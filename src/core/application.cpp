@@ -2,6 +2,7 @@
 #include "core/coordinates.hpp"
 #include <unordered_set>
 #include <cmath>
+#include <chrono>
 #include "core/spawn_presets.hpp"
 #include "core/logger.hpp"
 #include "core/memory_monitor.hpp"
@@ -47,7 +48,6 @@
 
 #include <SDL2/SDL.h>
 // GL/glew.h removed — Vulkan migration Phase 1
-#include <chrono>
 #include <cstdlib>
 #include <algorithm>
 #include <cctype>

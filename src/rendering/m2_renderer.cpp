@@ -1605,6 +1605,13 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
     getTightCollisionBounds(mdlRef, localMin, localMax);
     transformAABB(instance.modelMatrix, localMin, localMax, instance.worldBoundsMin, instance.worldBoundsMax);
 
+    // Cache model flags on instance to avoid per-frame hash lookups
+    instance.cachedHasAnimation = mdlRef.hasAnimation;
+    instance.cachedDisableAnimation = mdlRef.disableAnimation;
+    instance.cachedIsSmoke = mdlRef.isSmoke;
+    instance.cachedHasParticleEmitters = !mdlRef.particleEmitters.empty();
+    instance.cachedBoundRadius = mdlRef.boundRadius;
+
     // Initialize animation: play first sequence (usually Stand/Idle)
     const auto& mdl = mdlRef;
     if (mdl.hasAnimation && !mdl.disableAnimation && !mdl.sequences.empty()) {
@@ -1617,6 +1624,18 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
 
     instances.push_back(instance);
     size_t idx = instances.size() - 1;
+    // Track special instances for fast-path iteration
+    if (mdlRef.isSmoke) {
+        smokeInstanceIndices_.push_back(idx);
+    }
+    if (!mdlRef.particleEmitters.empty()) {
+        particleInstanceIndices_.push_back(idx);
+    }
+    if (mdlRef.hasAnimation && !mdlRef.disableAnimation) {
+        animatedInstanceIndices_.push_back(idx);
+    } else if (!mdlRef.particleEmitters.empty()) {
+        particleOnlyInstanceIndices_.push_back(idx);
+    }
     instanceIndexById[instance.id] = idx;
     GridCell minCell = toCell(instance.worldBoundsMin);
     GridCell maxCell = toCell(instance.worldBoundsMax);
@@ -1659,8 +1678,15 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
     glm::vec3 localMin, localMax;
     getTightCollisionBounds(models[modelId], localMin, localMax);
     transformAABB(instance.modelMatrix, localMin, localMax, instance.worldBoundsMin, instance.worldBoundsMax);
-    // Initialize animation
+    // Cache model flags on instance to avoid per-frame hash lookups
     const auto& mdl2 = models[modelId];
+    instance.cachedHasAnimation = mdl2.hasAnimation;
+    instance.cachedDisableAnimation = mdl2.disableAnimation;
+    instance.cachedIsSmoke = mdl2.isSmoke;
+    instance.cachedHasParticleEmitters = !mdl2.particleEmitters.empty();
+    instance.cachedBoundRadius = mdl2.boundRadius;
+
+    // Initialize animation
     if (mdl2.hasAnimation && !mdl2.disableAnimation && !mdl2.sequences.empty()) {
         instance.currentSequenceIndex = 0;
         instance.idleSequenceIndex = 0;
@@ -1673,6 +1699,17 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
 
     instances.push_back(instance);
     size_t idx = instances.size() - 1;
+    if (mdl2.isSmoke) {
+        smokeInstanceIndices_.push_back(idx);
+    }
+    if (!mdl2.particleEmitters.empty()) {
+        particleInstanceIndices_.push_back(idx);
+    }
+    if (mdl2.hasAnimation && !mdl2.disableAnimation) {
+        animatedInstanceIndices_.push_back(idx);
+    } else if (!mdl2.particleEmitters.empty()) {
+        particleOnlyInstanceIndices_.push_back(idx);
+    }
     instanceIndexById[instance.id] = idx;
     GridCell minCell = toCell(instance.worldBoundsMin);
     GridCell maxCell = toCell(instance.worldBoundsMax);
@@ -1818,7 +1855,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
     Frustum updateFrustum;
     updateFrustum.extractFromMatrix(viewProjection);
 
-    // --- Smoke particle spawning ---
+    // --- Smoke particle spawning (only iterate tracked smoke instances) ---
     std::uniform_real_distribution<float> distXY(-0.4f, 0.4f);
     std::uniform_real_distribution<float> distVelXY(-0.3f, 0.3f);
     std::uniform_real_distribution<float> distVelZ(3.0f, 5.0f);
@@ -1828,24 +1865,20 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
     smokeEmitAccum += deltaTime;
     float emitInterval = 1.0f / 8.0f;  // 8 particles per second per emitter
 
-    for (auto& instance : instances) {
-        auto it = models.find(instance.modelId);
-        if (it == models.end()) continue;
-        const M2ModelGPU& model = it->second;
+    if (smokeEmitAccum >= emitInterval &&
+        static_cast<int>(smokeParticles.size()) < MAX_SMOKE_PARTICLES) {
+        for (size_t si : smokeInstanceIndices_) {
+            if (si >= instances.size()) continue;
+            auto& instance = instances[si];
 
-        if (model.isSmoke && smokeEmitAccum >= emitInterval &&
-            static_cast<int>(smokeParticles.size()) < MAX_SMOKE_PARTICLES) {
-            // Emission point: model origin in world space (model matrix already positions at chimney)
             glm::vec3 emitWorld = glm::vec3(instance.modelMatrix * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-
-            // Occasionally spawn a spark instead of smoke (~1 in 8)
             bool spark = (smokeRng() % 8 == 0);
 
             SmokeParticle p;
             p.position = emitWorld + glm::vec3(distXY(smokeRng), distXY(smokeRng), 0.0f);
             if (spark) {
                 p.velocity = glm::vec3(distVelXY(smokeRng) * 2.0f, distVelXY(smokeRng) * 2.0f, distVelZ(smokeRng) * 1.5f);
-                p.maxLife = 0.8f + static_cast<float>(smokeRng() % 100) / 100.0f * 1.2f;  // 0.8-2.0s
+                p.maxLife = 0.8f + static_cast<float>(smokeRng() % 100) / 100.0f * 1.2f;
                 p.size = 0.5f;
                 p.isSpark = 1.0f;
             } else {
@@ -1857,10 +1890,8 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
             p.life = 0.0f;
             p.instanceId = instance.id;
             smokeParticles.push_back(p);
+            if (static_cast<int>(smokeParticles.size()) >= MAX_SMOKE_PARTICLES) break;
         }
-    }
-
-    if (smokeEmitAccum >= emitInterval) {
         smokeEmitAccum = 0.0f;
     }
 
@@ -1882,31 +1913,36 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
     }
 
     // --- Normal M2 animation update ---
-    // Phase 1: Update animation state (cheap, sequential)
-    // Collect indices of instances that need bone matrix computation.
-    // Reuse persistent vector to avoid allocation stutter
-    boneWorkIndices_.clear();
-    if (boneWorkIndices_.capacity() < instances.size()) {
-        boneWorkIndices_.reserve(instances.size());
+    // Advance animTime for ALL instances (needed for texture UV animation on static doodads).
+    // This is a tight loop touching only one float per instance — no hash lookups.
+    for (auto& instance : instances) {
+        instance.animTime += dtMs;
+    }
+    // Wrap animTime for particle-only instances so emission rate tracks keep looping
+    for (size_t idx : particleOnlyInstanceIndices_) {
+        if (idx >= instances.size()) continue;
+        auto& instance = instances[idx];
+        if (instance.animTime > 3333.0f) {
+            instance.animTime = std::fmod(instance.animTime, 3333.0f);
+        }
     }
 
-    for (size_t idx = 0; idx < instances.size(); ++idx) {
+    boneWorkIndices_.clear();
+    boneWorkIndices_.reserve(animatedInstanceIndices_.size());
+
+    // Update animated instances (full animation state + bone computation culling)
+    // Note: animTime was already advanced by dtMs in the global loop above.
+    // Here we apply the speed factor: subtract the base dtMs and add dtMs*speed.
+    for (size_t idx : animatedInstanceIndices_) {
+        if (idx >= instances.size()) continue;
         auto& instance = instances[idx];
+
+        instance.animTime += dtMs * (instance.animSpeed - 1.0f);
+
+        // For animation looping/variation, we need the actual model data.
         auto it = models.find(instance.modelId);
         if (it == models.end()) continue;
         const M2ModelGPU& model = it->second;
-
-        if (!model.hasAnimation || model.disableAnimation) {
-            instance.animTime += dtMs;
-            // Wrap animation time for models with particle emitters so emission
-            // rate tracks keep looping instead of running past their keyframes.
-            if (!model.particleEmitters.empty() && instance.animTime > 3333.0f) {
-                instance.animTime = std::fmod(instance.animTime, 3333.0f);
-            }
-            continue;
-        }
-
-        instance.animTime += dtMs * instance.animSpeed;
 
         // Validate sequence index
         if (instance.currentSequenceIndex < 0 ||
@@ -1918,14 +1954,11 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
         }
 
         // Handle animation looping / variation transitions
-        // When animDuration is 0 (e.g. "Stand" with infinite loop) but the model
-        // has particle emitters, wrap time so particle emission tracks keep looping.
-        if (instance.animDuration <= 0.0f && !model.particleEmitters.empty()) {
-            instance.animDuration = 3333.0f;  // ~3.3s loop for continuous particle effects
+        if (instance.animDuration <= 0.0f && instance.cachedHasParticleEmitters) {
+            instance.animDuration = 3333.0f;
         }
         if (instance.animDuration > 0.0f && instance.animTime >= instance.animDuration) {
             if (instance.playingVariation) {
-                // Variation finished — return to idle
                 instance.playingVariation = false;
                 instance.currentSequenceIndex = instance.idleSequenceIndex;
                 if (instance.idleSequenceIndex < static_cast<int>(model.sequences.size())) {
@@ -1934,12 +1967,11 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
                 instance.animTime = 0.0f;
                 instance.variationTimer = 4000.0f + static_cast<float>(rand() % 6000);
             } else {
-                // Loop idle
                 instance.animTime = std::fmod(instance.animTime, std::max(1.0f, instance.animDuration));
             }
         }
 
-        // Idle variation timer — occasionally play a different idle sequence
+        // Idle variation timer
         if (!instance.playingVariation && model.idleVariationIndices.size() > 1) {
             instance.variationTimer -= dtMs;
             if (instance.variationTimer <= 0.0f) {
@@ -1957,19 +1989,11 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
         }
 
         // Frustum + distance cull: skip expensive bone computation for off-screen instances.
-        // Keep thresholds aligned with render culling so visible distant ambient actors
-        // (fish/seagulls/etc.) continue animating instead of freezing in idle poses.
-        float worldRadius = model.boundRadius * instance.scale;
+        float worldRadius = instance.cachedBoundRadius * instance.scale;
         float cullRadius = worldRadius;
-        if (model.disableAnimation) {
-            cullRadius = std::max(cullRadius, 3.0f);
-        }
         glm::vec3 toCam = instance.position - cachedCamPos_;
         float distSq = glm::dot(toCam, toCam);
         float effectiveMaxDistSq = cachedMaxRenderDistSq_ * std::max(1.0f, cullRadius / 12.0f);
-        if (model.disableAnimation) {
-            effectiveMaxDistSq *= 2.6f;
-        }
         if (distSq > effectiveMaxDistSq) continue;
         float paddedRadius = std::max(cullRadius * 1.5f, cullRadius + 3.0f);
         if (cullRadius > 0.0f && !updateFrustum.intersectsSphere(instance.position, paddedRadius)) continue;
@@ -2041,21 +2065,20 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
     }
 
     // Phase 3: Particle update (sequential — uses RNG, not thread-safe)
-    // Run for ALL nearby instances with particle emitters, not just those in
-    // boneWorkIndices_, so particles keep animating even when bone updates are culled.
-    for (size_t idx = 0; idx < instances.size(); ++idx) {
+    // Only iterate instances that have particle emitters (pre-built list).
+    for (size_t idx : particleInstanceIndices_) {
+        if (idx >= instances.size()) continue;
         auto& instance = instances[idx];
-        auto mdlIt = models.find(instance.modelId);
-        if (mdlIt == models.end()) continue;
-        const auto& model = mdlIt->second;
-        if (model.particleEmitters.empty()) continue;
         // Distance cull: only update particles within visible range
         glm::vec3 toCam = instance.position - cachedCamPos_;
         float distSq = glm::dot(toCam, toCam);
         if (distSq > cachedMaxRenderDistSq_) continue;
-        emitParticles(instance, model, deltaTime);
+        auto mdlIt = models.find(instance.modelId);
+        if (mdlIt == models.end()) continue;
+        emitParticles(instance, mdlIt->second, deltaTime);
         updateParticles(instance, deltaTime);
     }
+
 }
 
 void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
@@ -3168,6 +3191,11 @@ void M2Renderer::setInstancePosition(uint32_t instanceId, const glm::vec3& posit
     auto idxIt = instanceIndexById.find(instanceId);
     if (idxIt == instanceIndexById.end()) return;
     auto& inst = instances[idxIt->second];
+
+    // Save old grid cells
+    GridCell oldMinCell = toCell(inst.worldBoundsMin);
+    GridCell oldMaxCell = toCell(inst.worldBoundsMax);
+
     inst.position = position;
     inst.updateModelMatrix();
     auto modelIt = models.find(inst.modelId);
@@ -3176,7 +3204,31 @@ void M2Renderer::setInstancePosition(uint32_t instanceId, const glm::vec3& posit
         getTightCollisionBounds(modelIt->second, localMin, localMax);
         transformAABB(inst.modelMatrix, localMin, localMax, inst.worldBoundsMin, inst.worldBoundsMax);
     }
-    spatialIndexDirty_ = true;
+
+    // Incrementally update spatial grid
+    GridCell newMinCell = toCell(inst.worldBoundsMin);
+    GridCell newMaxCell = toCell(inst.worldBoundsMax);
+    if (oldMinCell.x != newMinCell.x || oldMinCell.y != newMinCell.y || oldMinCell.z != newMinCell.z ||
+        oldMaxCell.x != newMaxCell.x || oldMaxCell.y != newMaxCell.y || oldMaxCell.z != newMaxCell.z) {
+        for (int z = oldMinCell.z; z <= oldMaxCell.z; z++) {
+            for (int y = oldMinCell.y; y <= oldMaxCell.y; y++) {
+                for (int x = oldMinCell.x; x <= oldMaxCell.x; x++) {
+                    auto it = spatialGrid.find(GridCell{x, y, z});
+                    if (it != spatialGrid.end()) {
+                        auto& vec = it->second;
+                        vec.erase(std::remove(vec.begin(), vec.end(), instanceId), vec.end());
+                    }
+                }
+            }
+        }
+        for (int z = newMinCell.z; z <= newMaxCell.z; z++) {
+            for (int y = newMinCell.y; y <= newMaxCell.y; y++) {
+                for (int x = newMinCell.x; x <= newMaxCell.x; x++) {
+                    spatialGrid[GridCell{x, y, z}].push_back(instanceId);
+                }
+            }
+        }
+    }
 }
 
 void M2Renderer::setInstanceAnimationFrozen(uint32_t instanceId, bool frozen) {
@@ -3194,6 +3246,10 @@ void M2Renderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& tran
     if (idxIt == instanceIndexById.end()) return;
     auto& inst = instances[idxIt->second];
 
+    // Remove old grid cells before updating bounds
+    GridCell oldMinCell = toCell(inst.worldBoundsMin);
+    GridCell oldMaxCell = toCell(inst.worldBoundsMax);
+
     // Update model matrix directly
     inst.modelMatrix = transform;
     inst.invModelMatrix = glm::inverse(transform);
@@ -3208,7 +3264,34 @@ void M2Renderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& tran
         getTightCollisionBounds(modelIt->second, localMin, localMax);
         transformAABB(inst.modelMatrix, localMin, localMax, inst.worldBoundsMin, inst.worldBoundsMax);
     }
-    spatialIndexDirty_ = true;
+
+    // Incrementally update spatial grid (remove old cells, add new cells)
+    GridCell newMinCell = toCell(inst.worldBoundsMin);
+    GridCell newMaxCell = toCell(inst.worldBoundsMax);
+    if (oldMinCell.x != newMinCell.x || oldMinCell.y != newMinCell.y || oldMinCell.z != newMinCell.z ||
+        oldMaxCell.x != newMaxCell.x || oldMaxCell.y != newMaxCell.y || oldMaxCell.z != newMaxCell.z) {
+        // Remove from old cells
+        for (int z = oldMinCell.z; z <= oldMaxCell.z; z++) {
+            for (int y = oldMinCell.y; y <= oldMaxCell.y; y++) {
+                for (int x = oldMinCell.x; x <= oldMaxCell.x; x++) {
+                    auto it = spatialGrid.find(GridCell{x, y, z});
+                    if (it != spatialGrid.end()) {
+                        auto& vec = it->second;
+                        vec.erase(std::remove(vec.begin(), vec.end(), instanceId), vec.end());
+                    }
+                }
+            }
+        }
+        // Add to new cells
+        for (int z = newMinCell.z; z <= newMaxCell.z; z++) {
+            for (int y = newMinCell.y; y <= newMaxCell.y; y++) {
+                for (int x = newMinCell.x; x <= newMaxCell.x; x++) {
+                    spatialGrid[GridCell{x, y, z}].push_back(instanceId);
+                }
+            }
+        }
+    }
+    // No spatialIndexDirty_ = true — handled incrementally
 }
 
 void M2Renderer::removeInstance(uint32_t instanceId) {
@@ -3289,6 +3372,10 @@ void M2Renderer::clear() {
     spatialGrid.clear();
     instanceIndexById.clear();
     smokeParticles.clear();
+    smokeInstanceIndices_.clear();
+    animatedInstanceIndices_.clear();
+    particleOnlyInstanceIndices_.clear();
+    particleInstanceIndices_.clear();
     smokeEmitAccum = 0.0f;
 }
 
@@ -3320,10 +3407,26 @@ void M2Renderer::rebuildSpatialIndex() {
     spatialGrid.clear();
     instanceIndexById.clear();
     instanceIndexById.reserve(instances.size());
+    smokeInstanceIndices_.clear();
+    animatedInstanceIndices_.clear();
+    particleOnlyInstanceIndices_.clear();
+    particleInstanceIndices_.clear();
 
     for (size_t i = 0; i < instances.size(); i++) {
         const auto& inst = instances[i];
         instanceIndexById[inst.id] = i;
+
+        if (inst.cachedIsSmoke) {
+            smokeInstanceIndices_.push_back(i);
+        }
+        if (inst.cachedHasParticleEmitters) {
+            particleInstanceIndices_.push_back(i);
+        }
+        if (inst.cachedHasAnimation && !inst.cachedDisableAnimation) {
+            animatedInstanceIndices_.push_back(i);
+        } else if (inst.cachedHasParticleEmitters) {
+            particleOnlyInstanceIndices_.push_back(i);
+        }
 
         GridCell minCell = toCell(inst.worldBoundsMin);
         GridCell maxCell = toCell(inst.worldBoundsMax);

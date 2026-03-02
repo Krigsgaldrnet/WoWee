@@ -174,6 +174,13 @@ struct M2Instance {
     std::vector<float> emitterAccumulators;  // fractional particle counter per emitter
     std::vector<M2Particle> particles;
 
+    // Cached model flags (set at creation to avoid per-frame hash lookups)
+    bool cachedHasAnimation = false;
+    bool cachedDisableAnimation = false;
+    bool cachedIsSmoke = false;
+    bool cachedHasParticleEmitters = false;
+    float cachedBoundRadius = 0.0f;
+
     // Frame-skip optimization (update distant animations less frequently)
     uint8_t frameSkipCounter = 0;
 
@@ -451,8 +458,14 @@ private:
     std::vector<std::future<void>> animFutures_; // Reused each frame
     bool spatialIndexDirty_ = false;
 
+    // Fast-path instance index lists (rebuilt in rebuildSpatialIndex / on create)
+    std::vector<size_t> animatedInstanceIndices_;   // hasAnimation && !disableAnimation
+    std::vector<size_t> particleOnlyInstanceIndices_; // !hasAnimation && hasParticleEmitters
+    std::vector<size_t> particleInstanceIndices_;    // ALL instances with particle emitters
+
     // Smoke particle system
     std::vector<SmokeParticle> smokeParticles;
+    std::vector<size_t> smokeInstanceIndices_;  // Indices into instances[] for smoke emitters
     static constexpr int MAX_SMOKE_PARTICLES = 1000;
     float smokeEmitAccum = 0.0f;
     std::mt19937 smokeRng{42};

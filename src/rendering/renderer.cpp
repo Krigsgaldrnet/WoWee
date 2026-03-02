@@ -3346,7 +3346,6 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
 
     auto renderEnd = std::chrono::steady_clock::now();
     lastRenderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
-
 }
 
 // initPostProcess(), resizePostProcess(), shutdownPostProcess() removed —
