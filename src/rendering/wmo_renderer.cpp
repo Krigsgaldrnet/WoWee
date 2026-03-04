@@ -536,7 +536,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             // Flag 0x80 on INDOOR groups in large WMOs = interior cathedral shell
             bool hasFlag80 = (wmoGroup.flags & 0x80) != 0;
             bool isIndoor = (wmoGroup.flags & 0x2000) != 0;
-            if (nVerts < 100 || (alwaysDraw && nVerts < 5000) || (isFacade && isLargeWmo) || (isCityShell && isLargeWmo) || (hasFlag80 && isIndoor && isLargeWmo)) {
+            if ((nVerts < 100 && isLargeWmo) || (alwaysDraw && nVerts < 5000) || (isFacade && isLargeWmo) || (isCityShell && isLargeWmo) || (hasFlag80 && isIndoor && isLargeWmo)) {
                 resources.isLOD = true;
             }
             modelData.groups.push_back(resources);
