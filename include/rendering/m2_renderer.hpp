@@ -182,6 +182,7 @@ struct M2Instance {
     bool cachedIsGroundDetail = false;
     bool cachedIsInvisibleTrap = false;
     bool cachedIsValid = false;
+    bool skipCollision = false;    // WMO interior doodads — skip player wall collision
     float cachedBoundRadius = 0.0f;
 
     // Frame-skip optimization (update distant animations less frequently)
@@ -287,6 +288,7 @@ public:
     void setInstanceAnimationFrozen(uint32_t instanceId, bool frozen);
     void removeInstance(uint32_t instanceId);
     void removeInstances(const std::vector<uint32_t>& instanceIds);
+    void setSkipCollision(uint32_t instanceId, bool skip);
     void clear();
     void cleanupUnusedModels();
 

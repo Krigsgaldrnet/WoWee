@@ -409,6 +409,9 @@ private:
         // Pre-computed per-triangle normals (unit length, indexed by triStart/3)
         std::vector<glm::vec3> triNormals;
 
+        // Per-collision-triangle MOPY flags (indexed by collision tri index, i.e. triStart/3)
+        std::vector<uint8_t> triMopyFlags;
+
         // Scratch bitset for deduplicating triangle queries (sized to numTriangles)
         mutable std::vector<uint8_t> triVisited;
 

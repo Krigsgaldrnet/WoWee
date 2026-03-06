@@ -1879,15 +1879,12 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
         resources.collisionVertices.push_back(v.position);
     }
     if (!group.triFlags.empty()) {
-        // Filter out non-collidable triangles
-        resources.collisionIndices.reserve(group.indices.size());
+        // Store all triangles but tag each with MOPY flags for collision filtering
+        resources.collisionIndices = group.indices;
         size_t numTris = group.indices.size() / 3;
+        resources.triMopyFlags.resize(numTris, 0);
         for (size_t t = 0; t < numTris; t++) {
-            uint8_t flags = (t < group.triFlags.size()) ? group.triFlags[t] : 0;
-            if (flags & 0x04) continue;  // detail/decorative — skip collision
-            resources.collisionIndices.push_back(group.indices[t * 3 + 0]);
-            resources.collisionIndices.push_back(group.indices[t * 3 + 1]);
-            resources.collisionIndices.push_back(group.indices[t * 3 + 2]);
+            resources.triMopyFlags[t] = (t < group.triFlags.size()) ? group.triFlags[t] : 0;
         }
     } else {
         resources.collisionIndices = group.indices;
@@ -3101,6 +3098,21 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 // Skip very short vertical surfaces (stair risers)
                 float triHeight = tb.maxZ - tb.minZ;
                 if (triHeight < 1.0f && tb.maxZ <= localFeetZ + 1.2f) continue;
+
+                // Use MOPY flags to filter wall collision.
+                // Only RENDERED triangles (flag 0x20) with collision intent (0x01)
+                // should block the player. Skip invisible collision hulls (0x08/0x48)
+                // and non-collidable render-only geometry.
+                uint32_t triIdx = triStart / 3;
+                if (!group.triMopyFlags.empty() && triIdx < group.triMopyFlags.size()) {
+                    uint8_t mopy = group.triMopyFlags[triIdx];
+                    // Must be rendered (0x20) AND have base collision flag (0x01)
+                    bool rendered = (mopy & 0x20) != 0;
+                    bool collidable = (mopy & 0x01) != 0;
+                    if (mopy != 0 && !(rendered && collidable)) {
+                        continue;
+                    }
+                }
 
                 const glm::vec3& v0 = verts[indices[triStart]];
                 const glm::vec3& v1 = verts[indices[triStart + 1]];

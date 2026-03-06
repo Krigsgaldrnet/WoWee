@@ -3321,6 +3321,15 @@ void M2Renderer::removeInstance(uint32_t instanceId) {
     }
 }
 
+void M2Renderer::setSkipCollision(uint32_t instanceId, bool skip) {
+    for (auto& inst : instances) {
+        if (inst.id == instanceId) {
+            inst.skipCollision = skip;
+            return;
+        }
+    }
+}
+
 void M2Renderer::removeInstances(const std::vector<uint32_t>& instanceIds) {
     if (instanceIds.empty() || instances.empty()) {
         return;
@@ -3649,6 +3658,7 @@ std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ,
 
         const M2ModelGPU& model = it->second;
         if (model.collisionNoBlock || model.isInvisibleTrap || model.isSpellEffect) continue;
+        if (instance.skipCollision) continue;
 
         // --- Mesh-based floor: vertical ray vs collision triangles ---
         // Does NOT skip the AABB path — both contribute and highest wins.
@@ -3803,6 +3813,7 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
 
         const M2ModelGPU& model = it->second;
         if (model.collisionNoBlock || model.isInvisibleTrap || model.isSpellEffect) continue;
+        if (instance.skipCollision) continue;
         if (instance.scale <= 0.001f) continue;
 
         // --- Mesh-based wall collision: closest-point push ---

@@ -865,7 +865,10 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
             m2Renderer->loadModel(doodad.model, doodad.modelId);
             uint32_t wmoDoodadInstId = m2Renderer->createInstanceWithMatrix(
                 doodad.modelId, doodad.modelMatrix, doodad.worldPosition);
-            if (wmoDoodadInstId) ft.m2InstanceIds.push_back(wmoDoodadInstId);
+            if (wmoDoodadInstId) {
+                m2Renderer->setSkipCollision(wmoDoodadInstId, true);
+                ft.m2InstanceIds.push_back(wmoDoodadInstId);
+            }
             ft.wmoDoodadIndex++;
             if (ft.wmoDoodadIndex < pending->wmoDoodads.size()) return false;
         }

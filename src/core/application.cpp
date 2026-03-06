@@ -3719,7 +3719,8 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
                                 uint32_t doodadModelId = static_cast<uint32_t>(std::hash<std::string>{}(m2Path));
                                 m2Renderer->loadModel(m2Model, doodadModelId);
-                                m2Renderer->createInstance(doodadModelId, worldPos, glm::vec3(0.0f), doodad.scale);
+                                uint32_t doodadInstId = m2Renderer->createInstance(doodadModelId, worldPos, glm::vec3(0.0f), doodad.scale);
+                                if (doodadInstId) m2Renderer->setSkipCollision(doodadInstId, true);
                                 loadedDoodads++;
                             }
                             LOG_INFO("Loaded ", loadedDoodads, " instance WMO doodads");
@@ -6735,6 +6736,7 @@ void Application::processPendingTransportDoodads() {
             m2Renderer->loadModel(m2Model, doodadModelId);
             uint32_t m2InstanceId = m2Renderer->createInstance(doodadModelId, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f);
             if (m2InstanceId == 0) continue;
+            m2Renderer->setSkipCollision(m2InstanceId, true);
 
             wmoRenderer->addDoodadToInstance(it->instanceId, m2InstanceId, doodadTemplate.localTransform);
             it->spawnedDoodads++;
