@@ -8809,13 +8809,21 @@ void GameHandler::checkAreaTriggers() {
         areaTriggerSuppressFirst_ = false;
     }
 
+    // Deeprun Tram entrance triggers need extended range because WMO
+    // collision walls block the player from reaching the trigger center.
+    static const std::unordered_set<uint32_t> extendedRangeTriggers = {
+        712, 713,   // Stormwind/Ironforge → Deeprun Tram
+        2166, 2171, // Tram interior exit triggers
+    };
+
     for (const auto& at : areaTriggers_) {
         if (at.mapId != currentMapId_) continue;
 
+        const bool extended = extendedRangeTriggers.count(at.id) > 0;
         bool inside = false;
         if (at.radius > 0.0f) {
             // Sphere trigger — small minimum so player must be near the portal
-            float effectiveRadius = std::max(at.radius, 12.0f);
+            float effectiveRadius = std::max(at.radius, extended ? 45.0f : 12.0f);
             float dx = px - at.x;
             float dy = py - at.y;
             float dz = pz - at.z;
@@ -8823,9 +8831,10 @@ void GameHandler::checkAreaTriggers() {
             inside = (distSq <= effectiveRadius * effectiveRadius);
         } else if (at.boxLength > 0.0f || at.boxWidth > 0.0f || at.boxHeight > 0.0f) {
             // Box trigger — small minimum so player must walk into the portal area
-            float effLength = std::max(at.boxLength, 16.0f);
-            float effWidth = std::max(at.boxWidth, 16.0f);
-            float effHeight = std::max(at.boxHeight, 16.0f);
+            float boxMin = extended ? 60.0f : 16.0f;
+            float effLength = std::max(at.boxLength, boxMin);
+            float effWidth = std::max(at.boxWidth, boxMin);
+            float effHeight = std::max(at.boxHeight, boxMin);
 
             float dx = px - at.x;
             float dy = py - at.y;
