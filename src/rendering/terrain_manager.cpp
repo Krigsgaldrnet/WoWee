@@ -567,8 +567,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
 
                         // Build doodad's local transform (WoW coordinates)
                         // WMO doodads use quaternion rotation
-                        // Fix: WoW quaternions need X/Y swap for correct orientation
-                        glm::quat fixedRotation(doodad.rotation.w, doodad.rotation.y, doodad.rotation.x, doodad.rotation.z);
+                        glm::quat fixedRotation(doodad.rotation.w, doodad.rotation.x, doodad.rotation.y, doodad.rotation.z);
 
                         glm::mat4 doodadLocal(1.0f);
                         doodadLocal = glm::translate(doodadLocal, doodad.position);

@@ -3712,8 +3712,8 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                                 }
                                 if (!m2Model.isValid()) continue;
 
-                                glm::quat fixedRotation(doodad.rotation.w, doodad.rotation.y,
-                                                        doodad.rotation.x, doodad.rotation.z);
+                                glm::quat fixedRotation(doodad.rotation.w, doodad.rotation.x,
+                                                        doodad.rotation.y, doodad.rotation.z);
                                 glm::mat4 doodadLocal(1.0f);
                                 doodadLocal = glm::translate(doodadLocal, doodad.position);
                                 doodadLocal *= glm::mat4_cast(fixedRotation);
@@ -3724,7 +3724,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
                                 uint32_t doodadModelId = static_cast<uint32_t>(std::hash<std::string>{}(m2Path));
                                 m2Renderer->loadModel(m2Model, doodadModelId);
-                                uint32_t doodadInstId = m2Renderer->createInstance(doodadModelId, worldPos, glm::vec3(0.0f), doodad.scale);
+                                uint32_t doodadInstId = m2Renderer->createInstanceWithMatrix(doodadModelId, worldMatrix, worldPos);
                                 if (doodadInstId) m2Renderer->setSkipCollision(doodadInstId, true);
                                 loadedDoodads++;
                             }
