@@ -3925,6 +3925,13 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             auto* terrainMgr = renderer->getTerrainManager();
             auto* camera = renderer->getCamera();
 
+            // Use a small radius for the initial load (just immediate tiles),
+            // then restore the full radius after entering the game.
+            // This matches WoW's behavior: load quickly, stream the rest in-game.
+            const int savedLoadRadius = 4;
+            terrainMgr->setLoadRadius(1);
+            terrainMgr->setUnloadRadius(7);
+
             // Trigger tile streaming for surrounding area
             terrainMgr->update(*camera, 1.0f);
 
@@ -4015,6 +4022,9 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             }
 
             LOG_INFO("Online terrain streaming complete: ", terrainMgr->getLoadedTileCount(), " tiles loaded");
+
+            // Restore full load radius — remaining tiles stream in-game
+            terrainMgr->setLoadRadius(savedLoadRadius);
 
             // Load/precompute collision cache
             if (renderer->getWMORenderer()) {
