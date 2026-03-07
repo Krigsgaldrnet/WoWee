@@ -609,10 +609,6 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
                     isLava = (texNameLower.find("lava") != std::string::npos ||
                               texNameLower.find("molten") != std::string::npos ||
                               texNameLower.find("magma") != std::string::npos);
-                    if (isLava) {
-                        LOG_WARNING("WMO LAVA BATCH: tex='", texName, "' matId=", batch.materialId,
-                                 " blend=", blendMode, " flags=0x", std::hex, matFlags, std::dec);
-                    }
                 }
             }
 

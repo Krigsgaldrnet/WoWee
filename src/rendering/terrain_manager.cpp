@@ -835,23 +835,13 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
                         modelMatrix = glm::rotate(modelMatrix, wmoReady.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
                         modelMatrix = glm::rotate(modelMatrix, wmoReady.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
                         modelMatrix = glm::rotate(modelMatrix, wmoReady.rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
-                        for (size_t gi = 0; gi < wmoReady.model.groups.size(); gi++) {
-                            const auto& group = wmoReady.model.groups[gi];
+                        for (const auto& group : wmoReady.model.groups) {
                             if (!group.liquid.hasLiquid()) continue;
-                            uint16_t lt = group.liquid.materialId;
-                            uint8_t basicType = (lt == 0) ? 0 : ((lt - 1) % 4);
-                            bool isInterior = (group.flags & 0x2000) != 0;
-                            LOG_WARNING("WMO MLIQ group", gi, ": flags=0x", std::hex, group.flags, std::dec,
-                                     " materialId=", lt, " basicType=", (int)basicType,
-                                     " interior=", isInterior ? "Y" : "N",
-                                     " xVerts=", group.liquid.xVerts, " yVerts=", group.liquid.yVerts);
                             // Skip interior water/ocean but keep magma/slime (e.g. Ironforge lava)
-                            if (isInterior) {
-                                if (basicType < 2) {
-                                    LOG_WARNING("  -> SKIPPED (interior water/ocean)");
-                                    continue;
-                                }
-                                LOG_WARNING("  -> LOADING (interior magma/slime)");
+                            if (group.flags & 0x2000) {
+                                uint16_t lt = group.liquid.materialId;
+                                uint8_t basicType = (lt == 0) ? 0 : ((lt - 1) % 4);
+                                if (basicType < 2) continue;
                             }
                             waterRenderer->loadFromWMO(group.liquid, modelMatrix, wmoInstId);
                             loadedLiquids++;
