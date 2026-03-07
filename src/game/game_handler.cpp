@@ -541,7 +541,13 @@ void GameHandler::update(float deltaTime) {
 
     // Update socket (processes incoming data and triggers callbacks)
     if (socket) {
+        auto socketStart = std::chrono::steady_clock::now();
         socket->update();
+        float socketMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - socketStart).count();
+        if (socketMs > 3.0f) {
+            LOG_WARNING("SLOW socket->update: ", socketMs, "ms");
+        }
     }
 
     // Detect server-side disconnect (socket closed during update)

@@ -6,12 +6,15 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <array>
 #include <optional>
 #include <future>
 #include <mutex>
+#include <thread>
+#include <atomic>
 
 namespace wowee {
 
@@ -282,7 +285,7 @@ private:
         uint32_t displayId;
         float x, y, z, orientation;
     };
-    std::vector<PendingCreatureSpawn> pendingCreatureSpawns_;
+    std::deque<PendingCreatureSpawn> pendingCreatureSpawns_;
     static constexpr int MAX_SPAWNS_PER_FRAME = 3;
     static constexpr int MAX_NEW_CREATURE_MODELS_PER_FRAME = 1;
     static constexpr uint16_t MAX_CREATURE_SPAWN_RETRIES = 300;
@@ -353,6 +356,23 @@ private:
     // Quest marker billboard sprites (above NPCs)
     void loadQuestMarkerModels();  // Now loads BLP textures
     void updateQuestMarkers();     // Updates billboard positions
+
+    // Background world preloader — warms AssetManager file cache for the
+    // expected world before the user clicks Enter World.
+    struct WorldPreload {
+        uint32_t mapId = 0;
+        std::string mapName;
+        int centerTileX = 0;
+        int centerTileY = 0;
+        std::atomic<bool> cancel{false};
+        std::vector<std::thread> workers;
+    };
+    std::unique_ptr<WorldPreload> worldPreload_;
+    void startWorldPreload(uint32_t mapId, const std::string& mapName, float serverX, float serverY);
+    void cancelWorldPreload();
+    void saveLastWorldInfo(uint32_t mapId, const std::string& mapName, float serverX, float serverY);
+    struct LastWorldInfo { uint32_t mapId = 0; std::string mapName; float x = 0, y = 0; bool valid = false; };
+    LastWorldInfo loadLastWorldInfo() const;
 };
 
 } // namespace core

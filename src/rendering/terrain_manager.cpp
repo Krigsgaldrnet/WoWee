@@ -1082,7 +1082,7 @@ void TerrainManager::workerLoop() {
 void TerrainManager::processReadyTiles() {
     // Process tiles with time budget to avoid frame spikes
     // Taxi mode gets a slightly larger budget to avoid visible late-pop terrain/models.
-    const float timeBudgetMs = taxiStreamingMode_ ? 8.0f : 5.0f;
+    const float timeBudgetMs = taxiStreamingMode_ ? 8.0f : 3.0f;
     auto startTime = std::chrono::high_resolution_clock::now();
 
     // Move newly ready tiles into the finalizing deque.

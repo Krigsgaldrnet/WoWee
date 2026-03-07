@@ -56,6 +56,7 @@
 #include <sstream>
 #include <set>
 #include <filesystem>
+#include <fstream>
 
 #include <thread>
 #ifdef __linux__
@@ -314,6 +315,15 @@ bool Application::initialize() {
             gameHandler->getTransportManager()->loadTaxiPathNodeDBC(assetManager.get());
         }
 
+        // Start background preload for last-played character's world.
+        // Warms the file cache so terrain tile loading is faster at Enter World.
+        {
+            auto lastWorld = loadLastWorldInfo();
+            if (lastWorld.valid) {
+                startWorldPreload(lastWorld.mapId, lastWorld.mapName, lastWorld.x, lastWorld.y);
+            }
+        }
+
     } else {
         LOG_WARNING("Failed to initialize asset manager - asset loading will be unavailable");
         LOG_WARNING("Set WOW_DATA_PATH environment variable to your WoW Data directory");
@@ -520,6 +530,9 @@ void Application::run() {
 
 void Application::shutdown() {
     LOG_WARNING("Shutting down application...");
+
+    // Stop background world preloader before destroying AssetManager
+    cancelWorldPreload();
 
     // Save floor cache before renderer is destroyed
     if (renderer && renderer->getWMORenderer()) {
@@ -843,6 +856,7 @@ void Application::update(float deltaTime) {
             const char* inGameStep = "begin";
             try {
             auto runInGameStage = [&](const char* stageName, auto&& fn) {
+                auto stageStart = std::chrono::steady_clock::now();
                 try {
                     fn();
                 } catch (const std::bad_alloc& e) {
@@ -851,6 +865,11 @@ void Application::update(float deltaTime) {
                 } catch (const std::exception& e) {
                     LOG_ERROR("Exception during IN_GAME update stage '", stageName, "': ", e.what());
                     throw;
+                }
+                auto stageEnd = std::chrono::steady_clock::now();
+                float stageMs = std::chrono::duration<float, std::milli>(stageEnd - stageStart).count();
+                if (stageMs > 3.0f) {
+                    LOG_WARNING("SLOW update stage '", stageName, "': ", stageMs, "ms");
                 }
             };
             inGameStep = "gameHandler update";
@@ -1289,6 +1308,7 @@ void Application::update(float deltaTime) {
             // creature models remain at stale spawn positions.
             inGameStep = "creature render sync";
             updateCheckpoint = "in_game: creature render sync";
+            auto creatureSyncStart = std::chrono::steady_clock::now();
             if (renderer && gameHandler && renderer->getCharacterRenderer()) {
                 auto* charRenderer = renderer->getCharacterRenderer();
                 static float npcWeaponRetryTimer = 0.0f;
@@ -1333,24 +1353,31 @@ void Application::update(float deltaTime) {
                     }
 
                     glm::vec3 canonical(entity->getX(), entity->getY(), entity->getZ());
+                    float canonDistSq = 0.0f;
                     if (havePlayerPos) {
                         glm::vec3 d = canonical - playerPos;
-                        if (glm::dot(d, d) > syncRadiusSq) continue;
+                        canonDistSq = glm::dot(d, d);
+                        if (canonDistSq > syncRadiusSq) continue;
                     }
 
                     glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
 
                     // Visual collision guard: keep hostile melee units from rendering inside the
                     // player's model while attacking. This is client-side only (no server position change).
-                    auto unit = std::static_pointer_cast<game::Unit>(entity);
-                    const uint64_t currentTargetGuid = gameHandler->hasTarget() ? gameHandler->getTargetGuid() : 0;
-                    const uint64_t autoAttackGuid = gameHandler->getAutoAttackTargetGuid();
-                    const bool isCombatTarget = (guid == currentTargetGuid || guid == autoAttackGuid);
-                    bool clipGuardEligible = havePlayerPos &&
-                                             unit->getHealth() > 0 &&
-                                             (unit->isHostile() ||
-                                              gameHandler->isAggressiveTowardPlayer(guid) ||
-                                              isCombatTarget);
+                    // Only check for creatures within 8 units (melee range) — saves expensive
+                    // getRenderBoundsForGuid/getModelData calls for distant creatures.
+                    bool clipGuardEligible = false;
+                    bool isCombatTarget = false;
+                    if (havePlayerPos && canonDistSq < 64.0f) { // 8² = melee range
+                        auto unit = std::static_pointer_cast<game::Unit>(entity);
+                        const uint64_t currentTargetGuid = gameHandler->hasTarget() ? gameHandler->getTargetGuid() : 0;
+                        const uint64_t autoAttackGuid = gameHandler->getAutoAttackTargetGuid();
+                        isCombatTarget = (guid == currentTargetGuid || guid == autoAttackGuid);
+                        clipGuardEligible = unit->getHealth() > 0 &&
+                                            (unit->isHostile() ||
+                                             gameHandler->isAggressiveTowardPlayer(guid) ||
+                                             isCombatTarget);
+                    }
                     if (clipGuardEligible) {
                         float creatureCollisionRadius = 0.8f;
                         glm::vec3 cc;
@@ -1410,7 +1437,8 @@ void Application::update(float deltaTime) {
                         float planarDist = glm::length(delta2);
                         float dz = std::abs(renderPos.z - prevPos.z);
 
-                        const bool deadOrCorpse = unit->getHealth() == 0;
+                        auto unitPtr = std::static_pointer_cast<game::Unit>(entity);
+                        const bool deadOrCorpse = unitPtr->getHealth() == 0;
                         const bool largeCorrection = (planarDist > 6.0f) || (dz > 3.0f);
                         if (deadOrCorpse || largeCorrection) {
                             charRenderer->setInstancePosition(instanceId, renderPos);
@@ -1423,6 +1451,14 @@ void Application::update(float deltaTime) {
                     }
                     float renderYaw = entity->getOrientation() + glm::radians(90.0f);
                     charRenderer->setInstanceRotation(instanceId, glm::vec3(0.0f, 0.0f, renderYaw));
+                }
+            }
+            {
+                float csMs = std::chrono::duration<float, std::milli>(
+                    std::chrono::steady_clock::now() - creatureSyncStart).count();
+                if (csMs > 5.0f) {
+                    LOG_WARNING("SLOW update stage 'creature render sync': ", csMs, "ms (",
+                                creatureInstances_.size(), " creatures)");
                 }
             }
 
@@ -1447,6 +1483,7 @@ void Application::update(float deltaTime) {
     // Update renderer (camera, etc.) only when in-game
     updateCheckpoint = "renderer update";
     if (renderer && state == AppState::IN_GAME) {
+        auto rendererUpdateStart = std::chrono::steady_clock::now();
         try {
             renderer->update(deltaTime);
         } catch (const std::bad_alloc& e) {
@@ -1455,6 +1492,11 @@ void Application::update(float deltaTime) {
         } catch (const std::exception& e) {
             LOG_ERROR("Exception during Application::update stage 'renderer->update': ", e.what());
             throw;
+        }
+        float ruMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - rendererUpdateStart).count();
+        if (ruMs > 5.0f) {
+            LOG_WARNING("SLOW update stage 'renderer->update': ", ruMs, "ms");
         }
     }
     // Update UI
@@ -3537,6 +3579,21 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
     }
     LOG_INFO("Loading online world terrain for map '", mapName, "' (ID ", mapId, ")");
 
+    // Cancel any stale preload (if it was for a different map, the file cache
+    // still retains whatever was loaded — it doesn't hurt).
+    if (worldPreload_) {
+        if (worldPreload_->mapId == mapId) {
+            LOG_INFO("World preload: cache-warm hit for map '", mapName, "'");
+        } else {
+            LOG_INFO("World preload: map mismatch (preloaded ", worldPreload_->mapName,
+                     ", entering ", mapName, ")");
+        }
+    }
+    cancelWorldPreload();
+
+    // Save this world info for next session's early preload
+    saveLastWorldInfo(mapId, mapName, x, y);
+
     // Convert server coordinates to canonical WoW coordinates
     // Server sends: X=West (canonical.Y), Y=North (canonical.X), Z=Up
     glm::vec3 spawnCanonical = core::coords::serverToCanonical(glm::vec3(x, y, z));
@@ -3967,8 +4024,11 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                 // Trigger new streaming — enqueue tiles for background workers
                 terrainMgr->update(*camera, 0.016f);
 
-                // Process ONE tile per iteration so loading screen updates after each
-                terrainMgr->processOneReadyTile();
+                // Process ALL available ready tiles per iteration — batches GPU
+                // uploads into a single command buffer + fence wait instead of
+                // one fence per tile.  Loading screen still updates between
+                // iterations while workers parse more tiles.
+                terrainMgr->processAllReadyTiles();
 
                 int remaining = terrainMgr->getRemainingTileCount();
                 int loaded = terrainMgr->getLoadedTileCount();
@@ -4126,9 +4186,64 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
             if (world) world->update(1.0f / 60.0f);
             processPlayerSpawnQueue();
+
+            // During load screen warmup: lift per-frame budgets so GPU uploads
+            // happen in bulk while the loading screen is still visible.
+            // Process ALL async creature model uploads (no 3-per-frame cap).
+            {
+                for (auto it = asyncCreatureLoads_.begin(); it != asyncCreatureLoads_.end(); ) {
+                    if (!it->future.valid() ||
+                        it->future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+                        ++it;
+                        continue;
+                    }
+                    auto result = it->future.get();
+                    it = asyncCreatureLoads_.erase(it);
+                    if (result.permanent_failure) {
+                        nonRenderableCreatureDisplayIds_.insert(result.displayId);
+                        creaturePermanentFailureGuids_.insert(result.guid);
+                        pendingCreatureSpawnGuids_.erase(result.guid);
+                        creatureSpawnRetryCounts_.erase(result.guid);
+                        continue;
+                    }
+                    if (!result.valid || !result.model) {
+                        pendingCreatureSpawnGuids_.erase(result.guid);
+                        creatureSpawnRetryCounts_.erase(result.guid);
+                        continue;
+                    }
+                    auto* charRenderer = renderer ? renderer->getCharacterRenderer() : nullptr;
+                    if (!charRenderer) { pendingCreatureSpawnGuids_.erase(result.guid); continue; }
+                    if (!charRenderer->loadModel(*result.model, result.modelId)) {
+                        nonRenderableCreatureDisplayIds_.insert(result.displayId);
+                        creaturePermanentFailureGuids_.insert(result.guid);
+                        pendingCreatureSpawnGuids_.erase(result.guid);
+                        creatureSpawnRetryCounts_.erase(result.guid);
+                        continue;
+                    }
+                    displayIdModelCache_[result.displayId] = result.modelId;
+                    pendingCreatureSpawnGuids_.erase(result.guid);
+                    creatureSpawnRetryCounts_.erase(result.guid);
+                    if (!creatureInstances_.count(result.guid) &&
+                        !creaturePermanentFailureGuids_.count(result.guid)) {
+                        PendingCreatureSpawn s{};
+                        s.guid = result.guid; s.displayId = result.displayId;
+                        s.x = result.x; s.y = result.y; s.z = result.z;
+                        s.orientation = result.orientation;
+                        pendingCreatureSpawns_.push_back(s);
+                        pendingCreatureSpawnGuids_.insert(result.guid);
+                    }
+                }
+            }
             processCreatureSpawnQueue();
             processDeferredEquipmentQueue();
-            processGameObjectSpawnQueue();
+
+            // Process ALL pending game object spawns (no 1-per-frame cap during load screen).
+            while (!pendingGameObjectSpawns_.empty()) {
+                auto& s = pendingGameObjectSpawns_.front();
+                spawnOnlineGameObject(s.guid, s.entry, s.displayId, s.x, s.y, s.z, s.orientation);
+                pendingGameObjectSpawns_.erase(pendingGameObjectSpawns_.begin());
+            }
+
             processPendingTransportDoodads();
             processPendingMount();
             updateQuestMarkers();
@@ -6767,12 +6882,25 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
 
 void Application::processAsyncCreatureResults() {
     // Check completed async model loads and finalize on main thread (GPU upload + instance creation).
+    // Limit GPU model uploads per frame to avoid spikes, but always drain cheap bookkeeping.
+    static constexpr int kMaxModelUploadsPerFrame = 3;
+    int modelUploads = 0;
+
     for (auto it = asyncCreatureLoads_.begin(); it != asyncCreatureLoads_.end(); ) {
         if (!it->future.valid() ||
             it->future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
             ++it;
             continue;
         }
+
+        // Peek: if this result needs a NEW model upload (not cached) and we've hit
+        // the upload budget, defer to next frame without consuming the future.
+        if (modelUploads >= kMaxModelUploadsPerFrame) {
+            // Check if this displayId already has a cached model (cheap spawn, no GPU upload).
+            // We can't peek the displayId without getting the future, so just break.
+            break;
+        }
+
         auto result = it->future.get();
         it = asyncCreatureLoads_.erase(it);
 
@@ -6805,6 +6933,7 @@ void Application::processAsyncCreatureResults() {
             continue;
         }
         displayIdModelCache_[result.displayId] = result.modelId;
+        modelUploads++;
 
         pendingCreatureSpawnGuids_.erase(result.guid);
         creatureSpawnRetryCounts_.erase(result.guid);
@@ -6854,7 +6983,7 @@ void Application::processCreatureSpawnQueue() {
         }
 
         PendingCreatureSpawn s = pendingCreatureSpawns_.front();
-        pendingCreatureSpawns_.erase(pendingCreatureSpawns_.begin());
+        pendingCreatureSpawns_.pop_front();
 
         if (nonRenderableCreatureDisplayIds_.count(s.displayId)) {
             pendingCreatureSpawnGuids_.erase(s.guid);
@@ -7035,13 +7164,11 @@ void Application::processDeferredEquipmentQueue() {
 void Application::processGameObjectSpawnQueue() {
     if (pendingGameObjectSpawns_.empty()) return;
 
-    int spawned = 0;
-    while (!pendingGameObjectSpawns_.empty() && spawned < MAX_SPAWNS_PER_FRAME) {
-        auto& s = pendingGameObjectSpawns_.front();
-        spawnOnlineGameObject(s.guid, s.entry, s.displayId, s.x, s.y, s.z, s.orientation);
-        pendingGameObjectSpawns_.erase(pendingGameObjectSpawns_.begin());
-        spawned++;
-    }
+    // Only spawn 1 game object per frame — each can involve heavy synchronous
+    // WMO loading (root + groups from disk + GPU upload), easily 100ms+.
+    auto& s = pendingGameObjectSpawns_.front();
+    spawnOnlineGameObject(s.guid, s.entry, s.displayId, s.x, s.y, s.z, s.orientation);
+    pendingGameObjectSpawns_.erase(pendingGameObjectSpawns_.begin());
 }
 
 void Application::processPendingTransportDoodads() {
@@ -7052,9 +7179,16 @@ void Application::processPendingTransportDoodads() {
     auto* m2Renderer = renderer->getM2Renderer();
     if (!wmoRenderer || !m2Renderer) return;
 
+    auto startTime = std::chrono::steady_clock::now();
+    static constexpr float kDoodadBudgetMs = 4.0f;
+
     size_t budgetLeft = MAX_TRANSPORT_DOODADS_PER_FRAME;
     for (auto it = pendingTransportDoodadBatches_.begin();
          it != pendingTransportDoodadBatches_.end() && budgetLeft > 0;) {
+        // Time budget check
+        float elapsedMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - startTime).count();
+        if (elapsedMs >= kDoodadBudgetMs) break;
         auto goIt = gameObjectInstances_.find(it->guid);
         if (goIt == gameObjectInstances_.end() || !goIt->second.isWmo ||
             goIt->second.instanceId != it->instanceId || goIt->second.modelId != it->modelId) {
@@ -7070,6 +7204,11 @@ void Application::processPendingTransportDoodads() {
 
         const size_t maxIndex = std::min(it->doodadBudget, doodadTemplates->size());
         while (it->nextIndex < maxIndex && budgetLeft > 0) {
+            // Per-doodad time budget (each does synchronous file I/O + parse + GPU upload)
+            float innerMs = std::chrono::duration<float, std::milli>(
+                std::chrono::steady_clock::now() - startTime).count();
+            if (innerMs >= kDoodadBudgetMs) { budgetLeft = 0; break; }
+
             const auto& doodadTemplate = (*doodadTemplates)[it->nextIndex];
             it->nextIndex++;
             budgetLeft--;
@@ -7727,6 +7866,122 @@ void Application::setupTestTransport() {
     LOG_INFO("To disembark:");
     LOG_INFO("  /transport leave");
     LOG_INFO("========================================");
+}
+
+// ─── World Preloader ─────────────────────────────────────────────────────────
+// Pre-warms AssetManager file cache with ADT files (and their _obj0 variants)
+// for tiles around the expected spawn position.  Runs in background so that
+// when loadOnlineWorldTerrain eventually asks TerrainManager workers to parse
+// the same files, every readFile() is an instant cache hit instead of disk I/O.
+
+void Application::startWorldPreload(uint32_t mapId, const std::string& mapName,
+                                     float serverX, float serverY) {
+    cancelWorldPreload();
+    if (!assetManager || !assetManager->isInitialized() || mapName.empty()) return;
+
+    glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(serverX, serverY, 0.0f));
+    auto [tileX, tileY] = core::coords::canonicalToTile(canonical.x, canonical.y);
+
+    worldPreload_ = std::make_unique<WorldPreload>();
+    worldPreload_->mapId = mapId;
+    worldPreload_->mapName = mapName;
+    worldPreload_->centerTileX = tileX;
+    worldPreload_->centerTileY = tileY;
+
+    LOG_INFO("World preload: starting for map '", mapName, "' tile [", tileX, ",", tileY, "]");
+
+    // Build list of tiles to preload (radius 1 = 3x3 = 9 tiles, matching load screen)
+    struct TileJob { int x, y; };
+    auto jobs = std::make_shared<std::vector<TileJob>>();
+    // Center tile first (most important)
+    jobs->push_back({tileX, tileY});
+    for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            if (dx == 0 && dy == 0) continue;
+            int tx = tileX + dx, ty = tileY + dy;
+            if (tx < 0 || tx > 63 || ty < 0 || ty > 63) continue;
+            jobs->push_back({tx, ty});
+        }
+    }
+
+    // Spawn worker threads (one per tile for maximum parallelism)
+    auto cancelFlag = &worldPreload_->cancel;
+    auto* am = assetManager.get();
+    std::string mn = mapName;
+
+    int numWorkers = std::min(static_cast<int>(jobs->size()), 4);
+    auto nextJob = std::make_shared<std::atomic<int>>(0);
+
+    for (int w = 0; w < numWorkers; w++) {
+        worldPreload_->workers.emplace_back([am, mn, jobs, nextJob, cancelFlag]() {
+            while (!cancelFlag->load(std::memory_order_relaxed)) {
+                int idx = nextJob->fetch_add(1, std::memory_order_relaxed);
+                if (idx >= static_cast<int>(jobs->size())) break;
+
+                int tx = (*jobs)[idx].x;
+                int ty = (*jobs)[idx].y;
+
+                // Read ADT file (warms file cache)
+                std::string adtPath = "World\\Maps\\" + mn + "\\" + mn + "_" +
+                                      std::to_string(tx) + "_" + std::to_string(ty) + ".adt";
+                am->readFile(adtPath);
+                if (cancelFlag->load(std::memory_order_relaxed)) break;
+
+                // Read obj0 variant
+                std::string objPath = "World\\Maps\\" + mn + "\\" + mn + "_" +
+                                      std::to_string(tx) + "_" + std::to_string(ty) + "_obj0.adt";
+                am->readFile(objPath);
+            }
+            LOG_DEBUG("World preload worker finished");
+        });
+    }
+}
+
+void Application::cancelWorldPreload() {
+    if (!worldPreload_) return;
+    worldPreload_->cancel.store(true, std::memory_order_relaxed);
+    for (auto& t : worldPreload_->workers) {
+        if (t.joinable()) t.join();
+    }
+    LOG_INFO("World preload: cancelled (map=", worldPreload_->mapName,
+             " tile=[", worldPreload_->centerTileX, ",", worldPreload_->centerTileY, "])");
+    worldPreload_.reset();
+}
+
+void Application::saveLastWorldInfo(uint32_t mapId, const std::string& mapName,
+                                     float serverX, float serverY) {
+#ifdef _WIN32
+    const char* base = std::getenv("APPDATA");
+    std::string dir = base ? std::string(base) + "\\wowee" : ".";
+#else
+    const char* home = std::getenv("HOME");
+    std::string dir = home ? std::string(home) + "/.wowee" : ".";
+#endif
+    std::filesystem::create_directories(dir);
+    std::ofstream f(dir + "/last_world.cfg");
+    if (f) {
+        f << mapId << "\n" << mapName << "\n" << serverX << "\n" << serverY << "\n";
+    }
+}
+
+Application::LastWorldInfo Application::loadLastWorldInfo() const {
+#ifdef _WIN32
+    const char* base = std::getenv("APPDATA");
+    std::string dir = base ? std::string(base) + "\\wowee" : ".";
+#else
+    const char* home = std::getenv("HOME");
+    std::string dir = home ? std::string(home) + "/.wowee" : ".";
+#endif
+    LastWorldInfo info;
+    std::ifstream f(dir + "/last_world.cfg");
+    if (!f) return info;
+    std::string line;
+    if (std::getline(f, line)) info.mapId = static_cast<uint32_t>(std::stoul(line));
+    if (std::getline(f, line)) info.mapName = line;
+    if (std::getline(f, line)) info.x = std::stof(line);
+    if (std::getline(f, line)) info.y = std::stof(line);
+    info.valid = !info.mapName.empty();
+    return info;
 }
 
 } // namespace core

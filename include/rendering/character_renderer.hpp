@@ -254,7 +254,14 @@ private:
     VkDescriptorPool materialDescPools_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     VkDescriptorPool boneDescPool_ = VK_NULL_HANDLE;
     uint32_t lastMaterialPoolResetFrame_ = 0xFFFFFFFFu;
-    std::vector<std::pair<VkBuffer, VmaAllocation>> transientMaterialUbos_[2];
+
+    // Material UBO ring buffer — pre-allocated per frame slot, sub-allocated each draw
+    VkBuffer materialRingBuffer_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VmaAllocation materialRingAlloc_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    void* materialRingMapped_[2] = {nullptr, nullptr};
+    uint32_t materialRingOffset_[2] = {0, 0};
+    uint32_t materialUboAlignment_ = 256;  // minUniformBufferOffsetAlignment
+    static constexpr uint32_t MATERIAL_RING_CAPACITY = 4096;
 
     // Texture cache
     struct TextureCacheEntry {

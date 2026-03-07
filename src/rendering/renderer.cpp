@@ -2527,7 +2527,13 @@ void Renderer::update(float deltaTime) {
 
     // Update terrain streaming
     if (terrainManager && camera) {
+        auto terrStart = std::chrono::steady_clock::now();
         terrainManager->update(*camera, deltaTime);
+        float terrMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - terrStart).count();
+        if (terrMs > 5.0f) {
+            LOG_WARNING("SLOW terrainManager->update: ", terrMs, "ms");
+        }
     }
 
     // Update sky system (skybox time, star twinkle, clouds, celestial moon phases)
@@ -2579,7 +2585,14 @@ void Renderer::update(float deltaTime) {
 
     // Update character animations
     if (characterRenderer && camera) {
+        auto charAnimStart = std::chrono::steady_clock::now();
         characterRenderer->update(deltaTime, camera->getPosition());
+        float charAnimMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - charAnimStart).count();
+        if (charAnimMs > 5.0f) {
+            LOG_WARNING("SLOW characterRenderer->update: ", charAnimMs, "ms (",
+                        characterRenderer->getInstanceCount(), " instances)");
+        }
     }
 
     // Update AudioEngine (cleanup finished sounds, etc.)

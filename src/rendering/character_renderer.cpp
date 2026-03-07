@@ -197,6 +197,29 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
         vkCreateDescriptorPool(device, &ci, nullptr, &boneDescPool_);
     }
 
+    // --- Material UBO ring buffers (one per frame slot) ---
+    {
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(ctx->getPhysicalDevice(), &props);
+        materialUboAlignment_ = static_cast<uint32_t>(props.limits.minUniformBufferOffsetAlignment);
+        if (materialUboAlignment_ < 1) materialUboAlignment_ = 1;
+        // Round up UBO size to alignment
+        uint32_t alignedUboSize = (sizeof(CharMaterialUBO) + materialUboAlignment_ - 1) & ~(materialUboAlignment_ - 1);
+        uint32_t ringSize = alignedUboSize * MATERIAL_RING_CAPACITY;
+        for (int i = 0; i < 2; i++) {
+            VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+            bci.size = ringSize;
+            bci.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+            VmaAllocationCreateInfo aci{};
+            aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+            aci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+            VmaAllocationInfo allocInfo{};
+            vmaCreateBuffer(ctx->getAllocator(), &bci, &aci,
+                            &materialRingBuffer_[i], &materialRingAlloc_[i], &allocInfo);
+            materialRingMapped_[i] = allocInfo.pMappedData;
+        }
+    }
+
     // --- Pipeline layout ---
     // set 0 = perFrame, set 1 = material, set 2 = bones
     // Push constant: mat4 model = 64 bytes
@@ -352,14 +375,15 @@ void CharacterRenderer::shutdown() {
 
     if (pipelineLayout_) { vkDestroyPipelineLayout(device, pipelineLayout_, nullptr); pipelineLayout_ = VK_NULL_HANDLE; }
 
-    // Release any deferred transient material UBOs.
+    // Destroy material ring buffers
     for (int i = 0; i < 2; i++) {
-        for (const auto& b : transientMaterialUbos_[i]) {
-            if (b.first) {
-                vmaDestroyBuffer(alloc, b.first, b.second);
-            }
+        if (materialRingBuffer_[i]) {
+            vmaDestroyBuffer(alloc, materialRingBuffer_[i], materialRingAlloc_[i]);
+            materialRingBuffer_[i] = VK_NULL_HANDLE;
+            materialRingAlloc_[i] = VK_NULL_HANDLE;
+            materialRingMapped_[i] = nullptr;
         }
-        transientMaterialUbos_[i].clear();
+        materialRingOffset_[i] = 0;
     }
 
     // Destroy descriptor pools and layouts
@@ -391,7 +415,6 @@ void CharacterRenderer::clear() {
 
     vkDeviceWaitIdle(vkCtx_->getDevice());
     VkDevice device = vkCtx_->getDevice();
-    VmaAllocator alloc = vkCtx_->getAllocator();
 
     // Destroy GPU resources for all models
     for (auto& pair : models) {
@@ -441,14 +464,9 @@ void CharacterRenderer::clear() {
     models.clear();
     instances.clear();
 
-    // Release deferred transient material UBOs
+    // Reset material ring buffer offsets (buffers persist, just reset write position)
     for (int i = 0; i < 2; i++) {
-        for (const auto& b : transientMaterialUbos_[i]) {
-            if (b.first) {
-                vmaDestroyBuffer(alloc, b.first, b.second);
-            }
-        }
-        transientMaterialUbos_[i].clear();
+        materialRingOffset_[i] = 0;
     }
 
     // Reset descriptor pools (don't destroy — reuse for new allocations)
@@ -1454,8 +1472,14 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
     const float animUpdateRadius = static_cast<float>(envSizeOrDefault("WOWEE_CHAR_ANIM_RADIUS", 120));
     const float animUpdateRadiusSq = animUpdateRadius * animUpdateRadius;
 
-    // Update fade-in opacity
-    for (auto& [id, inst] : instances) {
+    // Single pass: fade-in, movement, and animation bone collection
+    std::vector<std::reference_wrapper<CharacterInstance>> toUpdate;
+    toUpdate.reserve(instances.size());
+
+    for (auto& pair : instances) {
+        auto& inst = pair.second;
+
+        // Update fade-in opacity
         if (inst.fadeInDuration > 0.0f && inst.opacity < 1.0f) {
             inst.fadeInTime += deltaTime;
             inst.opacity = std::min(1.0f, inst.fadeInTime / inst.fadeInDuration);
@@ -1463,10 +1487,8 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
                 inst.fadeInDuration = 0.0f;
             }
         }
-    }
 
-    // Interpolate creature movement
-    for (auto& [id, inst] : instances) {
+        // Interpolate creature movement
         if (inst.isMoving) {
             inst.moveElapsed += deltaTime;
             float t = inst.moveElapsed / inst.moveDuration;
@@ -1475,23 +1497,14 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
                 inst.isMoving = false;
                 // Return to idle when movement completes
                 if (inst.currentAnimationId == 4 || inst.currentAnimationId == 5) {
-                    playAnimation(id, 0, true);
+                    playAnimation(pair.first, 0, true);
                 }
             } else {
                 inst.position = glm::mix(inst.moveStart, inst.moveEnd, t);
             }
         }
-    }
 
-    // Only update animations for nearby characters (performance optimization)
-    // Collect instances that need bone recomputation, with distance-based throttling
-    std::vector<std::reference_wrapper<CharacterInstance>> toUpdate;
-    toUpdate.reserve(instances.size());
-
-    for (auto& pair : instances) {
-        auto& inst = pair.second;
-
-        // Skip weapon instances — their transforms are set by parent bones
+        // Skip weapon instances for animation — their transforms are set by parent bones
         if (inst.hasOverrideModelMatrix) continue;
 
         float distSq = glm::distance2(inst.position, cameraPos);
@@ -1533,7 +1546,7 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
     // Thread bone matrix computation in chunks
     if (updatedCount >= 8 && numAnimThreads_ > 1) {
         static const size_t minAnimWorkPerThread = std::max<size_t>(
-            16, envSizeOrDefault("WOWEE_CHAR_ANIM_WORK_PER_THREAD", 64));
+            8, envSizeOrDefault("WOWEE_CHAR_ANIM_WORK_PER_THREAD", 16));
         const size_t maxUsefulThreads = std::max<size_t>(
             1, (updatedCount + minAnimWorkPerThread - 1) / minAnimWorkPerThread);
         const size_t numThreads = std::min(static_cast<size_t>(numAnimThreads_), maxUsefulThreads);
@@ -1728,8 +1741,6 @@ void CharacterRenderer::calculateBoneMatrices(CharacterInstance& instance) {
     size_t numBones = model.bones.size();
     instance.boneMatrices.resize(numBones);
 
-    static bool dumpedOnce = false;
-
     for (size_t i = 0; i < numBones; i++) {
         const auto& bone = model.bones[i];
 
@@ -1737,31 +1748,12 @@ void CharacterRenderer::calculateBoneMatrices(CharacterInstance& instance) {
         // At rest this is identity, so no separate bind pose is needed
         glm::mat4 localTransform = getBoneTransform(bone, instance.animationTime, instance.currentSequenceIndex);
 
-        // Debug: dump first frame bone data
-        if (!dumpedOnce && i < 5) {
-            glm::vec3 t = interpolateVec3(bone.translation, instance.currentSequenceIndex, instance.animationTime, glm::vec3(0.0f));
-            glm::quat r = interpolateQuat(bone.rotation, instance.currentSequenceIndex, instance.animationTime);
-            glm::vec3 s = interpolateVec3(bone.scale, instance.currentSequenceIndex, instance.animationTime, glm::vec3(1.0f));
-            core::Logger::getInstance().info("Bone ", i, " parent=", bone.parentBone,
-                " pivot=(", bone.pivot.x, ",", bone.pivot.y, ",", bone.pivot.z, ")",
-                " t=(", t.x, ",", t.y, ",", t.z, ")",
-                " r=(", r.w, ",", r.x, ",", r.y, ",", r.z, ")",
-                " s=(", s.x, ",", s.y, ",", s.z, ")",
-                " seqIdx=", instance.currentSequenceIndex);
-        }
-
         // Compose with parent
         if (bone.parentBone >= 0 && static_cast<size_t>(bone.parentBone) < numBones) {
             instance.boneMatrices[i] = instance.boneMatrices[bone.parentBone] * localTransform;
         } else {
             instance.boneMatrices[i] = localTransform;
         }
-    }
-    if (!dumpedOnce) {
-        dumpedOnce = true;
-        // Dump final matrix for bone 0
-        auto& m = instance.boneMatrices[0];
-        core::Logger::getInstance().info("Bone 0 final matrix row0=(", m[0][0], ",", m[1][0], ",", m[2][0], ",", m[3][0], ")");
     }
 }
 
@@ -1797,21 +1789,18 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
     uint32_t frameIndex = vkCtx_->getCurrentFrame();
     uint32_t frameSlot = frameIndex % 2u;
 
-    // Reset transient material allocations once per frame slot.
-    // beginFrame() waits on this slot's fence before recording.
+    // Reset material ring buffer and descriptor pool once per frame slot.
     if (lastMaterialPoolResetFrame_ != frameIndex) {
-        VmaAllocator alloc = vkCtx_->getAllocator();
-        for (const auto& b : transientMaterialUbos_[frameSlot]) {
-            if (b.first) {
-                vmaDestroyBuffer(alloc, b.first, b.second);
-            }
-        }
-        transientMaterialUbos_[frameSlot].clear();
+        materialRingOffset_[frameSlot] = 0;
         if (materialDescPools_[frameSlot]) {
             vkResetDescriptorPool(vkCtx_->getDevice(), materialDescPools_[frameSlot], 0);
         }
         lastMaterialPoolResetFrame_ = frameIndex;
     }
+
+    // Pre-compute aligned UBO stride for ring buffer sub-allocation
+    const uint32_t uboStride = (sizeof(CharMaterialUBO) + materialUboAlignment_ - 1) & ~(materialUboAlignment_ - 1);
+    const uint32_t ringCapacityBytes = uboStride * MATERIAL_RING_CAPACITY;
 
     // Bind per-frame descriptor set (set 0) -- shared across all draws
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -2182,27 +2171,18 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 matData.heightMapVariance = batchHeightVariance;
                 matData.normalMapStrength = normalMapStrength_;
 
-                // Create a small UBO for this batch's material
-                VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-                bci.size = sizeof(CharMaterialUBO);
-                bci.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-                VmaAllocationCreateInfo aci{};
-                aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-                aci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-                VmaAllocationInfo allocInfo{};
-                ::VkBuffer matUBO = VK_NULL_HANDLE;
-                VmaAllocation matUBOAlloc = VK_NULL_HANDLE;
-                vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &matUBO, &matUBOAlloc, &allocInfo);
-                if (allocInfo.pMappedData) {
-                    memcpy(allocInfo.pMappedData, &matData, sizeof(CharMaterialUBO));
-                }
+                // Sub-allocate material UBO from ring buffer
+                uint32_t matOffset = materialRingOffset_[frameSlot];
+                if (matOffset + uboStride > ringCapacityBytes) continue; // ring exhausted
+                memcpy(static_cast<char*>(materialRingMapped_[frameSlot]) + matOffset, &matData, sizeof(CharMaterialUBO));
+                materialRingOffset_[frameSlot] = matOffset + uboStride;
 
                 // Write descriptor set: binding 0 = texture, binding 1 = material UBO, binding 2 = normal/height map
                 VkTexture* bindTex = (texPtr && texPtr->isValid()) ? texPtr : whiteTexture_.get();
                 VkDescriptorImageInfo imgInfo = bindTex->descriptorInfo();
                 VkDescriptorBufferInfo bufInfo{};
-                bufInfo.buffer = matUBO;
-                bufInfo.offset = 0;
+                bufInfo.buffer = materialRingBuffer_[frameSlot];
+                bufInfo.offset = matOffset;
                 bufInfo.range = sizeof(CharMaterialUBO);
                 VkDescriptorImageInfo nhImgInfo = normalMap->descriptorInfo();
 
@@ -2235,8 +2215,6 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                                         pipelineLayout_, 1, 1, &materialSet, 0, nullptr);
 
                 vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
-
-                transientMaterialUbos_[frameSlot].emplace_back(matUBO, matUBOAlloc);
             }
         } else {
             // Draw entire model with first texture
@@ -2277,24 +2255,16 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
             matData.heightMapVariance = 0.0f;
             matData.normalMapStrength = normalMapStrength_;
 
-            VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-            bci.size = sizeof(CharMaterialUBO);
-            bci.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-            VmaAllocationCreateInfo aci{};
-            aci.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-            aci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-            VmaAllocationInfo allocInfo{};
-            ::VkBuffer matUBO = VK_NULL_HANDLE;
-            VmaAllocation matUBOAlloc = VK_NULL_HANDLE;
-            vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &matUBO, &matUBOAlloc, &allocInfo);
-            if (allocInfo.pMappedData) {
-                memcpy(allocInfo.pMappedData, &matData, sizeof(CharMaterialUBO));
-            }
+            // Sub-allocate material UBO from ring buffer
+            uint32_t matOffset2 = materialRingOffset_[frameSlot];
+            if (matOffset2 + uboStride > ringCapacityBytes) continue; // ring exhausted
+            memcpy(static_cast<char*>(materialRingMapped_[frameSlot]) + matOffset2, &matData, sizeof(CharMaterialUBO));
+            materialRingOffset_[frameSlot] = matOffset2 + uboStride;
 
             VkDescriptorImageInfo imgInfo = texPtr->descriptorInfo();
             VkDescriptorBufferInfo bufInfo{};
-            bufInfo.buffer = matUBO;
-            bufInfo.offset = 0;
+            bufInfo.buffer = materialRingBuffer_[frameSlot];
+            bufInfo.offset = matOffset2;
             bufInfo.range = sizeof(CharMaterialUBO);
             VkDescriptorImageInfo nhImgInfo2 = flatNormalTexture_->descriptorInfo();
 
@@ -2326,8 +2296,6 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                                     pipelineLayout_, 1, 1, &materialSet, 0, nullptr);
 
             vkCmdDrawIndexed(cmd, gpuModel.indexCount, 1, 0, 0, 0);
-
-            transientMaterialUbos_[frameSlot].emplace_back(matUBO, matUBOAlloc);
         }
     }
 }
