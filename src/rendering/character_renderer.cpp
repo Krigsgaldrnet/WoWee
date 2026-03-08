@@ -332,6 +332,11 @@ void CharacterRenderer::shutdown() {
     LOG_INFO("CharacterRenderer::shutdown instances=", instances.size(),
              " models=", models.size(), " override=", (void*)renderPassOverride_);
 
+    // Wait for any in-flight background normal map generation threads
+    while (pendingNormalMapCount_.load(std::memory_order_relaxed) > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
     vkDeviceWaitIdle(vkCtx_->getDevice());
     VkDevice device = vkCtx_->getDevice();
     VmaAllocator alloc = vkCtx_->getAllocator();
@@ -412,6 +417,16 @@ void CharacterRenderer::clear() {
 
     LOG_INFO("CharacterRenderer::clear instances=", instances.size(),
              " models=", models.size());
+
+    // Wait for any in-flight background normal map generation threads
+    while (pendingNormalMapCount_.load(std::memory_order_relaxed) > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    // Discard any completed results that haven't been uploaded
+    {
+        std::lock_guard<std::mutex> lock(normalMapResultsMutex_);
+        completedNormalMaps_.clear();
+    }
 
     vkDeviceWaitIdle(vkCtx_->getDevice());
     VkDevice device = vkCtx_->getDevice();
@@ -509,7 +524,32 @@ std::unique_ptr<VkTexture> CharacterRenderer::generateNormalHeightMap(
         const uint8_t* pixels, uint32_t width, uint32_t height, float& outVariance) {
     if (!vkCtx_ || width == 0 || height == 0) return nullptr;
 
+    // Use the CPU-only static method, then upload to GPU
+    std::vector<uint8_t> dummy(width * height * 4);
+    std::memcpy(dummy.data(), pixels, dummy.size());
+    auto result = generateNormalHeightMapCPU("", std::move(dummy), width, height);
+    outVariance = result.variance;
+
+    auto tex = std::make_unique<VkTexture>();
+    if (!tex->upload(*vkCtx_, result.pixels.data(), width, height, VK_FORMAT_R8G8B8A8_UNORM, true)) {
+        return nullptr;
+    }
+    tex->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                        VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    return tex;
+}
+
+// Static, thread-safe CPU-only normal map generation (no GPU access)
+CharacterRenderer::NormalMapResult CharacterRenderer::generateNormalHeightMapCPU(
+        std::string cacheKey, std::vector<uint8_t> srcPixels, uint32_t width, uint32_t height) {
+    NormalMapResult result;
+    result.cacheKey = std::move(cacheKey);
+    result.width = width;
+    result.height = height;
+    result.variance = 0.0f;
+
     const uint32_t totalPixels = width * height;
+    const uint8_t* pixels = srcPixels.data();
 
     // Step 1: Compute height from luminance
     std::vector<float> heightMap(totalPixels);
@@ -524,7 +564,7 @@ std::unique_ptr<VkTexture> CharacterRenderer::generateNormalHeightMap(
         sumH2 += h * h;
     }
     double mean = sumH / totalPixels;
-    outVariance = static_cast<float>(sumH2 / totalPixels - mean * mean);
+    result.variance = static_cast<float>(sumH2 / totalPixels - mean * mean);
 
     // Step 1.5: Box blur the height map to reduce noise from diffuse textures
     auto wrapSample = [&](const std::vector<float>& map, int x, int y) -> float {
@@ -545,11 +585,9 @@ std::unique_ptr<VkTexture> CharacterRenderer::generateNormalHeightMap(
         }
     }
 
-    // Step 2: Sobel 3x3 → normal map (crisp detail from original, blurred for POM alpha)
-    // Higher strength than WMO (2.0) because character/weapon textures are hand-painted
-    // with baked-in lighting that produces low-contrast gradients in the Sobel filter.
+    // Step 2: Sobel 3x3 → normal map
     const float strength = 5.0f;
-    std::vector<uint8_t> output(totalPixels * 4);
+    result.pixels.resize(totalPixels * 4);
 
     auto sampleH = [&](int x, int y) -> float {
         x = ((x % (int)width) + (int)width) % (int)width;
@@ -573,20 +611,14 @@ std::unique_ptr<VkTexture> CharacterRenderer::generateNormalHeightMap(
             if (len > 0.0f) { nx /= len; ny /= len; nz /= len; }
 
             uint32_t idx = (y * width + x) * 4;
-            output[idx + 0] = static_cast<uint8_t>(std::clamp((nx * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
-            output[idx + 1] = static_cast<uint8_t>(std::clamp((ny * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
-            output[idx + 2] = static_cast<uint8_t>(std::clamp((nz * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
-            output[idx + 3] = static_cast<uint8_t>(std::clamp(blurredHeight[y * width + x] * 255.0f, 0.0f, 255.0f));
+            result.pixels[idx + 0] = static_cast<uint8_t>(std::clamp((nx * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
+            result.pixels[idx + 1] = static_cast<uint8_t>(std::clamp((ny * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
+            result.pixels[idx + 2] = static_cast<uint8_t>(std::clamp((nz * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f));
+            result.pixels[idx + 3] = static_cast<uint8_t>(std::clamp(blurredHeight[y * width + x] * 255.0f, 0.0f, 255.0f));
         }
     }
 
-    auto tex = std::make_unique<VkTexture>();
-    if (!tex->upload(*vkCtx_, output.data(), width, height, VK_FORMAT_R8G8B8A8_UNORM, true)) {
-        return nullptr;
-    }
-    tex->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
-                        VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    return tex;
+    return result;
 }
 
 VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
@@ -687,15 +719,22 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
     e.hasAlpha = hasAlpha;
     e.colorKeyBlack = colorKeyBlackHint;
 
-    // Defer normal/height map generation to avoid stalling loadModel.
-    // Normal maps are generated in processPendingNormalMaps() at a per-frame budget.
+    // Launch normal map generation on background thread — CPU work is pure compute,
+    // only the GPU upload (in processPendingNormalMaps) needs the main thread (~1-2ms).
     if (blpImage.width >= 32 && blpImage.height >= 32) {
-        PendingNormalMap pending;
-        pending.cacheKey = key;
-        pending.pixels.assign(blpImage.data.begin(), blpImage.data.end());
-        pending.width = blpImage.width;
-        pending.height = blpImage.height;
-        pendingNormalMaps_.push_back(std::move(pending));
+        uint32_t w = blpImage.width, h = blpImage.height;
+        std::string ck = key;
+        std::vector<uint8_t> px(blpImage.data.begin(), blpImage.data.end());
+        pendingNormalMapCount_.fetch_add(1, std::memory_order_relaxed);
+        auto* self = this;
+        std::thread([self, ck = std::move(ck), px = std::move(px), w, h]() mutable {
+            auto result = generateNormalHeightMapCPU(std::move(ck), std::move(px), w, h);
+            {
+                std::lock_guard<std::mutex> lock(self->normalMapResultsMutex_);
+                self->completedNormalMaps_.push_back(std::move(result));
+            }
+            self->pendingNormalMapCount_.fetch_sub(1, std::memory_order_relaxed);
+        }).detach();
         e.normalMapPending = true;
     }
 
@@ -709,30 +748,39 @@ VkTexture* CharacterRenderer::loadTexture(const std::string& path) {
 }
 
 void CharacterRenderer::processPendingNormalMaps(int budget) {
-    if (pendingNormalMaps_.empty() || !vkCtx_) return;
+    if (!vkCtx_) return;
 
-    int processed = 0;
-    while (!pendingNormalMaps_.empty() && processed < budget) {
-        auto pending = std::move(pendingNormalMaps_.front());
-        pendingNormalMaps_.pop_front();
+    // Collect completed results from background threads
+    std::deque<NormalMapResult> ready;
+    {
+        std::lock_guard<std::mutex> lock(normalMapResultsMutex_);
+        if (completedNormalMaps_.empty()) return;
+        int count = std::min(budget, static_cast<int>(completedNormalMaps_.size()));
+        for (int i = 0; i < count; i++) {
+            ready.push_back(std::move(completedNormalMaps_.front()));
+            completedNormalMaps_.pop_front();
+        }
+    }
 
-        auto it = textureCache.find(pending.cacheKey);
+    // GPU upload only (~1-2ms each) — CPU work already done on background thread
+    for (auto& result : ready) {
+        auto it = textureCache.find(result.cacheKey);
         if (it == textureCache.end()) continue;  // texture was evicted
 
-        float nhVariance = 0.0f;
         vkCtx_->beginUploadBatch();
-        auto nhMap = generateNormalHeightMap(pending.pixels.data(),
-            pending.width, pending.height, nhVariance);
-        vkCtx_->endUploadBatch();
-
-        if (nhMap) {
-            it->second.heightMapVariance = nhVariance;
-            it->second.approxBytes += approxTextureBytesWithMips(pending.width, pending.height);
-            textureCacheBytes_ += approxTextureBytesWithMips(pending.width, pending.height);
-            it->second.normalHeightMap = std::move(nhMap);
+        auto tex = std::make_unique<VkTexture>();
+        bool ok = tex->upload(*vkCtx_, result.pixels.data(), result.width, result.height,
+                              VK_FORMAT_R8G8B8A8_UNORM, true);
+        if (ok) {
+            tex->createSampler(vkCtx_->getDevice(), VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                               VK_SAMPLER_ADDRESS_MODE_REPEAT);
+            it->second.heightMapVariance = result.variance;
+            it->second.approxBytes += approxTextureBytesWithMips(result.width, result.height);
+            textureCacheBytes_ += approxTextureBytesWithMips(result.width, result.height);
+            it->second.normalHeightMap = std::move(tex);
         }
+        vkCtx_->endUploadBatch();
         it->second.normalMapPending = false;
-        processed++;
     }
 }
 

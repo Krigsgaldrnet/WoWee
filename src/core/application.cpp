@@ -49,8 +49,8 @@
 #include <SDL2/SDL.h>
 // GL/glew.h removed — Vulkan migration Phase 1
 #include <cstdlib>
+#include <climits>
 #include <algorithm>
-#include <cctype>
 #include <cctype>
 #include <optional>
 #include <sstream>
@@ -922,9 +922,9 @@ void Application::update(float deltaTime) {
                 auto t3 = std::chrono::steady_clock::now();
                 processDeferredEquipmentQueue();
                 auto t4 = std::chrono::steady_clock::now();
-                // Process deferred normal maps (2 per frame to spread CPU cost)
+                // Upload completed normal maps from background threads (~1-2ms each GPU upload)
                 if (auto* cr = renderer ? renderer->getCharacterRenderer() : nullptr) {
-                    cr->processPendingNormalMaps(2);
+                    cr->processPendingNormalMaps(4);
                 }
                 auto t5 = std::chrono::steady_clock::now();
                 float pMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
@@ -4167,11 +4167,17 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         });
     }
 
-    // Hide first-login hitch by draining initial world packets/spawn queues before
-    // dropping the loading screen. Keep this bounded so we don't stall indefinitely.
+    // Keep the loading screen visible until all spawn/equipment/gameobject queues
+    // are fully drained. This ensures the player sees a fully populated world
+    // (character clothed, NPCs placed, game objects loaded) when the screen drops.
     {
-        const float kWarmupMaxSeconds = 2.5f;
+        const float kMinWarmupSeconds = 2.0f;   // minimum time to drain network packets
+        const float kMaxWarmupSeconds = 15.0f;  // hard cap to avoid infinite stall
         const auto warmupStart = std::chrono::high_resolution_clock::now();
+        // Track consecutive idle iterations (all queues empty) to detect convergence
+        int idleIterations = 0;
+        const int kIdleThreshold = 5;  // require 5 consecutive empty loops (~80ms)
+
         while (true) {
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
@@ -4185,7 +4191,6 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                     int w = event.window.data1;
                     int h = event.window.data2;
                     window->setSize(w, h);
-                    // Vulkan viewport set in command buffer
                     if (renderer && renderer->getCamera()) {
                         renderer->getCamera()->setAspectRatio(static_cast<float>(w) / h);
                     }
@@ -4208,14 +4213,17 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
             // During load screen warmup: lift per-frame budgets so GPU uploads
             // and spawns happen in bulk while the loading screen is still visible.
-            processCreatureSpawnQueue(true);  // unlimited: no model upload cap, no time budget
+            processCreatureSpawnQueue(true);
             processAsyncNpcCompositeResults();
-            processDeferredEquipmentQueue();
+            // Process equipment queue more aggressively during warmup (multiple per iteration)
+            for (int i = 0; i < 8 && (!deferredEquipmentQueue_.empty() || !asyncEquipmentLoads_.empty()); i++) {
+                processDeferredEquipmentQueue();
+            }
             if (auto* cr = renderer ? renderer->getCharacterRenderer() : nullptr) {
-                cr->processPendingNormalMaps(10);  // higher budget during load screen
+                cr->processPendingNormalMaps(INT_MAX);
             }
 
-            // Process ALL pending game object spawns (no 1-per-frame cap during load screen).
+            // Process ALL pending game object spawns.
             while (!pendingGameObjectSpawns_.empty()) {
                 auto& s = pendingGameObjectSpawns_.front();
                 spawnOnlineGameObject(s.guid, s.entry, s.displayId, s.x, s.y, s.z, s.orientation);
@@ -4226,14 +4234,42 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             processPendingMount();
             updateQuestMarkers();
 
+            // Update renderer (terrain streaming, animations)
+            if (renderer) {
+                renderer->update(1.0f / 60.0f);
+            }
+
             const auto now = std::chrono::high_resolution_clock::now();
             const float elapsed = std::chrono::duration<float>(now - warmupStart).count();
-            const float t = std::clamp(elapsed / kWarmupMaxSeconds, 0.0f, 1.0f);
-            showProgress("Finalizing world sync...", 0.97f + t * 0.025f);
 
-            if (elapsed >= kWarmupMaxSeconds) {
+            // Check if all queues are drained
+            bool queuesEmpty =
+                pendingCreatureSpawns_.empty() &&
+                asyncCreatureLoads_.empty() &&
+                asyncNpcCompositeLoads_.empty() &&
+                deferredEquipmentQueue_.empty() &&
+                asyncEquipmentLoads_.empty() &&
+                pendingGameObjectSpawns_.empty() &&
+                asyncGameObjectLoads_.empty() &&
+                pendingPlayerSpawns_.empty();
+
+            if (queuesEmpty) {
+                idleIterations++;
+            } else {
+                idleIterations = 0;
+            }
+
+            // Exit when: (min time passed AND queues drained for several iterations) OR hard cap
+            bool readyToExit = (elapsed >= kMinWarmupSeconds && idleIterations >= kIdleThreshold);
+            if (readyToExit || elapsed >= kMaxWarmupSeconds) {
+                if (elapsed >= kMaxWarmupSeconds) {
+                    LOG_WARNING("Warmup hit hard cap (", kMaxWarmupSeconds, "s), entering world with pending work");
+                }
                 break;
             }
+
+            const float t = std::clamp(elapsed / kMaxWarmupSeconds, 0.0f, 1.0f);
+            showProgress("Finalizing world sync...", 0.97f + t * 0.025f);
             SDL_Delay(16);
         }
     }

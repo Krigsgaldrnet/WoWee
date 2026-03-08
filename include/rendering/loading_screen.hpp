@@ -24,6 +24,10 @@ public:
     // Render the loading screen with progress bar and status text (pure ImGui)
     void render();
 
+    // Draw loading screen as ImGui overlay (call within an existing ImGui frame).
+    // Used during warmup to overlay loading screen on top of the rendered world.
+    void renderOverlay();
+
     void setProgress(float progress) { loadProgress = progress; }
     void setStatus(const std::string& status) { statusText = status; }
 

@@ -13,6 +13,8 @@
 #include <utility>
 #include <future>
 #include <deque>
+#include <mutex>
+#include <atomic>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
@@ -304,15 +306,23 @@ private:
     std::unique_ptr<VkTexture> generateNormalHeightMap(
         const uint8_t* pixels, uint32_t width, uint32_t height, float& outVariance);
 
-    // Deferred normal map generation — avoids stalling loadModel
-    struct PendingNormalMap {
+    // Background normal map generation — CPU work on thread pool, GPU upload on main thread
+    struct NormalMapResult {
         std::string cacheKey;
-        std::vector<uint8_t> pixels;  // RGBA pixel data
+        std::vector<uint8_t> pixels;  // RGBA normal map output
         uint32_t width, height;
+        float variance;
     };
-    std::deque<PendingNormalMap> pendingNormalMaps_;
+    // Completed results ready for GPU upload (populated by background threads)
+    std::mutex normalMapResultsMutex_;
+    std::deque<NormalMapResult> completedNormalMaps_;
+    std::atomic<int> pendingNormalMapCount_{0};  // in-flight background tasks
+
+    // Pure CPU normal map generation (thread-safe, no GPU access)
+    static NormalMapResult generateNormalHeightMapCPU(
+        std::string cacheKey, std::vector<uint8_t> pixels, uint32_t width, uint32_t height);
 public:
-    void processPendingNormalMaps(int budget = 2);
+    void processPendingNormalMaps(int budget = 4);
 private:
 
     // Normal mapping / POM settings

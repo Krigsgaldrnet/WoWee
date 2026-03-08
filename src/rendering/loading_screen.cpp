@@ -240,6 +240,66 @@ bool LoadingScreen::loadImage(const std::string& path) {
     return true;
 }
 
+void LoadingScreen::renderOverlay() {
+    // Draw loading screen content as ImGui overlay within an existing ImGui frame.
+    // Caller is responsible for ImGui NewFrame/Render and Vulkan frame management.
+    ImGuiIO& io = ImGui::GetIO();
+    float screenW = io.DisplaySize.x;
+    float screenH = io.DisplaySize.y;
+
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(screenW, screenH));
+    ImGui::Begin("##LoadingScreenOverlay", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground |
+        ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+    if (bgDescriptorSet) {
+        ImGui::GetWindowDrawList()->AddImage(
+            reinterpret_cast<ImTextureID>(bgDescriptorSet),
+            ImVec2(0, 0), ImVec2(screenW, screenH));
+    }
+
+    // Progress bar
+    {
+        const float barWidthFrac = 0.6f;
+        const float barHeight = 6.0f;
+        const float barY = screenH * 0.06f;
+        float barX = screenW * (0.5f - barWidthFrac * 0.5f);
+        float barW = screenW * barWidthFrac;
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(ImVec2(barX, barY), ImVec2(barX + barW, barY + barHeight),
+            IM_COL32(25, 25, 25, 200), 2.0f);
+        if (loadProgress > 0.001f) {
+            drawList->AddRectFilled(ImVec2(barX, barY), ImVec2(barX + barW * loadProgress, barY + barHeight),
+                IM_COL32(199, 156, 33, 255), 2.0f);
+        }
+        drawList->AddRect(ImVec2(barX - 1, barY - 1), ImVec2(barX + barW + 1, barY + barHeight + 1),
+            IM_COL32(140, 110, 25, 255), 2.0f);
+    }
+
+    // Percentage text
+    {
+        char pctBuf[32];
+        snprintf(pctBuf, sizeof(pctBuf), "%d%%", static_cast<int>(loadProgress * 100.0f));
+        float textY = screenH * 0.06f - 20.0f;
+        ImVec2 pctSize = ImGui::CalcTextSize(pctBuf);
+        ImGui::SetCursorPos(ImVec2((screenW - pctSize.x) * 0.5f, textY));
+        ImGui::TextColored(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), "%s", pctBuf);
+    }
+
+    // Status text
+    {
+        float statusY = screenH * 0.06f + 14.0f;
+        ImVec2 statusSize = ImGui::CalcTextSize(statusText.c_str());
+        ImGui::SetCursorPos(ImVec2((screenW - statusSize.x) * 0.5f, statusY));
+        ImGui::TextColored(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), "%s", statusText.c_str());
+    }
+
+    ImGui::End();
+}
+
 void LoadingScreen::render() {
     // If a frame is already in progress (e.g. called from a UI callback),
     // end it before starting our own
