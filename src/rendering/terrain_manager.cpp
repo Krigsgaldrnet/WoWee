@@ -816,7 +816,7 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
             }
             bool allDone = terrainRenderer->loadTerrainIncremental(
                 pending->mesh, pending->terrain.textures, x, y,
-                ft.terrainChunkNext, 8);
+                ft.terrainChunkNext, 16);
             if (!allDone) {
                 return false; // More chunks remain — yield to time budget
             }
@@ -858,7 +858,7 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
                 std::lock_guard<std::mutex> lk(queueMutex);
                 workersIdle = loadQueue.empty() && readyQueue.empty();
             }
-            const size_t kModelsPerStep = 2;
+            const size_t kModelsPerStep = workersIdle ? 6 : 4;
             size_t uploaded = 0;
             while (ft.m2ModelIndex < pending->m2Models.size() && uploaded < kModelsPerStep) {
                 auto& m2Ready = pending->m2Models[ft.m2ModelIndex];
@@ -925,7 +925,7 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
                 std::lock_guard<std::mutex> lk(queueMutex);
                 wmoWorkersIdle = loadQueue.empty() && readyQueue.empty();
             }
-            const size_t kWmosPerStep = 1;
+            const size_t kWmosPerStep = wmoWorkersIdle ? 2 : 1;
             size_t uploaded = 0;
             while (ft.wmoModelIndex < pending->wmoModels.size() && uploaded < kWmosPerStep) {
                 auto& wmoReady = pending->wmoModels[ft.wmoModelIndex];
@@ -1006,7 +1006,7 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
         if (m2Renderer && ft.wmoDoodadIndex < pending->wmoDoodads.size()) {
             // Set pre-decoded BLP cache for doodad M2 textures
             m2Renderer->setPredecodedBLPCache(&pending->preloadedM2Textures);
-            constexpr size_t kDoodadsPerStep = 2;
+            constexpr size_t kDoodadsPerStep = 4;
             size_t uploaded = 0;
             while (ft.wmoDoodadIndex < pending->wmoDoodads.size() && uploaded < kDoodadsPerStep) {
                 auto& doodad = pending->wmoDoodads[ft.wmoDoodadIndex];

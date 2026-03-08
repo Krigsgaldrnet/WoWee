@@ -1108,7 +1108,7 @@ void Application::update(float deltaTime) {
                 // Taxi flights move fast (32 u/s) — load further ahead so terrain is ready
                 // before the camera arrives.  Keep updates frequent to spot new tiles early.
                 renderer->getTerrainManager()->setUpdateInterval(onTaxi ? 0.033f : 0.033f);
-                renderer->getTerrainManager()->setLoadRadius(onTaxi ? 5 : 3);
+                renderer->getTerrainManager()->setLoadRadius(onTaxi ? 6 : 4);
                 renderer->getTerrainManager()->setUnloadRadius(onTaxi ? 9 : 7);
                 renderer->getTerrainManager()->setTaxiStreamingMode(onTaxi);
                 }
@@ -4041,7 +4041,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             // Use a small radius for the initial load (just immediate tiles),
             // then restore the full radius after entering the game.
             // This matches WoW's behavior: load quickly, stream the rest in-game.
-            const int savedLoadRadius = 3;
+            const int savedLoadRadius = 4;
             terrainMgr->setLoadRadius(1);
             terrainMgr->setUnloadRadius(7);
 
