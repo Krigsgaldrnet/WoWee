@@ -836,7 +836,19 @@ VkTexture* CharacterRenderer::compositeTextures(const std::vector<std::string>& 
     }
 
     // Load base layer
-    auto base = assetManager->loadTexture(layerPaths[0]);
+    pipeline::BLPImage base;
+    if (predecodedBLPCache_) {
+        std::string key = layerPaths[0];
+        std::replace(key.begin(), key.end(), '/', '\\');
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        auto pit = predecodedBLPCache_->find(key);
+        if (pit != predecodedBLPCache_->end()) {
+            base = std::move(pit->second);
+            predecodedBLPCache_->erase(pit);
+        }
+    }
+    if (!base.isValid()) base = assetManager->loadTexture(layerPaths[0]);
     if (!base.isValid()) {
         core::Logger::getInstance().warning("Composite: failed to load base layer: ", layerPaths[0]);
         return whiteTexture_.get();
@@ -877,7 +889,19 @@ VkTexture* CharacterRenderer::compositeTextures(const std::vector<std::string>& 
     for (size_t layer = 1; layer < layerPaths.size(); layer++) {
         if (layerPaths[layer].empty()) continue;
 
-        auto overlay = assetManager->loadTexture(layerPaths[layer]);
+        pipeline::BLPImage overlay;
+        if (predecodedBLPCache_) {
+            std::string key = layerPaths[layer];
+            std::replace(key.begin(), key.end(), '/', '\\');
+            std::transform(key.begin(), key.end(), key.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            auto pit = predecodedBLPCache_->find(key);
+            if (pit != predecodedBLPCache_->end()) {
+                overlay = std::move(pit->second);
+                predecodedBLPCache_->erase(pit);
+            }
+        }
+        if (!overlay.isValid()) overlay = assetManager->loadTexture(layerPaths[layer]);
         if (!overlay.isValid()) {
             core::Logger::getInstance().warning("Composite: FAILED to load overlay: ", layerPaths[layer]);
             continue;
@@ -1054,7 +1078,19 @@ VkTexture* CharacterRenderer::compositeWithRegions(const std::string& basePath,
         return whiteTexture_.get();
     }
 
-    auto base = assetManager->loadTexture(basePath);
+    pipeline::BLPImage base;
+    if (predecodedBLPCache_) {
+        std::string key = basePath;
+        std::replace(key.begin(), key.end(), '/', '\\');
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        auto pit = predecodedBLPCache_->find(key);
+        if (pit != predecodedBLPCache_->end()) {
+            base = std::move(pit->second);
+            predecodedBLPCache_->erase(pit);
+        }
+    }
+    if (!base.isValid()) base = assetManager->loadTexture(basePath);
     if (!base.isValid()) {
         return whiteTexture_.get();
     }
@@ -1093,7 +1129,19 @@ VkTexture* CharacterRenderer::compositeWithRegions(const std::string& basePath,
     bool upscaled = (base.width == 256 && base.height == 256 && width == 512);
     for (const auto& ul : baseLayers) {
         if (ul.empty()) continue;
-        auto overlay = assetManager->loadTexture(ul);
+        pipeline::BLPImage overlay;
+        if (predecodedBLPCache_) {
+            std::string key = ul;
+            std::replace(key.begin(), key.end(), '/', '\\');
+            std::transform(key.begin(), key.end(), key.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            auto pit = predecodedBLPCache_->find(key);
+            if (pit != predecodedBLPCache_->end()) {
+                overlay = std::move(pit->second);
+                predecodedBLPCache_->erase(pit);
+            }
+        }
+        if (!overlay.isValid()) overlay = assetManager->loadTexture(ul);
         if (!overlay.isValid()) continue;
 
         if (overlay.width == width && overlay.height == height) {
@@ -1171,7 +1219,19 @@ VkTexture* CharacterRenderer::compositeWithRegions(const std::string& basePath,
         int regionIdx = rl.first;
         if (regionIdx < 0 || regionIdx >= 8) continue;
 
-        auto overlay = assetManager->loadTexture(rl.second);
+        pipeline::BLPImage overlay;
+        if (predecodedBLPCache_) {
+            std::string key = rl.second;
+            std::replace(key.begin(), key.end(), '/', '\\');
+            std::transform(key.begin(), key.end(), key.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            auto pit = predecodedBLPCache_->find(key);
+            if (pit != predecodedBLPCache_->end()) {
+                overlay = std::move(pit->second);
+                predecodedBLPCache_->erase(pit);
+            }
+        }
+        if (!overlay.isValid()) overlay = assetManager->loadTexture(rl.second);
         if (!overlay.isValid()) {
             core::Logger::getInstance().warning("compositeWithRegions: failed to load ", rl.second);
             continue;

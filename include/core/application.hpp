@@ -220,6 +220,7 @@ private:
     std::unordered_set<uint64_t> deadCreatureGuids_;            // GUIDs that should spawn in corpse/death pose
     std::unordered_map<uint32_t, uint32_t> displayIdModelCache_; // displayId → modelId (model caching)
     std::unordered_set<uint32_t> displayIdTexturesApplied_;    // displayIds with per-model textures applied
+    std::unordered_map<uint32_t, std::unordered_map<std::string, pipeline::BLPImage>> displayIdPredecodedTextures_; // displayId → pre-decoded skin textures
     mutable std::unordered_set<uint32_t> warnedMissingDisplayDataIds_; // displayIds already warned
     mutable std::unordered_set<uint32_t> warnedMissingModelPathIds_;   // modelIds/displayIds already warned
     uint32_t nextCreatureModelId_ = 5000;  // Model IDs for online creatures
@@ -312,6 +313,49 @@ private:
     // Deferred equipment compositing queue — processes max 1 per frame to avoid stutter
     std::vector<std::pair<uint64_t, std::pair<std::array<uint32_t, 19>, std::array<uint8_t, 19>>>> deferredEquipmentQueue_;
     void processDeferredEquipmentQueue();
+    // Async equipment texture pre-decode: BLP decode on background thread, composite on main thread
+    struct PreparedEquipmentUpdate {
+        uint64_t guid;
+        std::array<uint32_t, 19> displayInfoIds;
+        std::array<uint8_t, 19> inventoryTypes;
+        std::unordered_map<std::string, pipeline::BLPImage> predecodedTextures;
+    };
+    struct AsyncEquipmentLoad {
+        std::future<PreparedEquipmentUpdate> future;
+    };
+    std::vector<AsyncEquipmentLoad> asyncEquipmentLoads_;
+    void processAsyncEquipmentResults();
+    std::vector<std::string> resolveEquipmentTexturePaths(uint64_t guid,
+        const std::array<uint32_t, 19>& displayInfoIds,
+        const std::array<uint8_t, 19>& inventoryTypes) const;
+    // Deferred NPC texture setup — async DBC lookups + BLP pre-decode to avoid main-thread stalls
+    struct DeferredNpcComposite {
+        uint32_t modelId;
+        uint32_t displayId;
+        // Skin compositing (type-1 slots)
+        std::string basePath;                     // CharSections skin base texture
+        std::vector<std::string> overlayPaths;    // face + underwear overlays
+        std::vector<std::pair<int, std::string>> regionLayers;  // equipment region overlays
+        std::vector<uint32_t> skinTextureSlots;   // model texture slots needing skin composite
+        bool hasComposite = false;                // needs compositing (overlays or equipment regions)
+        bool hasSimpleSkin = false;               // just base skin, no compositing needed
+        // Baked skin (type-1 slots)
+        std::string bakedSkinPath;                // baked texture path (if available)
+        bool hasBakedSkin = false;                // baked skin resolved successfully
+        // Hair (type-6 slots)
+        std::vector<uint32_t> hairTextureSlots;   // model texture slots needing hair texture
+        std::string hairTexturePath;              // resolved hair texture path
+        bool useBakedForHair = false;             // bald NPC: use baked skin for type-6
+    };
+    struct PreparedNpcComposite {
+        DeferredNpcComposite info;
+        std::unordered_map<std::string, pipeline::BLPImage> predecodedTextures;
+    };
+    struct AsyncNpcCompositeLoad {
+        std::future<PreparedNpcComposite> future;
+    };
+    std::vector<AsyncNpcCompositeLoad> asyncNpcCompositeLoads_;
+    void processAsyncNpcCompositeResults();
     // Cache base player model geometry by (raceId, genderId)
     std::unordered_map<uint32_t, uint32_t> playerModelCache_; // key=(race<<8)|gender → modelId
     struct PlayerTextureSlots { int skin = -1; int hair = -1; int underwear = -1; };

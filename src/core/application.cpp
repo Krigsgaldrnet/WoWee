@@ -913,11 +913,24 @@ void Application::update(float deltaTime) {
             inGameStep = "spawn/equipment queues";
             updateCheckpoint = "in_game: spawn/equipment queues";
             runInGameStage("spawn/equipment queues", [&] {
+                auto t0 = std::chrono::steady_clock::now();
                 processPlayerSpawnQueue();
-                // Process deferred online creature spawns (throttled)
+                auto t1 = std::chrono::steady_clock::now();
                 processCreatureSpawnQueue();
-                // Process deferred equipment compositing (max 1 per frame to avoid stutter)
+                auto t2 = std::chrono::steady_clock::now();
+                processAsyncNpcCompositeResults();
+                auto t3 = std::chrono::steady_clock::now();
                 processDeferredEquipmentQueue();
+                auto t4 = std::chrono::steady_clock::now();
+                float pMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+                float cMs = std::chrono::duration<float, std::milli>(t2 - t1).count();
+                float nMs = std::chrono::duration<float, std::milli>(t3 - t2).count();
+                float eMs = std::chrono::duration<float, std::milli>(t4 - t3).count();
+                float total = pMs + cMs + nMs + eMs;
+                if (total > 4.0f) {
+                    LOG_WARNING("spawn/equip breakdown: player=", pMs, "ms creature=", cMs,
+                                "ms npcComposite=", nMs, "ms equip=", eMs, "ms");
+                }
             });
             // Self-heal missing creature visuals: if a nearby UNIT exists in
             // entity state but has no render instance, queue a spawn retry.
@@ -4235,6 +4248,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                 }
             }
             processCreatureSpawnQueue();
+            processAsyncNpcCompositeResults();
             processDeferredEquipmentQueue();
 
             // Process ALL pending game object spawns (no 1-per-frame cap during load screen).
@@ -4792,8 +4806,16 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     auto itDisplayData = displayDataMap_.find(displayId);
     bool needsTextures = (displayIdTexturesApplied_.find(displayId) == displayIdTexturesApplied_.end());
     if (needsTextures && itDisplayData != displayDataMap_.end()) {
+        auto texStart = std::chrono::steady_clock::now();
         displayIdTexturesApplied_.insert(displayId);
         const auto& dispData = itDisplayData->second;
+
+        // Use pre-decoded textures from async creature load (if available)
+        auto itPreDec = displayIdPredecodedTextures_.find(displayId);
+        bool hasPreDec = (itPreDec != displayIdPredecodedTextures_.end());
+        if (hasPreDec) {
+            charRenderer->setPredecodedBLPCache(&itPreDec->second);
+        }
 
         // Get model directory for texture path construction
         std::string modelDir;
@@ -4827,336 +4849,217 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                 LOG_DEBUG("  Found humanoid extra: raceId=", (int)extra.raceId, " sexId=", (int)extra.sexId,
                           " hairStyle=", (int)extra.hairStyleId, " hairColor=", (int)extra.hairColorId,
                           " bakeName='", extra.bakeName, "'");
-                LOG_DEBUG("NPC equip: chest=", extra.equipDisplayId[3],
-                          " legs=", extra.equipDisplayId[5],
-                          " feet=", extra.equipDisplayId[6],
-                          " hands=", extra.equipDisplayId[8],
-                          " bake='", extra.bakeName, "'");
 
-                // Build equipment texture region layers from NPC equipment display IDs
-                // (texture-only compositing — no geoset changes to avoid invisibility bugs)
-                std::vector<std::pair<int, std::string>> npcRegionLayers;
-                std::string npcCapeTexturePath;
-                auto npcItemDisplayDbc = assetManager->loadDBC("ItemDisplayInfo.dbc");
-                    if (npcItemDisplayDbc) {
-                        static const char* npcComponentDirs[] = {
-                            "ArmUpperTexture", "ArmLowerTexture", "HandTexture",
-                            "TorsoUpperTexture", "TorsoLowerTexture",
-                            "LegUpperTexture", "LegLowerTexture", "FootTexture",
-                        };
-                        const auto* idiL = pipeline::getActiveDBCLayout()
-                            ? pipeline::getActiveDBCLayout()->getLayout("ItemDisplayInfo") : nullptr;
-                        // Texture component region fields (8 regions: ArmUpper..Foot)
-                        // Binary DBC (23 fields) has textures at 14+
-                        const uint32_t texRegionFields[8] = {
-                            idiL ? (*idiL)["TextureArmUpper"]  : 14u,
-                            idiL ? (*idiL)["TextureArmLower"]  : 15u,
-                            idiL ? (*idiL)["TextureHand"]      : 16u,
-                            idiL ? (*idiL)["TextureTorsoUpper"]: 17u,
-                            idiL ? (*idiL)["TextureTorsoLower"]: 18u,
-                            idiL ? (*idiL)["TextureLegUpper"]  : 19u,
-                            idiL ? (*idiL)["TextureLegLower"]  : 20u,
-                            idiL ? (*idiL)["TextureFoot"]      : 21u,
-                        };
-                        const bool npcIsFemale = (extra.sexId == 1);
-                        const bool npcHasArmArmor = (extra.equipDisplayId[7] != 0 || extra.equipDisplayId[8] != 0);
-
-                        auto regionAllowedForNpcSlot = [](int eqSlot, int region) -> bool {
-                            // Regions: 0 ArmUpper, 1 ArmLower, 2 Hand, 3 TorsoUpper, 4 TorsoLower,
-                            //          5 LegUpper, 6 LegLower, 7 Foot
-                            switch (eqSlot) {
-                                case 2: // shirt
-                                case 3: // chest
-                                    return region <= 4;
-                                case 4: // belt
-                                    // TODO(#npc-belt-region): belt torso-lower overlay can
-                                    // cut out male abdomen on some humanoid NPCs.
-                                    // Keep disabled until region compositing is fixed.
-                                    return false;
-                                case 5: // legs
-                                    return region == 5 || region == 6;
-                                case 6: // feet
-                                    return region == 7;
-                                case 7: // wrist
-                                    // Bracer overlays on NPCs often produce bad arm artifacts.
-                                    // Keep disabled until slot-accurate arm compositing is implemented.
-                                    return false;
-                                case 8: // hands
-                                    // Keep glove textures to hand region only; arm regions from glove
-                                    // items can produce furry/looping forearm artifacts on some NPCs.
-                                    return region == 2;
-                                case 9: // tabard
-                                    return region == 3 || region == 4;
-                                default:
-                                    return false;
-                            }
-                        };
-                        auto regionAllowedForNpcSlotCtx = [&](int eqSlot, int region) -> bool {
-                            // Shirt (slot 2) without arm armor: restrict to torso only
-                            // to avoid bare-skin shirt textures bleeding onto arms.
-                            // Chest (slot 3) always paints arms — plate/mail chest armor
-                            // must cover the full upper body even without separate gloves.
-                            if (eqSlot == 2 && !npcHasArmArmor) {
-                                return (region == 3 || region == 4);
-                            }
-                            return regionAllowedForNpcSlot(eqSlot, region);
-                        };
-
-                        // Iterate all 11 NPC equipment slots; use slot-aware region filtering
-                        for (int eqSlot = 0; eqSlot < 11; eqSlot++) {
-                            uint32_t did = extra.equipDisplayId[eqSlot];
-                            if (did == 0) continue;
-                            int32_t recIdx = npcItemDisplayDbc->findRecordById(did);
-                            if (recIdx < 0) continue;
-
-                            for (int region = 0; region < 8; region++) {
-                                if (!regionAllowedForNpcSlotCtx(eqSlot, region)) continue;
-                                std::string texName = npcItemDisplayDbc->getString(
-                                    static_cast<uint32_t>(recIdx), texRegionFields[region]);
-                                if (texName.empty()) continue;
-
-                                std::string base = "Item\\TextureComponents\\" +
-                                    std::string(npcComponentDirs[region]) + "\\" + texName;
-                                std::string genderPath = base + (npcIsFemale ? "_F.blp" : "_M.blp");
-                                std::string unisexPath = base + "_U.blp";
-                                std::string basePath = base + ".blp";
-                                std::string fullPath;
-                                if (assetManager->fileExists(genderPath)) fullPath = genderPath;
-                                else if (assetManager->fileExists(unisexPath)) fullPath = unisexPath;
-                                else if (assetManager->fileExists(basePath)) fullPath = basePath;
-                                else continue;
-
-                                npcRegionLayers.emplace_back(region, fullPath);
-                            }
-                        }
-
-                        // Cloak/cape texture is separate from the body atlas.
-                        // Read equipped cape displayId (slot 10) and resolve the best cape texture path.
-                        uint32_t capeDisplayId = extra.equipDisplayId[10];
-                        if (capeDisplayId != 0) {
-                            int32_t capeRecIdx = npcItemDisplayDbc->findRecordById(capeDisplayId);
-                            if (capeRecIdx >= 0) {
-                                const uint32_t leftTexField = idiL ? (*idiL)["LeftModelTexture"] : 3u;
-                                const uint32_t rightTexField = leftTexField + 1u; // modelTexture_2 in 3.3.5a
-
-                                std::vector<std::string> capeNames;
-                                auto addName = [&](const std::string& n) {
-                                    if (!n.empty() && std::find(capeNames.begin(), capeNames.end(), n) == capeNames.end()) {
-                                        capeNames.push_back(n);
-                                    }
-                                };
-                                std::string leftName = npcItemDisplayDbc->getString(
-                                    static_cast<uint32_t>(capeRecIdx), leftTexField);
-                                std::string rightName = npcItemDisplayDbc->getString(
-                                    static_cast<uint32_t>(capeRecIdx), rightTexField);
-                                // Female models often prefer modelTexture_2.
-                                if (npcIsFemale) {
-                                    addName(rightName);
-                                    addName(leftName);
-                                } else {
-                                    addName(leftName);
-                                    addName(rightName);
-                                }
-
-                                auto hasBlpExt = [](const std::string& p) {
-                                    if (p.size() < 4) return false;
-                                    std::string ext = p.substr(p.size() - 4);
-                                    std::transform(ext.begin(), ext.end(), ext.begin(),
-                                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                                    return ext == ".blp";
-                                };
-
-                                std::vector<std::string> capeCandidates;
-                                auto addCapeCandidate = [&](const std::string& p) {
-                                    if (p.empty()) return;
-                                    if (std::find(capeCandidates.begin(), capeCandidates.end(), p) == capeCandidates.end()) {
-                                        capeCandidates.push_back(p);
-                                    }
-                                };
-
-                                for (const auto& nameRaw : capeNames) {
-                                    std::string name = nameRaw;
-                                    std::replace(name.begin(), name.end(), '/', '\\');
-                                    bool hasDir = (name.find('\\') != std::string::npos);
-                                    bool hasExt = hasBlpExt(name);
-                                    if (hasDir) {
-                                        addCapeCandidate(name);
-                                        if (!hasExt) addCapeCandidate(name + ".blp");
-                                    } else {
-                                        std::string base = "Item\\ObjectComponents\\Cape\\" + name;
-                                        addCapeCandidate(base);
-                                        if (!hasExt) addCapeCandidate(base + ".blp");
-                                        // Some data sets use gender/unisex suffix variants.
-                                        addCapeCandidate(base + (npcIsFemale ? "_F.blp" : "_M.blp"));
-                                        addCapeCandidate(base + "_U.blp");
-                                    }
-                                }
-
-                                for (const auto& candidate : capeCandidates) {
-                                    if (assetManager->fileExists(candidate)) {
-                                        npcCapeTexturePath = candidate;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                // Use baked texture for body skin (types 1, 2)
-                // Type 6 (hair) needs its own texture from CharSections.dbc
-                const bool allowNpcRegionComposite = true;
-                rendering::VkTexture* bakedSkinTex = nullptr;
-                if (!extra.bakeName.empty()) {
-                    std::string bakePath = "Textures\\BakedNpcTextures\\" + extra.bakeName;
-                    rendering::VkTexture* finalTex = charRenderer->loadTexture(bakePath);
-                    bakedSkinTex = finalTex;
-                    if (finalTex && modelData) {
-                        for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
-                            uint32_t texType = modelData->textures[ti].type;
-                            if (texType == 1) {
-                                charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), finalTex);
-                                hasHumanoidTexture = true;
-                                LOG_DEBUG("NPC baked type1 slot=", ti, " modelId=", modelId,
-                                            " tex=", bakePath);
-                            }
-                        }
-                    }
-                }
-                // Fallback: if baked texture failed or bakeName was empty, build from CharSections
-                if (!hasHumanoidTexture) {
-                    LOG_DEBUG("  Trying CharSections fallback for NPC skin");
-
-                    // Build skin texture from CharSections.dbc (same as player character)
-                    auto csFallbackDbc = assetManager->loadDBC("CharSections.dbc");
-                    if (csFallbackDbc) {
-                        const auto* csFL = pipeline::getActiveDBCLayout()
-                            ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
-                        uint32_t npcRace = static_cast<uint32_t>(extra.raceId);
-                        uint32_t npcSex = static_cast<uint32_t>(extra.sexId);
-                        uint32_t npcSkin = static_cast<uint32_t>(extra.skinId);
-                        uint32_t npcFace = static_cast<uint32_t>(extra.faceId);
-                        std::string npcSkinPath, npcFaceLower, npcFaceUpper;
-                        std::vector<std::string> npcUnderwear;
-
-                        for (uint32_t r = 0; r < csFallbackDbc->getRecordCount(); r++) {
-                            uint32_t rId = csFallbackDbc->getUInt32(r, csFL ? (*csFL)["RaceID"] : 1);
-                            uint32_t sId = csFallbackDbc->getUInt32(r, csFL ? (*csFL)["SexID"] : 2);
-                            if (rId != npcRace || sId != npcSex) continue;
-
-                            uint32_t section = csFallbackDbc->getUInt32(r, csFL ? (*csFL)["BaseSection"] : 3);
-                            uint32_t variation = csFallbackDbc->getUInt32(r, csFL ? (*csFL)["VariationIndex"] : 8);
-                            uint32_t color = csFallbackDbc->getUInt32(r, csFL ? (*csFL)["ColorIndex"] : 9);
-                            uint32_t tex1F = csFL ? (*csFL)["Texture1"] : 4;
-
-                            // Section 0 = skin: match colorIndex = skinId
-                            if (section == 0 && npcSkinPath.empty() && color == npcSkin) {
-                                npcSkinPath = csFallbackDbc->getString(r, tex1F);
-                            }
-                            // Section 1 = face: match variation=faceId, color=skinId
-                            else if (section == 1 && npcFaceLower.empty() &&
-                                     variation == npcFace && color == npcSkin) {
-                                npcFaceLower = csFallbackDbc->getString(r, tex1F);
-                                npcFaceUpper = csFallbackDbc->getString(r, tex1F + 1);
-                            }
-                            // Section 4 = underwear: match color=skinId
-                            else if (section == 4 && npcUnderwear.empty() && color == npcSkin) {
-                                for (uint32_t f = tex1F; f <= tex1F + 2; f++) {
-                                    std::string tex = csFallbackDbc->getString(r, f);
-                                    if (!tex.empty()) npcUnderwear.push_back(tex);
-                                }
-                            }
-                        }
-
-                        LOG_DEBUG("NPC CharSections lookup: race=", npcRace, " sex=", npcSex,
-                                    " skin=", npcSkin, " face=", npcFace,
-                                    " skinPath='", npcSkinPath, "' faceLower='", npcFaceLower, "'");
-                        if (!npcSkinPath.empty()) {
-                            // Composite skin + face + underwear
-                            std::vector<std::string> skinLayers;
-                            skinLayers.push_back(npcSkinPath);
-                            if (!npcFaceLower.empty()) skinLayers.push_back(npcFaceLower);
-                            if (!npcFaceUpper.empty()) skinLayers.push_back(npcFaceUpper);
-                            for (const auto& uw : npcUnderwear) skinLayers.push_back(uw);
-
-                            rendering::VkTexture* npcSkinTex = nullptr;
-                            if (allowNpcRegionComposite && !npcRegionLayers.empty()) {
-                                npcSkinTex = charRenderer->compositeWithRegions(npcSkinPath,
-                                    std::vector<std::string>(skinLayers.begin() + 1, skinLayers.end()),
-                                    npcRegionLayers);
-                            } else if (skinLayers.size() > 1) {
-                                npcSkinTex = charRenderer->compositeTextures(skinLayers);
-                            } else {
-                                npcSkinTex = charRenderer->loadTexture(npcSkinPath);
-                            }
-
-                            if (npcSkinTex && modelData) {
-                                int slotsSet = 0;
-                                for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
-                                    uint32_t texType = modelData->textures[ti].type;
-                                    if (texType == 1 || texType == 11 || texType == 12 || texType == 13) {
-                                        charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), npcSkinTex);
-                                        hasHumanoidTexture = true;
-                                        slotsSet++;
-                                    }
-                                }
-                                LOG_DEBUG("NPC CharSections: skin='", npcSkinPath, "' regions=",
-                                            npcRegionLayers.size(), " applied=", hasHumanoidTexture,
-                                            " slots=", slotsSet,
-                                            " modelId=", modelId, " texCount=", modelData->textures.size());
-                            }
-                        }
+                // Collect model texture slot info (type 1 = skin, type 6 = hair)
+                std::vector<uint32_t> skinSlots, hairSlots;
+                if (modelData) {
+                    for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
+                        uint32_t texType = modelData->textures[ti].type;
+                        if (texType == 1 || texType == 11 || texType == 12 || texType == 13)
+                            skinSlots.push_back(static_cast<uint32_t>(ti));
+                        if (texType == 6)
+                            hairSlots.push_back(static_cast<uint32_t>(ti));
                     }
                 }
 
-                // Load hair texture from CharSections.dbc (section 3)
-                auto charSectionsDbc = assetManager->loadDBC("CharSections.dbc");
-                if (charSectionsDbc) {
-                    const auto* csL2 = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
-                    uint32_t targetRace = static_cast<uint32_t>(extra.raceId);
-                    uint32_t targetSex = static_cast<uint32_t>(extra.sexId);
-                    std::string hairTexPath;
+                // Copy extra data for the async task (avoid dangling reference)
+                HumanoidDisplayExtra extraCopy = extra;
 
-                    for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
-                        uint32_t raceId = charSectionsDbc->getUInt32(r, csL2 ? (*csL2)["RaceID"] : 1);
-                        uint32_t sexId = charSectionsDbc->getUInt32(r, csL2 ? (*csL2)["SexID"] : 2);
-                        uint32_t section = charSectionsDbc->getUInt32(r, csL2 ? (*csL2)["BaseSection"] : 3);
-                        uint32_t variation = charSectionsDbc->getUInt32(r, csL2 ? (*csL2)["VariationIndex"] : 4);
-                        uint32_t colorIdx = charSectionsDbc->getUInt32(r, csL2 ? (*csL2)["ColorIndex"] : 5);
+                // Launch async task: ALL DBC lookups, path resolution, and BLP pre-decode
+                // happen on a background thread. Only GPU texture upload runs on main thread
+                // (in processAsyncNpcCompositeResults).
+                auto* am = assetManager.get();
+                AsyncNpcCompositeLoad load;
+                load.future = std::async(std::launch::async,
+                    [am, extraCopy, skinSlots = std::move(skinSlots),
+                     hairSlots = std::move(hairSlots), modelId, displayId]() mutable -> PreparedNpcComposite {
+                        PreparedNpcComposite result;
+                        DeferredNpcComposite& def = result.info;
+                        def.modelId = modelId;
+                        def.displayId = displayId;
+                        def.skinTextureSlots = std::move(skinSlots);
+                        def.hairTextureSlots = std::move(hairSlots);
 
-                        if (raceId != targetRace || sexId != targetSex) continue;
-                        if (section != 3) continue;  // Section 3 = hair
-                        if (variation != static_cast<uint32_t>(extra.hairStyleId)) continue;
-                        if (colorIdx != static_cast<uint32_t>(extra.hairColorId)) continue;
+                        std::vector<std::string> allPaths;  // paths to pre-decode
 
-                        hairTexPath = charSectionsDbc->getString(r, csL2 ? (*csL2)["Texture1"] : 6);
-                        break;
-                    }
+                        // --- Baked skin texture ---
+                        if (!extraCopy.bakeName.empty()) {
+                            def.bakedSkinPath = "Textures\\BakedNpcTextures\\" + extraCopy.bakeName;
+                            def.hasBakedSkin = true;
+                            allPaths.push_back(def.bakedSkinPath);
+                        }
 
-                    if (!hairTexPath.empty()) {
-                        rendering::VkTexture* hairTex = charRenderer->loadTexture(hairTexPath);
-                        rendering::VkTexture* whTex = charRenderer->loadTexture("");
-                        if (hairTex && hairTex != whTex && modelData) {
-                            for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
-                                if (modelData->textures[ti].type == 6) {
-                                    charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), hairTex);
+                        // --- CharSections fallback (skin/face/underwear) ---
+                        if (!def.hasBakedSkin) {
+                            auto csDbc = am->loadDBC("CharSections.dbc");
+                            if (csDbc) {
+                                const auto* csL = pipeline::getActiveDBCLayout()
+                                    ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
+                                uint32_t npcRace = static_cast<uint32_t>(extraCopy.raceId);
+                                uint32_t npcSex = static_cast<uint32_t>(extraCopy.sexId);
+                                uint32_t npcSkin = static_cast<uint32_t>(extraCopy.skinId);
+                                uint32_t npcFace = static_cast<uint32_t>(extraCopy.faceId);
+                                std::string npcFaceLower, npcFaceUpper;
+                                std::vector<std::string> npcUnderwear;
+
+                                for (uint32_t r = 0; r < csDbc->getRecordCount(); r++) {
+                                    uint32_t rId = csDbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
+                                    uint32_t sId = csDbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
+                                    if (rId != npcRace || sId != npcSex) continue;
+
+                                    uint32_t section = csDbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
+                                    uint32_t variation = csDbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 4);
+                                    uint32_t color = csDbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 5);
+                                    uint32_t tex1F = csL ? (*csL)["Texture1"] : 6;
+
+                                    if (section == 0 && def.basePath.empty() && color == npcSkin) {
+                                        def.basePath = csDbc->getString(r, tex1F);
+                                    } else if (section == 1 && npcFaceLower.empty() &&
+                                               variation == npcFace && color == npcSkin) {
+                                        npcFaceLower = csDbc->getString(r, tex1F);
+                                        npcFaceUpper = csDbc->getString(r, tex1F + 1);
+                                    } else if (section == 4 && npcUnderwear.empty() && color == npcSkin) {
+                                        for (uint32_t f = tex1F; f <= tex1F + 2; f++) {
+                                            std::string tex = csDbc->getString(r, f);
+                                            if (!tex.empty()) npcUnderwear.push_back(tex);
+                                        }
+                                    }
+                                }
+
+                                if (!def.basePath.empty()) {
+                                    allPaths.push_back(def.basePath);
+                                    if (!npcFaceLower.empty()) { def.overlayPaths.push_back(npcFaceLower); allPaths.push_back(npcFaceLower); }
+                                    if (!npcFaceUpper.empty()) { def.overlayPaths.push_back(npcFaceUpper); allPaths.push_back(npcFaceUpper); }
+                                    for (const auto& uw : npcUnderwear) { def.overlayPaths.push_back(uw); allPaths.push_back(uw); }
                                 }
                             }
                         }
-                    }
-                    // Bald NPCs (hairStyle=0 or no CharSections match): set type-6 to
-                    // the skin/baked texture so the scalp cap renders with skin color.
-                    if (hairTexPath.empty() && bakedSkinTex && modelData) {
-                        for (size_t ti = 0; ti < modelData->textures.size(); ti++) {
-                            if (modelData->textures[ti].type == 6) {
-                                charRenderer->setModelTexture(modelId, static_cast<uint32_t>(ti), bakedSkinTex);
+
+                        // --- Equipment region layers (ItemDisplayInfo DBC) ---
+                        auto idiDbc = am->loadDBC("ItemDisplayInfo.dbc");
+                        if (idiDbc) {
+                            static const char* componentDirs[] = {
+                                "ArmUpperTexture", "ArmLowerTexture", "HandTexture",
+                                "TorsoUpperTexture", "TorsoLowerTexture",
+                                "LegUpperTexture", "LegLowerTexture", "FootTexture",
+                            };
+                            const auto* idiL = pipeline::getActiveDBCLayout()
+                                ? pipeline::getActiveDBCLayout()->getLayout("ItemDisplayInfo") : nullptr;
+                            const uint32_t texRegionFields[8] = {
+                                idiL ? (*idiL)["TextureArmUpper"]  : 14u,
+                                idiL ? (*idiL)["TextureArmLower"]  : 15u,
+                                idiL ? (*idiL)["TextureHand"]      : 16u,
+                                idiL ? (*idiL)["TextureTorsoUpper"]: 17u,
+                                idiL ? (*idiL)["TextureTorsoLower"]: 18u,
+                                idiL ? (*idiL)["TextureLegUpper"]  : 19u,
+                                idiL ? (*idiL)["TextureLegLower"]  : 20u,
+                                idiL ? (*idiL)["TextureFoot"]      : 21u,
+                            };
+                            const bool npcIsFemale = (extraCopy.sexId == 1);
+                            const bool npcHasArmArmor = (extraCopy.equipDisplayId[7] != 0 || extraCopy.equipDisplayId[8] != 0);
+
+                            auto regionAllowedForNpcSlot = [](int eqSlot, int region) -> bool {
+                                switch (eqSlot) {
+                                    case 2: case 3: return region <= 4;
+                                    case 4: return false;
+                                    case 5: return region == 5 || region == 6;
+                                    case 6: return region == 7;
+                                    case 7: return false;
+                                    case 8: return region == 2;
+                                    case 9: return region == 3 || region == 4;
+                                    default: return false;
+                                }
+                            };
+
+                            for (int eqSlot = 0; eqSlot < 11; eqSlot++) {
+                                uint32_t did = extraCopy.equipDisplayId[eqSlot];
+                                if (did == 0) continue;
+                                int32_t recIdx = idiDbc->findRecordById(did);
+                                if (recIdx < 0) continue;
+
+                                for (int region = 0; region < 8; region++) {
+                                    if (!regionAllowedForNpcSlot(eqSlot, region)) continue;
+                                    if (eqSlot == 2 && !npcHasArmArmor && !(region == 3 || region == 4)) continue;
+                                    std::string texName = idiDbc->getString(
+                                        static_cast<uint32_t>(recIdx), texRegionFields[region]);
+                                    if (texName.empty()) continue;
+
+                                    std::string base = "Item\\TextureComponents\\" +
+                                        std::string(componentDirs[region]) + "\\" + texName;
+                                    std::string genderPath = base + (npcIsFemale ? "_F.blp" : "_M.blp");
+                                    std::string unisexPath = base + "_U.blp";
+                                    std::string basePath = base + ".blp";
+                                    std::string fullPath;
+                                    if (am->fileExists(genderPath)) fullPath = genderPath;
+                                    else if (am->fileExists(unisexPath)) fullPath = unisexPath;
+                                    else if (am->fileExists(basePath)) fullPath = basePath;
+                                    else continue;
+
+                                    def.regionLayers.emplace_back(region, fullPath);
+                                    allPaths.push_back(fullPath);
+                                }
                             }
                         }
-                    }
-                }
 
-                // Do not apply cape textures at model scope here. Type-2 texture slots are
-                // shared per model and this can leak cape textures/white fallbacks onto
-                // unrelated humanoid NPCs that use the same modelId.
+                        // Determine compositing mode
+                        if (!def.basePath.empty()) {
+                            bool needsComposite = !def.overlayPaths.empty() || !def.regionLayers.empty();
+                            if (needsComposite && !def.skinTextureSlots.empty()) {
+                                def.hasComposite = true;
+                            } else if (!def.skinTextureSlots.empty()) {
+                                def.hasSimpleSkin = true;
+                            }
+                        }
+
+                        // --- Hair texture from CharSections (section 3) ---
+                        {
+                            auto csDbc = am->loadDBC("CharSections.dbc");
+                            if (csDbc) {
+                                const auto* csL = pipeline::getActiveDBCLayout()
+                                    ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
+                                uint32_t targetRace = static_cast<uint32_t>(extraCopy.raceId);
+                                uint32_t targetSex = static_cast<uint32_t>(extraCopy.sexId);
+
+                                for (uint32_t r = 0; r < csDbc->getRecordCount(); r++) {
+                                    uint32_t raceId = csDbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
+                                    uint32_t sexId = csDbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
+                                    if (raceId != targetRace || sexId != targetSex) continue;
+                                    uint32_t section = csDbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
+                                    if (section != 3) continue;
+                                    uint32_t variation = csDbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 4);
+                                    uint32_t colorIdx = csDbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 5);
+                                    if (variation != static_cast<uint32_t>(extraCopy.hairStyleId)) continue;
+                                    if (colorIdx != static_cast<uint32_t>(extraCopy.hairColorId)) continue;
+                                    def.hairTexturePath = csDbc->getString(r, csL ? (*csL)["Texture1"] : 6);
+                                    break;
+                                }
+
+                                if (!def.hairTexturePath.empty()) {
+                                    allPaths.push_back(def.hairTexturePath);
+                                } else if (def.hasBakedSkin && !def.hairTextureSlots.empty()) {
+                                    def.useBakedForHair = true;
+                                    // bakedSkinPath already in allPaths
+                                }
+                            }
+                        }
+
+                        // --- Pre-decode all BLP textures on this background thread ---
+                        for (const auto& path : allPaths) {
+                            std::string key = path;
+                            std::replace(key.begin(), key.end(), '/', '\\');
+                            std::transform(key.begin(), key.end(), key.begin(),
+                                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                            if (result.predecodedTextures.count(key)) continue;
+                            auto blp = am->loadTexture(key);
+                            if (blp.isValid()) {
+                                result.predecodedTextures[key] = std::move(blp);
+                            }
+                        }
+
+                        return result;
+                    });
+                asyncNpcCompositeLoads_.push_back(std::move(load));
+                hasHumanoidTexture = true;  // skip non-humanoid skin block
             } else {
                 LOG_WARNING("  extraDisplayId ", dispData.extraDisplayId, " not found in humanoidExtraMap");
             }
@@ -5233,6 +5136,18 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                                 " (skin fields: '", dispData.skin1, "', '",
                                 dispData.skin2, "', '", dispData.skin3, "')");
                 }
+            }
+        }
+
+        // Clear pre-decoded cache after applying all display textures
+        charRenderer->setPredecodedBLPCache(nullptr);
+        displayIdPredecodedTextures_.erase(displayId);
+        {
+            auto texEnd = std::chrono::steady_clock::now();
+            float texMs = std::chrono::duration<float, std::milli>(texEnd - texStart).count();
+            if (texMs > 3.0f) {
+                LOG_WARNING("spawnCreature texture setup took ", texMs, "ms displayId=", displayId,
+                            " hasPreDec=", hasPreDec, " extra=", dispData.extraDisplayId);
             }
         }
     }
@@ -6926,6 +6841,7 @@ void Application::processAsyncCreatureResults() {
 
         // Upload model to GPU (must happen on main thread)
         // Use pre-decoded BLP cache to skip main-thread texture decode
+        auto uploadStart = std::chrono::steady_clock::now();
         charRenderer->setPredecodedBLPCache(&result.predecodedTextures);
         if (!charRenderer->loadModel(*result.model, result.modelId)) {
             charRenderer->setPredecodedBLPCache(nullptr);
@@ -6936,6 +6852,18 @@ void Application::processAsyncCreatureResults() {
             continue;
         }
         charRenderer->setPredecodedBLPCache(nullptr);
+        {
+            auto uploadEnd = std::chrono::steady_clock::now();
+            float uploadMs = std::chrono::duration<float, std::milli>(uploadEnd - uploadStart).count();
+            if (uploadMs > 3.0f) {
+                LOG_WARNING("charRenderer->loadModel took ", uploadMs, "ms displayId=", result.displayId,
+                            " preDecoded=", result.predecodedTextures.size());
+            }
+        }
+        // Save remaining pre-decoded textures (display skins) for spawnOnlineCreature
+        if (!result.predecodedTextures.empty()) {
+            displayIdPredecodedTextures_[result.displayId] = std::move(result.predecodedTextures);
+        }
         displayIdModelCache_[result.displayId] = result.modelId;
         modelUploads++;
 
@@ -6959,6 +6887,77 @@ void Application::processAsyncCreatureResults() {
     }
 }
 
+void Application::processAsyncNpcCompositeResults() {
+    auto* charRenderer = renderer ? renderer->getCharacterRenderer() : nullptr;
+    if (!charRenderer) return;
+
+    for (auto it = asyncNpcCompositeLoads_.begin(); it != asyncNpcCompositeLoads_.end(); ) {
+        if (!it->future.valid() ||
+            it->future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+            ++it;
+            continue;
+        }
+        auto result = it->future.get();
+        it = asyncNpcCompositeLoads_.erase(it);
+
+        const auto& info = result.info;
+
+        // Set pre-decoded cache so texture loads skip synchronous BLP decode
+        charRenderer->setPredecodedBLPCache(&result.predecodedTextures);
+
+        // --- Apply skin to type-1 slots ---
+        rendering::VkTexture* skinTex = nullptr;
+
+        if (info.hasBakedSkin) {
+            // Baked skin: load from pre-decoded cache
+            skinTex = charRenderer->loadTexture(info.bakedSkinPath);
+        }
+
+        if (info.hasComposite) {
+            // Composite with face/underwear/equipment regions on top of base skin
+            rendering::VkTexture* compositeTex = nullptr;
+            if (!info.regionLayers.empty()) {
+                compositeTex = charRenderer->compositeWithRegions(info.basePath,
+                    info.overlayPaths, info.regionLayers);
+            } else if (!info.overlayPaths.empty()) {
+                std::vector<std::string> skinLayers;
+                skinLayers.push_back(info.basePath);
+                for (const auto& op : info.overlayPaths) skinLayers.push_back(op);
+                compositeTex = charRenderer->compositeTextures(skinLayers);
+            }
+            if (compositeTex) skinTex = compositeTex;
+        } else if (info.hasSimpleSkin) {
+            // Simple skin: just base texture, no compositing
+            auto* baseTex = charRenderer->loadTexture(info.basePath);
+            if (baseTex) skinTex = baseTex;
+        }
+
+        if (skinTex) {
+            for (uint32_t slot : info.skinTextureSlots) {
+                charRenderer->setModelTexture(info.modelId, slot, skinTex);
+            }
+        }
+
+        // --- Apply hair texture to type-6 slots ---
+        if (!info.hairTexturePath.empty()) {
+            rendering::VkTexture* hairTex = charRenderer->loadTexture(info.hairTexturePath);
+            rendering::VkTexture* whTex = charRenderer->loadTexture("");
+            if (hairTex && hairTex != whTex) {
+                for (uint32_t slot : info.hairTextureSlots) {
+                    charRenderer->setModelTexture(info.modelId, slot, hairTex);
+                }
+            }
+        } else if (info.useBakedForHair && skinTex) {
+            // Bald NPC: use skin/baked texture for scalp cap
+            for (uint32_t slot : info.hairTextureSlots) {
+                charRenderer->setModelTexture(info.modelId, slot, skinTex);
+            }
+        }
+
+        charRenderer->setPredecodedBLPCache(nullptr);
+    }
+}
+
 void Application::processCreatureSpawnQueue() {
     auto startTime = std::chrono::steady_clock::now();
     // Budget: max 2ms per frame for creature spawning to prevent stutter.
@@ -6966,6 +6965,13 @@ void Application::processCreatureSpawnQueue() {
 
     // First, finalize any async model loads that completed on background threads.
     processAsyncCreatureResults();
+    {
+        auto now = std::chrono::steady_clock::now();
+        float asyncMs = std::chrono::duration<float, std::milli>(now - startTime).count();
+        if (asyncMs > 3.0f) {
+            LOG_WARNING("processAsyncCreatureResults took ", asyncMs, "ms");
+        }
+    }
 
     if (pendingCreatureSpawns_.empty()) return;
     if (!creatureLookupsBuilt_) {
@@ -7039,9 +7045,136 @@ void Application::processCreatureSpawnQueue() {
             // Launch async M2 load — file I/O and parsing happen off the main thread.
             uint32_t modelId = nextCreatureModelId_++;
             auto* am = assetManager.get();
+
+            // Collect display skin texture paths for background pre-decode
+            std::vector<std::string> displaySkinPaths;
+            {
+                auto itDD = displayDataMap_.find(s.displayId);
+                if (itDD != displayDataMap_.end()) {
+                    std::string modelDir;
+                    size_t lastSlash = m2Path.find_last_of("\\/");
+                    if (lastSlash != std::string::npos) modelDir = m2Path.substr(0, lastSlash + 1);
+
+                    auto resolveForAsync = [&](const std::string& skinField) {
+                        if (skinField.empty()) return;
+                        std::string raw = skinField;
+                        std::replace(raw.begin(), raw.end(), '/', '\\');
+                        while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.front()))) raw.erase(raw.begin());
+                        while (!raw.empty() && std::isspace(static_cast<unsigned char>(raw.back()))) raw.pop_back();
+                        if (raw.empty()) return;
+                        bool hasExt = raw.size() >= 4 && raw.substr(raw.size()-4) == ".blp";
+                        bool hasDir = raw.find('\\') != std::string::npos;
+                        std::vector<std::string> candidates;
+                        if (hasDir) {
+                            candidates.push_back(raw);
+                            if (!hasExt) candidates.push_back(raw + ".blp");
+                        } else {
+                            candidates.push_back(modelDir + raw);
+                            if (!hasExt) candidates.push_back(modelDir + raw + ".blp");
+                            candidates.push_back(raw);
+                            if (!hasExt) candidates.push_back(raw + ".blp");
+                        }
+                        for (const auto& c : candidates) {
+                            if (am->fileExists(c)) { displaySkinPaths.push_back(c); return; }
+                        }
+                    };
+                    resolveForAsync(itDD->second.skin1);
+                    resolveForAsync(itDD->second.skin2);
+                    resolveForAsync(itDD->second.skin3);
+
+                    // Pre-decode humanoid NPC textures (bake, skin, face, underwear, hair, equipment)
+                    if (itDD->second.extraDisplayId != 0) {
+                        auto itHE = humanoidExtraMap_.find(itDD->second.extraDisplayId);
+                        if (itHE != humanoidExtraMap_.end()) {
+                            const auto& he = itHE->second;
+                            // Baked texture
+                            if (!he.bakeName.empty()) {
+                                displaySkinPaths.push_back("Textures\\BakedNpcTextures\\" + he.bakeName);
+                            }
+                            // CharSections: skin, face, underwear
+                            auto csDbc = am->loadDBC("CharSections.dbc");
+                            if (csDbc) {
+                                const auto* csL = pipeline::getActiveDBCLayout()
+                                    ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
+                                uint32_t nRace = static_cast<uint32_t>(he.raceId);
+                                uint32_t nSex = static_cast<uint32_t>(he.sexId);
+                                uint32_t nSkin = static_cast<uint32_t>(he.skinId);
+                                uint32_t nFace = static_cast<uint32_t>(he.faceId);
+                                for (uint32_t r = 0; r < csDbc->getRecordCount(); r++) {
+                                    uint32_t rId = csDbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
+                                    uint32_t sId = csDbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
+                                    if (rId != nRace || sId != nSex) continue;
+                                    uint32_t section = csDbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
+                                    uint32_t variation = csDbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 4);
+                                    uint32_t color = csDbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 5);
+                                    uint32_t tex1F = csL ? (*csL)["Texture1"] : 6;
+                                    if (section == 0 && color == nSkin) {
+                                        std::string t = csDbc->getString(r, tex1F);
+                                        if (!t.empty()) displaySkinPaths.push_back(t);
+                                    } else if (section == 1 && variation == nFace && color == nSkin) {
+                                        std::string t1 = csDbc->getString(r, tex1F);
+                                        std::string t2 = csDbc->getString(r, tex1F + 1);
+                                        if (!t1.empty()) displaySkinPaths.push_back(t1);
+                                        if (!t2.empty()) displaySkinPaths.push_back(t2);
+                                    } else if (section == 3 && variation == static_cast<uint32_t>(he.hairStyleId)
+                                               && color == static_cast<uint32_t>(he.hairColorId)) {
+                                        std::string t = csDbc->getString(r, tex1F);
+                                        if (!t.empty()) displaySkinPaths.push_back(t);
+                                    } else if (section == 4 && color == nSkin) {
+                                        for (uint32_t f = tex1F; f <= tex1F + 2; f++) {
+                                            std::string t = csDbc->getString(r, f);
+                                            if (!t.empty()) displaySkinPaths.push_back(t);
+                                        }
+                                    }
+                                }
+                            }
+                            // Equipment region textures
+                            auto idiDbc = am->loadDBC("ItemDisplayInfo.dbc");
+                            if (idiDbc) {
+                                static const char* compDirs[] = {
+                                    "ArmUpperTexture", "ArmLowerTexture", "HandTexture",
+                                    "TorsoUpperTexture", "TorsoLowerTexture",
+                                    "LegUpperTexture", "LegLowerTexture", "FootTexture",
+                                };
+                                const auto* idiL = pipeline::getActiveDBCLayout()
+                                    ? pipeline::getActiveDBCLayout()->getLayout("ItemDisplayInfo") : nullptr;
+                                const uint32_t trf[8] = {
+                                    idiL ? (*idiL)["TextureArmUpper"]  : 14u,
+                                    idiL ? (*idiL)["TextureArmLower"]  : 15u,
+                                    idiL ? (*idiL)["TextureHand"]      : 16u,
+                                    idiL ? (*idiL)["TextureTorsoUpper"]: 17u,
+                                    idiL ? (*idiL)["TextureTorsoLower"]: 18u,
+                                    idiL ? (*idiL)["TextureLegUpper"]  : 19u,
+                                    idiL ? (*idiL)["TextureLegLower"]  : 20u,
+                                    idiL ? (*idiL)["TextureFoot"]      : 21u,
+                                };
+                                const bool isFem = (he.sexId == 1);
+                                for (int eq = 0; eq < 11; eq++) {
+                                    uint32_t did = he.equipDisplayId[eq];
+                                    if (did == 0) continue;
+                                    int32_t recIdx = idiDbc->findRecordById(did);
+                                    if (recIdx < 0) continue;
+                                    for (int region = 0; region < 8; region++) {
+                                        std::string texName = idiDbc->getString(static_cast<uint32_t>(recIdx), trf[region]);
+                                        if (texName.empty()) continue;
+                                        std::string base = "Item\\TextureComponents\\" +
+                                            std::string(compDirs[region]) + "\\" + texName;
+                                        std::string gp = base + (isFem ? "_F.blp" : "_M.blp");
+                                        std::string up = base + "_U.blp";
+                                        if (am->fileExists(gp)) displaySkinPaths.push_back(gp);
+                                        else if (am->fileExists(up)) displaySkinPaths.push_back(up);
+                                        else displaySkinPaths.push_back(base + ".blp");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             AsyncCreatureLoad load;
             load.future = std::async(std::launch::async,
-                [am, m2Path, modelId, s]() -> PreparedCreatureModel {
+                [am, m2Path, modelId, s, skinPaths = std::move(displaySkinPaths)]() -> PreparedCreatureModel {
                     PreparedCreatureModel result;
                     result.guid = s.guid;
                     result.displayId = s.displayId;
@@ -7100,6 +7233,19 @@ void Application::processCreatureSpawnQueue() {
                         }
                     }
 
+                    // Pre-decode display skin textures (skin1/skin2/skin3 from CreatureDisplayInfo)
+                    for (const auto& sp : skinPaths) {
+                        std::string key = sp;
+                        std::replace(key.begin(), key.end(), '/', '\\');
+                        std::transform(key.begin(), key.end(), key.begin(),
+                                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                        if (result.predecodedTextures.count(key)) continue;
+                        auto blp = am->loadTexture(key);
+                        if (blp.isValid()) {
+                            result.predecodedTextures[key] = std::move(blp);
+                        }
+                    }
+
                     result.model = std::move(model);
                     result.valid = true;
                     return result;
@@ -7113,7 +7259,15 @@ void Application::processCreatureSpawnQueue() {
         }
 
         // Cached model — spawn is fast (no file I/O, just instance creation + texture setup)
-        spawnOnlineCreature(s.guid, s.displayId, s.x, s.y, s.z, s.orientation);
+        {
+            auto spawnStart = std::chrono::steady_clock::now();
+            spawnOnlineCreature(s.guid, s.displayId, s.x, s.y, s.z, s.orientation);
+            auto spawnEnd = std::chrono::steady_clock::now();
+            float spawnMs = std::chrono::duration<float, std::milli>(spawnEnd - spawnStart).count();
+            if (spawnMs > 3.0f) {
+                LOG_WARNING("spawnOnlineCreature took ", spawnMs, "ms displayId=", s.displayId);
+            }
+        }
         pendingCreatureSpawnGuids_.erase(s.guid);
 
         // If spawn still failed, retry for a limited number of frames.
@@ -7172,12 +7326,130 @@ void Application::processPlayerSpawnQueue() {
     }
 }
 
+std::vector<std::string> Application::resolveEquipmentTexturePaths(uint64_t guid,
+    const std::array<uint32_t, 19>& displayInfoIds,
+    const std::array<uint8_t, 19>& /*inventoryTypes*/) const {
+    std::vector<std::string> paths;
+
+    auto it = onlinePlayerAppearance_.find(guid);
+    if (it == onlinePlayerAppearance_.end()) return paths;
+    const OnlinePlayerAppearanceState& st = it->second;
+
+    // Add base skin + underwear paths
+    if (!st.bodySkinPath.empty()) paths.push_back(st.bodySkinPath);
+    for (const auto& up : st.underwearPaths) {
+        if (!up.empty()) paths.push_back(up);
+    }
+
+    // Resolve equipment region texture paths (same logic as setOnlinePlayerEquipment)
+    auto displayInfoDbc = assetManager->loadDBC("ItemDisplayInfo.dbc");
+    if (!displayInfoDbc) return paths;
+    const auto* idiL = pipeline::getActiveDBCLayout()
+        ? pipeline::getActiveDBCLayout()->getLayout("ItemDisplayInfo") : nullptr;
+
+    static const char* componentDirs[] = {
+        "ArmUpperTexture", "ArmLowerTexture", "HandTexture",
+        "TorsoUpperTexture", "TorsoLowerTexture",
+        "LegUpperTexture", "LegLowerTexture", "FootTexture",
+    };
+    const uint32_t texRegionFields[8] = {
+        idiL ? (*idiL)["TextureArmUpper"]  : 14u,
+        idiL ? (*idiL)["TextureArmLower"]  : 15u,
+        idiL ? (*idiL)["TextureHand"]      : 16u,
+        idiL ? (*idiL)["TextureTorsoUpper"]: 17u,
+        idiL ? (*idiL)["TextureTorsoLower"]: 18u,
+        idiL ? (*idiL)["TextureLegUpper"]  : 19u,
+        idiL ? (*idiL)["TextureLegLower"]  : 20u,
+        idiL ? (*idiL)["TextureFoot"]      : 21u,
+    };
+    const bool isFemale = (st.genderId == 1);
+
+    for (int s = 0; s < 19; s++) {
+        uint32_t did = displayInfoIds[s];
+        if (did == 0) continue;
+        int32_t recIdx = displayInfoDbc->findRecordById(did);
+        if (recIdx < 0) continue;
+        for (int region = 0; region < 8; region++) {
+            std::string texName = displayInfoDbc->getString(
+                static_cast<uint32_t>(recIdx), texRegionFields[region]);
+            if (texName.empty()) continue;
+            std::string base = "Item\\TextureComponents\\" +
+                std::string(componentDirs[region]) + "\\" + texName;
+            std::string genderPath = base + (isFemale ? "_F.blp" : "_M.blp");
+            std::string unisexPath = base + "_U.blp";
+            if (assetManager->fileExists(genderPath)) paths.push_back(genderPath);
+            else if (assetManager->fileExists(unisexPath)) paths.push_back(unisexPath);
+            else paths.push_back(base + ".blp");
+        }
+    }
+    return paths;
+}
+
+void Application::processAsyncEquipmentResults() {
+    for (auto it = asyncEquipmentLoads_.begin(); it != asyncEquipmentLoads_.end(); ) {
+        if (!it->future.valid() ||
+            it->future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+            ++it;
+            continue;
+        }
+        auto result = it->future.get();
+        it = asyncEquipmentLoads_.erase(it);
+
+        auto* charRenderer = renderer ? renderer->getCharacterRenderer() : nullptr;
+        if (!charRenderer) continue;
+
+        // Set pre-decoded cache so compositeWithRegions skips synchronous BLP decode
+        charRenderer->setPredecodedBLPCache(&result.predecodedTextures);
+        setOnlinePlayerEquipment(result.guid, result.displayInfoIds, result.inventoryTypes);
+        charRenderer->setPredecodedBLPCache(nullptr);
+    }
+}
+
 void Application::processDeferredEquipmentQueue() {
+    // First, finalize any completed async pre-decodes
+    processAsyncEquipmentResults();
+
     if (deferredEquipmentQueue_.empty()) return;
-    // Process at most 1 per frame — compositeWithRegions is expensive
+    // Limit in-flight async equipment loads
+    if (asyncEquipmentLoads_.size() >= 2) return;
+
     auto [guid, equipData] = deferredEquipmentQueue_.front();
     deferredEquipmentQueue_.erase(deferredEquipmentQueue_.begin());
-    setOnlinePlayerEquipment(guid, equipData.first, equipData.second);
+
+    // Resolve all texture paths that compositeWithRegions will need
+    auto texturePaths = resolveEquipmentTexturePaths(guid, equipData.first, equipData.second);
+
+    if (texturePaths.empty()) {
+        // No textures to pre-decode — just apply directly (fast path)
+        setOnlinePlayerEquipment(guid, equipData.first, equipData.second);
+        return;
+    }
+
+    // Launch background BLP pre-decode
+    auto* am = assetManager.get();
+    auto displayInfoIds = equipData.first;
+    auto inventoryTypes = equipData.second;
+    AsyncEquipmentLoad load;
+    load.future = std::async(std::launch::async,
+        [am, guid, displayInfoIds, inventoryTypes, paths = std::move(texturePaths)]() -> PreparedEquipmentUpdate {
+            PreparedEquipmentUpdate result;
+            result.guid = guid;
+            result.displayInfoIds = displayInfoIds;
+            result.inventoryTypes = inventoryTypes;
+            for (const auto& path : paths) {
+                std::string key = path;
+                std::replace(key.begin(), key.end(), '/', '\\');
+                std::transform(key.begin(), key.end(), key.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (result.predecodedTextures.count(key)) continue;
+                auto blp = am->loadTexture(key);
+                if (blp.isValid()) {
+                    result.predecodedTextures[key] = std::move(blp);
+                }
+            }
+            return result;
+        });
+    asyncEquipmentLoads_.push_back(std::move(load));
 }
 
 void Application::processAsyncGameObjectResults() {
