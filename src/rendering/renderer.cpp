@@ -3785,7 +3785,7 @@ bool Renderer::initFSR2Resources() {
         VkPushConstantRange pc{};
         pc.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
         pc.offset = 0;
-        pc.size = sizeof(glm::mat4) + sizeof(glm::vec4);  // 80 bytes
+        pc.size = sizeof(glm::mat4) + 2 * sizeof(glm::vec4);  // 96 bytes
 
         VkPipelineLayoutCreateInfo plCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         plCI.setLayoutCount = 1;
@@ -4086,17 +4086,20 @@ void Renderer::dispatchMotionVectors() {
     vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         fsr2_.motionVecPipelineLayout, 0, 1, &fsr2_.motionVecDescSet, 0, nullptr);
 
-    // Single reprojection matrix: prevUnjitteredVP * inv(currentUnjitteredVP)
-    // Both matrices are unjittered — jitter only affects sub-pixel sampling,
-    // not motion vector computation. This avoids numerical instability from
-    // jitter amplification through large world coordinates.
+    // Reprojection: prevUnjitteredVP * inv(currentUnjitteredVP)
+    // Using unjittered VPs avoids numerical instability from jitter amplification
+    // through large world coordinates. The shader corrects NDC by subtracting
+    // current jitter before reprojection (depth was rendered at jittered position).
     struct {
-        glm::mat4 reprojMatrix;   // prevUnjitteredVP * inv(currentUnjitteredVP)
+        glm::mat4 reprojMatrix;
         glm::vec4 resolution;
+        glm::vec4 jitterOffset;   // xy = current jitter (NDC), zw = unused
     } pc;
 
     glm::mat4 currentUnjitteredVP = camera->getUnjitteredViewProjectionMatrix();
     pc.reprojMatrix = fsr2_.prevViewProjection * glm::inverse(currentUnjitteredVP);
+    glm::vec2 jitter = camera->getJitter();
+    pc.jitterOffset = glm::vec4(jitter.x, jitter.y, 0.0f, 0.0f);
     pc.resolution = glm::vec4(
         static_cast<float>(fsr2_.internalWidth),
         static_cast<float>(fsr2_.internalHeight),
