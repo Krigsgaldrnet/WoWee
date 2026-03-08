@@ -261,13 +261,15 @@ public:
     float getShadowDistance() const { return shadowDistance_; }
     void setMsaaSamples(VkSampleCountFlagBits samples);
 
-    // FSR 1.0 (FidelityFX Super Resolution) upscaling
+    // FSR (FidelityFX Super Resolution) upscaling
     void setFSREnabled(bool enabled);
     bool isFSREnabled() const { return fsr_.enabled; }
     void setFSRQuality(float scaleFactor);  // 0.50=Perf, 0.59=Balanced, 0.67=Quality, 0.77=UltraQuality
     void setFSRSharpness(float sharpness);  // 0.0 - 2.0
     float getFSRScaleFactor() const { return fsr_.scaleFactor; }
     float getFSRSharpness() const { return fsr_.sharpness; }
+    void setFSR2Enabled(bool enabled);
+    bool isFSR2Enabled() const { return fsr2_.enabled; }
 
     void setWaterRefractionEnabled(bool enabled);
     bool isWaterRefractionEnabled() const;
@@ -362,6 +364,65 @@ private:
     bool initFSRResources();
     void destroyFSRResources();
     void renderFSRUpscale();
+
+    // FSR 2.2 temporal upscaling state
+    struct FSR2State {
+        bool enabled = false;
+        bool needsRecreate = false;
+        float scaleFactor = 0.77f;
+        float sharpness = 0.5f;
+        uint32_t internalWidth = 0;
+        uint32_t internalHeight = 0;
+
+        // Off-screen scene targets (internal resolution, no MSAA — FSR2 replaces AA)
+        AllocatedImage sceneColor{};
+        AllocatedImage sceneDepth{};
+        VkFramebuffer sceneFramebuffer = VK_NULL_HANDLE;
+
+        // Samplers
+        VkSampler linearSampler = VK_NULL_HANDLE;   // For color
+        VkSampler nearestSampler = VK_NULL_HANDLE;  // For depth / motion vectors
+
+        // Motion vector buffer (internal resolution)
+        AllocatedImage motionVectors{};
+
+        // History buffers (display resolution, ping-pong)
+        AllocatedImage history[2]{};
+        uint32_t currentHistory = 0;  // Output index (0 or 1)
+
+        // Compute pipelines
+        VkPipeline motionVecPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout motionVecPipelineLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout motionVecDescSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool motionVecDescPool = VK_NULL_HANDLE;
+        VkDescriptorSet motionVecDescSet = VK_NULL_HANDLE;
+
+        VkPipeline accumulatePipeline = VK_NULL_HANDLE;
+        VkPipelineLayout accumulatePipelineLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout accumulateDescSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool accumulateDescPool = VK_NULL_HANDLE;
+        VkDescriptorSet accumulateDescSets[2] = {};  // Per ping-pong
+
+        // RCAS sharpening pass (display resolution)
+        VkPipeline sharpenPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout sharpenPipelineLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout sharpenDescSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool sharpenDescPool = VK_NULL_HANDLE;
+        VkDescriptorSet sharpenDescSet = VK_NULL_HANDLE;
+
+        // Previous frame state for motion vector reprojection
+        glm::mat4 prevViewProjection = glm::mat4(1.0f);
+        glm::vec2 prevJitter = glm::vec2(0.0f);
+        uint32_t frameIndex = 0;
+        bool needsHistoryReset = true;
+    };
+    FSR2State fsr2_;
+    bool initFSR2Resources();
+    void destroyFSR2Resources();
+    void dispatchMotionVectors();
+    void dispatchTemporalAccumulate();
+    void renderFSR2Sharpen();
+    static float halton(uint32_t index, uint32_t base);
 
     // Footstep event tracking (animation-driven)
     uint32_t footstepLastAnimationId = 0;

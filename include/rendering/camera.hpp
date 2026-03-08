@@ -23,8 +23,15 @@ public:
     const glm::vec3& getPosition() const { return position; }
     const glm::mat4& getViewMatrix() const { return viewMatrix; }
     const glm::mat4& getProjectionMatrix() const { return projectionMatrix; }
+    const glm::mat4& getUnjitteredProjectionMatrix() const { return unjitteredProjectionMatrix; }
     glm::mat4 getViewProjectionMatrix() const { return projectionMatrix * viewMatrix; }
+    glm::mat4 getUnjitteredViewProjectionMatrix() const { return unjitteredProjectionMatrix * viewMatrix; }
     float getAspectRatio() const { return aspectRatio; }
+
+    // Sub-pixel jitter for temporal upscaling (FSR 2)
+    void setJitter(float jx, float jy);
+    void clearJitter();
+    glm::vec2 getJitter() const { return jitterOffset; }
 
     glm::vec3 getForward() const;
     glm::vec3 getRight() const;
@@ -46,6 +53,8 @@ private:
 
     glm::mat4 viewMatrix = glm::mat4(1.0f);
     glm::mat4 projectionMatrix = glm::mat4(1.0f);
+    glm::mat4 unjitteredProjectionMatrix = glm::mat4(1.0f);
+    glm::vec2 jitterOffset = glm::vec2(0.0f);  // NDC jitter (applied to projection)
 };
 
 } // namespace rendering

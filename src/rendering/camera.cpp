@@ -20,6 +20,13 @@ void Camera::updateProjectionMatrix() {
     projectionMatrix = glm::perspective(glm::radians(fov), aspectRatio, nearPlane, farPlane);
     // Vulkan clip-space has Y pointing down; flip the projection's Y axis.
     projectionMatrix[1][1] *= -1.0f;
+    unjitteredProjectionMatrix = projectionMatrix;
+
+    // Re-apply jitter if active
+    if (jitterOffset.x != 0.0f || jitterOffset.y != 0.0f) {
+        projectionMatrix[2][0] += jitterOffset.x;
+        projectionMatrix[2][1] += jitterOffset.y;
+    }
 }
 
 glm::vec3 Camera::getForward() const {
@@ -38,6 +45,21 @@ glm::vec3 Camera::getRight() const {
 
 glm::vec3 Camera::getUp() const {
     return glm::normalize(glm::cross(getRight(), getForward()));
+}
+
+void Camera::setJitter(float jx, float jy) {
+    // Remove old jitter, apply new
+    projectionMatrix[2][0] -= jitterOffset.x;
+    projectionMatrix[2][1] -= jitterOffset.y;
+    jitterOffset = glm::vec2(jx, jy);
+    projectionMatrix[2][0] += jitterOffset.x;
+    projectionMatrix[2][1] += jitterOffset.y;
+}
+
+void Camera::clearJitter() {
+    projectionMatrix[2][0] -= jitterOffset.x;
+    projectionMatrix[2][1] -= jitterOffset.y;
+    jitterOffset = glm::vec2(0.0f);
 }
 
 Ray Camera::screenToWorldRay(float screenX, float screenY, float screenW, float screenH) const {

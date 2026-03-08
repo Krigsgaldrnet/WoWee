@@ -6290,13 +6290,21 @@ void GameScreen::renderSettingsWindow() {
                         saveSettings();
                     }
                 }
-                // FSR 1.0 Upscaling
+                // FSR Upscaling
                 {
-                    if (ImGui::Checkbox("FSR Upscaling (Experimental)", &pendingFSR)) {
-                        if (renderer) renderer->setFSREnabled(pendingFSR);
+                    // FSR mode selection: Off, FSR 1.0 (Spatial), FSR 2.2 (Temporal)
+                    const char* fsrModeLabels[] = { "Off", "FSR 1.0 (Spatial)", "FSR 2.2 (Temporal)" };
+                    int fsrMode = pendingFSR ? 1 : 0;
+                    if (renderer && renderer->isFSR2Enabled()) fsrMode = 2;
+                    if (ImGui::Combo("Upscaling", &fsrMode, fsrModeLabels, 3)) {
+                        pendingFSR = (fsrMode == 1);
+                        if (renderer) {
+                            renderer->setFSREnabled(fsrMode == 1);
+                            renderer->setFSR2Enabled(fsrMode == 2);
+                        }
                         saveSettings();
                     }
-                    if (pendingFSR) {
+                    if (fsrMode > 0) {
                         const char* fsrQualityLabels[] = { "Ultra Quality (77%)", "Quality (67%)", "Balanced (59%)", "Performance (50%)" };
                         static const float fsrScaleFactors[] = { 0.77f, 0.67f, 0.59f, 0.50f };
                         if (ImGui::Combo("FSR Quality", &pendingFSRQuality, fsrQualityLabels, 4)) {

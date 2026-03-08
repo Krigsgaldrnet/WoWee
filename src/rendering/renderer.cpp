@@ -837,6 +837,7 @@ void Renderer::shutdown() {
     }
 
     destroyFSRResources();
+    destroyFSR2Resources();
     destroyPerFrameResources();
 
     zoneManager.reset();
@@ -937,6 +938,7 @@ void Renderer::applyMsaaChange() {
     if (selCirclePipeline) { vkDestroyPipeline(device, selCirclePipeline, nullptr); selCirclePipeline = VK_NULL_HANDLE; }
     if (overlayPipeline) { vkDestroyPipeline(device, overlayPipeline, nullptr); overlayPipeline = VK_NULL_HANDLE; }
     if (fsr_.sceneFramebuffer) destroyFSRResources();  // Will be lazily recreated in beginFrame()
+    if (fsr2_.sceneFramebuffer) destroyFSR2Resources();
 
     // Reinitialize ImGui Vulkan backend with new MSAA sample count
     ImGui_ImplVulkan_Shutdown();
@@ -972,10 +974,23 @@ void Renderer::beginFrame() {
         fsr_.needsRecreate = false;
         if (!fsr_.enabled) LOG_INFO("FSR: disabled");
     }
-    if (fsr_.enabled && !fsr_.sceneFramebuffer) {
+    if (fsr_.enabled && !fsr2_.enabled && !fsr_.sceneFramebuffer) {
         if (!initFSRResources()) {
             LOG_ERROR("FSR: initialization failed, disabling");
             fsr_.enabled = false;
+        }
+    }
+
+    // FSR 2.2 resource management
+    if (fsr2_.needsRecreate && fsr2_.sceneFramebuffer) {
+        destroyFSR2Resources();
+        fsr2_.needsRecreate = false;
+        if (!fsr2_.enabled) LOG_INFO("FSR2: disabled");
+    }
+    if (fsr2_.enabled && !fsr2_.sceneFramebuffer) {
+        if (!initFSR2Resources()) {
+            LOG_ERROR("FSR2: initialization failed, disabling");
+            fsr2_.enabled = false;
         }
     }
 
@@ -987,9 +1002,13 @@ void Renderer::beginFrame() {
             waterRenderer->recreatePipelines();
         }
         // Recreate FSR resources for new swapchain dimensions
-        if (fsr_.enabled) {
+        if (fsr_.enabled && !fsr2_.enabled) {
             destroyFSRResources();
             initFSRResources();
+        }
+        if (fsr2_.enabled) {
+            destroyFSR2Resources();
+            initFSR2Resources();
         }
     }
 
@@ -998,6 +1017,14 @@ void Renderer::beginFrame() {
     if (currentCmd == VK_NULL_HANDLE) {
         // Swapchain out of date, will retry next frame
         return;
+    }
+
+    // Apply FSR2 jitter to camera projection before UBO upload
+    if (fsr2_.enabled && fsr2_.sceneFramebuffer && camera) {
+        // Halton(2,3) sequence for sub-pixel jitter, scaled to internal resolution
+        float jx = (halton(fsr2_.frameIndex + 1, 2) - 0.5f) * 2.0f / static_cast<float>(fsr2_.internalWidth);
+        float jy = (halton(fsr2_.frameIndex + 1, 3) - 0.5f) * 2.0f / static_cast<float>(fsr2_.internalHeight);
+        camera->setJitter(jx, jy);
     }
 
     // Update per-frame UBO with current camera/lighting state
@@ -1044,7 +1071,10 @@ void Renderer::beginFrame() {
     rpInfo.renderPass = vkCtx->getImGuiRenderPass();
 
     VkExtent2D renderExtent;
-    if (fsr_.enabled && fsr_.sceneFramebuffer) {
+    if (fsr2_.enabled && fsr2_.sceneFramebuffer) {
+        rpInfo.framebuffer = fsr2_.sceneFramebuffer;
+        renderExtent = { fsr2_.internalWidth, fsr2_.internalHeight };
+    } else if (fsr_.enabled && fsr_.sceneFramebuffer) {
         rpInfo.framebuffer = fsr_.sceneFramebuffer;
         renderExtent = { fsr_.internalWidth, fsr_.internalHeight };
     } else {
@@ -1097,7 +1127,60 @@ void Renderer::beginFrame() {
 void Renderer::endFrame() {
     if (!vkCtx || currentCmd == VK_NULL_HANDLE) return;
 
-    if (fsr_.enabled && fsr_.sceneFramebuffer) {
+    if (fsr2_.enabled && fsr2_.sceneFramebuffer) {
+        // End the off-screen scene render pass
+        vkCmdEndRenderPass(currentCmd);
+
+        // Compute passes: motion vectors → temporal accumulation
+        dispatchMotionVectors();
+        dispatchTemporalAccumulate();
+
+        // Transition history output: GENERAL → SHADER_READ_ONLY for sharpen pass
+        transitionImageLayout(currentCmd, fsr2_.history[fsr2_.currentHistory].image,
+            VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+        // Begin swapchain render pass at full resolution for sharpening + ImGui
+        VkRenderPassBeginInfo rpInfo{};
+        rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        rpInfo.renderPass = vkCtx->getImGuiRenderPass();
+        rpInfo.framebuffer = vkCtx->getSwapchainFramebuffers()[currentImageIndex];
+        rpInfo.renderArea.offset = {0, 0};
+        rpInfo.renderArea.extent = vkCtx->getSwapchainExtent();
+
+        bool msaaOn = (vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT);
+        VkClearValue clearValues[4]{};
+        clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        clearValues[1].depthStencil = {1.0f, 0};
+        clearValues[2].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        clearValues[3].depthStencil = {1.0f, 0};
+        rpInfo.clearValueCount = msaaOn ? (vkCtx->getDepthResolveImageView() ? 4u : 3u) : 2u;
+        rpInfo.pClearValues = clearValues;
+
+        vkCmdBeginRenderPass(currentCmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        VkExtent2D ext = vkCtx->getSwapchainExtent();
+        VkViewport vp{};
+        vp.width = static_cast<float>(ext.width);
+        vp.height = static_cast<float>(ext.height);
+        vp.maxDepth = 1.0f;
+        vkCmdSetViewport(currentCmd, 0, 1, &vp);
+        VkRect2D sc{};
+        sc.extent = ext;
+        vkCmdSetScissor(currentCmd, 0, 1, &sc);
+
+        // Draw RCAS sharpening from accumulated history buffer
+        renderFSR2Sharpen();
+
+        // Store current VP for next frame's motion vectors, advance frame
+        fsr2_.prevViewProjection = camera->getUnjitteredViewProjectionMatrix();
+        fsr2_.prevJitter = camera->getJitter();
+        camera->clearJitter();
+        fsr2_.currentHistory = 1 - fsr2_.currentHistory;
+        fsr2_.frameIndex++;
+
+    } else if (fsr_.enabled && fsr_.sceneFramebuffer) {
         // End the off-screen scene render pass
         vkCmdEndRenderPass(currentCmd);
 
@@ -1149,7 +1232,7 @@ void Renderer::endFrame() {
     }
 
     // ImGui rendering — must respect subpass contents mode
-    if (!fsr_.enabled && parallelRecordingEnabled_) {
+    if (!fsr_.enabled && !fsr2_.enabled && parallelRecordingEnabled_) {
         // Scene pass was begun with VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS,
         // so ImGui must be recorded into a secondary command buffer.
         VkCommandBuffer imguiCmd = beginSecondary(SEC_IMGUI);
@@ -3572,19 +3655,576 @@ void Renderer::setFSREnabled(bool enabled) {
 
 void Renderer::setFSRQuality(float scaleFactor) {
     scaleFactor = glm::clamp(scaleFactor, 0.5f, 1.0f);
-    if (fsr_.scaleFactor == scaleFactor) return;
     fsr_.scaleFactor = scaleFactor;
+    fsr2_.scaleFactor = scaleFactor;
     // Don't destroy/recreate mid-frame — mark for lazy recreation in next beginFrame()
     if (fsr_.enabled && fsr_.sceneFramebuffer) {
         fsr_.needsRecreate = true;
+    }
+    if (fsr2_.enabled && fsr2_.sceneFramebuffer) {
+        fsr2_.needsRecreate = true;
+        fsr2_.needsHistoryReset = true;
     }
 }
 
 void Renderer::setFSRSharpness(float sharpness) {
     fsr_.sharpness = glm::clamp(sharpness, 0.0f, 2.0f);
+    fsr2_.sharpness = glm::clamp(sharpness, 0.0f, 2.0f);
 }
 
-// ========================= End FSR =========================
+// ========================= End FSR 1.0 =========================
+
+// ========================= FSR 2.2 Temporal Upscaling =========================
+
+float Renderer::halton(uint32_t index, uint32_t base) {
+    float f = 1.0f;
+    float r = 0.0f;
+    uint32_t current = index;
+    while (current > 0) {
+        f /= static_cast<float>(base);
+        r += f * static_cast<float>(current % base);
+        current /= base;
+    }
+    return r;
+}
+
+bool Renderer::initFSR2Resources() {
+    if (!vkCtx) return false;
+
+    VkDevice device = vkCtx->getDevice();
+    VmaAllocator alloc = vkCtx->getAllocator();
+    VkExtent2D swapExtent = vkCtx->getSwapchainExtent();
+
+    fsr2_.internalWidth = static_cast<uint32_t>(swapExtent.width * fsr2_.scaleFactor);
+    fsr2_.internalHeight = static_cast<uint32_t>(swapExtent.height * fsr2_.scaleFactor);
+    fsr2_.internalWidth = (fsr2_.internalWidth + 1) & ~1u;
+    fsr2_.internalHeight = (fsr2_.internalHeight + 1) & ~1u;
+
+    LOG_INFO("FSR2: initializing at ", fsr2_.internalWidth, "x", fsr2_.internalHeight,
+             " -> ", swapExtent.width, "x", swapExtent.height,
+             " (scale=", fsr2_.scaleFactor, ")");
+
+    VkFormat colorFmt = vkCtx->getSwapchainFormat();
+    VkFormat depthFmt = vkCtx->getDepthFormat();
+
+    // Scene color (internal resolution, 1x — FSR2 replaces MSAA)
+    fsr2_.sceneColor = createImage(device, alloc, fsr2_.internalWidth, fsr2_.internalHeight,
+        colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    if (!fsr2_.sceneColor.image) { LOG_ERROR("FSR2: failed to create scene color"); return false; }
+
+    // Scene depth (internal resolution, 1x, sampled for motion vectors)
+    fsr2_.sceneDepth = createImage(device, alloc, fsr2_.internalWidth, fsr2_.internalHeight,
+        depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    if (!fsr2_.sceneDepth.image) { LOG_ERROR("FSR2: failed to create scene depth"); destroyFSR2Resources(); return false; }
+
+    // Motion vector buffer (internal resolution)
+    fsr2_.motionVectors = createImage(device, alloc, fsr2_.internalWidth, fsr2_.internalHeight,
+        VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    if (!fsr2_.motionVectors.image) { LOG_ERROR("FSR2: failed to create motion vectors"); destroyFSR2Resources(); return false; }
+
+    // History buffers (display resolution, ping-pong)
+    for (int i = 0; i < 2; i++) {
+        fsr2_.history[i] = createImage(device, alloc, swapExtent.width, swapExtent.height,
+            VK_FORMAT_R16G16B16A16_SFLOAT,
+            VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        if (!fsr2_.history[i].image) { LOG_ERROR("FSR2: failed to create history buffer ", i); destroyFSR2Resources(); return false; }
+    }
+
+    // Scene framebuffer (non-MSAA: [color, depth])
+    // Must use the same render pass as the swapchain — which must be non-MSAA when FSR2 is active
+    VkImageView fbAttachments[2] = { fsr2_.sceneColor.imageView, fsr2_.sceneDepth.imageView };
+    VkFramebufferCreateInfo fbInfo{};
+    fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    fbInfo.renderPass = vkCtx->getImGuiRenderPass();
+    fbInfo.attachmentCount = 2;
+    fbInfo.pAttachments = fbAttachments;
+    fbInfo.width = fsr2_.internalWidth;
+    fbInfo.height = fsr2_.internalHeight;
+    fbInfo.layers = 1;
+    if (vkCreateFramebuffer(device, &fbInfo, nullptr, &fsr2_.sceneFramebuffer) != VK_SUCCESS) {
+        LOG_ERROR("FSR2: failed to create scene framebuffer");
+        destroyFSR2Resources();
+        return false;
+    }
+
+    // Samplers
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    vkCreateSampler(device, &samplerInfo, nullptr, &fsr2_.linearSampler);
+
+    samplerInfo.minFilter = VK_FILTER_NEAREST;
+    samplerInfo.magFilter = VK_FILTER_NEAREST;
+    vkCreateSampler(device, &samplerInfo, nullptr, &fsr2_.nearestSampler);
+
+    // --- Motion Vector Compute Pipeline ---
+    {
+        // Descriptor set layout: binding 0 = depth (sampler), binding 1 = motion vectors (storage image)
+        VkDescriptorSetLayoutBinding bindings[2] = {};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[1].binding = 1;
+        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        bindings[1].descriptorCount = 1;
+        bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        layoutInfo.bindingCount = 2;
+        layoutInfo.pBindings = bindings;
+        vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &fsr2_.motionVecDescSetLayout);
+
+        VkPushConstantRange pc{};
+        pc.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        pc.offset = 0;
+        pc.size = 2 * sizeof(glm::mat4) + 2 * sizeof(glm::vec4);  // 160 bytes
+
+        VkPipelineLayoutCreateInfo plCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        plCI.setLayoutCount = 1;
+        plCI.pSetLayouts = &fsr2_.motionVecDescSetLayout;
+        plCI.pushConstantRangeCount = 1;
+        plCI.pPushConstantRanges = &pc;
+        vkCreatePipelineLayout(device, &plCI, nullptr, &fsr2_.motionVecPipelineLayout);
+
+        VkShaderModule compMod;
+        if (!compMod.loadFromFile(device, "assets/shaders/fsr2_motion.comp.spv")) {
+            LOG_ERROR("FSR2: failed to load motion vector compute shader");
+            destroyFSR2Resources();
+            return false;
+        }
+
+        VkComputePipelineCreateInfo cpCI{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+        cpCI.stage = compMod.stageInfo(VK_SHADER_STAGE_COMPUTE_BIT);
+        cpCI.layout = fsr2_.motionVecPipelineLayout;
+        if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &cpCI, nullptr, &fsr2_.motionVecPipeline) != VK_SUCCESS) {
+            LOG_ERROR("FSR2: failed to create motion vector pipeline");
+            compMod.destroy();
+            destroyFSR2Resources();
+            return false;
+        }
+        compMod.destroy();
+
+        // Descriptor pool + set
+        VkDescriptorPoolSize poolSizes[2] = {};
+        poolSizes[0] = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        poolSizes[1] = {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1};
+        VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        poolInfo.maxSets = 1;
+        poolInfo.poolSizeCount = 2;
+        poolInfo.pPoolSizes = poolSizes;
+        vkCreateDescriptorPool(device, &poolInfo, nullptr, &fsr2_.motionVecDescPool);
+
+        VkDescriptorSetAllocateInfo dsAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        dsAI.descriptorPool = fsr2_.motionVecDescPool;
+        dsAI.descriptorSetCount = 1;
+        dsAI.pSetLayouts = &fsr2_.motionVecDescSetLayout;
+        vkAllocateDescriptorSets(device, &dsAI, &fsr2_.motionVecDescSet);
+
+        // Write descriptors
+        VkDescriptorImageInfo depthImgInfo{};
+        depthImgInfo.sampler = fsr2_.nearestSampler;
+        depthImgInfo.imageView = fsr2_.sceneDepth.imageView;
+        depthImgInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+        VkDescriptorImageInfo mvImgInfo{};
+        mvImgInfo.imageView = fsr2_.motionVectors.imageView;
+        mvImgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+        VkWriteDescriptorSet writes[2] = {};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = fsr2_.motionVecDescSet;
+        writes[0].dstBinding = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[0].pImageInfo = &depthImgInfo;
+
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = fsr2_.motionVecDescSet;
+        writes[1].dstBinding = 1;
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        writes[1].pImageInfo = &mvImgInfo;
+
+        vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+    }
+
+    // --- Temporal Accumulation Compute Pipeline ---
+    {
+        // bindings: 0=sceneColor, 1=depth, 2=motionVectors, 3=historyInput, 4=historyOutput
+        VkDescriptorSetLayoutBinding bindings[5] = {};
+        for (int i = 0; i < 4; i++) {
+            bindings[i].binding = i;
+            bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            bindings[i].descriptorCount = 1;
+            bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        }
+        bindings[4].binding = 4;
+        bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        bindings[4].descriptorCount = 1;
+        bindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        layoutInfo.bindingCount = 5;
+        layoutInfo.pBindings = bindings;
+        vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &fsr2_.accumulateDescSetLayout);
+
+        VkPushConstantRange pc{};
+        pc.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        pc.offset = 0;
+        pc.size = 4 * sizeof(glm::vec4);  // 64 bytes
+
+        VkPipelineLayoutCreateInfo plCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        plCI.setLayoutCount = 1;
+        plCI.pSetLayouts = &fsr2_.accumulateDescSetLayout;
+        plCI.pushConstantRangeCount = 1;
+        plCI.pPushConstantRanges = &pc;
+        vkCreatePipelineLayout(device, &plCI, nullptr, &fsr2_.accumulatePipelineLayout);
+
+        VkShaderModule compMod;
+        if (!compMod.loadFromFile(device, "assets/shaders/fsr2_accumulate.comp.spv")) {
+            LOG_ERROR("FSR2: failed to load accumulation compute shader");
+            destroyFSR2Resources();
+            return false;
+        }
+
+        VkComputePipelineCreateInfo cpCI{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+        cpCI.stage = compMod.stageInfo(VK_SHADER_STAGE_COMPUTE_BIT);
+        cpCI.layout = fsr2_.accumulatePipelineLayout;
+        if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &cpCI, nullptr, &fsr2_.accumulatePipeline) != VK_SUCCESS) {
+            LOG_ERROR("FSR2: failed to create accumulation pipeline");
+            compMod.destroy();
+            destroyFSR2Resources();
+            return false;
+        }
+        compMod.destroy();
+
+        // Descriptor pool: 2 sets (ping-pong), each with 4 samplers + 1 storage image
+        VkDescriptorPoolSize poolSizes[2] = {};
+        poolSizes[0] = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8};
+        poolSizes[1] = {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2};
+        VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        poolInfo.maxSets = 2;
+        poolInfo.poolSizeCount = 2;
+        poolInfo.pPoolSizes = poolSizes;
+        vkCreateDescriptorPool(device, &poolInfo, nullptr, &fsr2_.accumulateDescPool);
+
+        // Allocate 2 descriptor sets (one per ping-pong direction)
+        VkDescriptorSetLayout layouts[2] = { fsr2_.accumulateDescSetLayout, fsr2_.accumulateDescSetLayout };
+        VkDescriptorSetAllocateInfo dsAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        dsAI.descriptorPool = fsr2_.accumulateDescPool;
+        dsAI.descriptorSetCount = 2;
+        dsAI.pSetLayouts = layouts;
+        vkAllocateDescriptorSets(device, &dsAI, fsr2_.accumulateDescSets);
+
+        // Write descriptors for both ping-pong sets
+        for (int pp = 0; pp < 2; pp++) {
+            int inputHistory = 1 - pp;   // Read from the other
+            int outputHistory = pp;       // Write to this one
+
+            VkDescriptorImageInfo colorInfo{fsr2_.linearSampler, fsr2_.sceneColor.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkDescriptorImageInfo depthInfo{fsr2_.nearestSampler, fsr2_.sceneDepth.imageView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+            VkDescriptorImageInfo mvInfo{fsr2_.nearestSampler, fsr2_.motionVectors.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkDescriptorImageInfo histInInfo{fsr2_.linearSampler, fsr2_.history[inputHistory].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkDescriptorImageInfo histOutInfo{VK_NULL_HANDLE, fsr2_.history[outputHistory].imageView, VK_IMAGE_LAYOUT_GENERAL};
+
+            VkWriteDescriptorSet writes[5] = {};
+            for (int w = 0; w < 5; w++) {
+                writes[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writes[w].dstSet = fsr2_.accumulateDescSets[pp];
+                writes[w].dstBinding = w;
+                writes[w].descriptorCount = 1;
+            }
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; writes[0].pImageInfo = &colorInfo;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; writes[1].pImageInfo = &depthInfo;
+            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; writes[2].pImageInfo = &mvInfo;
+            writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; writes[3].pImageInfo = &histInInfo;
+            writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;          writes[4].pImageInfo = &histOutInfo;
+
+            vkUpdateDescriptorSets(device, 5, writes, 0, nullptr);
+        }
+    }
+
+    // --- RCAS Sharpening Pipeline (fragment shader, fullscreen pass) ---
+    {
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = 0;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        binding.descriptorCount = 1;
+        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        layoutInfo.bindingCount = 1;
+        layoutInfo.pBindings = &binding;
+        vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &fsr2_.sharpenDescSetLayout);
+
+        VkPushConstantRange pc{};
+        pc.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        pc.offset = 0;
+        pc.size = sizeof(glm::vec4);
+
+        VkPipelineLayoutCreateInfo plCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        plCI.setLayoutCount = 1;
+        plCI.pSetLayouts = &fsr2_.sharpenDescSetLayout;
+        plCI.pushConstantRangeCount = 1;
+        plCI.pPushConstantRanges = &pc;
+        vkCreatePipelineLayout(device, &plCI, nullptr, &fsr2_.sharpenPipelineLayout);
+
+        VkShaderModule vertMod, fragMod;
+        if (!vertMod.loadFromFile(device, "assets/shaders/postprocess.vert.spv") ||
+            !fragMod.loadFromFile(device, "assets/shaders/fsr2_sharpen.frag.spv")) {
+            LOG_ERROR("FSR2: failed to load sharpen shaders");
+            destroyFSR2Resources();
+            return false;
+        }
+
+        fsr2_.sharpenPipeline = PipelineBuilder()
+            .setShaders(vertMod.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                        fragMod.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+            .setVertexInput({}, {})
+            .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setNoDepthTest()
+            .setColorBlendAttachment(PipelineBuilder::blendDisabled())
+            .setMultisample(VK_SAMPLE_COUNT_1_BIT)
+            .setLayout(fsr2_.sharpenPipelineLayout)
+            .setRenderPass(vkCtx->getImGuiRenderPass())
+            .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+            .build(device);
+
+        vertMod.destroy();
+        fragMod.destroy();
+
+        if (!fsr2_.sharpenPipeline) {
+            LOG_ERROR("FSR2: failed to create sharpen pipeline");
+            destroyFSR2Resources();
+            return false;
+        }
+
+        // Descriptor pool + set for sharpen pass (reads from history output)
+        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
+        VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        poolInfo.maxSets = 1;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+        vkCreateDescriptorPool(device, &poolInfo, nullptr, &fsr2_.sharpenDescPool);
+
+        VkDescriptorSetAllocateInfo dsAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        dsAI.descriptorPool = fsr2_.sharpenDescPool;
+        dsAI.descriptorSetCount = 1;
+        dsAI.pSetLayouts = &fsr2_.sharpenDescSetLayout;
+        vkAllocateDescriptorSets(device, &dsAI, &fsr2_.sharpenDescSet);
+        // Descriptor updated dynamically each frame to point at the correct history buffer
+    }
+
+    fsr2_.needsHistoryReset = true;
+    fsr2_.frameIndex = 0;
+    LOG_INFO("FSR2: initialized successfully");
+    return true;
+}
+
+void Renderer::destroyFSR2Resources() {
+    if (!vkCtx) return;
+    VkDevice device = vkCtx->getDevice();
+    VmaAllocator alloc = vkCtx->getAllocator();
+
+    vkDeviceWaitIdle(device);
+
+    if (fsr2_.sharpenPipeline) { vkDestroyPipeline(device, fsr2_.sharpenPipeline, nullptr); fsr2_.sharpenPipeline = VK_NULL_HANDLE; }
+    if (fsr2_.sharpenPipelineLayout) { vkDestroyPipelineLayout(device, fsr2_.sharpenPipelineLayout, nullptr); fsr2_.sharpenPipelineLayout = VK_NULL_HANDLE; }
+    if (fsr2_.sharpenDescPool) { vkDestroyDescriptorPool(device, fsr2_.sharpenDescPool, nullptr); fsr2_.sharpenDescPool = VK_NULL_HANDLE; fsr2_.sharpenDescSet = VK_NULL_HANDLE; }
+    if (fsr2_.sharpenDescSetLayout) { vkDestroyDescriptorSetLayout(device, fsr2_.sharpenDescSetLayout, nullptr); fsr2_.sharpenDescSetLayout = VK_NULL_HANDLE; }
+
+    if (fsr2_.accumulatePipeline) { vkDestroyPipeline(device, fsr2_.accumulatePipeline, nullptr); fsr2_.accumulatePipeline = VK_NULL_HANDLE; }
+    if (fsr2_.accumulatePipelineLayout) { vkDestroyPipelineLayout(device, fsr2_.accumulatePipelineLayout, nullptr); fsr2_.accumulatePipelineLayout = VK_NULL_HANDLE; }
+    if (fsr2_.accumulateDescPool) { vkDestroyDescriptorPool(device, fsr2_.accumulateDescPool, nullptr); fsr2_.accumulateDescPool = VK_NULL_HANDLE; fsr2_.accumulateDescSets[0] = fsr2_.accumulateDescSets[1] = VK_NULL_HANDLE; }
+    if (fsr2_.accumulateDescSetLayout) { vkDestroyDescriptorSetLayout(device, fsr2_.accumulateDescSetLayout, nullptr); fsr2_.accumulateDescSetLayout = VK_NULL_HANDLE; }
+
+    if (fsr2_.motionVecPipeline) { vkDestroyPipeline(device, fsr2_.motionVecPipeline, nullptr); fsr2_.motionVecPipeline = VK_NULL_HANDLE; }
+    if (fsr2_.motionVecPipelineLayout) { vkDestroyPipelineLayout(device, fsr2_.motionVecPipelineLayout, nullptr); fsr2_.motionVecPipelineLayout = VK_NULL_HANDLE; }
+    if (fsr2_.motionVecDescPool) { vkDestroyDescriptorPool(device, fsr2_.motionVecDescPool, nullptr); fsr2_.motionVecDescPool = VK_NULL_HANDLE; fsr2_.motionVecDescSet = VK_NULL_HANDLE; }
+    if (fsr2_.motionVecDescSetLayout) { vkDestroyDescriptorSetLayout(device, fsr2_.motionVecDescSetLayout, nullptr); fsr2_.motionVecDescSetLayout = VK_NULL_HANDLE; }
+
+    if (fsr2_.sceneFramebuffer) { vkDestroyFramebuffer(device, fsr2_.sceneFramebuffer, nullptr); fsr2_.sceneFramebuffer = VK_NULL_HANDLE; }
+    if (fsr2_.linearSampler) { vkDestroySampler(device, fsr2_.linearSampler, nullptr); fsr2_.linearSampler = VK_NULL_HANDLE; }
+    if (fsr2_.nearestSampler) { vkDestroySampler(device, fsr2_.nearestSampler, nullptr); fsr2_.nearestSampler = VK_NULL_HANDLE; }
+
+    destroyImage(device, alloc, fsr2_.motionVectors);
+    for (int i = 0; i < 2; i++) destroyImage(device, alloc, fsr2_.history[i]);
+    destroyImage(device, alloc, fsr2_.sceneDepth);
+    destroyImage(device, alloc, fsr2_.sceneColor);
+
+    fsr2_.internalWidth = 0;
+    fsr2_.internalHeight = 0;
+}
+
+void Renderer::dispatchMotionVectors() {
+    if (!fsr2_.motionVecPipeline || currentCmd == VK_NULL_HANDLE) return;
+
+    // Transition depth: DEPTH_STENCIL_ATTACHMENT → DEPTH_STENCIL_READ_ONLY
+    transitionImageLayout(currentCmd, fsr2_.sceneDepth.image,
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+    // Transition motion vectors: UNDEFINED → GENERAL
+    transitionImageLayout(currentCmd, fsr2_.motionVectors.image,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+    vkCmdBindPipeline(currentCmd, VK_PIPELINE_BIND_POINT_COMPUTE, fsr2_.motionVecPipeline);
+    vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+        fsr2_.motionVecPipelineLayout, 0, 1, &fsr2_.motionVecDescSet, 0, nullptr);
+
+    // Push constants: invViewProj, prevViewProj, resolution, jitterOffset
+    struct {
+        glm::mat4 invViewProj;
+        glm::mat4 prevViewProj;
+        glm::vec4 resolution;
+        glm::vec4 jitterOffset;
+    } pc;
+
+    glm::mat4 currentVP = camera->getProjectionMatrix() * camera->getViewMatrix();
+    pc.invViewProj = glm::inverse(currentVP);
+    pc.prevViewProj = fsr2_.prevViewProjection;
+    pc.resolution = glm::vec4(
+        static_cast<float>(fsr2_.internalWidth),
+        static_cast<float>(fsr2_.internalHeight),
+        1.0f / fsr2_.internalWidth,
+        1.0f / fsr2_.internalHeight);
+    glm::vec2 jitter = camera->getJitter();
+    pc.jitterOffset = glm::vec4(jitter.x, jitter.y, fsr2_.prevJitter.x, fsr2_.prevJitter.y);
+
+    vkCmdPushConstants(currentCmd, fsr2_.motionVecPipelineLayout,
+        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
+
+    uint32_t gx = (fsr2_.internalWidth + 7) / 8;
+    uint32_t gy = (fsr2_.internalHeight + 7) / 8;
+    vkCmdDispatch(currentCmd, gx, gy, 1);
+
+    // Transition motion vectors: GENERAL → SHADER_READ_ONLY for accumulation
+    transitionImageLayout(currentCmd, fsr2_.motionVectors.image,
+        VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+}
+
+void Renderer::dispatchTemporalAccumulate() {
+    if (!fsr2_.accumulatePipeline || currentCmd == VK_NULL_HANDLE) return;
+
+    VkExtent2D swapExtent = vkCtx->getSwapchainExtent();
+    uint32_t outputIdx = fsr2_.currentHistory;
+    uint32_t inputIdx = 1 - outputIdx;
+
+    // Transition scene color: PRESENT_SRC_KHR → SHADER_READ_ONLY
+    transitionImageLayout(currentCmd, fsr2_.sceneColor.image,
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+    // Transition history input: GENERAL/UNDEFINED → SHADER_READ_ONLY
+    transitionImageLayout(currentCmd, fsr2_.history[inputIdx].image,
+        fsr2_.needsHistoryReset ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+    // Transition history output: UNDEFINED → GENERAL
+    transitionImageLayout(currentCmd, fsr2_.history[outputIdx].image,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+    vkCmdBindPipeline(currentCmd, VK_PIPELINE_BIND_POINT_COMPUTE, fsr2_.accumulatePipeline);
+    vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+        fsr2_.accumulatePipelineLayout, 0, 1, &fsr2_.accumulateDescSets[outputIdx], 0, nullptr);
+
+    // Push constants
+    struct {
+        glm::vec4 internalSize;
+        glm::vec4 displaySize;
+        glm::vec4 jitterOffset;
+        glm::vec4 params;
+    } pc;
+
+    pc.internalSize = glm::vec4(
+        static_cast<float>(fsr2_.internalWidth), static_cast<float>(fsr2_.internalHeight),
+        1.0f / fsr2_.internalWidth, 1.0f / fsr2_.internalHeight);
+    pc.displaySize = glm::vec4(
+        static_cast<float>(swapExtent.width), static_cast<float>(swapExtent.height),
+        1.0f / swapExtent.width, 1.0f / swapExtent.height);
+    glm::vec2 jitter = camera->getJitter();
+    pc.jitterOffset = glm::vec4(jitter.x, jitter.y, 0.0f, 0.0f);
+    pc.params = glm::vec4(fsr2_.needsHistoryReset ? 1.0f : 0.0f, fsr2_.sharpness, 0.0f, 0.0f);
+
+    vkCmdPushConstants(currentCmd, fsr2_.accumulatePipelineLayout,
+        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
+
+    uint32_t gx = (swapExtent.width + 7) / 8;
+    uint32_t gy = (swapExtent.height + 7) / 8;
+    vkCmdDispatch(currentCmd, gx, gy, 1);
+
+    fsr2_.needsHistoryReset = false;
+}
+
+void Renderer::renderFSR2Sharpen() {
+    if (!fsr2_.sharpenPipeline || currentCmd == VK_NULL_HANDLE) return;
+
+    VkExtent2D ext = vkCtx->getSwapchainExtent();
+    uint32_t outputIdx = fsr2_.currentHistory;
+
+    // Update sharpen descriptor to point at current history output
+    VkDescriptorImageInfo imgInfo{};
+    imgInfo.sampler = fsr2_.linearSampler;
+    imgInfo.imageView = fsr2_.history[outputIdx].imageView;
+    imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    write.dstSet = fsr2_.sharpenDescSet;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &imgInfo;
+    vkUpdateDescriptorSets(vkCtx->getDevice(), 1, &write, 0, nullptr);
+
+    vkCmdBindPipeline(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fsr2_.sharpenPipeline);
+    vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        fsr2_.sharpenPipelineLayout, 0, 1, &fsr2_.sharpenDescSet, 0, nullptr);
+
+    glm::vec4 params(1.0f / ext.width, 1.0f / ext.height, fsr2_.sharpness, 0.0f);
+    vkCmdPushConstants(currentCmd, fsr2_.sharpenPipelineLayout,
+        VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(glm::vec4), &params);
+
+    vkCmdDraw(currentCmd, 3, 1, 0, 0);
+}
+
+void Renderer::setFSR2Enabled(bool enabled) {
+    if (fsr2_.enabled == enabled) return;
+    fsr2_.enabled = enabled;
+
+    if (enabled) {
+        // FSR2 replaces both FSR1 and MSAA
+        if (fsr_.enabled) {
+            fsr_.enabled = false;
+            fsr_.needsRecreate = true;
+        }
+        // Use FSR1's scale factor and sharpness as defaults
+        fsr2_.scaleFactor = fsr_.scaleFactor;
+        fsr2_.sharpness = fsr_.sharpness;
+        fsr2_.needsHistoryReset = true;
+    } else {
+        fsr2_.needsRecreate = true;
+        if (camera) camera->clearJitter();
+    }
+}
+
+// ========================= End FSR 2.2 =========================
 
 void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     (void)world;
