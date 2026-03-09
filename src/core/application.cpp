@@ -8152,15 +8152,17 @@ void Application::despawnOnlineGameObject(uint64_t guid) {
 void Application::loadQuestMarkerModels() {
     if (!assetManager || !renderer) return;
 
-    // Quest markers in WoW 3.3.5a are billboard sprites (BLP textures), not M2 models
-    // Load the BLP textures for quest markers
-    LOG_INFO("Quest markers will be rendered as billboard sprites using BLP textures:");
-    LOG_INFO("  - Available: Interface\\GossipFrame\\AvailableQuestIcon.blp");
-    LOG_INFO("  - Turn-in: Interface\\GossipFrame\\ActiveQuestIcon.blp");
-    LOG_INFO("  - Incomplete: Interface\\GossipFrame\\IncompleteQuestIcon.blp");
-
-    // TODO: Implement billboard sprite rendering for quest markers
-    // For now, the 2D ImGui markers will continue to work
+    // Quest markers are billboard sprites; the renderer's QuestMarkerRenderer handles
+    // texture loading and pipeline setup during world initialization.
+    // Calling initialize() here is a no-op if already done; harmless if called early.
+    if (auto* qmr = renderer->getQuestMarkerRenderer()) {
+        if (auto* vkCtx = renderer->getVkContext()) {
+            VkDescriptorSetLayout pfl = renderer->getPerFrameSetLayout();
+            if (pfl != VK_NULL_HANDLE) {
+                qmr->initialize(vkCtx, pfl, assetManager.get());
+            }
+        }
+    }
 }
 
 void Application::updateQuestMarkers() {
