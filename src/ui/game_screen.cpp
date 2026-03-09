@@ -324,14 +324,28 @@ void GameScreen::render(game::GameHandler& gameHandler) {
             static const float fsrScales[] = { 0.77f, 0.67f, 0.59f, 0.50f };
             renderer->setFSRQuality(fsrScales[pendingFSRQuality]);
             renderer->setFSRSharpness(pendingFSRSharpness);
-            // FSR2 can stall on some drivers during world-load transitions.
-            // Defer persisted FSR2 activation until fully in world.
-            if (pendingUpscalingMode == 2 && gameHandler.getState() != game::WorldState::IN_WORLD) {
+            // Safety fallback: persisted FSR2 can still hang on some systems during startup.
+            // Require explicit opt-in for startup FSR2; otherwise fall back to FSR1.
+            const bool allowStartupFsr2 = (std::getenv("WOWEE_ALLOW_STARTUP_FSR2") != nullptr);
+            int effectiveMode = pendingUpscalingMode;
+            if (effectiveMode == 2 && !allowStartupFsr2) {
+                static bool warnedStartupFsr2Fallback = false;
+                if (!warnedStartupFsr2Fallback) {
+                    LOG_WARNING("Startup FSR2 is disabled by default for stability; falling back to FSR1. Set WOWEE_ALLOW_STARTUP_FSR2=1 to override.");
+                    warnedStartupFsr2Fallback = true;
+                }
+                effectiveMode = 1;
+                pendingUpscalingMode = 1;
+                pendingFSR = true;
+            }
+
+            // If explicitly enabled, still defer FSR2 until fully in-world.
+            if (effectiveMode == 2 && gameHandler.getState() != game::WorldState::IN_WORLD) {
                 renderer->setFSREnabled(false);
                 renderer->setFSR2Enabled(false);
             } else {
-                renderer->setFSREnabled(pendingUpscalingMode == 1);
-                renderer->setFSR2Enabled(pendingUpscalingMode == 2);
+                renderer->setFSREnabled(effectiveMode == 1);
+                renderer->setFSR2Enabled(effectiveMode == 2);
                 fsrSettingsApplied_ = true;
             }
         }
