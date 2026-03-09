@@ -1038,7 +1038,8 @@ void Renderer::beginFrame() {
                 ffxFsr2GetJitterOffset(&jitterX, &jitterY, static_cast<int32_t>(fsr2_.frameIndex % static_cast<uint32_t>(phaseCount)), phaseCount) == FFX_OK) {
                 float ndcJx = (2.0f * jitterX) / static_cast<float>(fsr2_.internalWidth);
                 float ndcJy = (2.0f * jitterY) / static_cast<float>(fsr2_.internalHeight);
-                camera->setJitter(ndcJx, ndcJy);
+                // Keep projection jitter and FSR dispatch jitter in sync.
+                camera->setJitter(fsr2_.jitterSign * ndcJx, fsr2_.jitterSign * ndcJy);
             } else {
                 camera->setJitter(0.0f, 0.0f);
             }
@@ -1046,7 +1047,7 @@ void Renderer::beginFrame() {
             const float jitterScale = 0.5f;
             float jx = (halton(fsr2_.frameIndex + 1, 2) - 0.5f) * 2.0f * jitterScale / static_cast<float>(fsr2_.internalWidth);
             float jy = (halton(fsr2_.frameIndex + 1, 3) - 0.5f) * 2.0f * jitterScale / static_cast<float>(fsr2_.internalHeight);
-            camera->setJitter(jx, jy);
+            camera->setJitter(fsr2_.jitterSign * jx, fsr2_.jitterSign * jy);
 #endif
         }
     }
@@ -4323,9 +4324,10 @@ void Renderer::dispatchAmdFsr2() {
         L"FSR2_Output", FFX_RESOURCE_STATE_UNORDERED_ACCESS);
 
     // Camera jitter is stored as NDC projection offsets; convert to render-pixel offsets.
+    // Do not apply jitterSign again here: it is already baked into camera jitter.
     glm::vec2 jitterNdc = camera->getJitter();
-    desc.jitterOffset.x = fsr2_.jitterSign * jitterNdc.x * 0.5f * static_cast<float>(fsr2_.internalWidth);
-    desc.jitterOffset.y = fsr2_.jitterSign * jitterNdc.y * 0.5f * static_cast<float>(fsr2_.internalHeight);
+    desc.jitterOffset.x = jitterNdc.x * 0.5f * static_cast<float>(fsr2_.internalWidth);
+    desc.jitterOffset.y = jitterNdc.y * 0.5f * static_cast<float>(fsr2_.internalHeight);
     desc.motionVectorScale.x = static_cast<float>(fsr2_.internalWidth) * fsr2_.motionVecScaleX;
     desc.motionVectorScale.y = static_cast<float>(fsr2_.internalHeight) * fsr2_.motionVecScaleY;
     desc.renderSize.width = fsr2_.internalWidth;
