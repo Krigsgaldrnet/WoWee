@@ -44,6 +44,14 @@ struct AmdFsr3RuntimeDispatchDesc {
     float cameraFar = 1000.0f;
     float cameraFovYRadians = 1.0f;
     bool reset = false;
+    uint32_t externalFlags = 0;
+    uint64_t colorMemoryHandle = 0;
+    uint64_t depthMemoryHandle = 0;
+    uint64_t motionVectorMemoryHandle = 0;
+    uint64_t outputMemoryHandle = 0;
+    uint64_t frameGenOutputMemoryHandle = 0;
+    uint64_t acquireSemaphoreHandle = 0;
+    uint64_t releaseSemaphoreHandle = 0;
 };
 
 class AmdFsr3Runtime {

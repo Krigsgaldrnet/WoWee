@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WOWEE_FSR3_WRAPPER_ABI_VERSION 1u
+#define WOWEE_FSR3_WRAPPER_ABI_VERSION 2u
 
 typedef void* WoweeFsr3WrapperContext;
 
@@ -50,12 +50,30 @@ typedef struct WoweeFsr3WrapperDispatchDesc {
     float cameraFar;
     float cameraFovYRadians;
     uint32_t reset;
+    uint32_t externalFlags;
+    uint64_t colorMemoryHandle;
+    uint64_t depthMemoryHandle;
+    uint64_t motionVectorMemoryHandle;
+    uint64_t outputMemoryHandle;
+    uint64_t frameGenOutputMemoryHandle;
+    uint64_t acquireSemaphoreHandle;
+    uint64_t releaseSemaphoreHandle;
 } WoweeFsr3WrapperDispatchDesc;
 
 enum {
     WOWEE_FSR3_WRAPPER_ENABLE_HDR_INPUT = 1u << 0,
     WOWEE_FSR3_WRAPPER_ENABLE_DEPTH_INVERTED = 1u << 1,
     WOWEE_FSR3_WRAPPER_ENABLE_FRAME_GENERATION = 1u << 2
+};
+
+enum {
+    WOWEE_FSR3_WRAPPER_EXTERNAL_COLOR_MEMORY = 1u << 0,
+    WOWEE_FSR3_WRAPPER_EXTERNAL_DEPTH_MEMORY = 1u << 1,
+    WOWEE_FSR3_WRAPPER_EXTERNAL_MOTION_MEMORY = 1u << 2,
+    WOWEE_FSR3_WRAPPER_EXTERNAL_OUTPUT_MEMORY = 1u << 3,
+    WOWEE_FSR3_WRAPPER_EXTERNAL_FRAMEGEN_OUTPUT_MEMORY = 1u << 4,
+    WOWEE_FSR3_WRAPPER_EXTERNAL_ACQUIRE_SEMAPHORE = 1u << 5,
+    WOWEE_FSR3_WRAPPER_EXTERNAL_RELEASE_SEMAPHORE = 1u << 6
 };
 
 uint32_t wowee_fsr3_wrapper_get_abi_version(void);

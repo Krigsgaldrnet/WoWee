@@ -72,6 +72,9 @@
 #include <unordered_set>
 #include <set>
 #include <future>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 namespace wowee {
 namespace rendering {
@@ -109,6 +112,29 @@ static int envIntOrDefault(const char* key, int defaultValue) {
     if (end == raw) return defaultValue;
     return static_cast<int>(n);
 }
+
+#if defined(_WIN32)
+static uint64_t exportImageMemoryHandleWin32(VkDevice device, PFN_vkGetDeviceProcAddr getDeviceProcAddr,
+                                             VmaAllocator allocator, const AllocatedImage& image) {
+    if (!device || !getDeviceProcAddr || !allocator || !image.allocation) return 0;
+    auto getMemHandle = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(
+        getDeviceProcAddr(device, "vkGetMemoryWin32HandleKHR"));
+    if (!getMemHandle) return 0;
+
+    VmaAllocationInfo allocInfo{};
+    vmaGetAllocationInfo(allocator, image.allocation, &allocInfo);
+    if (allocInfo.deviceMemory == VK_NULL_HANDLE) return 0;
+
+    VkMemoryGetWin32HandleInfoKHR handleInfo{};
+    handleInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
+    handleInfo.memory = allocInfo.deviceMemory;
+    handleInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+
+    HANDLE outHandle = nullptr;
+    if (getMemHandle(device, &handleInfo, &outHandle) != VK_SUCCESS || !outHandle) return 0;
+    return reinterpret_cast<uint64_t>(outHandle);
+}
+#endif
 
 static std::vector<std::string> parseEmoteCommands(const std::string& raw) {
     std::vector<std::string> out;
@@ -4488,6 +4514,53 @@ void Renderer::dispatchAmdFsr3Framegen() {
     fgDispatch.cameraFovYRadians = camera ? glm::radians(camera->getFovDegrees()) : 1.0f;
     fgDispatch.reset = fsr2_.needsHistoryReset;
 
+#if defined(_WIN32)
+    std::vector<HANDLE> exportedHandles;
+    auto trackHandle = [&](uint64_t h) {
+        if (!h) return;
+        HANDLE raw = reinterpret_cast<HANDLE>(h);
+        exportedHandles.push_back(raw);
+    };
+    auto cleanupExportedHandles = [&]() {
+        for (HANDLE h : exportedHandles) {
+            if (h) CloseHandle(h);
+        }
+        exportedHandles.clear();
+    };
+
+    fgDispatch.externalFlags = 0;
+    fgDispatch.colorMemoryHandle = exportImageMemoryHandleWin32(
+        device, vkGetDeviceProcAddr, alloc, fsr2_.sceneColor);
+    if (fgDispatch.colorMemoryHandle) {
+        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_COLOR_MEMORY;
+        trackHandle(fgDispatch.colorMemoryHandle);
+    }
+    fgDispatch.depthMemoryHandle = exportImageMemoryHandleWin32(
+        device, vkGetDeviceProcAddr, alloc, fsr2_.sceneDepth);
+    if (fgDispatch.depthMemoryHandle) {
+        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_DEPTH_MEMORY;
+        trackHandle(fgDispatch.depthMemoryHandle);
+    }
+    fgDispatch.motionVectorMemoryHandle = exportImageMemoryHandleWin32(
+        device, vkGetDeviceProcAddr, alloc, fsr2_.motionVectors);
+    if (fgDispatch.motionVectorMemoryHandle) {
+        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_MOTION_MEMORY;
+        trackHandle(fgDispatch.motionVectorMemoryHandle);
+    }
+    fgDispatch.outputMemoryHandle = exportImageMemoryHandleWin32(
+        device, vkGetDeviceProcAddr, alloc, fsr2_.history[fsr2_.currentHistory]);
+    if (fgDispatch.outputMemoryHandle) {
+        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_OUTPUT_MEMORY;
+        trackHandle(fgDispatch.outputMemoryHandle);
+    }
+    fgDispatch.frameGenOutputMemoryHandle = exportImageMemoryHandleWin32(
+        device, vkGetDeviceProcAddr, alloc, fsr2_.framegenOutput);
+    if (fgDispatch.frameGenOutputMemoryHandle) {
+        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_FRAMEGEN_OUTPUT_MEMORY;
+        trackHandle(fgDispatch.frameGenOutputMemoryHandle);
+    }
+#endif
+
     if (!fsr2_.amdFsr3Runtime->dispatchUpscale(fgDispatch)) {
         static bool warnedRuntimeDispatch = false;
         if (!warnedRuntimeDispatch) {
@@ -4497,6 +4570,9 @@ void Renderer::dispatchAmdFsr3Framegen() {
         fsr2_.amdFsr3RuntimeLastError = fsr2_.amdFsr3Runtime->lastError();
         fsr2_.amdFsr3FallbackCount++;
         fsr2_.amdFsr3FramegenRuntimeActive = false;
+#if defined(_WIN32)
+        cleanupExportedHandles();
+#endif
         return;
     }
     fsr2_.amdFsr3RuntimeLastError.clear();
@@ -4504,10 +4580,16 @@ void Renderer::dispatchAmdFsr3Framegen() {
 
     if (!fsr2_.amdFsr3FramegenEnabled) {
         fsr2_.amdFsr3FramegenRuntimeActive = false;
+#if defined(_WIN32)
+        cleanupExportedHandles();
+#endif
         return;
     }
     if (!fsr2_.amdFsr3Runtime->isFrameGenerationReady()) {
         fsr2_.amdFsr3FramegenRuntimeActive = false;
+#if defined(_WIN32)
+        cleanupExportedHandles();
+#endif
         return;
     }
     if (!fsr2_.amdFsr3Runtime->dispatchFrameGeneration(fgDispatch)) {
@@ -4519,12 +4601,18 @@ void Renderer::dispatchAmdFsr3Framegen() {
         fsr2_.amdFsr3RuntimeLastError = fsr2_.amdFsr3Runtime->lastError();
         fsr2_.amdFsr3FallbackCount++;
         fsr2_.amdFsr3FramegenRuntimeActive = false;
+#if defined(_WIN32)
+        cleanupExportedHandles();
+#endif
         return;
     }
     fsr2_.amdFsr3RuntimeLastError.clear();
     fsr2_.amdFsr3FramegenDispatchCount++;
     fsr2_.framegenOutputValid = true;
     fsr2_.amdFsr3FramegenRuntimeActive = true;
+#if defined(_WIN32)
+    cleanupExportedHandles();
+#endif
 #else
     fsr2_.amdFsr3FramegenRuntimeActive = false;
 #endif

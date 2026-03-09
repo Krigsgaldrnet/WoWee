@@ -218,6 +218,7 @@ make -j$(nproc)
       - Set to `0` to skip adapter/device preflight.
     - Bridge preflight also checks Vulkan Win32 interop funcs/extensions before enabling DX12 path.
   - Path B wrapper libraries must export the clean wrapper ABI (`include/rendering/amd_fsr3_wrapper_abi.h`):
+    - ABI version is currently `2` (dispatch includes external-memory/semaphore handle fields for bridge interop plumbing).
     - `wowee_fsr3_wrapper_get_abi_version`
     - `wowee_fsr3_wrapper_initialize`
     - `wowee_fsr3_wrapper_dispatch_upscale`

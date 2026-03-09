@@ -462,6 +462,14 @@ bool AmdFsr3Runtime::dispatchUpscale(const AmdFsr3RuntimeDispatchDesc& desc) {
         wrapperDesc.cameraFar = desc.cameraFar;
         wrapperDesc.cameraFovYRadians = desc.cameraFovYRadians;
         wrapperDesc.reset = desc.reset ? 1u : 0u;
+        wrapperDesc.externalFlags = desc.externalFlags;
+        wrapperDesc.colorMemoryHandle = desc.colorMemoryHandle;
+        wrapperDesc.depthMemoryHandle = desc.depthMemoryHandle;
+        wrapperDesc.motionVectorMemoryHandle = desc.motionVectorMemoryHandle;
+        wrapperDesc.outputMemoryHandle = desc.outputMemoryHandle;
+        wrapperDesc.frameGenOutputMemoryHandle = desc.frameGenOutputMemoryHandle;
+        wrapperDesc.acquireSemaphoreHandle = desc.acquireSemaphoreHandle;
+        wrapperDesc.releaseSemaphoreHandle = desc.releaseSemaphoreHandle;
         const bool ok = fns_->wrapperDispatchUpscale(static_cast<WoweeFsr3WrapperContext>(wrapperContext_), &wrapperDesc) == 0;
         if (!ok) {
             lastError_ = "wrapper upscale dispatch failed";
@@ -570,6 +578,14 @@ bool AmdFsr3Runtime::dispatchFrameGeneration(const AmdFsr3RuntimeDispatchDesc& d
         wrapperDesc.cameraFar = desc.cameraFar;
         wrapperDesc.cameraFovYRadians = desc.cameraFovYRadians;
         wrapperDesc.reset = desc.reset ? 1u : 0u;
+        wrapperDesc.externalFlags = desc.externalFlags;
+        wrapperDesc.colorMemoryHandle = desc.colorMemoryHandle;
+        wrapperDesc.depthMemoryHandle = desc.depthMemoryHandle;
+        wrapperDesc.motionVectorMemoryHandle = desc.motionVectorMemoryHandle;
+        wrapperDesc.outputMemoryHandle = desc.outputMemoryHandle;
+        wrapperDesc.frameGenOutputMemoryHandle = desc.frameGenOutputMemoryHandle;
+        wrapperDesc.acquireSemaphoreHandle = desc.acquireSemaphoreHandle;
+        wrapperDesc.releaseSemaphoreHandle = desc.releaseSemaphoreHandle;
         const bool ok = fns_->wrapperDispatchFramegen(static_cast<WoweeFsr3WrapperContext>(wrapperContext_), &wrapperDesc) == 0;
         if (!ok) {
             lastError_ = "wrapper frame generation dispatch failed";
