@@ -34,17 +34,21 @@ void main() {
     vec3 range = maxRGB - minRGB;
     vec3 rcpRange = 1.0 / (range + 0.001);
 
-    // Sharpening amount: inversely proportional to contrast
-    float luma = dot(center, vec3(0.299, 0.587, 0.114));
-    float lumaRange = max(range.r, max(range.g, range.b));
-    float w = clamp(1.0 - lumaRange * 2.0, 0.0, 1.0) * sharpness * 0.25;
+    // AMD FidelityFX RCAS-style weight computation:
+    // Compute per-channel sharpening weight from local contrast
+    vec3 rcpM = 1.0 / (4.0 * range + 0.001);
+    // Weight capped at sharpness, inversely proportional to contrast
+    float w = min(min(rcpM.r, min(rcpM.g, rcpM.b)), sharpness);
 
-    // Apply sharpening via unsharp mask
-    vec3 avg = (north + south + west + east) * 0.25;
-    vec3 sharpened = center + (center - avg) * w;
+    // Apply sharpening: negative lobe on neighbors
+    vec3 sharpened = (center * (1.0 + 4.0 * w) - (north + south + west + east) * w)
+                   / (1.0 + 4.0 * w - 4.0 * w);
+    // Simplified: center + w * (4*center - north - south - west - east)
+    sharpened = center + w * (4.0 * center - north - south - west - east);
 
-    // Clamp to prevent ringing artifacts
-    sharpened = clamp(sharpened, minRGB, maxRGB);
+    // Soft clamp: allow some overshoot for sharpness, prevent extreme ringing
+    vec3 overshoot = 0.1 * (maxRGB - minRGB);
+    sharpened = clamp(sharpened, minRGB - overshoot, maxRGB + overshoot);
 
     FragColor = vec4(sharpened, 1.0);
 }

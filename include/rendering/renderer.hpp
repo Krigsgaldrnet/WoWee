@@ -370,7 +370,7 @@ private:
         bool enabled = false;
         bool needsRecreate = false;
         float scaleFactor = 0.77f;
-        float sharpness = 0.5f;
+        float sharpness = 3.0f;  // Very strong RCAS to counteract upscale softness
         uint32_t internalWidth = 0;
         uint32_t internalHeight = 0;
 
@@ -415,6 +415,11 @@ private:
         glm::vec2 prevJitter = glm::vec2(0.0f);
         uint32_t frameIndex = 0;
         bool needsHistoryReset = true;
+
+        // Convergent accumulation: jitter for N frames then freeze
+        int convergenceFrame = 0;
+        static constexpr int convergenceMaxFrames = 8;
+        glm::mat4 lastStableVP = glm::mat4(1.0f);
     };
     FSR2State fsr2_;
     bool initFSR2Resources();

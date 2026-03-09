@@ -1022,12 +1022,33 @@ void Renderer::beginFrame() {
         return;
     }
 
-    // Apply FSR2 jitter to camera projection before UBO upload
+    // FSR2 jitter pattern for temporal accumulation.
+    constexpr bool kFsr2TemporalEnabled = false;
     if (fsr2_.enabled && fsr2_.sceneFramebuffer && camera) {
-        // Halton(2,3) sequence for sub-pixel jitter, scaled to internal resolution
-        float jx = (halton(fsr2_.frameIndex + 1, 2) - 0.5f) * 2.0f / static_cast<float>(fsr2_.internalWidth);
-        float jy = (halton(fsr2_.frameIndex + 1, 3) - 0.5f) * 2.0f / static_cast<float>(fsr2_.internalHeight);
+        if (!kFsr2TemporalEnabled) {
+            camera->setJitter(0.0f, 0.0f);
+        } else {
+        glm::mat4 currentVP = camera->getViewProjectionMatrix();
+
+        // Reset history only for clear camera movement.
+        bool cameraMoved = false;
+        for (int i = 0; i < 4 && !cameraMoved; i++) {
+            for (int j = 0; j < 4 && !cameraMoved; j++) {
+                if (std::abs(currentVP[i][j] - fsr2_.lastStableVP[i][j]) > 1e-3f) {
+                    cameraMoved = true;
+                }
+            }
+        }
+        if (cameraMoved) {
+            fsr2_.lastStableVP = currentVP;
+            fsr2_.needsHistoryReset = true;
+        }
+
+        const float jitterScale = 0.5f;
+        float jx = (halton(fsr2_.frameIndex + 1, 2) - 0.5f) * 2.0f * jitterScale / static_cast<float>(fsr2_.internalWidth);
+        float jy = (halton(fsr2_.frameIndex + 1, 3) - 0.5f) * 2.0f * jitterScale / static_cast<float>(fsr2_.internalHeight);
         camera->setJitter(jx, jy);
+        }
     }
 
     // Update per-frame UBO with current camera/lighting state
@@ -1131,18 +1152,26 @@ void Renderer::endFrame() {
     if (!vkCtx || currentCmd == VK_NULL_HANDLE) return;
 
     if (fsr2_.enabled && fsr2_.sceneFramebuffer) {
+        constexpr bool kFsr2TemporalEnabled = false;
         // End the off-screen scene render pass
         vkCmdEndRenderPass(currentCmd);
 
-        // Compute passes: motion vectors → temporal accumulation
-        dispatchMotionVectors();
-        dispatchTemporalAccumulate();
+        if (kFsr2TemporalEnabled) {
+            // Compute passes: motion vectors -> temporal accumulation
+            dispatchMotionVectors();
+            dispatchTemporalAccumulate();
 
-        // Transition history output: GENERAL → SHADER_READ_ONLY for sharpen pass
-        transitionImageLayout(currentCmd, fsr2_.history[fsr2_.currentHistory].image,
-            VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+            // Transition history output: GENERAL -> SHADER_READ_ONLY for sharpen pass
+            transitionImageLayout(currentCmd, fsr2_.history[fsr2_.currentHistory].image,
+                VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        } else {
+            transitionImageLayout(currentCmd, fsr2_.sceneColor.image,
+                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        }
 
         // Begin swapchain render pass at full resolution for sharpening + ImGui
         VkRenderPassBeginInfo rpInfo{};
@@ -1176,11 +1205,13 @@ void Renderer::endFrame() {
         // Draw RCAS sharpening from accumulated history buffer
         renderFSR2Sharpen();
 
-        // Store current VP for next frame's motion vectors, advance frame
-        fsr2_.prevViewProjection = camera->getUnjitteredViewProjectionMatrix();
+        // Maintain frame bookkeeping
+        fsr2_.prevViewProjection = camera->getViewProjectionMatrix();
         fsr2_.prevJitter = camera->getJitter();
         camera->clearJitter();
-        fsr2_.currentHistory = 1 - fsr2_.currentHistory;
+        if (kFsr2TemporalEnabled) {
+            fsr2_.currentHistory = 1 - fsr2_.currentHistory;
+        }
         fsr2_.frameIndex = (fsr2_.frameIndex + 1) % 256;  // Wrap to keep Halton values well-distributed
 
     } else if (fsr_.enabled && fsr_.sceneFramebuffer) {
@@ -3698,6 +3729,8 @@ bool Renderer::initFSR2Resources() {
     VmaAllocator alloc = vkCtx->getAllocator();
     VkExtent2D swapExtent = vkCtx->getSwapchainExtent();
 
+    // Temporary stability fallback: keep FSR2 path at native internal resolution
+    // until temporal reprojection is reworked.
     fsr2_.internalWidth = static_cast<uint32_t>(swapExtent.width * fsr2_.scaleFactor);
     fsr2_.internalHeight = static_cast<uint32_t>(swapExtent.height * fsr2_.scaleFactor);
     fsr2_.internalWidth = (fsr2_.internalWidth + 1) & ~1u;
@@ -3785,7 +3818,7 @@ bool Renderer::initFSR2Resources() {
         VkPushConstantRange pc{};
         pc.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
         pc.offset = 0;
-        pc.size = sizeof(glm::mat4) + 2 * sizeof(glm::vec4);  // 96 bytes
+        pc.size = 2 * sizeof(glm::mat4);  // 128 bytes
 
         VkPipelineLayoutCreateInfo plCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         plCI.setLayoutCount = 1;
@@ -3929,7 +3962,9 @@ bool Renderer::initFSR2Resources() {
             int inputHistory = 1 - pp;   // Read from the other
             int outputHistory = pp;       // Write to this one
 
-            VkDescriptorImageInfo colorInfo{fsr2_.linearSampler, fsr2_.sceneColor.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            // The accumulation shader already performs custom Lanczos reconstruction.
+            // Use nearest here to avoid double filtering (linear + Lanczos) softening.
+            VkDescriptorImageInfo colorInfo{fsr2_.nearestSampler, fsr2_.sceneColor.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
             VkDescriptorImageInfo depthInfo{fsr2_.nearestSampler, fsr2_.sceneDepth.imageView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
             VkDescriptorImageInfo mvInfo{fsr2_.nearestSampler, fsr2_.motionVectors.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
             VkDescriptorImageInfo histInInfo{fsr2_.linearSampler, fsr2_.history[inputHistory].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
@@ -4086,25 +4121,16 @@ void Renderer::dispatchMotionVectors() {
     vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         fsr2_.motionVecPipelineLayout, 0, 1, &fsr2_.motionVecDescSet, 0, nullptr);
 
-    // Reprojection: prevUnjitteredVP * inv(currentUnjitteredVP)
-    // Using unjittered VPs avoids numerical instability from jitter amplification
-    // through large world coordinates. The shader corrects NDC by subtracting
-    // current jitter before reprojection (depth was rendered at jittered position).
+    // Reprojection with jittered matrices:
+    // reconstruct world position from current depth, then project into previous clip.
     struct {
-        glm::mat4 reprojMatrix;
-        glm::vec4 resolution;
-        glm::vec4 jitterOffset;   // xy = current jitter (NDC), zw = unused
+        glm::mat4 prevViewProjection;
+        glm::mat4 invCurrentViewProj;
     } pc;
 
-    glm::mat4 currentUnjitteredVP = camera->getUnjitteredViewProjectionMatrix();
-    pc.reprojMatrix = fsr2_.prevViewProjection * glm::inverse(currentUnjitteredVP);
-    glm::vec2 jitter = camera->getJitter();
-    pc.jitterOffset = glm::vec4(jitter.x, jitter.y, 0.0f, 0.0f);
-    pc.resolution = glm::vec4(
-        static_cast<float>(fsr2_.internalWidth),
-        static_cast<float>(fsr2_.internalHeight),
-        1.0f / fsr2_.internalWidth,
-        1.0f / fsr2_.internalHeight);
+    glm::mat4 currentVP = camera->getViewProjectionMatrix();
+    pc.prevViewProjection = fsr2_.prevViewProjection;
+    pc.invCurrentViewProj = glm::inverse(currentVP);
 
     vkCmdPushConstants(currentCmd, fsr2_.motionVecPipelineLayout,
         VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
@@ -4173,7 +4199,11 @@ void Renderer::dispatchTemporalAccumulate() {
         1.0f / swapExtent.width, 1.0f / swapExtent.height);
     glm::vec2 jitter = camera->getJitter();
     pc.jitterOffset = glm::vec4(jitter.x, jitter.y, 0.0f, 0.0f);
-    pc.params = glm::vec4(fsr2_.needsHistoryReset ? 1.0f : 0.0f, fsr2_.sharpness, 0.0f, 0.0f);
+    pc.params = glm::vec4(
+        fsr2_.needsHistoryReset ? 1.0f : 0.0f,
+        fsr2_.sharpness,
+        static_cast<float>(fsr2_.convergenceFrame),
+        0.0f);
 
     vkCmdPushConstants(currentCmd, fsr2_.accumulatePipelineLayout,
         VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
@@ -4187,6 +4217,7 @@ void Renderer::dispatchTemporalAccumulate() {
 
 void Renderer::renderFSR2Sharpen() {
     if (!fsr2_.sharpenPipeline || currentCmd == VK_NULL_HANDLE) return;
+    constexpr bool kFsr2TemporalEnabled = false;
 
     VkExtent2D ext = vkCtx->getSwapchainExtent();
     uint32_t outputIdx = fsr2_.currentHistory;
@@ -4198,7 +4229,9 @@ void Renderer::renderFSR2Sharpen() {
     // Update sharpen descriptor to point at current history output
     VkDescriptorImageInfo imgInfo{};
     imgInfo.sampler = fsr2_.linearSampler;
-    imgInfo.imageView = fsr2_.history[outputIdx].imageView;
+    imgInfo.imageView = kFsr2TemporalEnabled
+        ? fsr2_.history[outputIdx].imageView
+        : fsr2_.sceneColor.imageView;
     imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};

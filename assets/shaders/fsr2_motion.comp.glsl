@@ -6,45 +6,41 @@ layout(set = 0, binding = 0) uniform sampler2D depthBuffer;
 layout(set = 0, binding = 1, rg16f) uniform writeonly image2D motionVectors;
 
 layout(push_constant) uniform PushConstants {
-    mat4 reprojMatrix;      // prevUnjitteredVP * inverse(currentUnjitteredVP)
-    vec4 resolution;        // xy = internal size, zw = 1/internal size
-    vec4 jitterOffset;      // xy = current jitter (NDC), zw = unused
+    mat4 prevViewProjection;   // previous jittered VP
+    mat4 invCurrentViewProj;   // inverse(current jittered VP)
 } pc;
 
 void main() {
     ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 imgSize = ivec2(pc.resolution.xy);
+    ivec2 imgSize = imageSize(motionVectors);
     if (pixelCoord.x >= imgSize.x || pixelCoord.y >= imgSize.y) return;
 
     float depth = texelFetch(depthBuffer, pixelCoord, 0).r;
 
     // Pixel center UV and NDC
-    vec2 uv = (vec2(pixelCoord) + 0.5) * pc.resolution.zw;
+    vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(imgSize);
     vec2 ndc = uv * 2.0 - 1.0;
 
-    // Unjitter the NDC: the scene was rendered with jitter applied to
-    // projection[2][0/1]. For RH perspective (P[2][3]=-1, clip.w=-vz):
-    //   jittered_ndc = unjittered_ndc - jitter
-    //   unjittered_ndc = ndc + jitter
-    vec2 unjitteredNDC = ndc + pc.jitterOffset.xy;
+    // Reconstruct current world position from current frame depth.
+    vec4 clipPos = vec4(ndc, depth, 1.0);
+    vec4 worldPos = pc.invCurrentViewProj * clipPos;
+    if (abs(worldPos.w) < 1e-6) {
+        imageStore(motionVectors, pixelCoord, vec4(0.0, 0.0, 0.0, 0.0));
+        return;
+    }
+    worldPos /= worldPos.w;
 
-    // Reproject to previous frame via unjittered VP matrices
-    vec4 clipPos = vec4(unjitteredNDC, depth, 1.0);
-    vec4 prevClip = pc.reprojMatrix * clipPos;
+    // Project reconstructed world position into previous frame clip space.
+    vec4 prevClip = pc.prevViewProjection * worldPos;
+    if (abs(prevClip.w) < 1e-6) {
+        imageStore(motionVectors, pixelCoord, vec4(0.0, 0.0, 0.0, 0.0));
+        return;
+    }
     vec2 prevNdc = prevClip.xy / prevClip.w;
     vec2 prevUV = prevNdc * 0.5 + 0.5;
 
-    // Current unjittered UV for this pixel's world content
-    vec2 currentUnjitteredUV = unjitteredNDC * 0.5 + 0.5;
-
-    // Motion between unjittered positions — jitter-free.
-    // For a static scene (identity reprojMatrix), this is exactly zero.
-    vec2 motion = prevUV - currentUnjitteredUV;
-
-    // Soft dead zone: smoothly fade out sub-pixel noise from float precision
-    // in reprojMatrix (avoids hard spatial discontinuity from step())
-    float motionPx = length(motion * pc.resolution.xy);
-    motion *= smoothstep(0.0, 0.05, motionPx);
+    vec2 currentUV = uv;
+    vec2 motion = prevUV - currentUV;
 
     imageStore(motionVectors, pixelCoord, vec4(motion, 0.0, 0.0));
 }
