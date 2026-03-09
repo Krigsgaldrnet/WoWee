@@ -1831,6 +1831,47 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_ALL_ACHIEVEMENT_DATA:
             // Initial data burst on login — ignored for now (no achievement tracker UI).
             break;
+        case Opcode::SMSG_ITEM_COOLDOWN: {
+            // uint64 itemGuid + uint32 spellId + uint32 cooldownMs
+            size_t rem = packet.getSize() - packet.getReadPos();
+            if (rem >= 16) {
+                /*uint64_t itemGuid =*/ packet.readUInt64();
+                uint32_t spellId    = packet.readUInt32();
+                uint32_t cdMs       = packet.readUInt32();
+                float cdSec = cdMs / 1000.0f;
+                if (spellId != 0 && cdSec > 0.0f) {
+                    spellCooldowns[spellId] = cdSec;
+                    for (auto& slot : actionBar) {
+                        if (slot.type == ActionBarSlot::SPELL && slot.id == spellId) {
+                            slot.cooldownRemaining = cdSec;
+                        }
+                    }
+                    LOG_DEBUG("SMSG_ITEM_COOLDOWN: spellId=", spellId, " cd=", cdSec, "s");
+                }
+            }
+            break;
+        }
+        case Opcode::SMSG_FISH_NOT_HOOKED:
+            addSystemChatMessage("Your fish got away.");
+            break;
+        case Opcode::SMSG_FISH_ESCAPED:
+            addSystemChatMessage("Your fish escaped!");
+            break;
+        case Opcode::MSG_MINIMAP_PING:
+            // Minimap ping from a party member — consume; no visual support yet.
+            packet.setReadPos(packet.getSize());
+            break;
+        case Opcode::SMSG_ZONE_UNDER_ATTACK: {
+            // uint32 areaId
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t areaId = packet.readUInt32();
+                char buf[128];
+                std::snprintf(buf, sizeof(buf),
+                              "A zone is under attack! (area %u)", areaId);
+                addSystemChatMessage(buf);
+            }
+            break;
+        }
         case Opcode::SMSG_CANCEL_AUTO_REPEAT:
             break; // Server signals to stop a repeating spell (wand/shoot); no client action needed
         case Opcode::SMSG_AURA_UPDATE:
