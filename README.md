@@ -200,37 +200,12 @@ make -j$(nproc)
   - `WOWEE_ENABLE_AMD_FSR3_FRAMEGEN=ON` enables a compile-probe target (`wowee_fsr3_framegen_amd_vk_probe`) that validates SDK FI/OF/FSR3/Vulkan interface headers at build time.
 - Runtime toggle:
   - In settings, `AMD FSR3 Frame Generation (Experimental)` persists to config.
-  - Runtime library auto-probe checks for `libffx_fsr3_vk`/`ffx_fsr3_vk` in default loader paths.
-  - Override runtime library path with:
-    - `WOWEE_FFX_SDK_RUNTIME_LIB=/absolute/path/to/libffx_fsr3_vk.so` (platform extension varies).
-  - Wrapper override path:
-    - `WOWEE_FFX_SDK_RUNTIME_WRAPPER_LIB=/absolute/path/to/libffx_fsr3_vk_wrapper.so` (platform extension varies).
-  - In-tree wrapper build:
-    - `wowee_fsr3_vk_wrapper` now builds automatically when FSR3 SDK headers are present and outputs to `build/bin/libffx_fsr3_vk_wrapper.*`.
-    - Wrapper backend override (what the wrapper loads underneath): `WOWEE_FSR3_WRAPPER_BACKEND_LIB=/absolute/path/to/libffx_fsr3_vk.so`.
-    - Wrapper backend mode:
-      - `WOWEE_FSR3_WRAPPER_BACKEND=vulkan_runtime` (default on all platforms)
-      - `WOWEE_FSR3_WRAPPER_BACKEND=dx12_bridge` (opt-in)
-      - If backend mode is not explicitly set and Vulkan-runtime backend loading fails, wrapper now auto-falls back to `dx12_bridge` on Windows and Linux.
-    - DX12 runtime override (for `dx12_bridge`):
-      - `WOWEE_FSR3_DX12_RUNTIME_LIB=C:\\path\\to\\amd_fidelityfx_framegeneration_dx12.dll`
-    - DX12 device validation probe (default on):
-      - `WOWEE_FSR3_WRAPPER_DX12_VALIDATE_DEVICE=1`
-      - Set to `0` to skip adapter/device preflight.
-    - Windows `dx12_bridge` preflight checks Vulkan Win32 interop funcs/extensions before enabling DX12 path.
-    - Linux `dx12_bridge` is enabled for wrapper runtime compatibility mode and uses Vulkan dispatch symbols in this build.
-    - Linux `dx12_bridge` preflight validates Vulkan FD interop funcs/extensions:
-      - `vkGetMemoryFdKHR`, `vkGetSemaphoreFdKHR`
-      - `VK_KHR_external_memory`, `VK_KHR_external_memory_fd`, `VK_KHR_external_semaphore`, `VK_KHR_external_semaphore_fd`
-  - Path B wrapper libraries must export the clean wrapper ABI (`include/rendering/amd_fsr3_wrapper_abi.h`):
-    - ABI version is currently `3` (dispatch includes external-memory/semaphore handles plus acquire/release fence values for bridge sync).
-    - `wowee_fsr3_wrapper_get_abi_version`
-    - `wowee_fsr3_wrapper_get_backend`
-    - `wowee_fsr3_wrapper_initialize`
-    - `wowee_fsr3_wrapper_dispatch_upscale`
-    - `wowee_fsr3_wrapper_shutdown`
-    - Optional FG hook: `wowee_fsr3_wrapper_dispatch_framegen`
-    - Optional diagnostics: `wowee_fsr3_wrapper_get_last_error`, `wowee_fsr3_wrapper_get_capabilities`
+  - Runtime library loader is Path A only (official AMD runtime).
+  - Auto-probe checks common names (for example `amd_fidelityfx_vk` / `ffx_fsr3_vk`) in loader paths.
+  - Override runtime path with:
+    - `WOWEE_FFX_SDK_RUNTIME_LIB=/absolute/path/to/<amd-runtime-library>`
+  - If runtime is missing, FG is cleanly unavailable (Path C).
+
 
 ### Current FSR Defaults
 

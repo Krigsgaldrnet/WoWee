@@ -58,7 +58,6 @@
 #include "rendering/vk_pipeline.hpp"
 #include "rendering/vk_utils.hpp"
 #include "rendering/amd_fsr3_runtime.hpp"
-#include "rendering/amd_fsr3_wrapper_abi.h"
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -116,115 +115,7 @@ static int envIntOrDefault(const char* key, int defaultValue) {
     return static_cast<int>(n);
 }
 
-#if defined(_WIN32)
-static uint64_t exportImageMemoryHandleWin32(VkDevice device, PFN_vkGetDeviceProcAddr getDeviceProcAddr,
-                                             VmaAllocator allocator, const AllocatedImage& image) {
-#if defined(VK_USE_PLATFORM_WIN32_KHR) && defined(VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR) && defined(VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT)
-    if (!device || !getDeviceProcAddr || !allocator || !image.allocation) return 0;
-    auto getMemHandle = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(
-        getDeviceProcAddr(device, "vkGetMemoryWin32HandleKHR"));
-    if (!getMemHandle) return 0;
 
-    VmaAllocationInfo allocInfo{};
-    vmaGetAllocationInfo(allocator, image.allocation, &allocInfo);
-    if (allocInfo.deviceMemory == VK_NULL_HANDLE) return 0;
-
-    VkMemoryGetWin32HandleInfoKHR handleInfo{};
-    handleInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
-    handleInfo.memory = allocInfo.deviceMemory;
-    handleInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
-
-    HANDLE outHandle = nullptr;
-    if (getMemHandle(device, &handleInfo, &outHandle) != VK_SUCCESS || !outHandle) return 0;
-    return reinterpret_cast<uint64_t>(outHandle);
-#else
-    (void)device;
-    (void)getDeviceProcAddr;
-    (void)allocator;
-    (void)image;
-    return 0;
-#endif
-}
-
-static uint64_t exportSemaphoreHandleWin32(VkDevice device, PFN_vkGetDeviceProcAddr getDeviceProcAddr,
-                                           VkSemaphore semaphore) {
-#if defined(VK_USE_PLATFORM_WIN32_KHR) && defined(VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR) && defined(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT)
-    if (!device || !getDeviceProcAddr || !semaphore) return 0;
-    auto getSemHandle = reinterpret_cast<PFN_vkGetSemaphoreWin32HandleKHR>(
-        getDeviceProcAddr(device, "vkGetSemaphoreWin32HandleKHR"));
-    if (!getSemHandle) return 0;
-
-    VkSemaphoreGetWin32HandleInfoKHR handleInfo{};
-    handleInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR;
-    handleInfo.semaphore = semaphore;
-    handleInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
-
-    HANDLE outHandle = nullptr;
-    if (getSemHandle(device, &handleInfo, &outHandle) != VK_SUCCESS || !outHandle) return 0;
-    return reinterpret_cast<uint64_t>(outHandle);
-#else
-    (void)device;
-    (void)getDeviceProcAddr;
-    (void)semaphore;
-    return 0;
-#endif
-}
-#endif
-
-#if defined(__linux__)
-static uint64_t exportImageMemoryHandleFd(VkDevice device, PFN_vkGetDeviceProcAddr getDeviceProcAddr,
-                                          VmaAllocator allocator, const AllocatedImage& image) {
-#if !defined(VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR) || !defined(VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT)
-    (void)device;
-    (void)getDeviceProcAddr;
-    (void)allocator;
-    (void)image;
-    return 0;
-#else
-    if (!device || !getDeviceProcAddr || !allocator || !image.allocation) return 0;
-    auto getMemFd = reinterpret_cast<PFN_vkGetMemoryFdKHR>(
-        getDeviceProcAddr(device, "vkGetMemoryFdKHR"));
-    if (!getMemFd) return 0;
-
-    VmaAllocationInfo allocInfo{};
-    vmaGetAllocationInfo(allocator, image.allocation, &allocInfo);
-    if (allocInfo.deviceMemory == VK_NULL_HANDLE) return 0;
-
-    VkMemoryGetFdInfoKHR fdInfo{};
-    fdInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
-    fdInfo.memory = allocInfo.deviceMemory;
-    fdInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
-
-    int outFd = -1;
-    if (getMemFd(device, &fdInfo, &outFd) != VK_SUCCESS || outFd < 0) return 0;
-    return static_cast<uint64_t>(static_cast<uint32_t>(outFd));
-#endif
-}
-
-static uint64_t exportSemaphoreHandleFd(VkDevice device, PFN_vkGetDeviceProcAddr getDeviceProcAddr,
-                                        VkSemaphore semaphore) {
-#if !defined(VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR) || !defined(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT)
-    (void)device;
-    (void)getDeviceProcAddr;
-    (void)semaphore;
-    return 0;
-#else
-    if (!device || !getDeviceProcAddr || !semaphore) return 0;
-    auto getSemFd = reinterpret_cast<PFN_vkGetSemaphoreFdKHR>(
-        getDeviceProcAddr(device, "vkGetSemaphoreFdKHR"));
-    if (!getSemFd) return 0;
-
-    VkSemaphoreGetFdInfoKHR fdInfo{};
-    fdInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
-    fdInfo.semaphore = semaphore;
-    fdInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
-
-    int outFd = -1;
-    if (getSemFd(device, &fdInfo, &outFd) != VK_SUCCESS || outFd < 0) return 0;
-    return static_cast<uint64_t>(static_cast<uint32_t>(outFd));
-#endif
-}
-#endif
 
 static std::vector<std::string> parseEmoteCommands(const std::string& raw) {
     std::vector<std::string> out;
@@ -3758,9 +3649,9 @@ bool Renderer::initFSRResources() {
 
 void Renderer::destroyFSRResources() {
     if (!vkCtx) return;
+
     VkDevice device = vkCtx->getDevice();
     VmaAllocator alloc = vkCtx->getAllocator();
-
     vkDeviceWaitIdle(device);
 
     if (fsr_.pipeline) { vkDestroyPipeline(device, fsr_.pipeline, nullptr); fsr_.pipeline = VK_NULL_HANDLE; }
@@ -4293,9 +4184,9 @@ bool Renderer::initFSR2Resources() {
 
 void Renderer::destroyFSR2Resources() {
     if (!vkCtx) return;
+
     VkDevice device = vkCtx->getDevice();
     VmaAllocator alloc = vkCtx->getAllocator();
-
     vkDeviceWaitIdle(device);
 
 #if WOWEE_HAS_AMD_FSR2
@@ -4542,8 +4433,6 @@ void Renderer::dispatchAmdFsr2() {
 
 void Renderer::dispatchAmdFsr3Framegen() {
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
-    VkDevice device = vkCtx->getDevice();
-    VmaAllocator alloc = vkCtx->getAllocator();
     if (!fsr2_.amdFsr3FramegenEnabled) {
         fsr2_.amdFsr3FramegenRuntimeActive = false;
         return;
@@ -4604,127 +4493,6 @@ void Renderer::dispatchAmdFsr3Framegen() {
     fgDispatch.cameraFovYRadians = camera ? glm::radians(camera->getFovDegrees()) : 1.0f;
     fgDispatch.reset = fsr2_.needsHistoryReset;
 
-#if defined(_WIN32) || defined(__linux__)
-#if defined(_WIN32)
-    using ExportHandle = HANDLE;
-#else
-    using ExportHandle = int;
-#endif
-    bool exportInteropHandles = false;
-    if (fsr2_.amdFsr3Runtime && fsr2_.amdFsr3Runtime->hasWrapperExternalInterop()) {
-        exportInteropHandles = true;
-    }
-
-    std::vector<ExportHandle> exportedHandles;
-    auto trackHandle = [&](uint64_t h) {
-        if (!h) return;
-        ExportHandle raw =
-#if defined(_WIN32)
-            reinterpret_cast<ExportHandle>(h);
-#else
-            static_cast<ExportHandle>(static_cast<int>(h));
-#endif
-        exportedHandles.push_back(raw);
-    };
-    auto cleanupExportedHandles = [&]() {
-        for (ExportHandle h : exportedHandles) {
-#if defined(_WIN32)
-            if (h) CloseHandle(h);
-#else
-            if (h >= 0) close(h);
-#endif
-        }
-        exportedHandles.clear();
-    };
-
-    fgDispatch.externalFlags = 0;
-    if (exportInteropHandles) {
-#if defined(_WIN32)
-    fgDispatch.colorMemoryHandle = exportImageMemoryHandleWin32(
-        device, vkGetDeviceProcAddr, alloc, fsr2_.sceneColor);
-#else
-    fgDispatch.colorMemoryHandle = exportImageMemoryHandleFd(
-        device, vkGetDeviceProcAddr, alloc, fsr2_.sceneColor);
-#endif
-    if (fgDispatch.colorMemoryHandle) {
-        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_COLOR_MEMORY;
-        trackHandle(fgDispatch.colorMemoryHandle);
-    }
-#if defined(_WIN32)
-    fgDispatch.depthMemoryHandle = exportImageMemoryHandleWin32(
-        device, vkGetDeviceProcAddr, alloc, fsr2_.sceneDepth);
-#else
-    fgDispatch.depthMemoryHandle = exportImageMemoryHandleFd(
-        device, vkGetDeviceProcAddr, alloc, fsr2_.sceneDepth);
-#endif
-    if (fgDispatch.depthMemoryHandle) {
-        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_DEPTH_MEMORY;
-        trackHandle(fgDispatch.depthMemoryHandle);
-    }
-#if defined(_WIN32)
-    fgDispatch.motionVectorMemoryHandle = exportImageMemoryHandleWin32(
-        device, vkGetDeviceProcAddr, alloc, fsr2_.motionVectors);
-#else
-    fgDispatch.motionVectorMemoryHandle = exportImageMemoryHandleFd(
-        device, vkGetDeviceProcAddr, alloc, fsr2_.motionVectors);
-#endif
-    if (fgDispatch.motionVectorMemoryHandle) {
-        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_MOTION_MEMORY;
-        trackHandle(fgDispatch.motionVectorMemoryHandle);
-    }
-#if defined(_WIN32)
-    fgDispatch.outputMemoryHandle = exportImageMemoryHandleWin32(
-        device, vkGetDeviceProcAddr, alloc, fsr2_.history[fsr2_.currentHistory]);
-#else
-    fgDispatch.outputMemoryHandle = exportImageMemoryHandleFd(
-        device, vkGetDeviceProcAddr, alloc, fsr2_.history[fsr2_.currentHistory]);
-#endif
-    if (fgDispatch.outputMemoryHandle) {
-        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_OUTPUT_MEMORY;
-        trackHandle(fgDispatch.outputMemoryHandle);
-    }
-#if defined(_WIN32)
-    fgDispatch.frameGenOutputMemoryHandle = exportImageMemoryHandleWin32(
-        device, vkGetDeviceProcAddr, alloc, fsr2_.framegenOutput);
-#else
-    fgDispatch.frameGenOutputMemoryHandle = exportImageMemoryHandleFd(
-        device, vkGetDeviceProcAddr, alloc, fsr2_.framegenOutput);
-#endif
-    if (fgDispatch.frameGenOutputMemoryHandle) {
-        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_FRAMEGEN_OUTPUT_MEMORY;
-        trackHandle(fgDispatch.frameGenOutputMemoryHandle);
-    }
-
-    const FrameData& frameData = vkCtx->getCurrentFrameData();
-#if defined(_WIN32)
-    fgDispatch.acquireSemaphoreHandle = exportSemaphoreHandleWin32(
-        device, vkGetDeviceProcAddr, frameData.imageAvailableSemaphore);
-#else
-    fgDispatch.acquireSemaphoreHandle = exportSemaphoreHandleFd(
-        device, vkGetDeviceProcAddr, frameData.imageAvailableSemaphore);
-#endif
-    if (fgDispatch.acquireSemaphoreHandle) {
-        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_ACQUIRE_SEMAPHORE;
-        trackHandle(fgDispatch.acquireSemaphoreHandle);
-    }
-#if defined(_WIN32)
-    fgDispatch.releaseSemaphoreHandle = exportSemaphoreHandleWin32(
-        device, vkGetDeviceProcAddr, frameData.renderFinishedSemaphore);
-#else
-    fgDispatch.releaseSemaphoreHandle = exportSemaphoreHandleFd(
-        device, vkGetDeviceProcAddr, frameData.renderFinishedSemaphore);
-#endif
-    if (fgDispatch.releaseSemaphoreHandle) {
-        fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_RELEASE_SEMAPHORE;
-        trackHandle(fgDispatch.releaseSemaphoreHandle);
-    }
-    uint64_t syncValue = fsr2_.amdFsr3InteropSyncValue;
-    if (syncValue == 0) syncValue = 1;
-    fgDispatch.acquireSemaphoreValue = syncValue;
-    fgDispatch.releaseSemaphoreValue = syncValue;
-    fsr2_.amdFsr3InteropSyncValue = syncValue + 1;
-    }
-#endif
 
     if (!fsr2_.amdFsr3Runtime->dispatchUpscale(fgDispatch)) {
         static bool warnedRuntimeDispatch = false;
@@ -4735,9 +4503,6 @@ void Renderer::dispatchAmdFsr3Framegen() {
         fsr2_.amdFsr3RuntimeLastError = fsr2_.amdFsr3Runtime->lastError();
         fsr2_.amdFsr3FallbackCount++;
         fsr2_.amdFsr3FramegenRuntimeActive = false;
-#if defined(_WIN32) || defined(__linux__)
-        cleanupExportedHandles();
-#endif
         return;
     }
     fsr2_.amdFsr3RuntimeLastError.clear();
@@ -4745,16 +4510,10 @@ void Renderer::dispatchAmdFsr3Framegen() {
 
     if (!fsr2_.amdFsr3FramegenEnabled) {
         fsr2_.amdFsr3FramegenRuntimeActive = false;
-#if defined(_WIN32) || defined(__linux__)
-        cleanupExportedHandles();
-#endif
         return;
     }
     if (!fsr2_.amdFsr3Runtime->isFrameGenerationReady()) {
         fsr2_.amdFsr3FramegenRuntimeActive = false;
-#if defined(_WIN32) || defined(__linux__)
-        cleanupExportedHandles();
-#endif
         return;
     }
     if (!fsr2_.amdFsr3Runtime->dispatchFrameGeneration(fgDispatch)) {
@@ -4766,18 +4525,12 @@ void Renderer::dispatchAmdFsr3Framegen() {
         fsr2_.amdFsr3RuntimeLastError = fsr2_.amdFsr3Runtime->lastError();
         fsr2_.amdFsr3FallbackCount++;
         fsr2_.amdFsr3FramegenRuntimeActive = false;
-#if defined(_WIN32) || defined(__linux__)
-        cleanupExportedHandles();
-#endif
         return;
     }
     fsr2_.amdFsr3RuntimeLastError.clear();
     fsr2_.amdFsr3FramegenDispatchCount++;
     fsr2_.framegenOutputValid = true;
     fsr2_.amdFsr3FramegenRuntimeActive = true;
-#if defined(_WIN32) || defined(__linux__)
-    cleanupExportedHandles();
-#endif
 #else
     fsr2_.amdFsr3FramegenRuntimeActive = false;
 #endif

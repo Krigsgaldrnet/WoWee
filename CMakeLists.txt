@@ -212,7 +212,7 @@ else()
     if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN)
         if(EXISTS ${WOWEE_AMD_FFX_SDK_KITS_FG_HEADER})
             message(STATUS "FidelityFX-SDK Kits layout detected at ${WOWEE_AMD_FFX_SDK_KITS_DIR}, "
-                           "but legacy sdk/include headers required by WoWee FSR3 probe/wrapper are not present. "
+                           "but legacy sdk/include headers required by WoWee FSR3 probe/runtime are not present. "
                            "FSR3 framegen interface probe disabled.")
         else()
             message(WARNING "AMD FidelityFX-SDK framegen headers not found at ${WOWEE_AMD_FFX_SDK_DIR}; "

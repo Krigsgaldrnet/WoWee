@@ -40,50 +40,12 @@ Detection expects:
 
 Runtime note:
 
-- Renderer/UI now expose a persisted experimental framegen toggle.
-- Runtime loader now supports:
-  - Path A: AMD SDK runtime binaries (`ffx_fsr3_vk`).
-  - Path B: wrapper runtime libraries implementing WoWee's wrapper ABI.
+- Renderer/UI expose a persisted experimental framegen toggle.
+- Runtime loader is Path A only (official AMD runtime library).
 - You can point to an explicit runtime binary with:
   - `WOWEE_FFX_SDK_RUNTIME_LIB=/absolute/path/to/libffx_fsr3_vk.so` (or `.dll` / `.dylib`).
-- You can point to an explicit wrapper binary with:
-  - `WOWEE_FFX_SDK_RUNTIME_WRAPPER_LIB=/absolute/path/to/libffx_fsr3_vk_wrapper.so` (or `.dll` / `.dylib`).
-- WoWee now ships an in-tree wrapper target:
-  - `wowee_fsr3_vk_wrapper` (output in `build/bin`).
-- Wrapper backend runtime override:
-  - `WOWEE_FSR3_WRAPPER_BACKEND_LIB=/absolute/path/to/libffx_fsr3_vk.so` (or `.dll` / `.dylib`).
-- Wrapper backend mode selection:
-  - `WOWEE_FSR3_WRAPPER_BACKEND=vulkan_runtime`
-  - `WOWEE_FSR3_WRAPPER_BACKEND=dx12_bridge`
-- Default is `vulkan_runtime` on all platforms.
-- If backend mode is not explicitly set and Vulkan-runtime backend loading fails, wrapper auto-falls back to `dx12_bridge` on Windows and Linux.
-- `dx12_bridge` is opt-in.
-- On Windows: `dx12_bridge` performs DX12/Vulkan preflight, then loads the first runtime library exposing the required FSR3 dispatch exports.
-- On Linux: `dx12_bridge` is enabled for wrapper runtime compatibility mode and uses Vulkan dispatch symbols in this build.
-- Linux bridge preflight validates Vulkan FD interop support:
-  - required device functions: `vkGetMemoryFdKHR`, `vkGetSemaphoreFdKHR`
-  - required device extensions: `VK_KHR_external_memory`, `VK_KHR_external_memory_fd`, `VK_KHR_external_semaphore`, `VK_KHR_external_semaphore_fd`
-- DX12 bridge runtime override:
-  - `WOWEE_FSR3_DX12_RUNTIME_LIB=<path-to-amd_fidelityfx_framegeneration_dx12.dll>`
-- DX12 bridge device preflight toggle:
-  - `WOWEE_FSR3_WRAPPER_DX12_VALIDATE_DEVICE=1` (default)
-  - `WOWEE_FSR3_WRAPPER_DX12_VALIDATE_DEVICE=0` to skip DXGI/D3D12 device creation probe
-- DX12 bridge preflight also validates Vulkan Win32 interop support:
-  - required device functions: `vkGetMemoryWin32HandleKHR`, `vkImportSemaphoreWin32HandleKHR`, `vkGetSemaphoreWin32HandleKHR`
-  - required device extensions: `VK_KHR_external_memory`, `VK_KHR_external_memory_win32`, `VK_KHR_external_semaphore`, `VK_KHR_external_semaphore_win32`
-- Path B wrapper ABI contract is declared in:
-  - `include/rendering/amd_fsr3_wrapper_abi.h`
-- Current wrapper ABI version: `3` (dispatch payload carries external memory/semaphore handles and acquire/release fence values for bridge synchronization).
-- Required wrapper exports:
-  - `wowee_fsr3_wrapper_get_abi_version`
-  - `wowee_fsr3_wrapper_get_backend`
-  - `wowee_fsr3_wrapper_initialize`
-  - `wowee_fsr3_wrapper_dispatch_upscale`
-  - `wowee_fsr3_wrapper_shutdown`
-- Optional wrapper export:
-  - `wowee_fsr3_wrapper_dispatch_framegen`
-  - `wowee_fsr3_wrapper_get_last_error`
-  - `wowee_fsr3_wrapper_get_capabilities`
+- If no official runtime is found, frame generation is disabled cleanly (Path C).
+
 
 ## Current Status
 

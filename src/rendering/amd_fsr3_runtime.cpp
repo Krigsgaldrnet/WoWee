@@ -1,5 +1,4 @@
 #include "rendering/amd_fsr3_runtime.hpp"
-#include "rendering/amd_fsr3_wrapper_abi.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -30,16 +29,6 @@ namespace wowee::rendering {
 
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
 struct AmdFsr3Runtime::RuntimeFns {
-    uint32_t (*wrapperGetAbiVersion)() = nullptr;
-    const char* (*wrapperGetName)() = nullptr;
-    const char* (*wrapperGetBackend)(WoweeFsr3WrapperContext) = nullptr;
-    uint32_t (*wrapperGetCapabilities)(WoweeFsr3WrapperContext) = nullptr;
-    int32_t (*wrapperInitialize)(const WoweeFsr3WrapperInitDesc*, WoweeFsr3WrapperContext*, char*, uint32_t) = nullptr;
-    int32_t (*wrapperDispatchUpscale)(WoweeFsr3WrapperContext, const WoweeFsr3WrapperDispatchDesc*) = nullptr;
-    int32_t (*wrapperDispatchFramegen)(WoweeFsr3WrapperContext, const WoweeFsr3WrapperDispatchDesc*) = nullptr;
-    void (*wrapperShutdown)(WoweeFsr3WrapperContext) = nullptr;
-    const char* (*wrapperGetLastError)(WoweeFsr3WrapperContext) = nullptr;
-
     decltype(&ffxGetScratchMemorySizeVK) getScratchMemorySizeVK = nullptr;
     decltype(&ffxGetDeviceVK) getDeviceVK = nullptr;
     decltype(&ffxGetInterfaceVK) getInterfaceVK = nullptr;
@@ -60,8 +49,6 @@ AmdFsr3Runtime::AmdFsr3Runtime() = default;
 AmdFsr3Runtime::~AmdFsr3Runtime() {
     shutdown();
 }
-
-bool AmdFsr3Runtime::hasWrapperExternalInterop() const { return false; }
 
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
 namespace {
@@ -166,9 +153,6 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
     shutdown();
     lastError_.clear();
     loadPathKind_ = LoadPathKind::None;
-    wrapperBackendName_.clear();
-    wrapperCapabilities_ = 0;
-    backend_ = RuntimeBackend::None;
 
 #if !WOWEE_HAS_AMD_FSR3_FRAMEGEN
     (void)desc;
@@ -184,44 +168,42 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
         return false;
     }
 
-    struct Candidate {
-        std::string path;
-        LoadPathKind kind = LoadPathKind::Official;
-    };
-    std::vector<Candidate> candidates;
+    std::vector<std::string> candidates;
     if (const char* envPath = std::getenv("WOWEE_FFX_SDK_RUNTIME_LIB")) {
-        if (*envPath) candidates.push_back({envPath, LoadPathKind::Official});
+        if (*envPath) candidates.emplace_back(envPath);
     }
 #if defined(_WIN32)
-    candidates.push_back({"amd_fidelityfx_vk.dll", LoadPathKind::Official});
-    candidates.push_back({"libamd_fidelityfx_vk.dll", LoadPathKind::Official});
-    candidates.push_back({"ffx_fsr3_vk.dll", LoadPathKind::Official});
-    candidates.push_back({"ffx_fsr3.dll", LoadPathKind::Official});
+    candidates.emplace_back("amd_fidelityfx_vk.dll");
+    candidates.emplace_back("libamd_fidelityfx_vk.dll");
+    candidates.emplace_back("ffx_fsr3_vk.dll");
+    candidates.emplace_back("ffx_fsr3.dll");
 #elif defined(__APPLE__)
-    candidates.push_back({"libamd_fidelityfx_vk.dylib", LoadPathKind::Official});
-    candidates.push_back({"libffx_fsr3_vk.dylib", LoadPathKind::Official});
-    candidates.push_back({"libffx_fsr3.dylib", LoadPathKind::Official});
+    candidates.emplace_back("libamd_fidelityfx_vk.dylib");
+    candidates.emplace_back("libffx_fsr3_vk.dylib");
+    candidates.emplace_back("libffx_fsr3.dylib");
 #else
-    candidates.push_back({"./libamd_fidelityfx_vk.so", LoadPathKind::Official});
-    candidates.push_back({"libamd_fidelityfx_vk.so", LoadPathKind::Official});
-    candidates.push_back({"./libffx_fsr3_vk.so", LoadPathKind::Official});
-    candidates.push_back({"libffx_fsr3_vk.so", LoadPathKind::Official});
-    candidates.push_back({"libffx_fsr3.so", LoadPathKind::Official});
+    candidates.emplace_back("./libamd_fidelityfx_vk.so");
+    candidates.emplace_back("libamd_fidelityfx_vk.so");
+    candidates.emplace_back("./libffx_fsr3_vk.so");
+    candidates.emplace_back("libffx_fsr3_vk.so");
+    candidates.emplace_back("libffx_fsr3.so");
 #endif
-    for (const Candidate& candidate : candidates) {
+
+    for (const std::string& path : candidates) {
 #if defined(_WIN32)
-        HMODULE h = LoadLibraryA(candidate.path.c_str());
+        HMODULE h = LoadLibraryA(path.c_str());
         if (!h) continue;
         libHandle_ = reinterpret_cast<void*>(h);
 #else
-        void* h = dlopen(candidate.path.c_str(), RTLD_NOW | RTLD_LOCAL);
+        void* h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
         if (!h) continue;
         libHandle_ = h;
 #endif
-        loadedLibraryPath_ = candidate.path;
-        loadPathKind_ = candidate.kind;
+        loadedLibraryPath_ = path;
+        loadPathKind_ = LoadPathKind::Official;
         break;
     }
+
     if (!libHandle_) {
         lastError_ = "no official runtime (Path A) found";
         return false;
@@ -236,98 +218,6 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
     };
 
     fns_ = new RuntimeFns{};
-    if (loadPathKind_ == LoadPathKind::Wrapper) {
-        fns_->wrapperGetAbiVersion = reinterpret_cast<decltype(fns_->wrapperGetAbiVersion)>(resolveSym("wowee_fsr3_wrapper_get_abi_version"));
-        fns_->wrapperGetName = reinterpret_cast<decltype(fns_->wrapperGetName)>(resolveSym("wowee_fsr3_wrapper_get_name"));
-        fns_->wrapperGetBackend = reinterpret_cast<decltype(fns_->wrapperGetBackend)>(resolveSym("wowee_fsr3_wrapper_get_backend"));
-        fns_->wrapperGetCapabilities = reinterpret_cast<decltype(fns_->wrapperGetCapabilities)>(resolveSym("wowee_fsr3_wrapper_get_capabilities"));
-        fns_->wrapperInitialize = reinterpret_cast<decltype(fns_->wrapperInitialize)>(resolveSym("wowee_fsr3_wrapper_initialize"));
-        fns_->wrapperDispatchUpscale = reinterpret_cast<decltype(fns_->wrapperDispatchUpscale)>(resolveSym("wowee_fsr3_wrapper_dispatch_upscale"));
-        fns_->wrapperDispatchFramegen = reinterpret_cast<decltype(fns_->wrapperDispatchFramegen)>(resolveSym("wowee_fsr3_wrapper_dispatch_framegen"));
-        fns_->wrapperShutdown = reinterpret_cast<decltype(fns_->wrapperShutdown)>(resolveSym("wowee_fsr3_wrapper_shutdown"));
-        fns_->wrapperGetLastError = reinterpret_cast<decltype(fns_->wrapperGetLastError)>(resolveSym("wowee_fsr3_wrapper_get_last_error"));
-
-        if (!fns_->wrapperGetAbiVersion || !fns_->wrapperInitialize ||
-            !fns_->wrapperDispatchUpscale || !fns_->wrapperShutdown) {
-            LOG_WARNING("FSR3 runtime: required wrapper ABI symbols not found in ", loadedLibraryPath_);
-            lastError_ = "missing required wowee_fsr3_wrapper_* symbols";
-            shutdown();
-            return false;
-        }
-
-        const uint32_t abiVersion = fns_->wrapperGetAbiVersion();
-        if (abiVersion != WOWEE_FSR3_WRAPPER_ABI_VERSION) {
-            LOG_WARNING("FSR3 runtime: wrapper ABI mismatch. expected=", WOWEE_FSR3_WRAPPER_ABI_VERSION,
-                        " got=", abiVersion);
-            lastError_ = "wrapper ABI version mismatch";
-            shutdown();
-            return false;
-        }
-        if (desc.enableFrameGeneration && !fns_->wrapperDispatchFramegen) {
-            LOG_WARNING("FSR3 runtime: wrapper runtime missing framegen dispatch symbol.");
-            lastError_ = "wrapper missing frame generation entry points";
-            shutdown();
-            return false;
-        }
-
-        WoweeFsr3WrapperInitDesc wrapperInit{};
-        wrapperInit.structSize = sizeof(wrapperInit);
-        wrapperInit.abiVersion = WOWEE_FSR3_WRAPPER_ABI_VERSION;
-        wrapperInit.physicalDevice = desc.physicalDevice;
-        wrapperInit.device = desc.device;
-        wrapperInit.getDeviceProcAddr = desc.getDeviceProcAddr;
-        wrapperInit.maxRenderWidth = desc.maxRenderWidth;
-        wrapperInit.maxRenderHeight = desc.maxRenderHeight;
-        wrapperInit.displayWidth = desc.displayWidth;
-        wrapperInit.displayHeight = desc.displayHeight;
-        wrapperInit.colorFormat = desc.colorFormat;
-        wrapperInit.enableFlags = 0;
-        if (desc.hdrInput) wrapperInit.enableFlags |= WOWEE_FSR3_WRAPPER_ENABLE_HDR_INPUT;
-        if (desc.depthInverted) wrapperInit.enableFlags |= WOWEE_FSR3_WRAPPER_ENABLE_DEPTH_INVERTED;
-        if (desc.enableFrameGeneration) wrapperInit.enableFlags |= WOWEE_FSR3_WRAPPER_ENABLE_FRAME_GENERATION;
-
-        char errorText[256] = {};
-        WoweeFsr3WrapperContext wrapperCtx = nullptr;
-        if (fns_->wrapperInitialize(&wrapperInit, &wrapperCtx, errorText, static_cast<uint32_t>(sizeof(errorText))) != 0 || !wrapperCtx) {
-            LOG_WARNING("FSR3 runtime: wrapper initialization failed: ", errorText[0] ? errorText : "unknown error");
-            lastError_ = errorText[0] ? errorText : "wrapper initialization failed";
-            shutdown();
-            return false;
-        }
-
-        wrapperContext_ = wrapperCtx;
-        frameGenerationReady_ = false;
-        ready_ = true;
-        backend_ = RuntimeBackend::Wrapper;
-        uint32_t wrapperCaps = 0;
-        if (fns_->wrapperGetCapabilities) {
-            wrapperCaps = fns_->wrapperGetCapabilities(wrapperCtx);
-        } else {
-            wrapperCaps = WOWEE_FSR3_WRAPPER_CAP_UPSCALE;
-            if (fns_->wrapperDispatchFramegen) {
-                wrapperCaps |= WOWEE_FSR3_WRAPPER_CAP_FRAME_GENERATION;
-            }
-        }
-        wrapperCapabilities_ = wrapperCaps;
-        frameGenerationReady_ = desc.enableFrameGeneration &&
-                                ((wrapperCaps & WOWEE_FSR3_WRAPPER_CAP_FRAME_GENERATION) != 0u);
-        if (fns_->wrapperGetBackend) {
-            const char* backendName = fns_->wrapperGetBackend(wrapperCtx);
-            if (backendName && *backendName) wrapperBackendName_ = backendName;
-        }
-        if (fns_->wrapperGetName) {
-            const char* wrapperName = fns_->wrapperGetName();
-            if (wrapperName && *wrapperName) {
-                LOG_INFO("FSR3 runtime: wrapper active: ", wrapperName,
-                         " backend=", wrapperBackendName_.empty() ? "unknown" : wrapperBackendName_,
-                         " caps=0x", static_cast<unsigned int>(wrapperCaps));
-            }
-        }
-        LOG_INFO("FSR3 runtime: loaded wrapper library ", loadedLibraryPath_,
-                 " framegenReady=", frameGenerationReady_ ? "yes" : "no");
-        return true;
-    }
-
     fns_->getScratchMemorySizeVK = reinterpret_cast<decltype(fns_->getScratchMemorySizeVK)>(resolveSym("ffxGetScratchMemorySizeVK"));
     fns_->getDeviceVK = reinterpret_cast<decltype(fns_->getDeviceVK)>(resolveSym("ffxGetDeviceVK"));
     fns_->getInterfaceVK = reinterpret_cast<decltype(fns_->getInterfaceVK)>(resolveSym("ffxGetInterfaceVK"));
@@ -359,6 +249,7 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
         shutdown();
         return false;
     }
+
     scratchBuffer_ = std::malloc(scratchBufferSize_);
     if (!scratchBuffer_) {
         LOG_WARNING("FSR3 runtime: failed to allocate scratch buffer.");
@@ -376,6 +267,7 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
     vkDevCtx.vkDeviceProcAddr = desc.getDeviceProcAddr;
     FfxDevice ffxDevice = fns_->getDeviceVK(&vkDevCtx);
 #endif
+
     FfxInterface backendShared{};
 #if WOWEE_AMD_FFX_SDK_KITS
     FfxErrorCode ifaceErr = fns_->getInterfaceVK(
@@ -454,7 +346,6 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
     }
 
     ready_ = true;
-    backend_ = RuntimeBackend::Official;
     LOG_INFO("FSR3 runtime: loaded official library ", loadedLibraryPath_,
              " framegenReady=", frameGenerationReady_ ? "yes" : "no");
     return true;
@@ -475,60 +366,6 @@ bool AmdFsr3Runtime::dispatchUpscale(const AmdFsr3RuntimeDispatchDesc& desc) {
         lastError_ = "invalid upscale dispatch resources";
         return false;
     }
-    if (backend_ == RuntimeBackend::Wrapper) {
-        if (!wrapperContext_ || !fns_->wrapperDispatchUpscale) {
-            lastError_ = "wrapper upscale entry points unavailable";
-            return false;
-        }
-        WoweeFsr3WrapperDispatchDesc wrapperDesc{};
-        wrapperDesc.structSize = sizeof(wrapperDesc);
-        wrapperDesc.commandBuffer = desc.commandBuffer;
-        wrapperDesc.colorImage = desc.colorImage;
-        wrapperDesc.depthImage = desc.depthImage;
-        wrapperDesc.motionVectorImage = desc.motionVectorImage;
-        wrapperDesc.outputImage = desc.outputImage;
-        wrapperDesc.frameGenOutputImage = desc.frameGenOutputImage;
-        wrapperDesc.renderWidth = desc.renderWidth;
-        wrapperDesc.renderHeight = desc.renderHeight;
-        wrapperDesc.outputWidth = desc.outputWidth;
-        wrapperDesc.outputHeight = desc.outputHeight;
-        wrapperDesc.colorFormat = desc.colorFormat;
-        wrapperDesc.depthFormat = desc.depthFormat;
-        wrapperDesc.motionVectorFormat = desc.motionVectorFormat;
-        wrapperDesc.outputFormat = desc.outputFormat;
-        wrapperDesc.jitterX = desc.jitterX;
-        wrapperDesc.jitterY = desc.jitterY;
-        wrapperDesc.motionScaleX = desc.motionScaleX;
-        wrapperDesc.motionScaleY = desc.motionScaleY;
-        wrapperDesc.frameTimeDeltaMs = desc.frameTimeDeltaMs;
-        wrapperDesc.cameraNear = desc.cameraNear;
-        wrapperDesc.cameraFar = desc.cameraFar;
-        wrapperDesc.cameraFovYRadians = desc.cameraFovYRadians;
-        wrapperDesc.reset = desc.reset ? 1u : 0u;
-        wrapperDesc.externalFlags = desc.externalFlags;
-        wrapperDesc.colorMemoryHandle = desc.colorMemoryHandle;
-        wrapperDesc.depthMemoryHandle = desc.depthMemoryHandle;
-        wrapperDesc.motionVectorMemoryHandle = desc.motionVectorMemoryHandle;
-        wrapperDesc.outputMemoryHandle = desc.outputMemoryHandle;
-        wrapperDesc.frameGenOutputMemoryHandle = desc.frameGenOutputMemoryHandle;
-        wrapperDesc.acquireSemaphoreHandle = desc.acquireSemaphoreHandle;
-        wrapperDesc.releaseSemaphoreHandle = desc.releaseSemaphoreHandle;
-        wrapperDesc.acquireSemaphoreValue = desc.acquireSemaphoreValue;
-        wrapperDesc.releaseSemaphoreValue = desc.releaseSemaphoreValue;
-        const bool ok = fns_->wrapperDispatchUpscale(static_cast<WoweeFsr3WrapperContext>(wrapperContext_), &wrapperDesc) == 0;
-        if (!ok) {
-            if (fns_->wrapperGetLastError) {
-                const char* err = fns_->wrapperGetLastError(static_cast<WoweeFsr3WrapperContext>(wrapperContext_));
-                lastError_ = (err && *err) ? err : "wrapper upscale dispatch failed";
-            } else {
-                lastError_ = "wrapper upscale dispatch failed";
-            }
-        } else {
-            lastError_.clear();
-        }
-        return ok;
-    }
-
     if (!contextStorage_ || !fns_->fsr3ContextDispatchUpscale) {
         lastError_ = "official runtime upscale context unavailable";
         return false;
@@ -549,23 +386,23 @@ bool AmdFsr3Runtime::dispatchUpscale(const AmdFsr3RuntimeDispatchDesc& desc) {
     static wchar_t kDepthName[] = L"FSR3_Depth";
     static wchar_t kMotionName[] = L"FSR3_MotionVectors";
     static wchar_t kOutputName[] = L"FSR3_Output";
- #if WOWEE_AMD_FFX_SDK_KITS
+#if WOWEE_AMD_FFX_SDK_KITS
     dispatch.color = fns_->getResourceVK(desc.colorImage, colorDesc, kColorName, FFX_RESOURCE_STATE_COMPUTE_READ);
     dispatch.depth = fns_->getResourceVK(desc.depthImage, depthDesc, kDepthName, FFX_RESOURCE_STATE_COMPUTE_READ);
     dispatch.motionVectors = fns_->getResourceVK(desc.motionVectorImage, mvDesc, kMotionName, FFX_RESOURCE_STATE_COMPUTE_READ);
- #else
+#else
     dispatch.color = fns_->getResourceVK(reinterpret_cast<void*>(desc.colorImage), colorDesc, kColorName, FFX_RESOURCE_STATE_COMPUTE_READ);
     dispatch.depth = fns_->getResourceVK(reinterpret_cast<void*>(desc.depthImage), depthDesc, kDepthName, FFX_RESOURCE_STATE_COMPUTE_READ);
     dispatch.motionVectors = fns_->getResourceVK(reinterpret_cast<void*>(desc.motionVectorImage), mvDesc, kMotionName, FFX_RESOURCE_STATE_COMPUTE_READ);
- #endif
+#endif
     dispatch.exposure = FfxResource{};
     dispatch.reactive = FfxResource{};
     dispatch.transparencyAndComposition = FfxResource{};
- #if WOWEE_AMD_FFX_SDK_KITS
+#if WOWEE_AMD_FFX_SDK_KITS
     dispatch.upscaleOutput = fns_->getResourceVK(desc.outputImage, outDesc, kOutputName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
- #else
+#else
     dispatch.upscaleOutput = fns_->getResourceVK(reinterpret_cast<void*>(desc.outputImage), outDesc, kOutputName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
- #endif
+#endif
     dispatch.jitterOffset.x = desc.jitterX;
     dispatch.jitterOffset.y = desc.jitterY;
     dispatch.motionVectorScale.x = desc.motionScaleX;
@@ -608,60 +445,6 @@ bool AmdFsr3Runtime::dispatchFrameGeneration(const AmdFsr3RuntimeDispatchDesc& d
         lastError_ = "invalid frame generation dispatch resources";
         return false;
     }
-    if (backend_ == RuntimeBackend::Wrapper) {
-        if (!wrapperContext_ || !fns_->wrapperDispatchFramegen) {
-            lastError_ = "wrapper frame generation entry points unavailable";
-            return false;
-        }
-        WoweeFsr3WrapperDispatchDesc wrapperDesc{};
-        wrapperDesc.structSize = sizeof(wrapperDesc);
-        wrapperDesc.commandBuffer = desc.commandBuffer;
-        wrapperDesc.colorImage = desc.colorImage;
-        wrapperDesc.depthImage = desc.depthImage;
-        wrapperDesc.motionVectorImage = desc.motionVectorImage;
-        wrapperDesc.outputImage = desc.outputImage;
-        wrapperDesc.frameGenOutputImage = desc.frameGenOutputImage;
-        wrapperDesc.renderWidth = desc.renderWidth;
-        wrapperDesc.renderHeight = desc.renderHeight;
-        wrapperDesc.outputWidth = desc.outputWidth;
-        wrapperDesc.outputHeight = desc.outputHeight;
-        wrapperDesc.colorFormat = desc.colorFormat;
-        wrapperDesc.depthFormat = desc.depthFormat;
-        wrapperDesc.motionVectorFormat = desc.motionVectorFormat;
-        wrapperDesc.outputFormat = desc.outputFormat;
-        wrapperDesc.jitterX = desc.jitterX;
-        wrapperDesc.jitterY = desc.jitterY;
-        wrapperDesc.motionScaleX = desc.motionScaleX;
-        wrapperDesc.motionScaleY = desc.motionScaleY;
-        wrapperDesc.frameTimeDeltaMs = desc.frameTimeDeltaMs;
-        wrapperDesc.cameraNear = desc.cameraNear;
-        wrapperDesc.cameraFar = desc.cameraFar;
-        wrapperDesc.cameraFovYRadians = desc.cameraFovYRadians;
-        wrapperDesc.reset = desc.reset ? 1u : 0u;
-        wrapperDesc.externalFlags = desc.externalFlags;
-        wrapperDesc.colorMemoryHandle = desc.colorMemoryHandle;
-        wrapperDesc.depthMemoryHandle = desc.depthMemoryHandle;
-        wrapperDesc.motionVectorMemoryHandle = desc.motionVectorMemoryHandle;
-        wrapperDesc.outputMemoryHandle = desc.outputMemoryHandle;
-        wrapperDesc.frameGenOutputMemoryHandle = desc.frameGenOutputMemoryHandle;
-        wrapperDesc.acquireSemaphoreHandle = desc.acquireSemaphoreHandle;
-        wrapperDesc.releaseSemaphoreHandle = desc.releaseSemaphoreHandle;
-        wrapperDesc.acquireSemaphoreValue = desc.acquireSemaphoreValue;
-        wrapperDesc.releaseSemaphoreValue = desc.releaseSemaphoreValue;
-        const bool ok = fns_->wrapperDispatchFramegen(static_cast<WoweeFsr3WrapperContext>(wrapperContext_), &wrapperDesc) == 0;
-        if (!ok) {
-            if (fns_->wrapperGetLastError) {
-                const char* err = fns_->wrapperGetLastError(static_cast<WoweeFsr3WrapperContext>(wrapperContext_));
-                lastError_ = (err && *err) ? err : "wrapper frame generation dispatch failed";
-            } else {
-                lastError_ = "wrapper frame generation dispatch failed";
-            }
-        } else {
-            lastError_.clear();
-        }
-        return ok;
-    }
-
     if (!contextStorage_ || !fns_->fsr3DispatchFrameGeneration) {
         lastError_ = "official runtime frame generation context unavailable";
         return false;
@@ -676,17 +459,17 @@ bool AmdFsr3Runtime::dispatchFrameGeneration(const AmdFsr3RuntimeDispatchDesc& d
     static wchar_t kInterpolatedName[] = L"FSR3_InterpolatedOutput";
     FfxFrameGenerationDispatchDescription fgDispatch{};
     fgDispatch.commandList = fns_->getCommandListVK(desc.commandBuffer);
- #if WOWEE_AMD_FFX_SDK_KITS
+#if WOWEE_AMD_FFX_SDK_KITS
     fgDispatch.presentColor = fns_->getResourceVK(
         desc.outputImage, presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
     fgDispatch.outputs[0] = fns_->getResourceVK(
         desc.frameGenOutputImage, fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
- #else
+#else
     fgDispatch.presentColor = fns_->getResourceVK(
         reinterpret_cast<void*>(desc.outputImage), presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
     fgDispatch.outputs[0] = fns_->getResourceVK(
         reinterpret_cast<void*>(desc.frameGenOutputImage), fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
- #endif
+#endif
     fgDispatch.numInterpolatedFrames = 1;
     fgDispatch.reset = desc.reset;
     fgDispatch.backBufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;
@@ -705,10 +488,6 @@ bool AmdFsr3Runtime::dispatchFrameGeneration(const AmdFsr3RuntimeDispatchDesc& d
 
 void AmdFsr3Runtime::shutdown() {
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
-    if (wrapperContext_ && fns_ && fns_->wrapperShutdown) {
-        fns_->wrapperShutdown(static_cast<WoweeFsr3WrapperContext>(wrapperContext_));
-    }
-    wrapperContext_ = nullptr;
     if (contextStorage_ && fns_ && fns_->fsr3ContextDestroy) {
         fns_->fsr3ContextDestroy(reinterpret_cast<FfxFsr3Context*>(contextStorage_));
     }
@@ -736,9 +515,6 @@ void AmdFsr3Runtime::shutdown() {
     libHandle_ = nullptr;
     loadedLibraryPath_.clear();
     loadPathKind_ = LoadPathKind::None;
-    wrapperBackendName_.clear();
-    wrapperCapabilities_ = 0;
-    backend_ = RuntimeBackend::None;
 }
 
 }  // namespace wowee::rendering

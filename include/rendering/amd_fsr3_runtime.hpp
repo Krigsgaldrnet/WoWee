@@ -44,24 +44,13 @@ struct AmdFsr3RuntimeDispatchDesc {
     float cameraFar = 1000.0f;
     float cameraFovYRadians = 1.0f;
     bool reset = false;
-    uint32_t externalFlags = 0;
-    uint64_t colorMemoryHandle = 0;
-    uint64_t depthMemoryHandle = 0;
-    uint64_t motionVectorMemoryHandle = 0;
-    uint64_t outputMemoryHandle = 0;
-    uint64_t frameGenOutputMemoryHandle = 0;
-    uint64_t acquireSemaphoreHandle = 0;
-    uint64_t releaseSemaphoreHandle = 0;
-    uint64_t acquireSemaphoreValue = 0;
-    uint64_t releaseSemaphoreValue = 0;
 };
 
 class AmdFsr3Runtime {
 public:
     enum class LoadPathKind {
         None,
-        Official,
-        Wrapper
+        Official
     };
 
     AmdFsr3Runtime();
@@ -76,18 +65,9 @@ public:
     bool isFrameGenerationReady() const { return frameGenerationReady_; }
     const std::string& loadedLibraryPath() const { return loadedLibraryPath_; }
     LoadPathKind loadPathKind() const { return loadPathKind_; }
-    const std::string& wrapperBackendName() const { return wrapperBackendName_; }
-    uint32_t wrapperCapabilities() const { return wrapperCapabilities_; }
-    bool hasWrapperExternalInterop() const;
     const std::string& lastError() const { return lastError_; }
 
 private:
-    enum class RuntimeBackend {
-        None,
-        Official,
-        Wrapper
-    };
-
     void* libHandle_ = nullptr;
     std::string loadedLibraryPath_;
     void* scratchBuffer_ = nullptr;
@@ -95,15 +75,11 @@ private:
     bool ready_ = false;
     bool frameGenerationReady_ = false;
     LoadPathKind loadPathKind_ = LoadPathKind::None;
-    std::string wrapperBackendName_;
-    uint32_t wrapperCapabilities_ = 0;
     std::string lastError_;
 
     struct RuntimeFns;
     RuntimeFns* fns_ = nullptr;
     void* contextStorage_ = nullptr;
-    void* wrapperContext_ = nullptr;
-    RuntimeBackend backend_ = RuntimeBackend::None;
 };
 
 }  // namespace wowee::rendering
