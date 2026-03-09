@@ -87,6 +87,7 @@ int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3WrapperContext context,
 int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3WrapperContext context,
                                              const WoweeFsr3WrapperDispatchDesc* dispatchDesc);
 void wowee_fsr3_wrapper_shutdown(WoweeFsr3WrapperContext context);
+const char* wowee_fsr3_wrapper_get_last_error(WoweeFsr3WrapperContext context);
 
 #ifdef __cplusplus
 }

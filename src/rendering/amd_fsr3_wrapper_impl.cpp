@@ -229,7 +229,13 @@ struct WrapperContext {
     size_t scratchBufferSize = 0;
     void* fsr3ContextStorage = nullptr;
     bool frameGenerationReady = false;
+    std::string lastError{};
 };
+
+void setContextError(WrapperContext* ctx, const char* message) {
+    if (!ctx) return;
+    ctx->lastError = (message && *message) ? message : "unknown wrapper error";
+}
 
 void closeLibrary(void* handle) {
     if (!handle) return;
@@ -655,7 +661,10 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
     if (!context || !dispatchDesc) return -1;
     if (dispatchDesc->structSize < sizeof(WoweeFsr3WrapperDispatchDesc)) return -1;
     if (!dispatchDesc->commandBuffer || !dispatchDesc->colorImage || !dispatchDesc->depthImage ||
-        !dispatchDesc->motionVectorImage || !dispatchDesc->outputImage) return -1;
+        !dispatchDesc->motionVectorImage || !dispatchDesc->outputImage) {
+        setContextError(reinterpret_cast<WrapperContext*>(context), "invalid dispatch resources for upscale");
+        return -1;
+    }
     WrapperContext* ctx = reinterpret_cast<WrapperContext*>(context);
 #if defined(_WIN32)
     if (ctx->backend == WrapperBackend::Dx12Bridge) {
@@ -670,6 +679,25 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
             dispatchDesc->colorMemoryHandle == 0 || dispatchDesc->depthMemoryHandle == 0 ||
             dispatchDesc->motionVectorMemoryHandle == 0 || dispatchDesc->outputMemoryHandle == 0 ||
             dispatchDesc->acquireSemaphoreHandle == 0 || dispatchDesc->releaseSemaphoreHandle == 0) {
+            setContextError(ctx, "dx12_bridge dispatch missing required external handles for upscale");
+            return -1;
+        }
+
+        ID3D12Device* d3d12Device = nullptr;
+        if (D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d12Device)) == S_OK && d3d12Device) {
+            ID3D12Resource* sharedOutputResource = nullptr;
+            HRESULT hrOpen = d3d12Device->OpenSharedHandle(
+                reinterpret_cast<HANDLE>(dispatchDesc->outputMemoryHandle),
+                IID_PPV_ARGS(&sharedOutputResource));
+            if (FAILED(hrOpen) || !sharedOutputResource) {
+                setContextError(ctx, "dx12_bridge failed to open shared output memory handle as D3D12 resource");
+                d3d12Device->Release();
+                return -1;
+            }
+            sharedOutputResource->Release();
+            d3d12Device->Release();
+        } else {
+            setContextError(ctx, "dx12_bridge failed to create D3D12 device for shared-handle import");
             return -1;
         }
     }
@@ -713,7 +741,13 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
     dispatch.cameraFovAngleVertical = dispatchDesc->cameraFovYRadians;
     dispatch.viewSpaceToMetersFactor = 1.0f;
 
-    return (ctx->fns.fsr3ContextDispatchUpscale(reinterpret_cast<FfxFsr3Context*>(ctx->fsr3ContextStorage), &dispatch) == FFX_OK) ? 0 : -1;
+    const bool ok = (ctx->fns.fsr3ContextDispatchUpscale(reinterpret_cast<FfxFsr3Context*>(ctx->fsr3ContextStorage), &dispatch) == FFX_OK);
+    if (!ok) {
+        setContextError(ctx, "ffxFsr3ContextDispatchUpscale failed");
+        return -1;
+    }
+    ctx->lastError.clear();
+    return 0;
 #endif
 }
 
@@ -726,9 +760,15 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
 #else
     if (!context || !dispatchDesc) return -1;
     if (dispatchDesc->structSize < sizeof(WoweeFsr3WrapperDispatchDesc)) return -1;
-    if (!dispatchDesc->commandBuffer || !dispatchDesc->outputImage || !dispatchDesc->frameGenOutputImage) return -1;
+    if (!dispatchDesc->commandBuffer || !dispatchDesc->outputImage || !dispatchDesc->frameGenOutputImage) {
+        setContextError(reinterpret_cast<WrapperContext*>(context), "invalid dispatch resources for frame generation");
+        return -1;
+    }
     WrapperContext* ctx = reinterpret_cast<WrapperContext*>(context);
-    if (!ctx->frameGenerationReady || !ctx->fns.fsr3DispatchFrameGeneration) return -1;
+    if (!ctx->frameGenerationReady || !ctx->fns.fsr3DispatchFrameGeneration) {
+        setContextError(ctx, "frame generation backend is not ready");
+        return -1;
+    }
 #if defined(_WIN32)
     if (ctx->backend == WrapperBackend::Dx12Bridge) {
         const uint32_t requiredMask =
@@ -739,6 +779,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
         if ((dispatchDesc->externalFlags & requiredMask) != requiredMask ||
             dispatchDesc->outputMemoryHandle == 0 || dispatchDesc->frameGenOutputMemoryHandle == 0 ||
             dispatchDesc->acquireSemaphoreHandle == 0 || dispatchDesc->releaseSemaphoreHandle == 0) {
+            setContextError(ctx, "dx12_bridge dispatch missing required external handles for frame generation");
             return -1;
         }
     }
@@ -761,7 +802,13 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
     fgDispatch.minMaxLuminance[0] = 0.0f;
     fgDispatch.minMaxLuminance[1] = 1.0f;
 
-    return (ctx->fns.fsr3DispatchFrameGeneration(&fgDispatch) == FFX_OK) ? 0 : -1;
+    const bool ok = (ctx->fns.fsr3DispatchFrameGeneration(&fgDispatch) == FFX_OK);
+    if (!ok) {
+        setContextError(ctx, "ffxFsr3DispatchFrameGeneration failed");
+        return -1;
+    }
+    ctx->lastError.clear();
+    return 0;
 #endif
 }
 
@@ -771,5 +818,16 @@ WOWEE_FSR3_WRAPPER_EXPORT void wowee_fsr3_wrapper_shutdown(WoweeFsr3WrapperConte
     destroyContext(ctx);
 #else
     (void)context;
+#endif
+}
+
+WOWEE_FSR3_WRAPPER_EXPORT const char* wowee_fsr3_wrapper_get_last_error(WoweeFsr3WrapperContext context) {
+#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
+    WrapperContext* ctx = reinterpret_cast<WrapperContext*>(context);
+    if (!ctx) return "invalid wrapper context";
+    return ctx->lastError.c_str();
+#else
+    (void)context;
+    return "wrapper built without WOWEE_HAS_AMD_FSR3_FRAMEGEN";
 #endif
 }

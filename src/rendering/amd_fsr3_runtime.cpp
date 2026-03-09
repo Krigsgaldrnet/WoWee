@@ -32,6 +32,7 @@ struct AmdFsr3Runtime::RuntimeFns {
     int32_t (*wrapperDispatchUpscale)(WoweeFsr3WrapperContext, const WoweeFsr3WrapperDispatchDesc*) = nullptr;
     int32_t (*wrapperDispatchFramegen)(WoweeFsr3WrapperContext, const WoweeFsr3WrapperDispatchDesc*) = nullptr;
     void (*wrapperShutdown)(WoweeFsr3WrapperContext) = nullptr;
+    const char* (*wrapperGetLastError)(WoweeFsr3WrapperContext) = nullptr;
 
     decltype(&ffxGetScratchMemorySizeVK) getScratchMemorySizeVK = nullptr;
     decltype(&ffxGetDeviceVK) getDeviceVK = nullptr;
@@ -238,6 +239,7 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
         fns_->wrapperDispatchUpscale = reinterpret_cast<decltype(fns_->wrapperDispatchUpscale)>(resolveSym("wowee_fsr3_wrapper_dispatch_upscale"));
         fns_->wrapperDispatchFramegen = reinterpret_cast<decltype(fns_->wrapperDispatchFramegen)>(resolveSym("wowee_fsr3_wrapper_dispatch_framegen"));
         fns_->wrapperShutdown = reinterpret_cast<decltype(fns_->wrapperShutdown)>(resolveSym("wowee_fsr3_wrapper_shutdown"));
+        fns_->wrapperGetLastError = reinterpret_cast<decltype(fns_->wrapperGetLastError)>(resolveSym("wowee_fsr3_wrapper_get_last_error"));
 
         if (!fns_->wrapperGetAbiVersion || !fns_->wrapperInitialize ||
             !fns_->wrapperDispatchUpscale || !fns_->wrapperShutdown) {
@@ -472,7 +474,12 @@ bool AmdFsr3Runtime::dispatchUpscale(const AmdFsr3RuntimeDispatchDesc& desc) {
         wrapperDesc.releaseSemaphoreHandle = desc.releaseSemaphoreHandle;
         const bool ok = fns_->wrapperDispatchUpscale(static_cast<WoweeFsr3WrapperContext>(wrapperContext_), &wrapperDesc) == 0;
         if (!ok) {
-            lastError_ = "wrapper upscale dispatch failed";
+            if (fns_->wrapperGetLastError) {
+                const char* err = fns_->wrapperGetLastError(static_cast<WoweeFsr3WrapperContext>(wrapperContext_));
+                lastError_ = (err && *err) ? err : "wrapper upscale dispatch failed";
+            } else {
+                lastError_ = "wrapper upscale dispatch failed";
+            }
         } else {
             lastError_.clear();
         }
@@ -588,7 +595,12 @@ bool AmdFsr3Runtime::dispatchFrameGeneration(const AmdFsr3RuntimeDispatchDesc& d
         wrapperDesc.releaseSemaphoreHandle = desc.releaseSemaphoreHandle;
         const bool ok = fns_->wrapperDispatchFramegen(static_cast<WoweeFsr3WrapperContext>(wrapperContext_), &wrapperDesc) == 0;
         if (!ok) {
-            lastError_ = "wrapper frame generation dispatch failed";
+            if (fns_->wrapperGetLastError) {
+                const char* err = fns_->wrapperGetLastError(static_cast<WoweeFsr3WrapperContext>(wrapperContext_));
+                lastError_ = (err && *err) ? err : "wrapper frame generation dispatch failed";
+            } else {
+                lastError_ = "wrapper frame generation dispatch failed";
+            }
         } else {
             lastError_.clear();
         }
