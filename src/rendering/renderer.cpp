@@ -3823,6 +3823,7 @@ bool Renderer::initFSR2Resources() {
     fsr2_.amdFsr3UpscaleDispatchCount = 0;
     fsr2_.amdFsr3FramegenDispatchCount = 0;
     fsr2_.amdFsr3FallbackCount = 0;
+    fsr2_.amdFsr3InteropSyncValue = 1;
 #if WOWEE_HAS_AMD_FSR2
     LOG_INFO("FSR2: AMD FidelityFX SDK detected at build time.");
 #else
@@ -4260,6 +4261,7 @@ void Renderer::destroyFSR2Resources() {
     fsr2_.framegenOutputValid = false;
     fsr2_.amdFsr3RuntimePath = "Path C";
     fsr2_.amdFsr3RuntimeLastError.clear();
+    fsr2_.amdFsr3InteropSyncValue = 1;
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
     if (fsr2_.amdFsr3Runtime) {
         fsr2_.amdFsr3Runtime->shutdown();
@@ -4606,8 +4608,11 @@ void Renderer::dispatchAmdFsr3Framegen() {
         fgDispatch.externalFlags |= WOWEE_FSR3_WRAPPER_EXTERNAL_RELEASE_SEMAPHORE;
         trackHandle(fgDispatch.releaseSemaphoreHandle);
     }
-    fgDispatch.acquireSemaphoreValue = 1;
-    fgDispatch.releaseSemaphoreValue = 1;
+    uint64_t syncValue = fsr2_.amdFsr3InteropSyncValue;
+    if (syncValue == 0) syncValue = 1;
+    fgDispatch.acquireSemaphoreValue = syncValue;
+    fgDispatch.releaseSemaphoreValue = syncValue;
+    fsr2_.amdFsr3InteropSyncValue = syncValue + 1;
 #endif
 
     if (!fsr2_.amdFsr3Runtime->dispatchUpscale(fgDispatch)) {
