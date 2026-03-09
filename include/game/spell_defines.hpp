@@ -50,7 +50,8 @@ struct ActionBarSlot {
 struct CombatTextEntry {
     enum Type : uint8_t {
         MELEE_DAMAGE, SPELL_DAMAGE, HEAL, MISS, DODGE, PARRY, BLOCK,
-        CRIT_DAMAGE, CRIT_HEAL, PERIODIC_DAMAGE, PERIODIC_HEAL, ENVIRONMENTAL
+        CRIT_DAMAGE, CRIT_HEAL, PERIODIC_DAMAGE, PERIODIC_HEAL, ENVIRONMENTAL,
+        ENERGIZE
     };
     Type type;
     int32_t amount = 0;

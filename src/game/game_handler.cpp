@@ -3067,7 +3067,24 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
         }
-        case Opcode::SMSG_SPELLENERGIZELOG:
+        case Opcode::SMSG_SPELLENERGIZELOG: {
+            // packed victim GUID, packed caster GUID, uint32 spellId, uint8 powerType, int32 amount
+            size_t rem = packet.getSize() - packet.getReadPos();
+            if (rem < 4) { packet.setReadPos(packet.getSize()); break; }
+            uint64_t victimGuid = UpdateObjectParser::readPackedGuid(packet);
+            uint64_t casterGuid = UpdateObjectParser::readPackedGuid(packet);
+            rem = packet.getSize() - packet.getReadPos();
+            if (rem < 6) { packet.setReadPos(packet.getSize()); break; }
+            uint32_t spellId   = packet.readUInt32();
+            /*uint8_t powerType =*/ packet.readUInt8();
+            int32_t  amount    = static_cast<int32_t>(packet.readUInt32());
+            bool isPlayerVictim = (victimGuid == playerGuid);
+            bool isPlayerCaster = (casterGuid == playerGuid);
+            if ((isPlayerVictim || isPlayerCaster) && amount > 0)
+                addCombatText(CombatTextEntry::ENERGIZE, amount, spellId, isPlayerCaster);
+            packet.setReadPos(packet.getSize());
+            break;
+        }
         case Opcode::SMSG_ENVIRONMENTAL_DAMAGE_LOG:
         case Opcode::SMSG_SET_PROFICIENCY:
             packet.setReadPos(packet.getSize());

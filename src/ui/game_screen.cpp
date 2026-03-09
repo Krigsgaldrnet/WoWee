@@ -4470,6 +4470,29 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     color = outgoing ? ImVec4(0.6f, 0.6f, 0.6f, alpha)
                                      : ImVec4(0.4f, 0.9f, 1.0f, alpha);
                     break;
+                case game::CombatTextEntry::BLOCK:
+                    snprintf(text, sizeof(text), outgoing ? "Block" : "You Block");
+                    color = outgoing ? ImVec4(0.6f, 0.6f, 0.6f, alpha)
+                                     : ImVec4(0.4f, 0.9f, 1.0f, alpha);
+                    break;
+                case game::CombatTextEntry::PERIODIC_DAMAGE:
+                    snprintf(text, sizeof(text), "-%d", entry.amount);
+                    color = outgoing ?
+                        ImVec4(1.0f, 0.9f, 0.3f, alpha) :   // Outgoing DoT = pale yellow
+                        ImVec4(1.0f, 0.4f, 0.4f, alpha);     // Incoming DoT = pale red
+                    break;
+                case game::CombatTextEntry::PERIODIC_HEAL:
+                    snprintf(text, sizeof(text), "+%d", entry.amount);
+                    color = ImVec4(0.4f, 1.0f, 0.5f, alpha);
+                    break;
+                case game::CombatTextEntry::ENVIRONMENTAL:
+                    snprintf(text, sizeof(text), "-%d", entry.amount);
+                    color = ImVec4(0.9f, 0.5f, 0.2f, alpha);  // Orange for environmental
+                    break;
+                case game::CombatTextEntry::ENERGIZE:
+                    snprintf(text, sizeof(text), "+%d", entry.amount);
+                    color = ImVec4(0.3f, 0.6f, 1.0f, alpha);  // Blue for mana/energy
+                    break;
                 default:
                     snprintf(text, sizeof(text), "%d", entry.amount);
                     color = ImVec4(1.0f, 1.0f, 1.0f, alpha);
