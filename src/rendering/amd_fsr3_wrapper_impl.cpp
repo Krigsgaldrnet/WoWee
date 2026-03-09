@@ -829,7 +829,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
     };
 
     bool loaded = tryLoadForBackend(selectedBackend);
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__linux__)
     if (!loaded && !backendExplicit && selectedBackend == WrapperBackend::VulkanRuntime) {
         loaded = tryLoadForBackend(WrapperBackend::Dx12Bridge);
     }
@@ -843,7 +843,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
     if (!ctx->backendLibHandle) {
         const bool attemptedDx12 =
             (selectedBackend == WrapperBackend::Dx12Bridge)
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__linux__)
             || (!backendExplicit && selectedBackend == WrapperBackend::VulkanRuntime)
 #endif
             ;
