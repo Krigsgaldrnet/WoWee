@@ -128,26 +128,36 @@ jobs:
       - name: Verify FSR3 wrapper bridge exports (Linux)
         run: |
           set -euo pipefail
-          WRAPPER_SO="build/bin/libffx_fsr3_vk_wrapper.so"
-          if [ -f "$WRAPPER_SO" ]; then
-            nm -D "$WRAPPER_SO" | grep -q 'wowee_fsr3_wrapper_get_backend'
-            nm -D "$WRAPPER_SO" | grep -q 'wowee_fsr3_wrapper_get_capabilities'
-            nm -D "$WRAPPER_SO" | grep -q 'wowee_fsr3_wrapper_dispatch_upscale'
+          if cmake --build build --target help | grep -q 'wowee_fsr3_vk_wrapper'; then
+            cmake --build build --target wowee_fsr3_vk_wrapper --parallel $(nproc)
+            WRAPPER_SO="build/bin/libffx_fsr3_vk_wrapper.so"
+            if [ -f "$WRAPPER_SO" ]; then
+              nm -D "$WRAPPER_SO" | grep -q 'wowee_fsr3_wrapper_get_backend'
+              nm -D "$WRAPPER_SO" | grep -q 'wowee_fsr3_wrapper_get_capabilities'
+              nm -D "$WRAPPER_SO" | grep -q 'wowee_fsr3_wrapper_dispatch_upscale'
+            else
+              echo "Wrapper shared library not found at $WRAPPER_SO"
+              exit 1
+            fi
           else
-            echo "Wrapper shared library not found at $WRAPPER_SO"
-            exit 1
+            echo "FSR3 wrapper target not generated for this SDK layout; skipping wrapper export verification."
           fi
 
       - name: Run FSR3 wrapper runtime smoke probe (Linux)
         run: |
           set -euo pipefail
-          SMOKE_BIN="build/bin/wowee_fsr3_wrapper_runtime_smoke"
-          WRAPPER_SO="./build/bin/libffx_fsr3_vk_wrapper.so"
-          if [ -x "$SMOKE_BIN" ] && [ -f "$WRAPPER_SO" ]; then
-            "$SMOKE_BIN" "$WRAPPER_SO"
+          if cmake --build build --target help | grep -q 'wowee_fsr3_wrapper_runtime_smoke'; then
+            cmake --build build --target wowee_fsr3_wrapper_runtime_smoke --parallel $(nproc)
+            SMOKE_BIN="build/bin/wowee_fsr3_wrapper_runtime_smoke"
+            WRAPPER_SO="./build/bin/libffx_fsr3_vk_wrapper.so"
+            if [ -x "$SMOKE_BIN" ] && [ -f "$WRAPPER_SO" ]; then
+              "$SMOKE_BIN" "$WRAPPER_SO"
+            else
+              echo "Smoke probe binary or wrapper library missing."
+              exit 1
+            fi
           else
-            echo "Smoke probe binary or wrapper library missing."
-            exit 1
+            echo "FSR3 wrapper runtime smoke target not generated for this SDK layout; skipping."
           fi
 
       - name: Package (DEB)
