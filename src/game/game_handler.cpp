@@ -1535,6 +1535,66 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_LOG_XPGAIN:
             handleXpGain(packet);
             break;
+        case Opcode::SMSG_EXPLORATION_EXPERIENCE: {
+            // uint32 areaId + uint32 xpGained
+            if (packet.getSize() - packet.getReadPos() >= 8) {
+                /*uint32_t areaId =*/ packet.readUInt32();
+                uint32_t xpGained = packet.readUInt32();
+                if (xpGained > 0) {
+                    char buf[128];
+                    std::snprintf(buf, sizeof(buf),
+                                  "Discovered new area! Gained %u experience.", xpGained);
+                    addSystemChatMessage(buf);
+                    // XP is updated via PLAYER_XP update fields from the server.
+                }
+            }
+            break;
+        }
+        case Opcode::SMSG_PET_TAME_FAILURE: {
+            // uint8 reason: 0=invalid_creature, 1=too_many_pets, 2=already_tamed, etc.
+            const char* reasons[] = {
+                "Invalid creature", "Too many pets", "Already tamed",
+                "Wrong faction", "Level too low", "Creature not tameable",
+                "Can't control", "Can't command"
+            };
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                uint8_t reason = packet.readUInt8();
+                const char* msg = (reason < 8) ? reasons[reason] : "Unknown reason";
+                std::string s = std::string("Failed to tame: ") + msg;
+                addSystemChatMessage(s);
+            }
+            break;
+        }
+        case Opcode::SMSG_PET_ACTION_FEEDBACK: {
+            // uint8 action + uint8 flags
+            packet.setReadPos(packet.getSize());  // Consume; no UI for pet feedback yet.
+            break;
+        }
+        case Opcode::SMSG_PET_NAME_QUERY_RESPONSE: {
+            // uint32 petNumber + string name + uint32 timestamp + bool declined
+            packet.setReadPos(packet.getSize());  // Consume; pet names shown via unit objects.
+            break;
+        }
+        case Opcode::SMSG_QUESTUPDATE_FAILED: {
+            // uint32 questId
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t questId = packet.readUInt32();
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "Quest %u failed!", questId);
+                addSystemChatMessage(buf);
+            }
+            break;
+        }
+        case Opcode::SMSG_QUESTUPDATE_FAILEDTIMER: {
+            // uint32 questId
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t questId = packet.readUInt32();
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "Quest %u timed out!", questId);
+                addSystemChatMessage(buf);
+            }
+            break;
+        }
 
         // ---- Creature Movement ----
         case Opcode::SMSG_MONSTER_MOVE:
