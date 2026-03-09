@@ -229,7 +229,7 @@ void destroyContext(WrapperContext* ctx) {
 }
 
 #if defined(_WIN32)
-bool runDx12BridgePreflight(std::string& errorMessage) {
+bool runDx12BridgePreflight(const WoweeFsr3WrapperInitDesc* initDesc, std::string& errorMessage) {
     std::vector<std::string> missing;
 
     HMODULE d3d12 = LoadLibraryA("d3d12.dll");
@@ -246,6 +246,22 @@ bool runDx12BridgePreflight(std::string& errorMessage) {
         FreeLibrary(dxgi);
     }
 
+    if (!initDesc || !initDesc->device || !initDesc->getDeviceProcAddr) {
+        missing.emplace_back("valid Vulkan device/getDeviceProcAddr");
+    } else {
+        const char* requiredVkInteropFns[] = {
+            "vkGetMemoryWin32HandleKHR",
+            "vkImportSemaphoreWin32HandleKHR",
+            "vkGetSemaphoreWin32HandleKHR"
+        };
+        for (const char* fn : requiredVkInteropFns) {
+            PFN_vkVoidFunction fp = initDesc->getDeviceProcAddr(initDesc->device, fn);
+            if (!fp) {
+                missing.emplace_back(fn);
+            }
+        }
+    }
+
     std::vector<std::string> runtimeCandidates;
     if (const char* explicitRuntime = std::getenv("WOWEE_FSR3_DX12_RUNTIME_LIB")) {
         if (explicitRuntime && *explicitRuntime) runtimeCandidates.emplace_back(explicitRuntime);
@@ -254,16 +270,26 @@ bool runDx12BridgePreflight(std::string& errorMessage) {
     runtimeCandidates.emplace_back("ffx_framegeneration_dx12.dll");
 
     bool foundRuntime = false;
+    bool foundRequiredApiSymbols = false;
     for (const std::string& candidate : runtimeCandidates) {
         HMODULE runtime = LoadLibraryA(candidate.c_str());
         if (runtime) {
+            const bool hasCreate = GetProcAddress(runtime, "ffxCreateContext") != nullptr;
+            const bool hasDestroy = GetProcAddress(runtime, "ffxDestroyContext") != nullptr;
+            const bool hasConfigure = GetProcAddress(runtime, "ffxConfigure") != nullptr;
+            const bool hasDispatch = GetProcAddress(runtime, "ffxDispatch") != nullptr;
+            if (hasCreate && hasDestroy && hasConfigure && hasDispatch) {
+                foundRequiredApiSymbols = true;
+            }
             FreeLibrary(runtime);
             foundRuntime = true;
-            break;
+            if (foundRequiredApiSymbols) break;
         }
     }
     if (!foundRuntime) {
         missing.emplace_back("amd_fidelityfx_framegeneration_dx12.dll");
+    } else if (!foundRequiredApiSymbols) {
+        missing.emplace_back("ffxCreateContext/ffxConfigure/ffxDispatch exports");
     }
 
     if (missing.empty()) return true;
@@ -325,7 +351,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
         return -1;
 #else
         std::string preflightError;
-        if (!runDx12BridgePreflight(preflightError)) {
+        if (!runDx12BridgePreflight(initDesc, preflightError)) {
             writeError(outErrorText, outErrorTextCapacity, preflightError.c_str());
             return -1;
         }
