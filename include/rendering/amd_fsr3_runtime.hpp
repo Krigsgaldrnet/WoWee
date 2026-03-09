@@ -77,6 +77,8 @@ public:
     const std::string& loadedLibraryPath() const { return loadedLibraryPath_; }
     LoadPathKind loadPathKind() const { return loadPathKind_; }
     const std::string& wrapperBackendName() const { return wrapperBackendName_; }
+    uint32_t wrapperCapabilities() const { return wrapperCapabilities_; }
+    bool hasWrapperExternalInterop() const;
     const std::string& lastError() const { return lastError_; }
 
 private:
@@ -94,6 +96,7 @@ private:
     bool frameGenerationReady_ = false;
     LoadPathKind loadPathKind_ = LoadPathKind::None;
     std::string wrapperBackendName_;
+    uint32_t wrapperCapabilities_ = 0;
     std::string lastError_;
 
     struct RuntimeFns;

@@ -4620,9 +4620,7 @@ void Renderer::dispatchAmdFsr3Framegen() {
     using ExportHandle = int;
 #endif
     bool exportInteropHandles = false;
-    if (fsr2_.amdFsr3Runtime &&
-        fsr2_.amdFsr3Runtime->loadPathKind() == AmdFsr3Runtime::LoadPathKind::Wrapper &&
-        fsr2_.amdFsr3Runtime->wrapperBackendName() == "dx12_bridge") {
+    if (fsr2_.amdFsr3Runtime && fsr2_.amdFsr3Runtime->hasWrapperExternalInterop()) {
         exportInteropHandles = true;
     }
 

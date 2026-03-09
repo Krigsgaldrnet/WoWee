@@ -57,6 +57,11 @@ AmdFsr3Runtime::~AmdFsr3Runtime() {
     shutdown();
 }
 
+bool AmdFsr3Runtime::hasWrapperExternalInterop() const {
+    if (loadPathKind_ != LoadPathKind::Wrapper) return false;
+    return (wrapperCapabilities_ & WOWEE_FSR3_WRAPPER_CAP_EXTERNAL_INTEROP) != 0u;
+}
+
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
 namespace {
 FfxErrorCode vkSwapchainConfigureNoop(const FfxFrameGenerationConfig*) {
@@ -161,6 +166,7 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
     lastError_.clear();
     loadPathKind_ = LoadPathKind::None;
     wrapperBackendName_.clear();
+    wrapperCapabilities_ = 0;
     backend_ = RuntimeBackend::None;
 
 #if !WOWEE_HAS_AMD_FSR3_FRAMEGEN
@@ -307,6 +313,7 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
                 wrapperCaps |= WOWEE_FSR3_WRAPPER_CAP_FRAME_GENERATION;
             }
         }
+        wrapperCapabilities_ = wrapperCaps;
         frameGenerationReady_ = desc.enableFrameGeneration &&
                                 ((wrapperCaps & WOWEE_FSR3_WRAPPER_CAP_FRAME_GENERATION) != 0u);
         if (fns_->wrapperGetBackend) {
@@ -705,6 +712,7 @@ void AmdFsr3Runtime::shutdown() {
     loadedLibraryPath_.clear();
     loadPathKind_ = LoadPathKind::None;
     wrapperBackendName_.clear();
+    wrapperCapabilities_ = 0;
     backend_ = RuntimeBackend::None;
 }
 
