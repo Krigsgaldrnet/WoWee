@@ -56,6 +56,7 @@ Runtime note:
   - `WOWEE_FSR3_WRAPPER_BACKEND=vulkan_runtime`
   - `WOWEE_FSR3_WRAPPER_BACKEND=dx12_bridge`
 - Default is `vulkan_runtime` on all platforms.
+- If backend mode is not explicitly set and Vulkan-runtime backend loading fails, wrapper auto-falls back to `dx12_bridge` on Windows and Linux.
 - `dx12_bridge` is opt-in.
 - On Windows: `dx12_bridge` performs DX12/Vulkan preflight, then loads the first runtime library exposing the required FSR3 dispatch exports.
 - On Linux: `dx12_bridge` is enabled for wrapper runtime compatibility mode and uses Vulkan dispatch symbols in this build.

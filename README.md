@@ -211,6 +211,7 @@ make -j$(nproc)
     - Wrapper backend mode:
       - `WOWEE_FSR3_WRAPPER_BACKEND=vulkan_runtime` (default on all platforms)
       - `WOWEE_FSR3_WRAPPER_BACKEND=dx12_bridge` (opt-in)
+      - If backend mode is not explicitly set and Vulkan-runtime backend loading fails, wrapper now auto-falls back to `dx12_bridge` on Windows and Linux.
     - DX12 runtime override (for `dx12_bridge`):
       - `WOWEE_FSR3_DX12_RUNTIME_LIB=C:\\path\\to\\amd_fidelityfx_framegeneration_dx12.dll`
     - DX12 device validation probe (default on):
