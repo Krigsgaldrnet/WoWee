@@ -247,8 +247,9 @@ make -j$(nproc)
 
 ## CI / CD
 
-- GitHub Actions builds on every push: Linux (x86-64, ARM64), Windows (MSYS2), macOS (ARM64)
-- `build-linux-amd-fsr2` clones AMD's FSR2 SDK and builds with `-DWOWEE_ENABLE_AMD_FSR2=ON`; if Vulkan permutation headers are absent in that SDK checkout, WoWee automatically falls back to the internal FSR2 backend
+- GitHub Actions builds on every push: Linux (x86-64, ARM64), Windows (x86-64, ARM64 via MSYS2), macOS (ARM64)
+- All build jobs are AMD-FSR2-only (`WOWEE_ENABLE_AMD_FSR2=ON`) and explicitly build `wowee_fsr2_amd_vk`
+- Each job clones AMD's FSR2 SDK; if generated Vulkan permutation headers are absent upstream, WoWee bootstraps them from `third_party/fsr2_vk_permutations`
 - Container build via `container/build-in-container.sh` (Podman)
 
 ## Security

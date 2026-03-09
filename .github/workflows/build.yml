@@ -57,8 +57,28 @@ jobs:
             libx11-dev
           sudo apt-get install -y libstorm-dev || true
 
-      - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Fetch AMD FSR2 SDK
+        run: |
+          rm -rf extern/FidelityFX-FSR2
+          git clone --depth 1 https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git extern/FidelityFX-FSR2
+
+      - name: Check AMD FSR2 Vulkan permutation headers
+        run: |
+          set -euo pipefail
+          SDK_DIR="$PWD/extern/FidelityFX-FSR2"
+          OUT_DIR="$SDK_DIR/src/ffx-fsr2-api/vk/shaders"
+          if [ -f "$OUT_DIR/ffx_fsr2_accumulate_pass_permutations.h" ]; then
+            echo "AMD FSR2 Vulkan permutation headers detected."
+          else
+            echo "AMD FSR2 Vulkan permutation headers not found in SDK checkout."
+            echo "WoWee CMake will bootstrap vendored headers."
+          fi
+
+      - name: Configure (AMD ON)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWOWEE_ENABLE_AMD_FSR2=ON
+
+      - name: Assert AMD FSR2 target
+        run: cmake --build build --target wowee_fsr2_amd_vk --parallel $(nproc)
 
       - name: Build
         run: cmake --build build --parallel $(nproc)
@@ -72,61 +92,6 @@ jobs:
           name: wowee-linux-${{ matrix.arch }}-deb
           path: build/wowee-*.deb
           if-no-files-found: error
-
-  build-linux-amd-fsr2:
-    name: Build (linux-amd-fsr2)
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake \
-            build-essential \
-            pkg-config \
-            libsdl2-dev \
-            libglew-dev \
-            libglm-dev \
-            libssl-dev \
-            zlib1g-dev \
-            libvulkan-dev \
-            vulkan-tools \
-            glslc \
-            libavformat-dev \
-            libavcodec-dev \
-            libswscale-dev \
-            libavutil-dev \
-            libunicorn-dev \
-            libx11-dev
-          sudo apt-get install -y libstorm-dev || true
-
-      - name: Fetch AMD FSR2 SDK
-        run: |
-          rm -rf extern/FidelityFX-FSR2
-          git clone --depth 1 https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git extern/FidelityFX-FSR2
-
-      - name: Check AMD FSR2 Vulkan permutation headers (non-fatal)
-        run: |
-          set -euo pipefail
-          SDK_DIR="$PWD/extern/FidelityFX-FSR2"
-          OUT_DIR="$SDK_DIR/src/ffx-fsr2-api/vk/shaders"
-          if [ -f "$OUT_DIR/ffx_fsr2_accumulate_pass_permutations.h" ]; then
-            echo "AMD FSR2 Vulkan permutation headers detected."
-          else
-            echo "WARNING: AMD FSR2 Vulkan permutation headers not found in SDK checkout."
-            echo "Build will continue; WoWee CMake will bootstrap vendored headers."
-          fi
-
-      - name: Configure (AMD ON)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWOWEE_ENABLE_AMD_FSR2=ON
-
-      - name: Build
-        run: cmake --build build --parallel $(nproc)
 
   build-macos:
     name: Build (macOS ${{ matrix.arch }})
@@ -151,6 +116,11 @@ jobs:
           # dylibbundler may not be in all brew mirrors; install separately to not block others
           brew install dylibbundler 2>/dev/null || true
 
+      - name: Fetch AMD FSR2 SDK
+        run: |
+          rm -rf extern/FidelityFX-FSR2
+          git clone --depth 1 https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git extern/FidelityFX-FSR2
+
       - name: Configure
         run: |
           BREW=$(brew --prefix)
@@ -158,7 +128,11 @@ jobs:
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$BREW" \
-            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
+            -DWOWEE_ENABLE_AMD_FSR2=ON
+
+      - name: Assert AMD FSR2 target
+        run: cmake --build build --target wowee_fsr2_amd_vk --parallel $(sysctl -n hw.logicalcpu)
 
       - name: Build
         run: cmake --build build --parallel $(sysctl -n hw.logicalcpu)
@@ -261,9 +235,19 @@ jobs:
           cmake --build /tmp/StormLib/build --parallel $(nproc)
           cmake --install /tmp/StormLib/build
 
+      - name: Fetch AMD FSR2 SDK
+        shell: msys2 {0}
+        run: |
+          rm -rf extern/FidelityFX-FSR2
+          git clone --depth 1 https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git extern/FidelityFX-FSR2
+
       - name: Configure
         shell: msys2 {0}
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWOWEE_ENABLE_AMD_FSR2=ON
+
+      - name: Assert AMD FSR2 target
+        shell: msys2 {0}
+        run: cmake --build build --target wowee_fsr2_amd_vk --parallel $(nproc)
 
       - name: Build
         shell: msys2 {0}
@@ -331,9 +315,19 @@ jobs:
           cmake --build /tmp/StormLib/build --parallel $(nproc)
           cmake --install /tmp/StormLib/build
 
+      - name: Fetch AMD FSR2 SDK
+        shell: msys2 {0}
+        run: |
+          rm -rf extern/FidelityFX-FSR2
+          git clone --depth 1 https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git extern/FidelityFX-FSR2
+
       - name: Configure
         shell: msys2 {0}
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWOWEE_ENABLE_AMD_FSR2=ON
+
+      - name: Assert AMD FSR2 target
+        shell: msys2 {0}
+        run: cmake --build build --target wowee_fsr2_amd_vk --parallel $(nproc)
 
       - name: Build
         shell: msys2 {0}
