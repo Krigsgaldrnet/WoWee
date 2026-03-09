@@ -3070,6 +3070,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_SPELLENERGIZELOG:
         case Opcode::SMSG_ENVIRONMENTAL_DAMAGE_LOG:
         case Opcode::SMSG_SET_PROFICIENCY:
+            packet.setReadPos(packet.getSize());
+            break;
+
         case Opcode::SMSG_ACTION_BUTTONS: {
             // uint8 mode (0=initial, 1=update) + 144 × uint32 packed buttons
             // packed: bits 0-23 = actionId, bits 24-31 = type
