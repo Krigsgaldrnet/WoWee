@@ -33,8 +33,8 @@ function Ensure-Fsr2Sdk {
 function Ensure-FidelityFxSdk {
     $sdkDir = Join-Path $ScriptDir "extern\FidelityFX-SDK"
     $sdkHeader = Join-Path $sdkDir "sdk\include\FidelityFX\host\ffx_frameinterpolation.h"
-    $sdkRepo = if ($env:WOWEE_FFX_SDK_REPO) { $env:WOWEE_FFX_SDK_REPO } else { "https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git" }
-    $sdkRef = if ($env:WOWEE_FFX_SDK_REF) { $env:WOWEE_FFX_SDK_REF } else { "v1.1.4" }
+    $sdkRepo = if ($env:WOWEE_FFX_SDK_REPO) { $env:WOWEE_FFX_SDK_REPO } else { "https://github.com/Kelsidavis/FidelityFX-SDK.git" }
+    $sdkRef = if ($env:WOWEE_FFX_SDK_REF) { $env:WOWEE_FFX_SDK_REF } else { "main" }
     if (Test-Path $sdkHeader) { return }
 
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {

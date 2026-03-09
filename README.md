@@ -187,9 +187,9 @@ make -j$(nproc)
 - Build scripts and CI also fetch:
   - `extern/FidelityFX-SDK`
 - Source URL:
-  - `https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git`
+  - `https://github.com/Kelsidavis/FidelityFX-SDK.git`
 - Ref:
-  - `v1.1.4` (depth-1 clone)
+  - `main` (depth-1 clone)
   - Override with env vars:
     - `WOWEE_FFX_SDK_REPO=https://github.com/<you>/FidelityFX-SDK.git`
     - `WOWEE_FFX_SDK_REF=<branch-or-tag>`

@@ -25,8 +25,8 @@ ensure_fsr2_sdk() {
 ensure_fidelityfx_sdk() {
     local sdk_dir="extern/FidelityFX-SDK"
     local sdk_header="$sdk_dir/sdk/include/FidelityFX/host/ffx_frameinterpolation.h"
-    local sdk_repo="${WOWEE_FFX_SDK_REPO:-https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git}"
-    local sdk_ref="${WOWEE_FFX_SDK_REF:-v1.1.4}"
+    local sdk_repo="${WOWEE_FFX_SDK_REPO:-https://github.com/Kelsidavis/FidelityFX-SDK.git}"
+    local sdk_ref="${WOWEE_FFX_SDK_REF:-main}"
     if [ -f "$sdk_header" ]; then
         return
     fi

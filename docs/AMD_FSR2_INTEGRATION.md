@@ -13,12 +13,12 @@ AMD SDK checkout path:
 
 FidelityFX SDK checkout path (framegen extern):
 
-`extern/FidelityFX-SDK` (pinned to `v1.1.4` in build scripts and CI)
+`extern/FidelityFX-SDK` (default branch `main` from WoWee's fork in build scripts and CI)
 
 Override knobs for local build scripts:
 
-- `WOWEE_FFX_SDK_REPO` (default: `https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git`)
-- `WOWEE_FFX_SDK_REF` (default: `v1.1.4`)
+- `WOWEE_FFX_SDK_REPO` (default: `https://github.com/Kelsidavis/FidelityFX-SDK.git`)
+- `WOWEE_FFX_SDK_REF` (default: `main`)
 
 Detection expects:
 
