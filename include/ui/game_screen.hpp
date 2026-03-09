@@ -227,6 +227,7 @@ private:
     void renderBankWindow(game::GameHandler& gameHandler);
     void renderGuildBankWindow(game::GameHandler& gameHandler);
     void renderAuctionHouseWindow(game::GameHandler& gameHandler);
+    void renderDungeonFinderWindow(game::GameHandler& gameHandler);
 
     /**
      * Inventory screen
@@ -258,6 +259,11 @@ private:
     VkDescriptorSet emptyBagSlotTexture_ = VK_NULL_HANDLE;
     int bagBarPickedSlot_ = -1;   // Visual drag in progress (-1 = none)
     int bagBarDragSource_ = -1;   // Mouse pressed on this slot, waiting for drag or click (-1 = none)
+
+    // Dungeon Finder state
+    bool  showDungeonFinder_ = false;
+    uint8_t lfgRoles_ = 0x08;  // default: DPS (0x02=tank, 0x04=healer, 0x08=dps)
+    uint32_t lfgSelectedDungeon_ = 861;  // default: random dungeon (entry 861 = Random Dungeon WotLK)
 
     // Chat settings
     bool chatShowTimestamps_ = false;

@@ -412,6 +412,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderBankWindow(gameHandler);
     renderGuildBankWindow(gameHandler);
     renderAuctionHouseWindow(gameHandler);
+    renderDungeonFinderWindow(gameHandler);
     // renderQuestMarkers(gameHandler);  // Disabled - using 3D billboard markers now
     renderMinimapMarkers(gameHandler);
     renderDeathScreen(gameHandler);
@@ -8875,6 +8876,200 @@ void GameScreen::renderDingEffect() {
         draw->AddText(font, dingSize, ImVec2(dx, dy),
                       IM_COL32(255, 255, 150, (int)(alpha * 255)), ding);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Dungeon Finder window (toggle with hotkey or bag-bar button)
+// ---------------------------------------------------------------------------
+void GameScreen::renderDungeonFinderWindow(game::GameHandler& gameHandler) {
+    // Toggle on I key when not typing
+    if (!chatInputActive && ImGui::IsKeyPressed(ImGuiKey_I, false)) {
+        showDungeonFinder_ = !showDungeonFinder_;
+    }
+
+    if (!showDungeonFinder_) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth())  : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) :  720.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW * 0.5f - 175.0f, screenH * 0.2f),
+                            ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_Always);
+
+    bool open = true;
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
+    if (!ImGui::Begin("Dungeon Finder", &open, flags)) {
+        ImGui::End();
+        if (!open) showDungeonFinder_ = false;
+        return;
+    }
+    if (!open) {
+        ImGui::End();
+        showDungeonFinder_ = false;
+        return;
+    }
+
+    using LfgState = game::GameHandler::LfgState;
+    LfgState state = gameHandler.getLfgState();
+
+    // ---- Status banner ----
+    switch (state) {
+        case LfgState::None:
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Status: Not queued");
+            break;
+        case LfgState::RoleCheck:
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Status: Role check in progress...");
+            break;
+        case LfgState::Queued: {
+            int32_t avgSec  = gameHandler.getLfgAvgWaitSec();
+            uint32_t qMs    = gameHandler.getLfgTimeInQueueMs();
+            int      qMin   = static_cast<int>(qMs / 60000);
+            int      qSec   = static_cast<int>((qMs % 60000) / 1000);
+            ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Status: In queue (%d:%02d)", qMin, qSec);
+            if (avgSec >= 0) {
+                int aMin = avgSec / 60;
+                int aSec = avgSec % 60;
+                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f),
+                                   "Avg wait: %d:%02d", aMin, aSec);
+            }
+            break;
+        }
+        case LfgState::Proposal:
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Status: Group found!");
+            break;
+        case LfgState::Boot:
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Status: Vote kick in progress");
+            break;
+        case LfgState::InDungeon:
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Status: In dungeon");
+            break;
+        case LfgState::FinishedDungeon:
+            ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.6f, 1.0f), "Status: Dungeon complete");
+            break;
+        case LfgState::RaidBrowser:
+            ImGui::TextColored(ImVec4(0.8f, 0.6f, 1.0f, 1.0f), "Status: Raid browser");
+            break;
+    }
+
+    ImGui::Separator();
+
+    // ---- Proposal accept/decline ----
+    if (state == LfgState::Proposal) {
+        ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f),
+                           "A group has been found for your dungeon!");
+        ImGui::Spacing();
+        if (ImGui::Button("Accept", ImVec2(120, 0))) {
+            gameHandler.lfgAcceptProposal(gameHandler.getLfgProposalId(), true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Decline", ImVec2(120, 0))) {
+            gameHandler.lfgAcceptProposal(gameHandler.getLfgProposalId(), false);
+        }
+        ImGui::Separator();
+    }
+
+    // ---- Teleport button (in dungeon) ----
+    if (state == LfgState::InDungeon) {
+        if (ImGui::Button("Teleport to Dungeon", ImVec2(-1, 0))) {
+            gameHandler.lfgTeleport(true);
+        }
+        ImGui::Separator();
+    }
+
+    // ---- Role selection (only when not queued/in dungeon) ----
+    bool canConfigure = (state == LfgState::None || state == LfgState::FinishedDungeon);
+
+    if (canConfigure) {
+        ImGui::Text("Role:");
+        ImGui::SameLine();
+        bool isTank   = (lfgRoles_ & 0x02) != 0;
+        bool isHealer = (lfgRoles_ & 0x04) != 0;
+        bool isDps    = (lfgRoles_ & 0x08) != 0;
+        if (ImGui::Checkbox("Tank",   &isTank))   lfgRoles_ = (lfgRoles_ & ~0x02) | (isTank   ? 0x02 : 0);
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Healer", &isHealer)) lfgRoles_ = (lfgRoles_ & ~0x04) | (isHealer ? 0x04 : 0);
+        ImGui::SameLine();
+        if (ImGui::Checkbox("DPS",    &isDps))    lfgRoles_ = (lfgRoles_ & ~0x08) | (isDps    ? 0x08 : 0);
+
+        ImGui::Spacing();
+
+        // ---- Dungeon selection ----
+        ImGui::Text("Dungeon:");
+
+        struct DungeonEntry { uint32_t id; const char* name; };
+        static const DungeonEntry kDungeons[] = {
+            { 861, "Random Dungeon" },
+            { 862, "Random Heroic" },
+            // Vanilla classics
+            {  36, "Deadmines" },
+            {  43, "Ragefire Chasm" },
+            {  47, "Razorfen Kraul" },
+            {  48, "Blackfathom Deeps" },
+            {  52, "Uldaman" },
+            {  57, "Dire Maul: East" },
+            {  70, "Onyxia's Lair" },
+            // TBC heroics
+            { 264, "The Blood Furnace" },
+            { 269, "The Shattered Halls" },
+            // WotLK normals/heroics
+            { 576, "The Nexus" },
+            { 578, "The Oculus" },
+            { 595, "The Culling of Stratholme" },
+            { 599, "Halls of Stone" },
+            { 600, "Drak'Tharon Keep" },
+            { 601, "Azjol-Nerub" },
+            { 604, "Gundrak" },
+            { 608, "Violet Hold" },
+            { 619, "Ahn'kahet: Old Kingdom" },
+            { 623, "Halls of Lightning" },
+            { 632, "The Forge of Souls" },
+            { 650, "Trial of the Champion" },
+            { 658, "Pit of Saron" },
+            { 668, "Halls of Reflection" },
+        };
+
+        // Find current index
+        int curIdx = 0;
+        for (int i = 0; i < (int)(sizeof(kDungeons)/sizeof(kDungeons[0])); ++i) {
+            if (kDungeons[i].id == lfgSelectedDungeon_) { curIdx = i; break; }
+        }
+
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::BeginCombo("##dungeon", kDungeons[curIdx].name)) {
+            for (int i = 0; i < (int)(sizeof(kDungeons)/sizeof(kDungeons[0])); ++i) {
+                bool selected = (kDungeons[i].id == lfgSelectedDungeon_);
+                if (ImGui::Selectable(kDungeons[i].name, selected))
+                    lfgSelectedDungeon_ = kDungeons[i].id;
+                if (selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::Spacing();
+
+        // ---- Join button ----
+        bool rolesOk = (lfgRoles_ != 0);
+        if (!rolesOk) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Join Dungeon Finder", ImVec2(-1, 0))) {
+            gameHandler.lfgJoin(lfgSelectedDungeon_, lfgRoles_);
+        }
+        if (!rolesOk) {
+            ImGui::EndDisabled();
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Select at least one role.");
+        }
+    }
+
+    // ---- Leave button (when queued or role check) ----
+    if (state == LfgState::Queued || state == LfgState::RoleCheck) {
+        if (ImGui::Button("Leave Queue", ImVec2(-1, 0))) {
+            gameHandler.lfgLeave();
+        }
+    }
+
+    ImGui::End();
 }
 
 }} // namespace wowee::ui

@@ -737,8 +737,10 @@ public:
     LfgState getLfgState() const { return lfgState_; }
     bool isLfgQueued()    const { return lfgState_ == LfgState::Queued; }
     bool isLfgInDungeon() const { return lfgState_ == LfgState::InDungeon; }
-    uint32_t getLfgDungeonId() const { return lfgDungeonId_; }
-    int32_t  getLfgAvgWaitSec() const { return lfgAvgWaitSec_; }
+    uint32_t getLfgDungeonId()   const { return lfgDungeonId_; }
+    uint32_t getLfgProposalId()  const { return lfgProposalId_; }
+    int32_t  getLfgAvgWaitSec()  const { return lfgAvgWaitSec_; }
+    uint32_t getLfgTimeInQueueMs() const { return lfgTimeInQueueMs_; }
 
     // ---- Phase 5: Loot ----
     void lootTarget(uint64_t guid);
@@ -1585,6 +1587,7 @@ private:
     // LFG / Dungeon Finder state
     LfgState lfgState_        = LfgState::None;
     uint32_t lfgDungeonId_    = 0;   // current dungeon entry
+    uint32_t lfgProposalId_   = 0;   // pending proposal id (0 = none)
     int32_t  lfgAvgWaitSec_   = -1;  // estimated wait, -1=unknown
     uint32_t lfgTimeInQueueMs_= 0;   // ms already in queue
 

@@ -9073,15 +9073,18 @@ void GameHandler::handleLfgProposalUpdate(network::Packet& packet) {
     if (remaining < 17) return;
     /*bool canOverride =*/ packet.readUInt8();
 
-    lfgDungeonId_ = dungeonId;
+    lfgDungeonId_  = dungeonId;
+    lfgProposalId_ = proposalId;
 
     switch (proposalState) {
         case 0:
-            lfgState_ = LfgState::Queued;
+            lfgState_      = LfgState::Queued;
+            lfgProposalId_ = 0;
             addSystemChatMessage("Dungeon Finder: Group proposal failed.");
             break;
         case 1:
-            lfgState_ = LfgState::InDungeon;
+            lfgState_      = LfgState::InDungeon;
+            lfgProposalId_ = 0;
             addSystemChatMessage("Dungeon Finder: Group found! Entering dungeon...");
             break;
         case 2:
@@ -9094,7 +9097,6 @@ void GameHandler::handleLfgProposalUpdate(network::Packet& packet) {
 
     LOG_INFO("SMSG_LFG_PROPOSAL_UPDATE: dungeonId=", dungeonId,
              " proposalId=", proposalId, " state=", proposalState);
-    (void)proposalId;
 }
 
 void GameHandler::handleLfgRoleCheckUpdate(network::Packet& packet) {
