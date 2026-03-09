@@ -4323,9 +4323,11 @@ void Renderer::dispatchAmdFsr2() {
         L"FSR2_Output", FFX_RESOURCE_STATE_UNORDERED_ACCESS);
 
     // Camera jitter is stored as NDC projection offsets; convert to render-pixel offsets.
+    // AMD jitter convention is opposite our projection offset sign in Vulkan space.
+    const float jitterSign = static_cast<float>(envIntOrDefault("WOWEE_FSR2_JITTER_SIGN", -1));
     glm::vec2 jitterNdc = camera->getJitter();
-    desc.jitterOffset.x = jitterNdc.x * 0.5f * static_cast<float>(fsr2_.internalWidth);
-    desc.jitterOffset.y = jitterNdc.y * 0.5f * static_cast<float>(fsr2_.internalHeight);
+    desc.jitterOffset.x = jitterSign * jitterNdc.x * 0.5f * static_cast<float>(fsr2_.internalWidth);
+    desc.jitterOffset.y = jitterSign * jitterNdc.y * 0.5f * static_cast<float>(fsr2_.internalHeight);
     desc.motionVectorScale.x = static_cast<float>(fsr2_.internalWidth);
     desc.motionVectorScale.y = static_cast<float>(fsr2_.internalHeight);
     desc.renderSize.width = fsr2_.internalWidth;
