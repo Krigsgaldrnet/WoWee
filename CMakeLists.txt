@@ -90,16 +90,22 @@ endif()
 
 # AMD FidelityFX SDK (FSR3 frame generation interfaces) detection under extern/FidelityFX-SDK
 set(WOWEE_AMD_FFX_SDK_DIR ${CMAKE_SOURCE_DIR}/extern/FidelityFX-SDK/sdk)
+set(WOWEE_AMD_FFX_SDK_KITS_DIR ${CMAKE_SOURCE_DIR}/extern/FidelityFX-SDK/Kits/FidelityFX)
 set(WOWEE_AMD_FFX_SDK_FI_HEADER ${WOWEE_AMD_FFX_SDK_DIR}/include/FidelityFX/host/ffx_frameinterpolation.h)
 set(WOWEE_AMD_FFX_SDK_OF_HEADER ${WOWEE_AMD_FFX_SDK_DIR}/include/FidelityFX/host/ffx_opticalflow.h)
 set(WOWEE_AMD_FFX_SDK_FSR3_HEADER ${WOWEE_AMD_FFX_SDK_DIR}/include/FidelityFX/host/ffx_fsr3upscaler.h)
 set(WOWEE_AMD_FFX_SDK_VK_HEADER ${WOWEE_AMD_FFX_SDK_DIR}/include/FidelityFX/host/backends/vk/ffx_vk.h)
+set(WOWEE_AMD_FFX_SDK_KITS_FG_HEADER ${WOWEE_AMD_FFX_SDK_KITS_DIR}/framegeneration/include/ffx_framegeneration.h)
 
-if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN
-   AND EXISTS ${WOWEE_AMD_FFX_SDK_FI_HEADER}
+set(WOWEE_AMD_FFX_SDK_LEGACY_READY FALSE)
+if(EXISTS ${WOWEE_AMD_FFX_SDK_FI_HEADER}
    AND EXISTS ${WOWEE_AMD_FFX_SDK_OF_HEADER}
    AND EXISTS ${WOWEE_AMD_FFX_SDK_FSR3_HEADER}
    AND EXISTS ${WOWEE_AMD_FFX_SDK_VK_HEADER})
+    set(WOWEE_AMD_FFX_SDK_LEGACY_READY TRUE)
+endif()
+
+if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN AND WOWEE_AMD_FFX_SDK_LEGACY_READY)
     message(STATUS "AMD FidelityFX-SDK framegen headers detected at ${WOWEE_AMD_FFX_SDK_DIR}")
     add_compile_definitions(WOWEE_HAS_AMD_FSR3_FRAMEGEN=1)
     add_library(wowee_fsr3_framegen_amd_vk_probe STATIC
@@ -134,7 +140,14 @@ if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN
 else()
     add_compile_definitions(WOWEE_HAS_AMD_FSR3_FRAMEGEN=0)
     if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN)
-        message(WARNING "AMD FidelityFX-SDK framegen headers not found at ${WOWEE_AMD_FFX_SDK_DIR}; FSR3 framegen interface probe disabled.")
+        if(EXISTS ${WOWEE_AMD_FFX_SDK_KITS_FG_HEADER})
+            message(STATUS "FidelityFX-SDK Kits layout detected at ${WOWEE_AMD_FFX_SDK_KITS_DIR}, "
+                           "but legacy sdk/include headers required by WoWee FSR3 probe/wrapper are not present. "
+                           "FSR3 framegen interface probe disabled.")
+        else()
+            message(WARNING "AMD FidelityFX-SDK framegen headers not found at ${WOWEE_AMD_FFX_SDK_DIR}; "
+                            "FSR3 framegen interface probe disabled.")
+        endif()
     endif()
 endif()
 
