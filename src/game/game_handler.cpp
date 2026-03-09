@@ -3070,8 +3070,41 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_SPELLENERGIZELOG:
         case Opcode::SMSG_ENVIRONMENTAL_DAMAGE_LOG:
         case Opcode::SMSG_SET_PROFICIENCY:
-        case Opcode::SMSG_ACTION_BUTTONS:
+        case Opcode::SMSG_ACTION_BUTTONS: {
+            // uint8 mode (0=initial, 1=update) + 144 × uint32 packed buttons
+            // packed: bits 0-23 = actionId, bits 24-31 = type
+            //   0x00 = spell (when id != 0), 0x80 = item, 0x40 = macro (skip)
+            size_t rem = packet.getSize() - packet.getReadPos();
+            if (rem < 1) break;
+            /*uint8_t mode =*/ packet.readUInt8();
+            rem--;
+            constexpr int SERVER_BAR_SLOTS = 144;
+            constexpr int OUR_BAR_SLOTS    = 12;   // our actionBar array size
+            for (int i = 0; i < SERVER_BAR_SLOTS; ++i) {
+                if (rem < 4) break;
+                uint32_t packed = packet.readUInt32();
+                rem -= 4;
+                if (i >= OUR_BAR_SLOTS) continue;  // only load first bar
+                if (packed == 0) {
+                    // Empty slot — only clear if not already set to Attack/Hearthstone defaults
+                    // so we don't wipe hardcoded fallbacks when the server sends zeros.
+                    continue;
+                }
+                uint8_t  type   = static_cast<uint8_t>((packed >> 24) & 0xFF);
+                uint32_t id     = packed & 0x00FFFFFFu;
+                if (id == 0) continue;
+                ActionBarSlot slot;
+                switch (type) {
+                    case 0x00: slot.type = ActionBarSlot::SPELL; slot.id = id; break;
+                    case 0x80: slot.type = ActionBarSlot::ITEM;  slot.id = id; break;
+                    default:   continue;  // macro or unknown — leave as-is
+                }
+                actionBar[i] = slot;
+            }
+            LOG_INFO("SMSG_ACTION_BUTTONS: populated action bar from server");
+            packet.setReadPos(packet.getSize());
             break;
+        }
 
         case Opcode::SMSG_LEVELUP_INFO:
         case Opcode::SMSG_LEVELUP_INFO_ALT: {
