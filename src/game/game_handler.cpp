@@ -4121,6 +4121,40 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
         }
+        case Opcode::SMSG_AUCTION_REMOVED_NOTIFICATION: {
+            // uint32 auctionId + uint32 itemEntry + uint32 itemRandom — auction expired/cancelled
+            if (packet.getSize() - packet.getReadPos() >= 12) {
+                /*uint32_t auctionId =*/ packet.readUInt32();
+                uint32_t itemEntry = packet.readUInt32();
+                /*uint32_t itemRandom =*/ packet.readUInt32();
+                ensureItemInfo(itemEntry);
+                auto* info = getItemInfo(itemEntry);
+                std::string itemName = info ? info->name : ("Item #" + std::to_string(itemEntry));
+                addSystemChatMessage("Your auction of " + itemName + " has expired.");
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
+        case Opcode::SMSG_OPEN_CONTAINER: {
+            // uint64 containerGuid — tells client to open this container
+            // The actual items come via update packets; we just log this.
+            if (packet.getSize() - packet.getReadPos() >= 8) {
+                uint64_t containerGuid = packet.readUInt64();
+                LOG_DEBUG("SMSG_OPEN_CONTAINER: guid=0x", std::hex, containerGuid, std::dec);
+            }
+            break;
+        }
+        case Opcode::SMSG_GM_TICKET_STATUS_UPDATE:
+            // GM ticket status (new/updated); no ticket UI yet
+            packet.setReadPos(packet.getSize());
+            break;
+        case Opcode::SMSG_PLAYER_VEHICLE_DATA:
+            // Vehicle data update for player in vehicle; no vehicle UI yet
+            packet.setReadPos(packet.getSize());
+            break;
+        case Opcode::SMSG_SET_EXTRA_AURA_INFO_NEED_UPDATE:
+            packet.setReadPos(packet.getSize());
+            break;
         case Opcode::SMSG_TAXINODE_STATUS:
             // Node status cache not implemented yet.
             packet.setReadPos(packet.getSize());
