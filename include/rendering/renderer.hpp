@@ -268,7 +268,7 @@ public:
     // FSR (FidelityFX Super Resolution) upscaling
     void setFSREnabled(bool enabled);
     bool isFSREnabled() const { return fsr_.enabled; }
-    void setFSRQuality(float scaleFactor);  // 0.50=Perf, 0.59=Balanced, 0.67=Quality, 0.77=UltraQuality
+    void setFSRQuality(float scaleFactor);  // 0.59=Balanced, 0.67=Quality, 0.77=UltraQuality, 1.00=Native
     void setFSRSharpness(float sharpness);  // 0.0 - 2.0
     float getFSRScaleFactor() const { return fsr_.scaleFactor; }
     float getFSRSharpness() const { return fsr_.sharpness; }
@@ -353,8 +353,8 @@ private:
     struct FSRState {
         bool enabled = false;
         bool needsRecreate = false;
-        float scaleFactor = 0.77f;  // Ultra Quality default
-        float sharpness = 0.5f;
+        float scaleFactor = 1.00f;  // Native default
+        float sharpness = 1.6f;
         uint32_t internalWidth = 0;
         uint32_t internalHeight = 0;
 
@@ -429,7 +429,7 @@ private:
         uint32_t frameIndex = 0;
         bool needsHistoryReset = true;
         bool useAmdBackend = false;
-        float jitterSign = 0.40f;
+        float jitterSign = 0.38f;
         float motionVecScaleX = 1.0f;
         float motionVecScaleY = 1.0f;
 #if WOWEE_HAS_AMD_FSR2

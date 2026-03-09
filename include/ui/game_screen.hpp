@@ -118,9 +118,9 @@ private:
     int pendingPOMQuality = 1;          // 0=Low(16), 1=Medium(32), 2=High(64)
     bool pendingFSR = false;
     int pendingUpscalingMode = 0;       // 0=Off, 1=FSR1, 2=FSR2
-    int pendingFSRQuality = 0;          // 0=UltraQuality, 1=Quality, 2=Balanced, 3=Native(100%)
-    float pendingFSRSharpness = 0.5f;
-    float pendingFSR2JitterSign = 0.40f;
+    int pendingFSRQuality = 3;          // 0=UltraQuality, 1=Quality, 2=Balanced, 3=Native(100%)
+    float pendingFSRSharpness = 1.6f;
+    float pendingFSR2JitterSign = 0.38f;
     float pendingFSR2MotionVecScaleX = 1.0f;
     float pendingFSR2MotionVecScaleY = 1.0f;
     bool fsrSettingsApplied_ = false;

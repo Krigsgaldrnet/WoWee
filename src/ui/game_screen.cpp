@@ -6337,10 +6337,19 @@ void GameScreen::renderSettingsWindow() {
                             ImGui::TextDisabled("FSR2 backend: %s",
                                 renderer->isAmdFsr2SdkAvailable() ? "AMD FidelityFX SDK" : "Internal fallback");
                         }
-                        const char* fsrQualityLabels[] = { "Ultra Quality (77%)", "Quality (67%)", "Balanced (59%)", "Native (100%)" };
+                        const char* fsrQualityLabels[] = { "Native (100%)", "Ultra Quality (77%)", "Quality (67%)", "Balanced (59%)" };
                         static const float fsrScaleFactors[] = { 0.77f, 0.67f, 0.59f, 1.00f };
+                        static const int displayToInternal[] = { 3, 0, 1, 2 };
                         pendingFSRQuality = std::clamp(pendingFSRQuality, 0, 3);
-                        if (ImGui::Combo("FSR Quality", &pendingFSRQuality, fsrQualityLabels, 4)) {
+                        int fsrQualityDisplay = 0;
+                        for (int i = 0; i < 4; ++i) {
+                            if (displayToInternal[i] == pendingFSRQuality) {
+                                fsrQualityDisplay = i;
+                                break;
+                            }
+                        }
+                        if (ImGui::Combo("FSR Quality", &fsrQualityDisplay, fsrQualityLabels, 4)) {
+                            pendingFSRQuality = displayToInternal[fsrQualityDisplay];
                             if (renderer) renderer->setFSRQuality(fsrScaleFactors[pendingFSRQuality]);
                             saveSettings();
                         }
@@ -6359,7 +6368,7 @@ void GameScreen::renderSettingsWindow() {
                                 }
                                 saveSettings();
                             }
-                            ImGui::TextDisabled("Tip: 0.40 is the current recommended default.");
+                            ImGui::TextDisabled("Tip: 0.38 is the current recommended default.");
                         }
                     }
                 }
