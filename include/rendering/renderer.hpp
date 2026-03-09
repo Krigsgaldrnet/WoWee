@@ -411,6 +411,8 @@ private:
 
         // History buffers (display resolution, ping-pong)
         AllocatedImage history[2]{};
+        AllocatedImage framegenOutput{};
+        bool framegenOutputValid = false;
         uint32_t currentHistory = 0;  // Output index (0 or 1)
 
         // Compute pipelines

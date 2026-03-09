@@ -17,6 +17,7 @@ struct AmdFsr3RuntimeInitDesc {
     VkFormat colorFormat = VK_FORMAT_UNDEFINED;
     bool hdrInput = false;
     bool depthInverted = false;
+    bool enableFrameGeneration = false;
 };
 
 struct AmdFsr3RuntimeDispatchDesc {
@@ -25,6 +26,7 @@ struct AmdFsr3RuntimeDispatchDesc {
     VkImage depthImage = VK_NULL_HANDLE;
     VkImage motionVectorImage = VK_NULL_HANDLE;
     VkImage outputImage = VK_NULL_HANDLE;
+    VkImage frameGenOutputImage = VK_NULL_HANDLE;
     uint32_t renderWidth = 0;
     uint32_t renderHeight = 0;
     uint32_t outputWidth = 0;
@@ -51,9 +53,11 @@ public:
 
     bool initialize(const AmdFsr3RuntimeInitDesc& desc);
     bool dispatchUpscale(const AmdFsr3RuntimeDispatchDesc& desc);
+    bool dispatchFrameGeneration(const AmdFsr3RuntimeDispatchDesc& desc);
     void shutdown();
 
     bool isReady() const { return ready_; }
+    bool isFrameGenerationReady() const { return frameGenerationReady_; }
     const std::string& loadedLibraryPath() const { return loadedLibraryPath_; }
 
 private:
@@ -62,6 +66,7 @@ private:
     void* scratchBuffer_ = nullptr;
     size_t scratchBufferSize_ = 0;
     bool ready_ = false;
+    bool frameGenerationReady_ = false;
 
     struct RuntimeFns;
     RuntimeFns* fns_ = nullptr;
@@ -69,4 +74,3 @@ private:
 };
 
 }  // namespace wowee::rendering
-

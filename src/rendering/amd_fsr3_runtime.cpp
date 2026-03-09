@@ -28,6 +28,8 @@ struct AmdFsr3Runtime::RuntimeFns {
     decltype(&ffxGetResourceVK) getResourceVK = nullptr;
     decltype(&ffxFsr3ContextCreate) fsr3ContextCreate = nullptr;
     decltype(&ffxFsr3ContextDispatchUpscale) fsr3ContextDispatchUpscale = nullptr;
+    decltype(&ffxFsr3ConfigureFrameGeneration) fsr3ConfigureFrameGeneration = nullptr;
+    decltype(&ffxFsr3DispatchFrameGeneration) fsr3DispatchFrameGeneration = nullptr;
     decltype(&ffxFsr3ContextDestroy) fsr3ContextDestroy = nullptr;
 };
 #else
@@ -42,6 +44,10 @@ AmdFsr3Runtime::~AmdFsr3Runtime() {
 
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
 namespace {
+FfxErrorCode vkSwapchainConfigureNoop(const FfxFrameGenerationConfig*) {
+    return FFX_OK;
+}
+
 FfxSurfaceFormat mapVkFormatToFfxSurfaceFormat(VkFormat format, bool isDepth) {
     if (isDepth) {
         switch (format) {
@@ -178,6 +184,8 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
     fns_->getResourceVK = reinterpret_cast<decltype(fns_->getResourceVK)>(resolveSym("ffxGetResourceVK"));
     fns_->fsr3ContextCreate = reinterpret_cast<decltype(fns_->fsr3ContextCreate)>(resolveSym("ffxFsr3ContextCreate"));
     fns_->fsr3ContextDispatchUpscale = reinterpret_cast<decltype(fns_->fsr3ContextDispatchUpscale)>(resolveSym("ffxFsr3ContextDispatchUpscale"));
+    fns_->fsr3ConfigureFrameGeneration = reinterpret_cast<decltype(fns_->fsr3ConfigureFrameGeneration)>(resolveSym("ffxFsr3ConfigureFrameGeneration"));
+    fns_->fsr3DispatchFrameGeneration = reinterpret_cast<decltype(fns_->fsr3DispatchFrameGeneration)>(resolveSym("ffxFsr3DispatchFrameGeneration"));
     fns_->fsr3ContextDestroy = reinterpret_cast<decltype(fns_->fsr3ContextDestroy)>(resolveSym("ffxFsr3ContextDestroy"));
 
     if (!fns_->getScratchMemorySizeVK || !fns_->getDeviceVK || !fns_->getInterfaceVK ||
@@ -217,8 +225,10 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
 
     FfxFsr3ContextDescription ctxDesc{};
     ctxDesc.flags = FFX_FSR3_ENABLE_AUTO_EXPOSURE |
-                    FFX_FSR3_ENABLE_MOTION_VECTORS_JITTER_CANCELLATION |
-                    FFX_FSR3_ENABLE_UPSCALING_ONLY;
+                    FFX_FSR3_ENABLE_MOTION_VECTORS_JITTER_CANCELLATION;
+    if (!desc.enableFrameGeneration) {
+        ctxDesc.flags |= FFX_FSR3_ENABLE_UPSCALING_ONLY;
+    }
     if (desc.hdrInput) ctxDesc.flags |= FFX_FSR3_ENABLE_HIGH_DYNAMIC_RANGE;
     if (desc.depthInverted) ctxDesc.flags |= FFX_FSR3_ENABLE_DEPTH_INVERTED;
     ctxDesc.maxRenderSize.width = desc.maxRenderWidth;
@@ -227,6 +237,9 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
     ctxDesc.upscaleOutputSize.height = desc.displayHeight;
     ctxDesc.displaySize.width = desc.displayWidth;
     ctxDesc.displaySize.height = desc.displayHeight;
+    if (!backendShared.fpSwapChainConfigureFrameGeneration) {
+        backendShared.fpSwapChainConfigureFrameGeneration = vkSwapchainConfigureNoop;
+    }
     ctxDesc.backendInterfaceSharedResources = backendShared;
     ctxDesc.backendInterfaceUpscaling = backendShared;
     ctxDesc.backendInterfaceFrameInterpolation = backendShared;
@@ -246,6 +259,27 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
         LOG_WARNING("FSR3 runtime: ffxFsr3ContextCreate failed (", static_cast<int>(createErr), ").");
         shutdown();
         return false;
+    }
+
+    if (desc.enableFrameGeneration) {
+        if (!fns_->fsr3ConfigureFrameGeneration || !fns_->fsr3DispatchFrameGeneration) {
+            LOG_WARNING("FSR3 runtime: frame generation symbols unavailable in ", loadedLibraryPath_);
+            shutdown();
+            return false;
+        }
+        FfxFrameGenerationConfig fgCfg{};
+        fgCfg.frameGenerationEnabled = true;
+        fgCfg.allowAsyncWorkloads = false;
+        fgCfg.flags = 0;
+        fgCfg.onlyPresentInterpolated = false;
+        FfxErrorCode cfgErr = fns_->fsr3ConfigureFrameGeneration(
+            reinterpret_cast<FfxFsr3Context*>(contextStorage_), &fgCfg);
+        if (cfgErr != FFX_OK) {
+            LOG_WARNING("FSR3 runtime: ffxFsr3ConfigureFrameGeneration failed (", static_cast<int>(cfgErr), ").");
+            shutdown();
+            return false;
+        }
+        frameGenerationReady_ = true;
     }
 
     ready_ = true;
@@ -305,6 +339,39 @@ bool AmdFsr3Runtime::dispatchUpscale(const AmdFsr3RuntimeDispatchDesc& desc) {
 #endif
 }
 
+bool AmdFsr3Runtime::dispatchFrameGeneration(const AmdFsr3RuntimeDispatchDesc& desc) {
+#if !WOWEE_HAS_AMD_FSR3_FRAMEGEN
+    (void)desc;
+    return false;
+#else
+    if (!ready_ || !frameGenerationReady_ || !contextStorage_ || !fns_ || !fns_->fsr3DispatchFrameGeneration) return false;
+    if (!desc.commandBuffer || !desc.outputImage || !desc.frameGenOutputImage ||
+        desc.outputWidth == 0 || desc.outputHeight == 0 || desc.outputFormat == VK_FORMAT_UNDEFINED) return false;
+
+    FfxResourceDescription presentDesc = makeResourceDescription(
+        desc.outputFormat, desc.outputWidth, desc.outputHeight, FFX_RESOURCE_USAGE_READ_ONLY);
+    FfxResourceDescription fgOutDesc = makeResourceDescription(
+        desc.outputFormat, desc.outputWidth, desc.outputHeight, FFX_RESOURCE_USAGE_UAV);
+
+    static wchar_t kPresentName[] = L"FSR3_PresentColor";
+    static wchar_t kInterpolatedName[] = L"FSR3_InterpolatedOutput";
+    FfxFrameGenerationDispatchDescription fgDispatch{};
+    fgDispatch.commandList = fns_->getCommandListVK(desc.commandBuffer);
+    fgDispatch.presentColor = fns_->getResourceVK(
+        reinterpret_cast<void*>(desc.outputImage), presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
+    fgDispatch.outputs[0] = fns_->getResourceVK(
+        reinterpret_cast<void*>(desc.frameGenOutputImage), fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+    fgDispatch.numInterpolatedFrames = 1;
+    fgDispatch.reset = desc.reset;
+    fgDispatch.backBufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;
+    fgDispatch.minMaxLuminance[0] = 0.0f;
+    fgDispatch.minMaxLuminance[1] = 1.0f;
+
+    FfxErrorCode err = fns_->fsr3DispatchFrameGeneration(&fgDispatch);
+    return err == FFX_OK;
+#endif
+}
+
 void AmdFsr3Runtime::shutdown() {
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
     if (contextStorage_ && fns_ && fns_->fsr3ContextDestroy) {
@@ -321,6 +388,7 @@ void AmdFsr3Runtime::shutdown() {
     }
     scratchBufferSize_ = 0;
     ready_ = false;
+    frameGenerationReady_ = false;
     if (fns_) {
         delete fns_;
         fns_ = nullptr;

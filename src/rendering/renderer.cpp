@@ -1167,14 +1167,21 @@ void Renderer::endFrame() {
                 }
             } else {
                 dispatchAmdFsr2();
-                dispatchAmdFsr3Framegen();
             }
 
-            // Transition history output: GENERAL -> SHADER_READ_ONLY for sharpen pass
-            transitionImageLayout(currentCmd, fsr2_.history[fsr2_.currentHistory].image,
-                VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+            // Transition post-FSR input for sharpen pass.
+            if (fsr2_.amdFsr3FramegenRuntimeActive && fsr2_.framegenOutput.image) {
+                transitionImageLayout(currentCmd, fsr2_.framegenOutput.image,
+                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+                fsr2_.framegenOutputValid = true;
+            } else {
+                transitionImageLayout(currentCmd, fsr2_.history[fsr2_.currentHistory].image,
+                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+            }
         } else {
             transitionImageLayout(currentCmd, fsr2_.sceneColor.image,
                 VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -3751,6 +3758,7 @@ bool Renderer::initFSR2Resources() {
     fsr2_.useAmdBackend = false;
     fsr2_.amdFsr3FramegenRuntimeActive = false;
     fsr2_.amdFsr3FramegenRuntimeReady = false;
+    fsr2_.framegenOutputValid = false;
 #if WOWEE_HAS_AMD_FSR2
     LOG_INFO("FSR2: AMD FidelityFX SDK detected at build time.");
 #else
@@ -3782,6 +3790,9 @@ bool Renderer::initFSR2Resources() {
             VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
         if (!fsr2_.history[i].image) { LOG_ERROR("FSR2: failed to create history buffer ", i); destroyFSR2Resources(); return false; }
     }
+    fsr2_.framegenOutput = createImage(device, alloc, swapExtent.width, swapExtent.height,
+        VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    if (!fsr2_.framegenOutput.image) { LOG_ERROR("FSR2: failed to create framegen output"); destroyFSR2Resources(); return false; }
 
     // Scene framebuffer (non-MSAA: [color, depth])
     // Must use the same render pass as the swapchain — which must be non-MSAA when FSR2 is active
@@ -3861,15 +3872,16 @@ bool Renderer::initFSR2Resources() {
                     fgInit.maxRenderHeight = fsr2_.internalHeight;
                     fgInit.displayWidth = swapExtent.width;
                     fgInit.displayHeight = swapExtent.height;
-                    fgInit.colorFormat = vkCtx->getSwapchainFormat();
+                    fgInit.colorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
                     fgInit.hdrInput = false;
                     fgInit.depthInverted = false;
+                    fgInit.enableFrameGeneration = true;
                     fsr2_.amdFsr3FramegenRuntimeReady = fsr2_.amdFsr3Runtime->initialize(fgInit);
                     if (fsr2_.amdFsr3FramegenRuntimeReady) {
                         LOG_INFO("FSR3 framegen runtime library loaded from ", fsr2_.amdFsr3Runtime->loadedLibraryPath(),
-                                 " (upscale dispatch enabled)");
+                                 " (upscale+framegen dispatch enabled)");
                     } else {
-                        LOG_WARNING("FSR3 framegen toggle is enabled, but runtime library was not found. ",
+                        LOG_WARNING("FSR3 framegen toggle is enabled, but runtime initialization failed. ",
                                     "Set WOWEE_FFX_SDK_RUNTIME_LIB to the SDK runtime binary path.");
                     }
                 }
@@ -4173,6 +4185,7 @@ void Renderer::destroyFSR2Resources() {
 #endif
     fsr2_.amdFsr3FramegenRuntimeActive = false;
     fsr2_.amdFsr3FramegenRuntimeReady = false;
+    fsr2_.framegenOutputValid = false;
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
     if (fsr2_.amdFsr3Runtime) {
         fsr2_.amdFsr3Runtime->shutdown();
@@ -4201,6 +4214,7 @@ void Renderer::destroyFSR2Resources() {
 
     destroyImage(device, alloc, fsr2_.motionVectors);
     for (int i = 0; i < 2; i++) destroyImage(device, alloc, fsr2_.history[i]);
+    destroyImage(device, alloc, fsr2_.framegenOutput);
     destroyImage(device, alloc, fsr2_.sceneDepth);
     destroyImage(device, alloc, fsr2_.sceneColor);
 
@@ -4398,14 +4412,35 @@ void Renderer::dispatchAmdFsr2() {
 }
 
 void Renderer::dispatchAmdFsr3Framegen() {
-    if (!fsr2_.amdFsr3FramegenEnabled) {
-        fsr2_.amdFsr3FramegenRuntimeActive = false;
-        return;
-    }
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
     if (!fsr2_.amdFsr3Runtime || !fsr2_.amdFsr3FramegenRuntimeReady) {
         fsr2_.amdFsr3FramegenRuntimeActive = false;
         return;
+    }
+    uint32_t outputIdx = fsr2_.currentHistory;
+    transitionImageLayout(currentCmd, fsr2_.sceneColor.image,
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    transitionImageLayout(currentCmd, fsr2_.motionVectors.image,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    transitionImageLayout(currentCmd, fsr2_.sceneDepth.image,
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    transitionImageLayout(currentCmd, fsr2_.history[outputIdx].image,
+        fsr2_.needsHistoryReset ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_IMAGE_LAYOUT_GENERAL,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    if (fsr2_.amdFsr3FramegenEnabled && fsr2_.framegenOutput.image) {
+        transitionImageLayout(currentCmd, fsr2_.framegenOutput.image,
+            fsr2_.framegenOutputValid ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_GENERAL,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     }
 
     AmdFsr3RuntimeDispatchDesc fgDispatch{};
@@ -4422,6 +4457,7 @@ void Renderer::dispatchAmdFsr3Framegen() {
     fgDispatch.depthFormat = vkCtx->getDepthFormat();
     fgDispatch.motionVectorFormat = VK_FORMAT_R16G16_SFLOAT;
     fgDispatch.outputFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    fgDispatch.frameGenOutputImage = fsr2_.framegenOutput.image;
     glm::vec2 jitterNdc = camera ? camera->getJitter() : glm::vec2(0.0f);
     fgDispatch.jitterX = jitterNdc.x * 0.5f * static_cast<float>(fsr2_.internalWidth);
     fgDispatch.jitterY = jitterNdc.y * 0.5f * static_cast<float>(fsr2_.internalHeight);
@@ -4433,16 +4469,34 @@ void Renderer::dispatchAmdFsr3Framegen() {
     fgDispatch.cameraFovYRadians = camera ? glm::radians(camera->getFovDegrees()) : 1.0f;
     fgDispatch.reset = fsr2_.needsHistoryReset;
 
-    bool ok = fsr2_.amdFsr3Runtime->dispatchUpscale(fgDispatch);
-    if (!ok) {
+    if (!fsr2_.amdFsr3Runtime->dispatchUpscale(fgDispatch)) {
         static bool warnedRuntimeDispatch = false;
         if (!warnedRuntimeDispatch) {
             warnedRuntimeDispatch = true;
-            LOG_WARNING("FSR3 runtime dispatch failed; falling back to FSR2 dispatch output.");
+            LOG_WARNING("FSR3 runtime upscale dispatch failed; falling back to FSR2 dispatch output.");
         }
         fsr2_.amdFsr3FramegenRuntimeActive = false;
         return;
     }
+
+    if (!fsr2_.amdFsr3FramegenEnabled) {
+        fsr2_.amdFsr3FramegenRuntimeActive = false;
+        return;
+    }
+    if (!fsr2_.amdFsr3Runtime->isFrameGenerationReady()) {
+        fsr2_.amdFsr3FramegenRuntimeActive = false;
+        return;
+    }
+    if (!fsr2_.amdFsr3Runtime->dispatchFrameGeneration(fgDispatch)) {
+        static bool warnedFgDispatch = false;
+        if (!warnedFgDispatch) {
+            warnedFgDispatch = true;
+            LOG_WARNING("FSR3 runtime frame generation dispatch failed; using upscaled output only.");
+        }
+        fsr2_.amdFsr3FramegenRuntimeActive = false;
+        return;
+    }
+    fsr2_.framegenOutputValid = true;
     fsr2_.amdFsr3FramegenRuntimeActive = true;
 #else
     fsr2_.amdFsr3FramegenRuntimeActive = false;
@@ -4462,9 +4516,13 @@ void Renderer::renderFSR2Sharpen() {
     // Update sharpen descriptor to point at current history output
     VkDescriptorImageInfo imgInfo{};
     imgInfo.sampler = fsr2_.linearSampler;
-    imgInfo.imageView = fsr2_.useAmdBackend
-        ? fsr2_.history[outputIdx].imageView
-        : fsr2_.sceneColor.imageView;
+    if (fsr2_.useAmdBackend) {
+        imgInfo.imageView = (fsr2_.amdFsr3FramegenRuntimeActive && fsr2_.framegenOutput.imageView)
+            ? fsr2_.framegenOutput.imageView
+            : fsr2_.history[outputIdx].imageView;
+    } else {
+        imgInfo.imageView = fsr2_.sceneColor.imageView;
+    }
     imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
