@@ -1819,6 +1819,157 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
 
+        // ---- Gossip POI (quest map markers) ----
+        case Opcode::SMSG_GOSSIP_POI: {
+            // uint32 flags + float x + float y + uint32 icon + uint32 data + string name
+            if (packet.getSize() - packet.getReadPos() < 20) break;
+            /*uint32_t flags =*/ packet.readUInt32();
+            float poiX = packet.readFloat();  // WoW canonical coords
+            float poiY = packet.readFloat();
+            uint32_t icon = packet.readUInt32();
+            uint32_t data = packet.readUInt32();
+            std::string name = packet.readString();
+            GossipPoi poi;
+            poi.x    = poiX;
+            poi.y    = poiY;
+            poi.icon = icon;
+            poi.data = data;
+            poi.name = std::move(name);
+            gossipPois_.push_back(std::move(poi));
+            LOG_DEBUG("SMSG_GOSSIP_POI: x=", poiX, " y=", poiY, " icon=", icon);
+            break;
+        }
+
+        // ---- Combat clearing ----
+        case Opcode::SMSG_ATTACKSWING_DEADTARGET:
+            // Target died mid-swing: clear auto-attack
+            autoAttacking = false;
+            autoAttackTarget = 0;
+            break;
+
+        case Opcode::SMSG_CANCEL_COMBAT:
+            // Server-side combat state reset
+            autoAttacking = false;
+            autoAttackTarget = 0;
+            autoAttackRequested_ = false;
+            break;
+
+        case Opcode::SMSG_BREAK_TARGET:
+            // Server breaking our targeting (PvP flag, etc.)
+            // uint64 guid — consume; target cleared if it matches
+            if (packet.getSize() - packet.getReadPos() >= 8) {
+                uint64_t bGuid = packet.readUInt64();
+                if (bGuid == targetGuid) targetGuid = 0;
+            }
+            break;
+
+        case Opcode::SMSG_CLEAR_TARGET:
+            // uint64 guid — server cleared targeting on a unit (or 0 = clear all)
+            if (packet.getSize() - packet.getReadPos() >= 8) {
+                uint64_t cGuid = packet.readUInt64();
+                if (cGuid == 0 || cGuid == targetGuid) targetGuid = 0;
+            }
+            break;
+
+        // ---- Server-forced dismount ----
+        case Opcode::SMSG_DISMOUNT:
+            // No payload — server forcing dismount
+            currentMountDisplayId_ = 0;
+            if (mountCallback_) mountCallback_(0);
+            break;
+
+        case Opcode::SMSG_MOUNTRESULT: {
+            // uint32 result: 0=error, 1=invalid, 2=not in range, 3=already mounted, 4=ok
+            if (packet.getSize() - packet.getReadPos() < 4) break;
+            uint32_t result = packet.readUInt32();
+            if (result != 4) {
+                const char* msgs[] = { "Cannot mount here.", "Invalid mount spell.", "Too far away to mount.", "Already mounted." };
+                addSystemChatMessage(result < 4 ? msgs[result] : "Cannot mount.");
+            }
+            break;
+        }
+        case Opcode::SMSG_DISMOUNTRESULT: {
+            // uint32 result: 0=ok, others=error
+            if (packet.getSize() - packet.getReadPos() < 4) break;
+            uint32_t result = packet.readUInt32();
+            if (result != 0) addSystemChatMessage("Cannot dismount here.");
+            break;
+        }
+
+        // ---- Loot notifications ----
+        case Opcode::SMSG_LOOT_ALL_PASSED: {
+            // uint64 objectGuid + uint32 slot + uint32 itemId + uint32 randSuffix + uint32 randPropId
+            if (packet.getSize() - packet.getReadPos() < 24) break;
+            /*uint64_t objGuid =*/ packet.readUInt64();
+            /*uint32_t slot    =*/ packet.readUInt32();
+            uint32_t itemId  = packet.readUInt32();
+            auto* info = getItemInfo(itemId);
+            char buf[256];
+            std::snprintf(buf, sizeof(buf), "Everyone passed on [%s].",
+                          info ? info->name.c_str() : std::to_string(itemId).c_str());
+            addSystemChatMessage(buf);
+            pendingLootRollActive_ = false;
+            break;
+        }
+        case Opcode::SMSG_LOOT_ITEM_NOTIFY:
+            // uint64 looterGuid + uint64 lootGuid + uint32 itemId + uint32 count — consume
+            packet.setReadPos(packet.getSize());
+            break;
+        case Opcode::SMSG_LOOT_SLOT_CHANGED:
+            // uint64 objectGuid + uint32 slot + ... — consume
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Spell log miss ----
+        case Opcode::SMSG_SPELLLOGMISS: {
+            // packed_guid caster + packed_guid target + uint8 isCrit + uint32 count
+            // + count × (uint64 victimGuid + uint8 missInfo)
+            if (packet.getSize() - packet.getReadPos() < 2) break;
+            uint64_t casterGuid = UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 2) break;
+            /*uint64_t targetGuidLog =*/ UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 5) break;
+            /*uint8_t isCrit =*/ packet.readUInt8();
+            uint32_t count = packet.readUInt32();
+            count = std::min(count, 32u);
+            for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= 9; ++i) {
+                /*uint64_t victimGuid =*/ packet.readUInt64();
+                uint8_t missInfo = packet.readUInt8();
+                // Show combat text only for local player's spell misses
+                if (casterGuid == playerGuid) {
+                    static const CombatTextEntry::Type missTypes[] = {
+                        CombatTextEntry::MISS,    // 0=MISS
+                        CombatTextEntry::DODGE,   // 1=DODGE
+                        CombatTextEntry::PARRY,   // 2=PARRY
+                        CombatTextEntry::BLOCK,   // 3=BLOCK
+                        CombatTextEntry::MISS,    // 4=EVADE  → show as MISS
+                        CombatTextEntry::MISS,    // 5=IMMUNE → show as MISS
+                        CombatTextEntry::MISS,    // 6=DEFLECT
+                        CombatTextEntry::MISS,    // 7=ABSORB
+                        CombatTextEntry::MISS,    // 8=RESIST
+                    };
+                    CombatTextEntry::Type ct = (missInfo < 9) ? missTypes[missInfo] : CombatTextEntry::MISS;
+                    addCombatText(ct, 0, 0, true);
+                }
+            }
+            break;
+        }
+
+        // ---- Environmental damage log ----
+        case Opcode::SMSG_ENVIRONMENTALDAMAGELOG: {
+            // uint64 victimGuid + uint8 envDamageType + uint32 damage + uint32 absorb + uint32 resist
+            if (packet.getSize() - packet.getReadPos() < 21) break;
+            uint64_t victimGuid = packet.readUInt64();
+            /*uint8_t  envType =*/ packet.readUInt8();
+            uint32_t damage   = packet.readUInt32();
+            /*uint32_t absorb =*/ packet.readUInt32();
+            /*uint32_t resist =*/ packet.readUInt32();
+            if (victimGuid == playerGuid && damage > 0) {
+                addCombatText(CombatTextEntry::ENVIRONMENTAL, static_cast<int32_t>(damage), 0, false);
+            }
+            break;
+        }
+
         // ---- Creature Movement ----
         case Opcode::SMSG_MONSTER_MOVE:
             handleMonsterMove(packet);

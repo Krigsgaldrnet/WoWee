@@ -825,6 +825,17 @@ public:
     bool isQuestDetailsOpen() const { return questDetailsOpen; }
     const QuestDetailsData& getQuestDetails() const { return currentQuestDetails; }
 
+    // Gossip / quest map POI markers (SMSG_GOSSIP_POI)
+    struct GossipPoi {
+        float    x     = 0.0f;   // WoW canonical X (north)
+        float    y     = 0.0f;   // WoW canonical Y (west)
+        uint32_t icon  = 0;      // POI icon type
+        uint32_t data  = 0;
+        std::string name;
+    };
+    const std::vector<GossipPoi>& getGossipPois() const { return gossipPois_; }
+    void clearGossipPois() { gossipPois_.clear(); }
+
     // Quest turn-in
     bool isQuestRequestItemsOpen() const { return questRequestItemsOpen_; }
     const QuestRequestItemsData& getQuestRequestItems() const { return currentQuestRequestItems_; }
@@ -1778,6 +1789,7 @@ private:
     // Gossip
     bool gossipWindowOpen = false;
     GossipMessageData currentGossip;
+    std::vector<GossipPoi> gossipPois_;
 
     void performGameObjectInteractionNow(uint64_t guid);
 

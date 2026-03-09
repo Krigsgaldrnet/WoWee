@@ -7378,6 +7378,32 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             IM_COL32(0, 0, 0, 255), marker);
     }
 
+    // Gossip POI markers (quest / NPC navigation targets)
+    for (const auto& poi : gameHandler.getGossipPois()) {
+        // Convert WoW canonical coords to render coords for minimap projection
+        glm::vec3 poiRender = core::coords::canonicalToRender(glm::vec3(poi.x, poi.y, 0.0f));
+        float sx = 0.0f, sy = 0.0f;
+        if (!projectToMinimap(poiRender, sx, sy)) continue;
+
+        // Draw as a cyan diamond with tooltip on hover
+        const float d = 5.0f;
+        ImVec2 pts[4] = {
+            { sx,     sy - d },
+            { sx + d, sy     },
+            { sx,     sy + d },
+            { sx - d, sy     },
+        };
+        drawList->AddConvexPolyFilled(pts, 4, IM_COL32(0, 210, 255, 220));
+        drawList->AddPolyline(pts, 4, IM_COL32(255, 255, 255, 160), true, 1.0f);
+
+        // Show name label if cursor is within ~8px
+        ImVec2 cursorPos = ImGui::GetMousePos();
+        float dx = cursorPos.x - sx, dy = cursorPos.y - sy;
+        if (!poi.name.empty() && (dx * dx + dy * dy) < 64.0f) {
+            ImGui::SetTooltip("%s", poi.name.c_str());
+        }
+    }
+
     auto applyMuteState = [&]() {
         auto* activeRenderer = core::Application::getInstance().getRenderer();
         float masterScale = soundMuted_ ? 0.0f : static_cast<float>(pendingMasterVolume) / 100.0f;
