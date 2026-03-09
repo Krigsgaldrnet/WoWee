@@ -948,6 +948,11 @@ public:
     using PlaySoundCallback = std::function<void(uint32_t soundId)>;
     void setPlaySoundCallback(PlaySoundCallback cb) { playSoundCallback_ = std::move(cb); }
 
+    // Server-triggered 3-D positional sound callback — fires for SMSG_PLAY_OBJECT_SOUND and
+    // SMSG_PLAY_SPELL_IMPACT. Includes sourceGuid so the receiver can look up world position.
+    using PlayPositionalSoundCallback = std::function<void(uint32_t soundId, uint64_t sourceGuid)>;
+    void setPlayPositionalSoundCallback(PlayPositionalSoundCallback cb) { playPositionalSoundCallback_ = std::move(cb); }
+
     // Mount state
     using MountCallback = std::function<void(uint32_t mountDisplayId)>;  // 0 = dismount
     void setMountCallback(MountCallback cb) { mountCallback_ = std::move(cb); }
@@ -2103,6 +2108,7 @@ private:
     // ---- Server-triggered audio ----
     PlayMusicCallback playMusicCallback_;
     PlaySoundCallback playSoundCallback_;
+    PlayPositionalSoundCallback playPositionalSoundCallback_;
 };
 
 } // namespace game

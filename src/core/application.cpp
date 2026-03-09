@@ -2142,6 +2142,35 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // SMSG_PLAY_OBJECT_SOUND / SMSG_PLAY_SPELL_IMPACT: play as 3D positional sound at source entity
+    gameHandler->setPlayPositionalSoundCallback([this](uint32_t soundId, uint64_t sourceGuid) {
+        if (!assetManager || !gameHandler) return;
+
+        auto dbc = assetManager->loadDBC("SoundEntries.dbc");
+        if (!dbc || !dbc->isLoaded()) return;
+
+        int32_t idx = dbc->findRecordById(soundId);
+        if (idx < 0) return;
+
+        const uint32_t row = static_cast<uint32_t>(idx);
+        std::string dir = dbc->getString(row, 23);
+        for (uint32_t f = 3; f <= 12; ++f) {
+            std::string name = dbc->getString(row, f);
+            if (name.empty()) continue;
+            std::string path = dir.empty() ? name : dir + "\\" + name;
+
+            // Play as 3D sound if source entity position is available
+            auto entity = gameHandler->getEntityManager().getEntity(sourceGuid);
+            if (entity) {
+                glm::vec3 pos{entity->getLatestX(), entity->getLatestY(), entity->getLatestZ()};
+                audio::AudioEngine::instance().playSound3D(path, pos);
+            } else {
+                audio::AudioEngine::instance().playSound2D(path);
+            }
+            return;
+        }
+    });
+
     // Other player level-up callback — trigger 3D effect + chat notification
     gameHandler->setOtherPlayerLevelUpCallback([this](uint64_t guid, uint32_t newLevel) {
         if (!gameHandler || !renderer) return;

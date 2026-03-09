@@ -4507,9 +4507,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
         // ---- Play object/spell sounds ----
         case Opcode::SMSG_PLAY_OBJECT_SOUND:
         case Opcode::SMSG_PLAY_SPELL_IMPACT:
-            if (packet.getSize() - packet.getReadPos() >= 4) {
+            if (packet.getSize() - packet.getReadPos() >= 12) {
+                // uint32 soundId + uint64 sourceGuid
+                uint32_t soundId   = packet.readUInt32();
+                uint64_t srcGuid   = packet.readUInt64();
+                LOG_DEBUG("SMSG_PLAY_OBJECT_SOUND/SPELL_IMPACT id=", soundId, " src=0x", std::hex, srcGuid, std::dec);
+                if (playPositionalSoundCallback_) playPositionalSoundCallback_(soundId, srcGuid);
+                else if (playSoundCallback_) playSoundCallback_(soundId);
+            } else if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t soundId = packet.readUInt32();
-                LOG_DEBUG("SMSG_PLAY_OBJECT_SOUND/SPELL_IMPACT id=", soundId);
                 if (playSoundCallback_) playSoundCallback_(soundId);
             }
             packet.setReadPos(packet.getSize());
