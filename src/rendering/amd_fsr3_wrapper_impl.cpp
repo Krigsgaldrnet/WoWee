@@ -230,6 +230,9 @@ struct WrapperContext {
     void* fsr3ContextStorage = nullptr;
     bool frameGenerationReady = false;
     std::string lastError{};
+#if defined(_WIN32)
+    ID3D12Device* dx12Device = nullptr;
+#endif
 };
 
 void setContextError(WrapperContext* ctx, const char* message) {
@@ -284,6 +287,12 @@ bool bindVulkanRuntimeFns(void* libHandle, RuntimeFns& outFns) {
 
 void destroyContext(WrapperContext* ctx) {
     if (!ctx) return;
+#if defined(_WIN32)
+    if (ctx->dx12Device) {
+        ctx->dx12Device->Release();
+        ctx->dx12Device = nullptr;
+    }
+#endif
     if (ctx->fsr3ContextStorage && ctx->fns.fsr3ContextDestroy) {
         ctx->fns.fsr3ContextDestroy(reinterpret_cast<FfxFsr3Context*>(ctx->fsr3ContextStorage));
     }
@@ -302,6 +311,36 @@ void destroyContext(WrapperContext* ctx) {
 }
 
 #if defined(_WIN32)
+bool openSharedResourceHandle(ID3D12Device* device, uint64_t handleValue, const char* name, std::string& outError) {
+    if (!device || handleValue == 0) {
+        outError = std::string("invalid shared resource handle for ") + (name ? name : "unknown");
+        return false;
+    }
+    ID3D12Resource* res = nullptr;
+    const HRESULT hr = device->OpenSharedHandle(reinterpret_cast<HANDLE>(handleValue), IID_PPV_ARGS(&res));
+    if (FAILED(hr) || !res) {
+        outError = std::string("failed to import shared resource handle for ") + (name ? name : "unknown");
+        return false;
+    }
+    res->Release();
+    return true;
+}
+
+bool openSharedFenceHandle(ID3D12Device* device, uint64_t handleValue, const char* name, std::string& outError) {
+    if (!device || handleValue == 0) {
+        outError = std::string("invalid shared fence handle for ") + (name ? name : "unknown");
+        return false;
+    }
+    ID3D12Fence* fence = nullptr;
+    const HRESULT hr = device->OpenSharedHandle(reinterpret_cast<HANDLE>(handleValue), IID_PPV_ARGS(&fence));
+    if (FAILED(hr) || !fence) {
+        outError = std::string("failed to import shared fence handle for ") + (name ? name : "unknown");
+        return false;
+    }
+    fence->Release();
+    return true;
+}
+
 bool runDx12BridgePreflight(const WoweeFsr3WrapperInitDesc* initDesc, std::string& errorMessage) {
     std::vector<std::string> missing;
 
@@ -537,6 +576,15 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
 
     WrapperContext* ctx = new WrapperContext{};
     ctx->backend = backend;
+#if defined(_WIN32)
+    if (backend == WrapperBackend::Dx12Bridge) {
+        if (D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&ctx->dx12Device)) != S_OK || !ctx->dx12Device) {
+            destroyContext(ctx);
+            writeError(outErrorText, outErrorTextCapacity, "dx12_bridge failed to create D3D12 device");
+            return -1;
+        }
+    }
+#endif
     for (const std::string& path : candidates) {
         void* candidateHandle = openLibrary(path.c_str());
         if (!candidateHandle) continue;
@@ -682,22 +730,18 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
             setContextError(ctx, "dx12_bridge dispatch missing required external handles for upscale");
             return -1;
         }
-
-        ID3D12Device* d3d12Device = nullptr;
-        if (D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d12Device)) == S_OK && d3d12Device) {
-            ID3D12Resource* sharedOutputResource = nullptr;
-            HRESULT hrOpen = d3d12Device->OpenSharedHandle(
-                reinterpret_cast<HANDLE>(dispatchDesc->outputMemoryHandle),
-                IID_PPV_ARGS(&sharedOutputResource));
-            if (FAILED(hrOpen) || !sharedOutputResource) {
-                setContextError(ctx, "dx12_bridge failed to open shared output memory handle as D3D12 resource");
-                d3d12Device->Release();
-                return -1;
-            }
-            sharedOutputResource->Release();
-            d3d12Device->Release();
-        } else {
-            setContextError(ctx, "dx12_bridge failed to create D3D12 device for shared-handle import");
+        if (!ctx->dx12Device) {
+            setContextError(ctx, "dx12_bridge D3D12 device is unavailable");
+            return -1;
+        }
+        std::string importError;
+        if (!openSharedResourceHandle(ctx->dx12Device, dispatchDesc->colorMemoryHandle, "color", importError) ||
+            !openSharedResourceHandle(ctx->dx12Device, dispatchDesc->depthMemoryHandle, "depth", importError) ||
+            !openSharedResourceHandle(ctx->dx12Device, dispatchDesc->motionVectorMemoryHandle, "motion vectors", importError) ||
+            !openSharedResourceHandle(ctx->dx12Device, dispatchDesc->outputMemoryHandle, "upscale output", importError) ||
+            !openSharedFenceHandle(ctx->dx12Device, dispatchDesc->acquireSemaphoreHandle, "acquire semaphore", importError) ||
+            !openSharedFenceHandle(ctx->dx12Device, dispatchDesc->releaseSemaphoreHandle, "release semaphore", importError)) {
+            setContextError(ctx, importError.c_str());
             return -1;
         }
     }
@@ -780,6 +824,18 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
             dispatchDesc->outputMemoryHandle == 0 || dispatchDesc->frameGenOutputMemoryHandle == 0 ||
             dispatchDesc->acquireSemaphoreHandle == 0 || dispatchDesc->releaseSemaphoreHandle == 0) {
             setContextError(ctx, "dx12_bridge dispatch missing required external handles for frame generation");
+            return -1;
+        }
+        if (!ctx->dx12Device) {
+            setContextError(ctx, "dx12_bridge D3D12 device is unavailable");
+            return -1;
+        }
+        std::string importError;
+        if (!openSharedResourceHandle(ctx->dx12Device, dispatchDesc->outputMemoryHandle, "present output", importError) ||
+            !openSharedResourceHandle(ctx->dx12Device, dispatchDesc->frameGenOutputMemoryHandle, "framegen output", importError) ||
+            !openSharedFenceHandle(ctx->dx12Device, dispatchDesc->acquireSemaphoreHandle, "acquire semaphore", importError) ||
+            !openSharedFenceHandle(ctx->dx12Device, dispatchDesc->releaseSemaphoreHandle, "release semaphore", importError)) {
+            setContextError(ctx, importError.c_str());
             return -1;
         }
     }

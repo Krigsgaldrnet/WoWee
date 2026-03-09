@@ -75,6 +75,7 @@ Runtime note:
   - `wowee_fsr3_wrapper_shutdown`
 - Optional wrapper export:
   - `wowee_fsr3_wrapper_dispatch_framegen`
+  - `wowee_fsr3_wrapper_get_last_error`
 
 ## Current Status
 
