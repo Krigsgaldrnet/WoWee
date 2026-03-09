@@ -119,13 +119,7 @@ static int envIntOrDefault(const char* key, int defaultValue) {
 #if defined(_WIN32)
 static uint64_t exportImageMemoryHandleWin32(VkDevice device, PFN_vkGetDeviceProcAddr getDeviceProcAddr,
                                              VmaAllocator allocator, const AllocatedImage& image) {
-#if !defined(VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR) || !defined(VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT)
-    (void)device;
-    (void)getDeviceProcAddr;
-    (void)allocator;
-    (void)image;
-    return 0;
-#else
+#if defined(VK_USE_PLATFORM_WIN32_KHR) && defined(VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR) && defined(VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT)
     if (!device || !getDeviceProcAddr || !allocator || !image.allocation) return 0;
     auto getMemHandle = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(
         getDeviceProcAddr(device, "vkGetMemoryWin32HandleKHR"));
@@ -143,17 +137,18 @@ static uint64_t exportImageMemoryHandleWin32(VkDevice device, PFN_vkGetDevicePro
     HANDLE outHandle = nullptr;
     if (getMemHandle(device, &handleInfo, &outHandle) != VK_SUCCESS || !outHandle) return 0;
     return reinterpret_cast<uint64_t>(outHandle);
+#else
+    (void)device;
+    (void)getDeviceProcAddr;
+    (void)allocator;
+    (void)image;
+    return 0;
 #endif
 }
 
 static uint64_t exportSemaphoreHandleWin32(VkDevice device, PFN_vkGetDeviceProcAddr getDeviceProcAddr,
                                            VkSemaphore semaphore) {
-#if !defined(VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR) || !defined(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT)
-    (void)device;
-    (void)getDeviceProcAddr;
-    (void)semaphore;
-    return 0;
-#else
+#if defined(VK_USE_PLATFORM_WIN32_KHR) && defined(VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR) && defined(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT)
     if (!device || !getDeviceProcAddr || !semaphore) return 0;
     auto getSemHandle = reinterpret_cast<PFN_vkGetSemaphoreWin32HandleKHR>(
         getDeviceProcAddr(device, "vkGetSemaphoreWin32HandleKHR"));
@@ -167,6 +162,11 @@ static uint64_t exportSemaphoreHandleWin32(VkDevice device, PFN_vkGetDeviceProcA
     HANDLE outHandle = nullptr;
     if (getSemHandle(device, &handleInfo, &outHandle) != VK_SUCCESS || !outHandle) return 0;
     return reinterpret_cast<uint64_t>(outHandle);
+#else
+    (void)device;
+    (void)getDeviceProcAddr;
+    (void)semaphore;
+    return 0;
 #endif
 }
 #endif
@@ -4001,16 +4001,7 @@ bool Renderer::initFSR2Resources() {
                     fsr2_.amdFsr3FramegenRuntimeReady = fsr2_.amdFsr3Runtime->initialize(fgInit);
                     if (fsr2_.amdFsr3FramegenRuntimeReady) {
                         fsr2_.amdFsr3RuntimeLastError.clear();
-                        if (fsr2_.amdFsr3Runtime->loadPathKind() == AmdFsr3Runtime::LoadPathKind::Wrapper) {
-                            const std::string& wrapperBackend = fsr2_.amdFsr3Runtime->wrapperBackendName();
-                            if (!wrapperBackend.empty()) {
-                                fsr2_.amdFsr3RuntimePath = "Path B (" + wrapperBackend + ")";
-                            } else {
-                                fsr2_.amdFsr3RuntimePath = "Path B";
-                            }
-                        } else {
-                            fsr2_.amdFsr3RuntimePath = "Path A";
-                        }
+                        fsr2_.amdFsr3RuntimePath = "Path A";
                         LOG_INFO("FSR3 framegen runtime library loaded from ", fsr2_.amdFsr3Runtime->loadedLibraryPath(),
                                  " (upscale+framegen dispatch enabled)");
                     } else {

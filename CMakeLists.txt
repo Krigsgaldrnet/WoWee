@@ -18,12 +18,18 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
+if(WIN32)
+    # Needed for Vulkan Win32 external memory/semaphore handle types used by FSR3 interop.
+    add_compile_definitions(VK_USE_PLATFORM_WIN32_KHR)
+endif()
+
 # Options
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(WOWEE_BUILD_TESTS "Build tests" OFF)
 option(WOWEE_ENABLE_ASAN "Enable AddressSanitizer (Debug builds)" OFF)
 option(WOWEE_ENABLE_AMD_FSR2 "Enable AMD FidelityFX FSR2 backend when SDK is present" ON)
 option(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN "Enable AMD FidelityFX SDK FSR3 frame generation interface probe when SDK is present" ON)
+option(WOWEE_BUILD_AMD_FSR3_RUNTIME "Build native AMD FidelityFX VK runtime (Path A) from extern/FidelityFX-SDK/Kits" ON)
 
 # AMD FidelityFX FSR2 SDK detection (drop-in under extern/FidelityFX-FSR2)
 set(WOWEE_AMD_FSR2_DIR ${CMAKE_SOURCE_DIR}/extern/FidelityFX-FSR2)
@@ -105,8 +111,22 @@ if(EXISTS ${WOWEE_AMD_FFX_SDK_FI_HEADER}
     set(WOWEE_AMD_FFX_SDK_LEGACY_READY TRUE)
 endif()
 
-if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN AND WOWEE_AMD_FFX_SDK_LEGACY_READY)
-    message(STATUS "AMD FidelityFX-SDK framegen headers detected at ${WOWEE_AMD_FFX_SDK_DIR}")
+set(WOWEE_AMD_FFX_SDK_KITS_READY FALSE)
+if(EXISTS ${WOWEE_AMD_FFX_SDK_KITS_DIR}/upscalers/fsr3/include/ffx_fsr3upscaler.h
+   AND EXISTS ${WOWEE_AMD_FFX_SDK_KITS_DIR}/framegeneration/fsr3/include/ffx_frameinterpolation.h
+   AND EXISTS ${WOWEE_AMD_FFX_SDK_KITS_DIR}/framegeneration/fsr3/include/ffx_opticalflow.h
+   AND EXISTS ${WOWEE_AMD_FFX_SDK_KITS_DIR}/backend/vk/ffx_vk.h)
+    set(WOWEE_AMD_FFX_SDK_KITS_READY TRUE)
+endif()
+
+if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN AND (WOWEE_AMD_FFX_SDK_LEGACY_READY OR WOWEE_AMD_FFX_SDK_KITS_READY))
+    if(WOWEE_AMD_FFX_SDK_LEGACY_READY)
+        message(STATUS "AMD FidelityFX-SDK framegen headers detected at ${WOWEE_AMD_FFX_SDK_DIR} (legacy layout)")
+        add_compile_definitions(WOWEE_AMD_FFX_SDK_KITS=0)
+    else()
+        message(STATUS "AMD FidelityFX-SDK framegen headers detected at ${WOWEE_AMD_FFX_SDK_KITS_DIR} (Kits layout)")
+        add_compile_definitions(WOWEE_AMD_FFX_SDK_KITS=1)
+    endif()
     add_compile_definitions(WOWEE_HAS_AMD_FSR3_FRAMEGEN=1)
     add_library(wowee_fsr3_framegen_amd_vk_probe STATIC
         src/rendering/amd_fsr3_framegen_probe.cpp
@@ -115,44 +135,80 @@ if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN AND WOWEE_AMD_FFX_SDK_LEGACY_READY)
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
     )
-    target_include_directories(wowee_fsr3_framegen_amd_vk_probe PUBLIC
-        ${WOWEE_AMD_FFX_SDK_DIR}/include
-    )
+    if(WOWEE_AMD_FFX_SDK_LEGACY_READY)
+        target_include_directories(wowee_fsr3_framegen_amd_vk_probe PUBLIC
+            ${WOWEE_AMD_FFX_SDK_DIR}/include
+        )
+    else()
+        target_include_directories(wowee_fsr3_framegen_amd_vk_probe PUBLIC
+            ${WOWEE_AMD_FFX_SDK_KITS_DIR}/upscalers/fsr3/include
+            ${WOWEE_AMD_FFX_SDK_KITS_DIR}/framegeneration/fsr3/include
+            ${WOWEE_AMD_FFX_SDK_KITS_DIR}/framegeneration/include
+            ${WOWEE_AMD_FFX_SDK_KITS_DIR}/backend/vk
+            ${WOWEE_AMD_FFX_SDK_KITS_DIR}/api/internal
+            ${WOWEE_AMD_FFX_SDK_KITS_DIR}/api/include
+        )
+    endif()
     target_link_libraries(wowee_fsr3_framegen_amd_vk_probe PUBLIC Vulkan::Vulkan)
 
-    add_library(wowee_fsr3_vk_wrapper SHARED
-        src/rendering/amd_fsr3_wrapper_impl.cpp
-        include/rendering/amd_fsr3_wrapper_abi.h
-    )
-    set_target_properties(wowee_fsr3_vk_wrapper PROPERTIES
-        CXX_STANDARD 17
-        CXX_STANDARD_REQUIRED ON
-        OUTPUT_NAME ffx_fsr3_vk_wrapper
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
-        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
-        ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}
-    )
-    target_include_directories(wowee_fsr3_vk_wrapper PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
-        ${WOWEE_AMD_FFX_SDK_DIR}/include
-    )
-    target_link_libraries(wowee_fsr3_vk_wrapper PUBLIC Vulkan::Vulkan ${CMAKE_DL_LIBS})
+    if(WOWEE_BUILD_AMD_FSR3_RUNTIME AND WOWEE_AMD_FFX_SDK_KITS_READY)
+        message(STATUS "AMD FSR3 Path A runtime target enabled: build with target 'wowee_fsr3_official_runtime_copy'")
+        set(WOWEE_AMD_FSR3_RUNTIME_BUILD_DIR ${CMAKE_BINARY_DIR}/ffx_sdk_runtime_build)
+        if(WIN32)
+            set(WOWEE_AMD_FSR3_RUNTIME_NAME amd_fidelityfx_vk.dll)
+            if(CMAKE_CONFIGURATION_TYPES)
+                set(WOWEE_AMD_FSR3_RUNTIME_SRC ${WOWEE_AMD_FSR3_RUNTIME_BUILD_DIR}/$<CONFIG>/amd_fidelityfx_vk.dll)
+            else()
+                set(WOWEE_AMD_FSR3_RUNTIME_SRC ${WOWEE_AMD_FSR3_RUNTIME_BUILD_DIR}/amd_fidelityfx_vk.dll)
+            endif()
+        elseif(APPLE)
+            set(WOWEE_AMD_FSR3_RUNTIME_NAME libamd_fidelityfx_vk.dylib)
+            if(CMAKE_CONFIGURATION_TYPES)
+                set(WOWEE_AMD_FSR3_RUNTIME_SRC ${WOWEE_AMD_FSR3_RUNTIME_BUILD_DIR}/$<CONFIG>/libamd_fidelityfx_vk.dylib)
+            else()
+                set(WOWEE_AMD_FSR3_RUNTIME_SRC ${WOWEE_AMD_FSR3_RUNTIME_BUILD_DIR}/libamd_fidelityfx_vk.dylib)
+            endif()
+        else()
+            set(WOWEE_AMD_FSR3_RUNTIME_NAME libamd_fidelityfx_vk.so)
+            set(WOWEE_AMD_FSR3_RUNTIME_SRC ${WOWEE_AMD_FSR3_RUNTIME_BUILD_DIR}/libamd_fidelityfx_vk.so)
+        endif()
 
-    add_executable(wowee_fsr3_wrapper_runtime_smoke
-        src/rendering/amd_fsr3_wrapper_runtime_smoke.cpp
-        include/rendering/amd_fsr3_wrapper_abi.h
-    )
-    set_target_properties(wowee_fsr3_wrapper_runtime_smoke PROPERTIES
-        CXX_STANDARD 17
-        CXX_STANDARD_REQUIRED ON
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
-    )
-    target_include_directories(wowee_fsr3_wrapper_runtime_smoke PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
-    )
-    target_link_libraries(wowee_fsr3_wrapper_runtime_smoke PUBLIC ${CMAKE_DL_LIBS})
+        if(CMAKE_BUILD_TYPE)
+            set(WOWEE_AMD_FSR3_RUNTIME_BUILD_TYPE ${CMAKE_BUILD_TYPE})
+        else()
+            set(WOWEE_AMD_FSR3_RUNTIME_BUILD_TYPE Release)
+        endif()
+
+        add_custom_target(wowee_fsr3_official_runtime_build
+            COMMAND ${CMAKE_COMMAND}
+                -S ${WOWEE_AMD_FFX_SDK_KITS_DIR}
+                -B ${WOWEE_AMD_FSR3_RUNTIME_BUILD_DIR}
+                -DCMAKE_BUILD_TYPE=${WOWEE_AMD_FSR3_RUNTIME_BUILD_TYPE}
+                -DFFX_BUILD_VK=ON
+                -DFFX_BUILD_FRAMEGENERATION=ON
+                -DFFX_BUILD_UPSCALER=ON
+            COMMAND ${CMAKE_COMMAND}
+                --build ${WOWEE_AMD_FSR3_RUNTIME_BUILD_DIR}
+                --config $<CONFIG>
+                --parallel
+            COMMENT "Building native AMD FSR3 runtime (Path A) from FidelityFX-SDK Kits"
+            VERBATIM
+        )
+
+        add_custom_target(wowee_fsr3_official_runtime_copy
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${WOWEE_AMD_FSR3_RUNTIME_SRC}
+                ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${WOWEE_AMD_FSR3_RUNTIME_NAME}
+            DEPENDS wowee_fsr3_official_runtime_build
+            COMMENT "Copying native AMD FSR3 runtime to ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+            VERBATIM
+        )
+    endif()
+
 else()
     add_compile_definitions(WOWEE_HAS_AMD_FSR3_FRAMEGEN=0)
+    add_compile_definitions(WOWEE_AMD_FFX_SDK_KITS=0)
     if(WOWEE_ENABLE_AMD_FSR3_FRAMEGEN)
         if(EXISTS ${WOWEE_AMD_FFX_SDK_KITS_FG_HEADER})
             message(STATUS "FidelityFX-SDK Kits layout detected at ${WOWEE_AMD_FFX_SDK_KITS_DIR}, "

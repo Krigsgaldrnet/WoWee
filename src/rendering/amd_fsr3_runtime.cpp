@@ -1,5 +1,4 @@
 #include "rendering/amd_fsr3_runtime.hpp"
-
 #include "rendering/amd_fsr3_wrapper_abi.h"
 
 #include <algorithm>
@@ -18,8 +17,13 @@
 #endif
 
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
+#if WOWEE_AMD_FFX_SDK_KITS
+#include "third_party/ffx_fsr3_legacy_compat.h"
+#include <ffx_vk.h>
+#else
 #include <FidelityFX/host/ffx_fsr3.h>
 #include <FidelityFX/host/backends/vk/ffx_vk.h>
+#endif
 #endif
 
 namespace wowee::rendering {
@@ -57,10 +61,7 @@ AmdFsr3Runtime::~AmdFsr3Runtime() {
     shutdown();
 }
 
-bool AmdFsr3Runtime::hasWrapperExternalInterop() const {
-    if (loadPathKind_ != LoadPathKind::Wrapper) return false;
-    return (wrapperCapabilities_ & WOWEE_FSR3_WRAPPER_CAP_EXTERNAL_INTEROP) != 0u;
-}
+bool AmdFsr3Runtime::hasWrapperExternalInterop() const { return false; }
 
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
 namespace {
@@ -191,28 +192,22 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
     if (const char* envPath = std::getenv("WOWEE_FFX_SDK_RUNTIME_LIB")) {
         if (*envPath) candidates.push_back({envPath, LoadPathKind::Official});
     }
-    if (const char* wrapperEnv = std::getenv("WOWEE_FFX_SDK_RUNTIME_WRAPPER_LIB")) {
-        if (*wrapperEnv) candidates.push_back({wrapperEnv, LoadPathKind::Wrapper});
-    }
 #if defined(_WIN32)
+    candidates.push_back({"amd_fidelityfx_vk.dll", LoadPathKind::Official});
+    candidates.push_back({"libamd_fidelityfx_vk.dll", LoadPathKind::Official});
     candidates.push_back({"ffx_fsr3_vk.dll", LoadPathKind::Official});
     candidates.push_back({"ffx_fsr3.dll", LoadPathKind::Official});
-    candidates.push_back({"ffx_fsr3_vk_wrapper.dll", LoadPathKind::Wrapper});
-    candidates.push_back({"ffx_fsr3_bridge.dll", LoadPathKind::Wrapper});
 #elif defined(__APPLE__)
+    candidates.push_back({"libamd_fidelityfx_vk.dylib", LoadPathKind::Official});
     candidates.push_back({"libffx_fsr3_vk.dylib", LoadPathKind::Official});
     candidates.push_back({"libffx_fsr3.dylib", LoadPathKind::Official});
-    candidates.push_back({"libffx_fsr3_vk_wrapper.dylib", LoadPathKind::Wrapper});
-    candidates.push_back({"libffx_fsr3_bridge.dylib", LoadPathKind::Wrapper});
 #else
+    candidates.push_back({"./libamd_fidelityfx_vk.so", LoadPathKind::Official});
+    candidates.push_back({"libamd_fidelityfx_vk.so", LoadPathKind::Official});
     candidates.push_back({"./libffx_fsr3_vk.so", LoadPathKind::Official});
     candidates.push_back({"libffx_fsr3_vk.so", LoadPathKind::Official});
     candidates.push_back({"libffx_fsr3.so", LoadPathKind::Official});
-    candidates.push_back({"./libffx_fsr3_vk_wrapper.so", LoadPathKind::Wrapper});
-    candidates.push_back({"libffx_fsr3_vk_wrapper.so", LoadPathKind::Wrapper});
-    candidates.push_back({"libffx_fsr3_bridge.so", LoadPathKind::Wrapper});
 #endif
-
     for (const Candidate& candidate : candidates) {
 #if defined(_WIN32)
         HMODULE h = LoadLibraryA(candidate.path.c_str());
@@ -228,7 +223,7 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
         break;
     }
     if (!libHandle_) {
-        lastError_ = "no official runtime (Path A) or wrapper runtime (Path B) found";
+        lastError_ = "no official runtime (Path A) found";
         return false;
     }
 
@@ -353,7 +348,11 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
         return false;
     }
 
+#if WOWEE_AMD_FFX_SDK_KITS
+    scratchBufferSize_ = fns_->getScratchMemorySizeVK(FFX_FSR3_CONTEXT_COUNT);
+#else
     scratchBufferSize_ = fns_->getScratchMemorySizeVK(desc.physicalDevice, FFX_FSR3_CONTEXT_COUNT);
+#endif
     if (scratchBufferSize_ == 0) {
         LOG_WARNING("FSR3 runtime: scratch buffer size query returned 0.");
         lastError_ = "scratch buffer size query returned 0";
@@ -368,14 +367,23 @@ bool AmdFsr3Runtime::initialize(const AmdFsr3RuntimeInitDesc& desc) {
         return false;
     }
 
+#if WOWEE_AMD_FFX_SDK_KITS
+    FfxDevice ffxDevice = fns_->getDeviceVK(desc.device);
+#else
     VkDeviceContext vkDevCtx{};
     vkDevCtx.vkDevice = desc.device;
     vkDevCtx.vkPhysicalDevice = desc.physicalDevice;
     vkDevCtx.vkDeviceProcAddr = desc.getDeviceProcAddr;
-
     FfxDevice ffxDevice = fns_->getDeviceVK(&vkDevCtx);
+#endif
     FfxInterface backendShared{};
-    FfxErrorCode ifaceErr = fns_->getInterfaceVK(&backendShared, ffxDevice, scratchBuffer_, scratchBufferSize_, FFX_FSR3_CONTEXT_COUNT);
+#if WOWEE_AMD_FFX_SDK_KITS
+    FfxErrorCode ifaceErr = fns_->getInterfaceVK(
+        &backendShared, ffxDevice, desc.physicalDevice, scratchBuffer_, scratchBufferSize_, FFX_FSR3_CONTEXT_COUNT);
+#else
+    FfxErrorCode ifaceErr = fns_->getInterfaceVK(
+        &backendShared, ffxDevice, scratchBuffer_, scratchBufferSize_, FFX_FSR3_CONTEXT_COUNT);
+#endif
     if (ifaceErr != FFX_OK) {
         LOG_WARNING("FSR3 runtime: ffxGetInterfaceVK failed (", static_cast<int>(ifaceErr), ").");
         lastError_ = "ffxGetInterfaceVK failed";
@@ -541,13 +549,23 @@ bool AmdFsr3Runtime::dispatchUpscale(const AmdFsr3RuntimeDispatchDesc& desc) {
     static wchar_t kDepthName[] = L"FSR3_Depth";
     static wchar_t kMotionName[] = L"FSR3_MotionVectors";
     static wchar_t kOutputName[] = L"FSR3_Output";
+ #if WOWEE_AMD_FFX_SDK_KITS
+    dispatch.color = fns_->getResourceVK(desc.colorImage, colorDesc, kColorName, FFX_RESOURCE_STATE_COMPUTE_READ);
+    dispatch.depth = fns_->getResourceVK(desc.depthImage, depthDesc, kDepthName, FFX_RESOURCE_STATE_COMPUTE_READ);
+    dispatch.motionVectors = fns_->getResourceVK(desc.motionVectorImage, mvDesc, kMotionName, FFX_RESOURCE_STATE_COMPUTE_READ);
+ #else
     dispatch.color = fns_->getResourceVK(reinterpret_cast<void*>(desc.colorImage), colorDesc, kColorName, FFX_RESOURCE_STATE_COMPUTE_READ);
     dispatch.depth = fns_->getResourceVK(reinterpret_cast<void*>(desc.depthImage), depthDesc, kDepthName, FFX_RESOURCE_STATE_COMPUTE_READ);
     dispatch.motionVectors = fns_->getResourceVK(reinterpret_cast<void*>(desc.motionVectorImage), mvDesc, kMotionName, FFX_RESOURCE_STATE_COMPUTE_READ);
+ #endif
     dispatch.exposure = FfxResource{};
     dispatch.reactive = FfxResource{};
     dispatch.transparencyAndComposition = FfxResource{};
+ #if WOWEE_AMD_FFX_SDK_KITS
+    dispatch.upscaleOutput = fns_->getResourceVK(desc.outputImage, outDesc, kOutputName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+ #else
     dispatch.upscaleOutput = fns_->getResourceVK(reinterpret_cast<void*>(desc.outputImage), outDesc, kOutputName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+ #endif
     dispatch.jitterOffset.x = desc.jitterX;
     dispatch.jitterOffset.y = desc.jitterY;
     dispatch.motionVectorScale.x = desc.motionScaleX;
@@ -658,10 +676,17 @@ bool AmdFsr3Runtime::dispatchFrameGeneration(const AmdFsr3RuntimeDispatchDesc& d
     static wchar_t kInterpolatedName[] = L"FSR3_InterpolatedOutput";
     FfxFrameGenerationDispatchDescription fgDispatch{};
     fgDispatch.commandList = fns_->getCommandListVK(desc.commandBuffer);
+ #if WOWEE_AMD_FFX_SDK_KITS
+    fgDispatch.presentColor = fns_->getResourceVK(
+        desc.outputImage, presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
+    fgDispatch.outputs[0] = fns_->getResourceVK(
+        desc.frameGenOutputImage, fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+ #else
     fgDispatch.presentColor = fns_->getResourceVK(
         reinterpret_cast<void*>(desc.outputImage), presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
     fgDispatch.outputs[0] = fns_->getResourceVK(
         reinterpret_cast<void*>(desc.frameGenOutputImage), fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+ #endif
     fgDispatch.numInterpolatedFrames = 1;
     fgDispatch.reset = desc.reset;
     fgDispatch.backBufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;

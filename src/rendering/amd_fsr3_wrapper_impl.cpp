@@ -1,11 +1,19 @@
 #include "rendering/amd_fsr3_wrapper_abi.h"
 
 #if WOWEE_HAS_AMD_FSR3_FRAMEGEN
+#if WOWEE_AMD_FFX_SDK_KITS
+#include "third_party/ffx_fsr3_legacy_compat.h"
+#include <ffx_vk.h>
+#if defined(_WIN32)
+#include <ffx_dx12.h>
+#endif
+#else
 #include <FidelityFX/host/backends/vk/ffx_vk.h>
 #if defined(_WIN32)
 #include <FidelityFX/host/backends/dx12/ffx_dx12.h>
 #endif
 #include <FidelityFX/host/ffx_fsr3.h>
+#endif
 #endif
 
 #include <algorithm>
@@ -878,7 +886,11 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
         ctx->scratchBufferSize = 0;
 #endif
     } else {
+#if WOWEE_AMD_FFX_SDK_KITS
+        ctx->scratchBufferSize = ctx->fns.getScratchMemorySizeVK(FFX_FSR3_CONTEXT_COUNT);
+#else
         ctx->scratchBufferSize = ctx->fns.getScratchMemorySizeVK(initDesc->physicalDevice, FFX_FSR3_CONTEXT_COUNT);
+#endif
     }
     if (ctx->scratchBufferSize == 0) {
         destroyContext(ctx);
@@ -901,6 +913,11 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
             &backendShared, ffxDevice, ctx->scratchBuffer, ctx->scratchBufferSize, FFX_FSR3_CONTEXT_COUNT);
 #endif
     } else {
+#if WOWEE_AMD_FFX_SDK_KITS
+        FfxDevice ffxDevice = ctx->fns.getDeviceVK(initDesc->device);
+        ifaceErr = ctx->fns.getInterfaceVK(
+            &backendShared, ffxDevice, initDesc->physicalDevice, ctx->scratchBuffer, ctx->scratchBufferSize, FFX_FSR3_CONTEXT_COUNT);
+#else
         VkDeviceContext vkDevCtx{};
         vkDevCtx.vkDevice = initDesc->device;
         vkDevCtx.vkPhysicalDevice = initDesc->physicalDevice;
@@ -908,6 +925,7 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_initialize(const WoweeFsr3W
         FfxDevice ffxDevice = ctx->fns.getDeviceVK(&vkDevCtx);
         ifaceErr = ctx->fns.getInterfaceVK(
             &backendShared, ffxDevice, ctx->scratchBuffer, ctx->scratchBufferSize, FFX_FSR3_CONTEXT_COUNT);
+#endif
     }
     if (ifaceErr != FFX_OK) {
         const bool wasDx12Backend = (ctx->backend == WrapperBackend::Dx12Bridge);
@@ -1108,10 +1126,17 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_upscale(WoweeFsr3W
 #endif
     } else {
         dispatch.commandList = ctx->fns.getCommandListVK(dispatchDesc->commandBuffer);
+#if WOWEE_AMD_FFX_SDK_KITS
+        dispatch.color = ctx->fns.getResourceVK(dispatchDesc->colorImage, colorDesc, kColorName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        dispatch.depth = ctx->fns.getResourceVK(dispatchDesc->depthImage, depthDesc, kDepthName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        dispatch.motionVectors = ctx->fns.getResourceVK(dispatchDesc->motionVectorImage, mvDesc, kMotionName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        dispatch.upscaleOutput = ctx->fns.getResourceVK(dispatchDesc->outputImage, outDesc, kOutputName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+#else
         dispatch.color = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->colorImage), colorDesc, kColorName, FFX_RESOURCE_STATE_COMPUTE_READ);
         dispatch.depth = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->depthImage), depthDesc, kDepthName, FFX_RESOURCE_STATE_COMPUTE_READ);
         dispatch.motionVectors = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->motionVectorImage), mvDesc, kMotionName, FFX_RESOURCE_STATE_COMPUTE_READ);
         dispatch.upscaleOutput = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->outputImage), outDesc, kOutputName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+#endif
     }
     dispatch.exposure = FfxResource{};
     dispatch.reactive = FfxResource{};
@@ -1289,8 +1314,13 @@ WOWEE_FSR3_WRAPPER_EXPORT int32_t wowee_fsr3_wrapper_dispatch_framegen(WoweeFsr3
 #endif
     } else {
         fgDispatch.commandList = ctx->fns.getCommandListVK(dispatchDesc->commandBuffer);
+#if WOWEE_AMD_FFX_SDK_KITS
+        fgDispatch.presentColor = ctx->fns.getResourceVK(dispatchDesc->outputImage, presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
+        fgDispatch.outputs[0] = ctx->fns.getResourceVK(dispatchDesc->frameGenOutputImage, fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+#else
         fgDispatch.presentColor = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->outputImage), presentDesc, kPresentName, FFX_RESOURCE_STATE_COMPUTE_READ);
         fgDispatch.outputs[0] = ctx->fns.getResourceVK(reinterpret_cast<void*>(dispatchDesc->frameGenOutputImage), fgOutDesc, kInterpolatedName, FFX_RESOURCE_STATE_UNORDERED_ACCESS);
+#endif
     }
     fgDispatch.numInterpolatedFrames = 1;
     fgDispatch.reset = (dispatchDesc->reset != 0u);
