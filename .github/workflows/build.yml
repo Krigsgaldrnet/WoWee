@@ -137,12 +137,15 @@ jobs:
             comp
             -Os
             -DFFX_GLSL=1
-            -DFFX_FSR2_OPTION_REPROJECT_USE_LANCZOS_TYPE={0,1}
             -DFFX_FSR2_OPTION_HDR_COLOR_INPUT={0,1}
             -DFFX_FSR2_OPTION_LOW_RESOLUTION_MOTION_VECTORS={0,1}
             -DFFX_FSR2_OPTION_JITTERED_MOTION_VECTORS={0,1}
             -DFFX_FSR2_OPTION_INVERTED_DEPTH={0,1}
             -DFFX_FSR2_OPTION_APPLY_SHARPENING={0,1}
+          )
+
+          REPROJECT_PERM_ARGS=(
+            -DFFX_FSR2_OPTION_REPROJECT_USE_LANCZOS_TYPE={0,1}
           )
 
           PASSES=(
@@ -158,10 +161,17 @@ jobs:
 
           for pass in "${PASSES[@]}"; do
             HALF_ARG="-DFFX_HALF={0,1}"
+            PERM_ARGS=("${BASE_ARGS[@]}")
             if [ "$pass" = "ffx_fsr2_compute_luminance_pyramid_pass" ]; then
               HALF_ARG="-DFFX_HALF=0"
             fi
-            wine "$SC" "${BASE_ARGS[@]}" "$HALF_ARG" \
+
+            # Only passes that include reproject path should receive this option permutation.
+            if [ "$pass" = "ffx_fsr2_accumulate_pass" ] || [ "$pass" = "ffx_fsr2_rcas_pass" ]; then
+              PERM_ARGS+=("${REPROJECT_PERM_ARGS[@]}")
+            fi
+
+            wine "$SC" "${PERM_ARGS[@]}" "$HALF_ARG" \
               "-name=${pass}" \
               "-I${SHADER_DIR}" \
               "-output=${OUT_DIR}" \
