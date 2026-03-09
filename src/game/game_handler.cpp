@@ -1596,6 +1596,229 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
 
+        // ---- Entity health/power delta updates ----
+        case Opcode::SMSG_HEALTH_UPDATE: {
+            // packed_guid + uint32 health
+            if (packet.getSize() - packet.getReadPos() < 2) break;
+            uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 4) break;
+            uint32_t hp = packet.readUInt32();
+            auto entity = entityManager.getEntity(guid);
+            if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+                unit->setHealth(hp);
+            }
+            break;
+        }
+        case Opcode::SMSG_POWER_UPDATE: {
+            // packed_guid + uint8 powerType + uint32 value
+            if (packet.getSize() - packet.getReadPos() < 2) break;
+            uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 5) break;
+            uint8_t  powerType = packet.readUInt8();
+            uint32_t value     = packet.readUInt32();
+            auto entity = entityManager.getEntity(guid);
+            if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+                unit->setPowerByType(powerType, value);
+            }
+            break;
+        }
+
+        // ---- World state single update ----
+        case Opcode::SMSG_UPDATE_WORLD_STATE: {
+            // uint32 field + uint32 value
+            if (packet.getSize() - packet.getReadPos() < 8) break;
+            uint32_t field = packet.readUInt32();
+            uint32_t value = packet.readUInt32();
+            worldStates_[field] = value;
+            LOG_DEBUG("SMSG_UPDATE_WORLD_STATE: field=", field, " value=", value);
+            break;
+        }
+
+        // ---- Combo points ----
+        case Opcode::SMSG_UPDATE_COMBO_POINTS: {
+            // packed_guid (target) + uint8 points
+            if (packet.getSize() - packet.getReadPos() < 2) break;
+            uint64_t target = UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            comboPoints_ = packet.readUInt8();
+            comboTarget_ = target;
+            LOG_DEBUG("SMSG_UPDATE_COMBO_POINTS: target=0x", std::hex, target,
+                      std::dec, " points=", static_cast<int>(comboPoints_));
+            break;
+        }
+
+        // ---- Mirror timers (breath/fatigue/feign death) ----
+        case Opcode::SMSG_START_MIRROR_TIMER: {
+            // uint32 type + int32 value + int32 maxValue + int32 scale + uint32 tracker + uint8 paused
+            if (packet.getSize() - packet.getReadPos() < 21) break;
+            uint32_t type  = packet.readUInt32();
+            int32_t  value = static_cast<int32_t>(packet.readUInt32());
+            int32_t  maxV  = static_cast<int32_t>(packet.readUInt32());
+            int32_t  scale = static_cast<int32_t>(packet.readUInt32());
+            /*uint32_t tracker =*/ packet.readUInt32();
+            uint8_t  paused = packet.readUInt8();
+            if (type < 3) {
+                mirrorTimers_[type].value    = value;
+                mirrorTimers_[type].maxValue = maxV;
+                mirrorTimers_[type].scale    = scale;
+                mirrorTimers_[type].paused   = (paused != 0);
+                mirrorTimers_[type].active   = true;
+            }
+            break;
+        }
+        case Opcode::SMSG_STOP_MIRROR_TIMER: {
+            // uint32 type
+            if (packet.getSize() - packet.getReadPos() < 4) break;
+            uint32_t type = packet.readUInt32();
+            if (type < 3) {
+                mirrorTimers_[type].active = false;
+                mirrorTimers_[type].value  = 0;
+            }
+            break;
+        }
+        case Opcode::SMSG_PAUSE_MIRROR_TIMER: {
+            // uint32 type + uint8 paused
+            if (packet.getSize() - packet.getReadPos() < 5) break;
+            uint32_t type   = packet.readUInt32();
+            uint8_t  paused = packet.readUInt8();
+            if (type < 3) {
+                mirrorTimers_[type].paused = (paused != 0);
+            }
+            break;
+        }
+
+        // ---- Cast result (WotLK extended cast failed) ----
+        case Opcode::SMSG_CAST_RESULT:
+            // WotLK: uint8 castCount + uint32 spellId + uint8 result [+ optional extra]
+            // If result == 0, the spell successfully began; otherwise treat like SMSG_CAST_FAILED.
+            if (packet.getSize() - packet.getReadPos() >= 6) {
+                /*uint8_t castCount =*/ packet.readUInt8();
+                /*uint32_t spellId  =*/ packet.readUInt32();
+                uint8_t  result    = packet.readUInt8();
+                if (result != 0) {
+                    // Failure — clear cast bar and show message
+                    casting = false;
+                    currentCastSpellId = 0;
+                    castTimeRemaining  = 0.0f;
+                    const char* reason = getSpellCastResultString(result, -1);
+                    MessageChatData msg;
+                    msg.type     = ChatType::SYSTEM;
+                    msg.language = ChatLanguage::UNIVERSAL;
+                    msg.message  = reason ? reason
+                                          : ("Spell cast failed (error " + std::to_string(result) + ")");
+                    addLocalChatMessage(msg);
+                }
+            }
+            break;
+
+        // ---- Spell failed on another unit ----
+        case Opcode::SMSG_SPELL_FAILED_OTHER:
+            // packed_guid + uint8 castCount + uint32 spellId + uint8 reason — just consume
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Spell proc resist log ----
+        case Opcode::SMSG_PROCRESIST:
+            // guid(8) + guid(8) + uint32 spellId + uint8 logSchoolMask — just consume
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Loot start roll (Need/Greed popup trigger) ----
+        case Opcode::SMSG_LOOT_START_ROLL: {
+            // uint64 objectGuid + uint32 mapId + uint32 lootSlot + uint32 itemId
+            // + uint32 randomSuffix + uint32 randomPropId + uint32 countdown + uint8 voteMask
+            if (packet.getSize() - packet.getReadPos() < 33) break;
+            uint64_t objectGuid = packet.readUInt64();
+            /*uint32_t mapId =*/ packet.readUInt32();
+            uint32_t slot   = packet.readUInt32();
+            uint32_t itemId = packet.readUInt32();
+            /*uint32_t randSuffix =*/ packet.readUInt32();
+            /*uint32_t randProp   =*/ packet.readUInt32();
+            /*uint32_t countdown  =*/ packet.readUInt32();
+            /*uint8_t  voteMask   =*/ packet.readUInt8();
+            // Trigger the roll popup for local player
+            pendingLootRollActive_      = true;
+            pendingLootRoll_.objectGuid = objectGuid;
+            pendingLootRoll_.slot       = slot;
+            pendingLootRoll_.itemId     = itemId;
+            auto* info = getItemInfo(itemId);
+            pendingLootRoll_.itemName    = info ? info->name : std::to_string(itemId);
+            pendingLootRoll_.itemQuality = info ? static_cast<uint8_t>(info->quality) : 0;
+            LOG_INFO("SMSG_LOOT_START_ROLL: item=", itemId, " (", pendingLootRoll_.itemName,
+                     ") slot=", slot);
+            break;
+        }
+
+        // ---- Pet stable result ----
+        case Opcode::SMSG_STABLE_RESULT: {
+            // uint8 result
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint8_t result = packet.readUInt8();
+            const char* msg = nullptr;
+            switch (result) {
+                case 0x01: msg = "Pet stored in stable."; break;
+                case 0x06: msg = "Pet retrieved from stable."; break;
+                case 0x07: msg = "Stable slot purchased."; break;
+                case 0x08: msg = "Stable list updated."; break;
+                case 0x09: msg = "Stable failed: not enough money or other error."; break;
+                default:   break;
+            }
+            if (msg) addSystemChatMessage(msg);
+            LOG_INFO("SMSG_STABLE_RESULT: result=", static_cast<int>(result));
+            break;
+        }
+
+        // ---- Title earned ----
+        case Opcode::SMSG_TITLE_EARNED: {
+            // uint32 titleBitIndex + uint32 isLost
+            if (packet.getSize() - packet.getReadPos() < 8) break;
+            uint32_t titleBit = packet.readUInt32();
+            uint32_t isLost   = packet.readUInt32();
+            char buf[128];
+            std::snprintf(buf, sizeof(buf),
+                          isLost ? "Title removed (ID %u)." : "Title earned (ID %u)!",
+                          titleBit);
+            addSystemChatMessage(buf);
+            LOG_INFO("SMSG_TITLE_EARNED: id=", titleBit, " lost=", isLost);
+            break;
+        }
+
+        // ---- Hearthstone binding ----
+        case Opcode::SMSG_PLAYERBOUND: {
+            // uint64 binderGuid + uint32 mapId + uint32 zoneId
+            if (packet.getSize() - packet.getReadPos() < 16) break;
+            /*uint64_t binderGuid =*/ packet.readUInt64();
+            uint32_t mapId  = packet.readUInt32();
+            uint32_t zoneId = packet.readUInt32();
+            char buf[128];
+            std::snprintf(buf, sizeof(buf),
+                          "Your home location has been set (map %u, zone %u).", mapId, zoneId);
+            addSystemChatMessage(buf);
+            break;
+        }
+        case Opcode::SMSG_BINDER_CONFIRM: {
+            // uint64 npcGuid — server asking client to confirm bind at innkeeper
+            packet.setReadPos(packet.getSize());
+            break;
+        }
+
+        // ---- Phase shift (WotLK phasing) ----
+        case Opcode::SMSG_SET_PHASE_SHIFT: {
+            // uint32 phaseFlags [+ packed guid + uint16 count + repeated uint16 phaseIds]
+            // Just consume; phasing doesn't require action from client in WotLK
+            packet.setReadPos(packet.getSize());
+            break;
+        }
+
+        // ---- XP gain toggle ----
+        case Opcode::SMSG_TOGGLE_XP_GAIN: {
+            // uint8 enabled
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint8_t enabled = packet.readUInt8();
+            addSystemChatMessage(enabled ? "XP gain enabled." : "XP gain disabled.");
+            break;
+        }
+
         // ---- Creature Movement ----
         case Opcode::SMSG_MONSTER_MOVE:
             handleMonsterMove(packet);

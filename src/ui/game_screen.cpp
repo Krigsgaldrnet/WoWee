@@ -393,6 +393,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderBagBar(gameHandler);
     renderXpBar(gameHandler);
     renderCastBar(gameHandler);
+    renderMirrorTimers(gameHandler);
     renderCombatText(gameHandler);
     renderPartyFrames(gameHandler);
     renderGroupInvitePopup(gameHandler);
@@ -4174,6 +4175,58 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
 
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
+}
+
+// ============================================================
+// Mirror Timers (breath / fatigue / feign death)
+// ============================================================
+
+void GameScreen::renderMirrorTimers(game::GameHandler& gameHandler) {
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth())  : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    static const struct { const char* label; ImVec4 color; } kTimerInfo[3] = {
+        { "Fatigue", ImVec4(0.8f, 0.4f, 0.1f, 1.0f) },
+        { "Breath",  ImVec4(0.2f, 0.5f, 1.0f, 1.0f) },
+        { "Feign",   ImVec4(0.6f, 0.6f, 0.6f, 1.0f) },
+    };
+
+    float barW  = 280.0f;
+    float barH  = 36.0f;
+    float barX  = (screenW - barW) / 2.0f;
+    float baseY = screenH - 160.0f;  // Just above the cast bar slot
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
+                             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
+                             ImGuiWindowFlags_NoInputs;
+
+    for (int i = 0; i < 3; ++i) {
+        const auto& t = gameHandler.getMirrorTimer(i);
+        if (!t.active || t.maxValue <= 0) continue;
+
+        float frac = static_cast<float>(t.value) / static_cast<float>(t.maxValue);
+        frac = std::max(0.0f, std::min(1.0f, frac));
+
+        char winId[32];
+        std::snprintf(winId, sizeof(winId), "##MirrorTimer%d", i);
+        ImGui::SetNextWindowPos(ImVec2(barX, baseY - i * (barH + 4.0f)), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(barW, barH), ImGuiCond_Always);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.05f, 0.88f));
+        if (ImGui::Begin(winId, nullptr, flags)) {
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, kTimerInfo[i].color);
+            char overlay[48];
+            float sec = static_cast<float>(t.value) / 1000.0f;
+            std::snprintf(overlay, sizeof(overlay), "%s  %.0fs", kTimerInfo[i].label, sec);
+            ImGui::ProgressBar(frac, ImVec2(-1, 20), overlay);
+            ImGui::PopStyleColor();
+        }
+        ImGui::End();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+    }
 }
 
 // ============================================================

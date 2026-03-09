@@ -201,6 +201,7 @@ private:
     void renderBagBar(game::GameHandler& gameHandler);
     void renderXpBar(game::GameHandler& gameHandler);
     void renderCastBar(game::GameHandler& gameHandler);
+    void renderMirrorTimers(game::GameHandler& gameHandler);
     void renderCombatText(game::GameHandler& gameHandler);
     void renderPartyFrames(game::GameHandler& gameHandler);
     void renderGroupInvitePopup(game::GameHandler& gameHandler);

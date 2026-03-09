@@ -865,6 +865,23 @@ public:
     uint32_t getWorldStateMapId() const { return worldStateMapId_; }
     uint32_t getWorldStateZoneId() const { return worldStateZoneId_; }
 
+    // Mirror timers (0=fatigue, 1=breath, 2=feigndeath)
+    struct MirrorTimer {
+        int32_t value    = 0;
+        int32_t maxValue = 0;
+        int32_t scale    = 0;     // +1 = counting up, -1 = counting down
+        bool    paused   = false;
+        bool    active   = false;
+    };
+    const MirrorTimer& getMirrorTimer(int type) const {
+        static MirrorTimer empty;
+        return (type >= 0 && type < 3) ? mirrorTimers_[type] : empty;
+    }
+
+    // Combo points
+    uint8_t  getComboPoints() const { return comboPoints_; }
+    uint64_t getComboTarget() const { return comboTarget_; }
+
     struct FactionStandingInit {
         uint8_t flags = 0;
         int32_t standing = 0;
@@ -1654,6 +1671,13 @@ private:
     // Instance difficulty
     uint32_t instanceDifficulty_ = 0;
     bool instanceIsHeroic_ = false;
+
+    // Mirror timers (0=fatigue, 1=breath, 2=feigndeath)
+    MirrorTimer mirrorTimers_[3];
+
+    // Combo points (rogues/druids)
+    uint8_t  comboPoints_ = 0;
+    uint64_t comboTarget_ = 0;
 
     // Instance / raid lockouts
     std::vector<InstanceLockout> instanceLockouts_;
