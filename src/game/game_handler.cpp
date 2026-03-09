@@ -2799,6 +2799,50 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_INSTANCE_DIFFICULTY:
             handleInstanceDifficulty(packet);
             break;
+
+        // ---- LFG / Dungeon Finder ----
+        case Opcode::SMSG_LFG_JOIN_RESULT:
+            handleLfgJoinResult(packet);
+            break;
+        case Opcode::SMSG_LFG_QUEUE_STATUS:
+            handleLfgQueueStatus(packet);
+            break;
+        case Opcode::SMSG_LFG_PROPOSAL_UPDATE:
+            handleLfgProposalUpdate(packet);
+            break;
+        case Opcode::SMSG_LFG_ROLE_CHECK_UPDATE:
+            handleLfgRoleCheckUpdate(packet);
+            break;
+        case Opcode::SMSG_LFG_UPDATE_PLAYER:
+        case Opcode::SMSG_LFG_UPDATE_PARTY:
+            handleLfgUpdatePlayer(packet);
+            break;
+        case Opcode::SMSG_LFG_PLAYER_REWARD:
+            handleLfgPlayerReward(packet);
+            break;
+        case Opcode::SMSG_LFG_BOOT_PROPOSAL_UPDATE:
+            handleLfgBootProposalUpdate(packet);
+            break;
+        case Opcode::SMSG_LFG_TELEPORT_DENIED:
+            handleLfgTeleportDenied(packet);
+            break;
+        case Opcode::SMSG_LFG_DISABLED:
+            addSystemChatMessage("The Dungeon Finder is currently disabled.");
+            LOG_INFO("SMSG_LFG_DISABLED received");
+            break;
+        case Opcode::SMSG_LFG_OFFER_CONTINUE:
+            addSystemChatMessage("Dungeon Finder: You may continue your dungeon.");
+            break;
+        case Opcode::SMSG_LFG_ROLE_CHOSEN:
+        case Opcode::SMSG_LFG_UPDATE_SEARCH:
+        case Opcode::SMSG_UPDATE_LFG_LIST:
+        case Opcode::SMSG_LFG_PLAYER_INFO:
+        case Opcode::SMSG_LFG_PARTY_INFO:
+        case Opcode::SMSG_OPEN_LFG_DUNGEON_FINDER:
+            // Informational LFG packets not yet surfaced in UI — consume silently.
+            packet.setReadPos(packet.getSize());
+            break;
+
         case Opcode::SMSG_ARENA_TEAM_COMMAND_RESULT:
             handleArenaTeamCommandResult(packet);
             break;
@@ -8809,6 +8853,323 @@ void GameHandler::handleInstanceDifficulty(network::Packet& packet) {
     uint32_t isHeroic = packet.readUInt32();
     instanceIsHeroic_ = (isHeroic != 0);
     LOG_INFO("Instance difficulty: ", instanceDifficulty_, " heroic=", instanceIsHeroic_);
+}
+
+// ---------------------------------------------------------------------------
+// LFG / Dungeon Finder handlers (WotLK 3.3.5a)
+// ---------------------------------------------------------------------------
+
+static const char* lfgJoinResultString(uint8_t result) {
+    switch (result) {
+        case 0:  return nullptr; // success
+        case 1:  return "Role check failed.";
+        case 2:  return "No LFG slots available for your group.";
+        case 3:  return "No LFG object found.";
+        case 4:  return "No slots available (player).";
+        case 5:  return "No slots available (party).";
+        case 6:  return "Dungeon requirements not met by all members.";
+        case 7:  return "Party members are from different realms.";
+        case 8:  return "Not all members are present.";
+        case 9:  return "Get info timeout.";
+        case 10: return "Invalid dungeon slot.";
+        case 11: return "You are marked as a deserter.";
+        case 12: return "A party member is marked as a deserter.";
+        case 13: return "You are on a random dungeon cooldown.";
+        case 14: return "A party member is on a random dungeon cooldown.";
+        case 16: return "No spec/role available.";
+        default: return "Cannot join dungeon finder.";
+    }
+}
+
+static const char* lfgTeleportDeniedString(uint8_t reason) {
+    switch (reason) {
+        case 0:  return "You are not in a LFG group.";
+        case 1:  return "You are not in the dungeon.";
+        case 2:  return "You have a summon pending.";
+        case 3:  return "You are dead.";
+        case 4:  return "You have Deserter.";
+        case 5:  return "You do not meet the requirements.";
+        default: return "Teleport to dungeon denied.";
+    }
+}
+
+void GameHandler::handleLfgJoinResult(network::Packet& packet) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 2) return;
+
+    uint8_t result = packet.readUInt8();
+    uint8_t state  = packet.readUInt8();
+
+    if (result == 0) {
+        // Success — state tells us what phase we're entering
+        lfgState_ = static_cast<LfgState>(state);
+        LOG_INFO("SMSG_LFG_JOIN_RESULT: success, state=", static_cast<int>(state));
+        addSystemChatMessage("Dungeon Finder: Joined the queue.");
+    } else {
+        const char* msg = lfgJoinResultString(result);
+        std::string errMsg = std::string("Dungeon Finder: ") + (msg ? msg : "Join failed.");
+        addSystemChatMessage(errMsg);
+        LOG_INFO("SMSG_LFG_JOIN_RESULT: result=", static_cast<int>(result),
+                 " state=", static_cast<int>(state));
+    }
+}
+
+void GameHandler::handleLfgQueueStatus(network::Packet& packet) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 4 + 6 * 4 + 1 + 4) return;  // dungeonId + 6 int32 + uint8 + uint32
+
+    lfgDungeonId_     = packet.readUInt32();
+    int32_t avgWait   = static_cast<int32_t>(packet.readUInt32());
+    int32_t waitTime  = static_cast<int32_t>(packet.readUInt32());
+    /*int32_t waitTimeTank   =*/ static_cast<int32_t>(packet.readUInt32());
+    /*int32_t waitTimeHealer =*/ static_cast<int32_t>(packet.readUInt32());
+    /*int32_t waitTimeDps    =*/ static_cast<int32_t>(packet.readUInt32());
+    /*uint8_t  queuedByNeeded=*/ packet.readUInt8();
+    lfgTimeInQueueMs_ = packet.readUInt32();
+
+    lfgAvgWaitSec_ = (waitTime >= 0) ? (waitTime / 1000) : (avgWait / 1000);
+    lfgState_ = LfgState::Queued;
+
+    LOG_INFO("SMSG_LFG_QUEUE_STATUS: dungeonId=", lfgDungeonId_,
+             " avgWait=", avgWait, "ms waitTime=", waitTime, "ms");
+}
+
+void GameHandler::handleLfgProposalUpdate(network::Packet& packet) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 16) return;
+
+    uint32_t dungeonId     = packet.readUInt32();
+    uint32_t proposalId    = packet.readUInt32();
+    uint32_t proposalState = packet.readUInt32();
+    /*uint32_t encounterMask =*/ packet.readUInt32();
+
+    if (remaining < 17) return;
+    /*bool canOverride =*/ packet.readUInt8();
+
+    lfgDungeonId_ = dungeonId;
+
+    switch (proposalState) {
+        case 0:
+            lfgState_ = LfgState::Queued;
+            addSystemChatMessage("Dungeon Finder: Group proposal failed.");
+            break;
+        case 1:
+            lfgState_ = LfgState::InDungeon;
+            addSystemChatMessage("Dungeon Finder: Group found! Entering dungeon...");
+            break;
+        case 2:
+            lfgState_ = LfgState::Proposal;
+            addSystemChatMessage("Dungeon Finder: A group has been found. Accept or decline.");
+            break;
+        default:
+            break;
+    }
+
+    LOG_INFO("SMSG_LFG_PROPOSAL_UPDATE: dungeonId=", dungeonId,
+             " proposalId=", proposalId, " state=", proposalState);
+    (void)proposalId;
+}
+
+void GameHandler::handleLfgRoleCheckUpdate(network::Packet& packet) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 6) return;
+
+    /*uint32_t dungeonId =*/ packet.readUInt32();
+    uint8_t  roleCheckState = packet.readUInt8();
+    /*bool     isBeginning =*/ packet.readUInt8();
+
+    // roleCheckState: 0=default, 1=finished, 2=initializing, 3=missing_role, 4=wrong_dungeons
+    if (roleCheckState == 1) {
+        lfgState_ = LfgState::Queued;
+        LOG_INFO("LFG role check finished");
+    } else if (roleCheckState == 3) {
+        lfgState_ = LfgState::None;
+        addSystemChatMessage("Dungeon Finder: Role check failed — missing required role.");
+    } else if (roleCheckState == 2) {
+        lfgState_ = LfgState::RoleCheck;
+        addSystemChatMessage("Dungeon Finder: Performing role check...");
+    }
+
+    LOG_INFO("SMSG_LFG_ROLE_CHECK_UPDATE: roleCheckState=", static_cast<int>(roleCheckState));
+}
+
+void GameHandler::handleLfgUpdatePlayer(network::Packet& packet) {
+    // SMSG_LFG_UPDATE_PLAYER and SMSG_LFG_UPDATE_PARTY share the same layout.
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 1) return;
+
+    uint8_t updateType = packet.readUInt8();
+
+    // LFGUpdateType values that carry no extra payload
+    // 0=default, 1=leader_unk1, 4=rolecheck_aborted, 8=removed_from_queue,
+    // 9=proposal_failed, 10=proposal_declined, 15=leave_queue, 17=member_offline, 18=group_disband
+    bool hasExtra = (updateType != 0 && updateType != 1 && updateType != 15 &&
+                     updateType != 17 && updateType != 18);
+    if (!hasExtra || packet.getSize() - packet.getReadPos() < 3) {
+        switch (updateType) {
+            case 8:  lfgState_ = LfgState::None;
+                     addSystemChatMessage("Dungeon Finder: Removed from queue."); break;
+            case 9:  lfgState_ = LfgState::Queued;
+                     addSystemChatMessage("Dungeon Finder: Proposal failed — re-queuing."); break;
+            case 10: lfgState_ = LfgState::Queued;
+                     addSystemChatMessage("Dungeon Finder: A member declined the proposal."); break;
+            case 15: lfgState_ = LfgState::None;
+                     addSystemChatMessage("Dungeon Finder: Left the queue."); break;
+            case 18: lfgState_ = LfgState::None;
+                     addSystemChatMessage("Dungeon Finder: Your group disbanded."); break;
+            default: break;
+        }
+        LOG_INFO("SMSG_LFG_UPDATE_PLAYER/PARTY: updateType=", static_cast<int>(updateType));
+        return;
+    }
+
+    /*bool queued =*/ packet.readUInt8();
+    packet.readUInt8(); // unk1
+    packet.readUInt8(); // unk2
+
+    if (packet.getSize() - packet.getReadPos() >= 1) {
+        uint8_t count = packet.readUInt8();
+        for (uint8_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= 4; ++i) {
+            uint32_t dungeonEntry = packet.readUInt32();
+            if (i == 0) lfgDungeonId_ = dungeonEntry;
+        }
+    }
+
+    switch (updateType) {
+        case 6:  lfgState_ = LfgState::Queued;
+                 addSystemChatMessage("Dungeon Finder: You have joined the queue."); break;
+        case 11: lfgState_ = LfgState::Proposal;
+                 addSystemChatMessage("Dungeon Finder: A group has been found!"); break;
+        case 12: lfgState_ = LfgState::Queued;
+                 addSystemChatMessage("Dungeon Finder: Added to queue."); break;
+        case 13: lfgState_ = LfgState::Proposal;
+                 addSystemChatMessage("Dungeon Finder: Proposal started."); break;
+        case 14: lfgState_ = LfgState::InDungeon; break;
+        case 16: addSystemChatMessage("Dungeon Finder: Two members are ready."); break;
+        default: break;
+    }
+    LOG_INFO("SMSG_LFG_UPDATE_PLAYER/PARTY: updateType=", static_cast<int>(updateType));
+}
+
+void GameHandler::handleLfgPlayerReward(network::Packet& packet) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 4 + 4 + 1 + 4 + 4 + 4) return;
+
+    /*uint32_t randomDungeonEntry =*/ packet.readUInt32();
+    /*uint32_t dungeonEntry       =*/ packet.readUInt32();
+    packet.readUInt8();  // unk
+    uint32_t money  = packet.readUInt32();
+    uint32_t xp     = packet.readUInt32();
+
+    std::string rewardMsg = "Dungeon Finder reward: " + std::to_string(money) + "g " +
+                            std::to_string(xp) + " XP";
+
+    if (packet.getSize() - packet.getReadPos() >= 4) {
+        uint32_t rewardCount = packet.readUInt32();
+        for (uint32_t i = 0; i < rewardCount && packet.getSize() - packet.getReadPos() >= 9; ++i) {
+            uint32_t itemId    = packet.readUInt32();
+            uint32_t itemCount = packet.readUInt32();
+            packet.readUInt8();  // unk
+            if (i == 0) {
+                rewardMsg += ", item #" + std::to_string(itemId);
+                if (itemCount > 1) rewardMsg += " x" + std::to_string(itemCount);
+            }
+        }
+    }
+
+    addSystemChatMessage(rewardMsg);
+    lfgState_ = LfgState::FinishedDungeon;
+    LOG_INFO("SMSG_LFG_PLAYER_REWARD: money=", money, " xp=", xp);
+}
+
+void GameHandler::handleLfgBootProposalUpdate(network::Packet& packet) {
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining < 7 + 4 + 4 + 4 + 4) return;
+
+    bool inProgress = packet.readUInt8() != 0;
+    bool myVote     = packet.readUInt8() != 0;
+    bool myAnswer   = packet.readUInt8() != 0;
+    uint32_t totalVotes  = packet.readUInt32();
+    uint32_t bootVotes   = packet.readUInt32();
+    uint32_t timeLeft    = packet.readUInt32();
+    uint32_t votesNeeded = packet.readUInt32();
+
+    (void)myVote; (void)totalVotes; (void)bootVotes; (void)timeLeft; (void)votesNeeded;
+
+    if (inProgress) {
+        addSystemChatMessage(
+            std::string("Dungeon Finder: Vote to kick in progress (") +
+            std::to_string(timeLeft) + "s remaining).");
+    } else if (myAnswer) {
+        addSystemChatMessage("Dungeon Finder: Vote kick passed — member removed.");
+    } else {
+        addSystemChatMessage("Dungeon Finder: Vote kick failed.");
+    }
+
+    LOG_INFO("SMSG_LFG_BOOT_PROPOSAL_UPDATE: inProgress=", inProgress,
+             " bootVotes=", bootVotes, "/", totalVotes);
+}
+
+void GameHandler::handleLfgTeleportDenied(network::Packet& packet) {
+    if (packet.getSize() - packet.getReadPos() < 1) return;
+    uint8_t reason = packet.readUInt8();
+    const char* msg = lfgTeleportDeniedString(reason);
+    addSystemChatMessage(std::string("Dungeon Finder: ") + msg);
+    LOG_INFO("SMSG_LFG_TELEPORT_DENIED: reason=", static_cast<int>(reason));
+}
+
+// ---------------------------------------------------------------------------
+// LFG outgoing packets
+// ---------------------------------------------------------------------------
+
+void GameHandler::lfgJoin(uint32_t dungeonId, uint8_t roles) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+
+    network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_JOIN));
+    pkt.writeUInt8(roles);
+    pkt.writeUInt8(0);  // needed
+    pkt.writeUInt8(0);  // unk
+    pkt.writeUInt8(1);  // 1 dungeon in list
+    pkt.writeUInt32(dungeonId);
+    pkt.writeString("");  // comment
+
+    socket->send(pkt);
+    LOG_INFO("Sent CMSG_LFG_JOIN: dungeonId=", dungeonId, " roles=", static_cast<int>(roles));
+}
+
+void GameHandler::lfgLeave() {
+    if (!socket) return;
+
+    network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_LEAVE));
+    // CMSG_LFG_LEAVE has an LFG identifier block; send zeroes to leave any active queue.
+    pkt.writeUInt32(0);  // slot
+    pkt.writeUInt32(0);  // unk
+    pkt.writeUInt32(0);  // dungeonId
+
+    socket->send(pkt);
+    lfgState_ = LfgState::None;
+    LOG_INFO("Sent CMSG_LFG_LEAVE");
+}
+
+void GameHandler::lfgAcceptProposal(uint32_t proposalId, bool accept) {
+    if (!socket) return;
+
+    network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_PROPOSAL_RESULT));
+    pkt.writeUInt32(proposalId);
+    pkt.writeUInt8(accept ? 1 : 0);
+
+    socket->send(pkt);
+    LOG_INFO("Sent CMSG_LFG_PROPOSAL_RESULT: proposalId=", proposalId, " accept=", accept);
+}
+
+void GameHandler::lfgTeleport(bool toLfgDungeon) {
+    if (!socket) return;
+
+    network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_TELEPORT));
+    pkt.writeUInt8(toLfgDungeon ? 0 : 1);  // 0=teleport in, 1=teleport out
+
+    socket->send(pkt);
+    LOG_INFO("Sent CMSG_LFG_TELEPORT: toLfgDungeon=", toLfgDungeon);
 }
 
 void GameHandler::loadAreaTriggerDbc() {

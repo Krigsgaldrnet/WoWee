@@ -707,6 +707,29 @@ public:
     bool hasPendingGroupInvite() const { return pendingGroupInvite; }
     const std::string& getPendingInviterName() const { return pendingInviterName; }
 
+    // ---- LFG / Dungeon Finder ----
+    enum class LfgState : uint8_t {
+        None           = 0,
+        RoleCheck      = 1,
+        Queued         = 2,
+        Proposal       = 3,
+        Boot           = 4,
+        InDungeon      = 5,
+        FinishedDungeon= 6,
+        RaidBrowser    = 7,
+    };
+
+    // roles bitmask: 0x02=tank, 0x04=healer, 0x08=dps; pass LFGDungeonEntry ID
+    void lfgJoin(uint32_t dungeonId, uint8_t roles);
+    void lfgLeave();
+    void lfgAcceptProposal(uint32_t proposalId, bool accept);
+    void lfgTeleport(bool toLfgDungeon = true);
+    LfgState getLfgState() const { return lfgState_; }
+    bool isLfgQueued()    const { return lfgState_ == LfgState::Queued; }
+    bool isLfgInDungeon() const { return lfgState_ == LfgState::InDungeon; }
+    uint32_t getLfgDungeonId() const { return lfgDungeonId_; }
+    int32_t  getLfgAvgWaitSec() const { return lfgAvgWaitSec_; }
+
     // ---- Phase 5: Loot ----
     void lootTarget(uint64_t guid);
     void lootItem(uint8_t slotIndex);
@@ -1207,6 +1230,16 @@ private:
     void loadAreaTriggerDbc();
     void checkAreaTriggers();
 
+    // ---- LFG / Dungeon Finder handlers ----
+    void handleLfgJoinResult(network::Packet& packet);
+    void handleLfgQueueStatus(network::Packet& packet);
+    void handleLfgProposalUpdate(network::Packet& packet);
+    void handleLfgRoleCheckUpdate(network::Packet& packet);
+    void handleLfgUpdatePlayer(network::Packet& packet);
+    void handleLfgPlayerReward(network::Packet& packet);
+    void handleLfgBootProposalUpdate(network::Packet& packet);
+    void handleLfgTeleportDenied(network::Packet& packet);
+
     // ---- Arena / Battleground handlers ----
     void handleBattlefieldStatus(network::Packet& packet);
     void handleInstanceDifficulty(network::Packet& packet);
@@ -1532,6 +1565,12 @@ private:
     // Instance difficulty
     uint32_t instanceDifficulty_ = 0;
     bool instanceIsHeroic_ = false;
+
+    // LFG / Dungeon Finder state
+    LfgState lfgState_        = LfgState::None;
+    uint32_t lfgDungeonId_    = 0;   // current dungeon entry
+    int32_t  lfgAvgWaitSec_   = -1;  // estimated wait, -1=unknown
+    uint32_t lfgTimeInQueueMs_= 0;   // ms already in queue
 
     // ---- Phase 4: Group ----
     GroupListData partyData;
