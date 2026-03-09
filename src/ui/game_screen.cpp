@@ -400,6 +400,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderLootRollPopup(gameHandler);
     renderTradeRequestPopup(gameHandler);
     renderSummonRequestPopup(gameHandler);
+    renderSharedQuestPopup(gameHandler);
     renderGuildInvitePopup(gameHandler);
     renderGuildRoster(gameHandler);
     renderBuffBar(gameHandler);
@@ -4399,6 +4400,31 @@ void GameScreen::renderDuelRequestPopup(game::GameHandler& gameHandler) {
         ImGui::SameLine();
         if (ImGui::Button("Decline", ImVec2(130, 30))) {
             gameHandler.forfeitDuel();
+        }
+    }
+    ImGui::End();
+}
+
+void GameScreen::renderSharedQuestPopup(game::GameHandler& gameHandler) {
+    if (!gameHandler.hasPendingSharedQuest()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 175, 490), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_Always);
+
+    if (ImGui::Begin("Shared Quest", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+        ImGui::Text("%s has shared a quest with you:", gameHandler.getSharedQuestSharerName().c_str());
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "\"%s\"", gameHandler.getSharedQuestTitle().c_str());
+        ImGui::Spacing();
+
+        if (ImGui::Button("Accept", ImVec2(130, 30))) {
+            gameHandler.acceptSharedQuest();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Decline", ImVec2(130, 30))) {
+            gameHandler.declineSharedQuest();
         }
     }
     ImGui::End();

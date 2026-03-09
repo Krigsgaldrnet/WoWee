@@ -707,6 +707,14 @@ public:
     bool hasPendingGroupInvite() const { return pendingGroupInvite; }
     const std::string& getPendingInviterName() const { return pendingInviterName; }
 
+    // ---- Shared Quest ----
+    bool hasPendingSharedQuest() const { return pendingSharedQuest_; }
+    uint32_t getSharedQuestId() const { return sharedQuestId_; }
+    const std::string& getSharedQuestTitle() const { return sharedQuestTitle_; }
+    const std::string& getSharedQuestSharerName() const { return sharedQuestSharerName_; }
+    void acceptSharedQuest();
+    void declineSharedQuest();
+
     // ---- Summon ----
     bool hasPendingSummonRequest() const { return pendingSummonRequest_; }
     const std::string& getSummonerName() const { return summonerName_; }
@@ -1295,6 +1303,7 @@ private:
 
     // ---- Instance lockout handler ----
     void handleRaidInstanceInfo(network::Packet& packet);
+    void handleQuestConfirmAccept(network::Packet& packet);
     void handleSummonRequest(network::Packet& packet);
     void handleTradeStatus(network::Packet& packet);
     void handleDuelRequested(network::Packet& packet);
@@ -1653,6 +1662,13 @@ private:
     GroupListData partyData;
     bool pendingGroupInvite = false;
     std::string pendingInviterName;
+
+    // Shared quest state
+    bool        pendingSharedQuest_       = false;
+    uint32_t    sharedQuestId_            = 0;
+    std::string sharedQuestTitle_;
+    std::string sharedQuestSharerName_;
+    uint64_t    sharedQuestSharerGuid_    = 0;
 
     // Summon state
     bool        pendingSummonRequest_ = false;

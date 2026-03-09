@@ -1994,6 +1994,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_LOOT_REMOVED:
             handleLootRemoved(packet);
             break;
+        case Opcode::SMSG_QUEST_CONFIRM_ACCEPT:
+            handleQuestConfirmAccept(packet);
+            break;
         case Opcode::SMSG_SUMMON_REQUEST:
             handleSummonRequest(packet);
             break;
@@ -15041,6 +15044,54 @@ void GameHandler::handleAuctionCommandResult(network::Packet& packet) {
     }
     LOG_INFO("SMSG_AUCTION_COMMAND_RESULT: action=", actionName,
              " error=", result.errorCode);
+}
+
+// ---------------------------------------------------------------------------
+// SMSG_QUEST_CONFIRM_ACCEPT (shared quest from group member)
+//   uint32 questId + string questTitle + uint64 sharerGuid
+// ---------------------------------------------------------------------------
+
+void GameHandler::handleQuestConfirmAccept(network::Packet& packet) {
+    size_t rem = packet.getSize() - packet.getReadPos();
+    if (rem < 4) return;
+
+    sharedQuestId_    = packet.readUInt32();
+    sharedQuestTitle_ = packet.readString();
+    if (packet.getSize() - packet.getReadPos() >= 8) {
+        sharedQuestSharerGuid_ = packet.readUInt64();
+    }
+
+    sharedQuestSharerName_.clear();
+    auto entity = entityManager.getEntity(sharedQuestSharerGuid_);
+    if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
+        sharedQuestSharerName_ = unit->getName();
+    }
+    if (sharedQuestSharerName_.empty()) {
+        char tmp[32];
+        std::snprintf(tmp, sizeof(tmp), "0x%llX",
+                      static_cast<unsigned long long>(sharedQuestSharerGuid_));
+        sharedQuestSharerName_ = tmp;
+    }
+
+    pendingSharedQuest_ = true;
+    addSystemChatMessage(sharedQuestSharerName_ + " has shared the quest \"" +
+                         sharedQuestTitle_ + "\" with you.");
+    LOG_INFO("SMSG_QUEST_CONFIRM_ACCEPT: questId=", sharedQuestId_,
+             " title=", sharedQuestTitle_, " sharer=", sharedQuestSharerName_);
+}
+
+void GameHandler::acceptSharedQuest() {
+    if (!pendingSharedQuest_ || !socket) return;
+    pendingSharedQuest_ = false;
+    network::Packet pkt(wireOpcode(Opcode::CMSG_QUEST_CONFIRM_ACCEPT));
+    pkt.writeUInt32(sharedQuestId_);
+    socket->send(pkt);
+    addSystemChatMessage("Accepted: " + sharedQuestTitle_);
+}
+
+void GameHandler::declineSharedQuest() {
+    pendingSharedQuest_ = false;
+    // No response packet needed — just dismiss the UI
 }
 
 // ---------------------------------------------------------------------------
