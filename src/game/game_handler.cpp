@@ -8086,6 +8086,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             LOG_WARNING("PLAYER_BYTES_2 (CREATE): raw=0x", std::hex, val, std::dec,
                                        " bankBagSlots=", static_cast<int>(bankBagSlots));
                             inventory.setPurchasedBankBagSlots(bankBagSlots);
+                            // Byte 3 (bits 24-31): REST_STATE — bit 0 set means in inn/city
+                            uint8_t restStateByte = static_cast<uint8_t>((val >> 24) & 0xFF);
+                            isResting_ = (restStateByte & 0x01) != 0;
                         }
                         // Do not synthesize quest-log entries from raw update-field slots.
                         // Slot layouts differ on some classic-family realms and can produce
@@ -8354,6 +8357,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         bool slotsChanged = false;
                         const uint16_t ufPlayerXp = fieldIndex(UF::PLAYER_XP);
                         const uint16_t ufPlayerNextXp = fieldIndex(UF::PLAYER_NEXT_LEVEL_XP);
+                        const uint16_t ufPlayerRestedXpV = fieldIndex(UF::PLAYER_REST_STATE_EXPERIENCE);
                         const uint16_t ufPlayerLevel = fieldIndex(UF::UNIT_FIELD_LEVEL);
                         const uint16_t ufCoinage = fieldIndex(UF::PLAYER_FIELD_COINAGE);
                         const uint16_t ufPlayerFlags = fieldIndex(UF::PLAYER_FLAGS);
@@ -8367,6 +8371,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             else if (key == ufPlayerNextXp) {
                                 playerNextLevelXp_ = val;
                                 LOG_DEBUG("Next level XP updated: ", val);
+                            }
+                            else if (ufPlayerRestedXpV != 0xFFFF && key == ufPlayerRestedXpV) {
+                                playerRestedXp_ = val;
                             }
                             else if (key == ufPlayerLevel) {
                                 serverPlayerLevel_ = val;
@@ -8390,6 +8397,9 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 LOG_WARNING("PLAYER_BYTES_2 (VALUES): raw=0x", std::hex, val, std::dec,
                                            " bankBagSlots=", static_cast<int>(bankBagSlots));
                                 inventory.setPurchasedBankBagSlots(bankBagSlots);
+                                // Byte 3 (bits 24-31): REST_STATE — bit 0 set means in inn/city
+                                uint8_t restStateByte = static_cast<uint8_t>((val >> 24) & 0xFF);
+                                isResting_ = (restStateByte & 0x01) != 0;
                             }
                             else if (key == ufPlayerFlags) {
                                 constexpr uint32_t PLAYER_FLAGS_GHOST = 0x00000010;

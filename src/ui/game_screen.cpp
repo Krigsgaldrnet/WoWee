@@ -4137,13 +4137,14 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
     };
 
     // Bar 2 (slots 12-23) — only show if at least one slot is populated
-    {
+    if (pendingShowActionBar2) {
         bool bar2HasContent = false;
         for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i)
             if (!bar[game::GameHandler::SLOTS_PER_BAR + i].isEmpty()) { bar2HasContent = true; break; }
 
-        float bar2Y = barY - barH - 2.0f;
-        ImGui::SetNextWindowPos(ImVec2(barX, bar2Y), ImGuiCond_Always);
+        float bar2X = barX + pendingActionBar2OffsetX;
+        float bar2Y = barY - barH - 2.0f + pendingActionBar2OffsetY;
+        ImGui::SetNextWindowPos(ImVec2(bar2X, bar2Y), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(barW, barH), ImGuiCond_Always);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
@@ -7996,6 +7997,44 @@ void GameScreen::renderSettingsWindow() {
             }
 
             // ============================================================
+            // INTERFACE TAB
+            // ============================================================
+            if (ImGui::BeginTabItem("Interface")) {
+                ImGui::Spacing();
+                ImGui::BeginChild("InterfaceSettings", ImVec2(0, 360), true);
+
+                ImGui::SeparatorText("Action Bars");
+                ImGui::Spacing();
+
+                if (ImGui::Checkbox("Show Second Action Bar", &pendingShowActionBar2)) {
+                    saveSettings();
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("(Shift+1 through Shift+=)");
+
+                if (pendingShowActionBar2) {
+                    ImGui::Spacing();
+                    ImGui::TextUnformatted("Second Bar Position Offset");
+                    ImGui::SetNextItemWidth(160.0f);
+                    if (ImGui::SliderFloat("Horizontal##bar2x", &pendingActionBar2OffsetX, -600.0f, 600.0f, "%.0f px")) {
+                        saveSettings();
+                    }
+                    ImGui::SetNextItemWidth(160.0f);
+                    if (ImGui::SliderFloat("Vertical##bar2y", &pendingActionBar2OffsetY, -400.0f, 400.0f, "%.0f px")) {
+                        saveSettings();
+                    }
+                    if (ImGui::Button("Reset Position##bar2")) {
+                        pendingActionBar2OffsetX = 0.0f;
+                        pendingActionBar2OffsetY = 0.0f;
+                        saveSettings();
+                    }
+                }
+
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
+
+            // ============================================================
             // AUDIO TAB
             // ============================================================
             if (ImGui::BeginTabItem("Audio")) {
@@ -9054,6 +9093,9 @@ void GameScreen::saveSettings() {
     out << "minimap_square=" << (pendingMinimapSquare ? 1 : 0) << "\n";
     out << "minimap_npc_dots=" << (pendingMinimapNpcDots ? 1 : 0) << "\n";
     out << "separate_bags=" << (pendingSeparateBags ? 1 : 0) << "\n";
+    out << "show_action_bar2=" << (pendingShowActionBar2 ? 1 : 0) << "\n";
+    out << "action_bar2_offset_x=" << pendingActionBar2OffsetX << "\n";
+    out << "action_bar2_offset_y=" << pendingActionBar2OffsetY << "\n";
 
     // Audio
     out << "sound_muted=" << (soundMuted_ ? 1 : 0) << "\n";
@@ -9143,6 +9185,12 @@ void GameScreen::loadSettings() {
             } else if (key == "separate_bags") {
                 pendingSeparateBags = (std::stoi(val) != 0);
                 inventoryScreen.setSeparateBags(pendingSeparateBags);
+            } else if (key == "show_action_bar2") {
+                pendingShowActionBar2 = (std::stoi(val) != 0);
+            } else if (key == "action_bar2_offset_x") {
+                pendingActionBar2OffsetX = std::clamp(std::stof(val), -600.0f, 600.0f);
+            } else if (key == "action_bar2_offset_y") {
+                pendingActionBar2OffsetY = std::clamp(std::stof(val), -400.0f, 400.0f);
             }
             // Audio
             else if (key == "sound_muted") {

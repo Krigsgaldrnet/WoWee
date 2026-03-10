@@ -112,6 +112,9 @@ private:
     bool pendingSeparateBags = true;
     bool pendingAutoLoot = false;
     bool pendingUseOriginalSoundtrack = true;
+    bool pendingShowActionBar2 = true;   // Show second action bar above main bar
+    float pendingActionBar2OffsetX = 0.0f;  // Horizontal offset from default center position
+    float pendingActionBar2OffsetY = 0.0f;  // Vertical offset from default (above bar 1)
     int pendingGroundClutterDensity = 100;
     int pendingAntiAliasing = 0;  // 0=Off, 1=2x, 2=4x, 3=8x
     bool pendingNormalMapping = true;   // on by default
