@@ -3833,7 +3833,11 @@ bool ListInventoryParser::parse(network::Packet& packet, ListInventoryData& data
 // Trainer
 // ============================================================
 
-bool TrainerListParser::parse(network::Packet& packet, TrainerListData& data) {
+bool TrainerListParser::parse(network::Packet& packet, TrainerListData& data, bool isClassic) {
+    // WotLK per-entry: spellId(4) + state(1) + cost(4) + profDialog(4) + profButton(4) +
+    //                  reqLevel(1) + reqSkill(4) + reqSkillValue(4) + chain×3(12) = 38 bytes
+    // Classic per-entry: spellId(4) + state(1) + cost(4) + reqLevel(1) +
+    //                    reqSkill(4) + reqSkillValue(4) + chain×3(12) + unk(4) = 34 bytes
     data = TrainerListData{};
     data.trainerGuid = packet.readUInt64();
     data.trainerType = packet.readUInt32();
@@ -3847,23 +3851,35 @@ bool TrainerListParser::parse(network::Packet& packet, TrainerListData& data) {
     data.spells.reserve(spellCount);
     for (uint32_t i = 0; i < spellCount; ++i) {
         TrainerSpell spell;
-        spell.spellId    = packet.readUInt32();
-        spell.state      = packet.readUInt8();
-        spell.spellCost  = packet.readUInt32();
-        spell.profDialog = packet.readUInt32();
-        spell.profButton = packet.readUInt32();
-        spell.reqLevel   = packet.readUInt8();
-        spell.reqSkill   = packet.readUInt32();
+        spell.spellId   = packet.readUInt32();
+        spell.state     = packet.readUInt8();
+        spell.spellCost = packet.readUInt32();
+        if (isClassic) {
+            // Classic 1.12: reqLevel immediately after cost; no profDialog/profButton
+            spell.profDialog = 0;
+            spell.profButton = 0;
+            spell.reqLevel   = packet.readUInt8();
+        } else {
+            // TBC / WotLK: profDialog + profButton before reqLevel
+            spell.profDialog = packet.readUInt32();
+            spell.profButton = packet.readUInt32();
+            spell.reqLevel   = packet.readUInt8();
+        }
+        spell.reqSkill      = packet.readUInt32();
         spell.reqSkillValue = packet.readUInt32();
-        spell.chainNode1 = packet.readUInt32();
-        spell.chainNode2 = packet.readUInt32();
-        spell.chainNode3 = packet.readUInt32();
+        spell.chainNode1    = packet.readUInt32();
+        spell.chainNode2    = packet.readUInt32();
+        spell.chainNode3    = packet.readUInt32();
+        if (isClassic) {
+            packet.readUInt32(); // trailing unk / sort index
+        }
         data.spells.push_back(spell);
     }
 
     data.greeting = packet.readString();
 
-    LOG_INFO("Trainer list: ", spellCount, " spells, type=", data.trainerType,
+    LOG_INFO("Trainer list (", isClassic ? "Classic" : "TBC/WotLK", "): ",
+             spellCount, " spells, type=", data.trainerType,
              ", greeting=\"", data.greeting, "\"");
     return true;
 }

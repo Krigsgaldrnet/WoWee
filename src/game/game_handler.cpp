@@ -15012,7 +15012,8 @@ void GameHandler::handleListInventory(network::Packet& packet) {
 // ============================================================
 
 void GameHandler::handleTrainerList(network::Packet& packet) {
-    if (!TrainerListParser::parse(packet, currentTrainerList_)) return;
+    const bool isClassic = isClassicLikeExpansion();
+    if (!TrainerListParser::parse(packet, currentTrainerList_, isClassic)) return;
     trainerWindowOpen_ = true;
     gossipWindowOpen = false;
 

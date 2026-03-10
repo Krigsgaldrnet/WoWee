@@ -2231,7 +2231,9 @@ struct TrainerListData {
 
 class TrainerListParser {
 public:
-    static bool parse(network::Packet& packet, TrainerListData& data);
+    // isClassic: Classic 1.12 per-spell layout has no profDialog/profButton fields
+    // (reqLevel immediately follows cost), plus a trailing unk uint32 per entry.
+    static bool parse(network::Packet& packet, TrainerListData& data, bool isClassic = false);
 };
 
 class TrainerBuySpellPacket {
