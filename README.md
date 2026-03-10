@@ -7,7 +7,7 @@
 A native C++ World of Warcraft client with a custom Vulkan renderer.
 
 [![Sponsor](https://img.shields.io/github/sponsors/Kelsidavis?label=Sponsor&logo=GitHub)](https://github.com/sponsors/Kelsidavis)
-[![Discord](https://img.shields.io/discord/1?label=Discord&logo=discord)](https://discord.gg/SDqjA79B)
+[![Discord](https://img.shields.io/discord/1?label=Discord&logo=discord)](https://discord.gg/PSdMPS8uje)
 
 [![Watch the video](https://img.youtube.com/vi/B-jtpPmiXGM/maxresdefault.jpg)](https://youtu.be/B-jtpPmiXGM)
 
