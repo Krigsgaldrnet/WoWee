@@ -14461,7 +14461,7 @@ void GameHandler::handleXpGain(network::Packet& packet) {
 
     // Server already updates PLAYER_XP via update fields,
     // but we can show combat text for XP gains
-    addCombatText(CombatTextEntry::HEAL, static_cast<int32_t>(data.totalXp), 0, true);
+    addCombatText(CombatTextEntry::XP_GAIN, static_cast<int32_t>(data.totalXp), 0, true);
 
     std::string msg = "You gain " + std::to_string(data.totalXp) + " experience.";
     if (data.groupBonus > 0) {

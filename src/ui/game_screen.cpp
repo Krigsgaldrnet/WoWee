@@ -4519,6 +4519,10 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     snprintf(text, sizeof(text), "+%d", entry.amount);
                     color = ImVec4(0.3f, 0.6f, 1.0f, alpha);  // Blue for mana/energy
                     break;
+                case game::CombatTextEntry::XP_GAIN:
+                    snprintf(text, sizeof(text), "+%d XP", entry.amount);
+                    color = ImVec4(0.7f, 0.3f, 1.0f, alpha);  // Purple for XP
+                    break;
                 default:
                     snprintf(text, sizeof(text), "%d", entry.amount);
                     color = ImVec4(1.0f, 1.0f, 1.0f, alpha);
