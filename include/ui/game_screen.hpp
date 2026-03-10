@@ -183,6 +183,11 @@ private:
     void renderTargetFrame(game::GameHandler& gameHandler);
 
     /**
+     * Render pet frame (below player frame when player has an active pet)
+     */
+    void renderPetFrame(game::GameHandler& gameHandler);
+
+    /**
      * Process targeting input (Tab, Escape, click)
      */
     void processTargetInput(game::GameHandler& gameHandler);

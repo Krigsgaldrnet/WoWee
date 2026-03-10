@@ -370,6 +370,11 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // Player unit frame (top-left)
     renderPlayerFrame(gameHandler);
 
+    // Pet frame (below player frame, only when player has an active pet)
+    if (gameHandler.hasPet()) {
+        renderPetFrame(gameHandler);
+    }
+
     // Target frame (only when we have a target)
     if (gameHandler.hasTarget()) {
         renderTargetFrame(gameHandler);
@@ -1809,6 +1814,91 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
                 ImGui::ProgressBar(mpPct, ImVec2(-1, 18), mpOverlay);
                 ImGui::PopStyleColor();
             }
+        }
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
+}
+
+void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
+    uint64_t petGuid = gameHandler.getPetGuid();
+    if (petGuid == 0) return;
+
+    auto petEntity = gameHandler.getEntityManager().getEntity(petGuid);
+    if (!petEntity) return;
+    auto* petUnit = dynamic_cast<game::Unit*>(petEntity.get());
+    if (!petUnit) return;
+
+    // Position below the player frame (player frame is at y=30)
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 135.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(200.0f, 0.0f), ImGuiCond_Always);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_AlwaysAutoResize;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.1f, 0.08f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+
+    if (ImGui::Begin("##PetFrame", nullptr, flags)) {
+        const std::string& petName = petUnit->getName();
+        uint32_t petLevel = petUnit->getLevel();
+
+        // Name + level on one row — clicking the pet name targets it
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.9f, 0.4f, 1.0f));
+        char petLabel[96];
+        snprintf(petLabel, sizeof(petLabel), "%s",
+                 petName.empty() ? "Pet" : petName.c_str());
+        if (ImGui::Selectable(petLabel, false, 0, ImVec2(0, 0))) {
+            gameHandler.setTarget(petGuid);
+        }
+        ImGui::PopStyleColor();
+        if (petLevel > 0) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("Lv %u", petLevel);
+        }
+
+        // Health bar
+        uint32_t hp    = petUnit->getHealth();
+        uint32_t maxHp = petUnit->getMaxHealth();
+        if (maxHp > 0) {
+            float pct = static_cast<float>(hp) / static_cast<float>(maxHp);
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+            char hpText[32];
+            snprintf(hpText, sizeof(hpText), "%u/%u", hp, maxHp);
+            ImGui::ProgressBar(pct, ImVec2(-1, 14), hpText);
+            ImGui::PopStyleColor();
+        }
+
+        // Power/mana bar (hunters' pets use focus)
+        uint8_t  powerType = petUnit->getPowerType();
+        uint32_t power     = petUnit->getPower();
+        uint32_t maxPower  = petUnit->getMaxPower();
+        if (maxPower == 0 && (powerType == 1 || powerType == 2 || powerType == 3)) maxPower = 100;
+        if (maxPower > 0) {
+            float mpPct = static_cast<float>(power) / static_cast<float>(maxPower);
+            ImVec4 powerColor;
+            switch (powerType) {
+                case 0: powerColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break; // Mana
+                case 1: powerColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage
+                case 2: powerColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus (hunter pets)
+                case 3: powerColor = ImVec4(0.9f, 0.9f, 0.2f, 1.0f); break; // Energy
+                default: powerColor = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); break;
+            }
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, powerColor);
+            char mpText[32];
+            snprintf(mpText, sizeof(mpText), "%u/%u", power, maxPower);
+            ImGui::ProgressBar(mpPct, ImVec2(-1, 14), mpText);
+            ImGui::PopStyleColor();
+        }
+
+        // Dismiss button (compact, right-aligned)
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 60.0f);
+        if (ImGui::SmallButton("Dismiss")) {
+            gameHandler.dismissPet();
         }
     }
     ImGui::End();
