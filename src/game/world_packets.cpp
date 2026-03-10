@@ -480,21 +480,9 @@ bool CharEnumParser::parse(network::Packet& packet, CharEnumResponse& response) 
             character.equipment.push_back(item);
         }
 
-        LOG_INFO("  Character ", (int)(i + 1), ": ", character.name);
-        LOG_INFO("    GUID: 0x", std::hex, character.guid, std::dec);
-        LOG_INFO("    ", getRaceName(character.race), " ",
-                 getClassName(character.characterClass), " (",
-                 getGenderName(character.gender), ")");
-        LOG_INFO("    Level: ", (int)character.level);
-        LOG_INFO("    Location: Zone ", character.zoneId, ", Map ", character.mapId);
-        LOG_INFO("    Position: (", character.x, ", ", character.y, ", ", character.z, ")");
-        if (character.hasGuild()) {
-            LOG_INFO("    Guild ID: ", character.guildId);
-        }
-        if (character.hasPet()) {
-            LOG_INFO("    Pet: Model ", character.pet.displayModel,
-                     ", Level ", character.pet.level);
-        }
+        LOG_DEBUG("  Character ", (int)(i + 1), ": ", character.name,
+                  " (", getRaceName(character.race), " ", getClassName(character.characterClass),
+                  " level ", (int)character.level, " zone ", character.zoneId, ")");
 
         response.characters.push_back(character);
     }
@@ -2771,9 +2759,9 @@ bool AttackerStateUpdateParser::parse(network::Packet& packet, AttackerStateUpda
         data.blocked = packet.readUInt32();
     }
 
-    LOG_INFO("Melee hit: ", data.totalDamage, " damage",
-             data.isCrit() ? " (CRIT)" : "",
-             data.isMiss() ? " (MISS)" : "");
+    LOG_DEBUG("Melee hit: ", data.totalDamage, " damage",
+              data.isCrit() ? " (CRIT)" : "",
+              data.isMiss() ? " (MISS)" : "");
     return true;
 }
 
@@ -2797,8 +2785,8 @@ bool SpellDamageLogParser::parse(network::Packet& packet, SpellDamageLogData& da
     // Check crit flag
     data.isCrit = (flags & 0x02) != 0;
 
-    LOG_INFO("Spell damage: spellId=", data.spellId, " dmg=", data.damage,
-             data.isCrit ? " CRIT" : "");
+    LOG_DEBUG("Spell damage: spellId=", data.spellId, " dmg=", data.damage,
+              data.isCrit ? " CRIT" : "");
     return true;
 }
 
@@ -2812,8 +2800,8 @@ bool SpellHealLogParser::parse(network::Packet& packet, SpellHealLogData& data) 
     uint8_t critFlag = packet.readUInt8();
     data.isCrit = (critFlag != 0);
 
-    LOG_INFO("Spell heal: spellId=", data.spellId, " heal=", data.heal,
-             data.isCrit ? " CRIT" : "");
+    LOG_DEBUG("Spell heal: spellId=", data.spellId, " heal=", data.heal,
+              data.isCrit ? " CRIT" : "");
     return true;
 }
 
