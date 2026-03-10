@@ -92,6 +92,8 @@ public:
     void setMovementCallback(MovementCallback cb) { movementCallback = std::move(cb); }
     void setUseWoWSpeed(bool use) { useWoWSpeed = use; }
     void setRunSpeedOverride(float speed) { runSpeedOverride_ = speed; }
+    void setWalkSpeedOverride(float speed) { walkSpeedOverride_ = speed; }
+    void setSwimSpeedOverride(float speed) { swimSpeedOverride_ = speed; }
     void setMovementRooted(bool rooted) { movementRooted_ = rooted; }
     bool isMovementRooted() const { return movementRooted_; }
     void setGravityDisabled(bool disabled) { gravityDisabled_ = disabled; }
@@ -269,8 +271,10 @@ private:
         return std::sqrt(2.0f * std::abs(MOUNT_GRAVITY) * MOUNT_JUMP_HEIGHT);
     }
 
-    // Server-driven run speed override (0 = use default WOW_RUN_SPEED)
+    // Server-driven speed overrides (0 = use hardcoded default)
     float runSpeedOverride_ = 0.0f;
+    float walkSpeedOverride_ = 0.0f;
+    float swimSpeedOverride_ = 0.0f;
     // Server-driven root state: when true, block all horizontal movement input.
     bool movementRooted_ = false;
     // Server-driven gravity disable (levitate/hover): skip gravity accumulation.

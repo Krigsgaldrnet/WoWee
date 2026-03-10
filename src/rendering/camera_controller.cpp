@@ -320,7 +320,8 @@ void CameraController::update(float deltaTime) {
         if (nowBackward && !nowForward) {
             speed = WOW_BACK_SPEED;
         } else if (ctrlDown) {
-            speed = WOW_WALK_SPEED;
+            speed = (walkSpeedOverride_ > 0.0f && walkSpeedOverride_ < 100.0f && !std::isnan(walkSpeedOverride_))
+                        ? walkSpeedOverride_ : WOW_WALK_SPEED;
         } else if (runSpeedOverride_ > 0.0f && runSpeedOverride_ < 100.0f && !std::isnan(runSpeedOverride_)) {
             speed = runSpeedOverride_;
         } else {
@@ -507,7 +508,8 @@ void CameraController::update(float deltaTime) {
             swimming = true;
             // Swim movement follows look pitch (forward/back), while strafe stays
             // lateral for stable control.
-            float swimSpeed = speed * SWIM_SPEED_FACTOR;
+            float swimSpeed = (swimSpeedOverride_ > 0.0f && swimSpeedOverride_ < 100.0f && !std::isnan(swimSpeedOverride_))
+                                  ? swimSpeedOverride_ : speed * SWIM_SPEED_FACTOR;
             float waterSurfaceZ = waterH ? (*waterH - WATER_SURFACE_OFFSET) : targetPos.z;
 
             // For auto-run/auto-swim: use character facing (immune to camera pan)
@@ -1518,7 +1520,8 @@ void CameraController::update(float deltaTime) {
 
         if (inWater) {
             swimming = true;
-            float swimSpeed = speed * SWIM_SPEED_FACTOR;
+            float swimSpeed = (swimSpeedOverride_ > 0.0f && swimSpeedOverride_ < 100.0f && !std::isnan(swimSpeedOverride_))
+                                  ? swimSpeedOverride_ : speed * SWIM_SPEED_FACTOR;
             float waterSurfaceCamZ = waterH ? (*waterH - WATER_SURFACE_OFFSET + eyeHeight) : newPos.z;
             bool diveIntent = nowForward && (forward3D.z < -0.28f);
 

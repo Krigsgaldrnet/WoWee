@@ -1009,6 +1009,8 @@ void Application::update(float deltaTime) {
             runInGameStage("post-update sync", [&] {
                 if (renderer && gameHandler && renderer->getCameraController()) {
                     renderer->getCameraController()->setRunSpeedOverride(gameHandler->getServerRunSpeed());
+                    renderer->getCameraController()->setWalkSpeedOverride(gameHandler->getServerWalkSpeed());
+                    renderer->getCameraController()->setSwimSpeedOverride(gameHandler->getServerSwimSpeed());
                     renderer->getCameraController()->setMovementRooted(gameHandler->isPlayerRooted());
                     renderer->getCameraController()->setGravityDisabled(gameHandler->isGravityDisabled());
                 }
