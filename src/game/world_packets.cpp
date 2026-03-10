@@ -1252,11 +1252,14 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
         if (!parseUpdateBlock(packet, block)) {
             static int parseBlockErrors = 0;
             if (++parseBlockErrors <= 5) {
-                LOG_ERROR("Failed to parse update block ", i + 1);
+                LOG_ERROR("Failed to parse update block ", i + 1, " of ", data.blockCount,
+                          " (", i, " blocks parsed successfully before failure)");
                 if (parseBlockErrors == 5)
                     LOG_ERROR("(suppressing further update block parse errors)");
             }
-            return false;
+            // Cannot reliably re-sync to the next block after a parse failure,
+            // but still return true so the blocks already parsed are processed.
+            break;
         }
 
         data.blocks.emplace_back(std::move(block));

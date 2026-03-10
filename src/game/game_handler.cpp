@@ -7327,7 +7327,8 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
         static int updateObjErrors = 0;
         if (++updateObjErrors <= 5)
             LOG_WARNING("Failed to parse SMSG_UPDATE_OBJECT");
-        return;
+        if (data.blocks.empty()) return;
+        // Fall through: process any blocks that were successfully parsed before the failure.
     }
 
     auto extractPlayerAppearance = [&](const std::map<uint16_t, uint32_t>& fields,
