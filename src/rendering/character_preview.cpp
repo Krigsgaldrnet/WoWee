@@ -543,7 +543,22 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
 
     auto displayInfoDbc = assetManager_->loadDBC("ItemDisplayInfo.dbc");
     if (!displayInfoDbc || !displayInfoDbc->isLoaded()) {
+        LOG_WARNING("applyEquipment: ItemDisplayInfo.dbc not loaded");
         return false;
+    }
+
+    // Diagnostic: log equipment vector and DBC state
+    LOG_INFO("applyEquipment: ", equipment.size(), " items, ItemDisplayInfo.dbc records=",
+             displayInfoDbc->getRecordCount(), " fields=", displayInfoDbc->getFieldCount(),
+             " bodySkin=", bodySkinPath_.empty() ? "(empty)" : bodySkinPath_);
+    for (size_t ei = 0; ei < equipment.size(); ++ei) {
+        const auto& it = equipment[ei];
+        if (it.displayModel == 0) continue;
+        int32_t dbcRec = displayInfoDbc->findRecordById(it.displayModel);
+        LOG_INFO("  slot[", ei, "]: displayModel=", it.displayModel,
+                 " invType=", (int)it.inventoryType,
+                 " dbcRec=", dbcRec,
+                 (dbcRec >= 0 ? " (found)" : " (NOT FOUND in ItemDisplayInfo.dbc)"));
     }
 
     auto hasInvType = [&](std::initializer_list<uint8_t> types) -> bool {
@@ -560,7 +575,7 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
         for (const auto& it : equipment) {
             if (it.displayModel == 0) continue;
             for (uint8_t t : types) {
-                if (it.inventoryType == t) return it.displayModel; // ItemDisplayInfo ID (3.3.5a char enum)
+                if (it.inventoryType == t) return it.displayModel;
             }
         }
         return 0;
@@ -570,7 +585,12 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
         if (displayInfoId == 0) return 0;
         int32_t recIdx = displayInfoDbc->findRecordById(displayInfoId);
         if (recIdx < 0) return 0;
-        return displayInfoDbc->getUInt32(static_cast<uint32_t>(recIdx), 7 + groupField);
+        uint32_t val = displayInfoDbc->getUInt32(static_cast<uint32_t>(recIdx), 7 + groupField);
+        if (val > 0) {
+            LOG_INFO("  getGeosetGroup: displayInfoId=", displayInfoId,
+                     " groupField=", groupField, " field=", (7 + groupField), " val=", val);
+        }
+        return val;
     };
 
     // --- Geosets ---
@@ -654,6 +674,9 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
             std::string texName = displayInfoDbc->getString(static_cast<uint32_t>(recIdx), fieldIdx);
             if (texName.empty()) continue;
 
+            LOG_INFO("  texture region ", region, " (field ", fieldIdx, "): texName=", texName,
+                     " for displayModel=", it.displayModel);
+
             std::string base = "Item\\TextureComponents\\" +
                 std::string(componentDirs[region]) + "\\" + texName;
 
@@ -669,6 +692,7 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
             } else if (assetManager_->fileExists(basePath)) {
                 fullPath = basePath;
             } else {
+                LOG_INFO("  texture path not found: ", base, " (_M/_F/_U/.blp)");
                 continue;
             }
             regionLayers.emplace_back(region, fullPath);
