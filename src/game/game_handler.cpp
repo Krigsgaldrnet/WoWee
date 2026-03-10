@@ -2733,11 +2733,35 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_DUEL_COUNTDOWN:
             // Countdown timer — no action needed; server also sends UNIT_FIELD_FLAGS update.
             break;
-        case Opcode::SMSG_PARTYKILLLOG:
-            // Classic-era packet: killer GUID + victim GUID.
-            // XP and combat state are handled by other packets; consume to avoid warning spam.
-            packet.setReadPos(packet.getSize());
+        case Opcode::SMSG_PARTYKILLLOG: {
+            // uint64 killerGuid + uint64 victimGuid
+            if (packet.getSize() - packet.getReadPos() < 16) break;
+            uint64_t killerGuid = packet.readUInt64();
+            uint64_t victimGuid = packet.readUInt64();
+            // Show kill message in party chat style
+            auto nameForGuid = [&](uint64_t g) -> std::string {
+                // Check player name cache first
+                auto nit = playerNameCache.find(g);
+                if (nit != playerNameCache.end()) return nit->second;
+                // Fall back to entity name (NPCs)
+                auto ent = entityManager.getEntity(g);
+                if (ent && (ent->getType() == game::ObjectType::UNIT ||
+                            ent->getType() == game::ObjectType::PLAYER)) {
+                    auto unit = std::static_pointer_cast<game::Unit>(ent);
+                    return unit->getName();
+                }
+                return {};
+            };
+            std::string killerName = nameForGuid(killerGuid);
+            std::string victimName = nameForGuid(victimGuid);
+            if (!killerName.empty() && !victimName.empty()) {
+                char buf[256];
+                std::snprintf(buf, sizeof(buf), "%s killed %s.",
+                              killerName.c_str(), victimName.c_str());
+                addSystemChatMessage(buf);
+            }
             break;
+        }
 
         // ---- Guild ----
         case Opcode::SMSG_GUILD_INFO:
