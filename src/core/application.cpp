@@ -749,6 +749,7 @@ void Application::logoutToLogin() {
     creatureRenderPosCache_.clear();
     creatureWeaponsAttached_.clear();
     creatureWeaponAttachAttempts_.clear();
+    creatureWasMoving_.clear();
     deadCreatureGuids_.clear();
     nonRenderableCreatureDisplayIds_.clear();
     creaturePermanentFailureGuids_.clear();
@@ -1466,14 +1467,28 @@ void Application::update(float deltaTime) {
                         auto unitPtr = std::static_pointer_cast<game::Unit>(entity);
                         const bool deadOrCorpse = unitPtr->getHealth() == 0;
                         const bool largeCorrection = (planarDist > 6.0f) || (dz > 3.0f);
+                        const bool isMovingNow = !deadOrCorpse && (planarDist > 0.03f || dz > 0.08f);
                         if (deadOrCorpse || largeCorrection) {
                             charRenderer->setInstancePosition(instanceId, renderPos);
-                        } else if (planarDist > 0.03f || dz > 0.08f) {
-                            // Use movement interpolation so step/run animation can play.
+                        } else if (isMovingNow) {
                             float duration = std::clamp(planarDist / 5.5f, 0.05f, 0.22f);
                             charRenderer->moveInstanceTo(instanceId, renderPos, duration);
                         }
                         posIt->second = renderPos;
+
+                        // Drive movement animation: Run (4) when moving, Stand (0) when idle.
+                        // Only switch on transitions to avoid resetting animation time.
+                        // Don't override Death (1) animation.
+                        bool prevMoving = creatureWasMoving_[guid];
+                        if (isMovingNow != prevMoving) {
+                            creatureWasMoving_[guid] = isMovingNow;
+                            uint32_t curAnimId = 0; float curT = 0.0f, curDur = 0.0f;
+                            bool gotState = charRenderer->getAnimationState(instanceId, curAnimId, curT, curDur);
+                            if (!gotState || curAnimId != 1 /*Death*/) {
+                                charRenderer->playAnimation(instanceId,
+                                    isMovingNow ? 4u : 0u, /*loop=*/true);
+                            }
+                        }
                     }
                     float renderYaw = entity->getOrientation() + glm::radians(90.0f);
                     charRenderer->setInstanceRotation(instanceId, glm::vec3(0.0f, 0.0f, renderYaw));
@@ -8449,6 +8464,7 @@ void Application::despawnOnlineCreature(uint64_t guid) {
     creatureRenderPosCache_.erase(guid);
     creatureWeaponsAttached_.erase(guid);
     creatureWeaponAttachAttempts_.erase(guid);
+    creatureWasMoving_.erase(guid);
 
     LOG_DEBUG("Despawned creature: guid=0x", std::hex, guid, std::dec);
 }

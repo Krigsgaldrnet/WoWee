@@ -1445,6 +1445,21 @@ void CameraController::update(float deltaTime) {
             // Honor first-person intent even if anti-clipping pushes camera back slightly.
             bool shouldHidePlayer = isFirstPersonView() || (actualDist < MIN_DISTANCE + 0.1f);
             characterRenderer->setInstanceVisible(playerInstanceId, !shouldHidePlayer);
+
+            // Drive movement animation: Run (4) when moving, Stand (0) when idle.
+            // Only transition on state changes to avoid resetting animation time every frame.
+            // Skip if current animation is Death (1) — death pose must persist.
+            bool nowMoving = isMoving();
+            if (nowMoving != prevPlayerMoving_) {
+                prevPlayerMoving_ = nowMoving;
+                uint32_t curAnimId = 0; float curT = 0.0f, curDur = 0.0f;
+                bool gotState = characterRenderer->getAnimationState(
+                    playerInstanceId, curAnimId, curT, curDur);
+                if (!gotState || curAnimId != 1 /*Death*/) {
+                    characterRenderer->playAnimation(playerInstanceId,
+                        nowMoving ? 4u : 0u, /*loop=*/true);
+                }
+            }
         }
     } else {
         // Free-fly camera mode (original behavior)
