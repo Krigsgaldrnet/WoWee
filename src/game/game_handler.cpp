@@ -4545,10 +4545,18 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (packet.getSize() - packet.getReadPos() >= 12) {
                     /*uint64_t guid =*/ packet.readUInt64();
                     uint32_t achievementId = packet.readUInt32();
-                    char buf[192];
-                    std::snprintf(buf, sizeof(buf),
-                        "%s is the first on the realm to earn achievement #%u!",
-                        charName.c_str(), achievementId);
+                    loadAchievementNameCache();
+                    auto nit = achievementNameCache_.find(achievementId);
+                    char buf[256];
+                    if (nit != achievementNameCache_.end() && !nit->second.empty()) {
+                        std::snprintf(buf, sizeof(buf),
+                            "%s is the first on the realm to earn: %s!",
+                            charName.c_str(), nit->second.c_str());
+                    } else {
+                        std::snprintf(buf, sizeof(buf),
+                            "%s is the first on the realm to earn achievement #%u!",
+                            charName.c_str(), achievementId);
+                    }
                     addSystemChatMessage(buf);
                 }
             }
@@ -12168,6 +12176,24 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         casting = false;
         currentCastSpellId = 0;
         castTimeRemaining = 0.0f;
+    }
+
+    // Play impact sound when player is hit by any spell (from self or others)
+    bool playerIsHit = false;
+    for (const auto& tgt : data.hitTargets) {
+        if (tgt == playerGuid) { playerIsHit = true; break; }
+    }
+    if (playerIsHit && data.casterUnit != playerGuid) {
+        if (auto* renderer = core::Application::getInstance().getRenderer()) {
+            if (auto* ssm = renderer->getSpellSoundManager()) {
+                loadSpellNameCache();
+                auto it = spellNameCache_.find(data.spellId);
+                auto school = (it != spellNameCache_.end() && it->second.schoolMask)
+                    ? schoolMaskToMagicSchool(it->second.schoolMask)
+                    : audio::SpellSoundManager::MagicSchool::ARCANE;
+                ssm->playImpact(school, audio::SpellSoundManager::SpellPower::MEDIUM);
+            }
+        }
     }
 }
 
