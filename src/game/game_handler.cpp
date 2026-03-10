@@ -520,6 +520,13 @@ void GameHandler::resetDbcCaches() {
     talentDbcLoaded_ = false;
     talentCache_.clear();
     talentTabCache_.clear();
+    // Clear the AssetManager DBC file cache so that expansion-specific DBCs
+    // (CharSections, ItemDisplayInfo, etc.) are reloaded from the new expansion's
+    // MPQ files instead of returning stale data from a previous session/expansion.
+    auto* am = core::Application::getInstance().getAssetManager();
+    if (am) {
+        am->clearDBCCache();
+    }
     LOG_INFO("GameHandler: DBC caches cleared for expansion switch");
 }
 

@@ -41,9 +41,31 @@ std::vector<uint8_t> readFileBytes(const std::string& path) {
     return buf;
 }
 
-// Check whether offset points to a plausible string in the string block.
-bool isValidStringOffset(const std::vector<uint8_t>& stringBlock, uint32_t offset) {
+// Precompute the set of valid string-boundary offsets in the string block.
+// An offset is a valid boundary if it is 0 or immediately follows a null byte.
+// This prevents small integer values (e.g. RaceID=1, 2, 3) from being falsely
+// detected as string offsets just because they land in the middle of a longer
+// string that starts at a lower offset.
+std::set<uint32_t> computeStringBoundaries(const std::vector<uint8_t>& stringBlock) {
+    std::set<uint32_t> boundaries;
+    if (stringBlock.empty()) return boundaries;
+    boundaries.insert(0); // offset 0 is always a valid start
+    for (size_t i = 0; i + 1 < stringBlock.size(); ++i) {
+        if (stringBlock[i] == 0) {
+            boundaries.insert(static_cast<uint32_t>(i + 1));
+        }
+    }
+    return boundaries;
+}
+
+// Check whether offset points to a valid string-boundary position in the block
+// and that the string there is printable and null-terminated.
+bool isValidStringOffset(const std::vector<uint8_t>& stringBlock,
+                         const std::set<uint32_t>& boundaries,
+                         uint32_t offset) {
     if (offset >= stringBlock.size()) return false;
+    // Must start at a string boundary (offset 0 or right after a null byte).
+    if (!boundaries.count(offset)) return false;
     // Must be null-terminated within the block and contain only printable/whitespace bytes.
     for (size_t i = offset; i < stringBlock.size(); ++i) {
         uint8_t c = stringBlock[i];
@@ -75,6 +97,10 @@ std::set<uint32_t> detectStringColumns(const DBCFile& dbc,
     // If no string block (or trivial size), no string columns.
     if (stringBlock.size() <= 1) return stringCols;
 
+    // Precompute valid string-start boundaries to avoid false positives from
+    // integer fields whose small values accidentally land inside longer strings.
+    auto boundaries = computeStringBoundaries(stringBlock);
+
     for (uint32_t col = 0; col < fieldCount; ++col) {
         bool allZeroOrValid = true;
         bool hasNonZero = false;
@@ -83,7 +109,7 @@ std::set<uint32_t> detectStringColumns(const DBCFile& dbc,
             uint32_t val = dbc.getUInt32(row, col);
             if (val == 0) continue;
             hasNonZero = true;
-            if (!isValidStringOffset(stringBlock, val)) {
+            if (!isValidStringOffset(stringBlock, boundaries, val)) {
                 allZeroOrValid = false;
                 break;
             }
