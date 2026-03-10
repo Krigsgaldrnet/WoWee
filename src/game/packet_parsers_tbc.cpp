@@ -484,7 +484,7 @@ bool TbcPacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjectDa
 
     packet.setReadPos(startPos);
     if (parseWithLayout(false, parsed)) {
-        LOG_WARNING("[TBC] SMSG_UPDATE_OBJECT parsed without has_transport byte fallback");
+        LOG_DEBUG("[TBC] SMSG_UPDATE_OBJECT parsed without has_transport byte fallback");
         data = std::move(parsed);
         return true;
     }
@@ -536,7 +536,7 @@ bool TbcPacketParsers::parseGossipMessage(network::Packet& packet, GossipMessage
         data.quests.push_back(quest);
     }
 
-    LOG_INFO("[TBC] Gossip: ", optionCount, " options, ", questCount, " quests");
+    LOG_DEBUG("[TBC] Gossip: ", optionCount, " options, ", questCount, " quests");
     return true;
 }
 
@@ -718,7 +718,7 @@ bool TbcPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsDa
     data.objectives = normalizeWowTextTokens(packet.readString());
 
     if (packet.getReadPos() + 5 > packet.getSize()) {
-        LOG_INFO("Quest details tbc/classic (short): id=", data.questId, " title='", data.title, "'");
+        LOG_DEBUG("Quest details tbc/classic (short): id=", data.questId, " title='", data.title, "'");
         return !data.title.empty() || data.questId != 0;
     }
 
@@ -759,7 +759,7 @@ bool TbcPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsDa
     if (packet.getReadPos() + 4 <= packet.getSize())
         data.rewardXp = packet.readUInt32();
 
-    LOG_INFO("Quest details tbc/classic: id=", data.questId, " title='", data.title, "'");
+    LOG_DEBUG("Quest details tbc/classic: id=", data.questId, " title='", data.title, "'");
     return true;
 }
 
@@ -783,7 +783,7 @@ network::Packet TbcPacketParsers::buildQueryQuestPacket(uint64_t npcGuid, uint32
 // SMSG_SET_EXTRA_AURA_INFO_OBSOLETE (0x3A4) instead
 // ============================================================================
 bool TbcPacketParsers::parseAuraUpdate(network::Packet& /*packet*/, AuraUpdateData& /*data*/, bool /*isAll*/) {
-    LOG_WARNING("[TBC] parseAuraUpdate called but SMSG_AURA_UPDATE does not exist in TBC 2.4.3");
+    LOG_DEBUG("[TBC] parseAuraUpdate called but SMSG_AURA_UPDATE does not exist in TBC 2.4.3");
     return false;
 }
 

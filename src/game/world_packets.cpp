@@ -2228,7 +2228,7 @@ bool NameQueryResponseParser::parse(network::Packet& packet, NameQueryResponseDa
     data.gender = packet.readUInt8();
     data.classId = packet.readUInt8();
 
-    LOG_INFO("Name query response: ", data.name, " (race=", (int)data.race,
+    LOG_DEBUG("Name query response: ", data.name, " (race=", (int)data.race,
              " class=", (int)data.classId, ")");
     return true;
 }
@@ -2718,7 +2718,7 @@ bool AttackStartParser::parse(network::Packet& packet, AttackStartData& data) {
     if (packet.getSize() < 16) return false;
     data.attackerGuid = packet.readUInt64();
     data.victimGuid = packet.readUInt64();
-    LOG_INFO("Attack started: 0x", std::hex, data.attackerGuid,
+    LOG_DEBUG("Attack started: 0x", std::hex, data.attackerGuid,
              " -> 0x", data.victimGuid, std::dec);
     return true;
 }
@@ -2729,7 +2729,7 @@ bool AttackStopParser::parse(network::Packet& packet, AttackStopData& data) {
     if (packet.getReadPos() < packet.getSize()) {
         data.unknown = packet.readUInt32();
     }
-    LOG_INFO("Attack stopped: 0x", std::hex, data.attackerGuid, std::dec);
+    LOG_DEBUG("Attack stopped: 0x", std::hex, data.attackerGuid, std::dec);
     return true;
 }
 
@@ -2821,7 +2821,7 @@ bool XpGainParser::parse(network::Packet& packet, XpGainData& data) {
             data.groupBonus = data.totalXp - static_cast<uint32_t>(data.totalXp / groupRate);
         }
     }
-    LOG_INFO("XP gain: ", data.totalXp, " xp (type=", static_cast<int>(data.type), ")");
+    LOG_DEBUG("XP gain: ", data.totalXp, " xp (type=", static_cast<int>(data.type), ")");
     return data.totalXp > 0;
 }
 
@@ -3173,7 +3173,7 @@ bool PartyCommandResultParser::parse(network::Packet& packet, PartyCommandResult
     data.command = static_cast<PartyCommand>(packet.readUInt32());
     data.name = packet.readString();
     data.result = static_cast<PartyResult>(packet.readUInt32());
-    LOG_INFO("Party command result: ", (int)data.result);
+    LOG_DEBUG("Party command result: ", (int)data.result);
     return true;
 }
 
@@ -3320,7 +3320,7 @@ bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data) 
         }
     }
 
-    LOG_INFO("Loot response: ", (int)itemCount, " regular + ", (int)questItemCount,
+    LOG_DEBUG("Loot response: ", (int)itemCount, " regular + ", (int)questItemCount,
              " quest items, ", data.gold, " copper");
     return true;
 }
@@ -3389,7 +3389,7 @@ bool QuestDetailsParser::parse(network::Packet& packet, QuestDetailsData& data) 
     data.objectives = normalizeWowTextTokens(packet.readString());
 
     if (packet.getReadPos() + 10 > packet.getSize()) {
-        LOG_INFO("Quest details (short): id=", data.questId, " title='", data.title, "'");
+        LOG_DEBUG("Quest details (short): id=", data.questId, " title='", data.title, "'");
         return true;
     }
 
@@ -3426,7 +3426,7 @@ bool QuestDetailsParser::parse(network::Packet& packet, QuestDetailsData& data) 
     if (packet.getReadPos() + 4 <= packet.getSize())
         data.rewardXp = packet.readUInt32();
 
-    LOG_INFO("Quest details: id=", data.questId, " title='", data.title, "'");
+    LOG_DEBUG("Quest details: id=", data.questId, " title='", data.title, "'");
     return true;
 }
 
@@ -3463,7 +3463,7 @@ bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data
         data.quests.push_back(quest);
     }
 
-    LOG_INFO("Gossip: ", optionCount, " options, ", questCount, " quests");
+    LOG_DEBUG("Gossip: ", optionCount, " options, ", questCount, " quests");
     return true;
 }
 
@@ -3495,7 +3495,7 @@ bool QuestRequestItemsParser::parse(network::Packet& packet, QuestRequestItemsDa
     data.completionText = normalizeWowTextTokens(packet.readString());
 
     if (packet.getReadPos() + 9 > packet.getSize()) {
-        LOG_INFO("Quest request items (short): id=", data.questId, " title='", data.title, "'");
+        LOG_DEBUG("Quest request items (short): id=", data.questId, " title='", data.title, "'");
         return true;
     }
 
@@ -3571,7 +3571,7 @@ bool QuestRequestItemsParser::parse(network::Packet& packet, QuestRequestItemsDa
     data.completableFlags = chosen->completableFlags;
     data.requiredItems = chosen->requiredItems;
 
-    LOG_INFO("Quest request items: id=", data.questId, " title='", data.title,
+    LOG_DEBUG("Quest request items: id=", data.questId, " title='", data.title,
              "' items=", data.requiredItems.size(), " completable=", data.isCompletable());
     return true;
 }
@@ -3584,7 +3584,7 @@ bool QuestOfferRewardParser::parse(network::Packet& packet, QuestOfferRewardData
     data.rewardText = normalizeWowTextTokens(packet.readString());
 
     if (packet.getReadPos() + 10 > packet.getSize()) {
-        LOG_INFO("Quest offer reward (short): id=", data.questId, " title='", data.title, "'");
+        LOG_DEBUG("Quest offer reward (short): id=", data.questId, " title='", data.title, "'");
         return true;
     }
 
@@ -3698,7 +3698,7 @@ bool QuestOfferRewardParser::parse(network::Packet& packet, QuestOfferRewardData
         data.rewardXp = best->rewardXp;
     }
 
-    LOG_INFO("Quest offer reward: id=", data.questId, " title='", data.title,
+    LOG_DEBUG("Quest offer reward: id=", data.questId, " title='", data.title,
              "' choices=", data.choiceRewards.size(), " fixed=", data.fixedRewards.size());
     return true;
 }
@@ -3811,7 +3811,7 @@ bool ListInventoryParser::parse(network::Packet& packet, ListInventoryData& data
         data.items.push_back(item);
     }
 
-    LOG_INFO("Vendor inventory: ", (int)itemCount, " items (extendedCost: ", hasExtendedCost ? "yes" : "no", ")");
+    LOG_DEBUG("Vendor inventory: ", (int)itemCount, " items (extendedCost: ", hasExtendedCost ? "yes" : "no", ")");
     return true;
 }
 

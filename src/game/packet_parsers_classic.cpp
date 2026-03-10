@@ -1012,7 +1012,7 @@ bool ClassicPacketParsers::parseGossipMessage(network::Packet& packet, GossipMes
         data.quests.push_back(quest);
     }
 
-    LOG_INFO("Classic Gossip: ", optionCount, " options, ", questCount, " quests");
+    LOG_DEBUG("Classic Gossip: ", optionCount, " options, ", questCount, " quests");
     return true;
 }
 
@@ -1503,7 +1503,7 @@ bool TurtlePacketParsers::parseMonsterMove(network::Packet& packet, MonsterMoveD
 
     packet.setReadPos(start);
     if (MonsterMoveParser::parse(packet, data)) {
-        LOG_WARNING("[Turtle] SMSG_MONSTER_MOVE parsed via WotLK fallback layout");
+        LOG_DEBUG("[Turtle] SMSG_MONSTER_MOVE parsed via WotLK fallback layout");
         return true;
     }
 
