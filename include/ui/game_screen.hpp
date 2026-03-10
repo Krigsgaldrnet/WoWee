@@ -210,6 +210,7 @@ private:
     void renderMirrorTimers(game::GameHandler& gameHandler);
     void renderCombatText(game::GameHandler& gameHandler);
     void renderPartyFrames(game::GameHandler& gameHandler);
+    void renderBossFrames(game::GameHandler& gameHandler);
     void renderGroupInvitePopup(game::GameHandler& gameHandler);
     void renderDuelRequestPopup(game::GameHandler& gameHandler);
     void renderLootRollPopup(game::GameHandler& gameHandler);

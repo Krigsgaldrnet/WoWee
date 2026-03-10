@@ -403,6 +403,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     if (showNameplates_) renderNameplates(gameHandler);
     renderCombatText(gameHandler);
     renderPartyFrames(gameHandler);
+    renderBossFrames(gameHandler);
     renderGroupInvitePopup(gameHandler);
     renderDuelRequestPopup(gameHandler);
     renderLootRollPopup(gameHandler);
@@ -4885,6 +4886,79 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
 
             ImGui::Separator();
             ImGui::PopID();
+        }
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+}
+
+// ============================================================
+// Boss Encounter Frames
+// ============================================================
+
+void GameScreen::renderBossFrames(game::GameHandler& gameHandler) {
+    // Collect active boss unit slots
+    struct BossSlot { uint32_t slot; uint64_t guid; };
+    std::vector<BossSlot> active;
+    for (uint32_t s = 0; s < game::GameHandler::kMaxEncounterSlots; ++s) {
+        uint64_t g = gameHandler.getEncounterUnitGuid(s);
+        if (g != 0) active.push_back({s, g});
+    }
+    if (active.empty()) return;
+
+    const float frameW = 200.0f;
+    const float startX = ImGui::GetIO().DisplaySize.x - frameW - 10.0f;
+    float frameY = 120.0f;
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                             ImGuiWindowFlags_AlwaysAutoResize;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.15f, 0.05f, 0.05f, 0.85f));
+
+    ImGui::SetNextWindowPos(ImVec2(startX, frameY), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(frameW, 0.0f), ImGuiCond_Always);
+
+    if (ImGui::Begin("##BossFrames", nullptr, flags)) {
+        for (const auto& bs : active) {
+            ImGui::PushID(static_cast<int>(bs.guid));
+
+            // Try to resolve name and health from entity manager
+            std::string name = "Boss";
+            uint32_t hp = 0, maxHp = 0;
+            auto entity = gameHandler.getEntityManager().getEntity(bs.guid);
+            if (entity && (entity->getType() == game::ObjectType::UNIT ||
+                           entity->getType() == game::ObjectType::PLAYER)) {
+                auto unit = std::static_pointer_cast<game::Unit>(entity);
+                const auto& n = unit->getName();
+                if (!n.empty()) name = n;
+                hp    = unit->getHealth();
+                maxHp = unit->getMaxHealth();
+            }
+
+            // Clickable name to target
+            if (ImGui::Selectable(name.c_str(), gameHandler.getTargetGuid() == bs.guid)) {
+                gameHandler.setTarget(bs.guid);
+            }
+
+            if (maxHp > 0) {
+                float pct = static_cast<float>(hp) / static_cast<float>(maxHp);
+                // Boss health bar in red shades
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+                    pct > 0.5f ? ImVec4(0.8f, 0.2f, 0.2f, 1.0f) :
+                    pct > 0.2f ? ImVec4(0.9f, 0.5f, 0.1f, 1.0f) :
+                                 ImVec4(1.0f, 0.8f, 0.1f, 1.0f));
+                char label[32];
+                std::snprintf(label, sizeof(label), "%u / %u", hp, maxHp);
+                ImGui::ProgressBar(pct, ImVec2(-1, 14), label);
+                ImGui::PopStyleColor();
+            }
+
+            ImGui::PopID();
+            ImGui::Spacing();
         }
     }
     ImGui::End();

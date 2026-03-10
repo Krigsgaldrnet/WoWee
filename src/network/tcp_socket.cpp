@@ -153,6 +153,11 @@ void TCPSocket::update() {
         if (net::isWouldBlock(err)) {
             break;
         }
+        if (net::isConnectionClosed(err)) {
+            // Peer closed the connection — treat the same as recv() returning 0
+            sawClose = true;
+            break;
+        }
 
         LOG_ERROR("Receive failed: ", net::errorString(err));
         disconnect();

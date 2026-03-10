@@ -91,6 +91,20 @@ inline bool isWouldBlock(int err) {
 #endif
 }
 
+// Returns true for errors that mean the peer closed the connection cleanly.
+// On Windows, WSAENOTCONN / WSAECONNRESET / WSAESHUTDOWN can be returned by
+// recv() when the server closes the connection, rather than returning 0.
+inline bool isConnectionClosed(int err) {
+#ifdef _WIN32
+    return err == WSAENOTCONN    ||  // socket not connected (server closed)
+           err == WSAECONNRESET  ||  // connection reset by peer
+           err == WSAESHUTDOWN   ||  // socket shut down
+           err == WSAECONNABORTED;   // connection aborted
+#else
+    return err == ENOTCONN || err == ECONNRESET;
+#endif
+}
+
 inline bool isInProgress(int err) {
 #ifdef _WIN32
     return err == WSAEWOULDBLOCK || err == WSAEALREADY;
