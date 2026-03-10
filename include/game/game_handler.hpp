@@ -56,6 +56,24 @@ enum class QuestGiverStatus : uint8_t {
 };
 
 /**
+ * A single contact list entry (friend, ignore, or mute).
+ */
+struct ContactEntry {
+    uint64_t    guid     = 0;
+    std::string name;
+    std::string note;
+    uint32_t    flags    = 0;   // 0x1=friend, 0x2=ignore, 0x4=mute
+    uint8_t     status   = 0;   // 0=offline, 1=online, 2=AFK, 3=DND
+    uint32_t    areaId   = 0;
+    uint32_t    level    = 0;
+    uint32_t    classId  = 0;
+
+    bool isFriend() const { return (flags & 0x1) != 0; }
+    bool isIgnored() const { return (flags & 0x2) != 0; }
+    bool isOnline()  const { return status != 0; }
+};
+
+/**
  * World connection state
  */
 enum class WorldState {
@@ -800,6 +818,7 @@ public:
     void leaveGroup();
     bool isInGroup() const { return !partyData.isEmpty(); }
     const GroupListData& getPartyData() const { return partyData; }
+    const std::vector<ContactEntry>& getContacts() const { return contacts_; }
     bool hasPendingGroupInvite() const { return pendingGroupInvite; }
     const std::string& getPendingInviterName() const { return pendingInviterName; }
 
@@ -1662,11 +1681,12 @@ private:
     std::unordered_map<uint32_t, GameObjectQueryResponseData> gameObjectInfoCache_;
     std::unordered_set<uint32_t> pendingGameObjectQueries_;
 
-    // ---- Friend list cache ----
+    // ---- Friend/contact list cache ----
     std::unordered_map<std::string, uint64_t> friendsCache;  // name -> guid
     std::unordered_set<uint64_t> friendGuids_;               // all known friend GUIDs (for name backfill)
     uint32_t lastContactListMask_ = 0;
     uint32_t lastContactListCount_ = 0;
+    std::vector<ContactEntry> contacts_;                     // structured contact list (friends + ignores)
 
     // ---- World state and faction initialization snapshots ----
     uint32_t worldStateMapId_ = 0;

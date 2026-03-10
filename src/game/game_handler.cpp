@@ -483,6 +483,7 @@ void GameHandler::disconnect() {
     playerNameCache.clear();
     pendingNameQueries.clear();
     friendGuids_.clear();
+    contacts_.clear();
     transportAttachments_.clear();
     serverUpdatedTransportGuids_.clear();
     requiresWarden_ = false;
@@ -16425,6 +16426,11 @@ void GameHandler::handleFriendList(network::Packet& packet) {
     if (rem() < 1) return;
     uint8_t count = packet.readUInt8();
     LOG_INFO("SMSG_FRIEND_LIST: ", (int)count, " entries");
+
+    // Rebuild friend contacts (keep ignores from previous contact_ entries)
+    contacts_.erase(std::remove_if(contacts_.begin(), contacts_.end(),
+        [](const ContactEntry& e){ return e.isFriend(); }), contacts_.end());
+
     for (uint8_t i = 0; i < count && rem() >= 9; ++i) {
         uint64_t guid   = packet.readUInt64();
         uint8_t  status = packet.readUInt8();
@@ -16434,18 +16440,28 @@ void GameHandler::handleFriendList(network::Packet& packet) {
             level   = packet.readUInt32();
             classId = packet.readUInt32();
         }
-        (void)area; (void)level; (void)classId;
         // Track as a friend GUID; resolve name via name query
         friendGuids_.insert(guid);
         auto nit = playerNameCache.find(guid);
+        std::string name;
         if (nit != playerNameCache.end()) {
-            friendsCache[nit->second] = guid;
-            LOG_INFO("  Friend: ", nit->second, " status=", (int)status);
+            name = nit->second;
+            friendsCache[name] = guid;
+            LOG_INFO("  Friend: ", name, " status=", (int)status);
         } else {
             LOG_INFO("  Friend guid=0x", std::hex, guid, std::dec,
                      " status=", (int)status, " (name pending)");
             queryPlayerName(guid);
         }
+        ContactEntry entry;
+        entry.guid    = guid;
+        entry.name    = name;
+        entry.flags   = 0x1;  // friend
+        entry.status  = status;
+        entry.areaId  = area;
+        entry.level   = level;
+        entry.classId = classId;
+        contacts_.push_back(std::move(entry));
     }
 }
 
@@ -16469,19 +16485,23 @@ void GameHandler::handleContactList(network::Packet& packet) {
     }
     lastContactListMask_  = packet.readUInt32();
     lastContactListCount_ = packet.readUInt32();
+    contacts_.clear();
     for (uint32_t i = 0; i < lastContactListCount_ && rem() >= 8; ++i) {
         uint64_t guid  = packet.readUInt64();
         if (rem() < 4) break;
         uint32_t flags = packet.readUInt32();
         std::string note = packet.readString();  // may be empty
-        (void)note;
+        uint8_t  status  = 0;
+        uint32_t areaId  = 0;
+        uint32_t level   = 0;
+        uint32_t classId = 0;
         if (flags & 0x1) {  // SOCIAL_FLAG_FRIEND
             if (rem() < 1) break;
-            uint8_t status = packet.readUInt8();
+            status = packet.readUInt8();
             if (status != 0 && rem() >= 12) {
-                packet.readUInt32();  // area
-                packet.readUInt32();  // level
-                packet.readUInt32();  // class
+                areaId  = packet.readUInt32();
+                level   = packet.readUInt32();
+                classId = packet.readUInt32();
             }
             friendGuids_.insert(guid);
             auto nit = playerNameCache.find(guid);
@@ -16492,6 +16512,17 @@ void GameHandler::handleContactList(network::Packet& packet) {
             }
         }
         // ignore / mute entries: no additional fields beyond guid+flags+note
+        ContactEntry entry;
+        entry.guid    = guid;
+        entry.flags   = flags;
+        entry.note    = std::move(note);
+        entry.status  = status;
+        entry.areaId  = areaId;
+        entry.level   = level;
+        entry.classId = classId;
+        auto nit = playerNameCache.find(guid);
+        if (nit != playerNameCache.end()) entry.name = nit->second;
+        contacts_.push_back(std::move(entry));
     }
     LOG_INFO("SMSG_CONTACT_LIST: mask=", lastContactListMask_,
              " count=", lastContactListCount_);

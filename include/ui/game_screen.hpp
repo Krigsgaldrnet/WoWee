@@ -64,6 +64,7 @@ private:
     bool showChatWindow = true;
     bool showNameplates_ = true;  // V key toggles nameplates
     bool showPlayerInfo = false;
+    bool showSocialFrame_ = false;  // O key toggles social/friends list
     bool showGuildRoster_ = false;
     std::string selectedGuildMember_;
     bool showGuildNoteEdit_ = false;
@@ -219,6 +220,7 @@ private:
     void renderSharedQuestPopup(game::GameHandler& gameHandler);
     void renderItemTextWindow(game::GameHandler& gameHandler);
     void renderBuffBar(game::GameHandler& gameHandler);
+    void renderSocialFrame(game::GameHandler& gameHandler);
     void renderLootWindow(game::GameHandler& gameHandler);
     void renderGossipWindow(game::GameHandler& gameHandler);
     void renderQuestDetailsWindow(game::GameHandler& gameHandler);

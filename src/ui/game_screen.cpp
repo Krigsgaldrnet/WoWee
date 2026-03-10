@@ -5530,21 +5530,20 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
     if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_O)) {
         showGuildRoster_ = !showGuildRoster_;
         if (showGuildRoster_) {
+            // Open friends tab directly if not in guild
             if (!gameHandler.isInGuild()) {
-                gameHandler.addLocalChatMessage(game::MessageChatData{
-                    game::ChatType::SYSTEM, game::ChatLanguage::UNIVERSAL, 0, "", 0, "", "You are not in a guild.", "", 0});
-                showGuildRoster_ = false;
-                return;
-            }
-            // Re-query guild name if we have guildId but no name yet
-            if (gameHandler.getGuildName().empty()) {
-                const auto* ch = gameHandler.getActiveCharacter();
-                if (ch && ch->hasGuild()) {
-                    gameHandler.queryGuildInfo(ch->guildId);
+                guildRosterTab_ = 2;  // Friends tab
+            } else {
+                // Re-query guild name if we have guildId but no name yet
+                if (gameHandler.getGuildName().empty()) {
+                    const auto* ch = gameHandler.getActiveCharacter();
+                    if (ch && ch->hasGuild()) {
+                        gameHandler.queryGuildInfo(ch->guildId);
+                    }
                 }
+                gameHandler.requestGuildRoster();
+                gameHandler.requestGuildInfo();
             }
-            gameHandler.requestGuildRoster();
-            gameHandler.requestGuildInfo();
         }
     }
 
@@ -5595,7 +5594,7 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 375, screenH / 2 - 250), ImGuiCond_Once);
     ImGui::SetNextWindowSize(ImVec2(750, 500), ImGuiCond_Once);
 
-    std::string title = gameHandler.isInGuild() ? (gameHandler.getGuildName() + " - Guild") : "Guild";
+    std::string title = gameHandler.isInGuild() ? (gameHandler.getGuildName() + " - Social") : "Social";
     bool open = showGuildRoster_;
     if (ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoCollapse)) {
         // Tab bar: Roster | Guild Info
@@ -5896,6 +5895,57 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
                     ImGui::EndPopup();
                 }
 
+                ImGui::EndTabItem();
+            }
+
+            // ---- Friends tab ----
+            if (ImGui::BeginTabItem("Friends")) {
+                guildRosterTab_ = 2;
+                const auto& contacts = gameHandler.getContacts();
+
+                // Filter to friends only
+                int friendCount = 0;
+                for (const auto& c : contacts) {
+                    if (!c.isFriend()) continue;
+                    ++friendCount;
+
+                    // Status dot
+                    ImU32 dotColor = c.isOnline()
+                        ? IM_COL32(80, 200, 80, 255)
+                        : IM_COL32(120, 120, 120, 255);
+                    ImVec2 cursor = ImGui::GetCursorScreenPos();
+                    ImGui::GetWindowDrawList()->AddCircleFilled(
+                        ImVec2(cursor.x + 6.0f, cursor.y + 8.0f), 5.0f, dotColor);
+                    ImGui::Dummy(ImVec2(14.0f, 0.0f));
+                    ImGui::SameLine();
+
+                    // Name
+                    const char* displayName = c.name.empty() ? "(unknown)" : c.name.c_str();
+                    ImVec4 nameCol = c.isOnline()
+                        ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+                        : ImVec4(0.55f, 0.55f, 0.55f, 1.0f);
+                    ImGui::TextColored(nameCol, "%s", displayName);
+
+                    // Level and status on same line (right-aligned)
+                    if (c.isOnline()) {
+                        ImGui::SameLine();
+                        const char* statusLabel =
+                            (c.status == 2) ? "(AFK)" :
+                            (c.status == 3) ? "(DND)" : "";
+                        if (c.level > 0) {
+                            ImGui::TextDisabled("Lv %u %s", c.level, statusLabel);
+                        } else if (*statusLabel) {
+                            ImGui::TextDisabled("%s", statusLabel);
+                        }
+                    }
+                }
+
+                if (friendCount == 0) {
+                    ImGui::TextDisabled("No friends online.");
+                }
+
+                ImGui::Separator();
+                ImGui::TextDisabled("Right-click a player's name in chat to add friends.");
                 ImGui::EndTabItem();
             }
 
