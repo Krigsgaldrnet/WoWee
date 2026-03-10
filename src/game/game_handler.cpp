@@ -2347,22 +2347,38 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_MONSTER_MOVE_TRANSPORT:
             handleMonsterMoveTransport(packet);
             break;
-        case Opcode::SMSG_SPLINE_MOVE_SET_WALK_MODE:
-        case Opcode::SMSG_SPLINE_MOVE_SET_RUN_MODE:
         case Opcode::SMSG_SPLINE_MOVE_FEATHER_FALL:
         case Opcode::SMSG_SPLINE_MOVE_GRAVITY_DISABLE:
         case Opcode::SMSG_SPLINE_MOVE_GRAVITY_ENABLE:
         case Opcode::SMSG_SPLINE_MOVE_LAND_WALK:
         case Opcode::SMSG_SPLINE_MOVE_NORMAL_FALL:
         case Opcode::SMSG_SPLINE_MOVE_ROOT:
-        case Opcode::SMSG_SPLINE_MOVE_SET_FLYING:
-        case Opcode::SMSG_SPLINE_MOVE_SET_HOVER:
-        case Opcode::SMSG_SPLINE_MOVE_START_SWIM:
-        case Opcode::SMSG_SPLINE_MOVE_STOP_SWIM: {
-            // Minimal parse: PackedGuid only — entity state flag change.
+        case Opcode::SMSG_SPLINE_MOVE_SET_HOVER: {
+            // Minimal parse: PackedGuid only — no animation-relevant state change.
             if (packet.getSize() - packet.getReadPos() >= 1) {
                 (void)UpdateObjectParser::readPackedGuid(packet);
             }
+            break;
+        }
+        case Opcode::SMSG_SPLINE_MOVE_SET_WALK_MODE:
+        case Opcode::SMSG_SPLINE_MOVE_SET_RUN_MODE:
+        case Opcode::SMSG_SPLINE_MOVE_SET_FLYING:
+        case Opcode::SMSG_SPLINE_MOVE_START_SWIM:
+        case Opcode::SMSG_SPLINE_MOVE_STOP_SWIM: {
+            // PackedGuid + synthesised move-flags → drives animation state in application layer.
+            // SWIMMING=0x00200000, WALKING=0x00000100, CAN_FLY=0x00800000, FLYING=0x01000000
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+            if (guid == 0 || guid == playerGuid || !unitMoveFlagsCallback_) break;
+            uint32_t synthFlags = 0;
+            if (*logicalOp == Opcode::SMSG_SPLINE_MOVE_START_SWIM)
+                synthFlags = 0x00200000u; // SWIMMING
+            else if (*logicalOp == Opcode::SMSG_SPLINE_MOVE_SET_WALK_MODE)
+                synthFlags = 0x00000100u; // WALKING
+            else if (*logicalOp == Opcode::SMSG_SPLINE_MOVE_SET_FLYING)
+                synthFlags = 0x01000000u | 0x00800000u; // FLYING | CAN_FLY
+            // STOP_SWIM and SET_RUN_MODE: synthFlags stays 0 → clears swim/walk
+            unitMoveFlagsCallback_(guid, synthFlags);
             break;
         }
         case Opcode::SMSG_SPLINE_SET_RUN_SPEED:
@@ -7785,6 +7801,13 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             if (unitInitiallyDead && npcDeathCallback_) {
                                 npcDeathCallback_(block.guid);
                             }
+                        }
+                        // Initialise swim/walk state from spawn-time movement flags (cold-join fix).
+                        // Without this, an entity already swimming/walking when the client joins
+                        // won't get its animation state set until the next MSG_MOVE_* heartbeat.
+                        if (block.hasMovement && block.moveFlags != 0 && unitMoveFlagsCallback_ &&
+                            block.guid != playerGuid) {
+                            unitMoveFlagsCallback_(block.guid, block.moveFlags);
                         }
                         // Query quest giver status for NPCs with questgiver flag (0x02)
                         if (block.objectType == ObjectType::UNIT && (unit->getNpcFlags() & 0x02) && socket) {

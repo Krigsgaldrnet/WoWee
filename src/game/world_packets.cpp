@@ -904,6 +904,7 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
         /*float pitchRate =*/ packet.readFloat();
 
         block.runSpeed = runSpeed;
+        block.moveFlags = moveFlags;
 
         // Spline data
         if (moveFlags & 0x08000000) { // MOVEMENTFLAG_SPLINE_ENABLED
