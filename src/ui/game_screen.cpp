@@ -1792,9 +1792,9 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
             uint8_t powerType = unit->getPowerType();
             uint32_t power = unit->getPower();
             uint32_t maxPower = unit->getMaxPower();
-            // Rage (1) and Energy (3) always cap at 100 — show bar even if server
-            // hasn't sent UNIT_FIELD_MAXPOWER1 yet (warriors start combat at 0 rage).
-            if (maxPower == 0 && (powerType == 1 || powerType == 3)) maxPower = 100;
+            // Rage (1), Focus (2), Energy (3), and Runic Power (6) always cap at 100.
+            // Show bar even if server hasn't sent UNIT_FIELD_MAXPOWER1 yet.
+            if (maxPower == 0 && (powerType == 1 || powerType == 2 || powerType == 3 || powerType == 6)) maxPower = 100;
             if (maxPower > 0) {
                 float mpPct = static_cast<float>(power) / static_cast<float>(maxPower);
                 ImVec4 powerColor;
