@@ -5165,11 +5165,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Spline move flag changes for other units ----
         case Opcode::SMSG_SPLINE_MOVE_UNROOT:
-        case Opcode::SMSG_SPLINE_MOVE_UNSET_FLYING:
         case Opcode::SMSG_SPLINE_MOVE_UNSET_HOVER:
-        case Opcode::SMSG_SPLINE_MOVE_WATER_WALK:
-            packet.setReadPos(packet.getSize());
+        case Opcode::SMSG_SPLINE_MOVE_WATER_WALK: {
+            // Minimal parse: PackedGuid only — no animation-relevant state change.
+            if (packet.getSize() - packet.getReadPos() >= 1) {
+                (void)UpdateObjectParser::readPackedGuid(packet);
+            }
             break;
+        }
+        case Opcode::SMSG_SPLINE_MOVE_UNSET_FLYING: {
+            // PackedGuid + synthesised move-flags=0 → clears flying animation.
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+            if (guid == 0 || guid == playerGuid || !unitMoveFlagsCallback_) break;
+            unitMoveFlagsCallback_(guid, 0u); // clear flying/CAN_FLY
+            break;
+        }
 
         // ---- Quest failure notification ----
         case Opcode::SMSG_QUESTGIVER_QUEST_FAILED: {
