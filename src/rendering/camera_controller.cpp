@@ -1446,29 +1446,8 @@ void CameraController::update(float deltaTime) {
             bool shouldHidePlayer = isFirstPersonView() || (actualDist < MIN_DISTANCE + 0.1f);
             characterRenderer->setInstanceVisible(playerInstanceId, !shouldHidePlayer);
 
-            // Drive movement animation: Run (4) / Walk (5) when moving, Stand (0) when idle.
-            // Only transition on state changes to avoid resetting animation time every frame.
-            // Skip if current animation is Death (1) — death pose must persist.
-            bool nowMoving = isMoving();
-            // Use Run (4) when running forward; Walk (5) for backpedal or slow pace.
-            uint32_t movingAnim = runPace ? 4u : 5u;
-            if (nowMoving != prevPlayerMoving_) {
-                prevPlayerMoving_ = nowMoving;
-                uint32_t curAnimId = 0; float curT = 0.0f, curDur = 0.0f;
-                bool gotState = characterRenderer->getAnimationState(
-                    playerInstanceId, curAnimId, curT, curDur);
-                if (!gotState || curAnimId != 1 /*Death*/) {
-                    characterRenderer->playAnimation(playerInstanceId,
-                        nowMoving ? movingAnim : 0u, /*loop=*/true);
-                }
-            } else if (nowMoving) {
-                // Also switch between Run and Walk if pace changes while moving.
-                uint32_t curAnimId = 0; float curT = 0.0f, curDur = 0.0f;
-                characterRenderer->getAnimationState(playerInstanceId, curAnimId, curT, curDur);
-                if (curAnimId != movingAnim && curAnimId != 1 /*Death*/) {
-                    characterRenderer->playAnimation(playerInstanceId, movingAnim, /*loop=*/true);
-                }
-            }
+            // Note: the Renderer's CharAnimState machine drives player character animations
+            // (Run, Walk, Jump, Swim, etc.) — no additional animation driving needed here.
         }
     } else {
         // Free-fly camera mode (original behavior)

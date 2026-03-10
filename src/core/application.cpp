@@ -1476,7 +1476,8 @@ void Application::update(float deltaTime) {
                         }
                         posIt->second = renderPos;
 
-                        // Drive movement animation: Run (4) when moving, Stand (0) when idle.
+                        // Drive movement animation: Run (anim 5) when moving, Stand (0) when idle.
+                        // WoW M2 animation IDs: 4=Walk, 5=Run. Use Run for all server-driven NPC movement.
                         // Only switch on transitions to avoid resetting animation time.
                         // Don't override Death (1) animation.
                         bool prevMoving = creatureWasMoving_[guid];
@@ -1486,7 +1487,7 @@ void Application::update(float deltaTime) {
                             bool gotState = charRenderer->getAnimationState(instanceId, curAnimId, curT, curDur);
                             if (!gotState || curAnimId != 1 /*Death*/) {
                                 charRenderer->playAnimation(instanceId,
-                                    isMovingNow ? 4u : 0u, /*loop=*/true);
+                                    isMovingNow ? 5u : 0u, /*loop=*/true);
                             }
                         }
                     }
@@ -2453,7 +2454,8 @@ void Application::setupUICallbacks() {
             glm::vec3 renderPos = core::coords::canonicalToRender(glm::vec3(x, y, z));
             float durationSec = static_cast<float>(durationMs) / 1000.0f;
             renderer->getCharacterRenderer()->moveInstanceTo(instanceId, renderPos, durationSec);
-            // Play Run animation for the duration of the spline move (anim 4).
+            // Play Run animation (anim 5) for the duration of the spline move.
+            // WoW M2 animation IDs: 4=Walk, 5=Run.
             // Don't override Death animation (1). The per-frame sync loop will return to
             // Stand when movement stops.
             if (durationMs > 0) {
@@ -2461,7 +2463,7 @@ void Application::setupUICallbacks() {
                 auto* cr = renderer->getCharacterRenderer();
                 bool gotState = cr->getAnimationState(instanceId, curAnimId, curT, curDur);
                 if (!gotState || curAnimId != 1 /*Death*/) {
-                    cr->playAnimation(instanceId, 4u, /*loop=*/true);
+                    cr->playAnimation(instanceId, 5u, /*loop=*/true);
                 }
                 if (!isPlayer) creatureWasMoving_[guid] = true;
             }

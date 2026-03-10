@@ -226,9 +226,6 @@ private:
     bool autoRunning = false;
     bool tildeWasDown = false;
 
-    // Movement animation state tracking
-    bool prevPlayerMoving_ = false;
-
     // Movement state tracking (for sending opcodes on state change)
     bool wasMovingForward = false;
     bool wasMovingBackward = false;
