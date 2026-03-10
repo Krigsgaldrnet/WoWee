@@ -2987,7 +2987,13 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     }
 
     data.missCount = packet.readUInt8();
-    // Skip miss details for now
+    data.missTargets.reserve(data.missCount);
+    for (uint8_t i = 0; i < data.missCount && packet.getReadPos() + 2 <= packet.getSize(); ++i) {
+        SpellGoMissEntry m;
+        m.targetGuid = UpdateObjectParser::readPackedGuid(packet);  // packed GUID in WotLK
+        m.missType   = (packet.getReadPos() < packet.getSize()) ? packet.readUInt8() : 0;
+        data.missTargets.push_back(m);
+    }
 
     LOG_DEBUG("Spell go: spell=", data.spellId, " hits=", (int)data.hitCount,
              " misses=", (int)data.missCount);

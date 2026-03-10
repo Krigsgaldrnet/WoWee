@@ -12713,6 +12713,26 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         castTimeRemaining = 0.0f;
     }
 
+    // Show miss/dodge/parry/etc combat text when player's spells miss targets
+    if (data.casterUnit == playerGuid && !data.missTargets.empty()) {
+        static const CombatTextEntry::Type missTypes[] = {
+            CombatTextEntry::MISS,    // 0=MISS
+            CombatTextEntry::DODGE,   // 1=DODGE
+            CombatTextEntry::PARRY,   // 2=PARRY
+            CombatTextEntry::BLOCK,   // 3=BLOCK
+            CombatTextEntry::MISS,    // 4=EVADE  → show as MISS
+            CombatTextEntry::MISS,    // 5=IMMUNE → show as MISS
+            CombatTextEntry::MISS,    // 6=DEFLECT
+            CombatTextEntry::MISS,    // 7=ABSORB
+            CombatTextEntry::MISS,    // 8=RESIST
+        };
+        // Show text for each miss (usually just 1 target per spell go)
+        for (const auto& m : data.missTargets) {
+            CombatTextEntry::Type ct = (m.missType < 9) ? missTypes[m.missType] : CombatTextEntry::MISS;
+            addCombatText(ct, 0, 0, true);
+        }
+    }
+
     // Play impact sound when player is hit by any spell (from self or others)
     bool playerIsHit = false;
     for (const auto& tgt : data.hitTargets) {

@@ -1766,6 +1766,11 @@ public:
 };
 
 /** SMSG_SPELL_GO data (simplified) */
+struct SpellGoMissEntry {
+    uint64_t targetGuid = 0;
+    uint8_t  missType   = 0;  // 0=MISS 1=DODGE 2=PARRY 3=BLOCK 4=EVADE 5=IMMUNE 6=DEFLECT 7=ABSORB 8=RESIST
+};
+
 struct SpellGoData {
     uint64_t casterGuid = 0;
     uint64_t casterUnit = 0;
@@ -1773,8 +1778,9 @@ struct SpellGoData {
     uint32_t spellId = 0;
     uint32_t castFlags = 0;
     uint8_t hitCount = 0;
-    std::vector<uint64_t> hitTargets;
+    std::vector<uint64_t>       hitTargets;
     uint8_t missCount = 0;
+    std::vector<SpellGoMissEntry> missTargets;
 
     bool isValid() const { return spellId != 0; }
 };

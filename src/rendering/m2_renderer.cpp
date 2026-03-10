@@ -1185,7 +1185,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             " tris, grid ", gpuModel.collision.gridCellsX, "x", gpuModel.collision.gridCellsY);
     }
 
-    // Flag smoke models for UV scroll animation (particle emitters not implemented)
+    // Flag smoke models for UV scroll animation (in addition to particle emitters)
     {
         std::string smokeName = model.name;
         std::transform(smokeName.begin(), smokeName.end(), smokeName.begin(),
@@ -2709,7 +2709,6 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         uint16_t targetLOD = desiredLOD;
         if (desiredLOD > 0 && !(model.availableLODs & (1u << desiredLOD))) targetLOD = 0;
 
-        const bool foliageLikeModel = model.isFoliageLike;
         const bool particleDominantEffect = model.isSpellEffect &&
             !model.particleEmitters.empty() && model.batches.size() <= 2;
 

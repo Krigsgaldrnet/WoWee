@@ -1051,6 +1051,13 @@ bool TbcPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) 
 
     if (packet.getReadPos() < packet.getSize()) {
         data.missCount = packet.readUInt8();
+        data.missTargets.reserve(data.missCount);
+        for (uint8_t i = 0; i < data.missCount && packet.getReadPos() + 9 <= packet.getSize(); ++i) {
+            SpellGoMissEntry m;
+            m.targetGuid = packet.readUInt64();  // full GUID in TBC
+            m.missType   = packet.readUInt8();
+            data.missTargets.push_back(m);
+        }
     }
 
     LOG_DEBUG("[TBC] Spell go: spell=", data.spellId, " hits=", (int)data.hitCount,
