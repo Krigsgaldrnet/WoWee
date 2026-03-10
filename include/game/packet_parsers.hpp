@@ -332,6 +332,8 @@ public:
     bool parseGossipMessage(network::Packet& packet, GossipMessageData& data) override;
     // TBC 2.4.3 SMSG_CAST_RESULT: spellId(u32) + result(u8) — WotLK added castCount(u8) prefix
     bool parseCastResult(network::Packet& packet, uint32_t& spellId, uint8_t& result) override;
+    // TBC 2.4.3 SMSG_CAST_FAILED: spellId(u32) + result(u8) — WotLK added castCount(u8) prefix
+    bool parseCastFailed(network::Packet& packet, CastFailedData& data) override;
     // TBC 2.4.3 SMSG_SPELL_START: full uint64 GUIDs (WotLK uses packed GUIDs)
     bool parseSpellStart(network::Packet& packet, SpellStartData& data) override;
     // TBC 2.4.3 SMSG_SPELL_GO: full uint64 GUIDs, no timestamp field (WotLK added one)

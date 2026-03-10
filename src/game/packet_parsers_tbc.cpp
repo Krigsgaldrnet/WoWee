@@ -1081,6 +1081,24 @@ bool TbcPacketParsers::parseCastResult(network::Packet& packet, uint32_t& spellI
 }
 
 // ============================================================================
+// TbcPacketParsers::parseCastFailed — TBC 2.4.3 SMSG_CAST_FAILED
+//
+// TBC format: spellId(u32) + result(u8)
+// WotLK added castCount(u8) before spellId; reading it on TBC would shift
+// the spellId by one byte and corrupt all subsequent fields.
+// Classic has the same layout, but the result enum starts differently (offset +1);
+// TBC uses the same result values as WotLK so no offset is needed.
+// ============================================================================
+bool TbcPacketParsers::parseCastFailed(network::Packet& packet, CastFailedData& data) {
+    if (packet.getSize() - packet.getReadPos() < 5) return false;
+    data.castCount = 0;                      // not present in TBC
+    data.spellId   = packet.readUInt32();
+    data.result    = packet.readUInt8();     // same enum as WotLK
+    LOG_DEBUG("[TBC] Cast failed: spell=", data.spellId, " result=", (int)data.result);
+    return true;
+}
+
+// ============================================================================
 // TbcPacketParsers::parseAttackerStateUpdate — TBC 2.4.3 SMSG_ATTACKERSTATEUPDATE
 //
 // TBC uses full uint64 GUIDs for attacker and target.
