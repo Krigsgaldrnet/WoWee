@@ -1495,14 +1495,14 @@ void Application::update(float deltaTime) {
                             if (!gotState || curAnimId != 1 /*Death*/) {
                                 uint32_t targetAnim;
                                 if (isMovingNow) {
-                                    if (isFlyingNow)       targetAnim = 61u; // Fly (FlyForward)
-                                    else if (isSwimmingNow) targetAnim = 42u; // Swim
-                                    else if (isWalkingNow)  targetAnim = 4u;  // Walk
-                                    else                    targetAnim = 5u;  // Run
+                                    if (isFlyingNow)        targetAnim = 159u; // FlyForward
+                                    else if (isSwimmingNow) targetAnim = 42u;  // Swim
+                                    else if (isWalkingNow)  targetAnim = 4u;   // Walk
+                                    else                    targetAnim = 5u;   // Run
                                 } else {
-                                    if (isFlyingNow)        targetAnim = 60u; // FlyIdle (hover)
-                                    else if (isSwimmingNow) targetAnim = 41u; // SwimIdle
-                                    else                    targetAnim = 0u;  // Stand
+                                    if (isFlyingNow)        targetAnim = 158u; // FlyIdle (hover)
+                                    else if (isSwimmingNow) targetAnim = 41u;  // SwimIdle
+                                    else                    targetAnim = 0u;   // Stand
                                 }
                                 charRenderer->playAnimation(instanceId, targetAnim, /*loop=*/true);
                             }
