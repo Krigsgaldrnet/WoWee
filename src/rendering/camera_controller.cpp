@@ -287,14 +287,15 @@ void CameraController::update(float deltaTime) {
     // WoW-like third-person keyboard behavior:
     // - RMB held: A/D strafe
     // - RMB released: A/D turn character+camera, Q/E strafe
+    // Turning is allowed even while rooted; only positional movement is blocked.
     if (thirdPerson && !rightMouseDown) {
         nowTurnLeft = keyA;
         nowTurnRight = keyD;
-        nowStrafeLeft = keyQ;
-        nowStrafeRight = keyE;
+        nowStrafeLeft = !movBlocked && keyQ;
+        nowStrafeRight = !movBlocked && keyE;
     } else {
-        nowStrafeLeft = keyA || keyQ;
-        nowStrafeRight = keyD || keyE;
+        nowStrafeLeft = !movBlocked && (keyA || keyQ);
+        nowStrafeRight = !movBlocked && (keyD || keyE);
     }
 
     // Keyboard turning updates camera yaw (character follows yaw in renderer)
