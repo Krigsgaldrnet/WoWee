@@ -7797,13 +7797,13 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         queryGameObjectInfo(itEntry->second, block.guid);
                     }
                     // Detect transport GameObjects via UPDATEFLAG_TRANSPORT (0x0002)
-                    LOG_WARNING("GameObject CREATE: guid=0x", std::hex, block.guid, std::dec,
+                    LOG_DEBUG("GameObject CREATE: guid=0x", std::hex, block.guid, std::dec,
                              " entry=", go->getEntry(), " displayId=", go->getDisplayId(),
                              " updateFlags=0x", std::hex, block.updateFlags, std::dec,
                              " pos=(", go->getX(), ", ", go->getY(), ", ", go->getZ(), ")");
                     if (block.updateFlags & 0x0002) {
                         transportGuids_.insert(block.guid);
-                        LOG_WARNING("Detected transport GameObject: 0x", std::hex, block.guid, std::dec,
+                        LOG_INFO("Detected transport GameObject: 0x", std::hex, block.guid, std::dec,
                                  " entry=", go->getEntry(),
                                  " displayId=", go->getDisplayId(),
                                  " pos=(", go->getX(), ", ", go->getY(), ", ", go->getZ(), ")");
