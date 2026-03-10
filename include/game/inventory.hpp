@@ -48,6 +48,8 @@ struct ItemDef {
     uint32_t sellPrice = 0;
     uint32_t curDurability = 0;
     uint32_t maxDurability = 0;
+    uint32_t itemLevel = 0;
+    uint32_t requiredLevel = 0;
 };
 
 struct ItemSlot {

@@ -1552,6 +1552,8 @@ struct ItemQueryResponseData {
     int32_t intellect = 0;
     int32_t spirit = 0;
     uint32_t sellPrice = 0;
+    uint32_t itemLevel = 0;
+    uint32_t requiredLevel = 0;
     std::string subclassName;
     // Item spells (up to 5)
     struct ItemSpell {

@@ -1714,6 +1714,9 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
 
     ImVec4 qColor = getQualityColor(item.quality);
     ImGui::TextColored(qColor, "%s", item.name.c_str());
+    if (item.itemLevel > 0) {
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.7f), "Item Level %u", item.itemLevel);
+    }
 
     if (item.itemId == 6948 && gameHandler_) {
         uint32_t mapId = 0;
@@ -1818,6 +1821,9 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
     appendBonus(bonusLine, item.spirit, "Spi");
     if (!bonusLine.empty()) {
         ImGui::TextColored(green, "%s", bonusLine.c_str());
+    }
+    if (item.requiredLevel > 1) {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Requires Level %u", item.requiredLevel);
     }
     if (item.maxDurability > 0) {
         float durPct = static_cast<float>(item.curDurability) / static_cast<float>(item.maxDurability);

@@ -10758,6 +10758,8 @@ void GameHandler::rebuildOnlineInventory() {
             def.agility = infoIt->second.agility;
             def.intellect = infoIt->second.intellect;
             def.spirit = infoIt->second.spirit;
+            def.itemLevel = infoIt->second.itemLevel;
+            def.requiredLevel = infoIt->second.requiredLevel;
         } else {
             def.name = "Item " + std::to_string(def.itemId);
             queryItemInfo(def.itemId, guid);
@@ -10798,6 +10800,8 @@ void GameHandler::rebuildOnlineInventory() {
             def.agility = infoIt->second.agility;
             def.intellect = infoIt->second.intellect;
             def.spirit = infoIt->second.spirit;
+            def.itemLevel = infoIt->second.itemLevel;
+            def.requiredLevel = infoIt->second.requiredLevel;
         } else {
             def.name = "Item " + std::to_string(def.itemId);
             queryItemInfo(def.itemId, guid);
@@ -10873,6 +10877,8 @@ void GameHandler::rebuildOnlineInventory() {
                 def.agility = infoIt->second.agility;
                 def.intellect = infoIt->second.intellect;
                 def.spirit = infoIt->second.spirit;
+                def.itemLevel = infoIt->second.itemLevel;
+                def.requiredLevel = infoIt->second.requiredLevel;
                 def.bagSlots = infoIt->second.containerSlots;
             } else {
                 def.name = "Item " + std::to_string(def.itemId);
@@ -10915,6 +10921,8 @@ void GameHandler::rebuildOnlineInventory() {
             def.agility = infoIt->second.agility;
             def.intellect = infoIt->second.intellect;
             def.spirit = infoIt->second.spirit;
+            def.itemLevel = infoIt->second.itemLevel;
+            def.requiredLevel = infoIt->second.requiredLevel;
             def.sellPrice = infoIt->second.sellPrice;
             def.bagSlots = infoIt->second.containerSlots;
         } else {
@@ -10998,6 +11006,8 @@ void GameHandler::rebuildOnlineInventory() {
                 def.agility = infoIt->second.agility;
                 def.intellect = infoIt->second.intellect;
                 def.spirit = infoIt->second.spirit;
+                def.itemLevel = infoIt->second.itemLevel;
+                def.requiredLevel = infoIt->second.requiredLevel;
                 def.sellPrice = infoIt->second.sellPrice;
                 def.bagSlots = infoIt->second.containerSlots;
             } else {

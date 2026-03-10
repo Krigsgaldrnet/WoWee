@@ -2449,8 +2449,8 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
 
     packet.readUInt32(); // AllowableClass
     packet.readUInt32(); // AllowableRace
-    packet.readUInt32(); // ItemLevel
-    packet.readUInt32(); // RequiredLevel
+    data.itemLevel = packet.readUInt32();
+    data.requiredLevel = packet.readUInt32();
     packet.readUInt32(); // RequiredSkill
     packet.readUInt32(); // RequiredSkillRank
     packet.readUInt32(); // RequiredSpell
