@@ -4485,6 +4485,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::MSG_MOVE_GRAVITY_CHNG:
         case Opcode::MSG_MOVE_UPDATE_CAN_FLY:
         case Opcode::MSG_MOVE_UPDATE_CAN_TRANSITION_BETWEEN_SWIM_AND_FLY:
+        case Opcode::MSG_MOVE_ROOT:
+        case Opcode::MSG_MOVE_UNROOT:
             if (state == WorldState::IN_WORLD) {
                 handleOtherPlayerMovement(packet);
             }
@@ -12328,7 +12330,7 @@ void GameHandler::handleCompressedMoves(network::Packet& packet) {
 
     // Player movement sub-opcodes (SMSG_MULTIPLE_MOVES carries MSG_MOVE_*)
     // Not static — wireOpcode() depends on runtime active opcode table.
-    const std::array<uint16_t, 27> kMoveOpcodes = {
+    const std::array<uint16_t, 29> kMoveOpcodes = {
         wireOpcode(Opcode::MSG_MOVE_START_FORWARD),
         wireOpcode(Opcode::MSG_MOVE_START_BACKWARD),
         wireOpcode(Opcode::MSG_MOVE_STOP),
@@ -12356,6 +12358,8 @@ void GameHandler::handleCompressedMoves(network::Packet& packet) {
         wireOpcode(Opcode::MSG_MOVE_GRAVITY_CHNG),
         wireOpcode(Opcode::MSG_MOVE_UPDATE_CAN_FLY),
         wireOpcode(Opcode::MSG_MOVE_UPDATE_CAN_TRANSITION_BETWEEN_SWIM_AND_FLY),
+        wireOpcode(Opcode::MSG_MOVE_ROOT),
+        wireOpcode(Opcode::MSG_MOVE_UNROOT),
     };
 
     // Track unhandled sub-opcodes once per compressed packet (avoid log spam)
