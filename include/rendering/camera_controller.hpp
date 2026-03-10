@@ -156,6 +156,7 @@ private:
     static constexpr float MAX_PITCH = 35.0f;       // Limited upward look
     glm::vec3* followTarget = nullptr;
     glm::vec3 smoothedCamPos = glm::vec3(0.0f);     // For smooth camera movement
+    float smoothedCollisionDist_ = -1.0f;           // Asymmetrically-smoothed WMO collision limit (-1 = uninitialised)
 
     // Gravity / grounding
     float verticalVelocity = 0.0f;

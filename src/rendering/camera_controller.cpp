@@ -1316,12 +1316,36 @@ void CameraController::update(float deltaTime) {
             }
         }
 
-        // ===== Camera collision (sphere sweep approximation) =====
-        // Find max safe distance using raycast + sphere radius
+        // ===== Camera collision (WMO raycast) =====
+        // Cast a ray from the pivot toward the camera direction to find the
+        // nearest WMO wall.  Uses asymmetric smoothing: pull-in is fast (so
+        // the camera never visibly clips through a wall) but recovery is slow
+        // (so passing through a doorway doesn't cause a zoom-out snap).
         collisionDistance = currentDistance;
 
-        // WMO/M2 camera collision disabled — was pulling camera through
-        // geometry at doorway transitions and causing erratic zoom behaviour.
+        if (wmoRenderer && currentDistance > MIN_DISTANCE) {
+            float rawHitDist = wmoRenderer->raycastBoundingBoxes(pivot, camDir, currentDistance);
+            // rawHitDist == currentDistance means no hit (function returns maxDistance on miss)
+            float rawLimit = (rawHitDist < currentDistance)
+                ? std::max(MIN_DISTANCE, rawHitDist - CAM_SPHERE_RADIUS - CAM_EPSILON)
+                : currentDistance;
+
+            // Initialise smoothed state on first use.
+            if (smoothedCollisionDist_ < 0.0f) {
+                smoothedCollisionDist_ = rawLimit;
+            }
+
+            // Asymmetric smoothing:
+            //   • Pull-in: τ ≈ 60 ms  — react quickly to prevent clipping
+            //   • Recover: τ ≈ 400 ms — zoom out slowly after leaving geometry
+            const float tau = (rawLimit < smoothedCollisionDist_) ? 0.06f : 0.40f;
+            float alpha = 1.0f - std::exp(-deltaTime / tau);
+            smoothedCollisionDist_ += (rawLimit - smoothedCollisionDist_) * alpha;
+
+            collisionDistance = std::min(collisionDistance, smoothedCollisionDist_);
+        } else {
+            smoothedCollisionDist_ = -1.0f;   // Reset when wmoRenderer unavailable
+        }
 
         // Camera collision: terrain-only floor clamping
         auto getTerrainFloorAt = [&](float x, float y) -> std::optional<float> {
