@@ -29,6 +29,9 @@ layout(set = 1, binding = 1) uniform WMOMaterial {
     float heightMapVariance;
     float normalMapStrength;
     int isLava;
+    float wmoAmbientR;
+    float wmoAmbientG;
+    float wmoAmbientB;
 };
 
 layout(set = 1, binding = 2) uniform sampler2D uNormalHeightMap;
@@ -185,7 +188,13 @@ void main() {
     } else if (unlit != 0) {
         result = texColor.rgb * shadow;
     } else if (isInterior != 0) {
-        vec3 mocv = max(VertColor.rgb, vec3(0.5));
+        // WMO interior: vertex colors (MOCV) are pre-baked lighting from the artist.
+        // The MOHD ambient color tints/floors the vertex colors so dark spots don't
+        // go completely black, matching the WoW client's interior shading.
+        vec3 wmoAmbient = vec3(wmoAmbientR, wmoAmbientG, wmoAmbientB);
+        // Clamp ambient to at least 0.3 to avoid total darkness when MOHD color is zero
+        wmoAmbient = max(wmoAmbient, vec3(0.3));
+        vec3 mocv = max(VertColor.rgb, wmoAmbient);
         result = texColor.rgb * mocv * shadow;
     } else {
         vec3 ldir = normalize(-lightDir.xyz);

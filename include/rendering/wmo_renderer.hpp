@@ -353,7 +353,9 @@ private:
         float heightMapVariance;   // 40 (low variance = skip POM)
         float normalMapStrength;   // 44 (0=flat, 1=full, 2=exaggerated)
         int32_t isLava;            // 48 (1=lava/magma UV scroll)
-        float pad[3];              // 52-60 padding to 64 bytes
+        float wmoAmbientR;         // 52 (interior ambient color R)
+        float wmoAmbientG;         // 56 (interior ambient color G)
+        float wmoAmbientB;         // 60 (interior ambient color B)
     };  // 64 bytes total
 
     /**
@@ -472,6 +474,7 @@ private:
         std::vector<GroupResources> groups;
         glm::vec3 boundingBoxMin;
         glm::vec3 boundingBoxMax;
+        glm::vec3 wmoAmbientColor{0.5f, 0.5f, 0.5f};  // From MOHD, used for interior lighting
         bool isLowPlatform = false;
 
         // Doodad templates (M2 models placed in WMO, stored for instancing)

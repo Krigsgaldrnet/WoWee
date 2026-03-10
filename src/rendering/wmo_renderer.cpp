@@ -414,6 +414,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
     modelData.id = id;
     modelData.boundingBoxMin = model.boundingBoxMin;
     modelData.boundingBoxMax = model.boundingBoxMax;
+    modelData.wmoAmbientColor = model.ambientColor;
     {
         glm::vec3 ext = model.boundingBoxMax - model.boundingBoxMin;
         float horiz = std::max(ext.x, ext.y);
@@ -681,6 +682,9 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             matData.heightMapVariance = mb.heightMapVariance;
             matData.normalMapStrength = normalMapStrength_;
             matData.isLava = mb.isLava ? 1 : 0;
+            matData.wmoAmbientR = modelData.wmoAmbientColor.r;
+            matData.wmoAmbientG = modelData.wmoAmbientColor.g;
+            matData.wmoAmbientB = modelData.wmoAmbientColor.b;
             if (matBuf.info.pMappedData) {
                 memcpy(matBuf.info.pMappedData, &matData, sizeof(matData));
             }
