@@ -315,6 +315,98 @@ network::Packet ClassicPacketParsers::buildUseItem(uint8_t bagIndex, uint8_t slo
 }
 
 // ============================================================================
+// Classic parseSpellStart — Vanilla 1.12 SMSG_SPELL_START
+//
+// Key differences from TBC:
+//   - GUIDs are PackedGuid (variable-length byte mask + non-zero bytes),
+//     NOT full uint64 as in TBC/WotLK.
+//   - castFlags is uint16 (NOT uint32 as in TBC/WotLK).
+//   - SpellCastTargets uses uint16 targetFlags (NOT uint32 as in TBC).
+//
+// Format: PackedGuid(casterObj) + PackedGuid(casterUnit) + uint8(castCount)
+//       + uint32(spellId) + uint16(castFlags) + uint32(castTime)
+//       + uint16(targetFlags) [+ PackedGuid(unitTarget) if TARGET_FLAG_UNIT]
+// ============================================================================
+bool ClassicPacketParsers::parseSpellStart(network::Packet& packet, SpellStartData& data) {
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 2) return false;
+
+    data.casterGuid = UpdateObjectParser::readPackedGuid(packet);
+    if (rem() < 1) return false;
+    data.casterUnit = UpdateObjectParser::readPackedGuid(packet);
+
+    // uint8 castCount + uint32 spellId + uint16 castFlags + uint32 castTime = 11 bytes
+    if (rem() < 11) return false;
+    data.castCount = packet.readUInt8();
+    data.spellId   = packet.readUInt32();
+    data.castFlags = packet.readUInt16();   // uint16 in Vanilla (uint32 in TBC/WotLK)
+    data.castTime  = packet.readUInt32();
+
+    // SpellCastTargets: uint16 targetFlags in Vanilla (uint32 in TBC/WotLK)
+    if (rem() < 2) return true;
+    uint16_t targetFlags = packet.readUInt16();
+    // TARGET_FLAG_UNIT (0x02) or TARGET_FLAG_OBJECT (0x800) carry a packed GUID
+    if (((targetFlags & 0x02) || (targetFlags & 0x800)) && rem() >= 1) {
+        data.targetGuid = UpdateObjectParser::readPackedGuid(packet);
+    }
+
+    LOG_DEBUG("[Classic] Spell start: spell=", data.spellId, " castTime=", data.castTime, "ms");
+    return true;
+}
+
+// ============================================================================
+// Classic parseSpellGo — Vanilla 1.12 SMSG_SPELL_GO
+//
+// Same GUID and castFlags format differences as parseSpellStart:
+//   - GUIDs are PackedGuid (not full uint64)
+//   - castFlags is uint16 (not uint32)
+//   - Hit/miss target GUIDs are also PackedGuid in Vanilla
+//
+// Format: PackedGuid(casterObj) + PackedGuid(casterUnit) + uint8(castCount)
+//       + uint32(spellId) + uint16(castFlags)
+//       + uint8(hitCount) + [PackedGuid(hitTarget) × hitCount]
+//       + uint8(missCount) + [PackedGuid(missTarget) + uint8(missType)] × missCount
+// ============================================================================
+bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) {
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (rem() < 2) return false;
+
+    data.casterGuid = UpdateObjectParser::readPackedGuid(packet);
+    if (rem() < 1) return false;
+    data.casterUnit = UpdateObjectParser::readPackedGuid(packet);
+
+    // uint8 castCount + uint32 spellId + uint16 castFlags = 7 bytes
+    if (rem() < 7) return false;
+    data.castCount = packet.readUInt8();
+    data.spellId   = packet.readUInt32();
+    data.castFlags = packet.readUInt16();   // uint16 in Vanilla (uint32 in TBC/WotLK)
+
+    // Hit targets
+    if (rem() < 1) return true;
+    data.hitCount = packet.readUInt8();
+    data.hitTargets.reserve(data.hitCount);
+    for (uint8_t i = 0; i < data.hitCount && rem() >= 1; ++i) {
+        data.hitTargets.push_back(UpdateObjectParser::readPackedGuid(packet));
+    }
+
+    // Miss targets
+    if (rem() < 1) return true;
+    data.missCount = packet.readUInt8();
+    data.missTargets.reserve(data.missCount);
+    for (uint8_t i = 0; i < data.missCount && rem() >= 2; ++i) {
+        SpellGoMissEntry m;
+        m.targetGuid = UpdateObjectParser::readPackedGuid(packet);
+        if (rem() < 1) break;
+        m.missType = packet.readUInt8();
+        data.missTargets.push_back(m);
+    }
+
+    LOG_DEBUG("[Classic] Spell go: spell=", data.spellId, " hits=", (int)data.hitCount,
+              " misses=", (int)data.missCount);
+    return true;
+}
+
+// ============================================================================
 // Classic SMSG_CAST_FAILED: no castCount byte (added in TBC/WotLK)
 // Format: spellId(u32) + result(u8)
 // ============================================================================

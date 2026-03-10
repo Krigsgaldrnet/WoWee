@@ -405,6 +405,9 @@ public:
     bool parseMonsterMove(network::Packet& packet, MonsterMoveData& data) override {
         return MonsterMoveParser::parseVanilla(packet, data);
     }
+    // Classic 1.12 uses PackedGuid (not full uint64) and uint16 castFlags (not uint32)
+    bool parseSpellStart(network::Packet& packet, SpellStartData& data) override;
+    bool parseSpellGo(network::Packet& packet, SpellGoData& data) override;
 };
 
 /**
