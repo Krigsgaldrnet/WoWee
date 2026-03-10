@@ -2876,6 +2876,15 @@ void CharacterRenderer::startFadeIn(uint32_t instanceId, float durationSeconds) 
     it->second.fadeInDuration = durationSeconds;
 }
 
+void CharacterRenderer::setInstanceOpacity(uint32_t instanceId, float opacity) {
+    auto it = instances.find(instanceId);
+    if (it != instances.end()) {
+        it->second.opacity = std::clamp(opacity, 0.0f, 1.0f);
+        // Cancel any fade-in in progress to avoid overwriting the new opacity
+        it->second.fadeInDuration = 0.0f;
+    }
+}
+
 void CharacterRenderer::setActiveGeosets(uint32_t instanceId, const std::unordered_set<uint16_t>& geosets) {
     auto it = instances.find(instanceId);
     if (it != instances.end()) {

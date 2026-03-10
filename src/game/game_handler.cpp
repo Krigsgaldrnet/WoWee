@@ -7749,6 +7749,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             releasedSpirit_ = true;
                             playerDead_ = true;
                             LOG_INFO("Player logged in as ghost (PLAYER_FLAGS)");
+                            if (ghostStateCallback_) ghostStateCallback_(true);
                         }
                     }
                     // Determine hostility from faction template for online creatures
@@ -8212,12 +8213,14 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 if (!wasGhost && nowGhost) {
                                     releasedSpirit_ = true;
                                     LOG_INFO("Player entered ghost form (PLAYER_FLAGS)");
+                                    if (ghostStateCallback_) ghostStateCallback_(true);
                                 } else if (wasGhost && !nowGhost) {
                                     releasedSpirit_ = false;
                                     playerDead_ = false;
                                     repopPending_ = false;
                                     resurrectPending_ = false;
                                     LOG_INFO("Player resurrected (PLAYER_FLAGS ghost cleared)");
+                                    if (ghostStateCallback_) ghostStateCallback_(false);
                                 }
                             }
                         }

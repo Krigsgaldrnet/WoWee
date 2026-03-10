@@ -2794,6 +2794,16 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // Ghost state callback — make player semi-transparent when in spirit form
+    gameHandler->setGhostStateCallback([this](bool isGhost) {
+        if (!renderer) return;
+        auto* cr = renderer->getCharacterRenderer();
+        if (!cr) return;
+        uint32_t charInstId = renderer->getCharacterInstanceId();
+        if (charInstId == 0) return;
+        cr->setInstanceOpacity(charInstId, isGhost ? 0.5f : 1.0f);
+    });
+
     // Stand state animation callback — map server stand state to M2 animation on player
     // and sync camera sit flag so movement is blocked while sitting
     gameHandler->setStandStateCallback([this](uint8_t standState) {

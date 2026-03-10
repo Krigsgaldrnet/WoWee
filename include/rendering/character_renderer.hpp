@@ -78,6 +78,7 @@ public:
     void setInstanceRotation(uint32_t instanceId, const glm::vec3& rotation);
     void moveInstanceTo(uint32_t instanceId, const glm::vec3& destination, float durationSeconds);
     void startFadeIn(uint32_t instanceId, float durationSeconds);
+    void setInstanceOpacity(uint32_t instanceId, float opacity);
     const pipeline::M2Model* getModelData(uint32_t modelId) const;
     void setActiveGeosets(uint32_t instanceId, const std::unordered_set<uint16_t>& geosets);
     void setGroupTextureOverride(uint32_t instanceId, uint16_t geosetGroup, VkTexture* texture);
