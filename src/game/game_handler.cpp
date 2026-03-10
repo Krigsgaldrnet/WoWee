@@ -16390,7 +16390,10 @@ void GameHandler::handlePlayedTime(network::Packet& packet) {
 }
 
 void GameHandler::handleWho(network::Packet& packet) {
-    // Parse WHO response
+    // Classic 1.12 / TBC 2.4.3 per-player: name + guild + level(u32) + class(u32) + race(u32) + zone(u32)
+    // WotLK 3.3.5a added a gender(u8) field between race and zone.
+    const bool hasGender = isActiveExpansion("wotlk");
+
     uint32_t displayCount = packet.readUInt32();
     uint32_t onlineCount = packet.readUInt32();
 
@@ -16404,18 +16407,21 @@ void GameHandler::handleWho(network::Packet& packet) {
     addSystemChatMessage(std::to_string(onlineCount) + " player(s) online:");
 
     for (uint32_t i = 0; i < displayCount; ++i) {
+        if (packet.getReadPos() >= packet.getSize()) break;
         std::string playerName = packet.readString();
         std::string guildName = packet.readString();
-        uint32_t level = packet.readUInt32();
+        if (packet.getSize() - packet.getReadPos() < 12) break;
+        uint32_t level   = packet.readUInt32();
         uint32_t classId = packet.readUInt32();
-        uint32_t raceId = packet.readUInt32();
-        packet.readUInt8();   // gender (unused)
-        packet.readUInt32();  // zoneId (unused)
+        uint32_t raceId  = packet.readUInt32();
+        if (hasGender && packet.getSize() - packet.getReadPos() >= 1)
+            packet.readUInt8();  // gender (WotLK only, unused)
+        if (packet.getSize() - packet.getReadPos() >= 4)
+            packet.readUInt32(); // zoneId (unused)
 
         std::string msg = "  " + playerName;
-        if (!guildName.empty()) {
+        if (!guildName.empty())
             msg += " <" + guildName + ">";
-        }
         msg += " - Level " + std::to_string(level);
 
         addSystemChatMessage(msg);
