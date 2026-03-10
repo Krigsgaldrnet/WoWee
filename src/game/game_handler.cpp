@@ -10758,6 +10758,7 @@ void GameHandler::rebuildOnlineInventory() {
             def.agility = infoIt->second.agility;
             def.intellect = infoIt->second.intellect;
             def.spirit = infoIt->second.spirit;
+            def.sellPrice = infoIt->second.sellPrice;
             def.itemLevel = infoIt->second.itemLevel;
             def.requiredLevel = infoIt->second.requiredLevel;
         } else {
@@ -10800,6 +10801,7 @@ void GameHandler::rebuildOnlineInventory() {
             def.agility = infoIt->second.agility;
             def.intellect = infoIt->second.intellect;
             def.spirit = infoIt->second.spirit;
+            def.sellPrice = infoIt->second.sellPrice;
             def.itemLevel = infoIt->second.itemLevel;
             def.requiredLevel = infoIt->second.requiredLevel;
         } else {
@@ -10877,6 +10879,7 @@ void GameHandler::rebuildOnlineInventory() {
                 def.agility = infoIt->second.agility;
                 def.intellect = infoIt->second.intellect;
                 def.spirit = infoIt->second.spirit;
+                def.sellPrice = infoIt->second.sellPrice;
                 def.itemLevel = infoIt->second.itemLevel;
                 def.requiredLevel = infoIt->second.requiredLevel;
                 def.bagSlots = infoIt->second.containerSlots;
