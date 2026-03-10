@@ -4253,6 +4253,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 LOG_INFO("Stand state updated: ", static_cast<int>(standState_),
                          " (", standState_ == 0 ? "stand" : standState_ == 1 ? "sit"
                             : standState_ == 7 ? "dead" : standState_ == 8 ? "kneel" : "other", ")");
+                if (standStateCallback_) {
+                    standStateCallback_(standState_);
+                }
             }
             break;
         case Opcode::SMSG_NEW_TAXI_PATH:

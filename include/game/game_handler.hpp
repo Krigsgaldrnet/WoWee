@@ -619,6 +619,11 @@ public:
     using NpcRespawnCallback = std::function<void(uint64_t guid)>;
     void setNpcRespawnCallback(NpcRespawnCallback cb) { npcRespawnCallback_ = std::move(cb); }
 
+    // Stand state animation callback — fired when SMSG_STANDSTATE_UPDATE confirms a new state
+    // standState: 0=stand, 1-6=sit variants, 7=dead, 8=kneel
+    using StandStateCallback = std::function<void(uint8_t standState)>;
+    void setStandStateCallback(StandStateCallback cb) { standStateCallback_ = std::move(cb); }
+
     // Melee swing callback (for driving animation/SFX)
     using MeleeSwingCallback = std::function<void()>;
     void setMeleeSwingCallback(MeleeSwingCallback cb) { meleeSwingCallback_ = std::move(cb); }
@@ -2250,6 +2255,7 @@ private:
     NpcDeathCallback npcDeathCallback_;
     NpcAggroCallback npcAggroCallback_;
     NpcRespawnCallback npcRespawnCallback_;
+    StandStateCallback standStateCallback_;
     MeleeSwingCallback meleeSwingCallback_;
     SpellCastAnimCallback spellCastAnimCallback_;
     NpcSwingCallback npcSwingCallback_;

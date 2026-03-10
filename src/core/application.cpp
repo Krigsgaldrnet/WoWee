@@ -2794,6 +2794,30 @@ void Application::setupUICallbacks() {
         }
     });
 
+    // Stand state animation callback — map server stand state to M2 animation on player
+    gameHandler->setStandStateCallback([this](uint8_t standState) {
+        if (!renderer) return;
+        auto* cr = renderer->getCharacterRenderer();
+        if (!cr) return;
+        uint32_t charInstId = renderer->getCharacterInstanceId();
+        if (charInstId == 0) return;
+        // WoW stand state → M2 animation ID mapping
+        // 0=Stand→0, 1-6=Sit variants→27 (SitGround), 7=Dead→1, 8=Kneel→72
+        uint32_t animId = 0;
+        if (standState == 0) {
+            animId = 0;   // Stand
+        } else if (standState >= 1 && standState <= 6) {
+            animId = 27;  // SitGround (covers sit-chair too; correct visual differs by chair height)
+        } else if (standState == 7) {
+            animId = 1;   // Death
+        } else if (standState == 8) {
+            animId = 72;  // Kneel
+        }
+        // Non-looping sit/kneel looks wrong frozen; loop them so the held-pose frame shows
+        const bool loop = (animId != 1);
+        cr->playAnimation(charInstId, animId, loop);
+    });
+
     // NPC greeting callback - play voice line
     gameHandler->setNpcGreetingCallback([this](uint64_t guid, const glm::vec3& position) {
         if (renderer && renderer->getNpcVoiceManager()) {
