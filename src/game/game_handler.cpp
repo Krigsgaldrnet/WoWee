@@ -4789,9 +4789,41 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Multiple aggregated packets/moves ----
         case Opcode::SMSG_MULTIPLE_MOVES:
-        case Opcode::SMSG_MULTIPLE_PACKETS:
             packet.setReadPos(packet.getSize());
             break;
+
+        case Opcode::SMSG_MULTIPLE_PACKETS: {
+            // Each sub-packet uses the standard WotLK server wire format:
+            //   uint16_be subSize  (includes the 2-byte opcode; payload = subSize - 2)
+            //   uint16_le subOpcode
+            //   payload  (subSize - 2 bytes)
+            const auto& pdata = packet.getData();
+            size_t dataLen = pdata.size();
+            size_t pos = packet.getReadPos();
+            static uint32_t multiPktWarnCount = 0;
+            while (pos + 4 <= dataLen) {
+                uint16_t subSize = static_cast<uint16_t>(
+                    (static_cast<uint16_t>(pdata[pos]) << 8) | pdata[pos + 1]);
+                if (subSize < 2) break;
+                size_t payloadLen = subSize - 2;
+                if (pos + 4 + payloadLen > dataLen) {
+                    if (++multiPktWarnCount <= 10) {
+                        LOG_WARNING("SMSG_MULTIPLE_PACKETS: sub-packet overruns buffer at pos=",
+                                    pos, " subSize=", subSize, " dataLen=", dataLen);
+                    }
+                    break;
+                }
+                uint16_t subOpcode = static_cast<uint16_t>(pdata[pos + 2]) |
+                                     (static_cast<uint16_t>(pdata[pos + 3]) << 8);
+                std::vector<uint8_t> subPayload(pdata.begin() + pos + 4,
+                                                pdata.begin() + pos + 4 + payloadLen);
+                network::Packet subPacket(subOpcode, std::move(subPayload));
+                handlePacket(subPacket);
+                pos += 4 + payloadLen;
+            }
+            packet.setReadPos(packet.getSize());
+            break;
+        }
 
         // ---- Misc consume ----
         case Opcode::SMSG_SET_PLAYER_DECLINED_NAMES_RESULT:

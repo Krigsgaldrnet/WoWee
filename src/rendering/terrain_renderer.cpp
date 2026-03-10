@@ -969,8 +969,6 @@ void TerrainRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSp
     vkCmdPushConstants(cmd, shadowPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
                        0, 128, &push);
 
-    const float cullRadiusSq = shadowRadius * shadowRadius;
-
     for (const auto& chunk : chunks) {
         if (!chunk.isValid()) continue;
 
