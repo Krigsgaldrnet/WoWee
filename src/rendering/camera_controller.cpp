@@ -537,6 +537,10 @@ void CameraController::update(float deltaTime) {
             // Use character's facing direction for strafe, not camera's right vector
             glm::vec3 swimRight = right;  // Character's right (horizontal facing), not camera's
 
+            float swimBackSpeed = (swimBackSpeedOverride_ > 0.0f && swimBackSpeedOverride_ < 100.0f
+                                    && !std::isnan(swimBackSpeedOverride_))
+                                       ? swimBackSpeedOverride_ : swimSpeed * 0.5f;
+
             glm::vec3 swimMove(0.0f);
             if (nowForward) swimMove += swimForward;
             if (nowBackward) swimMove -= swimForward;
@@ -545,7 +549,9 @@ void CameraController::update(float deltaTime) {
 
             if (glm::length(swimMove) > 0.001f) {
                 swimMove = glm::normalize(swimMove);
-                targetPos += swimMove * swimSpeed * physicsDeltaTime;
+                // Use backward swim speed when moving backwards only (not when combining with strafe)
+                float applySpeed = (nowBackward && !nowForward) ? swimBackSpeed : swimSpeed;
+                targetPos += swimMove * applySpeed * physicsDeltaTime;
             }
 
             // Spacebar = swim up (continuous, not a jump)

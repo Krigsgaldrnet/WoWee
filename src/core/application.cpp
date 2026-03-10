@@ -1011,6 +1011,7 @@ void Application::update(float deltaTime) {
                     renderer->getCameraController()->setRunSpeedOverride(gameHandler->getServerRunSpeed());
                     renderer->getCameraController()->setWalkSpeedOverride(gameHandler->getServerWalkSpeed());
                     renderer->getCameraController()->setSwimSpeedOverride(gameHandler->getServerSwimSpeed());
+                    renderer->getCameraController()->setSwimBackSpeedOverride(gameHandler->getServerSwimBackSpeed());
                     renderer->getCameraController()->setFlightSpeedOverride(gameHandler->getServerFlightSpeed());
                     renderer->getCameraController()->setRunBackSpeedOverride(gameHandler->getServerRunBackSpeed());
                     renderer->getCameraController()->setMovementRooted(gameHandler->isPlayerRooted());

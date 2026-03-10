@@ -94,6 +94,7 @@ public:
     void setRunSpeedOverride(float speed) { runSpeedOverride_ = speed; }
     void setWalkSpeedOverride(float speed) { walkSpeedOverride_ = speed; }
     void setSwimSpeedOverride(float speed) { swimSpeedOverride_ = speed; }
+    void setSwimBackSpeedOverride(float speed) { swimBackSpeedOverride_ = speed; }
     void setFlightSpeedOverride(float speed) { flightSpeedOverride_ = speed; }
     void setRunBackSpeedOverride(float speed) { runBackSpeedOverride_ = speed; }
     void setMovementRooted(bool rooted) { movementRooted_ = rooted; }
@@ -281,6 +282,7 @@ private:
     float runSpeedOverride_ = 0.0f;
     float walkSpeedOverride_ = 0.0f;
     float swimSpeedOverride_ = 0.0f;
+    float swimBackSpeedOverride_ = 0.0f;
     float flightSpeedOverride_ = 0.0f;
     float runBackSpeedOverride_ = 0.0f;
     // Server-driven root state: when true, block all horizontal movement input.

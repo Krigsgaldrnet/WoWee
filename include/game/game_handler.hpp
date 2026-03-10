@@ -1154,6 +1154,7 @@ public:
     float getServerRunSpeed() const { return serverRunSpeed_; }
     float getServerWalkSpeed() const { return serverWalkSpeed_; }
     float getServerSwimSpeed() const { return serverSwimSpeed_; }
+    float getServerSwimBackSpeed() const { return serverSwimBackSpeed_; }
     float getServerFlightSpeed() const { return serverFlightSpeed_; }
     float getServerRunBackSpeed() const { return serverRunBackSpeed_; }
     bool isPlayerRooted() const {
