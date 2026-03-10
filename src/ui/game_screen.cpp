@@ -4595,7 +4595,7 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
             ImGui::PushStyleColor(ImGuiCol_Text, titleCol);
             if (ImGui::Selectable(q.title.c_str(), false,
                                    ImGuiSelectableFlags_None, ImVec2(TRACKER_W - 12.0f, 0))) {
-                questLogScreen.setOpen(true);
+                questLogScreen.openAndSelectQuest(q.questId);
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Click to open Quest Log");
@@ -4888,8 +4888,153 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
     if (!gameHandler.isInGroup()) return;
 
     const auto& partyData = gameHandler.getPartyData();
+    const bool isRaid = (partyData.groupType == 1);
     float frameY = 120.0f;
 
+    // ---- Raid frame layout ----
+    if (isRaid) {
+        // Organize members by subgroup (0-7, up to 5 members each)
+        constexpr int MAX_SUBGROUPS = 8;
+        constexpr int MAX_PER_GROUP = 5;
+        std::vector<const game::GroupMember*> subgroups[MAX_SUBGROUPS];
+        for (const auto& m : partyData.members) {
+            int sg = m.subGroup < MAX_SUBGROUPS ? m.subGroup : 0;
+            if (static_cast<int>(subgroups[sg].size()) < MAX_PER_GROUP)
+                subgroups[sg].push_back(&m);
+        }
+
+        // Count non-empty subgroups to determine layout
+        int activeSgs = 0;
+        for (int sg = 0; sg < MAX_SUBGROUPS; sg++)
+            if (!subgroups[sg].empty()) activeSgs++;
+
+        // Compact raid cell: name + 2 narrow bars
+        constexpr float CELL_W = 90.0f;
+        constexpr float CELL_H = 42.0f;
+        constexpr float BAR_H  = 7.0f;
+        constexpr float CELL_PAD = 3.0f;
+
+        float winW = activeSgs * (CELL_W + CELL_PAD) + CELL_PAD + 8.0f;
+        float winH = MAX_PER_GROUP * (CELL_H + CELL_PAD) + CELL_PAD + 20.0f;
+
+        auto* window = core::Application::getInstance().getWindow();
+        float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+        float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+        float raidX = (screenW - winW) / 2.0f;
+        float raidY = screenH - winH - 120.0f;  // above action bar area
+
+        ImGui::SetNextWindowPos(ImVec2(raidX, raidY), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
+
+        ImGuiWindowFlags raidFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                     ImGuiWindowFlags_NoScrollbar;
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(CELL_PAD, CELL_PAD));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.07f, 0.07f, 0.1f, 0.85f));
+
+        if (ImGui::Begin("##RaidFrames", nullptr, raidFlags)) {
+            ImDrawList* draw = ImGui::GetWindowDrawList();
+            ImVec2 winPos = ImGui::GetWindowPos();
+
+            int colIdx = 0;
+            for (int sg = 0; sg < MAX_SUBGROUPS; sg++) {
+                if (subgroups[sg].empty()) continue;
+
+                float colX = winPos.x + CELL_PAD + colIdx * (CELL_W + CELL_PAD);
+
+                for (int row = 0; row < static_cast<int>(subgroups[sg].size()); row++) {
+                    const auto& m = *subgroups[sg][row];
+                    float cellY = winPos.y + CELL_PAD + 14.0f + row * (CELL_H + CELL_PAD);
+
+                    ImVec2 cellMin(colX, cellY);
+                    ImVec2 cellMax(colX + CELL_W, cellY + CELL_H);
+
+                    // Cell background
+                    bool isTarget = (gameHandler.getTargetGuid() == m.guid);
+                    ImU32 bg = isTarget ? IM_COL32(60, 80, 120, 200) : IM_COL32(30, 30, 40, 180);
+                    draw->AddRectFilled(cellMin, cellMax, bg, 3.0f);
+                    if (isTarget)
+                        draw->AddRect(cellMin, cellMax, IM_COL32(100, 150, 255, 200), 3.0f);
+
+                    // Dead/ghost overlay
+                    bool isOnline = (m.onlineStatus & 0x0001) != 0;
+                    bool isDead   = (m.onlineStatus & 0x0020) != 0;
+                    bool isGhost  = (m.onlineStatus & 0x0010) != 0;
+
+                    // Name text (truncated)
+                    char truncName[16];
+                    snprintf(truncName, sizeof(truncName), "%.12s", m.name.c_str());
+                    ImU32 nameCol = (!isOnline || isDead || isGhost)
+                        ? IM_COL32(140, 140, 140, 200) : IM_COL32(220, 220, 220, 255);
+                    draw->AddText(ImVec2(cellMin.x + 4.0f, cellMin.y + 3.0f), nameCol, truncName);
+
+                    // Health bar
+                    uint32_t hp = m.hasPartyStats ? m.curHealth : 0;
+                    uint32_t maxHp = m.hasPartyStats ? m.maxHealth : 0;
+                    if (maxHp > 0) {
+                        float pct = static_cast<float>(hp) / static_cast<float>(maxHp);
+                        float barY = cellMin.y + 16.0f;
+                        ImVec2 barBg(cellMin.x + 3.0f, barY);
+                        ImVec2 barBgEnd(cellMax.x - 3.0f, barY + BAR_H);
+                        draw->AddRectFilled(barBg, barBgEnd, IM_COL32(40, 40, 40, 200), 2.0f);
+                        ImVec2 barFill(barBg.x, barBg.y);
+                        ImVec2 barFillEnd(barBg.x + (barBgEnd.x - barBg.x) * pct, barBgEnd.y);
+                        ImU32 hpCol = pct > 0.5f ? IM_COL32(60, 180, 60, 255) :
+                                      pct > 0.2f ? IM_COL32(200, 180, 50, 255) :
+                                                   IM_COL32(200, 60, 60, 255);
+                        draw->AddRectFilled(barFill, barFillEnd, hpCol, 2.0f);
+                    }
+
+                    // Power bar
+                    if (m.hasPartyStats && m.maxPower > 0) {
+                        float pct = static_cast<float>(m.curPower) / static_cast<float>(m.maxPower);
+                        float barY = cellMin.y + 16.0f + BAR_H + 2.0f;
+                        ImVec2 barBg(cellMin.x + 3.0f, barY);
+                        ImVec2 barBgEnd(cellMax.x - 3.0f, barY + BAR_H - 2.0f);
+                        draw->AddRectFilled(barBg, barBgEnd, IM_COL32(30, 30, 40, 200), 2.0f);
+                        ImVec2 barFill(barBg.x, barBg.y);
+                        ImVec2 barFillEnd(barBg.x + (barBgEnd.x - barBg.x) * pct, barBgEnd.y);
+                        ImU32 pwrCol;
+                        switch (m.powerType) {
+                            case 0: pwrCol = IM_COL32(50, 80, 220, 255); break; // Mana
+                            case 1: pwrCol = IM_COL32(200, 50, 50, 255); break; // Rage
+                            case 3: pwrCol = IM_COL32(220, 210, 50, 255); break; // Energy
+                            case 6: pwrCol = IM_COL32(180, 30, 50, 255); break; // Runic Power
+                            default: pwrCol = IM_COL32(80, 120, 80, 255); break;
+                        }
+                        draw->AddRectFilled(barFill, barFillEnd, pwrCol, 2.0f);
+                    }
+
+                    // Clickable invisible region over the whole cell
+                    ImGui::SetCursorScreenPos(cellMin);
+                    ImGui::PushID(static_cast<int>(m.guid));
+                    if (ImGui::InvisibleButton("raidCell", ImVec2(CELL_W, CELL_H))) {
+                        gameHandler.setTarget(m.guid);
+                    }
+                    ImGui::PopID();
+                }
+                colIdx++;
+            }
+
+            // Subgroup header row
+            colIdx = 0;
+            for (int sg = 0; sg < MAX_SUBGROUPS; sg++) {
+                if (subgroups[sg].empty()) continue;
+                float colX = winPos.x + CELL_PAD + colIdx * (CELL_W + CELL_PAD);
+                char sgLabel[8];
+                snprintf(sgLabel, sizeof(sgLabel), "G%d", sg + 1);
+                draw->AddText(ImVec2(colX + CELL_W / 2 - 8.0f, winPos.y + CELL_PAD), IM_COL32(160, 160, 180, 200), sgLabel);
+                colIdx++;
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(2);
+        return;
+    }
+
+    // ---- Party frame layout (5-man) ----
     ImGui::SetNextWindowPos(ImVec2(10.0f, frameY), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(200.0f, 0.0f), ImGuiCond_Always);
 

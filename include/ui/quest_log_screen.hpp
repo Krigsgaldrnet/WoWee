@@ -13,11 +13,19 @@ public:
     bool isOpen() const { return open; }
     void toggle() { open = !open; }
     void setOpen(bool o) { open = o; }
+    // Open the log and scroll to the given quest (by questId)
+    void openAndSelectQuest(uint32_t questId) {
+        open = true;
+        pendingSelectQuestId_ = questId;
+        scrollToSelected_ = true;
+    }
 
 private:
     bool open = false;
     bool lKeyWasDown = false;
     int selectedIndex = -1;
+    uint32_t pendingSelectQuestId_ = 0;  // non-zero: select this quest on next render
+    bool scrollToSelected_ = false;       // true: call SetScrollHereY once after selection
     uint32_t lastDetailRequestQuestId_ = 0;
     double lastDetailRequestAt_ = 0.0;
     std::unordered_set<uint32_t> questDetailQueryNoResponse_;

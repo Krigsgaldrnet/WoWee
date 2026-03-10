@@ -261,6 +261,18 @@ void QuestLogScreen::render(game::GameHandler& gameHandler) {
             ImGui::BeginChild("QuestListPane", ImVec2(paneW, 0), true);
             ImGui::TextColored(ImVec4(0.85f, 0.82f, 0.74f, 1.0f), "Quest List");
             ImGui::Separator();
+
+            // Resolve pending select from tracker click
+            if (pendingSelectQuestId_ != 0) {
+                for (size_t i = 0; i < quests.size(); i++) {
+                    if (quests[i].questId == pendingSelectQuestId_) {
+                        selectedIndex = static_cast<int>(i);
+                        break;
+                    }
+                }
+                pendingSelectQuestId_ = 0;
+            }
+
             for (size_t i = 0; i < quests.size(); i++) {
                 const auto& q = quests[i];
                 ImGui::PushID(static_cast<int>(i));
@@ -274,6 +286,11 @@ void QuestLogScreen::render(game::GameHandler& gameHandler) {
                 if (rowW < 1.0f) rowW = 1.0f;
                 bool clicked = ImGui::InvisibleButton("questRowBtn", ImVec2(rowW, rowH));
                 bool hovered = ImGui::IsItemHovered();
+                // Scroll to selected quest on the first frame after openAndSelectQuest()
+                if (selected && scrollToSelected_) {
+                    ImGui::SetScrollHereY(0.5f);
+                    scrollToSelected_ = false;
+                }
 
                 ImVec2 rowMin = ImGui::GetItemRectMin();
                 ImVec2 rowMax = ImGui::GetItemRectMax();
