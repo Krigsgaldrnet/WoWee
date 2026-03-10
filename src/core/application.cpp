@@ -292,6 +292,11 @@ bool Application::initialize() {
             if (std::filesystem::exists(expansionManifest)) {
                 assetPath = profile->dataPath;
                 LOG_INFO("Using expansion-specific asset path: ", assetPath);
+                // Register base Data/ as fallback so world terrain files are found
+                // even when the expansion path only contains DBC overrides.
+                if (assetPath != dataPath) {
+                    assetManager->setBaseFallbackPath(dataPath);
+                }
             }
         }
     }

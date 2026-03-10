@@ -400,7 +400,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderCastBar(gameHandler);
     renderMirrorTimers(gameHandler);
     renderQuestObjectiveTracker(gameHandler);
-    if (showNameplates_) renderNameplates(gameHandler);
+    renderNameplates(gameHandler);  // player names always shown; NPC plates gated by showNameplates_
     renderBattlegroundScore(gameHandler);
     renderCombatText(gameHandler);
     renderPartyFrames(gameHandler);
@@ -4848,16 +4848,20 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         auto* unit = dynamic_cast<game::Unit*>(entityPtr.get());
         if (!unit || unit->getMaxHealth() == 0) continue;
 
+        bool isPlayer = (entityPtr->getType() == game::ObjectType::PLAYER);
         bool isTarget = (guid == targetGuid);
+
+        // Player nameplates are always shown; NPC nameplates respect the V-key toggle
+        if (!isPlayer && !showNameplates_) continue;
 
         // Convert canonical WoW position → render space, raise to head height
         glm::vec3 renderPos = core::coords::canonicalToRender(
             glm::vec3(unit->getX(), unit->getY(), unit->getZ()));
         renderPos.z += 2.3f;
 
-        // Cull distance: target up to 40 units; others up to 20 units
+        // Cull distance: target or other players up to 40 units; NPC others up to 20 units
         float dist = glm::length(renderPos - camPos);
-        float cullDist = isTarget ? 40.0f : 20.0f;
+        float cullDist = (isTarget || isPlayer) ? 40.0f : 20.0f;
         if (dist > cullDist) continue;
 
         // Project to clip space
@@ -4874,8 +4878,8 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         float sx = (ndc.x * 0.5f + 0.5f) * screenW;
         float sy = (ndc.y * 0.5f + 0.5f) * screenH;
 
-        // Fade out in the last 5 units of range
-        float alpha = dist < 35.0f ? 1.0f : 1.0f - (dist - 35.0f) / 5.0f;
+        // Fade out in the last 5 units of cull range
+        float alpha = dist < (cullDist - 5.0f) ? 1.0f : 1.0f - (dist - (cullDist - 5.0f)) / 5.0f;
         auto A = [&](int v) { return static_cast<int>(v * alpha); };
 
         // Bar colour by hostility
@@ -4920,10 +4924,12 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         ImVec2 textSize = ImGui::CalcTextSize(labelBuf);
         float nameX = sx - textSize.x * 0.5f;
         float nameY = sy - barH - 12.0f;
-        // Name color: hostile=red, non-hostile=yellow (WoW convention)
-        ImU32 nameColor = unit->isHostile()
-            ? IM_COL32(220, 80,  80,  A(230))
-            : IM_COL32(240, 200, 100, A(230));
+        // Name color: other player=cyan, hostile=red, non-hostile=yellow (WoW convention)
+        ImU32 nameColor = isPlayer
+            ? IM_COL32( 80, 200, 255, A(230))   // cyan — other players
+            : unit->isHostile()
+                ? IM_COL32(220,  80,  80, A(230))   // red  — hostile NPC
+                : IM_COL32(240, 200, 100, A(230));  // yellow — friendly NPC
         drawList->AddText(ImVec2(nameX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), labelBuf);
         drawList->AddText(ImVec2(nameX,         nameY),         nameColor, labelBuf);
 
@@ -10242,12 +10248,44 @@ void GameScreen::renderDingEffect() {
     if (dingTimer_ < 0.0f) dingTimer_ = 0.0f;
 
     float alpha    = dingTimer_ < 0.8f ? (dingTimer_ / 0.8f) : 1.0f;  // fade out last 0.8s
+    float elapsed  = DING_DURATION - dingTimer_;   // 0 → DING_DURATION
 
     ImGuiIO& io = ImGui::GetIO();
     float cx = io.DisplaySize.x * 0.5f;
     float cy = io.DisplaySize.y * 0.5f;
 
     ImDrawList* draw = ImGui::GetForegroundDrawList();
+
+    // ---- Golden radial ring burst (3 waves staggered by 0.45s) ----
+    {
+        constexpr float kMaxRadius  = 420.0f;
+        constexpr float kRingWidth  = 18.0f;
+        constexpr float kWaveLen    = 1.4f;   // each wave lasts 1.4s
+        constexpr int   kNumWaves   = 3;
+        constexpr float kStagger    = 0.45f;  // seconds between waves
+
+        for (int w = 0; w < kNumWaves; ++w) {
+            float waveElapsed = elapsed - w * kStagger;
+            if (waveElapsed <= 0.0f || waveElapsed >= kWaveLen) continue;
+
+            float t = waveElapsed / kWaveLen;          // 0 → 1
+            float radius = t * kMaxRadius;
+            float ringAlpha = (1.0f - t) * alpha;      // fades as it expands
+
+            ImU32 outerCol = IM_COL32(255, 215,  60, (int)(ringAlpha * 200));
+            ImU32 innerCol = IM_COL32(255, 255, 150, (int)(ringAlpha * 120));
+
+            draw->AddCircle(ImVec2(cx, cy), radius,            outerCol, 64, kRingWidth);
+            draw->AddCircle(ImVec2(cx, cy), radius * 0.92f,    innerCol, 64, kRingWidth * 0.5f);
+        }
+    }
+
+    // ---- Full-screen golden flash on first frame ----
+    if (elapsed < 0.15f) {
+        float flashA = (1.0f - elapsed / 0.15f) * 0.45f;
+        draw->AddRectFilled(ImVec2(0, 0), io.DisplaySize,
+                            IM_COL32(255, 200, 50, (int)(flashA * 255)));
+    }
 
     // "LEVEL X!" text — visible for first 2.2s
     if (dingTimer_ > 0.8f) {

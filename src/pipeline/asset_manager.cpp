@@ -137,8 +137,31 @@ std::string AssetManager::resolveFile(const std::string& normalizedPath) const {
             }
         }
     }
-    // Fall back to base manifest
-    return manifest_.resolveFilesystemPath(normalizedPath);
+    // Primary manifest
+    std::string primaryPath = manifest_.resolveFilesystemPath(normalizedPath);
+    if (!primaryPath.empty()) return primaryPath;
+
+    // If a base-path fallback is configured (expansion-specific primary that only
+    // holds DBC overrides), retry against the base extraction.
+    if (!baseFallbackDataPath_.empty()) {
+        return baseFallbackManifest_.resolveFilesystemPath(normalizedPath);
+    }
+    return {};
+}
+
+void AssetManager::setBaseFallbackPath(const std::string& basePath) {
+    if (basePath.empty() || basePath == dataPath) return;  // nothing to do
+    std::string manifestPath = basePath + "/manifest.json";
+    if (!std::filesystem::exists(manifestPath)) {
+        LOG_DEBUG("AssetManager: base fallback manifest not found at ", manifestPath,
+                  " — fallback disabled");
+        return;
+    }
+    if (baseFallbackManifest_.load(manifestPath)) {
+        baseFallbackDataPath_ = basePath;
+        LOG_INFO("AssetManager: base fallback path set to '", basePath,
+                 "' (", baseFallbackManifest_.getEntryCount(), " files)");
+    }
 }
 
 BLPImage AssetManager::loadTexture(const std::string& path) {

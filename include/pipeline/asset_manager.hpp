@@ -60,6 +60,15 @@ public:
     void setExpansionDataPath(const std::string& path);
 
     /**
+     * Set a base data path to fall back to when the primary manifest
+     * does not contain a requested file.  Call this when the primary
+     * dataPath is an expansion-specific subset (e.g. Data/expansions/vanilla/)
+     * that only holds DBC overrides, not the full world asset set.
+     * @param basePath  Path to the base extraction (Data/) that has a manifest.json
+     */
+    void setBaseFallbackPath(const std::string& basePath);
+
+    /**
      * Load a DBC file
      * @param name DBC file name (e.g., "Map.dbc")
      * @return Loaded DBC file (check isLoaded())
@@ -143,6 +152,11 @@ private:
     // Base manifest (loaded from dataPath/manifest.json)
     AssetManifest manifest_;
     LooseFileReader looseReader_;
+
+    // Optional base-path fallback: used when manifest_ doesn't contain a file.
+    // Populated by setBaseFallbackPath(); ignored if baseFallbackDataPath_ is empty.
+    std::string    baseFallbackDataPath_;
+    AssetManifest  baseFallbackManifest_;
 
     /**
      * Resolve filesystem path: check override dir first, then base manifest.

@@ -121,6 +121,15 @@ bool WardenEmulator::initialize(const void* moduleCode, size_t moduleSize, uint3
         return false;
     }
 
+    // Map a null guard page at address 0 (read-only, zeroed) so that NULL-pointer
+    // dereferences in the module don't crash the emulator with UC_ERR_MAP.
+    // This allows execution to continue past NULL reads, making diagnostics easier.
+    err = uc_mem_map(uc_, 0x0, 0x1000, UC_PROT_READ);
+    if (err != UC_ERR_OK) {
+        // Non-fatal — just log it; the emulator will still function
+        std::cerr << "[WardenEmulator] Note: could not map null guard page: " << uc_strerror(err) << '\n';
+    }
+
     // Add hooks for debugging and invalid memory access
     uc_hook hh;
     uc_hook_add(uc_, &hh, UC_HOOK_MEM_INVALID, (void*)hookMemInvalid, this, 1, 0);
