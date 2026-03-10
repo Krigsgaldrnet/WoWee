@@ -8510,6 +8510,22 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         }
     };
 
+    // Zone name label above the minimap (centered, WoW-style)
+    {
+        const std::string& zoneName = renderer ? renderer->getCurrentZoneName() : std::string{};
+        if (!zoneName.empty()) {
+            auto* fgDl = ImGui::GetForegroundDrawList();
+            float zoneTextY = centerY - mapRadius - 16.0f;
+            ImFont* font = ImGui::GetFont();
+            ImVec2 tsz = font->CalcTextSizeA(12.0f, FLT_MAX, 0.0f, zoneName.c_str());
+            float tzx = centerX - tsz.x * 0.5f;
+            fgDl->AddText(font, 12.0f, ImVec2(tzx + 1.0f, zoneTextY + 1.0f),
+                IM_COL32(0, 0, 0, 180), zoneName.c_str());
+            fgDl->AddText(font, 12.0f, ImVec2(tzx, zoneTextY),
+                IM_COL32(255, 220, 120, 230), zoneName.c_str());
+        }
+    }
+
     // Speaker mute button at the minimap top-right corner
     ImGui::SetNextWindowPos(ImVec2(centerX + mapRadius - 26.0f, centerY - mapRadius + 4.0f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(22.0f, 22.0f), ImGuiCond_Always);
