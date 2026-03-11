@@ -26,6 +26,10 @@ void KeybindingManager::initializeDefaults() {
     bindings_[static_cast<int>(Action::TOGGLE_CHAT)] = ImGuiKey_Enter;
     bindings_[static_cast<int>(Action::TOGGLE_GUILD_ROSTER)] = ImGuiKey_O;
     bindings_[static_cast<int>(Action::TOGGLE_DUNGEON_FINDER)] = ImGuiKey_J;  // Originally I, reassigned to avoid conflict
+    bindings_[static_cast<int>(Action::TOGGLE_WORLD_MAP)] = ImGuiKey_W;
+    bindings_[static_cast<int>(Action::TOGGLE_NAMEPLATES)] = ImGuiKey_V;
+    bindings_[static_cast<int>(Action::TOGGLE_RAID_FRAMES)] = ImGuiKey_R;
+    bindings_[static_cast<int>(Action::TOGGLE_QUEST_LOG)] = ImGuiKey_Q;
 }
 
 bool KeybindingManager::isActionPressed(Action action, bool repeat) {
@@ -61,6 +65,10 @@ const char* KeybindingManager::getActionName(Action action) {
         case Action::TOGGLE_CHAT: return "Chat";
         case Action::TOGGLE_GUILD_ROSTER: return "Guild Roster / Social";
         case Action::TOGGLE_DUNGEON_FINDER: return "Dungeon Finder";
+        case Action::TOGGLE_WORLD_MAP: return "World Map";
+        case Action::TOGGLE_NAMEPLATES: return "Nameplates";
+        case Action::TOGGLE_RAID_FRAMES: return "Raid Frames";
+        case Action::TOGGLE_QUEST_LOG: return "Quest Log";
         case Action::ACTION_COUNT: break;
     }
     return "Unknown";
@@ -120,6 +128,10 @@ void KeybindingManager::loadFromConfigFile(const std::string& filePath) {
         else if (action == "toggle_chat") actionIdx = static_cast<int>(Action::TOGGLE_CHAT);
         else if (action == "toggle_guild_roster") actionIdx = static_cast<int>(Action::TOGGLE_GUILD_ROSTER);
         else if (action == "toggle_dungeon_finder") actionIdx = static_cast<int>(Action::TOGGLE_DUNGEON_FINDER);
+        else if (action == "toggle_world_map") actionIdx = static_cast<int>(Action::TOGGLE_WORLD_MAP);
+        else if (action == "toggle_nameplates") actionIdx = static_cast<int>(Action::TOGGLE_NAMEPLATES);
+        else if (action == "toggle_raid_frames") actionIdx = static_cast<int>(Action::TOGGLE_RAID_FRAMES);
+        else if (action == "toggle_quest_log") actionIdx = static_cast<int>(Action::TOGGLE_QUEST_LOG);
 
         if (actionIdx < 0) continue;
 
@@ -206,6 +218,10 @@ void KeybindingManager::saveToConfigFile(const std::string& filePath) const {
         {Action::TOGGLE_CHAT, "toggle_chat"},
         {Action::TOGGLE_GUILD_ROSTER, "toggle_guild_roster"},
         {Action::TOGGLE_DUNGEON_FINDER, "toggle_dungeon_finder"},
+        {Action::TOGGLE_WORLD_MAP, "toggle_world_map"},
+        {Action::TOGGLE_NAMEPLATES, "toggle_nameplates"},
+        {Action::TOGGLE_RAID_FRAMES, "toggle_raid_frames"},
+        {Action::TOGGLE_QUEST_LOG, "toggle_quest_log"},
     };
 
     for (const auto& [action, nameStr] : actionMap) {

@@ -1470,8 +1470,8 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             }
         }
 
-        // V — toggle nameplates (WoW default keybinding)
-        if (input.isKeyJustPressed(SDL_SCANCODE_V)) {
+        // Toggle nameplates (customizable keybinding, default V)
+        if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_NAMEPLATES)) {
             showNameplates_ = !showNameplates_;
         }
 

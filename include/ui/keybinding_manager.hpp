@@ -25,6 +25,10 @@ public:
         TOGGLE_CHAT,
         TOGGLE_GUILD_ROSTER,
         TOGGLE_DUNGEON_FINDER,
+        TOGGLE_WORLD_MAP,
+        TOGGLE_NAMEPLATES,
+        TOGGLE_RAID_FRAMES,
+        TOGGLE_QUEST_LOG,
         ACTION_COUNT
     };
 
