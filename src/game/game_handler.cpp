@@ -2826,10 +2826,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // uint32 areaId
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t areaId = packet.readUInt32();
-                char buf[128];
-                std::snprintf(buf, sizeof(buf),
-                              "A zone is under attack! (area %u)", areaId);
-                addSystemChatMessage(buf);
+                std::string areaName = getAreaName(areaId);
+                std::string msg = areaName.empty()
+                    ? std::string("A zone is under attack!")
+                    : (areaName + " is under attack!");
+                addSystemChatMessage(msg);
             }
             break;
         }
