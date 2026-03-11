@@ -14,6 +14,7 @@ namespace game {
 enum class UF : uint16_t {
     // Object fields
     OBJECT_FIELD_ENTRY,
+    OBJECT_FIELD_SCALE_X,
 
     // Unit fields
     UNIT_FIELD_TARGET_LO,

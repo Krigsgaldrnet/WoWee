@@ -985,6 +985,18 @@ void Application::update(float deltaTime) {
                         retrySpawn.y = unit->getY();
                         retrySpawn.z = unit->getZ();
                         retrySpawn.orientation = unit->getOrientation();
+                        {
+                            using game::fieldIndex; using game::UF;
+                            uint16_t si = fieldIndex(UF::OBJECT_FIELD_SCALE_X);
+                            if (si != 0xFFFF) {
+                                uint32_t raw = unit->getField(si);
+                                if (raw != 0) {
+                                    float s2 = 1.0f;
+                                    std::memcpy(&s2, &raw, sizeof(float));
+                                    if (s2 > 0.01f && s2 < 100.0f) retrySpawn.scale = s2;
+                                }
+                            }
+                        }
                         pendingCreatureSpawns_.push_back(retrySpawn);
                         pendingCreatureSpawnGuids_.insert(guid);
                     }
@@ -2198,12 +2210,12 @@ void Application::setupUICallbacks() {
     // Faction hostility map is built in buildFactionHostilityMap() when character enters world
 
     // Creature spawn callback (online mode) - spawn creature models
-    gameHandler->setCreatureSpawnCallback([this](uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation) {
+    gameHandler->setCreatureSpawnCallback([this](uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation, float scale) {
         // Queue spawns to avoid hanging when many creatures appear at once.
         // Deduplicate so repeated updates don't flood pending queue.
         if (creatureInstances_.count(guid)) return;
         if (pendingCreatureSpawnGuids_.count(guid)) return;
-        pendingCreatureSpawns_.push_back({guid, displayId, x, y, z, orientation});
+        pendingCreatureSpawns_.push_back({guid, displayId, x, y, z, orientation, scale});
         pendingCreatureSpawnGuids_.insert(guid);
     });
 
@@ -2249,8 +2261,8 @@ void Application::setupUICallbacks() {
     });
 
     // GameObject spawn callback (online mode) - spawn static models (mailboxes, etc.)
-    gameHandler->setGameObjectSpawnCallback([this](uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation) {
-        pendingGameObjectSpawns_.push_back({guid, entry, displayId, x, y, z, orientation});
+    gameHandler->setGameObjectSpawnCallback([this](uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation, float scale) {
+        pendingGameObjectSpawns_.push_back({guid, entry, displayId, x, y, z, orientation, scale});
     });
 
     // GameObject despawn callback (online mode) - remove static models
@@ -4754,7 +4766,7 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             // Process ALL pending game object spawns.
             while (!pendingGameObjectSpawns_.empty()) {
                 auto& s = pendingGameObjectSpawns_.front();
-                spawnOnlineGameObject(s.guid, s.entry, s.displayId, s.x, s.y, s.z, s.orientation);
+                spawnOnlineGameObject(s.guid, s.entry, s.displayId, s.x, s.y, s.z, s.orientation, s.scale);
                 pendingGameObjectSpawns_.erase(pendingGameObjectSpawns_.begin());
             }
 
@@ -5285,7 +5297,7 @@ pipeline::M2Model Application::loadCreatureM2Sync(const std::string& m2Path) {
     return model;
 }
 
-void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation) {
+void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation, float scale) {
     if (!renderer || !renderer->getCharacterRenderer() || !assetManager) return;
 
     // Skip if lookups not yet built (asset manager not ready)
@@ -5722,9 +5734,9 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
     // Convert canonical WoW orientation (0=north) -> render yaw (0=west)
     float renderYaw = orientation + glm::radians(90.0f);
 
-    // Create instance
+    // Create instance (apply server-provided scale from OBJECT_FIELD_SCALE_X)
     uint32_t instanceId = charRenderer->createInstance(modelId, renderPos,
-        glm::vec3(0.0f, 0.0f, renderYaw), 1.0f);
+        glm::vec3(0.0f, 0.0f, renderYaw), scale);
 
     if (instanceId == 0) {
         LOG_WARNING("Failed to create creature instance for guid 0x", std::hex, guid, std::dec);
@@ -7035,7 +7047,7 @@ void Application::despawnOnlinePlayer(uint64_t guid) {
     creatureWasWalking_.erase(guid);
 }
 
-void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation) {
+void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation, float scale) {
     if (!renderer || !assetManager) return;
 
     if (!gameObjectLookupsBuilt_) {
@@ -7192,7 +7204,7 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
 
         if (loadedAsWmo) {
             uint32_t instanceId = wmoRenderer->createInstance(modelId, renderPos,
-                glm::vec3(0.0f, 0.0f, renderYawWmo), 1.0f);
+                glm::vec3(0.0f, 0.0f, renderYawWmo), scale);
             if (instanceId == 0) {
                 LOG_WARNING("Failed to create gameobject WMO instance for guid 0x", std::hex, guid, std::dec);
                 return;
@@ -7300,7 +7312,7 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
         }
 
         uint32_t instanceId = m2Renderer->createInstance(modelId, renderPos,
-            glm::vec3(0.0f, 0.0f, renderYawM2go), 1.0f);
+            glm::vec3(0.0f, 0.0f, renderYawM2go), scale);
         if (instanceId == 0) {
             LOG_WARNING("Failed to create gameobject instance for guid 0x", std::hex, guid, std::dec);
             return;
@@ -7418,6 +7430,7 @@ void Application::processAsyncCreatureResults(bool unlimited) {
             s.y = result.y;
             s.z = result.z;
             s.orientation = result.orientation;
+            s.scale = result.scale;
             pendingCreatureSpawns_.push_back(s);
             pendingCreatureSpawnGuids_.insert(result.guid);
         }
@@ -7732,6 +7745,7 @@ void Application::processCreatureSpawnQueue(bool unlimited) {
                     result.y = s.y;
                     result.z = s.z;
                     result.orientation = s.orientation;
+                    result.scale = s.scale;
 
                     auto m2Data = am->readFile(m2Path);
                     if (m2Data.empty()) {
@@ -7810,7 +7824,7 @@ void Application::processCreatureSpawnQueue(bool unlimited) {
         // Cached model — spawn is fast (no file I/O, just instance creation + texture setup)
         {
             auto spawnStart = std::chrono::steady_clock::now();
-            spawnOnlineCreature(s.guid, s.displayId, s.x, s.y, s.z, s.orientation);
+            spawnOnlineCreature(s.guid, s.displayId, s.x, s.y, s.z, s.orientation, s.scale);
             auto spawnEnd = std::chrono::steady_clock::now();
             float spawnMs = std::chrono::duration<float, std::milli>(spawnEnd - spawnStart).count();
             if (spawnMs > 100.0f) {
@@ -8015,7 +8029,7 @@ void Application::processAsyncGameObjectResults() {
         if (!result.valid || !result.isWmo || !result.wmoModel) {
             // Fallback: spawn via sync path (likely an M2 or failed WMO)
             spawnOnlineGameObject(result.guid, result.entry, result.displayId,
-                                 result.x, result.y, result.z, result.orientation);
+                                 result.x, result.y, result.z, result.orientation, result.scale);
             continue;
         }
 
@@ -8042,7 +8056,7 @@ void Application::processAsyncGameObjectResults() {
         glm::vec3 renderPos = core::coords::canonicalToRender(
             glm::vec3(result.x, result.y, result.z));
         uint32_t instanceId = wmoRenderer->createInstance(
-            modelId, renderPos, glm::vec3(0.0f, 0.0f, result.orientation), 1.0f);
+            modelId, renderPos, glm::vec3(0.0f, 0.0f, result.orientation), result.scale);
         if (instanceId == 0) continue;
 
         gameObjectInstances_[result.guid] = {modelId, instanceId, true};
@@ -8129,6 +8143,7 @@ void Application::processGameObjectSpawnQueue() {
                     result.y = capture.y;
                     result.z = capture.z;
                     result.orientation = capture.orientation;
+                    result.scale = capture.scale;
                     result.modelPath = capturePath;
                     result.isWmo = true;
 
@@ -8194,7 +8209,7 @@ void Application::processGameObjectSpawnQueue() {
         }
 
         // Cached WMO or M2 — spawn synchronously (cheap)
-        spawnOnlineGameObject(s.guid, s.entry, s.displayId, s.x, s.y, s.z, s.orientation);
+        spawnOnlineGameObject(s.guid, s.entry, s.displayId, s.x, s.y, s.z, s.orientation, s.scale);
         pendingGameObjectSpawns_.erase(pendingGameObjectSpawns_.begin());
     }
 }

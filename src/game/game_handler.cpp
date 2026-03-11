@@ -8009,8 +8009,19 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             LOG_DEBUG("[Spawn] UNIT guid=0x", std::hex, block.guid, std::dec,
                                       " displayId=", unit->getDisplayId(), " at (",
                                       unit->getX(), ",", unit->getY(), ",", unit->getZ(), ")");
+                            float unitScale = 1.0f;
+                            {
+                                uint16_t scaleIdx = fieldIndex(UF::OBJECT_FIELD_SCALE_X);
+                                if (scaleIdx != 0xFFFF) {
+                                    uint32_t raw = entity->getField(scaleIdx);
+                                    if (raw != 0) {
+                                        std::memcpy(&unitScale, &raw, sizeof(float));
+                                        if (unitScale <= 0.01f || unitScale > 100.0f) unitScale = 1.0f;
+                                    }
+                                }
+                            }
                             creatureSpawnCallback_(block.guid, unit->getDisplayId(),
-                                unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation());
+                                unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation(), unitScale);
                             if (unitInitiallyDead && npcDeathCallback_) {
                                 npcDeathCallback_(block.guid);
                             }
@@ -8060,8 +8071,19 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         // Note: TransportSpawnCallback will be invoked from Application after WMO instance is created
                     }
                     if (go->getDisplayId() != 0 && gameObjectSpawnCallback_) {
+                        float goScale = 1.0f;
+                        {
+                            uint16_t scaleIdx = fieldIndex(UF::OBJECT_FIELD_SCALE_X);
+                            if (scaleIdx != 0xFFFF) {
+                                uint32_t raw = entity->getField(scaleIdx);
+                                if (raw != 0) {
+                                    std::memcpy(&goScale, &raw, sizeof(float));
+                                    if (goScale <= 0.01f || goScale > 100.0f) goScale = 1.0f;
+                                }
+                            }
+                        }
                         gameObjectSpawnCallback_(block.guid, go->getEntry(), go->getDisplayId(),
-                            go->getX(), go->getY(), go->getZ(), go->getOrientation());
+                            go->getX(), go->getY(), go->getZ(), go->getOrientation(), goScale);
                     }
                     // Fire transport move callback for transports (position update on re-creation)
                     if (transportGuids_.count(block.guid) && transportMoveCallback_) {
@@ -8366,8 +8388,19 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     }
                                 }
                             } else if (creatureSpawnCallback_) {
+                                float unitScale2 = 1.0f;
+                                {
+                                    uint16_t scaleIdx = fieldIndex(UF::OBJECT_FIELD_SCALE_X);
+                                    if (scaleIdx != 0xFFFF) {
+                                        uint32_t raw = entity->getField(scaleIdx);
+                                        if (raw != 0) {
+                                            std::memcpy(&unitScale2, &raw, sizeof(float));
+                                            if (unitScale2 <= 0.01f || unitScale2 > 100.0f) unitScale2 = 1.0f;
+                                        }
+                                    }
+                                }
                                 creatureSpawnCallback_(block.guid, unit->getDisplayId(),
-                                    unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation());
+                                    unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation(), unitScale2);
                                 bool isDeadNow = (unit->getHealth() == 0) ||
                                     ((unit->getDynamicFlags() & (UNIT_DYNFLAG_DEAD | UNIT_DYNFLAG_LOOTABLE)) != 0);
                                 if (isDeadNow && !npcDeathNotified && npcDeathCallback_) {

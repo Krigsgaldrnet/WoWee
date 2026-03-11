@@ -98,7 +98,7 @@ private:
     void loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float z);
     void buildFactionHostilityMap(uint8_t playerRace);
     pipeline::M2Model loadCreatureM2Sync(const std::string& m2Path);
-    void spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation);
+    void spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation, float scale = 1.0f);
     void despawnOnlineCreature(uint64_t guid);
     bool tryAttachCreatureVirtualWeapons(uint64_t guid, uint32_t instanceId);
     void spawnOnlinePlayer(uint64_t guid,
@@ -113,7 +113,7 @@ private:
     void despawnOnlinePlayer(uint64_t guid);
     void buildCreatureDisplayLookups();
     std::string getModelPathForDisplayId(uint32_t displayId) const;
-    void spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation);
+    void spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation, float scale = 1.0f);
     void despawnOnlineGameObject(uint64_t guid);
     void buildGameObjectDisplayLookups();
     std::string getGameObjectModelPathForDisplayId(uint32_t displayId) const;
@@ -214,6 +214,7 @@ private:
         uint32_t displayId;
         uint32_t modelId;
         float x, y, z, orientation;
+        float scale = 1.0f;
         std::shared_ptr<pipeline::M2Model> model; // parsed on background thread
         std::unordered_map<std::string, pipeline::BLPImage> predecodedTextures; // decoded on bg thread
         bool valid = false;
@@ -300,6 +301,7 @@ private:
         uint64_t guid;
         uint32_t displayId;
         float x, y, z, orientation;
+        float scale = 1.0f;
     };
     std::deque<PendingCreatureSpawn> pendingCreatureSpawns_;
     static constexpr int MAX_SPAWNS_PER_FRAME = 3;
@@ -393,6 +395,7 @@ private:
         uint32_t entry;
         uint32_t displayId;
         float x, y, z, orientation;
+        float scale = 1.0f;
     };
     std::vector<PendingGameObjectSpawn> pendingGameObjectSpawns_;
     void processGameObjectSpawnQueue();
@@ -403,6 +406,7 @@ private:
         uint32_t entry;
         uint32_t displayId;
         float x, y, z, orientation;
+        float scale = 1.0f;
         std::shared_ptr<pipeline::WMOModel> wmoModel;
         std::unordered_map<std::string, pipeline::BLPImage> predecodedTextures; // decoded on bg thread
         bool valid = false;
