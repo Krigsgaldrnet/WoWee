@@ -217,6 +217,10 @@ private:
     static glm::quat interpolateQuat(const pipeline::M2AnimationTrack& track,
                                       int seqIdx, float time);
 
+    // Attachment point lookup helper — shared by attachWeapon() and getAttachmentTransform()
+    bool findAttachmentBone(uint32_t modelId, uint32_t attachmentId,
+                           uint16_t& outBoneIndex, glm::vec3& outOffset) const;
+
 public:
     /**
      * Build a composited character skin texture by alpha-blending overlay

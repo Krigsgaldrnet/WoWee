@@ -3034,6 +3034,65 @@ bool CharacterRenderer::getInstanceModelName(uint32_t instanceId, std::string& m
     return !modelName.empty();
 }
 
+bool CharacterRenderer::findAttachmentBone(uint32_t modelId, uint32_t attachmentId,
+                                          uint16_t& outBoneIndex, glm::vec3& outOffset) const {
+    auto modelIt = models.find(modelId);
+    if (modelIt == models.end()) return false;
+    const auto& model = modelIt->second.data;
+
+    outBoneIndex = 0;
+    outOffset = glm::vec3(0.0f);
+    bool found = false;
+
+    // Try attachment lookup first
+    if (attachmentId < model.attachmentLookup.size()) {
+        uint16_t attIdx = model.attachmentLookup[attachmentId];
+        if (attIdx < model.attachments.size()) {
+            outBoneIndex = model.attachments[attIdx].bone;
+            outOffset = model.attachments[attIdx].position;
+            found = true;
+        }
+    }
+
+    // Fallback: scan attachments by id
+    if (!found) {
+        for (const auto& att : model.attachments) {
+            if (att.id == attachmentId) {
+                outBoneIndex = att.bone;
+                outOffset = att.position;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    // Fallback: key-bone lookup for weapon hand attachment IDs (ID 1 = right hand, ID 2 = left hand)
+    if (!found && (attachmentId == 1 || attachmentId == 2)) {
+        int32_t targetKeyBone = (attachmentId == 1) ? 26 : 27;
+        for (size_t i = 0; i < model.bones.size(); i++) {
+            if (model.bones[i].keyBoneId == targetKeyBone) {
+                outBoneIndex = static_cast<uint16_t>(i);
+                outOffset = glm::vec3(0.0f);
+                found = true;
+                break;
+            }
+        }
+    }
+
+    // Fallback for head attachment (ID 11): use bone 0 if attachment not defined
+    if (!found && attachmentId == 11 && model.bones.size() > 0) {
+        outBoneIndex = 0;
+        found = true;
+    }
+
+    // Validate bone index
+    if (found && outBoneIndex >= model.bones.size()) {
+        found = false;
+    }
+
+    return found;
+}
+
 bool CharacterRenderer::attachWeapon(uint32_t charInstanceId, uint32_t attachmentId,
                                       const pipeline::M2Model& weaponModel, uint32_t weaponModelId,
                                       const std::string& texturePath) {
@@ -3045,59 +3104,11 @@ bool CharacterRenderer::attachWeapon(uint32_t charInstanceId, uint32_t attachmen
     auto& charInstance = charIt->second;
     auto charModelIt = models.find(charInstance.modelId);
     if (charModelIt == models.end()) return false;
-    const auto& charModel = charModelIt->second.data;
 
     // Find bone index for this attachment point
     uint16_t boneIndex = 0;
     glm::vec3 offset(0.0f);
-    bool found = false;
-
-    // Try attachment lookup first
-    if (attachmentId < charModel.attachmentLookup.size()) {
-        uint16_t attIdx = charModel.attachmentLookup[attachmentId];
-        if (attIdx < charModel.attachments.size()) {
-            boneIndex = charModel.attachments[attIdx].bone;
-            offset = charModel.attachments[attIdx].position;
-            found = true;
-        }
-    }
-    // Fallback: scan attachments by id
-    if (!found) {
-        for (const auto& att : charModel.attachments) {
-            if (att.id == attachmentId) {
-                boneIndex = att.bone;
-                offset = att.position;
-                found = true;
-                break;
-            }
-        }
-    }
-    // Fallback: key-bone lookup for weapon hand attachment IDs (ID 1 = right hand, ID 2 = left hand)
-    if (!found && (attachmentId == 1 || attachmentId == 2)) {
-        int32_t targetKeyBone = (attachmentId == 1) ? 26 : 27;
-        for (size_t i = 0; i < charModel.bones.size(); i++) {
-            if (charModel.bones[i].keyBoneId == targetKeyBone) {
-                boneIndex = static_cast<uint16_t>(i);
-                offset = glm::vec3(0.0f);
-                found = true;
-                break;
-            }
-        }
-    }
-
-    // Fallback for head attachment (ID 11): use bone 0 if attachment not defined
-    // Some models may not have explicit attachment 11 but use bone 0 as head
-    if (!found && attachmentId == 11 && charModel.bones.size() > 0) {
-        boneIndex = 0;
-        found = true;
-    }
-
-    // Validate bone index (bad attachment tables should not silently bind to origin)
-    if (found && boneIndex >= charModel.bones.size()) {
-        found = false;
-    }
-
-    if (!found) {
+    if (!findAttachmentBone(charInstance.modelId, attachmentId, boneIndex, offset)) {
         core::Logger::getInstance().warning("attachWeapon: no bone found for attachment ", attachmentId);
         return false;
     }
@@ -3208,57 +3219,11 @@ bool CharacterRenderer::getAttachmentTransform(uint32_t instanceId, uint32_t att
     if (instIt == instances.end()) return false;
     const auto& instance = instIt->second;
 
-    auto modelIt = models.find(instance.modelId);
-    if (modelIt == models.end()) return false;
-    const auto& model = modelIt->second.data;
-
-    // Find attachment point
+    // Find attachment point using shared lookup logic
     uint16_t boneIndex = 0;
     glm::vec3 offset(0.0f);
-    bool found = false;
-
-    // Try attachment lookup first
-    if (attachmentId < model.attachmentLookup.size()) {
-        uint16_t attIdx = model.attachmentLookup[attachmentId];
-        if (attIdx < model.attachments.size()) {
-            boneIndex = model.attachments[attIdx].bone;
-            offset = model.attachments[attIdx].position;
-            found = true;
-        }
-    }
-
-    // Fallback: scan attachments by id
-    if (!found) {
-        for (const auto& att : model.attachments) {
-            if (att.id == attachmentId) {
-                boneIndex = att.bone;
-                offset = att.position;
-                found = true;
-                break;
-            }
-        }
-    }
-
-    if (!found) return false;
-
-    // Validate bone index; invalid indices bind attachments to origin (looks like weapons at feet).
-    if (boneIndex >= model.bones.size()) {
-        // Fallback: key bones (26/27) only for hand attachments.
-        if (attachmentId == 1 || attachmentId == 2) {
-            int32_t targetKeyBone = (attachmentId == 1) ? 26 : 27;
-            found = false;
-            for (size_t i = 0; i < model.bones.size(); i++) {
-                if (model.bones[i].keyBoneId == targetKeyBone) {
-                    boneIndex = static_cast<uint16_t>(i);
-                    offset = glm::vec3(0.0f);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) return false;
-        } else {
-            return false;
-        }
+    if (!findAttachmentBone(instance.modelId, attachmentId, boneIndex, offset)) {
+        return false;
     }
 
     // Get bone matrix
