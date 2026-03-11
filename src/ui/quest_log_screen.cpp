@@ -380,6 +380,11 @@ void QuestLogScreen::render(game::GameHandler& gameHandler) {
                     ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Tracked Progress");
                     for (const auto& [entry, progress] : sel.killCounts) {
                         std::string name = gameHandler.getCachedCreatureName(entry);
+                        if (name.empty()) {
+                            // Game object objective: fall back to GO name cache.
+                            const auto* goInfo = gameHandler.getCachedGameObjectInfo(entry);
+                            if (goInfo && !goInfo->name.empty()) name = goInfo->name;
+                        }
                         if (name.empty()) name = "Unknown (" + std::to_string(entry) + ")";
                         ImGui::BulletText("%s: %u/%u", name.c_str(), progress.first, progress.second);
                     }

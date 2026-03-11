@@ -4157,8 +4157,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         if (reqCount == 0) {
                             auto it = quest.killCounts.find(entry);
                             if (it != quest.killCounts.end()) reqCount = it->second.second;
-                            if (reqCount == 0) reqCount = count;
                         }
+                        // Fall back to killObjectives (parsed from SMSG_QUEST_QUERY_RESPONSE).
+                        // Note: npcOrGoId < 0 means game object; server always sends entry as uint32
+                        // in QUESTUPDATE_ADD_KILL regardless of type, so match by absolute value.
+                        if (reqCount == 0) {
+                            for (const auto& obj : quest.killObjectives) {
+                                if (obj.npcOrGoId == 0 || obj.required == 0) continue;
+                                uint32_t objEntry = static_cast<uint32_t>(
+                                    obj.npcOrGoId > 0 ? obj.npcOrGoId : -obj.npcOrGoId);
+                                if (objEntry == entry) {
+                                    reqCount = obj.required;
+                                    break;
+                                }
+                            }
+                        }
+                        if (reqCount == 0) reqCount = count;  // last-resort: avoid 0/0 display
                         quest.killCounts[entry] = {count, reqCount};
 
                         std::string creatureName = getCachedCreatureName(entry);
@@ -4204,9 +4218,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 bool updatedAny = false;
                 for (auto& quest : questLog_) {
                     if (quest.complete) continue;
-                    const bool tracksItem =
+                    bool tracksItem =
                         quest.requiredItemCounts.count(itemId) > 0 ||
                         quest.itemCounts.count(itemId) > 0;
+                    // Also check itemObjectives parsed from SMSG_QUEST_QUERY_RESPONSE in case
+                    // requiredItemCounts hasn't been populated yet (race during quest accept).
+                    if (!tracksItem) {
+                        for (const auto& obj : quest.itemObjectives) {
+                            if (obj.itemId == itemId && obj.required > 0) {
+                                quest.requiredItemCounts.emplace(itemId, obj.required);
+                                tracksItem = true;
+                                break;
+                            }
+                        }
+                    }
                     if (!tracksItem) continue;
                     quest.itemCounts[itemId] = count;
                     updatedAny = true;
@@ -15076,7 +15101,10 @@ void GameHandler::applyPackedKillCountsFromFields(QuestLogEntry& quest) {
     for (int i = 0; i < 4; ++i) {
         const auto& obj = quest.killObjectives[i];
         if (obj.npcOrGoId == 0 || obj.required == 0) continue;
-        const uint32_t entryKey = static_cast<uint32_t>(obj.npcOrGoId);
+        // Negative npcOrGoId means game object; use absolute value as the map key
+        // (SMSG_QUESTUPDATE_ADD_KILL always sends a positive entry regardless of type).
+        const uint32_t entryKey = static_cast<uint32_t>(
+            obj.npcOrGoId > 0 ? obj.npcOrGoId : -obj.npcOrGoId);
         // Don't overwrite live kill count with stale packed data if already non-zero.
         if (counts[i] == 0 && quest.killCounts.count(entryKey)) continue;
         quest.killCounts[entryKey] = {counts[i], obj.required};

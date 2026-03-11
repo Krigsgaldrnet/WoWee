@@ -5048,10 +5048,15 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
             } else {
                 // Kill counts
                 for (const auto& [entry, progress] : q.killCounts) {
-                    std::string creatureName = gameHandler.getCachedCreatureName(entry);
-                    if (!creatureName.empty()) {
+                    std::string name = gameHandler.getCachedCreatureName(entry);
+                    if (name.empty()) {
+                        // May be a game object objective; fall back to GO name cache.
+                        const auto* goInfo = gameHandler.getCachedGameObjectInfo(entry);
+                        if (goInfo && !goInfo->name.empty()) name = goInfo->name;
+                    }
+                    if (!name.empty()) {
                         ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f),
-                                           "  %s: %u/%u", creatureName.c_str(),
+                                           "  %s: %u/%u", name.c_str(),
                                            progress.first, progress.second);
                     } else {
                         ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f),
