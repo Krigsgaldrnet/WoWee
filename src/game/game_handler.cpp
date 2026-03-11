@@ -16892,15 +16892,20 @@ void GameHandler::handleTeleportAck(network::Packet& packet) {
     if (packet.getSize() - packet.getReadPos() < 4) return;
     uint32_t counter = packet.readUInt32();
 
-    // Read the movement info embedded in the teleport
-    // Format: u32 flags, u16 flags2, u32 time, float x, float y, float z, float o
-    if (packet.getSize() - packet.getReadPos() < 4 + 2 + 4 + 4 * 4) {
+    // Read the movement info embedded in the teleport.
+    // WotLK: moveFlags(4) + moveFlags2(2) + time(4) + x(4) + y(4) + z(4) + o(4) = 26 bytes
+    // Classic 1.12 / TBC 2.4.3: moveFlags(4) + time(4) + x(4) + y(4) + z(4) + o(4) = 24 bytes
+    // (Classic and TBC have no moveFlags2 field in movement packets)
+    const bool taNoFlags2 = isClassicLikeExpansion() || isActiveExpansion("tbc");
+    const size_t minMoveSz = taNoFlags2 ? (4 + 4 + 4 * 4) : (4 + 2 + 4 + 4 * 4);
+    if (packet.getSize() - packet.getReadPos() < minMoveSz) {
         LOG_WARNING("MSG_MOVE_TELEPORT_ACK: not enough data for movement info");
         return;
     }
 
     packet.readUInt32();  // moveFlags
-    packet.readUInt16();  // moveFlags2
+    if (!taNoFlags2)
+        packet.readUInt16();  // moveFlags2 (WotLK only)
     uint32_t moveTime = packet.readUInt32();
     float serverX = packet.readFloat();
     float serverY = packet.readFloat();
