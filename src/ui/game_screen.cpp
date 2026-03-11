@@ -420,6 +420,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderGuildInvitePopup(gameHandler);
     renderReadyCheckPopup(gameHandler);
     renderBgInvitePopup(gameHandler);
+    renderLfgProposalPopup(gameHandler);
     renderGuildRoster(gameHandler);
     renderBuffBar(gameHandler);
     renderLootWindow(gameHandler);
@@ -6146,6 +6147,55 @@ void GameScreen::renderBgInvitePopup(game::GameHandler& gameHandler) {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
         if (ImGui::Button("Leave Queue", ImVec2(175, 30))) {
             gameHandler.declineBattlefield(slot->queueSlot);
+        }
+        ImGui::PopStyleColor(2);
+    }
+    ImGui::End();
+
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(3);
+}
+
+void GameScreen::renderLfgProposalPopup(game::GameHandler& gameHandler) {
+    using LfgState = game::GameHandler::LfgState;
+    if (gameHandler.getLfgState() != LfgState::Proposal) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2.0f - 175.0f, screenH / 2.0f - 65.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(350.0f, 0.0f), ImGuiCond_Always);
+
+    ImGui::PushStyleColor(ImGuiCol_WindowBg,      ImVec4(0.08f, 0.14f, 0.08f, 0.96f));
+    ImGui::PushStyleColor(ImGuiCol_Border,        ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.1f, 0.3f, 0.1f, 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
+
+    if (ImGui::Begin("Dungeon Finder", nullptr, flags)) {
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "A group has been found!");
+        ImGui::Spacing();
+        ImGui::TextWrapped("Please accept or decline to join the dungeon.");
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.5f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+        if (ImGui::Button("Accept", ImVec2(155.0f, 30.0f))) {
+            gameHandler.lfgAcceptProposal(gameHandler.getLfgProposalId(), true);
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.5f, 0.15f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::Button("Decline", ImVec2(155.0f, 30.0f))) {
+            gameHandler.lfgAcceptProposal(gameHandler.getLfgProposalId(), false);
         }
         ImGui::PopStyleColor(2);
     }
