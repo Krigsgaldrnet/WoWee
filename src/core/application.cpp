@@ -6450,32 +6450,8 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             }
 
             // Show tabard mesh only when CreatureDisplayInfoExtra equips one.
-            // Use ItemDisplayInfo.dbc to get the correct tabard geoset variant.
             if (hasGroup12 && hasEquippedTabard) {
-                uint16_t wantTabard = 1201;  // Default fallback
-
-                // Try to read tabard geoset variant from ItemDisplayInfo.dbc (slot 9)
-                if (hasHumanoidExtra && itExtra != humanoidExtraMap_.end()) {
-                    uint32_t tabardDisplayId = itExtra->second.equipDisplayId[9];
-                    if (tabardDisplayId != 0) {
-                        auto itemDisplayDbc = assetManager->loadDBC("ItemDisplayInfo.dbc");
-                        const auto* idiL = pipeline::getActiveDBCLayout()
-                            ? pipeline::getActiveDBCLayout()->getLayout("ItemDisplayInfo") : nullptr;
-                        if (itemDisplayDbc) {
-                            int32_t tabardIdx = itemDisplayDbc->findRecordById(tabardDisplayId);
-                            if (tabardIdx >= 0) {
-                                // Get geoset group variant from ItemDisplayInfo (group 1)
-                                const uint32_t ggField = idiL ? (*idiL)["GeosetGroup1"] : 7;
-                                uint32_t tabardGG = itemDisplayDbc->getUInt32(static_cast<uint32_t>(tabardIdx), ggField);
-                                if (tabardGG > 0) {
-                                    wantTabard = static_cast<uint16_t>(1200 + tabardGG);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                uint16_t tabardSid = pickFromGroup(wantTabard, 12);
+                uint16_t tabardSid = pickFromGroup(1201, 12);
                 if (tabardSid != 0) normalizedGeosets.insert(tabardSid);
             }
 
