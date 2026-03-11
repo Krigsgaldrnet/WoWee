@@ -3403,15 +3403,28 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
 
         case Opcode::SMSG_ACTION_BUTTONS: {
-            // uint8 mode (0=initial, 1=update) + 144 × uint32 packed buttons
             // packed: bits 0-23 = actionId, bits 24-31 = type
             //   0x00 = spell (when id != 0), 0x80 = item, 0x40 = macro (skip)
+            // Format differences:
+            //   Classic 1.12: no mode byte, 120 slots (480 bytes)
+            //   TBC 2.4.3:    no mode byte, 132 slots (528 bytes)
+            //   WotLK 3.3.5a: uint8 mode + 144 slots (577 bytes)
             size_t rem = packet.getSize() - packet.getReadPos();
-            if (rem < 1) break;
-            /*uint8_t mode =*/ packet.readUInt8();
-            rem--;
-            constexpr int SERVER_BAR_SLOTS = 144;
-            for (int i = 0; i < SERVER_BAR_SLOTS; ++i) {
+            const bool hasModeByteExp = isActiveExpansion("wotlk");
+            int serverBarSlots;
+            if (isClassicLikeExpansion()) {
+                serverBarSlots = 120;
+            } else if (isActiveExpansion("tbc")) {
+                serverBarSlots = 132;
+            } else {
+                serverBarSlots = 144;
+            }
+            if (hasModeByteExp) {
+                if (rem < 1) break;
+                /*uint8_t mode =*/ packet.readUInt8();
+                rem--;
+            }
+            for (int i = 0; i < serverBarSlots; ++i) {
                 if (rem < 4) break;
                 uint32_t packed = packet.readUInt32();
                 rem -= 4;
