@@ -3072,7 +3072,7 @@ bool CharacterRenderer::attachWeapon(uint32_t charInstanceId, uint32_t attachmen
             }
         }
     }
-    // Fallback to key-bone lookup only for weapon hand attachment IDs.
+    // Fallback to key-bone lookup for weapon hand attachment IDs.
     if (!found && (attachmentId == 1 || attachmentId == 2)) {
         int32_t targetKeyBone = (attachmentId == 1) ? 26 : 27;
         for (size_t i = 0; i < charModel.bones.size(); i++) {
@@ -3082,6 +3082,14 @@ bool CharacterRenderer::attachWeapon(uint32_t charInstanceId, uint32_t attachmen
                 break;
             }
         }
+    }
+
+    // Fallback for head attachment (ID 11): try common head bone indices
+    // Some models may not have attachment 11 defined, but have bone 0 or 1 as head
+    if (!found && attachmentId == 11 && charModel.bones.size() > 0) {
+        // Try bone 0 first (common for head in many humanoid models)
+        boneIndex = 0;
+        found = true;
     }
 
     // Validate bone index (bad attachment tables should not silently bind to origin)

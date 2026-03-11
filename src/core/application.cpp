@@ -6142,9 +6142,10 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                       " sleeves=", geosetSleeves, " pants=", geosetPants,
                       " boots=", geosetBoots, " gloves=", geosetGloves);
 
-            // TODO(#helmet-attach): NPC helmet attachment anchors are currently unreliable
-            // on some humanoid models (floating/incorrect bone bind). Keep hidden for now.
-            static constexpr bool kEnableNpcHelmetAttachmentsMainPath = false;
+            // NOTE: NPC helmet attachment with fallback logic to use bone 0 if attachment
+            // point 11 is missing. This improves compatibility with models that don't have
+            // attachment 11 explicitly defined.
+            static constexpr bool kEnableNpcHelmetAttachmentsMainPath = true;
             // Load and attach helmet model if equipped
             if (kEnableNpcHelmetAttachmentsMainPath && extra.equipDisplayId[0] != 0 && itemDisplayDbc) {
                 int32_t helmIdx = itemDisplayDbc->findRecordById(extra.equipDisplayId[0]);
