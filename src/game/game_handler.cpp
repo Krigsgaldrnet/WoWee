@@ -19201,6 +19201,11 @@ void GameHandler::handleTradeStatusExtended(network::Packet& packet) {
         else        peerTradeGold_ = coins;
     }
 
+    // Prefetch item info for all occupied trade slots so names show immediately
+    for (const auto& s : slots) {
+        if (s.occupied && s.itemId != 0) queryItemInfo(s.itemId, 0);
+    }
+
     LOG_DEBUG("SMSG_TRADE_STATUS_EXTENDED: isSelf=", (int)isSelf,
               " myGold=", myTradeGold_, " peerGold=", peerTradeGold_);
 }
