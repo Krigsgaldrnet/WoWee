@@ -8956,20 +8956,23 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         const uint16_t itemMaxDurField  = fieldIndex(UF::ITEM_FIELD_MAXDURABILITY);
                         const uint16_t containerNumSlotsField = fieldIndex(UF::CONTAINER_FIELD_NUM_SLOTS);
                         const uint16_t containerSlot1Field = fieldIndex(UF::CONTAINER_FIELD_SLOT_1);
+
+                        auto it = onlineItems_.find(block.guid);
+                        bool isItemInInventory = (it != onlineItems_.end());
+
                         for (const auto& [key, val] : block.fields) {
-                            auto it = onlineItems_.find(block.guid);
-                            if (key == itemStackField) {
-                                if (it != onlineItems_.end() && it->second.stackCount != val) {
+                            if (key == itemStackField && isItemInInventory) {
+                                if (it->second.stackCount != val) {
                                     it->second.stackCount = val;
                                     inventoryChanged = true;
                                 }
-                            } else if (key == itemDurField) {
-                                if (it != onlineItems_.end() && it->second.curDurability != val) {
+                            } else if (key == itemDurField && isItemInInventory) {
+                                if (it->second.curDurability != val) {
                                     it->second.curDurability = val;
                                     inventoryChanged = true;
                                 }
-                            } else if (key == itemMaxDurField) {
-                                if (it != onlineItems_.end() && it->second.maxDurability != val) {
+                            } else if (key == itemMaxDurField && isItemInInventory) {
+                                if (it->second.maxDurability != val) {
                                     it->second.maxDurability = val;
                                     inventoryChanged = true;
                                 }
