@@ -5973,7 +5973,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             uint16_t geosetSleeves = pickGeoset(801, 8);  // Bare wrists (group 8, controlled by chest)
             uint16_t geosetPants = pickGeoset(1301, 13);  // Bare legs (group 13)
             uint16_t geosetCape = 0;       // Group 15 disabled unless cape is equipped
-            uint16_t geosetTabard = 0;     // TODO: NPC tabard geosets currently flicker/apron; keep hidden for now
+            uint16_t geosetTabard = pickGeoset(1201, 12);  // Group 12 (tabard), default variant 1201
             rendering::VkTexture* npcCapeTextureId = nullptr;
 
             // Load equipment geosets from ItemDisplayInfo.dbc
@@ -6022,7 +6022,11 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                     if (gg > 0) geosetGloves = pickGeoset(static_cast<uint16_t>(301 + gg), 3);
                 }
 
-                // Tabard (slot 9) intentionally disabled for now (see geosetTabard TODO above).
+                // Tabard (slot 9) → group 12 (tabard/robe mesh)
+                {
+                    uint32_t gg = readGeosetGroup(9, "tabard");
+                    if (gg > 0) geosetTabard = pickGeoset(static_cast<uint16_t>(1200 + gg), 12);
+                }
 
                 // Cape (slot 10) → group 15
                 if (extra.equipDisplayId[10] != 0) {
