@@ -1683,11 +1683,11 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                                 heightOffset = 0.3f;
                             }
                         } else if (t == game::ObjectType::GAMEOBJECT) {
-                            // Do not hard-filter by GO type here. Some realms/content
-                            // classify usable objects (including some chests) with types
-                            // that look decorative in cache data.
-                            hitRadius = 2.5f;
-                            heightOffset = 1.2f;
+                            // For GOs with no renderer instance yet, use a tight fallback
+                            // sphere (not 2.5f) so invisible/unloaded GOs (chairs, doodads)
+                            // are not accidentally clicked during camera right-drag.
+                            hitRadius = 1.2f;
+                            heightOffset = 1.0f;
                         }
                         hitCenter = core::coords::canonicalToRender(
                             glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
