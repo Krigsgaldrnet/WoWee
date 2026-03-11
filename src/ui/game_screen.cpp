@@ -9406,10 +9406,13 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         float dx = worldRenderPos.x - playerRender.x;
         float dy = worldRenderPos.y - playerRender.y;
 
-        // Match minimap shader transform exactly.
-        // Render axes: +X=west, +Y=north. Minimap screen axes: +X=right(east), +Y=down(south).
-        float rx = -dx * cosB + dy * sinB;
-        float ry = -dx * sinB - dy * cosB;
+        // Exact inverse of minimap display shader:
+        //   shader: mapUV = playerUV + vec2(-rotated.x, rotated.y) * zoom * 2
+        //   where rotated = R(bearing) * center, center in [-0.5, 0.5]
+        // Inverse: center = R^-1(bearing) * (-deltaUV.x, deltaUV.y) / (zoom*2)
+        // With deltaUV.x ∝ +dx (render +X=west=larger U) and deltaUV.y ∝ -dy (V increases south):
+        float rx = -(dx * cosB + dy * sinB);
+        float ry =   dx * sinB - dy * cosB;
 
         // Scale to minimap pixels
         float px = rx / viewRadius * mapRadius;

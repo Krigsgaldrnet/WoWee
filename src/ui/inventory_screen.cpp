@@ -1722,7 +1722,9 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         }
 
         if (ImGui::IsItemHovered() && !holdingItem) {
-            renderItemTooltip(item, &inventory);
+            // Pass inventory for backpack/bag items only; equipped items compare against themselves otherwise
+            const game::Inventory* tooltipInv = (kind == SlotKind::EQUIPMENT) ? nullptr : &inventory;
+            renderItemTooltip(item, tooltipInv);
         }
     }
 }
@@ -1968,6 +1970,22 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
             }
             ImGui::TextColored(getQualityColor(eq->item.quality), "%s", eq->item.name.c_str());
 
+            // Item level comparison (always shown when different)
+            if (eq->item.itemLevel > 0 || item.itemLevel > 0) {
+                char ilvlBuf[64];
+                float diff = static_cast<float>(item.itemLevel) - static_cast<float>(eq->item.itemLevel);
+                if (diff > 0.0f)
+                    std::snprintf(ilvlBuf, sizeof(ilvlBuf), "Item Level: %u (▲%.0f)", item.itemLevel, diff);
+                else if (diff < 0.0f)
+                    std::snprintf(ilvlBuf, sizeof(ilvlBuf), "Item Level: %u (▼%.0f)", item.itemLevel, -diff);
+                else
+                    std::snprintf(ilvlBuf, sizeof(ilvlBuf), "Item Level: %u (=)", item.itemLevel);
+                ImVec4 ilvlColor = (diff > 0.0f) ? ImVec4(0.0f, 1.0f, 0.0f, 1.0f)
+                                 : (diff < 0.0f) ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f)
+                                 : ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+                ImGui::TextColored(ilvlColor, "%s", ilvlBuf);
+            }
+
             // Helper: render a numeric stat diff line
             auto showDiff = [](const char* label, float newVal, float eqVal) {
                 if (newVal == 0.0f && eqVal == 0.0f) return;
@@ -1980,7 +1998,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
                     std::snprintf(buf, sizeof(buf), "%s: %.0f (▼%.0f)", label, newVal, -diff);
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", buf);
                 } else {
-                    std::snprintf(buf, sizeof(buf), "%s: %.0f", label, newVal);
+                    std::snprintf(buf, sizeof(buf), "%s: %.0f (=)", label, newVal);
                     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", buf);
                 }
             };

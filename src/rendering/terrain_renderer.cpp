@@ -89,6 +89,7 @@ bool TerrainRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameL
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.maxSets = MAX_MATERIAL_SETS;
     poolInfo.poolSizeCount = 2;
     poolInfo.pPoolSizes = poolSizes;
@@ -1033,6 +1034,10 @@ void TerrainRenderer::destroyChunkGPU(TerrainChunkGPU& chunk) {
         AllocatedBuffer ab{}; ab.buffer = chunk.paramsUBO; ab.allocation = chunk.paramsAlloc;
         destroyBuffer(allocator, ab);
         chunk.paramsUBO = VK_NULL_HANDLE;
+    }
+    // Return material descriptor set to the pool so it can be reused by new chunks
+    if (chunk.materialSet && materialDescPool) {
+        vkFreeDescriptorSets(vkCtx->getDevice(), materialDescPool, 1, &chunk.materialSet);
     }
     chunk.materialSet = VK_NULL_HANDLE;
 
