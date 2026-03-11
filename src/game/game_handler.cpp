@@ -2450,10 +2450,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint64_t victimGuid = packet.readUInt64();
             /*uint8_t  envType =*/ packet.readUInt8();
             uint32_t damage   = packet.readUInt32();
-            /*uint32_t absorb =*/ packet.readUInt32();
-            /*uint32_t resist =*/ packet.readUInt32();
-            if (victimGuid == playerGuid && damage > 0) {
-                addCombatText(CombatTextEntry::ENVIRONMENTAL, static_cast<int32_t>(damage), 0, false);
+            uint32_t absorb   = packet.readUInt32();
+            uint32_t resist   = packet.readUInt32();
+            if (victimGuid == playerGuid) {
+                if (damage > 0)
+                    addCombatText(CombatTextEntry::ENVIRONMENTAL, static_cast<int32_t>(damage), 0, false);
+                if (absorb > 0)
+                    addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(absorb), 0, false);
+                if (resist > 0)
+                    addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(resist), 0, false);
             }
             break;
         }
