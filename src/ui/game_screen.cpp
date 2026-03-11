@@ -5317,6 +5317,10 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         // Player nameplates are always shown; NPC nameplates respect the V-key toggle
         if (!isPlayer && !showNameplates_) continue;
 
+        // For corpses (dead units), only show a minimal grey nameplate if selected
+        bool isCorpse = (unit->getHealth() == 0);
+        if (isCorpse && !isTarget) continue;
+
         // Prefer the renderer's actual instance position so the nameplate tracks the
         // rendered model exactly (avoids drift from the parallel entity interpolator).
         glm::vec3 renderPos;
@@ -5349,9 +5353,13 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         float alpha = dist < (cullDist - 5.0f) ? 1.0f : 1.0f - (dist - (cullDist - 5.0f)) / 5.0f;
         auto A = [&](int v) { return static_cast<int>(v * alpha); };
 
-        // Bar colour by hostility
+        // Bar colour by hostility (grey for corpses)
         ImU32 barColor, bgColor;
-        if (unit->isHostile()) {
+        if (isCorpse) {
+            // Minimal grey bar for selected corpses (loot/skin targets)
+            barColor = IM_COL32(140, 140, 140, A(200));
+            bgColor  = IM_COL32(70,  70,  70,  A(160));
+        } else if (unit->isHostile()) {
             barColor = IM_COL32(220, 60,  60,  A(200));
             bgColor  = IM_COL32(100, 25,  25,  A(160));
         } else {
@@ -5372,7 +5380,10 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             0.0f, 1.0f);
 
         drawList->AddRectFilled(ImVec2(barX,                 sy), ImVec2(barX + barW,               sy + barH), bgColor,    2.0f);
-        drawList->AddRectFilled(ImVec2(barX,                 sy), ImVec2(barX + barW * healthPct,   sy + barH), barColor,   2.0f);
+        // For corpses, don't fill health bar (just show grey background)
+        if (!isCorpse) {
+            drawList->AddRectFilled(ImVec2(barX,                 sy), ImVec2(barX + barW * healthPct,   sy + barH), barColor,   2.0f);
+        }
         drawList->AddRect       (ImVec2(barX - 1.0f, sy - 1.0f), ImVec2(barX + barW + 1.0f, sy + barH + 1.0f), borderColor, 2.0f);
 
         // Name + level label above health bar
