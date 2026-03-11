@@ -5242,6 +5242,27 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
     const uint64_t  playerGuid = gameHandler.getPlayerGuid();
     const uint64_t  targetGuid = gameHandler.getTargetGuid();
 
+    // Build set of creature entries that are kill objectives in active (incomplete) quests.
+    std::unordered_set<uint32_t> questKillEntries;
+    {
+        const auto& questLog = gameHandler.getQuestLog();
+        const auto& trackedIds = gameHandler.getTrackedQuestIds();
+        for (const auto& q : questLog) {
+            if (q.complete || q.questId == 0) continue;
+            // Only highlight for tracked quests (or all if nothing tracked).
+            if (!trackedIds.empty() && !trackedIds.count(q.questId)) continue;
+            for (const auto& obj : q.killObjectives) {
+                if (obj.npcOrGoId > 0 && obj.required > 0) {
+                    // Check if not already completed.
+                    auto it = q.killCounts.find(static_cast<uint32_t>(obj.npcOrGoId));
+                    if (it == q.killCounts.end() || it->second.first < it->second.second) {
+                        questKillEntries.insert(static_cast<uint32_t>(obj.npcOrGoId));
+                    }
+                }
+            }
+        }
+    }
+
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 
     for (const auto& [guid, entityPtr] : gameHandler.getEntityManager().getEntities()) {
@@ -5366,6 +5387,14 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
                 float markX = nameX - 14.0f;
                 drawList->AddText(ImVec2(markX + 1.0f, nameY + 1.0f), IM_COL32(0,0,0,120), kNPMarks[raidMark].sym);
                 drawList->AddText(ImVec2(markX,         nameY),        kNPMarks[raidMark].col, kNPMarks[raidMark].sym);
+            }
+
+            // Quest kill objective indicator: small yellow sword icon to the right of the name
+            if (!isPlayer && questKillEntries.count(unit->getEntry())) {
+                const char* objSym = "\xe2\x9a\x94";  // ⚔ crossed swords (UTF-8)
+                float objX = nameX + textSize.x + 4.0f;
+                drawList->AddText(ImVec2(objX + 1.0f, nameY + 1.0f), IM_COL32(0, 0, 0, A(160)), objSym);
+                drawList->AddText(ImVec2(objX,         nameY),         IM_COL32(255, 220, 0, A(230)), objSym);
             }
         }
 
