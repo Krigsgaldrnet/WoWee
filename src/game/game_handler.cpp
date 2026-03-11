@@ -1963,15 +1963,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Loot start roll (Need/Greed popup trigger) ----
         case Opcode::SMSG_LOOT_START_ROLL: {
-            // uint64 objectGuid + uint32 mapId + uint32 lootSlot + uint32 itemId
-            // + uint32 randomSuffix + uint32 randomPropId + uint32 countdown + uint8 voteMask
-            if (packet.getSize() - packet.getReadPos() < 33) break;
+            // WotLK 3.3.5a: uint64 objectGuid + uint32 mapId + uint32 lootSlot + uint32 itemId
+            //              + uint32 randomSuffix + uint32 randomPropId + uint32 countdown + uint8 voteMask (33 bytes)
+            // Classic/TBC:  uint64 objectGuid + uint32 mapId + uint32 lootSlot + uint32 itemId
+            //              + uint32 countdown + uint8 voteMask (25 bytes)
+            const bool isWotLK = isActiveExpansion("wotlk");
+            const size_t minSize = isWotLK ? 33u : 25u;
+            if (packet.getSize() - packet.getReadPos() < minSize) break;
             uint64_t objectGuid = packet.readUInt64();
             /*uint32_t mapId =*/ packet.readUInt32();
             uint32_t slot   = packet.readUInt32();
             uint32_t itemId = packet.readUInt32();
-            /*uint32_t randSuffix =*/ packet.readUInt32();
-            /*uint32_t randProp   =*/ packet.readUInt32();
+            if (isWotLK) {
+                /*uint32_t randSuffix =*/ packet.readUInt32();
+                /*uint32_t randProp   =*/ packet.readUInt32();
+            }
             /*uint32_t countdown  =*/ packet.readUInt32();
             /*uint8_t  voteMask   =*/ packet.readUInt8();
             // Trigger the roll popup for local player
@@ -2344,11 +2350,18 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Loot notifications ----
         case Opcode::SMSG_LOOT_ALL_PASSED: {
-            // uint64 objectGuid + uint32 slot + uint32 itemId + uint32 randSuffix + uint32 randPropId
-            if (packet.getSize() - packet.getReadPos() < 24) break;
+            // WotLK 3.3.5a: uint64 objectGuid + uint32 slot + uint32 itemId + uint32 randSuffix + uint32 randPropId (24 bytes)
+            // Classic/TBC:  uint64 objectGuid + uint32 slot + uint32 itemId (16 bytes)
+            const bool isWotLK = isActiveExpansion("wotlk");
+            const size_t minSize = isWotLK ? 24u : 16u;
+            if (packet.getSize() - packet.getReadPos() < minSize) break;
             /*uint64_t objGuid =*/ packet.readUInt64();
             /*uint32_t slot    =*/ packet.readUInt32();
             uint32_t itemId  = packet.readUInt32();
+            if (isWotLK) {
+                /*uint32_t randSuffix =*/ packet.readUInt32();
+                /*uint32_t randProp   =*/ packet.readUInt32();
+            }
             auto* info = getItemInfo(itemId);
             char buf[256];
             std::snprintf(buf, sizeof(buf), "Everyone passed on [%s].",
@@ -19516,18 +19529,23 @@ void GameHandler::handleTradeStatusExtended(network::Packet& packet) {
 // ---------------------------------------------------------------------------
 
 void GameHandler::handleLootRoll(network::Packet& packet) {
-    // uint64 objectGuid, uint32 slot, uint64 playerGuid,
-    // uint32 itemId, uint32 randomSuffix, uint32 randomPropId,
-    // uint8 rollNumber, uint8 rollType
+    // WotLK 3.3.5a: uint64 objectGuid, uint32 slot, uint64 playerGuid,
+    //              uint32 itemId, uint32 randomSuffix, uint32 randomPropId, uint8 rollNumber, uint8 rollType (34 bytes)
+    // Classic/TBC:  uint64 objectGuid, uint32 slot, uint64 playerGuid,
+    //              uint32 itemId, uint8 rollNumber, uint8 rollType (26 bytes)
+    const bool isWotLK = isActiveExpansion("wotlk");
+    const size_t minSize = isWotLK ? 34u : 26u;
     size_t rem = packet.getSize() - packet.getReadPos();
-    if (rem < 26) return;  // minimum: 8+4+8+4+4+4+1+1 = 34, be lenient
+    if (rem < minSize) return;
 
     uint64_t objectGuid = packet.readUInt64();
     uint32_t slot       = packet.readUInt32();
     uint64_t rollerGuid = packet.readUInt64();
     uint32_t itemId     = packet.readUInt32();
-    /*uint32_t randSuffix =*/ packet.readUInt32();
-    /*uint32_t randProp   =*/ packet.readUInt32();
+    if (isWotLK) {
+        /*uint32_t randSuffix =*/ packet.readUInt32();
+        /*uint32_t randProp   =*/ packet.readUInt32();
+    }
     uint8_t  rollNum    = packet.readUInt8();
     uint8_t  rollType   = packet.readUInt8();
 
@@ -19574,15 +19592,23 @@ void GameHandler::handleLootRoll(network::Packet& packet) {
 }
 
 void GameHandler::handleLootRollWon(network::Packet& packet) {
+    // WotLK 3.3.5a: uint64 objectGuid, uint32 slot, uint64 winnerGuid,
+    //              uint32 itemId, uint32 randomSuffix, uint32 randomPropId, uint8 rollNumber, uint8 rollType (34 bytes)
+    // Classic/TBC:  uint64 objectGuid, uint32 slot, uint64 winnerGuid,
+    //              uint32 itemId, uint8 rollNumber, uint8 rollType (26 bytes)
+    const bool isWotLK = isActiveExpansion("wotlk");
+    const size_t minSize = isWotLK ? 34u : 26u;
     size_t rem = packet.getSize() - packet.getReadPos();
-    if (rem < 26) return;
+    if (rem < minSize) return;
 
     /*uint64_t objectGuid =*/ packet.readUInt64();
     /*uint32_t slot       =*/ packet.readUInt32();
     uint64_t winnerGuid = packet.readUInt64();
     uint32_t itemId     = packet.readUInt32();
-    /*uint32_t randSuffix =*/ packet.readUInt32();
-    /*uint32_t randProp   =*/ packet.readUInt32();
+    if (isWotLK) {
+        /*uint32_t randSuffix =*/ packet.readUInt32();
+        /*uint32_t randProp   =*/ packet.readUInt32();
+    }
     uint8_t  rollNum    = packet.readUInt8();
     uint8_t  rollType   = packet.readUInt8();
 
