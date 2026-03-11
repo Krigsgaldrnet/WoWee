@@ -51,7 +51,7 @@ struct CombatTextEntry {
     enum Type : uint8_t {
         MELEE_DAMAGE, SPELL_DAMAGE, HEAL, MISS, DODGE, PARRY, BLOCK,
         CRIT_DAMAGE, CRIT_HEAL, PERIODIC_DAMAGE, PERIODIC_HEAL, ENVIRONMENTAL,
-        ENERGIZE, XP_GAIN, IMMUNE
+        ENERGIZE, XP_GAIN, IMMUNE, ABSORB, RESIST
     };
     Type type;
     int32_t amount = 0;

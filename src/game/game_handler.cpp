@@ -2433,8 +2433,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         CombatTextEntry::MISS,    // 4=EVADE
                         CombatTextEntry::IMMUNE,  // 5=IMMUNE
                         CombatTextEntry::MISS,    // 6=DEFLECT
-                        CombatTextEntry::MISS,    // 7=ABSORB
-                        CombatTextEntry::MISS,    // 8=RESIST
+                        CombatTextEntry::ABSORB,  // 7=ABSORB
+                        CombatTextEntry::RESIST,  // 8=RESIST
                     };
                     CombatTextEntry::Type ct = (missInfo < 9) ? missTypes[missInfo] : CombatTextEntry::MISS;
                     addCombatText(ct, 0, 0, true);
@@ -13967,8 +13967,8 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
             CombatTextEntry::MISS,    // 4=EVADE
             CombatTextEntry::IMMUNE,  // 5=IMMUNE
             CombatTextEntry::MISS,    // 6=DEFLECT
-            CombatTextEntry::MISS,    // 7=ABSORB
-            CombatTextEntry::MISS,    // 8=RESIST
+            CombatTextEntry::ABSORB,  // 7=ABSORB
+            CombatTextEntry::RESIST,  // 8=RESIST
         };
         // Show text for each miss (usually just 1 target per spell go)
         for (const auto& m : data.missTargets) {
