@@ -31,5 +31,15 @@ struct ShadowPush {
     glm::mat4 model;
 };
 
+// Uniform buffer for shadow rendering parameters (matches shader std140 layout)
+struct ShadowParamsUBO {
+    int32_t useBones;
+    int32_t useTexture;
+    int32_t alphaTest;
+    int32_t foliageSway;
+    float windTime;
+    float foliageMotionDamp;
+};
+
 } // namespace rendering
 } // namespace wowee

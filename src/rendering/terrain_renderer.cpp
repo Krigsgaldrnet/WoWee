@@ -788,15 +788,6 @@ bool TerrainRenderer::initializeShadow(VkRenderPass shadowRenderPass) {
     VmaAllocator allocator = vkCtx->getAllocator();
 
     // ShadowParams UBO — terrain uses no bones, no texture, no alpha test
-    struct ShadowParamsUBO {
-        int32_t useBones        = 0;
-        int32_t useTexture      = 0;
-        int32_t alphaTest       = 0;
-        int32_t foliageSway     = 0;
-        float   windTime        = 0.0f;
-        float   foliageMotionDamp = 1.0f;
-    };
-
     VkBufferCreateInfo bufCI{};
     bufCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufCI.size = sizeof(ShadowParamsUBO);

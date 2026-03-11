@@ -2865,16 +2865,6 @@ bool M2Renderer::initializeShadow(VkRenderPass shadowRenderPass) {
     if (!vkCtx_ || shadowRenderPass == VK_NULL_HANDLE) return false;
     VkDevice device = vkCtx_->getDevice();
 
-    // ShadowParams UBO: useBones, useTexture, alphaTest, foliageSway, windTime, foliageMotionDamp
-    struct ShadowParamsUBO {
-        int32_t useBones = 0;
-        int32_t useTexture = 0;
-        int32_t alphaTest = 0;
-        int32_t foliageSway = 0;
-        float windTime = 0.0f;
-        float foliageMotionDamp = 1.0f;
-    };
-
     // Create ShadowParams UBO
     VkBufferCreateInfo bufCI{};
     bufCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -3052,14 +3042,6 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
     if (!shadowPipeline_ || !shadowParamsSet_) return;
     if (instances.empty() || models.empty()) return;
 
-    struct ShadowParamsUBO {
-        int32_t useBones = 0;
-        int32_t useTexture = 0;
-        int32_t alphaTest = 0;
-        int32_t foliageSway = 0;
-        float windTime = 0.0f;
-        float foliageMotionDamp = 1.0f;
-    };
     const float shadowRadiusSq = shadowRadius * shadowRadius;
 
     // Reset per-frame texture descriptor pool for foliage alpha-test sets
