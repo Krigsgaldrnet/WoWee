@@ -5459,12 +5459,26 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                     bool isDead   = (m.onlineStatus & 0x0020) != 0;
                     bool isGhost  = (m.onlineStatus & 0x0010) != 0;
 
-                    // Name text (truncated)
+                    // Name text (truncated); leader name is gold
                     char truncName[16];
                     snprintf(truncName, sizeof(truncName), "%.12s", m.name.c_str());
-                    ImU32 nameCol = (!isOnline || isDead || isGhost)
-                        ? IM_COL32(140, 140, 140, 200) : IM_COL32(220, 220, 220, 255);
+                    bool isMemberLeader = (m.guid == partyData.leaderGuid);
+                    ImU32 nameCol = isMemberLeader ? IM_COL32(255, 215, 0, 255) :
+                                    (!isOnline || isDead || isGhost)
+                                        ? IM_COL32(140, 140, 140, 200) : IM_COL32(220, 220, 220, 255);
                     draw->AddText(ImVec2(cellMin.x + 4.0f, cellMin.y + 3.0f), nameCol, truncName);
+
+                    // Leader crown star in top-right of cell
+                    if (isMemberLeader)
+                        draw->AddText(ImVec2(cellMax.x - 10.0f, cellMin.y + 2.0f), IM_COL32(255, 215, 0, 255), "*");
+
+                    // LFG role badge in bottom-right corner of cell
+                    if (m.roles & 0x02)
+                        draw->AddText(ImVec2(cellMax.x - 11.0f, cellMax.y - 11.0f), IM_COL32(80, 130, 255, 230), "T");
+                    else if (m.roles & 0x04)
+                        draw->AddText(ImVec2(cellMax.x - 11.0f, cellMax.y - 11.0f), IM_COL32(60, 220, 80, 230), "H");
+                    else if (m.roles & 0x08)
+                        draw->AddText(ImVec2(cellMax.x - 11.0f, cellMax.y - 11.0f), IM_COL32(220, 80, 80, 230), "D");
 
                     // Health bar
                     uint32_t hp = m.hasPartyStats ? m.curHealth : 0;
@@ -5543,11 +5557,14 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.1f, 0.8f));
 
     if (ImGui::Begin("##PartyFrames", nullptr, flags)) {
+        const uint64_t leaderGuid = partyData.leaderGuid;
         for (const auto& member : partyData.members) {
             ImGui::PushID(static_cast<int>(member.guid));
 
-            // Name with level and status info
-            std::string label = member.name;
+            bool isLeader = (member.guid == leaderGuid);
+
+            // Name with level and status info — leader gets a gold star prefix
+            std::string label = (isLeader ? "* " : "  ") + member.name;
             if (member.hasPartyStats && member.level > 0) {
                 label += " [" + std::to_string(member.level) + "]";
             }
@@ -5559,9 +5576,19 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 else if (isDead || isGhost) label += " (dead)";
             }
 
-            // Clickable name to target
+            // Clickable name to target; leader name is gold
+            if (isLeader) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.0f, 1.0f));
             if (ImGui::Selectable(label.c_str(), gameHandler.getTargetGuid() == member.guid)) {
                 gameHandler.setTarget(member.guid);
+            }
+            if (isLeader) ImGui::PopStyleColor();
+
+            // LFG role badge (Tank/Healer/DPS) — shown on same line as name when set
+            if (member.roles != 0) {
+                ImGui::SameLine();
+                if (member.roles & 0x02) ImGui::TextColored(ImVec4(0.3f, 0.5f, 1.0f, 1.0f), "[T]");
+                if (member.roles & 0x04) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), "[H]"); }
+                if (member.roles & 0x08) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[D]"); }
             }
 
             // Health bar: prefer party stats, fall back to entity
