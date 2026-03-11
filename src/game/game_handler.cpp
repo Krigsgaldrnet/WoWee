@@ -3477,9 +3477,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
             for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= 1; ++i) {
                 uint8_t auraType = packet.readUInt8();
                 if (auraType == 3 || auraType == 89) {
-                    // PERIODIC_DAMAGE / PERIODIC_DAMAGE_PERCENT: damage+school+absorbed+resisted
-                    if (packet.getSize() - packet.getReadPos() < 16) break;
+                    // Classic/TBC: damage(4)+school(4)+absorbed(4)+resisted(4)  = 16 bytes
+                    // WotLK 3.3.5a: damage(4)+overkill(4)+school(4)+absorbed(4)+resisted(4) = 20 bytes
+                    const bool periodicWotlk = isActiveExpansion("wotlk");
+                    const size_t dotSz = periodicWotlk ? 20u : 16u;
+                    if (packet.getSize() - packet.getReadPos() < dotSz) break;
                     uint32_t dmg      = packet.readUInt32();
+                    if (periodicWotlk) /*uint32_t overkill=*/ packet.readUInt32();
                     /*uint32_t school=*/ packet.readUInt32();
                     uint32_t abs      = packet.readUInt32();
                     uint32_t res      = packet.readUInt32();
@@ -3493,13 +3497,24 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(res),
                                       spellId, isPlayerCaster);
                 } else if (auraType == 8 || auraType == 124 || auraType == 45) {
-                    // PERIODIC_HEAL / PERIODIC_HEAL_PCT / OBS_MOD_HEALTH: heal+maxHeal+overHeal
-                    if (packet.getSize() - packet.getReadPos() < 12) break;
+                    // Classic/TBC: heal(4)+maxHeal(4)+overHeal(4)                  = 12 bytes
+                    // WotLK 3.3.5a: heal(4)+maxHeal(4)+overHeal(4)+absorbed(4)+isCrit(1) = 17 bytes
+                    const bool healWotlk = isActiveExpansion("wotlk");
+                    const size_t hotSz = healWotlk ? 17u : 12u;
+                    if (packet.getSize() - packet.getReadPos() < hotSz) break;
                     uint32_t heal    = packet.readUInt32();
                     /*uint32_t max=*/  packet.readUInt32();
                     /*uint32_t over=*/ packet.readUInt32();
+                    uint32_t hotAbs  = 0;
+                    if (healWotlk) {
+                        hotAbs = packet.readUInt32();
+                        /*uint8_t isCrit=*/ packet.readUInt8();
+                    }
                     addCombatText(CombatTextEntry::PERIODIC_HEAL, static_cast<int32_t>(heal),
                                   spellId, isPlayerCaster);
+                    if (hotAbs > 0)
+                        addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(hotAbs),
+                                      spellId, isPlayerCaster);
                 } else if (auraType == 46 || auraType == 91) {
                     // OBS_MOD_POWER / PERIODIC_ENERGIZE: miscValue(powerType) + amount
                     // Common in WotLK: Replenishment, Mana Spring Totem, Divine Plea, etc.
