@@ -5606,15 +5606,44 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- PVP quest kill update ----
         case Opcode::SMSG_QUESTUPDATE_ADD_PVP_KILL: {
-            // uint64 guid + uint32 questId + uint32 killCount
+            // WotLK 3.3.5a format: uint64 guid + uint32 questId + uint32 count + uint32 reqCount
+            // Classic format:       uint64 guid + uint32 questId + uint32 count  (no reqCount)
             if (packet.getSize() - packet.getReadPos() >= 16) {
                 /*uint64_t guid =*/ packet.readUInt64();
                 uint32_t questId = packet.readUInt32();
                 uint32_t count   = packet.readUInt32();
-                char buf[64];
-                std::snprintf(buf, sizeof(buf), "PVP kill counted for quest #%u (%u).",
-                              questId, count);
-                addSystemChatMessage(buf);
+                uint32_t reqCount = 0;
+                if (packet.getSize() - packet.getReadPos() >= 4) {
+                    reqCount = packet.readUInt32();
+                }
+
+                // Update quest log kill counts (PvP kills use entry=0 as the key
+                // since there's no specific creature entry — one slot per quest).
+                constexpr uint32_t PVP_KILL_ENTRY = 0u;
+                for (auto& quest : questLog_) {
+                    if (quest.questId != questId) continue;
+
+                    if (reqCount == 0) {
+                        auto it = quest.killCounts.find(PVP_KILL_ENTRY);
+                        if (it != quest.killCounts.end()) reqCount = it->second.second;
+                    }
+                    if (reqCount == 0) {
+                        // Pull required count from kill objectives (npcOrGoId == 0 slot, if any)
+                        for (const auto& obj : quest.killObjectives) {
+                            if (obj.npcOrGoId == 0 && obj.required > 0) {
+                                reqCount = obj.required;
+                                break;
+                            }
+                        }
+                    }
+                    if (reqCount == 0) reqCount = count;
+                    quest.killCounts[PVP_KILL_ENTRY] = {count, reqCount};
+
+                    std::string progressMsg = quest.title + ": PvP kills " +
+                        std::to_string(count) + "/" + std::to_string(reqCount);
+                    addSystemChatMessage(progressMsg);
+                    break;
+                }
             }
             break;
         }
