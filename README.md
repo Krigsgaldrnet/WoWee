@@ -71,6 +71,29 @@ Protocol Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**.
 - **Warden** -- Warden anti-cheat module execution via Unicorn Engine x86 emulation (cross-platform, no Wine)
 - **UI** -- Loading screens with progress bar, settings window with graphics quality presets (LOW/MEDIUM/HIGH/ULTRA), shadow distance slider, minimap with zoom/rotation/square mode, top-right minimap mute speaker, separate bag windows with compact-empty mode (aggregate view)
 
+## Graphics & Performance
+
+### Quality Presets
+
+WoWee includes four built-in graphics quality presets to help you quickly balance visual quality and performance:
+
+| Preset | Shadows | MSAA | Normal Mapping | Clutter Density |
+|--------|---------|------|----------------|-----------------|
+| **LOW** | Off | Off | Disabled | 25% |
+| **MEDIUM** | 200m distance | 2x | Basic | 60% |
+| **HIGH** | 350m distance | 4x | Full (0.8x) | 100% |
+| **ULTRA** | 500m distance | 8x | Enhanced (1.2x) | 150% |
+
+Press Escape to open **Video Settings** and select a preset, or adjust individual settings for a custom configuration.
+
+### Performance Tips
+
+- Start with **LOW** or **MEDIUM** if you experience frame drops
+- Shadows and MSAA have the largest impact on performance
+- Reduce **shadow distance** if shadows cause issues
+- Disable **water refraction** if you encounter GPU errors (requires FSR to be active)
+- Use **FSR2** (built-in upscaling) for better frame rates on modern GPUs
+
 ## Building
 
 ### Prerequisites
