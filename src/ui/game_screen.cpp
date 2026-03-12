@@ -17511,6 +17511,16 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
             ImGui::TextDisabled("%s", timeBuf);
             ImGui::TableSetColumnIndex(1);
             ImGui::TextColored(color, "%s", desc);
+            // Hover tooltip: show rich spell info for entries with a known spell
+            if (e.spellId != 0 && ImGui::IsItemHovered()) {
+                auto* assetMgrLog = core::Application::getInstance().getAssetManager();
+                ImGui::BeginTooltip();
+                bool richOk = spellbookScreen.renderSpellInfoTooltip(e.spellId, gameHandler, assetMgrLog);
+                if (!richOk) {
+                    ImGui::Text("%s", spellName.c_str());
+                }
+                ImGui::EndTooltip();
+            }
         }
 
         // Auto-scroll to bottom
