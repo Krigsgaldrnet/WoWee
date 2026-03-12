@@ -6939,11 +6939,30 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
                 guildRosterTab_ = 2;
                 const auto& contacts = gameHandler.getContacts();
 
+                // Add Friend row
+                static char addFriendBuf[64] = {};
+                ImGui::SetNextItemWidth(180.0f);
+                ImGui::InputText("##addfriend", addFriendBuf, sizeof(addFriendBuf));
+                ImGui::SameLine();
+                if (ImGui::Button("Add Friend") && addFriendBuf[0] != '\0') {
+                    gameHandler.addFriend(addFriendBuf);
+                    addFriendBuf[0] = '\0';
+                }
+                ImGui::Separator();
+
+                // Note-edit state
+                static std::string friendNoteTarget;
+                static char friendNoteBuf[256] = {};
+                static bool openNotePopup = false;
+
                 // Filter to friends only
                 int friendCount = 0;
-                for (const auto& c : contacts) {
+                for (size_t ci = 0; ci < contacts.size(); ++ci) {
+                    const auto& c = contacts[ci];
                     if (!c.isFriend()) continue;
                     ++friendCount;
+
+                    ImGui::PushID(static_cast<int>(ci));
 
                     // Status dot
                     ImU32 dotColor = c.isOnline()
@@ -6955,33 +6974,137 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
                     ImGui::Dummy(ImVec2(14.0f, 0.0f));
                     ImGui::SameLine();
 
-                    // Name
+                    // Name as Selectable for right-click context menu
                     const char* displayName = c.name.empty() ? "(unknown)" : c.name.c_str();
                     ImVec4 nameCol = c.isOnline()
                         ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
                         : ImVec4(0.55f, 0.55f, 0.55f, 1.0f);
-                    ImGui::TextColored(nameCol, "%s", displayName);
+                    ImGui::PushStyleColor(ImGuiCol_Text, nameCol);
+                    ImGui::Selectable(displayName, false, ImGuiSelectableFlags_AllowOverlap, ImVec2(130.0f, 0.0f));
+                    ImGui::PopStyleColor();
 
-                    // Level and status on same line (right-aligned)
+                    // Double-click to whisper
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)
+                        && !c.name.empty()) {
+                        selectedChatType = 4;
+                        strncpy(whisperTargetBuffer, c.name.c_str(), sizeof(whisperTargetBuffer) - 1);
+                        whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                        refocusChatInput = true;
+                    }
+
+                    // Right-click context menu
+                    if (ImGui::BeginPopupContextItem("FriendCtx")) {
+                        ImGui::TextDisabled("%s", displayName);
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Whisper") && !c.name.empty()) {
+                            selectedChatType = 4;
+                            strncpy(whisperTargetBuffer, c.name.c_str(), sizeof(whisperTargetBuffer) - 1);
+                            whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                            refocusChatInput = true;
+                        }
+                        if (ImGui::MenuItem("Edit Note")) {
+                            friendNoteTarget = c.name;
+                            strncpy(friendNoteBuf, c.note.c_str(), sizeof(friendNoteBuf) - 1);
+                            friendNoteBuf[sizeof(friendNoteBuf) - 1] = '\0';
+                            openNotePopup = true;
+                        }
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Remove Friend")) {
+                            gameHandler.removeFriend(c.name);
+                        }
+                        ImGui::EndPopup();
+                    }
+
+                    // Note tooltip on hover
+                    if (ImGui::IsItemHovered() && !c.note.empty()) {
+                        ImGui::BeginTooltip();
+                        ImGui::TextDisabled("Note: %s", c.note.c_str());
+                        ImGui::EndTooltip();
+                    }
+
+                    // Level and status
                     if (c.isOnline()) {
-                        ImGui::SameLine();
+                        ImGui::SameLine(160.0f);
                         const char* statusLabel =
-                            (c.status == 2) ? "(AFK)" :
-                            (c.status == 3) ? "(DND)" : "";
+                            (c.status == 2) ? " (AFK)" :
+                            (c.status == 3) ? " (DND)" : "";
                         if (c.level > 0) {
-                            ImGui::TextDisabled("Lv %u %s", c.level, statusLabel);
+                            ImGui::TextDisabled("Lv %u%s", c.level, statusLabel);
                         } else if (*statusLabel) {
-                            ImGui::TextDisabled("%s", statusLabel);
+                            ImGui::TextDisabled("%s", statusLabel + 1);
                         }
                     }
+
+                    ImGui::PopID();
                 }
 
                 if (friendCount == 0) {
-                    ImGui::TextDisabled("No friends online.");
+                    ImGui::TextDisabled("No friends found.");
                 }
 
+                // Note edit modal
+                if (openNotePopup) {
+                    ImGui::OpenPopup("EditFriendNote");
+                    openNotePopup = false;
+                }
+                if (ImGui::BeginPopupModal("EditFriendNote", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ImGui::Text("Note for %s:", friendNoteTarget.c_str());
+                    ImGui::SetNextItemWidth(240.0f);
+                    ImGui::InputText("##fnote", friendNoteBuf, sizeof(friendNoteBuf));
+                    if (ImGui::Button("Save", ImVec2(110, 0))) {
+                        gameHandler.setFriendNote(friendNoteTarget, friendNoteBuf);
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel", ImVec2(110, 0))) {
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
+                }
+
+                ImGui::EndTabItem();
+            }
+
+            // ---- Ignore List tab ----
+            if (ImGui::BeginTabItem("Ignore")) {
+                guildRosterTab_ = 3;
+                const auto& contacts = gameHandler.getContacts();
+
+                // Add Ignore row
+                static char addIgnoreBuf[64] = {};
+                ImGui::SetNextItemWidth(180.0f);
+                ImGui::InputText("##addignore", addIgnoreBuf, sizeof(addIgnoreBuf));
+                ImGui::SameLine();
+                if (ImGui::Button("Ignore Player") && addIgnoreBuf[0] != '\0') {
+                    gameHandler.addIgnore(addIgnoreBuf);
+                    addIgnoreBuf[0] = '\0';
+                }
                 ImGui::Separator();
-                ImGui::TextDisabled("Right-click a player's name in chat to add friends.");
+
+                int ignoreCount = 0;
+                for (size_t ci = 0; ci < contacts.size(); ++ci) {
+                    const auto& c = contacts[ci];
+                    if (!c.isIgnored()) continue;
+                    ++ignoreCount;
+
+                    ImGui::PushID(static_cast<int>(ci) + 10000);
+                    const char* displayName = c.name.empty() ? "(unknown)" : c.name.c_str();
+                    ImGui::Selectable(displayName, false, ImGuiSelectableFlags_AllowOverlap);
+                    if (ImGui::BeginPopupContextItem("IgnoreCtx")) {
+                        ImGui::TextDisabled("%s", displayName);
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Remove Ignore")) {
+                            gameHandler.removeIgnore(c.name);
+                        }
+                        ImGui::EndPopup();
+                    }
+                    ImGui::PopID();
+                }
+
+                if (ignoreCount == 0) {
+                    ImGui::TextDisabled("Ignore list is empty.");
+                }
+
                 ImGui::EndTabItem();
             }
 
