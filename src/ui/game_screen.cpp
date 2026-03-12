@@ -12074,17 +12074,37 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         }
     }
 
+    // Persistent coordinate display below the minimap
+    {
+        glm::vec3 playerCanon = core::coords::renderToCanonical(playerRender);
+        char coordBuf[32];
+        std::snprintf(coordBuf, sizeof(coordBuf), "%.1f, %.1f", playerCanon.x, playerCanon.y);
+
+        ImFont* font = ImGui::GetFont();
+        float fontSize = ImGui::GetFontSize();
+        ImVec2 textSz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, coordBuf);
+
+        float tx = centerX - textSz.x * 0.5f;
+        float ty = centerY + mapRadius + 3.0f;
+
+        // Semi-transparent dark background pill
+        float pad = 3.0f;
+        drawList->AddRectFilled(
+            ImVec2(tx - pad, ty - pad),
+            ImVec2(tx + textSz.x + pad, ty + textSz.y + pad),
+            IM_COL32(0, 0, 0, 140), 4.0f);
+        // Coordinate text in warm yellow
+        drawList->AddText(font, fontSize, ImVec2(tx, ty), IM_COL32(230, 220, 140, 255), coordBuf);
+    }
+
     // Hover tooltip: show player's WoW coordinates (canonical X=North, Y=West)
     {
         ImVec2 mouse = ImGui::GetMousePos();
         float mdx = mouse.x - centerX;
         float mdy = mouse.y - centerY;
         if (mdx * mdx + mdy * mdy <= mapRadius * mapRadius) {
-            glm::vec3 playerCanon = core::coords::renderToCanonical(playerRender);
             ImGui::BeginTooltip();
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.5f, 1.0f),
-                               "%.1f, %.1f", playerCanon.x, playerCanon.y);
-            ImGui::TextDisabled("Ctrl+click to ping");
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.5f, 1.0f), "Ctrl+click to ping");
             ImGui::EndTooltip();
         }
     }
