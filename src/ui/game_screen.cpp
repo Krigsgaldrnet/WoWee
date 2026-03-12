@@ -2860,10 +2860,61 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
             ImGui::PopStyleColor();
         }
 
-        // Dismiss button (compact, right-aligned)
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 60.0f);
-        if (ImGui::SmallButton("Dismiss")) {
-            gameHandler.dismissPet();
+        // Stance row: Passive / Defensive / Aggressive — with Dismiss right-aligned
+        {
+            static const char* kReactLabels[]     = { "Psv", "Def", "Agg" };
+            static const char* kReactTooltips[]   = { "Passive", "Defensive", "Aggressive" };
+            static const ImVec4 kReactColors[]    = {
+                ImVec4(0.4f, 0.6f, 1.0f, 1.0f),  // passive  — blue
+                ImVec4(0.3f, 0.85f, 0.3f, 1.0f), // defensive — green
+                ImVec4(1.0f, 0.35f, 0.35f, 1.0f),// aggressive — red
+            };
+            static const ImVec4 kReactDimColors[] = {
+                ImVec4(0.15f, 0.2f, 0.4f, 0.8f),
+                ImVec4(0.1f, 0.3f, 0.1f, 0.8f),
+                ImVec4(0.4f, 0.1f, 0.1f, 0.8f),
+            };
+            uint8_t curReact = gameHandler.getPetReact(); // 0=passive,1=defensive,2=aggressive
+
+            // Find each react-type slot in the action bar by known built-in IDs:
+            // 1=Passive, 4=Defensive, 6=Aggressive (WoW wire protocol)
+            static const uint32_t kReactActionIds[] = { 1u, 4u, 6u };
+            uint32_t reactSlotVals[3] = { 0, 0, 0 };
+            const int slotTotal = game::GameHandler::PET_ACTION_BAR_SLOTS;
+            for (int i = 0; i < slotTotal; ++i) {
+                uint32_t sv = gameHandler.getPetActionSlot(i);
+                uint32_t aid = sv & 0x00FFFFFFu;
+                for (int r = 0; r < 3; ++r) {
+                    if (aid == kReactActionIds[r]) { reactSlotVals[r] = sv; break; }
+                }
+            }
+
+            for (int r = 0; r < 3; ++r) {
+                if (r > 0) ImGui::SameLine(0.0f, 3.0f);
+                bool active = (curReact == static_cast<uint8_t>(r));
+                ImVec4 btnCol = active ? kReactColors[r] : kReactDimColors[r];
+                ImGui::PushID(r + 1000);
+                ImGui::PushStyleColor(ImGuiCol_Button,        btnCol);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kReactColors[r]);
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  kReactColors[r]);
+                if (ImGui::Button(kReactLabels[r], ImVec2(34.0f, 16.0f))) {
+                    // Use server-provided slot value if available; fall back to raw ID
+                    uint32_t action = (reactSlotVals[r] != 0)
+                        ? reactSlotVals[r]
+                        : kReactActionIds[r];
+                    gameHandler.sendPetAction(action, 0);
+                }
+                ImGui::PopStyleColor(3);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", kReactTooltips[r]);
+                ImGui::PopID();
+            }
+
+            // Dismiss button right-aligned on the same row
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 58.0f);
+            if (ImGui::SmallButton("Dismiss")) {
+                gameHandler.dismissPet();
+            }
         }
 
         // Pet action bar — show up to 10 action slots from SMSG_PET_SPELLS
@@ -2893,9 +2944,12 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                 // Try to show spell icon; fall back to abbreviated text label.
                 VkDescriptorSet iconTex = VK_NULL_HANDLE;
                 const char* builtinLabel = nullptr;
-                if      (actionId == 2) builtinLabel = "Fol";
+                if      (actionId == 1) builtinLabel = "Psv";
+                else if (actionId == 2) builtinLabel = "Fol";
                 else if (actionId == 3) builtinLabel = "Sty";
+                else if (actionId == 4) builtinLabel = "Def";
                 else if (actionId == 5) builtinLabel = "Atk";
+                else if (actionId == 6) builtinLabel = "Agg";
                 else if (assetMgr)      iconTex = getSpellIcon(actionId, assetMgr);
 
                 // Tint green when autocast is on.
@@ -2933,11 +2987,17 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
 
                 // Tooltip: show spell name or built-in command name.
                 if (ImGui::IsItemHovered()) {
-                    const char* tip = builtinLabel
-                        ? (actionId == 5 ? "Attack" : actionId == 2 ? "Follow" : "Stay")
-                        : nullptr;
+                    const char* tip = nullptr;
+                    if (builtinLabel) {
+                        if      (actionId == 1) tip = "Passive";
+                        else if (actionId == 2) tip = "Follow";
+                        else if (actionId == 3) tip = "Stay";
+                        else if (actionId == 4) tip = "Defensive";
+                        else if (actionId == 5) tip = "Attack";
+                        else if (actionId == 6) tip = "Aggressive";
+                    }
                     std::string spellNm;
-                    if (!tip && actionId > 5) {
+                    if (!tip && actionId > 6) {
                         spellNm = gameHandler.getSpellName(actionId);
                         if (!spellNm.empty()) tip = spellNm.c_str();
                     }
