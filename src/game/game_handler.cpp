@@ -907,6 +907,7 @@ void GameHandler::update(float deltaTime) {
             castIsChannel = false;
             currentCastSpellId = 0;
             castTimeRemaining = 0.0f;
+            addUIError("Interrupted.");
             addSystemChatMessage("Interrupted.");
         }
         if (casting && castTimeRemaining > 0.0f) {
@@ -2828,13 +2829,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 // Classic result enum starts at 0=AFFECTING_COMBAT; shift +1 for WotLK table
                 uint8_t failReason = isClassic ? static_cast<uint8_t>(rawFailReason + 1) : rawFailReason;
                 if (failGuid == playerGuid && failReason != 0) {
-                    // Show interruption/failure reason in chat for player
+                    // Show interruption/failure reason in chat and error overlay for player
                     int pt = -1;
                     if (auto pe = entityManager.getEntity(playerGuid))
                         if (auto pu = std::dynamic_pointer_cast<Unit>(pe))
                             pt = static_cast<int>(pu->getPowerType());
                     const char* reason = getSpellCastResultString(failReason, pt);
                     if (reason) {
+                        addUIError(reason);
                         MessageChatData emsg;
                         emsg.type = ChatType::SYSTEM;
                         emsg.language = ChatLanguage::UNIVERSAL;
@@ -3790,11 +3792,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
 
         case Opcode::SMSG_SERVER_MESSAGE: {
-            // uint32 type, string message
+            // uint32 type + string message
+            // Types: 1=shutdown_time, 2=restart_time, 3=string, 4=shutdown_cancelled, 5=restart_cancelled
             if (packet.getSize() - packet.getReadPos() >= 4) {
-                /*uint32_t msgType =*/ packet.readUInt32();
+                uint32_t msgType = packet.readUInt32();
                 std::string msg = packet.readString();
-                if (!msg.empty()) addSystemChatMessage("[Server] " + msg);
+                if (!msg.empty()) {
+                    std::string prefix;
+                    switch (msgType) {
+                        case 1: prefix = "[Shutdown] ";   addUIError("Server shutdown: " + msg);  break;
+                        case 2: prefix = "[Restart] ";    addUIError("Server restart: " + msg);   break;
+                        case 4: prefix = "[Shutdown cancelled] "; break;
+                        case 5: prefix = "[Restart cancelled] ";  break;
+                        default: prefix = "[Server] "; break;
+                    }
+                    addSystemChatMessage(prefix + msg);
+                }
             }
             break;
         }
