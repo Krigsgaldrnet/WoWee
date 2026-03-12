@@ -7657,6 +7657,34 @@ void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
         uint8_t q = roll.itemQuality;
         ImVec4 col = (q < 6) ? kQualityColors[q] : kQualityColors[1];
 
+        // Countdown bar
+        {
+            auto now = std::chrono::steady_clock::now();
+            float elapsedMs = static_cast<float>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - roll.rollStartedAt).count());
+            float totalMs   = static_cast<float>(roll.rollCountdownMs > 0 ? roll.rollCountdownMs : 60000);
+            float fraction  = 1.0f - std::min(elapsedMs / totalMs, 1.0f);
+            float remainSec = (totalMs - elapsedMs) / 1000.0f;
+            if (remainSec < 0.0f) remainSec = 0.0f;
+
+            // Color: green → yellow → red
+            ImVec4 barColor;
+            if (fraction > 0.5f)
+                barColor = ImVec4(0.2f + (1.0f - fraction) * 1.4f, 0.85f, 0.2f, 1.0f);
+            else if (fraction > 0.2f)
+                barColor = ImVec4(1.0f, fraction * 1.7f, 0.1f, 1.0f);
+            else {
+                float pulse = 0.7f + 0.3f * std::sin(static_cast<float>(ImGui::GetTime()) * 6.0f);
+                barColor = ImVec4(pulse, 0.1f * pulse, 0.1f * pulse, 1.0f);
+            }
+
+            char timeBuf[16];
+            std::snprintf(timeBuf, sizeof(timeBuf), "%.0fs", remainSec);
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
+            ImGui::ProgressBar(fraction, ImVec2(-1, 12), timeBuf);
+            ImGui::PopStyleColor();
+        }
+
         ImGui::Text("An item is up for rolls:");
 
         // Show item icon if available

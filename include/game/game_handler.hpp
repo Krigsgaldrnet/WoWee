@@ -1129,6 +1129,8 @@ public:
         uint32_t itemId        = 0;
         std::string itemName;
         uint8_t  itemQuality   = 0;
+        uint32_t rollCountdownMs = 60000; // Duration of roll window in ms
+        std::chrono::steady_clock::time_point rollStartedAt{};
     };
     bool hasPendingLootRoll() const { return pendingLootRollActive_; }
     const LootRollEntry& getPendingLootRoll() const { return pendingLootRoll_; }
