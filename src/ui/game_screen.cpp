@@ -451,6 +451,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderBgInvitePopup(gameHandler);
     renderLfgProposalPopup(gameHandler);
     renderGuildRoster(gameHandler);
+    renderSocialFrame(gameHandler);
     renderBuffBar(gameHandler);
     renderLootWindow(gameHandler);
     renderGossipWindow(gameHandler);
@@ -7782,6 +7783,117 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
 }
 
 // ============================================================
+// Social Frame — compact online friends panel (toggled by showSocialFrame_)
+// ============================================================
+
+void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
+    if (!showSocialFrame_) return;
+
+    const auto& contacts = gameHandler.getContacts();
+    // Count online friends for early-out
+    int onlineCount = 0;
+    for (const auto& c : contacts)
+        if (c.isFriend() && c.isOnline()) ++onlineCount;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth())  : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) :  720.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW - 230.0f, 240.0f), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(220.0f, 0.0f), ImGuiCond_Always);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.1f, 0.92f));
+
+    bool open = showSocialFrame_;
+    if (ImGui::Begin("Friends##SocialFrame", &open,
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar)) {
+
+        // Online friends
+        char onlineHeader[32];
+        snprintf(onlineHeader, sizeof(onlineHeader), "Online (%d)", onlineCount);
+        ImGui::TextDisabled("%s", onlineHeader);
+        ImGui::Separator();
+
+        int shown = 0;
+        for (size_t ci = 0; ci < contacts.size(); ++ci) {
+            const auto& c = contacts[ci];
+            if (!c.isFriend()) continue;
+
+            ImGui::PushID(static_cast<int>(ci));
+
+            // Status dot: green=online, yellow=AFK, orange=DND, grey=offline
+            ImU32 dotColor;
+            if (!c.isOnline())        dotColor = IM_COL32(100, 100, 100, 200);
+            else if (c.status == 2)   dotColor = IM_COL32(255, 200,  50, 255); // AFK
+            else if (c.status == 3)   dotColor = IM_COL32(255, 120,  50, 255); // DND
+            else                      dotColor = IM_COL32( 50, 220,  50, 255); // online
+
+            ImVec2 dotMin = ImGui::GetCursorScreenPos();
+            dotMin.y += 4.0f;
+            ImGui::GetWindowDrawList()->AddCircleFilled(
+                ImVec2(dotMin.x + 5.0f, dotMin.y + 5.0f), 4.5f, dotColor);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 14.0f);
+
+            const char* displayName = c.name.empty() ? "(unknown)" : c.name.c_str();
+            ImVec4 nameCol = c.isOnline()
+                ? ImVec4(0.9f, 0.9f, 0.9f, 1.0f)
+                : ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+            ImGui::TextColored(nameCol, "%s", displayName);
+
+            if (c.isOnline() && c.level > 0) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("%u", c.level);
+            }
+
+            // Right-click context menu
+            if (ImGui::BeginPopupContextItem("FriendCtx")) {
+                ImGui::TextDisabled("%s", displayName);
+                ImGui::Separator();
+                if (c.isOnline()) {
+                    if (ImGui::MenuItem("Whisper")) {
+                        showSocialFrame_ = false;
+                        strncpy(whisperTargetBuffer, c.name.c_str(), sizeof(whisperTargetBuffer) - 1);
+                        whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                        selectedChatType = 4;
+                        refocusChatInput = true;
+                    }
+                    if (ImGui::MenuItem("Invite to Group"))
+                        gameHandler.inviteToGroup(c.name);
+                }
+                if (ImGui::MenuItem("Remove Friend"))
+                    gameHandler.removeFriend(c.name);
+                ImGui::EndPopup();
+            }
+
+            ++shown;
+            ImGui::PopID();
+        }
+
+        if (shown == 0) {
+            ImGui::TextDisabled("No friends.");
+        }
+
+        ImGui::Separator();
+        // Add friend inline
+        static char addFriendBuf[64] = {};
+        ImGui::SetNextItemWidth(140.0f);
+        ImGui::InputText("##sf_addfriend", addFriendBuf, sizeof(addFriendBuf));
+        ImGui::SameLine();
+        if (ImGui::Button("+") && addFriendBuf[0] != '\0') {
+            gameHandler.addFriend(addFriendBuf);
+            addFriendBuf[0] = '\0';
+        }
+    }
+    ImGui::End();
+    showSocialFrame_ = open;
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+}
+
+// ============================================================
 // Buff/Debuff Bar (Phase 3)
 // ============================================================
 
@@ -11372,6 +11484,56 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         if (hovered) ImGui::SetTooltip(soundMuted_ ? "Unmute" : "Mute");
     }
     ImGui::End();
+
+    // Friends button at top-left of minimap
+    {
+        const auto& contacts = gameHandler.getContacts();
+        int onlineCount = 0;
+        for (const auto& c : contacts)
+            if (c.isFriend() && c.isOnline()) ++onlineCount;
+
+        ImGui::SetNextWindowPos(ImVec2(centerX - mapRadius + 4.0f, centerY - mapRadius + 4.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(22.0f, 22.0f), ImGuiCond_Always);
+        ImGuiWindowFlags friendsBtnFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                           ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                                           ImGuiWindowFlags_NoBackground;
+        if (ImGui::Begin("##MinimapFriendsBtn", nullptr, friendsBtnFlags)) {
+            ImDrawList* draw = ImGui::GetWindowDrawList();
+            ImVec2 p = ImGui::GetCursorScreenPos();
+            ImVec2 sz(20.0f, 20.0f);
+            if (ImGui::InvisibleButton("##FriendsBtnInv", sz)) {
+                showSocialFrame_ = !showSocialFrame_;
+            }
+            bool hovered = ImGui::IsItemHovered();
+            ImU32 bg = showSocialFrame_
+                ? IM_COL32(42, 100, 42, 230)
+                : IM_COL32(38, 38, 38, 210);
+            if (hovered) bg = showSocialFrame_ ? IM_COL32(58, 130, 58, 230) : IM_COL32(65, 65, 65, 220);
+            draw->AddRectFilled(p, ImVec2(p.x + sz.x, p.y + sz.y), bg, 4.0f);
+            draw->AddRect(ImVec2(p.x + 0.5f, p.y + 0.5f),
+                          ImVec2(p.x + sz.x - 0.5f, p.y + sz.y - 0.5f),
+                          IM_COL32(255, 255, 255, 42), 4.0f);
+            // Simple smiley-face dots as "social" icon
+            ImU32 fg = IM_COL32(255, 255, 255, 245);
+            draw->AddCircle(ImVec2(p.x + 10.0f, p.y + 10.0f), 6.5f, fg, 16, 1.2f);
+            draw->AddCircleFilled(ImVec2(p.x + 7.5f, p.y + 8.0f), 1.2f, fg);
+            draw->AddCircleFilled(ImVec2(p.x + 12.5f, p.y + 8.0f), 1.2f, fg);
+            draw->PathArcTo(ImVec2(p.x + 10.0f, p.y + 11.5f), 3.0f, 0.2f, 2.9f, 8);
+            draw->PathStroke(fg, 0, 1.2f);
+            // Small green dot if friends online
+            if (onlineCount > 0) {
+                draw->AddCircleFilled(ImVec2(p.x + sz.x - 3.5f, p.y + 3.5f),
+                                      3.5f, IM_COL32(50, 220, 50, 255));
+            }
+            if (hovered) {
+                if (onlineCount > 0)
+                    ImGui::SetTooltip("Friends (%d online)", onlineCount);
+                else
+                    ImGui::SetTooltip("Friends");
+            }
+        }
+        ImGui::End();
+    }
 
     // Zoom buttons at the bottom edge of the minimap
     ImGui::SetNextWindowPos(ImVec2(centerX - 22, centerY + mapRadius - 30), ImGuiCond_Always);
