@@ -2959,6 +2959,11 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                     gameHandler.setTarget(fGuid);
                     gameHandler.inspectTarget();
                 }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Add Friend"))
+                    gameHandler.addFriend(focusName);
+                if (ImGui::MenuItem("Ignore"))
+                    gameHandler.addIgnore(focusName);
             }
             ImGui::EndPopup();
         }
@@ -6010,17 +6015,67 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             }
         }
 
-        // Click to target: detect left-click inside the combined nameplate region
-        if (!ImGui::GetIO().WantCaptureMouse && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        // Click to target / right-click context: detect clicks inside the nameplate region
+        if (!ImGui::GetIO().WantCaptureMouse) {
             ImVec2 mouse = ImGui::GetIO().MousePos;
             float nx0 = nameX - 2.0f;
             float ny0 = nameY - 1.0f;
             float nx1 = nameX + textSize.x + 2.0f;
             float ny1 = sy + barH + 2.0f;
             if (mouse.x >= nx0 && mouse.x <= nx1 && mouse.y >= ny0 && mouse.y <= ny1) {
-                gameHandler.setTarget(guid);
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    gameHandler.setTarget(guid);
+                } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                    nameplateCtxGuid_ = guid;
+                    nameplateCtxPos_  = mouse;
+                    ImGui::OpenPopup("##NameplateCtx");
+                }
             }
         }
+    }
+
+    // Render nameplate context popup (uses a tiny overlay window as host)
+    if (nameplateCtxGuid_ != 0) {
+        ImGui::SetNextWindowPos(nameplateCtxPos_, ImGuiCond_Appearing);
+        ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always);
+        ImGuiWindowFlags ctxHostFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                                         ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoFocusOnAppearing |
+                                         ImGuiWindowFlags_AlwaysAutoResize;
+        if (ImGui::Begin("##NameplateCtxHost", nullptr, ctxHostFlags)) {
+            if (ImGui::BeginPopup("##NameplateCtx")) {
+                auto entityPtr = gameHandler.getEntityManager().getEntity(nameplateCtxGuid_);
+                std::string ctxName = entityPtr ? getEntityName(entityPtr) : "";
+                if (!ctxName.empty()) {
+                    ImGui::TextDisabled("%s", ctxName.c_str());
+                    ImGui::Separator();
+                }
+                if (ImGui::MenuItem("Target"))
+                    gameHandler.setTarget(nameplateCtxGuid_);
+                if (ImGui::MenuItem("Set Focus"))
+                    gameHandler.setFocus(nameplateCtxGuid_);
+                bool isPlayer = entityPtr && entityPtr->getType() == game::ObjectType::PLAYER;
+                if (isPlayer && !ctxName.empty()) {
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Whisper")) {
+                        selectedChatType = 4;
+                        strncpy(whisperTargetBuffer, ctxName.c_str(), sizeof(whisperTargetBuffer) - 1);
+                        whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                        refocusChatInput = true;
+                    }
+                    if (ImGui::MenuItem("Invite to Group"))
+                        gameHandler.inviteToGroup(ctxName);
+                    if (ImGui::MenuItem("Add Friend"))
+                        gameHandler.addFriend(ctxName);
+                    if (ImGui::MenuItem("Ignore"))
+                        gameHandler.addIgnore(ctxName);
+                }
+                ImGui::EndPopup();
+            } else {
+                nameplateCtxGuid_ = 0;
+            }
+        }
+        ImGui::End();
     }
 }
 
@@ -7284,6 +7339,13 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
                             if (ImGui::MenuItem("Invite to Group")) {
                                 gameHandler.inviteToGroup(selectedGuildMember_);
                             }
+                            ImGui::Separator();
+                        }
+                        if (!selectedGuildMember_.empty()) {
+                            if (ImGui::MenuItem("Add Friend"))
+                                gameHandler.addFriend(selectedGuildMember_);
+                            if (ImGui::MenuItem("Ignore"))
+                                gameHandler.addIgnore(selectedGuildMember_);
                             ImGui::Separator();
                         }
                         if (ImGui::MenuItem("Promote")) {

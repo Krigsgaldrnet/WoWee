@@ -70,6 +70,8 @@ private:
     bool showMinimap_ = true;  // M key toggles minimap
     bool showNameplates_ = true;  // V key toggles nameplates
     float nameplateScale_ = 1.0f; // Scale multiplier for nameplate bar dimensions
+    uint64_t nameplateCtxGuid_ = 0; // GUID of nameplate right-clicked (0 = none)
+    ImVec2 nameplateCtxPos_{};      // Screen position of nameplate right-click
     uint32_t lastPlayerHp_ = 0;   // Previous frame HP for damage flash detection
     float damageFlashAlpha_ = 0.0f; // Screen edge flash intensity (fades to 0)
     float levelUpFlashAlpha_ = 0.0f; // Golden level-up burst effect (fades to 0)
