@@ -7828,22 +7828,13 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
         if (vendor.items.empty()) {
             ImGui::TextDisabled("This vendor has nothing for sale.");
         } else {
-            if (ImGui::BeginTable("VendorTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+            if (ImGui::BeginTable("VendorTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+                ImGui::TableSetupColumn("##icon", ImGuiTableColumnFlags_WidthFixed, 22.0f);
                 ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
                 ImGui::TableSetupColumn("Price", ImGuiTableColumnFlags_WidthFixed, 120.0f);
                 ImGui::TableSetupColumn("Stock", ImGuiTableColumnFlags_WidthFixed, 60.0f);
                 ImGui::TableSetupColumn("Buy", ImGuiTableColumnFlags_WidthFixed, 50.0f);
                 ImGui::TableHeadersRow();
-
-                // Quality colors (matching WoW)
-                static const ImVec4 qualityColors[] = {
-                    ImVec4(0.6f, 0.6f, 0.6f, 1.0f),  // 0 Poor (gray)
-                    ImVec4(1.0f, 1.0f, 1.0f, 1.0f),  // 1 Common (white)
-                    ImVec4(0.12f, 1.0f, 0.0f, 1.0f),  // 2 Uncommon (green)
-                    ImVec4(0.0f, 0.44f, 0.87f, 1.0f), // 3 Rare (blue)
-                    ImVec4(0.64f, 0.21f, 0.93f, 1.0f),// 4 Epic (purple)
-                    ImVec4(1.0f, 0.5f, 0.0f, 1.0f),   // 5 Legendary (orange)
-                };
 
                 for (int vi = 0; vi < static_cast<int>(vendor.items.size()); ++vi) {
                     const auto& item = vendor.items[vi];
@@ -7852,13 +7843,24 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
 
                     // Proactively ensure vendor item info is loaded
                     gameHandler.ensureItemInfo(item.itemId);
-
-                    ImGui::TableSetColumnIndex(0);
                     auto* info = gameHandler.getItemInfo(item.itemId);
+
+                    // Icon column
+                    ImGui::TableSetColumnIndex(0);
+                    {
+                        uint32_t dispId = item.displayInfoId;
+                        if (info && info->valid && info->displayInfoId != 0) dispId = info->displayInfoId;
+                        if (dispId != 0) {
+                            VkDescriptorSet iconTex = inventoryScreen.getItemIcon(dispId);
+                            if (iconTex) ImGui::Image((ImTextureID)(uintptr_t)iconTex, ImVec2(18, 18));
+                        }
+                    }
+
+                    // Name column
+                    ImGui::TableSetColumnIndex(1);
                     if (info && info->valid) {
-                        uint32_t q = info->quality < 6 ? info->quality : 1;
-                        ImGui::TextColored(qualityColors[q], "%s", info->name.c_str());
-                        // Tooltip with stats on hover
+                        ImVec4 qc = InventoryScreen::getQualityColor(static_cast<game::ItemQuality>(info->quality));
+                        ImGui::TextColored(qc, "%s", info->name.c_str());
                         if (ImGui::IsItemHovered()) {
                             inventoryScreen.renderItemTooltip(*info);
                         }
@@ -7866,7 +7868,7 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                         ImGui::Text("Item %u", item.itemId);
                     }
 
-                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TableSetColumnIndex(2);
                     if (item.buyPrice == 0 && item.extendedCost != 0) {
                         // Token-only item (no gold cost)
                         ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "[Tokens]");
@@ -7880,14 +7882,14 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                         if (!canAfford) ImGui::PopStyleColor();
                     }
 
-                    ImGui::TableSetColumnIndex(2);
+                    ImGui::TableSetColumnIndex(3);
                     if (item.maxCount < 0) {
                         ImGui::Text("Inf");
                     } else {
                         ImGui::Text("%d", item.maxCount);
                     }
 
-                    ImGui::TableSetColumnIndex(3);
+                    ImGui::TableSetColumnIndex(4);
                     std::string buyBtnId = "Buy##vendor_" + std::to_string(vi);
                     if (ImGui::SmallButton(buyBtnId.c_str())) {
                         gameHandler.buyItem(vendor.vendorGuid, item.itemId, item.slot, 1);
