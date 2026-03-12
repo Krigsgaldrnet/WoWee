@@ -9232,16 +9232,58 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
                         ImGui::EndTooltip();
                     }
 
-                    // Level and status
+                    // Level, class, and status
                     if (c.isOnline()) {
-                        ImGui::SameLine(160.0f);
+                        ImGui::SameLine(150.0f);
                         const char* statusLabel =
                             (c.status == 2) ? " (AFK)" :
                             (c.status == 3) ? " (DND)" : "";
-                        if (c.level > 0) {
+                        // Class color for the level/class display
+                        ImVec4 friendClassCol = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+                        const char* friendClassName = "";
+                        if (c.classId > 0 && c.classId < 12) {
+                            static const ImVec4 kFriendClassColors[] = {
+                                {0,0,0,0},
+                                {0.78f,0.61f,0.43f,1}, // Warrior
+                                {0.96f,0.55f,0.73f,1}, // Paladin
+                                {0.67f,0.83f,0.45f,1}, // Hunter
+                                {1.00f,0.96f,0.41f,1}, // Rogue
+                                {1.00f,1.00f,1.00f,1}, // Priest
+                                {0.77f,0.12f,0.23f,1}, // Death Knight
+                                {0.00f,0.44f,0.87f,1}, // Shaman
+                                {0.41f,0.80f,0.94f,1}, // Mage
+                                {0.58f,0.51f,0.79f,1}, // Warlock
+                                {0,0,0,0},              // (unused slot 10)
+                                {1.00f,0.49f,0.04f,1}, // Druid
+                            };
+                            static const char* kFriendClassNames[] = {
+                                "","Warrior","Paladin","Hunter","Rogue","Priest",
+                                "Death Knight","Shaman","Mage","Warlock","","Druid"
+                            };
+                            friendClassCol = kFriendClassColors[c.classId];
+                            friendClassName = kFriendClassNames[c.classId];
+                        }
+                        if (c.level > 0 && *friendClassName) {
+                            ImGui::TextColored(friendClassCol, "Lv%u %s%s", c.level, friendClassName, statusLabel);
+                        } else if (c.level > 0) {
                             ImGui::TextDisabled("Lv %u%s", c.level, statusLabel);
                         } else if (*statusLabel) {
                             ImGui::TextDisabled("%s", statusLabel + 1);
+                        }
+
+                        // Tooltip: zone info
+                        if (ImGui::IsItemHovered() && c.areaId != 0) {
+                            ImGui::BeginTooltip();
+                            if (zoneManager) {
+                                const auto* zi = zoneManager->getZoneInfo(c.areaId);
+                                if (zi && !zi->name.empty())
+                                    ImGui::Text("Zone: %s", zi->name.c_str());
+                                else
+                                    ImGui::TextDisabled("Area ID: %u", c.areaId);
+                            } else {
+                                ImGui::TextDisabled("Area ID: %u", c.areaId);
+                            }
+                            ImGui::EndTooltip();
                         }
                     }
 
