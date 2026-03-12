@@ -10988,7 +10988,18 @@ void GameScreen::renderTaxiWindow(game::GameHandler& gameHandler) {
 // ============================================================
 
 void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
-    if (!gameHandler.showDeathDialog()) return;
+    if (!gameHandler.showDeathDialog()) {
+        deathTimerRunning_ = false;
+        deathElapsed_ = 0.0f;
+        return;
+    }
+    float dt = ImGui::GetIO().DeltaTime;
+    if (!deathTimerRunning_) {
+        deathElapsed_ = 0.0f;
+        deathTimerRunning_ = true;
+    } else {
+        deathElapsed_ += dt;
+    }
 
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
@@ -11006,7 +11017,7 @@ void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
 
     // "Release Spirit" dialog centered on screen
     float dlgW = 280.0f;
-    float dlgH = 100.0f;
+    float dlgH = 130.0f;
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - dlgW / 2, screenH * 0.35f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(dlgW, dlgH), ImGuiCond_Always);
 
@@ -11024,6 +11035,18 @@ void GameScreen::renderDeathScreen(game::GameHandler& gameHandler) {
         float textW = ImGui::CalcTextSize(deathText).x;
         ImGui::SetCursorPosX((dlgW - textW) / 2);
         ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "%s", deathText);
+
+        // Respawn timer: show how long until forced release
+        float timeLeft = kForcedReleaseSec - deathElapsed_;
+        if (timeLeft > 0.0f) {
+            int mins = static_cast<int>(timeLeft) / 60;
+            int secs = static_cast<int>(timeLeft) % 60;
+            char timerBuf[48];
+            snprintf(timerBuf, sizeof(timerBuf), "Release in %d:%02d", mins, secs);
+            float tw = ImGui::CalcTextSize(timerBuf).x;
+            ImGui::SetCursorPosX((dlgW - tw) / 2);
+            ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.65f, 1.0f), "%s", timerBuf);
+        }
 
         ImGui::Spacing();
         ImGui::Spacing();

@@ -112,6 +112,12 @@ private:
     std::vector<ZoneToastEntry> zoneToasts_;
     std::string lastKnownZone_;
     static constexpr float kZoneToastLifetime = 3.0f;
+
+    // Death screen: elapsed time since the death dialog first appeared
+    float deathElapsed_ = 0.0f;
+    bool deathTimerRunning_ = false;
+    // WoW forces release after ~6 minutes; show countdown until then
+    static constexpr float kForcedReleaseSec = 360.0f;
     void renderZoneToasts(float deltaTime);
     bool showPlayerInfo = false;
     bool showSocialFrame_ = false;  // O key toggles social/friends list
