@@ -6147,6 +6147,26 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
         drawList->AddText(ImVec2(tx, ty), IM_COL32(230, 230, 230, 255), overlay);
 
         ImGui::Dummy(barSize);
+
+        // Tooltip with XP-to-level and rested details
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            uint32_t xpToLevel = (currentXp < nextLevelXp) ? (nextLevelXp - currentXp) : 0;
+            ImGui::TextColored(ImVec4(0.9f, 0.85f, 1.0f, 1.0f), "Experience");
+            ImGui::Separator();
+            ImGui::Text("Current: %u / %u XP", currentXp, nextLevelXp);
+            ImGui::Text("To next level: %u XP", xpToLevel);
+            if (restedXp > 0) {
+                float restedLevels = static_cast<float>(restedXp) / static_cast<float>(nextLevelXp);
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.78f, 0.60f, 1.0f, 1.0f),
+                    "Rested: +%u XP (%.1f%% of a level)", restedXp, restedLevels * 100.0f);
+                if (isResting)
+                    ImGui::TextColored(ImVec4(0.6f, 0.9f, 0.6f, 1.0f),
+                        "Resting — accumulating bonus XP");
+            }
+            ImGui::EndTooltip();
+        }
     }
     ImGui::End();
 
