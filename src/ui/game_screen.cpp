@@ -31,6 +31,7 @@
 #include "pipeline/dbc_layout.hpp"
 
 #include "game/expansion_profile.hpp"
+#include "game/character.hpp"
 #include "core/logger.hpp"
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -596,6 +597,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderAuctionHouseWindow(gameHandler);
     renderDungeonFinderWindow(gameHandler);
     renderInstanceLockouts(gameHandler);
+    renderWhoWindow(gameHandler);
     renderAchievementWindow(gameHandler);
     renderGmTicketWindow(gameHandler);
     renderInspectWindow(gameHandler);
@@ -4040,6 +4042,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 }
 
                 gameHandler.queryWho(query);
+                showWhoWindow_ = true;
                 chatInputBuffer[0] = '\0';
                 return;
             }
@@ -16836,6 +16839,106 @@ void GameScreen::renderBattlegroundScore(game::GameHandler& gameHandler) {
     }
     ImGui::End();
     ImGui::PopStyleVar(2);
+}
+
+// ─── Who Results Window ───────────────────────────────────────────────────────
+void GameScreen::renderWhoWindow(game::GameHandler& gameHandler) {
+    if (!showWhoWindow_) return;
+
+    const auto& results = gameHandler.getWhoResults();
+
+    ImGui::SetNextWindowSize(ImVec2(500, 300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(200, 180), ImGuiCond_FirstUseEver);
+
+    char title[64];
+    uint32_t onlineCount = gameHandler.getWhoOnlineCount();
+    if (onlineCount > 0)
+        snprintf(title, sizeof(title), "Players Online: %u###WhoWindow", onlineCount);
+    else
+        snprintf(title, sizeof(title), "Who###WhoWindow");
+
+    if (!ImGui::Begin(title, &showWhoWindow_)) {
+        ImGui::End();
+        return;
+    }
+
+    if (results.empty()) {
+        ImGui::TextDisabled("No results. Use /who [filter] to search.");
+        ImGui::End();
+        return;
+    }
+
+    // Table: Name | Guild | Level | Class | Zone
+    if (ImGui::BeginTable("##WhoTable", 5,
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+            ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
+            ImVec2(0, 0))) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("Name",  ImGuiTableColumnFlags_WidthStretch, 0.22f);
+        ImGui::TableSetupColumn("Guild", ImGuiTableColumnFlags_WidthStretch, 0.20f);
+        ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed,   40.0f);
+        ImGui::TableSetupColumn("Class", ImGuiTableColumnFlags_WidthStretch, 0.20f);
+        ImGui::TableSetupColumn("Zone",  ImGuiTableColumnFlags_WidthStretch, 0.28f);
+        ImGui::TableHeadersRow();
+
+        for (size_t i = 0; i < results.size(); ++i) {
+            const auto& e = results[i];
+            ImGui::TableNextRow();
+            ImGui::PushID(static_cast<int>(i));
+
+            // Name (class-colored if class is known)
+            ImGui::TableSetColumnIndex(0);
+            uint8_t cid = static_cast<uint8_t>(e.classId);
+            ImVec4 nameCol = classColorVec4(cid);
+            ImGui::TextColored(nameCol, "%s", e.name.c_str());
+
+            // Right-click context menu on the name
+            if (ImGui::BeginPopupContextItem("##WhoCtx")) {
+                ImGui::TextDisabled("%s", e.name.c_str());
+                ImGui::Separator();
+                if (ImGui::MenuItem("Whisper")) {
+                    selectedChatType = 4;
+                    strncpy(whisperTargetBuffer, e.name.c_str(), sizeof(whisperTargetBuffer) - 1);
+                    whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                    refocusChatInput = true;
+                }
+                if (ImGui::MenuItem("Invite to Group"))
+                    gameHandler.inviteToGroup(e.name);
+                if (ImGui::MenuItem("Add Friend"))
+                    gameHandler.addFriend(e.name);
+                if (ImGui::MenuItem("Ignore"))
+                    gameHandler.addIgnore(e.name);
+                ImGui::EndPopup();
+            }
+
+            // Guild
+            ImGui::TableSetColumnIndex(1);
+            if (!e.guildName.empty())
+                ImGui::TextDisabled("<%s>", e.guildName.c_str());
+
+            // Level
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("%u", e.level);
+
+            // Class
+            ImGui::TableSetColumnIndex(3);
+            const char* className = game::getClassName(static_cast<game::Class>(e.classId));
+            ImGui::TextColored(nameCol, "%s", className);
+
+            // Zone
+            ImGui::TableSetColumnIndex(4);
+            if (e.zoneId != 0) {
+                std::string zoneName = gameHandler.getWhoAreaName(e.zoneId);
+                ImGui::TextUnformatted(zoneName.empty() ? "Unknown" : zoneName.c_str());
+            }
+
+            ImGui::PopID();
+        }
+
+        ImGui::EndTable();
+    }
+
+    ImGui::End();
 }
 
 // ─── Achievement Window ───────────────────────────────────────────────────────

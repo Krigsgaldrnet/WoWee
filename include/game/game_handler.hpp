@@ -353,6 +353,19 @@ public:
     uint32_t getTotalTimePlayed() const { return totalTimePlayed_; }
     uint32_t getLevelTimePlayed() const { return levelTimePlayed_; }
 
+    // Who results (structured, from last SMSG_WHO response)
+    struct WhoEntry {
+        std::string name;
+        std::string guildName;
+        uint32_t level    = 0;
+        uint32_t classId  = 0;
+        uint32_t raceId   = 0;
+        uint32_t zoneId   = 0;
+    };
+    const std::vector<WhoEntry>& getWhoResults() const { return whoResults_; }
+    uint32_t getWhoOnlineCount() const { return whoOnlineCount_; }
+    std::string getWhoAreaName(uint32_t zoneId) const { return getAreaName(zoneId); }
+
     // Social commands
     void addFriend(const std::string& playerName, const std::string& note = "");
     void removeFriend(const std::string& playerName);
@@ -2302,6 +2315,10 @@ private:
     float       summonTimeoutSec_     = 0.0f;
     uint32_t    totalTimePlayed_      = 0;
     uint32_t    levelTimePlayed_      = 0;
+
+    // Who results (last SMSG_WHO response)
+    std::vector<WhoEntry> whoResults_;
+    uint32_t whoOnlineCount_ = 0;
 
     // Trade state
     TradeStatus tradeStatus_  = TradeStatus::None;

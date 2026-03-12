@@ -18352,12 +18352,14 @@ void GameHandler::handleWho(network::Packet& packet) {
 
     LOG_INFO("WHO response: ", displayCount, " players displayed, ", onlineCount, " total online");
 
+    // Store structured results for the who-results window
+    whoResults_.clear();
+    whoOnlineCount_ = onlineCount;
+
     if (displayCount == 0) {
         addSystemChatMessage("No players found.");
         return;
     }
-
-    addSystemChatMessage(std::to_string(onlineCount) + " player(s) online:");
 
     for (uint32_t i = 0; i < displayCount; ++i) {
         if (packet.getReadPos() >= packet.getSize()) break;
@@ -18373,19 +18375,16 @@ void GameHandler::handleWho(network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() >= 4)
             zoneId = packet.readUInt32();
 
-        const char* className = getClassName(static_cast<Class>(classId));
+        // Store structured entry
+        WhoEntry entry;
+        entry.name      = playerName;
+        entry.guildName = guildName;
+        entry.level     = level;
+        entry.classId   = classId;
+        entry.raceId    = raceId;
+        entry.zoneId    = zoneId;
+        whoResults_.push_back(std::move(entry));
 
-        std::string msg = "  " + playerName;
-        if (!guildName.empty())
-            msg += " <" + guildName + ">";
-        msg += " - Level " + std::to_string(level) + " " + className;
-        if (zoneId != 0) {
-            std::string zoneName = getAreaName(zoneId);
-            if (!zoneName.empty())
-                msg += " [" + zoneName + "]";
-        }
-
-        addSystemChatMessage(msg);
         LOG_INFO("  ", playerName, " (", guildName, ") Lv", level, " Class:", classId,
                  " Race:", raceId, " Zone:", zoneId);
     }

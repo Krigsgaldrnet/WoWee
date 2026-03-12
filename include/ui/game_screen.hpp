@@ -396,6 +396,10 @@ private:
     int bagBarPickedSlot_ = -1;   // Visual drag in progress (-1 = none)
     int bagBarDragSource_ = -1;   // Mouse pressed on this slot, waiting for drag or click (-1 = none)
 
+    // Who Results window
+    bool  showWhoWindow_ = false;
+    void  renderWhoWindow(game::GameHandler& gameHandler);
+
     // Instance Lockouts window
     bool  showInstanceLockouts_ = false;
 
