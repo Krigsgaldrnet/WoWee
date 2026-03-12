@@ -1728,6 +1728,10 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             showRaidFrames_ = !showRaidFrames_;
         }
 
+        if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_QUEST_LOG)) {
+            questLogScreen.toggle();
+        }
+
         // Action bar keys (1-9, 0, -, =)
         static const SDL_Scancode actionBarKeys[] = {
             SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4,
