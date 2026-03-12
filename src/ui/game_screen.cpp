@@ -8148,6 +8148,41 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
         ImGui::Separator();
 
         ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Right-click bag items to sell");
+
+        // Count grey (POOR quality) sellable items across backpack and bags
+        const auto& inv = gameHandler.getInventory();
+        int junkCount = 0;
+        for (int i = 0; i < inv.getBackpackSize(); ++i) {
+            const auto& sl = inv.getBackpackSlot(i);
+            if (!sl.empty() && sl.item.quality == game::ItemQuality::POOR && sl.item.sellPrice > 0)
+                ++junkCount;
+        }
+        for (int b = 0; b < game::Inventory::NUM_BAG_SLOTS; ++b) {
+            for (int s = 0; s < inv.getBagSize(b); ++s) {
+                const auto& sl = inv.getBagSlot(b, s);
+                if (!sl.empty() && sl.item.quality == game::ItemQuality::POOR && sl.item.sellPrice > 0)
+                    ++junkCount;
+            }
+        }
+        if (junkCount > 0) {
+            char junkLabel[64];
+            snprintf(junkLabel, sizeof(junkLabel), "Sell All Junk (%d item%s)",
+                     junkCount, junkCount == 1 ? "" : "s");
+            if (ImGui::Button(junkLabel, ImVec2(-1, 0))) {
+                for (int i = 0; i < inv.getBackpackSize(); ++i) {
+                    const auto& sl = inv.getBackpackSlot(i);
+                    if (!sl.empty() && sl.item.quality == game::ItemQuality::POOR && sl.item.sellPrice > 0)
+                        gameHandler.sellItemBySlot(i);
+                }
+                for (int b = 0; b < game::Inventory::NUM_BAG_SLOTS; ++b) {
+                    for (int s = 0; s < inv.getBagSize(b); ++s) {
+                        const auto& sl = inv.getBagSlot(b, s);
+                        if (!sl.empty() && sl.item.quality == game::ItemQuality::POOR && sl.item.sellPrice > 0)
+                            gameHandler.sellItemInBag(b, s);
+                    }
+                }
+            }
+        }
         ImGui::Separator();
 
         const auto& buyback = gameHandler.getBuybackItems();
