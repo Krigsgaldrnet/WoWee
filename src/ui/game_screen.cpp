@@ -7197,12 +7197,27 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
                     VkDescriptorSet iconTex = dispId ? inventoryScreen.getItemIcon(dispId) : VK_NULL_HANDLE;
                     if (iconTex) {
                         ImGui::Image((ImTextureID)(uintptr_t)iconTex, ImVec2(12, 12));
+                        if (info && info->valid && ImGui::IsItemHovered()) {
+                            ImGui::BeginTooltip();
+                            inventoryScreen.renderItemTooltip(*info);
+                            ImGui::EndTooltip();
+                        }
                         ImGui::SameLine(0, 3);
                         ImGui::TextColored(objColor,
                                            "%s: %u/%u", itemName ? itemName : "Item", count, required);
+                        if (info && info->valid && ImGui::IsItemHovered()) {
+                            ImGui::BeginTooltip();
+                            inventoryScreen.renderItemTooltip(*info);
+                            ImGui::EndTooltip();
+                        }
                     } else if (itemName) {
                         ImGui::TextColored(objColor,
                                            "  %s: %u/%u", itemName, count, required);
+                        if (info && info->valid && ImGui::IsItemHovered()) {
+                            ImGui::BeginTooltip();
+                            inventoryScreen.renderItemTooltip(*info);
+                            ImGui::EndTooltip();
+                        }
                     } else {
                         ImGui::TextColored(objColor,
                                            "  Item: %u/%u", count, required);
