@@ -9835,6 +9835,10 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.1f, 0.92f));
 
+    // State for "Set Note" inline editing
+    static int  noteEditContactIdx = -1;
+    static char noteEditBuf[128]   = {};
+
     bool open = showSocialFrame_;
     char socialTitle[32];
     snprintf(socialTitle, sizeof(socialTitle), "Social (%d online)##SocialFrame", onlineCount);
@@ -9924,6 +9928,14 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
                                 }
                                 if (ImGui::MenuItem("Invite to Group"))
                                     gameHandler.inviteToGroup(c.name);
+                                if (c.guid != 0 && ImGui::MenuItem("Trade"))
+                                    gameHandler.initiateTrade(c.guid);
+                            }
+                            if (ImGui::MenuItem("Set Note")) {
+                                noteEditContactIdx = static_cast<int>(ci);
+                                strncpy(noteEditBuf, c.note.c_str(), sizeof(noteEditBuf) - 1);
+                                noteEditBuf[sizeof(noteEditBuf) - 1] = '\0';
+                                ImGui::OpenPopup("##SetFriendNote");
                             }
                             if (ImGui::MenuItem("Remove Friend"))
                                 gameHandler.removeFriend(c.name);
@@ -9944,6 +9956,31 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
                 }
 
                 ImGui::EndChild();
+
+                // "Set Note" modal popup
+                if (ImGui::BeginPopup("##SetFriendNote")) {
+                    const std::string& noteName = (noteEditContactIdx >= 0 &&
+                        noteEditContactIdx < static_cast<int>(contacts.size()))
+                        ? contacts[noteEditContactIdx].name : "";
+                    ImGui::TextDisabled("Note for %s:", noteName.c_str());
+                    ImGui::SetNextItemWidth(180.0f);
+                    bool confirm = ImGui::InputText("##noteinput", noteEditBuf, sizeof(noteEditBuf),
+                        ImGuiInputTextFlags_EnterReturnsTrue);
+                    ImGui::SameLine();
+                    if (confirm || ImGui::Button("OK")) {
+                        if (!noteName.empty())
+                            gameHandler.setFriendNote(noteName, noteEditBuf);
+                        noteEditContactIdx = -1;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel")) {
+                        noteEditContactIdx = -1;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
+                }
+
                 ImGui::Separator();
 
                 // Add friend
