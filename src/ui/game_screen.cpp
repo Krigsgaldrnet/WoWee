@@ -8600,6 +8600,63 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                 }
                 renderSpellTable("TrainerTable", allSpells);
             }
+
+            // Count how many spells are trainable right now
+            int trainableCount = 0;
+            uint64_t totalCost = 0;
+            for (const auto& spell : trainer.spells) {
+                bool prereq1Met = isKnown(spell.chainNode1);
+                bool prereq2Met = isKnown(spell.chainNode2);
+                bool prereq3Met = isKnown(spell.chainNode3);
+                bool prereqsMet = prereq1Met && prereq2Met && prereq3Met;
+                bool levelMet = (spell.reqLevel == 0 || playerLevel >= spell.reqLevel);
+                bool alreadyKnown = isKnown(spell.spellId);
+                uint8_t effectiveState = spell.state;
+                if (spell.state == 1 && prereqsMet && levelMet) effectiveState = 0;
+                bool canTrain = !alreadyKnown && effectiveState == 0
+                               && prereqsMet && levelMet
+                               && (money >= spell.spellCost);
+                if (canTrain) {
+                    ++trainableCount;
+                    totalCost += spell.spellCost;
+                }
+            }
+
+            ImGui::Separator();
+            bool canAffordAll = (money >= totalCost);
+            bool hasTrainable = (trainableCount > 0) && canAffordAll;
+            if (!hasTrainable) ImGui::BeginDisabled();
+            uint32_t tag = static_cast<uint32_t>(totalCost / 10000);
+            uint32_t tas = static_cast<uint32_t>((totalCost / 100) % 100);
+            uint32_t tac = static_cast<uint32_t>(totalCost % 100);
+            char trainAllLabel[80];
+            if (trainableCount == 0) {
+                snprintf(trainAllLabel, sizeof(trainAllLabel), "Train All Available (none)");
+            } else {
+                snprintf(trainAllLabel, sizeof(trainAllLabel),
+                         "Train All Available (%d spell%s, %ug %us %uc)",
+                         trainableCount, trainableCount == 1 ? "" : "s",
+                         tag, tas, tac);
+            }
+            if (ImGui::Button(trainAllLabel, ImVec2(-1.0f, 0.0f))) {
+                for (const auto& spell : trainer.spells) {
+                    bool prereq1Met = isKnown(spell.chainNode1);
+                    bool prereq2Met = isKnown(spell.chainNode2);
+                    bool prereq3Met = isKnown(spell.chainNode3);
+                    bool prereqsMet = prereq1Met && prereq2Met && prereq3Met;
+                    bool levelMet = (spell.reqLevel == 0 || playerLevel >= spell.reqLevel);
+                    bool alreadyKnown = isKnown(spell.spellId);
+                    uint8_t effectiveState = spell.state;
+                    if (spell.state == 1 && prereqsMet && levelMet) effectiveState = 0;
+                    bool canTrain = !alreadyKnown && effectiveState == 0
+                                   && prereqsMet && levelMet
+                                   && (money >= spell.spellCost);
+                    if (canTrain) {
+                        gameHandler.trainSpell(spell.spellId);
+                    }
+                }
+            }
+            if (!hasTrainable) ImGui::EndDisabled();
         }
     }
     ImGui::End();
