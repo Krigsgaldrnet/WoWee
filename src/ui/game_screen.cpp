@@ -8202,6 +8202,60 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                         draw->AddRectFilled(barFill, barFillEnd, pwrCol, 2.0f);
                     }
 
+                    // Dispellable debuff dots at the bottom of the raid cell
+                    // Mirrors party frame debuff indicators for healers in 25/40-man raids
+                    if (!isDead && !isGhost) {
+                        const std::vector<game::AuraSlot>* unitAuras = nullptr;
+                        if (m.guid == gameHandler.getPlayerGuid())
+                            unitAuras = &gameHandler.getPlayerAuras();
+                        else if (m.guid == gameHandler.getTargetGuid())
+                            unitAuras = &gameHandler.getTargetAuras();
+                        else
+                            unitAuras = gameHandler.getUnitAuras(m.guid);
+
+                        if (unitAuras) {
+                            bool shown[5] = {};
+                            float dotX = cellMin.x + 4.0f;
+                            const float dotY  = cellMax.y - 5.0f;
+                            const float DOT_R = 3.5f;
+                            ImVec2 mouse = ImGui::GetMousePos();
+                            for (const auto& aura : *unitAuras) {
+                                if (aura.isEmpty()) continue;
+                                if ((aura.flags & 0x80) == 0) continue; // debuffs only
+                                uint8_t dt = gameHandler.getSpellDispelType(aura.spellId);
+                                if (dt == 0 || dt > 4 || shown[dt]) continue;
+                                shown[dt] = true;
+                                ImVec4 dc;
+                                switch (dt) {
+                                    case 1: dc = ImVec4(0.25f, 0.50f, 1.00f, 0.90f); break; // Magic: blue
+                                    case 2: dc = ImVec4(0.70f, 0.15f, 0.90f, 0.90f); break; // Curse: purple
+                                    case 3: dc = ImVec4(0.65f, 0.45f, 0.10f, 0.90f); break; // Disease: brown
+                                    case 4: dc = ImVec4(0.10f, 0.75f, 0.10f, 0.90f); break; // Poison: green
+                                    default: continue;
+                                }
+                                ImU32 dotColU = ImGui::ColorConvertFloat4ToU32(dc);
+                                draw->AddCircleFilled(ImVec2(dotX, dotY), DOT_R, dotColU);
+                                draw->AddCircle(ImVec2(dotX, dotY), DOT_R + 0.5f, IM_COL32(0, 0, 0, 160), 8, 1.0f);
+
+                                float mdx = mouse.x - dotX, mdy = mouse.y - dotY;
+                                if (mdx * mdx + mdy * mdy < (DOT_R + 4.0f) * (DOT_R + 4.0f)) {
+                                    static const char* kDispelNames[] = { "", "Magic", "Curse", "Disease", "Poison" };
+                                    ImGui::BeginTooltip();
+                                    ImGui::TextColored(dc, "%s", kDispelNames[dt]);
+                                    for (const auto& da : *unitAuras) {
+                                        if (da.isEmpty() || (da.flags & 0x80) == 0) continue;
+                                        if (gameHandler.getSpellDispelType(da.spellId) != dt) continue;
+                                        const std::string& dName = gameHandler.getSpellName(da.spellId);
+                                        if (!dName.empty())
+                                            ImGui::Text("  %s", dName.c_str());
+                                    }
+                                    ImGui::EndTooltip();
+                                }
+                                dotX += 9.0f;
+                            }
+                        }
+                    }
+
                     // Clickable invisible region over the whole cell
                     ImGui::SetCursorScreenPos(cellMin);
                     ImGui::PushID(static_cast<int>(m.guid));
@@ -14091,6 +14145,25 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         drawList->AddText(font, 11.0f,
             ImVec2(sx - textSize.x * 0.5f, sy - textSize.y * 0.5f),
             IM_COL32(0, 0, 0, 255), marker);
+
+        // Show NPC name and quest status on hover
+        {
+            ImVec2 mouse = ImGui::GetMousePos();
+            float mdx = mouse.x - sx, mdy = mouse.y - sy;
+            if (mdx * mdx + mdy * mdy < 64.0f) {
+                std::string npcName;
+                if (entity->getType() == game::ObjectType::UNIT) {
+                    auto npcUnit = std::static_pointer_cast<game::Unit>(entity);
+                    npcName = npcUnit->getName();
+                }
+                if (!npcName.empty()) {
+                    bool hasQuest = (status == game::QuestGiverStatus::AVAILABLE ||
+                                     status == game::QuestGiverStatus::AVAILABLE_LOW);
+                    ImGui::SetTooltip("%s\n%s", npcName.c_str(),
+                                      hasQuest ? "Has a quest for you" : "Quest ready to turn in");
+                }
+            }
+        }
     }
 
     // Quest kill objective markers — highlight live NPCs matching active quest kill objectives
