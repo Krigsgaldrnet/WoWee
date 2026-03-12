@@ -1270,6 +1270,34 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
             ImGui::EndTabItem();
         }
 
+        if (ImGui::BeginTabItem("PvP")) {
+            const auto& arenaStats = gameHandler.getArenaTeamStats();
+            if (arenaStats.empty()) {
+                ImGui::Spacing();
+                ImGui::TextDisabled("Not a member of any Arena team.");
+            } else {
+                for (const auto& team : arenaStats) {
+                    ImGui::PushID(static_cast<int>(team.teamId));
+                    char header[64];
+                    snprintf(header, sizeof(header), "Team ID %u  (Rating: %u)", team.teamId, team.rating);
+                    if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) {
+                        ImGui::Columns(2, "##arenacols", false);
+                        ImGui::Text("Rating:");     ImGui::NextColumn();
+                        ImGui::Text("%u", team.rating);    ImGui::NextColumn();
+                        ImGui::Text("Rank:");       ImGui::NextColumn();
+                        ImGui::Text("#%u", team.rank);     ImGui::NextColumn();
+                        ImGui::Text("This week:");  ImGui::NextColumn();
+                        ImGui::Text("%u / %u (W/G)", team.weekWins, team.weekGames); ImGui::NextColumn();
+                        ImGui::Text("Season:");     ImGui::NextColumn();
+                        ImGui::Text("%u / %u (W/G)", team.seasonWins, team.seasonGames); ImGui::NextColumn();
+                        ImGui::Columns(1);
+                    }
+                    ImGui::PopID();
+                }
+            }
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
 

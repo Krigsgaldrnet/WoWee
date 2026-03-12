@@ -4924,7 +4924,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleArenaTeamEvent(packet);
             break;
         case Opcode::SMSG_ARENA_TEAM_STATS:
-            LOG_INFO("Received SMSG_ARENA_TEAM_STATS");
+            handleArenaTeamStats(packet);
             break;
         case Opcode::SMSG_ARENA_ERROR:
             handleArenaError(packet);
@@ -13274,6 +13274,35 @@ void GameHandler::handleArenaTeamEvent(network::Packet& packet) {
     if (!param2.empty()) msg += " (" + param2 + ")";
     addSystemChatMessage(msg);
     LOG_INFO("Arena team event: ", eventName, " ", param1, " ", param2);
+}
+
+void GameHandler::handleArenaTeamStats(network::Packet& packet) {
+    // SMSG_ARENA_TEAM_STATS (WotLK 3.3.5a):
+    //   uint32 teamId, uint32 rating, uint32 weekGames, uint32 weekWins,
+    //   uint32 seasonGames, uint32 seasonWins, uint32 rank
+    if (packet.getSize() - packet.getReadPos() < 28) return;
+
+    ArenaTeamStats stats;
+    stats.teamId      = packet.readUInt32();
+    stats.rating      = packet.readUInt32();
+    stats.weekGames   = packet.readUInt32();
+    stats.weekWins    = packet.readUInt32();
+    stats.seasonGames = packet.readUInt32();
+    stats.seasonWins  = packet.readUInt32();
+    stats.rank        = packet.readUInt32();
+
+    // Update or insert for this team
+    for (auto& s : arenaTeamStats_) {
+        if (s.teamId == stats.teamId) {
+            s = stats;
+            LOG_INFO("SMSG_ARENA_TEAM_STATS: teamId=", stats.teamId,
+                     " rating=", stats.rating, " rank=", stats.rank);
+            return;
+        }
+    }
+    arenaTeamStats_.push_back(stats);
+    LOG_INFO("SMSG_ARENA_TEAM_STATS: teamId=", stats.teamId,
+             " rating=", stats.rating, " rank=", stats.rank);
 }
 
 void GameHandler::handleArenaError(network::Packet& packet) {

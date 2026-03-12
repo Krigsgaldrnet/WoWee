@@ -1070,6 +1070,18 @@ public:
     uint32_t getLfgBootTimeLeft() const { return lfgBootTimeLeft_; }
     uint32_t getLfgBootNeeded()   const { return lfgBootNeeded_; }
 
+    // ---- Arena Team Stats ----
+    struct ArenaTeamStats {
+        uint32_t teamId       = 0;
+        uint32_t rating       = 0;
+        uint32_t weekGames    = 0;
+        uint32_t weekWins     = 0;
+        uint32_t seasonGames  = 0;
+        uint32_t seasonWins   = 0;
+        uint32_t rank         = 0;
+    };
+    const std::vector<ArenaTeamStats>& getArenaTeamStats() const { return arenaTeamStats_; }
+
     // ---- Phase 5: Loot ----
     void lootTarget(uint64_t guid);
     void lootItem(uint8_t slotIndex);
@@ -1774,6 +1786,7 @@ private:
     void handleArenaTeamQueryResponse(network::Packet& packet);
     void handleArenaTeamInvite(network::Packet& packet);
     void handleArenaTeamEvent(network::Packet& packet);
+    void handleArenaTeamStats(network::Packet& packet);
     void handleArenaError(network::Packet& packet);
 
     // ---- Bank handlers ----
@@ -2126,6 +2139,9 @@ private:
 
     // Instance / raid lockouts
     std::vector<InstanceLockout> instanceLockouts_;
+
+    // Arena team stats (indexed by team slot, updated by SMSG_ARENA_TEAM_STATS)
+    std::vector<ArenaTeamStats> arenaTeamStats_;
 
     // Instance encounter boss units (slots 0-4 from SMSG_UPDATE_INSTANCE_ENCOUNTER_UNIT)
     std::array<uint64_t, kMaxEncounterSlots> encounterUnitGuids_ = {};  // 0 = empty slot
