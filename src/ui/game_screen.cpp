@@ -3143,7 +3143,18 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                 snprintf(castLabel, sizeof(castLabel), "%s (%.1fs)", castName.c_str(), castLeft);
             else
                 snprintf(castLabel, sizeof(castLabel), "Casting... (%.1fs)", castLeft);
-            ImGui::ProgressBar(castPct, ImVec2(-1, 14), castLabel);
+            {
+                auto* tcastAsset = core::Application::getInstance().getAssetManager();
+                VkDescriptorSet tIcon = (tspell != 0 && tcastAsset)
+                    ? getSpellIcon(tspell, tcastAsset) : VK_NULL_HANDLE;
+                if (tIcon) {
+                    ImGui::Image((ImTextureID)(uintptr_t)tIcon, ImVec2(14, 14));
+                    ImGui::SameLine(0, 2);
+                    ImGui::ProgressBar(castPct, ImVec2(-1, 14), castLabel);
+                } else {
+                    ImGui::ProgressBar(castPct, ImVec2(-1, 14), castLabel);
+                }
+            }
             ImGui::PopStyleColor();
         }
 
@@ -3558,7 +3569,18 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                     snprintf(castBuf, sizeof(castBuf), "%s (%.1fs)", spName.c_str(), rem);
                 else
                     snprintf(castBuf, sizeof(castBuf), "Casting... (%.1fs)", rem);
-                ImGui::ProgressBar(prog, ImVec2(-1, 12), castBuf);
+                {
+                    auto* fcAsset = core::Application::getInstance().getAssetManager();
+                    VkDescriptorSet fcIcon = (focusCast->spellId != 0 && fcAsset)
+                        ? getSpellIcon(focusCast->spellId, fcAsset) : VK_NULL_HANDLE;
+                    if (fcIcon) {
+                        ImGui::Image((ImTextureID)(uintptr_t)fcIcon, ImVec2(12, 12));
+                        ImGui::SameLine(0, 2);
+                        ImGui::ProgressBar(prog, ImVec2(-1, 12), castBuf);
+                    } else {
+                        ImGui::ProgressBar(prog, ImVec2(-1, 12), castBuf);
+                    }
+                }
                 ImGui::PopStyleColor();
             }
         }
