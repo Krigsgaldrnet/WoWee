@@ -393,6 +393,28 @@ public:
     void declineBattlefield(uint32_t queueSlot = 0xFFFFFFFF);
     const std::array<BgQueueSlot, 3>& getBgQueues() const { return bgQueues_; }
 
+    // BG scoreboard (MSG_PVP_LOG_DATA)
+    struct BgPlayerScore {
+        uint64_t    guid            = 0;
+        std::string name;
+        uint8_t     team            = 0;  // 0=Horde, 1=Alliance
+        uint32_t    killingBlows    = 0;
+        uint32_t    deaths          = 0;
+        uint32_t    honorableKills  = 0;
+        uint32_t    bonusHonor      = 0;
+        std::vector<std::pair<std::string, uint32_t>> bgStats;  // BG-specific fields
+    };
+    struct BgScoreboardData {
+        std::vector<BgPlayerScore> players;
+        bool hasWinner = false;
+        uint8_t winner = 0;      // 0=Horde, 1=Alliance
+        bool isArena   = false;
+    };
+    void requestPvpLog();
+    const BgScoreboardData* getBgScoreboard() const {
+        return bgScoreboard_.players.empty() ? nullptr : &bgScoreboard_;
+    }
+
     // Network latency (milliseconds, updated each PONG response)
     uint32_t getLatencyMs() const { return lastLatency; }
 
@@ -1921,6 +1943,7 @@ private:
     void handleArenaTeamEvent(network::Packet& packet);
     void handleArenaTeamStats(network::Packet& packet);
     void handleArenaError(network::Packet& packet);
+    void handlePvpLogData(network::Packet& packet);
 
     // ---- Bank handlers ----
     void handleShowBank(network::Packet& packet);
@@ -2282,6 +2305,9 @@ private:
 
     // Arena team stats (indexed by team slot, updated by SMSG_ARENA_TEAM_STATS)
     std::vector<ArenaTeamStats> arenaTeamStats_;
+
+    // BG scoreboard (MSG_PVP_LOG_DATA)
+    BgScoreboardData bgScoreboard_;
 
     // Instance encounter boss units (slots 0-4 from SMSG_UPDATE_INSTANCE_ENCOUNTER_UNIT)
     std::array<uint64_t, kMaxEncounterSlots> encounterUnitGuids_ = {};  // 0 = empty slot

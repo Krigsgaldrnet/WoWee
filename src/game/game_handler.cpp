@@ -4988,7 +4988,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleArenaError(packet);
             break;
         case Opcode::MSG_PVP_LOG_DATA:
-            LOG_INFO("Received MSG_PVP_LOG_DATA");
+            handlePvpLogData(packet);
             break;
         case Opcode::MSG_INSPECT_ARENA_TEAMS:
             LOG_INFO("Received MSG_INSPECT_ARENA_TEAMS");
@@ -5207,6 +5207,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             std::vector<AuraSlot>* auraList = nullptr;
             if (auraTargetGuid == playerGuid)       auraList = &playerAuras;
             else if (auraTargetGuid == targetGuid)  auraList = &targetAuras;
+            else if (auraTargetGuid != 0)           auraList = &unitAurasCache_[auraTargetGuid];
 
             if (auraList && isInit) auraList->clear();
 
@@ -13465,6 +13466,80 @@ void GameHandler::handleArenaError(network::Packet& packet) {
     }
     addSystemChatMessage(msg);
     LOG_INFO("Arena error: ", error, " - ", msg);
+}
+
+void GameHandler::requestPvpLog() {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    // MSG_PVP_LOG_DATA is bidirectional: client sends an empty packet to request
+    network::Packet pkt(wireOpcode(Opcode::MSG_PVP_LOG_DATA));
+    socket->send(pkt);
+    LOG_INFO("Requested PvP log data");
+}
+
+void GameHandler::handlePvpLogData(network::Packet& packet) {
+    auto remaining = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (remaining() < 1) return;
+
+    bgScoreboard_ = BgScoreboardData{};
+    bgScoreboard_.isArena = (packet.readUInt8() != 0);
+
+    if (bgScoreboard_.isArena) {
+        // Skip arena-specific header (two teams × (rating change uint32 + name string + 5×uint32))
+        // Rather than hardcoding arena parse we skip gracefully up to playerCount
+        // Each arena team block: uint32 + string + uint32*5 — variable length due to string.
+        // Skip by scanning for the uint32 playerCount heuristically; simply consume rest.
+        packet.setReadPos(packet.getSize());
+        return;
+    }
+
+    if (remaining() < 4) return;
+    uint32_t playerCount = packet.readUInt32();
+    bgScoreboard_.players.reserve(playerCount);
+
+    for (uint32_t i = 0; i < playerCount && remaining() >= 13; ++i) {
+        BgPlayerScore ps;
+        ps.guid           = packet.readUInt64();
+        ps.team           = packet.readUInt8();
+        ps.killingBlows   = packet.readUInt32();
+        ps.honorableKills = packet.readUInt32();
+        ps.deaths         = packet.readUInt32();
+        ps.bonusHonor     = packet.readUInt32();
+
+        // Resolve player name from entity manager
+        {
+            auto ent = entityManager.getEntity(ps.guid);
+            if (ent && (ent->getType() == game::ObjectType::PLAYER ||
+                        ent->getType() == game::ObjectType::UNIT)) {
+                auto u = std::static_pointer_cast<game::Unit>(ent);
+                if (!u->getName().empty()) ps.name = u->getName();
+            }
+        }
+
+        // BG-specific stat blocks: uint32 count + N × (string fieldName + uint32 value)
+        if (remaining() < 4) { bgScoreboard_.players.push_back(std::move(ps)); break; }
+        uint32_t statCount = packet.readUInt32();
+        for (uint32_t s = 0; s < statCount && remaining() >= 5; ++s) {
+            std::string fieldName;
+            while (remaining() > 0) {
+                char c = static_cast<char>(packet.readUInt8());
+                if (c == '\0') break;
+                fieldName += c;
+            }
+            uint32_t val = (remaining() >= 4) ? packet.readUInt32() : 0;
+            ps.bgStats.emplace_back(std::move(fieldName), val);
+        }
+
+        bgScoreboard_.players.push_back(std::move(ps));
+    }
+
+    if (remaining() >= 1) {
+        bgScoreboard_.hasWinner = (packet.readUInt8() != 0);
+        if (bgScoreboard_.hasWinner && remaining() >= 1)
+            bgScoreboard_.winner = packet.readUInt8();
+    }
+
+    LOG_INFO("PvP log: ", bgScoreboard_.players.size(), " players, hasWinner=",
+             bgScoreboard_.hasWinner, " winner=", (int)bgScoreboard_.winner);
 }
 
 void GameHandler::handleOtherPlayerMovement(network::Packet& packet) {

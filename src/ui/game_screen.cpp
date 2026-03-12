@@ -611,6 +611,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderGmTicketWindow(gameHandler);
     renderInspectWindow(gameHandler);
     renderThreatWindow(gameHandler);
+    renderBgScoreboard(gameHandler);
     renderObjectiveTracker(gameHandler);
     // renderQuestMarkers(gameHandler);  // Disabled - using 3D billboard markers now
     if (showMinimap_) {
@@ -3979,6 +3980,14 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // /score command — BG scoreboard
+            if (cmdLower == "score") {
+                gameHandler.requestPvpLog();
+                showBgScoreboard_ = true;
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // /time command
             if (cmdLower == "time") {
                 gameHandler.queryServerTime();
@@ -4065,7 +4074,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     "Movement: /sit  /stand  /kneel  /dismount",
                     "Misc: /played  /time  /zone  /afk [msg]  /dnd [msg]  /inspect",
                     "      /helm  /cloak  /trade  /join <channel>  /leave <channel>",
-                    "      /unstuck  /logout  /ticket  /help",
+                    "      /score  /unstuck  /logout  /ticket  /help",
                 };
                 for (const char* line : kHelpLines) {
                     game::MessageChatData helpMsg;
@@ -17733,6 +17742,139 @@ void GameScreen::renderThreatWindow(game::GameHandler& gameHandler) {
         ImGui::TextColored(col, "%-18s  %u", victimName.c_str(), entry.threat);
 
         if (rank >= 10) break; // cap display at 10 entries
+    }
+
+    ImGui::End();
+}
+
+// ─── BG Scoreboard ────────────────────────────────────────────────────────────
+void GameScreen::renderBgScoreboard(game::GameHandler& gameHandler) {
+    if (!showBgScoreboard_) return;
+
+    const game::GameHandler::BgScoreboardData* data = gameHandler.getBgScoreboard();
+
+    ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(150, 100), ImGuiCond_FirstUseEver);
+
+    const char* title = "Battleground Score###BgScore";
+    if (!ImGui::Begin(title, &showBgScoreboard_, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!data) {
+        ImGui::TextDisabled("No score data yet.");
+        ImGui::TextDisabled("Use /score to request the scoreboard while in a battleground.");
+        ImGui::End();
+        return;
+    }
+
+    // Winner banner
+    if (data->hasWinner) {
+        const char* winnerStr = (data->winner == 1) ? "Alliance" : "Horde";
+        ImVec4 winnerColor    = (data->winner == 1) ? ImVec4(0.4f, 0.6f, 1.0f, 1.0f)
+                                                    : ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
+        float textW = ImGui::CalcTextSize(winnerStr).x + ImGui::CalcTextSize("  Victory!").x;
+        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - textW) * 0.5f);
+        ImGui::TextColored(winnerColor, "%s", winnerStr);
+        ImGui::SameLine(0, 4);
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "Victory!");
+        ImGui::Separator();
+    }
+
+    // Refresh button
+    if (ImGui::SmallButton("Refresh")) {
+        gameHandler.requestPvpLog();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu players", data->players.size());
+
+    // Score table
+    constexpr ImGuiTableFlags kTableFlags =
+        ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
+        ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV |
+        ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Sortable;
+
+    // Build dynamic column count based on what BG-specific stats are present
+    int numBgCols = 0;
+    std::vector<std::string> bgColNames;
+    for (const auto& ps : data->players) {
+        for (const auto& [fieldName, val] : ps.bgStats) {
+            // Extract short name after last '.' (e.g. "BattlegroundAB.AbFlagCaptures" → "Caps")
+            std::string shortName = fieldName;
+            auto dotPos = fieldName.rfind('.');
+            if (dotPos != std::string::npos) shortName = fieldName.substr(dotPos + 1);
+            bool found = false;
+            for (const auto& n : bgColNames) { if (n == shortName) { found = true; break; } }
+            if (!found) bgColNames.push_back(shortName);
+        }
+    }
+    numBgCols = static_cast<int>(bgColNames.size());
+
+    // Fixed cols: Team | Name | KB | Deaths | HKs | Honor; then BG-specific
+    int totalCols = 6 + numBgCols;
+    float tableH = ImGui::GetContentRegionAvail().y;
+    if (ImGui::BeginTable("##BgScoreTable", totalCols, kTableFlags, ImVec2(0.0f, tableH))) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("Team",   ImGuiTableColumnFlags_WidthFixed,   56.0f);
+        ImGui::TableSetupColumn("Name",   ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("KB",     ImGuiTableColumnFlags_WidthFixed,   38.0f);
+        ImGui::TableSetupColumn("Deaths", ImGuiTableColumnFlags_WidthFixed,   52.0f);
+        ImGui::TableSetupColumn("HKs",    ImGuiTableColumnFlags_WidthFixed,   38.0f);
+        ImGui::TableSetupColumn("Honor",  ImGuiTableColumnFlags_WidthFixed,   52.0f);
+        for (const auto& col : bgColNames)
+            ImGui::TableSetupColumn(col.c_str(), ImGuiTableColumnFlags_WidthFixed, 52.0f);
+        ImGui::TableHeadersRow();
+
+        // Sort: Alliance first, then Horde; within each team by KB desc
+        std::vector<const game::GameHandler::BgPlayerScore*> sorted;
+        sorted.reserve(data->players.size());
+        for (const auto& ps : data->players) sorted.push_back(&ps);
+        std::stable_sort(sorted.begin(), sorted.end(),
+            [](const game::GameHandler::BgPlayerScore* a,
+               const game::GameHandler::BgPlayerScore* b) {
+                if (a->team != b->team) return a->team > b->team;  // Alliance(1) first
+                return a->killingBlows > b->killingBlows;
+            });
+
+        uint64_t playerGuid = gameHandler.getPlayerGuid();
+        for (const auto* ps : sorted) {
+            ImGui::TableNextRow();
+
+            // Team
+            ImGui::TableNextColumn();
+            if (ps->team == 1)
+                ImGui::TextColored(ImVec4(0.4f, 0.6f, 1.0f, 1.0f), "Alliance");
+            else
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Horde");
+
+            // Name (highlight player's own row)
+            ImGui::TableNextColumn();
+            bool isSelf = (ps->guid == playerGuid);
+            if (isSelf) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.0f, 1.0f));
+            const char* nameStr = ps->name.empty() ? "Unknown" : ps->name.c_str();
+            ImGui::TextUnformatted(nameStr);
+            if (isSelf) ImGui::PopStyleColor();
+
+            ImGui::TableNextColumn(); ImGui::Text("%u", ps->killingBlows);
+            ImGui::TableNextColumn(); ImGui::Text("%u", ps->deaths);
+            ImGui::TableNextColumn(); ImGui::Text("%u", ps->honorableKills);
+            ImGui::TableNextColumn(); ImGui::Text("%u", ps->bonusHonor);
+
+            for (const auto& col : bgColNames) {
+                ImGui::TableNextColumn();
+                uint32_t val = 0;
+                for (const auto& [fieldName, fval] : ps->bgStats) {
+                    std::string shortName = fieldName;
+                    auto dotPos = fieldName.rfind('.');
+                    if (dotPos != std::string::npos) shortName = fieldName.substr(dotPos + 1);
+                    if (shortName == col) { val = fval; break; }
+                }
+                if (val > 0) ImGui::Text("%u", val);
+                else ImGui::TextDisabled("-");
+            }
+        }
+        ImGui::EndTable();
     }
 
     ImGui::End();
