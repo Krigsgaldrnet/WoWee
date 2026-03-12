@@ -2441,22 +2441,10 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
             playerHp = playerMaxHp;
         }
 
-        // Derive class color (WoW standard class colors)
-        ImVec4 classColor(0.3f, 1.0f, 0.3f, 1.0f); // default green
-        if (activeChar) {
-            switch (activeChar->characterClass) {
-                case game::Class::WARRIOR:    classColor = ImVec4(0.78f, 0.61f, 0.43f, 1.0f); break;
-                case game::Class::PALADIN:    classColor = ImVec4(0.96f, 0.55f, 0.73f, 1.0f); break;
-                case game::Class::HUNTER:     classColor = ImVec4(0.67f, 0.83f, 0.45f, 1.0f); break;
-                case game::Class::ROGUE:      classColor = ImVec4(1.00f, 0.96f, 0.41f, 1.0f); break;
-                case game::Class::PRIEST:     classColor = ImVec4(1.00f, 1.00f, 1.00f, 1.0f); break;
-                case game::Class::DEATH_KNIGHT: classColor = ImVec4(0.77f, 0.12f, 0.23f, 1.0f); break;
-                case game::Class::SHAMAN:     classColor = ImVec4(0.00f, 0.44f, 0.87f, 1.0f); break;
-                case game::Class::MAGE:       classColor = ImVec4(0.41f, 0.80f, 0.94f, 1.0f); break;
-                case game::Class::WARLOCK:    classColor = ImVec4(0.58f, 0.51f, 0.79f, 1.0f); break;
-                case game::Class::DRUID:      classColor = ImVec4(1.00f, 0.49f, 0.04f, 1.0f); break;
-            }
-        }
+        // Derive class color via shared helper
+        ImVec4 classColor = activeChar
+            ? classColorVec4(static_cast<uint8_t>(activeChar->characterClass))
+            : ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
 
         // Name in class color — clickable for self-target, right-click for menu
         ImGui::PushStyleColor(ImGuiCol_Text, classColor);
