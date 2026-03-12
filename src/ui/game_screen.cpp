@@ -2448,6 +2448,22 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
             ImGui::PopStyleColor();
         }
 
+        // Pet cast bar
+        if (auto* pcs = gameHandler.getUnitCastState(petGuid)) {
+            float castPct = (pcs->timeTotal > 0.0f)
+                ? (pcs->timeTotal - pcs->timeRemaining) / pcs->timeTotal : 0.0f;
+            // Orange color to distinguish from health/power bars
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.85f, 0.55f, 0.1f, 1.0f));
+            char petCastLabel[48];
+            const std::string& spellNm = gameHandler.getSpellName(pcs->spellId);
+            if (!spellNm.empty())
+                snprintf(petCastLabel, sizeof(petCastLabel), "%s (%.1fs)", spellNm.c_str(), pcs->timeRemaining);
+            else
+                snprintf(petCastLabel, sizeof(petCastLabel), "Casting... (%.1fs)", pcs->timeRemaining);
+            ImGui::ProgressBar(castPct, ImVec2(-1, 10), petCastLabel);
+            ImGui::PopStyleColor();
+        }
+
         // Dismiss button (compact, right-aligned)
         ImGui::SameLine(ImGui::GetContentRegionAvail().x - 60.0f);
         if (ImGui::SmallButton("Dismiss")) {
