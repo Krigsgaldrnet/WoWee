@@ -6325,6 +6325,7 @@ void GameScreen::renderRaidWarningOverlay(game::GameHandler& gameHandler) {
         // Walk only the new messages (deque — iterate from back by skipping old ones)
         size_t toScan = newCount - raidWarnChatSeenCount_;
         size_t startIdx = newCount > toScan ? newCount - toScan : 0;
+        auto* renderer = core::Application::getInstance().getRenderer();
         for (size_t i = startIdx; i < newCount; ++i) {
             const auto& msg = chatHistory[i];
             if (msg.type == game::ChatType::RAID_WARNING ||
@@ -6337,6 +6338,11 @@ void GameScreen::renderRaidWarningOverlay(game::GameHandler& gameHandler) {
                 raidWarnEntries_.push_back({text, 0.0f, isBoss});
                 if (raidWarnEntries_.size() > 3)
                     raidWarnEntries_.erase(raidWarnEntries_.begin());
+            }
+            // Whisper audio notification
+            if (msg.type == game::ChatType::WHISPER && renderer) {
+                if (auto* ui = renderer->getUiSoundManager())
+                    ui->playWhisperReceived();
             }
         }
         raidWarnChatSeenCount_ = newCount;

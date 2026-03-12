@@ -122,6 +122,14 @@ bool UiSoundManager::initialize(pipeline::AssetManager* assets) {
     deselectTargetSounds_.resize(1);
     loadSound("Sound\\Interface\\iDeselectTarget.wav", deselectTargetSounds_[0], assets);
 
+    // Whisper notification (falls back to iSelectTarget if the dedicated file is absent)
+    whisperSounds_.resize(1);
+    if (!loadSound("Sound\\Interface\\Whisper_TellMale.wav", whisperSounds_[0], assets)) {
+        if (!loadSound("Sound\\Interface\\Whisper_TellFemale.wav", whisperSounds_[0], assets)) {
+            whisperSounds_ = selectTargetSounds_;
+        }
+    }
+
     LOG_INFO("UISoundManager: Window sounds - Bag: ", (bagOpenLoaded && bagCloseLoaded) ? "YES" : "NO",
              ", QuestLog: ", (questLogOpenLoaded && questLogCloseLoaded) ? "YES" : "NO",
              ", CharSheet: ", (charSheetOpenLoaded && charSheetCloseLoaded) ? "YES" : "NO");
@@ -224,6 +232,9 @@ void UiSoundManager::playAchievementAlert() { playSound(achievementSounds_); }
 void UiSoundManager::playError() { playSound(errorSounds_); }
 void UiSoundManager::playTargetSelect() { playSound(selectTargetSounds_); }
 void UiSoundManager::playTargetDeselect() { playSound(deselectTargetSounds_); }
+
+// Chat notifications
+void UiSoundManager::playWhisperReceived() { playSound(whisperSounds_); }
 
 } // namespace audio
 } // namespace wowee
