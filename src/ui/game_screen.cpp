@@ -6301,9 +6301,15 @@ void GameScreen::renderRepBar(game::GameHandler& gameHandler) {
 void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
     if (!gameHandler.isCasting()) return;
 
+    auto* assetMgr = core::Application::getInstance().getAssetManager();
+
     ImVec2 displaySize = ImGui::GetIO().DisplaySize;
     float screenW = displaySize.x > 0.0f ? displaySize.x : 1280.0f;
     float screenH = displaySize.y > 0.0f ? displaySize.y : 720.0f;
+
+    uint32_t currentSpellId = gameHandler.getCurrentCastSpellId();
+    VkDescriptorSet iconTex = (currentSpellId != 0 && assetMgr)
+        ? getSpellIcon(currentSpellId, assetMgr) : VK_NULL_HANDLE;
 
     float barW = 300.0f;
     float barX = (screenW - barW) / 2.0f;
@@ -6332,7 +6338,6 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
 
         char overlay[64];
-        uint32_t currentSpellId = gameHandler.getCurrentCastSpellId();
         if (currentSpellId == 0) {
             snprintf(overlay, sizeof(overlay), "Opening... (%.1fs)", gameHandler.getCastTimeRemaining());
         } else {
@@ -6343,7 +6348,15 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
             else
                 snprintf(overlay, sizeof(overlay), "%s... (%.1fs)", verb, gameHandler.getCastTimeRemaining());
         }
-        ImGui::ProgressBar(progress, ImVec2(-1, 20), overlay);
+
+        if (iconTex) {
+            // Spell icon to the left of the progress bar
+            ImGui::Image((ImTextureID)(uintptr_t)iconTex, ImVec2(20, 20));
+            ImGui::SameLine(0, 4);
+            ImGui::ProgressBar(progress, ImVec2(-1, 20), overlay);
+        } else {
+            ImGui::ProgressBar(progress, ImVec2(-1, 20), overlay);
+        }
         ImGui::PopStyleColor();
     }
     ImGui::End();
