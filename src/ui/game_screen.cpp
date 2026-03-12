@@ -2197,6 +2197,12 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
             ImGui::TextColored(ImVec4(0.9f, 0.5f, 0.2f, 1.0f), "<DND>");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Do not disturb — /dnd to cancel");
         }
+        if (inCombatConfirmed && !isDead) {
+            float combatPulse = 0.75f + 0.25f * std::sin(static_cast<float>(ImGui::GetTime()) * 4.0f);
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.2f * combatPulse, 0.2f * combatPulse, 1.0f), "[Combat]");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("You are in combat");
+        }
 
         // Try to get real HP/mana from the player entity
         auto playerEntity = gameHandler.getEntityManager().getEntity(gameHandler.getPlayerGuid());
@@ -2812,6 +2818,12 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                 levelColor = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
             }
             ImGui::TextColored(levelColor, "Lv %u", unit->getLevel());
+            if (confirmedCombatWithTarget) {
+                float cPulse = 0.75f + 0.25f * std::sin(static_cast<float>(ImGui::GetTime()) * 4.0f);
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.2f * cPulse, 0.2f * cPulse, 1.0f), "[Attacking]");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Engaged in combat with this target");
+            }
 
             // Health bar
             uint32_t hp = unit->getHealth();
