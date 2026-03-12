@@ -2209,9 +2209,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_FORCE_ANIM: {
             // packed_guid + uint32 animId — force entity to play animation
             if (packet.getSize() - packet.getReadPos() >= 1) {
-                (void)UpdateObjectParser::readPackedGuid(packet);
+                uint64_t animGuid = UpdateObjectParser::readPackedGuid(packet);
                 if (packet.getSize() - packet.getReadPos() >= 4) {
-                    /*uint32_t animId =*/ packet.readUInt32();
+                    uint32_t animId = packet.readUInt32();
+                    if (emoteAnimCallback_)
+                        emoteAnimCallback_(animGuid, animId);
                 }
             }
             break;
