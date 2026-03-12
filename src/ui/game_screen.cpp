@@ -15082,8 +15082,27 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         drawList->AddCircleFilled(ImVec2(centerX, centerY), 2.5f, IM_COL32(255, 255, 255, 220));
     }
 
+    // Build set of NPC entries that are incomplete kill objectives for tracked quests.
+    // Used both for minimap dot highlighting and tooltip annotation.
+    std::unordered_set<uint32_t> minimapQuestEntries;
+    {
+        const auto& ql = gameHandler.getQuestLog();
+        const auto& tq = gameHandler.getTrackedQuestIds();
+        for (const auto& q : ql) {
+            if (q.complete || q.questId == 0) continue;
+            if (!tq.empty() && !tq.count(q.questId)) continue;
+            for (const auto& obj : q.killObjectives) {
+                if (obj.npcOrGoId <= 0 || obj.required == 0) continue;
+                auto it = q.killCounts.find(static_cast<uint32_t>(obj.npcOrGoId));
+                if (it == q.killCounts.end() || it->second.first < it->second.second)
+                    minimapQuestEntries.insert(static_cast<uint32_t>(obj.npcOrGoId));
+            }
+        }
+    }
+
     // Optional base nearby NPC dots (independent of quest status packets).
     if (minimapNpcDots_) {
+        ImVec2 mouse = ImGui::GetMousePos();
         for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
             if (!entity || entity->getType() != game::ObjectType::UNIT) continue;
 
@@ -15094,8 +15113,21 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             float sx = 0.0f, sy = 0.0f;
             if (!projectToMinimap(npcRender, sx, sy)) continue;
 
-            ImU32 baseDot = unit->isHostile() ? IM_COL32(220, 70, 70, 220) : IM_COL32(245, 245, 245, 210);
-            drawList->AddCircleFilled(ImVec2(sx, sy), 1.0f, baseDot);
+            bool isQuestTarget = minimapQuestEntries.count(unit->getEntry()) != 0;
+            if (isQuestTarget) {
+                // Quest kill objective: larger gold dot with dark outline
+                drawList->AddCircleFilled(ImVec2(sx, sy), 3.5f, IM_COL32(255, 210, 30, 240));
+                drawList->AddCircle(ImVec2(sx, sy), 3.5f, IM_COL32(80, 50, 0, 180), 0, 1.0f);
+                // Tooltip on hover showing unit name
+                float mdx = mouse.x - sx, mdy = mouse.y - sy;
+                if (mdx * mdx + mdy * mdy < 64.0f) {
+                    const std::string& nm = unit->getName();
+                    if (!nm.empty()) ImGui::SetTooltip("%s (quest)", nm.c_str());
+                }
+            } else {
+                ImU32 baseDot = unit->isHostile() ? IM_COL32(220, 70, 70, 220) : IM_COL32(245, 245, 245, 210);
+                drawList->AddCircleFilled(ImVec2(sx, sy), 1.0f, baseDot);
+            }
         }
     }
 
