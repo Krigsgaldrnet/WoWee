@@ -1648,7 +1648,13 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
             inst.animationTime += deltaTime * 1000.0f;
             if (seq.duration > 0 && inst.animationTime >= static_cast<float>(seq.duration)) {
                 if (inst.animationLoop) {
-                    inst.animationTime = std::fmod(inst.animationTime, static_cast<float>(seq.duration));
+                    // Subtract duration instead of fmod to preserve float precision
+                    // fmod() loses precision with large animationTime values
+                    inst.animationTime -= static_cast<float>(seq.duration);
+                    // Clamp to [0, duration) to handle multiple loops in one frame
+                    while (inst.animationTime >= static_cast<float>(seq.duration)) {
+                        inst.animationTime -= static_cast<float>(seq.duration);
+                    }
                 } else {
                     // One-shot animation finished: return to Stand (0) unless dead
                     if (inst.currentAnimationId != 1 /*Death*/) {
