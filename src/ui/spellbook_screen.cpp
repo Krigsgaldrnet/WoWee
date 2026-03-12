@@ -687,6 +687,19 @@ void SpellbookScreen::render(game::GameHandler& gameHandler, pipeline::AssetMana
                                 }
                                 if (onCooldown) ImGui::EndDisabled();
                             }
+                            if (!isPassive) {
+                                if (ImGui::MenuItem("Add to Action Bar")) {
+                                    const auto& bar = gameHandler.getActionBar();
+                                    int firstEmpty = -1;
+                                    for (int si = 0; si < game::GameHandler::SLOTS_PER_BAR; ++si) {
+                                        if (bar[si].isEmpty()) { firstEmpty = si; break; }
+                                    }
+                                    if (firstEmpty >= 0) {
+                                        gameHandler.setActionBarSlot(firstEmpty,
+                                            game::ActionBarSlot::SPELL, info->spellId);
+                                    }
+                                }
+                            }
                             if (ImGui::MenuItem("Copy Spell Link")) {
                                 char linkBuf[256];
                                 snprintf(linkBuf, sizeof(linkBuf),
