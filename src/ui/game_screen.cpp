@@ -14924,6 +14924,32 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         }
     }
 
+    // Nearby other-player dots — shown when NPC dots are enabled.
+    // Party members are already drawn as squares above; other players get a small circle.
+    if (minimapNpcDots_) {
+        const uint64_t selfGuid = gameHandler.getPlayerGuid();
+        const auto& partyData = gameHandler.getPartyData();
+        for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
+            if (!entity || entity->getType() != game::ObjectType::PLAYER) continue;
+            if (entity->getGuid() == selfGuid) continue;  // skip self (already drawn as arrow)
+
+            // Skip party members (already drawn as squares above)
+            bool isPartyMember = false;
+            for (const auto& m : partyData.members) {
+                if (m.guid == guid) { isPartyMember = true; break; }
+            }
+            if (isPartyMember) continue;
+
+            glm::vec3 pRender = core::coords::canonicalToRender(
+                glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
+            float sx = 0.0f, sy = 0.0f;
+            if (!projectToMinimap(pRender, sx, sy)) continue;
+
+            // Blue dot for other nearby players
+            drawList->AddCircleFilled(ImVec2(sx, sy), 2.0f, IM_COL32(80, 160, 255, 220));
+        }
+    }
+
     // Lootable corpse dots: small yellow-green diamonds on dead, lootable units.
     // Shown whenever NPC dots are enabled (or always, since they're always useful).
     {
