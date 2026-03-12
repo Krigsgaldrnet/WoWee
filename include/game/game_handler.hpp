@@ -514,6 +514,21 @@ public:
     const std::vector<CombatTextEntry>& getCombatText() const { return combatText; }
     void updateCombatText(float deltaTime);
 
+    // Threat
+    struct ThreatEntry {
+        uint64_t victimGuid = 0;
+        uint32_t threat     = 0;
+    };
+    // Returns the current threat list for a given unit GUID (from last SMSG_THREAT_UPDATE)
+    const std::vector<ThreatEntry>* getThreatList(uint64_t unitGuid) const {
+        auto it = threatLists_.find(unitGuid);
+        return (it != threatLists_.end()) ? &it->second : nullptr;
+    }
+    // Returns the threat list for the player's current target, or nullptr
+    const std::vector<ThreatEntry>* getTargetThreatList() const {
+        return targetGuid ? getThreatList(targetGuid) : nullptr;
+    }
+
     // ---- Phase 3: Spells ----
     void castSpell(uint32_t spellId, uint64_t targetGuid = 0);
     void cancelCast();
@@ -2047,6 +2062,8 @@ private:
     float autoAttackFacingSyncTimer_ = 0.0f; // Periodic facing sync while meleeing
     std::unordered_set<uint64_t> hostileAttackers_;
     std::vector<CombatTextEntry> combatText;
+    // unitGuid → sorted threat list (descending by threat value)
+    std::unordered_map<uint64_t, std::vector<ThreatEntry>> threatLists_;
 
     // ---- Phase 3: Spells ----
     WorldEntryCallback worldEntryCallback_;

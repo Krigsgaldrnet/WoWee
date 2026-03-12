@@ -2331,24 +2331,51 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         case Opcode::SMSG_THREAT_CLEAR:
             // All threat dropped on the local player (e.g. Vanish, Feign Death)
-            // No local state to clear — informational
+            threatLists_.clear();
             LOG_DEBUG("SMSG_THREAT_CLEAR: threat wiped");
             break;
         case Opcode::SMSG_THREAT_REMOVE: {
             // packed_guid (unit) + packed_guid (victim whose threat was removed)
-            if (packet.getSize() - packet.getReadPos() >= 1) {
-                (void)UpdateObjectParser::readPackedGuid(packet);
-                if (packet.getSize() - packet.getReadPos() >= 1) {
-                    (void)UpdateObjectParser::readPackedGuid(packet);
-                }
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint64_t unitGuid   = UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint64_t victimGuid = UpdateObjectParser::readPackedGuid(packet);
+            auto it = threatLists_.find(unitGuid);
+            if (it != threatLists_.end()) {
+                auto& list = it->second;
+                list.erase(std::remove_if(list.begin(), list.end(),
+                    [victimGuid](const ThreatEntry& e){ return e.victimGuid == victimGuid; }),
+                    list.end());
+                if (list.empty()) threatLists_.erase(it);
             }
             break;
         }
-        case Opcode::SMSG_HIGHEST_THREAT_UPDATE: {
-            // packed_guid (tank) + packed_guid (new highest threat unit) + uint32 count
-            // + count × (packed_guid victim + uint32 threat)
-            // Informational — no threat UI yet; consume to suppress warnings
-            packet.setReadPos(packet.getSize());
+        case Opcode::SMSG_HIGHEST_THREAT_UPDATE:
+        case Opcode::SMSG_THREAT_UPDATE: {
+            // Both packets share the same format:
+            // packed_guid (unit) + packed_guid (highest-threat target or target, unused here)
+            // + uint32 count + count × (packed_guid victim + uint32 threat)
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint64_t unitGuid = UpdateObjectParser::readPackedGuid(packet);
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            (void)UpdateObjectParser::readPackedGuid(packet); // highest-threat / current target
+            if (packet.getSize() - packet.getReadPos() < 4) break;
+            uint32_t cnt = packet.readUInt32();
+            if (cnt > 100) { packet.setReadPos(packet.getSize()); break; } // sanity
+            std::vector<ThreatEntry> list;
+            list.reserve(cnt);
+            for (uint32_t i = 0; i < cnt; ++i) {
+                if (packet.getSize() - packet.getReadPos() < 1) break;
+                ThreatEntry entry;
+                entry.victimGuid = UpdateObjectParser::readPackedGuid(packet);
+                if (packet.getSize() - packet.getReadPos() < 4) break;
+                entry.threat = packet.readUInt32();
+                list.push_back(entry);
+            }
+            // Sort descending by threat so highest is first
+            std::sort(list.begin(), list.end(),
+                [](const ThreatEntry& a, const ThreatEntry& b){ return a.threat > b.threat; });
+            threatLists_[unitGuid] = std::move(list);
             break;
         }
 
@@ -5656,22 +5683,6 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
 
-        case Opcode::SMSG_THREAT_UPDATE: {
-            // packed_guid (unit) + packed_guid (target) + uint32 count
-            // + count × (packed_guid victim + uint32 threat) — consume to suppress warnings
-            if (packet.getSize() - packet.getReadPos() < 1) break;
-            (void)UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 1) break;
-            (void)UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 4) break;
-            uint32_t cnt = packet.readUInt32();
-            for (uint32_t i = 0; i < cnt && packet.getSize() - packet.getReadPos() >= 1; ++i) {
-                (void)UpdateObjectParser::readPackedGuid(packet);
-                if (packet.getSize() - packet.getReadPos() >= 4)
-                    packet.readUInt32();
-            }
-            break;
-        }
         case Opcode::SMSG_UPDATE_INSTANCE_ENCOUNTER_UNIT: {
             // uint32 slot + packed_guid unit (0 packed = clear slot)
             if (packet.getSize() - packet.getReadPos() < 5) {

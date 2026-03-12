@@ -500,6 +500,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderAchievementWindow(gameHandler);
     renderGmTicketWindow(gameHandler);
     renderInspectWindow(gameHandler);
+    renderThreatWindow(gameHandler);
     // renderQuestMarkers(gameHandler);  // Disabled - using 3D billboard markers now
     if (showMinimap_) {
         renderMinimapMarkers(gameHandler);
@@ -2728,6 +2729,15 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
         float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
         ImGui::TextDisabled("%.1f yd", distance);
 
+        // Threat button (shown when in combat and threat data is available)
+        if (gameHandler.getTargetThreatList()) {
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.5f, 0.1f, 0.1f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.2f, 0.2f, 0.9f));
+            if (ImGui::SmallButton("Threat")) showThreatWindow_ = !showThreatWindow_;
+            ImGui::PopStyleColor(2);
+        }
+
         // Target auras (buffs/debuffs)
         const auto& targetAuras = gameHandler.getTargetAuras();
         int activeAuras = 0;
@@ -3148,6 +3158,13 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             if (cmdLower == "inspect") {
                 gameHandler.inspectTarget();
                 showInspectWindow_ = true;
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /threat command
+            if (cmdLower == "threat") {
+                showThreatWindow_ = !showThreatWindow_;
                 chatInputBuffer[0] = '\0';
                 return;
             }
@@ -14485,6 +14502,79 @@ void GameScreen::renderGmTicketWindow(game::GameHandler& gameHandler) {
     ImGui::SameLine();
     if (ImGui::Button("Delete Ticket", ImVec2(100, 0))) {
         gameHandler.deleteGmTicket();
+    }
+
+    ImGui::End();
+}
+
+// ─── Threat Window ────────────────────────────────────────────────────────────
+void GameScreen::renderThreatWindow(game::GameHandler& gameHandler) {
+    if (!showThreatWindow_) return;
+
+    const auto* list = gameHandler.getTargetThreatList();
+
+    ImGui::SetNextWindowSize(ImVec2(280, 220), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(10, 300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowBgAlpha(0.85f);
+
+    if (!ImGui::Begin("Threat###ThreatWin", &showThreatWindow_,
+                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!list || list->empty()) {
+        ImGui::TextDisabled("No threat data for current target.");
+        ImGui::End();
+        return;
+    }
+
+    uint32_t maxThreat = list->front().threat;
+
+    ImGui::TextDisabled("%-19s  Threat", "Player");
+    ImGui::Separator();
+
+    uint64_t playerGuid = gameHandler.getPlayerGuid();
+    int rank = 0;
+    for (const auto& entry : *list) {
+        ++rank;
+        bool isPlayer = (entry.victimGuid == playerGuid);
+
+        // Resolve name
+        std::string victimName;
+        auto entity = gameHandler.getEntityManager().getEntity(entry.victimGuid);
+        if (entity) {
+            if (entity->getType() == game::ObjectType::PLAYER) {
+                auto p = std::static_pointer_cast<game::Player>(entity);
+                victimName = p->getName().empty() ? "Player" : p->getName();
+            } else if (entity->getType() == game::ObjectType::UNIT) {
+                auto u = std::static_pointer_cast<game::Unit>(entity);
+                victimName = u->getName().empty() ? "NPC" : u->getName();
+            }
+        }
+        if (victimName.empty())
+            victimName = "0x" + [&](){
+                char buf[20]; snprintf(buf, sizeof(buf), "%llX",
+                    static_cast<unsigned long long>(entry.victimGuid)); return std::string(buf); }();
+
+        // Colour: gold for #1 (tank), red if player is highest, white otherwise
+        ImVec4 col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+        if (rank == 1) col = ImVec4(1.0f, 0.82f, 0.0f, 1.0f);      // gold
+        if (isPlayer && rank == 1) col = ImVec4(1.0f, 0.3f, 0.3f, 1.0f); // red — you have aggro
+
+        // Threat bar
+        float pct = (maxThreat > 0) ? (float)entry.threat / (float)maxThreat : 0.0f;
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+            isPlayer ? ImVec4(0.8f, 0.2f, 0.2f, 0.7f) : ImVec4(0.2f, 0.5f, 0.8f, 0.5f));
+        char barLabel[48];
+        snprintf(barLabel, sizeof(barLabel), "%.0f%%", pct * 100.0f);
+        ImGui::ProgressBar(pct, ImVec2(60, 14), barLabel);
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+
+        ImGui::TextColored(col, "%-18s  %u", victimName.c_str(), entry.threat);
+
+        if (rank >= 10) break; // cap display at 10 entries
     }
 
     ImGui::End();

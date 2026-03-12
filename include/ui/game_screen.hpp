@@ -368,6 +368,10 @@ private:
     // Inspect window
     bool  showInspectWindow_ = false;
     void  renderInspectWindow(game::GameHandler& gameHandler);
+
+    // Threat window
+    bool  showThreatWindow_ = false;
+    void  renderThreatWindow(game::GameHandler& gameHandler);
     uint8_t lfgRoles_ = 0x08;  // default: DPS (0x02=tank, 0x04=healer, 0x08=dps)
     uint32_t lfgSelectedDungeon_ = 861;  // default: random dungeon (entry 861 = Random Dungeon WotLK)
 
