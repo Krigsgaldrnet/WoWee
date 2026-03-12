@@ -1220,8 +1220,9 @@ void InventoryScreen::renderReputationPanel(game::GameHandler& gameHandler) {
         { "Exalted",      42000, 42000, ImVec4(1.0f, 0.84f, 0.0f, 1.0f) },
     };
 
+    constexpr int kNumTiers = static_cast<int>(sizeof(tiers) / sizeof(tiers[0]));
     auto getTier = [&](int32_t val) -> const RepTier& {
-        for (int i = 6; i >= 0; --i) {
+        for (int i = kNumTiers - 1; i >= 0; --i) {
             if (val >= tiers[i].floor) return tiers[i];
         }
         return tiers[0];
