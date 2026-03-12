@@ -46,6 +46,17 @@
 #include <unordered_set>
 
 namespace {
+    // Build a WoW-format item link string for chat insertion.
+    // Format: |cff<qualHex>|Hitem:<itemId>:0:0:0:0:0:0:0:0|h[<name>]|h|r
+    std::string buildItemChatLink(uint32_t itemId, uint8_t quality, const std::string& name) {
+        static const char* kQualHex[] = {"9d9d9d","ffffff","1eff00","0070dd","a335ee","ff8000"};
+        uint8_t qi = quality < 6 ? quality : 1;
+        char buf[512];
+        snprintf(buf, sizeof(buf), "|cff%s|Hitem:%u:0:0:0:0:0:0:0:0|h[%s]|h|r",
+                 kQualHex[qi], itemId, name.c_str());
+        return buf;
+    }
+
     std::string trim(const std::string& s) {
         size_t first = s.find_first_not_of(" \t\r\n");
         if (first == std::string::npos) return "";
@@ -7145,7 +7156,18 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
 
             // Invisible selectable for click handling
             if (ImGui::Selectable("##loot", false, 0, ImVec2(0, rowH))) {
-                lootSlotClicked = item.slotIndex;
+                if (ImGui::GetIO().KeyShift && info && !info->name.empty()) {
+                    // Shift-click: insert item link into chat
+                    std::string link = buildItemChatLink(info->entry, info->quality, info->name);
+                    size_t curLen = strlen(chatInputBuffer);
+                    if (curLen + link.size() + 1 < sizeof(chatInputBuffer)) {
+                        strncat(chatInputBuffer, link.c_str(), sizeof(chatInputBuffer) - curLen - 1);
+                        chatInputMoveCursorToEnd = true;
+                        refocusChatInput = true;
+                    }
+                } else {
+                    lootSlotClicked = item.slotIndex;
+                }
             }
             if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
                 lootSlotClicked = item.slotIndex;
@@ -7926,6 +7948,16 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                         ImGui::TextColored(qc, "%s", info->name.c_str());
                         if (ImGui::IsItemHovered()) {
                             inventoryScreen.renderItemTooltip(*info);
+                        }
+                        // Shift-click: insert item link into chat
+                        if (ImGui::IsItemClicked() && ImGui::GetIO().KeyShift) {
+                            std::string link = buildItemChatLink(info->entry, info->quality, info->name);
+                            size_t curLen = strlen(chatInputBuffer);
+                            if (curLen + link.size() + 1 < sizeof(chatInputBuffer)) {
+                                strncat(chatInputBuffer, link.c_str(), sizeof(chatInputBuffer) - curLen - 1);
+                                chatInputMoveCursorToEnd = true;
+                                refocusChatInput = true;
+                            }
                         }
                     } else {
                         ImGui::Text("Item %u", item.itemId);
