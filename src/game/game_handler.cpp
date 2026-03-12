@@ -18324,10 +18324,12 @@ void GameHandler::handleWho(network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() >= 4)
             zoneId = packet.readUInt32();
 
+        const char* className = getClassName(static_cast<Class>(classId));
+
         std::string msg = "  " + playerName;
         if (!guildName.empty())
             msg += " <" + guildName + ">";
-        msg += " - Level " + std::to_string(level);
+        msg += " - Level " + std::to_string(level) + " " + className;
         if (zoneId != 0) {
             std::string zoneName = getAreaName(zoneId);
             if (!zoneName.empty())
