@@ -485,12 +485,28 @@ void QuestLogScreen::render(game::GameHandler& gameHandler, InventoryScreen& inv
                         auto reqIt = sel.requiredItemCounts.find(itemId);
                         if (reqIt != sel.requiredItemCounts.end()) required = reqIt->second;
                         VkDescriptorSet iconTex = dispId ? invScreen.getItemIcon(dispId) : VK_NULL_HANDLE;
+                        const auto* objInfo = gameHandler.getItemInfo(itemId);
                         if (iconTex) {
                             ImGui::Image((ImTextureID)(uintptr_t)iconTex, ImVec2(14, 14));
+                            if (objInfo && objInfo->valid && ImGui::IsItemHovered()) {
+                                ImGui::BeginTooltip();
+                                invScreen.renderItemTooltip(*objInfo);
+                                ImGui::EndTooltip();
+                            }
                             ImGui::SameLine();
                             ImGui::Text("%s: %u/%u", itemLabel.c_str(), count, required);
+                            if (objInfo && objInfo->valid && ImGui::IsItemHovered()) {
+                                ImGui::BeginTooltip();
+                                invScreen.renderItemTooltip(*objInfo);
+                                ImGui::EndTooltip();
+                            }
                         } else {
                             ImGui::BulletText("%s: %u/%u", itemLabel.c_str(), count, required);
+                            if (objInfo && objInfo->valid && ImGui::IsItemHovered()) {
+                                ImGui::BeginTooltip();
+                                invScreen.renderItemTooltip(*objInfo);
+                                ImGui::EndTooltip();
+                            }
                         }
                     }
                 }
