@@ -4451,6 +4451,79 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            if (cmdLower == "cast" && spacePos != std::string::npos) {
+                std::string spellArg = command.substr(spacePos + 1);
+                // Trim leading/trailing whitespace
+                while (!spellArg.empty() && spellArg.front() == ' ') spellArg.erase(spellArg.begin());
+                while (!spellArg.empty() && spellArg.back()  == ' ') spellArg.pop_back();
+
+                // Parse optional "(Rank N)" suffix: "Fireball(Rank 3)" or "Fireball (Rank 3)"
+                int requestedRank = -1;  // -1 = highest rank
+                std::string spellName = spellArg;
+                {
+                    auto rankPos = spellArg.find('(');
+                    if (rankPos != std::string::npos) {
+                        std::string rankStr = spellArg.substr(rankPos + 1);
+                        // Strip closing paren and whitespace
+                        auto closePos = rankStr.find(')');
+                        if (closePos != std::string::npos) rankStr = rankStr.substr(0, closePos);
+                        for (char& c : rankStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        // Expect "rank N"
+                        if (rankStr.rfind("rank ", 0) == 0) {
+                            try { requestedRank = std::stoi(rankStr.substr(5)); } catch (...) {}
+                        }
+                        spellName = spellArg.substr(0, rankPos);
+                        while (!spellName.empty() && spellName.back() == ' ') spellName.pop_back();
+                    }
+                }
+
+                std::string spellNameLower = spellName;
+                for (char& c : spellNameLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+                // Search known spells for a name match; pick highest rank (or specific rank)
+                uint32_t bestSpellId = 0;
+                int bestRank = -1;
+                for (uint32_t sid : gameHandler.getKnownSpells()) {
+                    const std::string& sName = gameHandler.getSpellName(sid);
+                    if (sName.empty()) continue;
+                    std::string sNameLower = sName;
+                    for (char& c : sNameLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    if (sNameLower != spellNameLower) continue;
+
+                    // Parse numeric rank from rank string ("Rank 3" → 3, "" → 0)
+                    int sRank = 0;
+                    const std::string& rankStr = gameHandler.getSpellRank(sid);
+                    if (!rankStr.empty()) {
+                        std::string rLow = rankStr;
+                        for (char& c : rLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        if (rLow.rfind("rank ", 0) == 0) {
+                            try { sRank = std::stoi(rLow.substr(5)); } catch (...) {}
+                        }
+                    }
+
+                    if (requestedRank >= 0) {
+                        if (sRank == requestedRank) { bestSpellId = sid; break; }
+                    } else {
+                        if (sRank > bestRank) { bestRank = sRank; bestSpellId = sid; }
+                    }
+                }
+
+                if (bestSpellId) {
+                    uint64_t targetGuid = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
+                    gameHandler.castSpell(bestSpellId, targetGuid);
+                } else {
+                    game::MessageChatData sysMsg;
+                    sysMsg.type = game::ChatType::SYSTEM;
+                    sysMsg.language = game::ChatLanguage::UNIVERSAL;
+                    sysMsg.message = requestedRank >= 0
+                        ? "You don't know '" + spellName + "' (Rank " + std::to_string(requestedRank) + ")."
+                        : "Unknown spell: '" + spellName + "'.";
+                    gameHandler.addLocalChatMessage(sysMsg);
+                }
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // Targeting commands
             if (cmdLower == "cleartarget") {
                 gameHandler.clearTarget();
