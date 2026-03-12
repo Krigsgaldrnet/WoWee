@@ -9338,17 +9338,22 @@ void GameScreen::renderBossFrames(game::GameHandler& gameHandler) {
         for (const auto& bs : active) {
             ImGui::PushID(static_cast<int>(bs.guid));
 
-            // Try to resolve name and health from entity manager
+            // Try to resolve name, health, and power from entity manager
             std::string name = "Boss";
             uint32_t hp = 0, maxHp = 0;
+            uint8_t  bossPowerType = 0;
+            uint32_t bossPower = 0, bossMaxPower = 0;
             auto entity = gameHandler.getEntityManager().getEntity(bs.guid);
             if (entity && (entity->getType() == game::ObjectType::UNIT ||
                            entity->getType() == game::ObjectType::PLAYER)) {
                 auto unit = std::static_pointer_cast<game::Unit>(entity);
                 const auto& n = unit->getName();
                 if (!n.empty()) name = n;
-                hp    = unit->getHealth();
-                maxHp = unit->getMaxHealth();
+                hp           = unit->getHealth();
+                maxHp        = unit->getMaxHealth();
+                bossPowerType = unit->getPowerType();
+                bossPower     = unit->getPower();
+                bossMaxPower  = unit->getMaxPower();
             }
 
             // Clickable name to target
@@ -9366,6 +9371,25 @@ void GameScreen::renderBossFrames(game::GameHandler& gameHandler) {
                 char label[32];
                 std::snprintf(label, sizeof(label), "%u / %u", hp, maxHp);
                 ImGui::ProgressBar(pct, ImVec2(-1, 14), label);
+                ImGui::PopStyleColor();
+            }
+
+            // Boss power bar — shown when boss has a non-zero power pool
+            // Energy bosses (type 3) are particularly important: full energy signals ability use
+            if (bossMaxPower > 0 && bossPower > 0) {
+                float bpPct = static_cast<float>(bossPower) / static_cast<float>(bossMaxPower);
+                ImVec4 bpColor;
+                switch (bossPowerType) {
+                    case 0: bpColor = ImVec4(0.2f, 0.3f, 0.9f, 1.0f); break; // Mana: blue
+                    case 1: bpColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break; // Rage: red
+                    case 2: bpColor = ImVec4(0.9f, 0.6f, 0.1f, 1.0f); break; // Focus: orange
+                    case 3: bpColor = ImVec4(0.9f, 0.9f, 0.1f, 1.0f); break; // Energy: yellow
+                    default: bpColor = ImVec4(0.4f, 0.8f, 0.4f, 1.0f); break;
+                }
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, bpColor);
+                char bpLabel[24];
+                std::snprintf(bpLabel, sizeof(bpLabel), "%u", bossPower);
+                ImGui::ProgressBar(bpPct, ImVec2(-1, 6), bpLabel);
                 ImGui::PopStyleColor();
             }
 
