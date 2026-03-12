@@ -16659,10 +16659,19 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
         return;
     }
 
-    // Talent summary
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.82f, 0.0f, 1.0f)); // gold
-    ImGui::Text("%s", result->playerName.c_str());
-    ImGui::PopStyleColor();
+    // Player name — class-colored if entity is loaded, else gold
+    {
+        auto ent = gameHandler.getEntityManager().getEntity(result->guid);
+        uint8_t cid = entityClassId(ent.get());
+        ImVec4 nameColor = (cid != 0) ? classColorVec4(cid) : ImVec4(1.0f, 0.82f, 0.0f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, nameColor);
+        ImGui::Text("%s", result->playerName.c_str());
+        ImGui::PopStyleColor();
+        if (cid != 0) {
+            ImGui::SameLine();
+            ImGui::TextColored(classColorVec4(cid), "(%s)", classNameStr(cid));
+        }
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("  %u talent pts", result->totalTalents);
     if (result->unspentTalents > 0) {
@@ -16686,6 +16695,27 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
         ImGui::TextDisabled("Equipment data not yet available.");
         ImGui::TextDisabled("(Gear loads after the player is inspected in-range)");
     } else {
+        // Average item level (only slots that have loaded info and are not shirt/tabard)
+        // Shirt=slot3, Tabard=slot18 — excluded from gear score by WoW convention
+        uint32_t iLevelSum = 0;
+        int iLevelCount = 0;
+        for (int s = 0; s < 19; ++s) {
+            if (s == 3 || s == 18) continue; // shirt, tabard
+            uint32_t entry = result->itemEntries[s];
+            if (entry == 0) continue;
+            const game::ItemQueryResponseData* info = gameHandler.getItemInfo(entry);
+            if (info && info->valid && info->itemLevel > 0) {
+                iLevelSum += info->itemLevel;
+                ++iLevelCount;
+            }
+        }
+        if (iLevelCount > 0) {
+            float avgIlvl = static_cast<float>(iLevelSum) / static_cast<float>(iLevelCount);
+            ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Avg iLvl: %.1f", avgIlvl);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%d/%d slots loaded)", iLevelCount,
+                [&]{ int c=0; for(int s=0;s<19;++s){if(s==3||s==18)continue;if(result->itemEntries[s])++c;} return c; }());
+        }
         if (ImGui::BeginChild("##inspect_gear", ImVec2(0, 0), false)) {
             constexpr float kIconSz = 28.0f;
             for (int s = 0; s < 19; ++s) {
