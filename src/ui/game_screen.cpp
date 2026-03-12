@@ -310,6 +310,26 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         areaDiscoveryCallbackSet_ = true;
     }
 
+    // Set up quest objective progress toast callback (once)
+    if (!questProgressCallbackSet_) {
+        gameHandler.setQuestProgressCallback([this](const std::string& questTitle,
+                                                    const std::string& objectiveName,
+                                                    uint32_t current, uint32_t required) {
+            // Coalesce: if the same objective already has a toast, just update counts
+            for (auto& t : questToasts_) {
+                if (t.questTitle == questTitle && t.objectiveName == objectiveName) {
+                    t.current  = current;
+                    t.required = required;
+                    t.age      = 0.0f;  // restart lifetime
+                    return;
+                }
+            }
+            if (questToasts_.size() >= 4) questToasts_.erase(questToasts_.begin());
+            questToasts_.push_back({questTitle, objectiveName, current, required, 0.0f});
+        });
+        questProgressCallbackSet_ = true;
+    }
+
     // Set up UI error frame callback (once)
     if (!uiErrorCallbackSet_) {
         gameHandler.setUIErrorCallback([this](const std::string& msg) {
@@ -640,6 +660,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderAchievementToast();
     renderDiscoveryToast();
     renderWhisperToasts();
+    renderQuestProgressToasts();
     renderZoneText();
 
     // World map (M key toggle handled inside)
@@ -18035,6 +18056,92 @@ void GameScreen::renderDiscoveryToast() {
                       IM_COL32(0, 0, 0, (int)(alpha * 140)), xpBuf);
         draw->AddText(font, xpSize, ImVec2(xpX, xpY),
                       IM_COL32(100, 220, 100, (int)(alpha * 230)), xpBuf);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Quest objective progress toasts — shown at screen bottom-right on kill/item updates
+// ---------------------------------------------------------------------------
+
+void GameScreen::renderQuestProgressToasts() {
+    if (questToasts_.empty()) return;
+
+    float dt = ImGui::GetIO().DeltaTime;
+    for (auto& t : questToasts_) t.age += dt;
+    questToasts_.erase(
+        std::remove_if(questToasts_.begin(), questToasts_.end(),
+            [](const QuestProgressToastEntry& t) { return t.age >= QUEST_TOAST_DURATION; }),
+        questToasts_.end());
+    if (questToasts_.empty()) return;
+
+    ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+    float screenW = displaySize.x > 0.0f ? displaySize.x : 1280.0f;
+    float screenH = displaySize.y > 0.0f ? displaySize.y : 720.0f;
+
+    // Stack at bottom-right, just above action bar area
+    constexpr float TOAST_W   = 240.0f;
+    constexpr float TOAST_H   = 48.0f;
+    constexpr float TOAST_GAP = 4.0f;
+    float baseY = screenH * 0.72f;
+    float toastX = screenW - TOAST_W - 14.0f;
+
+    ImDrawList* bgDL = ImGui::GetBackgroundDrawList();
+    const int count = static_cast<int>(questToasts_.size());
+
+    for (int i = 0; i < count; ++i) {
+        const auto& toast = questToasts_[i];
+
+        float remaining = QUEST_TOAST_DURATION - toast.age;
+        float alpha;
+        if (toast.age < 0.2f)
+            alpha = toast.age / 0.2f;
+        else if (remaining < 1.0f)
+            alpha = remaining;
+        else
+            alpha = 1.0f;
+        alpha = std::clamp(alpha, 0.0f, 1.0f);
+
+        float ty = baseY - (count - i) * (TOAST_H + TOAST_GAP);
+
+        uint8_t bgA = static_cast<uint8_t>(200 * alpha);
+        uint8_t fgA = static_cast<uint8_t>(255 * alpha);
+
+        // Background: dark amber tint (quest color convention)
+        bgDL->AddRectFilled(ImVec2(toastX, ty), ImVec2(toastX + TOAST_W, ty + TOAST_H),
+                            IM_COL32(35, 25, 5, bgA), 5.0f);
+        bgDL->AddRect(ImVec2(toastX, ty), ImVec2(toastX + TOAST_W, ty + TOAST_H),
+                      IM_COL32(200, 160, 30, static_cast<uint8_t>(160 * alpha)), 5.0f, 0, 1.5f);
+
+        // Quest title (gold, small)
+        bgDL->AddText(ImVec2(toastX + 8.0f, ty + 5.0f),
+                      IM_COL32(220, 180, 50, fgA), toast.questTitle.c_str());
+
+        // Progress bar + text: "ObjectiveName X / Y"
+        float barY  = ty + 21.0f;
+        float barX0 = toastX + 8.0f;
+        float barX1 = toastX + TOAST_W - 8.0f;
+        float barH  = 8.0f;
+        float pct   = (toast.required > 0)
+            ? std::min(1.0f, static_cast<float>(toast.current) / static_cast<float>(toast.required))
+            : 1.0f;
+        // Bar background
+        bgDL->AddRectFilled(ImVec2(barX0, barY), ImVec2(barX1, barY + barH),
+                            IM_COL32(50, 40, 10, static_cast<uint8_t>(180 * alpha)), 3.0f);
+        // Bar fill — green when complete, amber otherwise
+        ImU32 barCol = (pct >= 1.0f) ? IM_COL32(60, 220, 80, fgA) : IM_COL32(200, 160, 30, fgA);
+        bgDL->AddRectFilled(ImVec2(barX0, barY),
+                            ImVec2(barX0 + (barX1 - barX0) * pct, barY + barH),
+                            barCol, 3.0f);
+
+        // Objective name + count
+        char progBuf[48];
+        if (!toast.objectiveName.empty())
+            snprintf(progBuf, sizeof(progBuf), "%.22s: %u/%u",
+                     toast.objectiveName.c_str(), toast.current, toast.required);
+        else
+            snprintf(progBuf, sizeof(progBuf), "%u/%u", toast.current, toast.required);
+        bgDL->AddText(ImVec2(toastX + 8.0f, ty + 32.0f),
+                      IM_COL32(220, 220, 200, static_cast<uint8_t>(210 * alpha)), progBuf);
     }
 }
 

@@ -538,6 +538,19 @@ private:
     size_t whisperSeenCount_ = 0;     // how many chat entries have been scanned for whispers
     void renderWhisperToasts();
 
+    // Quest objective progress toast ("Quest: <ObjectiveName> X/Y")
+    struct QuestProgressToastEntry {
+        std::string questTitle;
+        std::string objectiveName;
+        uint32_t current = 0;
+        uint32_t required = 0;
+        float age = 0.0f;
+    };
+    static constexpr float QUEST_TOAST_DURATION = 4.0f;
+    std::vector<QuestProgressToastEntry> questToasts_;
+    bool questProgressCallbackSet_ = false;
+    void renderQuestProgressToasts();
+
     // Zone discovery text ("Entering: <ZoneName>")
     static constexpr float ZONE_TEXT_DURATION = 5.0f;
     float zoneTextTimer_ = 0.0f;

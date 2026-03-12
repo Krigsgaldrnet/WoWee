@@ -4484,6 +4484,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         progressMsg += std::to_string(count) + "/" + std::to_string(reqCount);
                         addSystemChatMessage(progressMsg);
 
+                        if (questProgressCallback_) {
+                            questProgressCallback_(quest.title, creatureName, count, reqCount);
+                        }
+
                         LOG_INFO("Updated kill count for quest ", questId, ": ",
                                  count, "/", reqCount);
                         break;
@@ -4538,6 +4542,26 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     updatedAny = true;
                 }
                 addSystemChatMessage("Quest item: " + itemLabel + " (" + std::to_string(count) + ")");
+
+                if (questProgressCallback_ && updatedAny) {
+                    // Find the quest that tracks this item to get title and required count
+                    for (const auto& quest : questLog_) {
+                        if (quest.complete) continue;
+                        if (quest.itemCounts.count(itemId) == 0) continue;
+                        uint32_t required = 0;
+                        auto rIt = quest.requiredItemCounts.find(itemId);
+                        if (rIt != quest.requiredItemCounts.end()) required = rIt->second;
+                        if (required == 0) {
+                            for (const auto& obj : quest.itemObjectives) {
+                                if (obj.itemId == itemId) { required = obj.required; break; }
+                            }
+                        }
+                        if (required == 0) required = count;
+                        questProgressCallback_(quest.title, itemLabel, count, required);
+                        break;
+                    }
+                }
+
                 LOG_INFO("Quest item update: itemId=", itemId, " count=", count,
                          " trackedQuestsUpdated=", updatedAny);
             }
