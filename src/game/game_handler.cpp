@@ -3149,6 +3149,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             readyCheckReadyCount_    = 0;
             readyCheckNotReadyCount_ = 0;
             readyCheckInitiator_.clear();
+            readyCheckResults_.clear();
             if (packet.getSize() - packet.getReadPos() >= 8) {
                 uint64_t initiatorGuid = packet.readUInt64();
                 auto entity = entityManager.getEntity(initiatorGuid);
@@ -3182,7 +3183,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 auto ent = entityManager.getEntity(respGuid);
                 if (ent) rname = std::static_pointer_cast<game::Unit>(ent)->getName();
             }
+            // Track per-player result for live popup display
             if (!rname.empty()) {
+                bool found = false;
+                for (auto& r : readyCheckResults_) {
+                    if (r.name == rname) { r.ready = (isReady != 0); found = true; break; }
+                }
+                if (!found) readyCheckResults_.push_back({ rname, isReady != 0 });
+
                 char rbuf[128];
                 std::snprintf(rbuf, sizeof(rbuf), "%s is %s.", rname.c_str(), isReady ? "Ready" : "Not Ready");
                 addSystemChatMessage(rbuf);
@@ -3198,6 +3206,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             pendingReadyCheck_       = false;
             readyCheckReadyCount_    = 0;
             readyCheckNotReadyCount_ = 0;
+            readyCheckResults_.clear();
             break;
         }
         case Opcode::SMSG_RAID_INSTANCE_INFO:

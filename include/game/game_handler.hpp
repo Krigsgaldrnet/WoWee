@@ -458,11 +458,16 @@ public:
     uint64_t getPetitionNpcGuid() const { return petitionNpcGuid_; }
 
     // Ready check
+    struct ReadyCheckResult {
+        std::string name;
+        bool ready = false;
+    };
     void initiateReadyCheck();
     void respondToReadyCheck(bool ready);
     bool hasPendingReadyCheck() const { return pendingReadyCheck_; }
     void dismissReadyCheck() { pendingReadyCheck_ = false; }
     const std::string& getReadyCheckInitiator() const { return readyCheckInitiator_; }
+    const std::vector<ReadyCheckResult>& getReadyCheckResults() const { return readyCheckResults_; }
 
     // Duel
     void forfeitDuel();
@@ -2258,6 +2263,7 @@ private:
     uint32_t    readyCheckReadyCount_    = 0;
     uint32_t    readyCheckNotReadyCount_ = 0;
     std::string readyCheckInitiator_;
+    std::vector<ReadyCheckResult> readyCheckResults_; // per-player status live during check
 
     // Faction standings (factionId → absolute standing value)
     std::unordered_map<uint32_t, int32_t> factionStandings_;

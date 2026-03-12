@@ -8866,6 +8866,29 @@ void GameScreen::renderReadyCheckPopup(game::GameHandler& gameHandler) {
             gameHandler.respondToReadyCheck(false);
             gameHandler.dismissReadyCheck();
         }
+
+        // Live player responses
+        const auto& results = gameHandler.getReadyCheckResults();
+        if (!results.empty()) {
+            ImGui::Separator();
+            if (ImGui::BeginTable("##rcresults", 2,
+                    ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 72.0f);
+                for (const auto& r : results) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(r.name.c_str());
+                    ImGui::TableSetColumnIndex(1);
+                    if (r.ready) {
+                        ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.2f, 1.0f), "Ready");
+                    } else {
+                        ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "Not Ready");
+                    }
+                }
+                ImGui::EndTable();
+            }
+        }
     }
     ImGui::End();
 }
