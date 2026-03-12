@@ -524,6 +524,9 @@ private:
     bool showDPSMeter_ = false;
     float dpsCombatAge_ = 0.0f;   // seconds in current combat (for accurate early-combat DPS)
     bool dpsWasInCombat_ = false;
+    float dpsEncounterDamage_ = 0.0f;  // total player damage this combat
+    float dpsEncounterHeal_   = 0.0f;  // total player healing this combat
+    size_t dpsLogSeenCount_   = 0;     // log entries already scanned
 
 public:
     void triggerDing(uint32_t newLevel);

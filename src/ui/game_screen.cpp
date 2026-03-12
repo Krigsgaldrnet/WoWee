@@ -7479,11 +7479,37 @@ void GameScreen::renderDPSMeter(game::GameHandler& gameHandler) {
 
     // Track combat duration for accurate DPS denominator in short fights
     bool inCombat = gameHandler.isInCombat();
+    if (inCombat && !dpsWasInCombat_) {
+        // Just entered combat — reset encounter accumulators
+        dpsEncounterDamage_ = 0.0f;
+        dpsEncounterHeal_   = 0.0f;
+        dpsLogSeenCount_    = gameHandler.getCombatLog().size();
+        dpsCombatAge_       = 0.0f;
+    }
     if (inCombat) {
         dpsCombatAge_ += dt;
+        // Scan any new log entries since last frame
+        const auto& log = gameHandler.getCombatLog();
+        while (dpsLogSeenCount_ < log.size()) {
+            const auto& e = log[dpsLogSeenCount_++];
+            if (!e.isPlayerSource) continue;
+            switch (e.type) {
+                case game::CombatTextEntry::MELEE_DAMAGE:
+                case game::CombatTextEntry::SPELL_DAMAGE:
+                case game::CombatTextEntry::CRIT_DAMAGE:
+                case game::CombatTextEntry::PERIODIC_DAMAGE:
+                    dpsEncounterDamage_ += static_cast<float>(e.amount);
+                    break;
+                case game::CombatTextEntry::HEAL:
+                case game::CombatTextEntry::CRIT_HEAL:
+                case game::CombatTextEntry::PERIODIC_HEAL:
+                    dpsEncounterHeal_ += static_cast<float>(e.amount);
+                    break;
+                default: break;
+            }
+        }
     } else if (dpsWasInCombat_) {
-        // Just left combat — let meter show last reading for LIFETIME then reset
-        dpsCombatAge_ = 0.0f;
+        // Just left combat — keep encounter totals but stop accumulating
     }
     dpsWasInCombat_ = inCombat;
 
@@ -7507,8 +7533,9 @@ void GameScreen::renderDPSMeter(game::GameHandler& gameHandler) {
         }
     }
 
-    // Only show if there's something to report
-    if (totalDamage < 1.0f && totalHeal < 1.0f && !inCombat) return;
+    // Only show if there's something to report (rolling window or lingering encounter data)
+    if (totalDamage < 1.0f && totalHeal < 1.0f && !inCombat &&
+        dpsEncounterDamage_ < 1.0f && dpsEncounterHeal_ < 1.0f) return;
 
     // DPS window = min(combat age, combat-text lifetime) to avoid under-counting
     // at the start of a fight and over-counting when entries expire.
@@ -7534,8 +7561,22 @@ void GameScreen::renderDPSMeter(game::GameHandler& gameHandler) {
     float screenW = appWin ? static_cast<float>(appWin->getWidth())  : 1280.0f;
     float screenH = appWin ? static_cast<float>(appWin->getHeight()) : 720.0f;
 
+    // Show encounter row when fight has been going long enough (> 3s)
+    bool showEnc = (dpsCombatAge_ > 3.0f || (!inCombat && dpsEncounterDamage_ > 0.0f));
+    float encDPS = (dpsCombatAge_ > 0.1f) ? dpsEncounterDamage_ / dpsCombatAge_ : 0.0f;
+    float encHPS = (dpsCombatAge_ > 0.1f) ? dpsEncounterHeal_   / dpsCombatAge_ : 0.0f;
+
+    char encDpsBuf[16], encHpsBuf[16];
+    fmtNum(encDPS, encDpsBuf, sizeof(encDpsBuf));
+    fmtNum(encHPS, encHpsBuf, sizeof(encHpsBuf));
+
     constexpr float WIN_W = 90.0f;
-    constexpr float WIN_H = 36.0f;
+    // Extra rows for encounter DPS/HPS if active
+    int extraRows = 0;
+    if (showEnc && encDPS > 0.5f) ++extraRows;
+    if (showEnc && encHPS > 0.5f) ++extraRows;
+    float WIN_H = 18.0f + extraRows * 14.0f;
+    if (dps > 0.5f || hps > 0.5f) WIN_H = std::max(WIN_H, 36.0f);
     float wx = screenW * 0.5f + 160.0f;   // right of cast bar
     float wy = screenH - 130.0f;           // above action bar area
 
@@ -7561,6 +7602,17 @@ void GameScreen::renderDPSMeter(game::GameHandler& gameHandler) {
             ImGui::TextColored(ImVec4(0.35f, 1.0f, 0.35f, 1.0f), "%s", hpsBuf);
             ImGui::SameLine(0, 2);
             ImGui::TextDisabled("hps");
+        }
+        // Encounter totals (full-fight average, shown when fight > 3s)
+        if (showEnc && encDPS > 0.5f) {
+            ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.25f, 0.80f), "%s", encDpsBuf);
+            ImGui::SameLine(0, 2);
+            ImGui::TextDisabled("enc");
+        }
+        if (showEnc && encHPS > 0.5f) {
+            ImGui::TextColored(ImVec4(0.50f, 1.0f, 0.50f, 0.80f), "%s", encHpsBuf);
+            ImGui::SameLine(0, 2);
+            ImGui::TextDisabled("enc");
         }
     }
     ImGui::End();
