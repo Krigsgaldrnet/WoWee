@@ -3999,6 +3999,27 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
         ImGui::TextDisabled("[Focus]");
         ImGui::SameLine();
 
+        // Raid mark icon (star, circle, diamond, …) preceding the name
+        {
+            static constexpr struct { const char* sym; ImU32 col; } kFocusMarks[] = {
+                { "\xe2\x98\x85", IM_COL32(255, 204,   0, 255) },  // 0 Star     (yellow)
+                { "\xe2\x97\x8f", IM_COL32(255, 103,   0, 255) },  // 1 Circle   (orange)
+                { "\xe2\x97\x86", IM_COL32(160,  32, 240, 255) },  // 2 Diamond  (purple)
+                { "\xe2\x96\xb2", IM_COL32( 50, 200,  50, 255) },  // 3 Triangle (green)
+                { "\xe2\x97\x8c", IM_COL32( 80, 160, 255, 255) },  // 4 Moon     (blue)
+                { "\xe2\x96\xa0", IM_COL32( 50, 200, 220, 255) },  // 5 Square   (teal)
+                { "\xe2\x9c\x9d", IM_COL32(255,  80,  80, 255) },  // 6 Cross    (red)
+                { "\xe2\x98\xa0", IM_COL32(255, 255, 255, 255) },  // 7 Skull    (white)
+            };
+            uint8_t fmark = gameHandler.getEntityRaidMark(focus->getGuid());
+            if (fmark < game::GameHandler::kRaidMarkCount) {
+                ImGui::GetWindowDrawList()->AddText(
+                    ImGui::GetCursorScreenPos(),
+                    kFocusMarks[fmark].col, kFocusMarks[fmark].sym);
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f);
+            }
+        }
+
         std::string focusName = getEntityName(focus);
         ImGui::PushStyleColor(ImGuiCol_Text, focusColor);
         ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0,0,0,0));
