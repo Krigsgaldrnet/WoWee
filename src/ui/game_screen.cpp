@@ -13748,7 +13748,9 @@ void GameScreen::renderChatBubbles(game::GameHandler& gameHandler) {
 
         glm::vec2 ndc(clipPos.x / clipPos.w, clipPos.y / clipPos.w);
         float screenX = (ndc.x * 0.5f + 0.5f) * screenW;
-        float screenY = (1.0f - (ndc.y * 0.5f + 0.5f)) * screenH;  // Flip Y
+        // Camera bakes the Vulkan Y-flip into the projection matrix:
+        // NDC y=-1 is top, y=1 is bottom — same convention as nameplate/minimap projection.
+        float screenY = (ndc.y * 0.5f + 0.5f) * screenH;
 
         // Skip if off-screen
         if (screenX < -200.0f || screenX > screenW + 200.0f ||
