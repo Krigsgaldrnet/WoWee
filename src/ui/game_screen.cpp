@@ -144,9 +144,15 @@ void GameScreen::initChatTabs() {
     chatTabs_.clear();
     // General tab: shows everything
     chatTabs_.push_back({"General", 0xFFFFFFFF});
-    // Combat tab: system + loot messages
+    // Combat tab: system, loot, skills, achievements, and NPC speech/emotes
     chatTabs_.push_back({"Combat", (1u << static_cast<uint8_t>(game::ChatType::SYSTEM)) |
-                                    (1u << static_cast<uint8_t>(game::ChatType::LOOT))});
+                                    (1u << static_cast<uint8_t>(game::ChatType::LOOT)) |
+                                    (1u << static_cast<uint8_t>(game::ChatType::SKILL)) |
+                                    (1u << static_cast<uint8_t>(game::ChatType::ACHIEVEMENT)) |
+                                    (1u << static_cast<uint8_t>(game::ChatType::GUILD_ACHIEVEMENT)) |
+                                    (1u << static_cast<uint8_t>(game::ChatType::MONSTER_SAY)) |
+                                    (1u << static_cast<uint8_t>(game::ChatType::MONSTER_YELL)) |
+                                    (1u << static_cast<uint8_t>(game::ChatType::MONSTER_EMOTE))});
     // Whispers tab
     chatTabs_.push_back({"Whispers", (1u << static_cast<uint8_t>(game::ChatType::WHISPER)) |
                                       (1u << static_cast<uint8_t>(game::ChatType::WHISPER_INFORM))});
@@ -9615,6 +9621,17 @@ void GameScreen::renderSettingsWindow() {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Allow the camera to zoom out further than normal");
 
+                if (ImGui::SliderFloat("Field of View", &pendingFov, 45.0f, 110.0f, "%.0f°")) {
+                    if (renderer) {
+                        if (auto* camera = renderer->getCamera()) {
+                            camera->setFov(pendingFov);
+                        }
+                    }
+                    saveSettings();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Camera field of view in degrees (default: 70)");
+
                 ImGui::Spacing();
                 ImGui::Spacing();
 
@@ -10866,6 +10883,7 @@ void GameScreen::saveSettings() {
     out << "mouse_sensitivity=" << pendingMouseSensitivity << "\n";
     out << "invert_mouse=" << (pendingInvertMouse ? 1 : 0) << "\n";
     out << "extended_zoom=" << (pendingExtendedZoom ? 1 : 0) << "\n";
+    out << "fov=" << pendingFov << "\n";
 
     // Chat
     out << "chat_active_tab=" << activeChatTab_ << "\n";
@@ -10992,6 +11010,12 @@ void GameScreen::loadSettings() {
             else if (key == "mouse_sensitivity") pendingMouseSensitivity = std::clamp(std::stof(val), 0.05f, 1.0f);
             else if (key == "invert_mouse") pendingInvertMouse = (std::stoi(val) != 0);
             else if (key == "extended_zoom") pendingExtendedZoom = (std::stoi(val) != 0);
+            else if (key == "fov") {
+                pendingFov = std::clamp(std::stof(val), 45.0f, 110.0f);
+                if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                    if (auto* camera = renderer->getCamera()) camera->setFov(pendingFov);
+                }
+            }
             // Chat
             else if (key == "chat_active_tab") activeChatTab_ = std::clamp(std::stoi(val), 0, 3);
             else if (key == "chat_timestamps") chatShowTimestamps_ = (std::stoi(val) != 0);

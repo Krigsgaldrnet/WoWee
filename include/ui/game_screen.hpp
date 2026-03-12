@@ -109,6 +109,7 @@ private:
     float pendingMouseSensitivity = 0.2f;
     bool pendingInvertMouse = false;
     bool pendingExtendedZoom = false;
+    float pendingFov = 70.0f;  // degrees, default matches WoW's ~70° horizontal FOV
     int pendingUiOpacity = 65;
     bool pendingMinimapRotate = false;
     bool pendingMinimapSquare = false;
