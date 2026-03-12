@@ -5484,8 +5484,8 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             : IM_COL32(20,  20,  20, A(180));
 
         // Bar geometry
-        constexpr float barW = 80.0f;
-        constexpr float barH = 8.0f;
+        const float barW = 80.0f * nameplateScale_;
+        const float barH = 8.0f * nameplateScale_;
         const float barX = sx - barW * 0.5f;
 
         float healthPct = std::clamp(
@@ -9563,6 +9563,14 @@ void GameScreen::renderSettingsWindow() {
                 }
 
                 ImGui::Spacing();
+                ImGui::SeparatorText("Nameplates");
+                ImGui::Spacing();
+                ImGui::SetNextItemWidth(200.0f);
+                if (ImGui::SliderFloat("Nameplate Scale", &nameplateScale_, 0.5f, 2.0f, "%.2fx")) {
+                    saveSettings();
+                }
+
+                ImGui::Spacing();
                 ImGui::SeparatorText("Network");
                 ImGui::Spacing();
                 if (ImGui::Checkbox("Show Latency Meter", &pendingShowLatencyMeter)) {
@@ -10995,6 +11003,7 @@ void GameScreen::saveSettings() {
     out << "show_latency_meter=" << (pendingShowLatencyMeter ? 1 : 0) << "\n";
     out << "separate_bags=" << (pendingSeparateBags ? 1 : 0) << "\n";
     out << "action_bar_scale=" << pendingActionBarScale << "\n";
+    out << "nameplate_scale=" << nameplateScale_ << "\n";
     out << "show_action_bar2=" << (pendingShowActionBar2 ? 1 : 0) << "\n";
     out << "action_bar2_offset_x=" << pendingActionBar2OffsetX << "\n";
     out << "action_bar2_offset_y=" << pendingActionBar2OffsetY << "\n";
@@ -11103,6 +11112,8 @@ void GameScreen::loadSettings() {
                 inventoryScreen.setSeparateBags(pendingSeparateBags);
             } else if (key == "action_bar_scale") {
                 pendingActionBarScale = std::clamp(std::stof(val), 0.5f, 1.5f);
+            } else if (key == "nameplate_scale") {
+                nameplateScale_ = std::clamp(std::stof(val), 0.5f, 2.0f);
             } else if (key == "show_action_bar2") {
                 pendingShowActionBar2 = (std::stoi(val) != 0);
             } else if (key == "action_bar2_offset_x") {

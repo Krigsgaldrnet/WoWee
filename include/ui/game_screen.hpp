@@ -65,6 +65,7 @@ private:
     bool showChatWindow = true;
     bool showMinimap_ = true;  // M key toggles minimap
     bool showNameplates_ = true;  // V key toggles nameplates
+    float nameplateScale_ = 1.0f; // Scale multiplier for nameplate bar dimensions
     bool showPlayerInfo = false;
     bool showSocialFrame_ = false;  // O key toggles social/friends list
     bool showGuildRoster_ = false;
