@@ -7500,14 +7500,24 @@ void GameScreen::renderQuestRequestItemsWindow(game::GameHandler& gameHandler) {
             for (const auto& item : quest.requiredItems) {
                 uint32_t have = countItemInInventory(item.itemId);
                 bool enough = have >= item.count;
+                ImVec4 textCol = enough ? ImVec4(0.6f, 1.0f, 0.6f, 1.0f) : ImVec4(1.0f, 0.6f, 0.6f, 1.0f);
                 auto* info = gameHandler.getItemInfo(item.itemId);
                 const char* name = (info && info->valid) ? info->name.c_str() : nullptr;
+
+                // Show icon if display info is available
+                uint32_t dispId = item.displayInfoId;
+                if (info && info->valid && info->displayInfoId != 0) dispId = info->displayInfoId;
+                if (dispId != 0) {
+                    VkDescriptorSet iconTex = inventoryScreen.getItemIcon(dispId);
+                    if (iconTex) {
+                        ImGui::Image((ImTextureID)(uintptr_t)iconTex, ImVec2(18, 18));
+                        ImGui::SameLine();
+                    }
+                }
                 if (name && *name) {
-                    ImGui::TextColored(enough ? ImVec4(0.6f, 1.0f, 0.6f, 1.0f) : ImVec4(1.0f, 0.6f, 0.6f, 1.0f),
-                                       "  %s  %u/%u", name, have, item.count);
+                    ImGui::TextColored(textCol, "%s  %u/%u", name, have, item.count);
                 } else {
-                    ImGui::TextColored(enough ? ImVec4(0.6f, 1.0f, 0.6f, 1.0f) : ImVec4(1.0f, 0.6f, 0.6f, 1.0f),
-                                       "  Item %u  %u/%u", item.itemId, have, item.count);
+                    ImGui::TextColored(textCol, "Item %u  %u/%u", item.itemId, have, item.count);
                 }
             }
         }
