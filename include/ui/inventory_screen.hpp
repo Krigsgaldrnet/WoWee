@@ -176,6 +176,9 @@ private:
     int dropBackpackIndex_ = -1;
     std::string dropItemName_;
 
+    // Pending chat item link from shift-click
+    std::string pendingChatItemLink_;
+
 public:
     static ImVec4 getQualityColor(game::ItemQuality quality);
 
@@ -190,6 +193,13 @@ public:
     /// Drop the currently held item into a specific equipment slot.
     /// Returns true if the drop was accepted and consumed.
     bool dropHeldItemToEquipSlot(game::Inventory& inv, game::EquipSlot slot);
+    /// Returns a WoW item link string if the user shift-clicked a bag item, then clears it.
+    std::string getAndClearPendingChatLink() {
+        std::string out = std::move(pendingChatItemLink_);
+        pendingChatItemLink_.clear();
+        return out;
+    }
+
     /// Drop the currently held item into a bank slot via CMSG_SWAP_ITEM.
     void dropIntoBankSlot(game::GameHandler& gh, uint8_t dstBag, uint8_t dstSlot);
     /// Pick up an item from main bank slot (click-and-hold from bank window).

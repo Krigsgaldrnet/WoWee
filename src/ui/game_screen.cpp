@@ -511,6 +511,19 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     inventoryScreen.setGameHandler(&gameHandler);
     inventoryScreen.render(gameHandler.getInventory(), gameHandler.getMoneyCopper());
 
+    // Insert item link into chat if player shift-clicked a bag item
+    {
+        std::string pendingLink = inventoryScreen.getAndClearPendingChatLink();
+        if (!pendingLink.empty()) {
+            size_t curLen = strlen(chatInputBuffer);
+            if (curLen + pendingLink.size() + 1 < sizeof(chatInputBuffer)) {
+                strncat(chatInputBuffer, pendingLink.c_str(), sizeof(chatInputBuffer) - curLen - 1);
+                chatInputMoveCursorToEnd = true;
+                refocusChatInput = true;
+            }
+        }
+    }
+
     // Character screen (C key toggle handled inside render())
     inventoryScreen.renderCharacterScreen(gameHandler);
 
