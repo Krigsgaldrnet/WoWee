@@ -8915,6 +8915,12 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
             if (ImGui::Selectable(label.c_str(), gameHandler.getTargetGuid() == member.guid)) {
                 gameHandler.setTarget(member.guid);
             }
+            // Zone tooltip on name hover
+            if (ImGui::IsItemHovered() && member.hasPartyStats && member.zoneId != 0) {
+                std::string zoneName = gameHandler.getWhoAreaName(member.zoneId);
+                if (!zoneName.empty())
+                    ImGui::SetTooltip("%s", zoneName.c_str());
+            }
             ImGui::PopStyleColor();
 
             // LFG role badge (Tank/Healer/DPS) — shown on same line as name when set
