@@ -6103,12 +6103,17 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 ImGui::EndTooltip();
             } else if (slot.type == game::ActionBarSlot::ITEM) {
                 ImGui::BeginTooltip();
-                if (barItemDef && !barItemDef->name.empty())
+                // Prefer full rich tooltip from ItemQueryResponseData (has stats, quality, set info)
+                const auto* itemQueryInfo = gameHandler.getItemInfo(slot.id);
+                if (itemQueryInfo && itemQueryInfo->valid) {
+                    inventoryScreen.renderItemTooltip(*itemQueryInfo);
+                } else if (barItemDef && !barItemDef->name.empty()) {
                     ImGui::Text("%s", barItemDef->name.c_str());
-                else if (!itemNameFromQuery.empty())
+                } else if (!itemNameFromQuery.empty()) {
                     ImGui::Text("%s", itemNameFromQuery.c_str());
-                else
+                } else {
                     ImGui::Text("Item #%u", slot.id);
+                }
                 if (onCooldown) {
                     float cd = slot.cooldownRemaining;
                     if (cd >= 60.0f)
