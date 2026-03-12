@@ -773,6 +773,45 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         }
     }
 
+    // Persistent low-health vignette — pulsing red edges when HP < 20%
+    {
+        auto playerEntity = gameHandler.getEntityManager().getEntity(gameHandler.getPlayerGuid());
+        bool isDead = gameHandler.isPlayerDead();
+        float hpPct = 1.0f;
+        if (!isDead && playerEntity &&
+            (playerEntity->getType() == game::ObjectType::PLAYER ||
+             playerEntity->getType() == game::ObjectType::UNIT)) {
+            auto unit = std::static_pointer_cast<game::Unit>(playerEntity);
+            if (unit->getMaxHealth() > 0)
+                hpPct = static_cast<float>(unit->getHealth()) / static_cast<float>(unit->getMaxHealth());
+        }
+
+        // Only show when alive and below 20% HP; intensity increases as HP drops
+        if (!isDead && hpPct < 0.20f && hpPct > 0.0f) {
+            // Base intensity from HP deficit (0 at 20%, 1 at 0%); pulse at ~1.5 Hz
+            float danger = (0.20f - hpPct) / 0.20f;
+            float pulse  = 0.55f + 0.45f * std::sin(static_cast<float>(ImGui::GetTime()) * 9.4f);
+            int   alpha  = static_cast<int>(danger * pulse * 90.0f);  // max ~90 alpha, subtle
+            if (alpha > 0) {
+                ImDrawList* fg = ImGui::GetForegroundDrawList();
+                ImGuiIO& io = ImGui::GetIO();
+                const float W = io.DisplaySize.x;
+                const float H = io.DisplaySize.y;
+                const float thickness = std::min(W, H) * 0.15f;
+                const ImU32 edgeCol = IM_COL32(200, 0, 0, alpha);
+                const ImU32 fadeCol = IM_COL32(200, 0, 0, 0);
+                fg->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(W, thickness),
+                                            edgeCol, edgeCol, fadeCol, fadeCol);
+                fg->AddRectFilledMultiColor(ImVec2(0, H - thickness), ImVec2(W, H),
+                                            fadeCol, fadeCol, edgeCol, edgeCol);
+                fg->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(thickness, H),
+                                            edgeCol, fadeCol, fadeCol, edgeCol);
+                fg->AddRectFilledMultiColor(ImVec2(W - thickness, 0), ImVec2(W, H),
+                                            fadeCol, edgeCol, edgeCol, fadeCol);
+            }
+        }
+    }
+
     // Level-up golden burst overlay
     if (levelUpFlashAlpha_ > 0.0f) {
         levelUpFlashAlpha_ -= ImGui::GetIO().DeltaTime * 1.0f;  // fade over ~1 second
