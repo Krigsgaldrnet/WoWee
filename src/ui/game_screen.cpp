@@ -8676,11 +8676,26 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
                 ImVec2 textSize = ImGui::CalcTextSize(timeStr);
                 float cx = iconMin.x + (iconMax.x - iconMin.x - textSize.x) * 0.5f;
                 float cy = iconMax.y - textSize.y - 2.0f;
+                // Choose timer color based on urgency
+                ImU32 timerColor;
+                if (remainMs < 10000) {
+                    // < 10s: pulse red
+                    float pulse = 0.7f + 0.3f * std::sin(
+                        static_cast<float>(ImGui::GetTime()) * 6.0f);
+                    timerColor = IM_COL32(
+                        static_cast<int>(255 * pulse),
+                        static_cast<int>(80 * pulse),
+                        static_cast<int>(60 * pulse), 255);
+                } else if (remainMs < 30000) {
+                    timerColor = IM_COL32(255, 165, 0, 255); // orange
+                } else {
+                    timerColor = IM_COL32(255, 255, 255, 255); // white
+                }
                 // Drop shadow for readability over any icon colour
                 ImGui::GetWindowDrawList()->AddText(ImVec2(cx + 1, cy + 1),
                     IM_COL32(0, 0, 0, 200), timeStr);
                 ImGui::GetWindowDrawList()->AddText(ImVec2(cx, cy),
-                    IM_COL32(255, 255, 255, 255), timeStr);
+                    timerColor, timeStr);
             }
 
             // Stack / charge count overlay — upper-left corner of the icon
