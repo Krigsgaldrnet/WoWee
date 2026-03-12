@@ -3094,23 +3094,30 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
                     gameHandler.sendPetAction(slotVal, targetGuid);
                 }
 
-                // Tooltip: show spell name or built-in command name.
+                // Tooltip: rich spell info for pet spells, simple label for built-in commands
                 if (ImGui::IsItemHovered()) {
-                    const char* tip = nullptr;
                     if (builtinLabel) {
+                        const char* tip = nullptr;
                         if      (actionId == 1) tip = "Passive";
                         else if (actionId == 2) tip = "Follow";
                         else if (actionId == 3) tip = "Stay";
                         else if (actionId == 4) tip = "Defensive";
                         else if (actionId == 5) tip = "Attack";
                         else if (actionId == 6) tip = "Aggressive";
+                        if (tip) ImGui::SetTooltip("%s", tip);
+                    } else if (actionId > 6) {
+                        auto* spellAsset = core::Application::getInstance().getAssetManager();
+                        ImGui::BeginTooltip();
+                        bool richOk = spellbookScreen.renderSpellInfoTooltip(actionId, gameHandler, spellAsset);
+                        if (!richOk) {
+                            std::string nm = gameHandler.getSpellName(actionId);
+                            if (nm.empty()) nm = "Spell #" + std::to_string(actionId);
+                            ImGui::Text("%s", nm.c_str());
+                        }
+                        if (autocastOn)
+                            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Autocast: On");
+                        ImGui::EndTooltip();
                     }
-                    std::string spellNm;
-                    if (!tip && actionId > 6) {
-                        spellNm = gameHandler.getSpellName(actionId);
-                        if (!spellNm.empty()) tip = spellNm.c_str();
-                    }
-                    if (tip) ImGui::SetTooltip("%s", tip);
                 }
 
                 ImGui::PopID();
