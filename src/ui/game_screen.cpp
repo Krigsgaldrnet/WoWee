@@ -7780,6 +7780,16 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
                     }
                     if (ImGui::MenuItem("Invite to Group"))
                         gameHandler.inviteToGroup(ctxName);
+                    if (ImGui::MenuItem("Trade"))
+                        gameHandler.initiateTrade(nameplateCtxGuid_);
+                    if (ImGui::MenuItem("Duel"))
+                        gameHandler.proposeDuel(nameplateCtxGuid_);
+                    if (ImGui::MenuItem("Inspect")) {
+                        gameHandler.setTarget(nameplateCtxGuid_);
+                        gameHandler.inspectTarget();
+                        showInspectWindow_ = true;
+                    }
+                    ImGui::Separator();
                     if (ImGui::MenuItem("Add Friend"))
                         gameHandler.addFriend(ctxName);
                     if (ImGui::MenuItem("Ignore"))
