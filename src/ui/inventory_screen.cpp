@@ -2482,6 +2482,35 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
         }
     }
 
+    // Gem socket slots
+    {
+        static const struct { uint32_t mask; const char* label; ImVec4 col; } kSocketTypes[] = {
+            { 1, "Meta Socket",   { 0.7f, 0.7f, 0.9f, 1.0f } },
+            { 2, "Red Socket",    { 1.0f, 0.3f, 0.3f, 1.0f } },
+            { 4, "Yellow Socket", { 1.0f, 0.9f, 0.3f, 1.0f } },
+            { 8, "Blue Socket",   { 0.3f, 0.6f, 1.0f, 1.0f } },
+        };
+        bool hasSocket = false;
+        for (int i = 0; i < 3; ++i) {
+            if (info.socketColor[i] == 0) continue;
+            if (!hasSocket) { ImGui::Spacing(); hasSocket = true; }
+            for (const auto& st : kSocketTypes) {
+                if (info.socketColor[i] & st.mask) {
+                    ImGui::TextColored(st.col, "%s", st.label);
+                    break;
+                }
+            }
+        }
+        if (hasSocket && info.socketBonus != 0 && gameHandler_) {
+            // Socket bonus is an enchantment ID — show its name if known
+            const std::string& bonusName = gameHandler_->getSpellName(info.socketBonus);
+            if (!bonusName.empty())
+                ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "Socket Bonus: %s", bonusName.c_str());
+            else
+                ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "Socket Bonus: (id %u)", info.socketBonus);
+        }
+    }
+
     if (info.startQuestId != 0) {
         ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Begins a Quest");
     }

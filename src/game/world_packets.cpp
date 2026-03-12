@@ -2930,6 +2930,26 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
         data.startQuestId = packet.readUInt32(); // StartQuest
     }
 
+    // WotLK 3.3.5a: additional fields after StartQuest (read up to socket data)
+    // LockID(4), Material(4), Sheath(4), RandomProperty(4), RandomSuffix(4),
+    // Block(4), ItemSet(4), MaxDurability(4), Area(4), Map(4), BagFamily(4),
+    // TotemCategory(4) = 48 bytes before sockets
+    constexpr size_t kPreSocketSkip = 48;
+    if (packet.getReadPos() + kPreSocketSkip + 28 <= packet.getSize()) {
+        for (size_t i = 0; i < kPreSocketSkip / 4; ++i)
+            packet.readUInt32();
+        // 3 socket slots: socketColor (4 bytes each)
+        data.socketColor[0] = packet.readUInt32();
+        data.socketColor[1] = packet.readUInt32();
+        data.socketColor[2] = packet.readUInt32();
+        // 3 socket content (gem enchantment IDs — skip, not currently displayed)
+        packet.readUInt32();
+        packet.readUInt32();
+        packet.readUInt32();
+        // socketBonus (enchantmentId)
+        data.socketBonus = packet.readUInt32();
+    }
+
     data.valid = !data.name.empty();
     return true;
 }
