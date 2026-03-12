@@ -3517,6 +3517,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                                   delta > 0 ? "increased" : "decreased",
                                   std::abs(delta));
                     addSystemChatMessage(buf);
+                    if (repChangeCallback_) repChangeCallback_(name, delta, standing);
                 }
                 LOG_DEBUG("SMSG_SET_FACTION_STANDING: faction=", factionId, " standing=", standing);
             }

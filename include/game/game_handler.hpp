@@ -1275,6 +1275,10 @@ public:
     void setUIErrorCallback(UIErrorCallback cb) { uiErrorCallback_ = std::move(cb); }
     void addUIError(const std::string& msg) { if (uiErrorCallback_) uiErrorCallback_(msg); }
 
+    // Reputation change toast: factionName, delta, new standing
+    using RepChangeCallback = std::function<void(const std::string& factionName, int32_t delta, int32_t standing)>;
+    void setRepChangeCallback(RepChangeCallback cb) { repChangeCallback_ = std::move(cb); }
+
     // Mount state
     using MountCallback = std::function<void(uint32_t mountDisplayId)>;  // 0 = dismount
     void setMountCallback(MountCallback cb) { mountCallback_ = std::move(cb); }
@@ -2557,6 +2561,9 @@ private:
 
     // ---- UI error frame callback ----
     UIErrorCallback uiErrorCallback_;
+
+    // ---- Reputation change callback ----
+    RepChangeCallback repChangeCallback_;
 };
 
 } // namespace game

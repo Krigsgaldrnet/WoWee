@@ -82,6 +82,12 @@ private:
     std::vector<UIErrorEntry> uiErrors_;
     bool uiErrorCallbackSet_ = false;
     static constexpr float kUIErrorLifetime = 2.5f;
+
+    // Reputation change toast: brief colored slide-in below minimap
+    struct RepToastEntry { std::string factionName; int32_t delta = 0; int32_t standing = 0; float age = 0.0f; };
+    std::vector<RepToastEntry> repToasts_;
+    bool repChangeCallbackSet_ = false;
+    static constexpr float kRepToastLifetime = 3.5f;
     bool showPlayerInfo = false;
     bool showSocialFrame_ = false;  // O key toggles social/friends list
     bool showGuildRoster_ = false;
@@ -263,6 +269,7 @@ private:
     void renderPartyFrames(game::GameHandler& gameHandler);
     void renderBossFrames(game::GameHandler& gameHandler);
     void renderUIErrors(game::GameHandler& gameHandler, float deltaTime);
+    void renderRepToasts(float deltaTime);
     void renderGroupInvitePopup(game::GameHandler& gameHandler);
     void renderDuelRequestPopup(game::GameHandler& gameHandler);
     void renderLootRollPopup(game::GameHandler& gameHandler);

@@ -236,6 +236,15 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         uiErrorCallbackSet_ = true;
     }
 
+    // Set up reputation change toast callback (once)
+    if (!repChangeCallbackSet_) {
+        gameHandler.setRepChangeCallback([this](const std::string& name, int32_t delta, int32_t standing) {
+            repToasts_.push_back({name, delta, standing, 0.0f});
+            if (repToasts_.size() > 4) repToasts_.erase(repToasts_.begin());
+        });
+        repChangeCallbackSet_ = true;
+    }
+
     // Apply UI transparency setting
     float prevAlpha = ImGui::GetStyle().Alpha;
     ImGui::GetStyle().Alpha = uiOpacity_;
@@ -453,6 +462,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderBattlegroundScore(gameHandler);
     renderCombatText(gameHandler);
     renderUIErrors(gameHandler, ImGui::GetIO().DeltaTime);
+    renderRepToasts(ImGui::GetIO().DeltaTime);
     if (showRaidFrames_) {
         renderPartyFrames(gameHandler);
     }
@@ -6586,6 +6596,89 @@ void GameScreen::renderUIErrors(game::GameHandler& /*gameHandler*/, float deltaT
 }
 
 // ============================================================
+// Reputation change toasts
+// ============================================================
+
+void GameScreen::renderRepToasts(float deltaTime) {
+    for (auto& e : repToasts_) e.age += deltaTime;
+    repToasts_.erase(
+        std::remove_if(repToasts_.begin(), repToasts_.end(),
+            [](const RepToastEntry& e) { return e.age >= kRepToastLifetime; }),
+        repToasts_.end());
+
+    if (repToasts_.empty()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    // Stack toasts in the lower-right corner (above the action bar), newest on top
+    const float toastW = 220.0f;
+    const float toastH = 26.0f;
+    const float padY   = 4.0f;
+    const float rightEdge = screenW - 14.0f;
+    const float baseY = screenH - 180.0f;
+
+    const int count = static_cast<int>(repToasts_.size());
+
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    float fontSize = ImGui::GetFontSize();
+
+    // Compute standing tier label (Exalted, Revered, Honored, Friendly, Neutral, Unfriendly, Hostile, Hated)
+    auto standingLabel = [](int32_t s) -> const char* {
+        if (s >= 42000) return "Exalted";
+        if (s >= 21000) return "Revered";
+        if (s >= 9000)  return "Honored";
+        if (s >= 3000)  return "Friendly";
+        if (s >= 0)     return "Neutral";
+        if (s >= -3000) return "Unfriendly";
+        if (s >= -6000) return "Hostile";
+        return "Hated";
+    };
+
+    for (int i = 0; i < count; ++i) {
+        const auto& e = repToasts_[i];
+        // Slide in from right on appear, slide out at end
+        constexpr float kSlideDur = 0.3f;
+        float slideIn  = std::min(e.age, kSlideDur) / kSlideDur;
+        float slideOut = std::min(std::max(0.0f, kRepToastLifetime - e.age), kSlideDur) / kSlideDur;
+        float slide    = std::min(slideIn, slideOut);
+
+        float alpha = std::clamp(slide, 0.0f, 1.0f);
+        float xFull  = rightEdge - toastW;
+        float xStart = screenW + 10.0f;
+        float toastX = xStart + (xFull - xStart) * slide;
+        float toastY = baseY - i * (toastH + padY);
+
+        ImVec2 tl(toastX, toastY);
+        ImVec2 br(toastX + toastW, toastY + toastH);
+
+        // Background
+        draw->AddRectFilled(tl, br, IM_COL32(15, 15, 20, (int)(alpha * 200)), 4.0f);
+        // Border: green for gain, red for loss
+        ImU32 borderCol = (e.delta > 0)
+            ? IM_COL32(80, 200, 80, (int)(alpha * 220))
+            : IM_COL32(200, 60, 60, (int)(alpha * 220));
+        draw->AddRect(tl, br, borderCol, 4.0f, 0, 1.5f);
+
+        // Delta text: "+250" or "-250"
+        char deltaBuf[16];
+        snprintf(deltaBuf, sizeof(deltaBuf), "%+d", e.delta);
+        ImU32 deltaCol = (e.delta > 0) ? IM_COL32(80, 220, 80, (int)(alpha * 255))
+                                       : IM_COL32(220, 70, 70, (int)(alpha * 255));
+        draw->AddText(font, fontSize, ImVec2(tl.x + 6.0f, tl.y + (toastH - fontSize) * 0.5f),
+                      deltaCol, deltaBuf);
+
+        // Faction name + standing
+        char nameBuf[64];
+        snprintf(nameBuf, sizeof(nameBuf), "%s (%s)", e.factionName.c_str(), standingLabel(e.standing));
+        draw->AddText(font, fontSize * 0.85f, ImVec2(tl.x + 44.0f, tl.y + (toastH - fontSize * 0.85f) * 0.5f),
+                      IM_COL32(210, 210, 210, (int)(alpha * 220)), nameBuf);
+    }
+}
+
+// ============================================================
 // Boss Encounter Frames
 // ============================================================
 
@@ -8013,6 +8106,44 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
                 if (ImGui::Button("+##addignore") && addIgnBuf[0] != '\0') {
                     gameHandler.addIgnore(addIgnBuf);
                     addIgnBuf[0] = '\0';
+                }
+
+                ImGui::EndTabItem();
+            }
+
+            // ---- Channels tab ----
+            if (ImGui::BeginTabItem("Channels")) {
+                const auto& channels = gameHandler.getJoinedChannels();
+                ImGui::BeginChild("##ChannelList", ImVec2(200, 200), false);
+
+                if (channels.empty()) {
+                    ImGui::TextDisabled("Not in any channels.");
+                } else {
+                    for (size_t ci = 0; ci < channels.size(); ++ci) {
+                        ImGui::PushID(static_cast<int>(ci));
+                        ImGui::TextUnformatted(channels[ci].c_str());
+                        if (ImGui::BeginPopupContextItem("ChanCtx")) {
+                            ImGui::TextDisabled("%s", channels[ci].c_str());
+                            ImGui::Separator();
+                            if (ImGui::MenuItem("Leave Channel"))
+                                gameHandler.leaveChannel(channels[ci]);
+                            ImGui::EndPopup();
+                        }
+                        ImGui::PopID();
+                    }
+                }
+
+                ImGui::EndChild();
+                ImGui::Separator();
+
+                // Join a channel
+                static char joinChanBuf[64] = {};
+                ImGui::SetNextItemWidth(140.0f);
+                ImGui::InputText("##sf_joinchan", joinChanBuf, sizeof(joinChanBuf));
+                ImGui::SameLine();
+                if (ImGui::Button("+##joinchan") && joinChanBuf[0] != '\0') {
+                    gameHandler.joinChannel(joinChanBuf);
+                    joinChanBuf[0] = '\0';
                 }
 
                 ImGui::EndTabItem();
