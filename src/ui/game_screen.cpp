@@ -15290,6 +15290,31 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         break;  // Show at most one queue slot indicator
     }
 
+    // LFG queue indicator — shown when Dungeon Finder queue is active (Queued or RoleCheck)
+    {
+        using LfgState = game::GameHandler::LfgState;
+        LfgState lfgSt = gameHandler.getLfgState();
+        if (lfgSt == LfgState::Queued || lfgSt == LfgState::RoleCheck) {
+            ImGui::SetNextWindowPos(ImVec2(indicatorX, nextIndicatorY), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(indicatorW, kIndicatorH), ImGuiCond_Always);
+            if (ImGui::Begin("##LfgQueueIndicator", nullptr, indicatorFlags)) {
+                if (lfgSt == LfgState::RoleCheck) {
+                    float pulse = 0.6f + 0.4f * std::sin(static_cast<float>(ImGui::GetTime()) * 3.0f);
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, pulse), "LFG: Role Check...");
+                } else {
+                    uint32_t qMs  = gameHandler.getLfgTimeInQueueMs();
+                    int      qMin = static_cast<int>(qMs / 60000);
+                    int      qSec = static_cast<int>((qMs % 60000) / 1000);
+                    float pulse = 0.6f + 0.4f * std::sin(static_cast<float>(ImGui::GetTime()) * 1.2f);
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, pulse),
+                        "LFG: %d:%02d", qMin, qSec);
+                }
+            }
+            ImGui::End();
+            nextIndicatorY += kIndicatorH;
+        }
+    }
+
     // Latency indicator — centered at top of screen
     uint32_t latMs = gameHandler.getLatencyMs();
     if (showLatencyMeter_ && latMs > 0 && gameHandler.getState() == game::WorldState::IN_WORLD) {
