@@ -72,6 +72,21 @@ const game::ItemSlot* findComparableEquipped(const game::Inventory& inventory, u
         default: return nullptr;
     }
 }
+
+void renderCoinsText(uint32_t g, uint32_t s, uint32_t c) {
+    bool any = false;
+    if (g > 0) {
+        ImGui::TextColored(ImVec4(1.00f, 0.82f, 0.00f, 1.0f), "%ug", g);
+        any = true;
+    }
+    if (s > 0 || g > 0) {
+        if (any) ImGui::SameLine(0, 3);
+        ImGui::TextColored(ImVec4(0.80f, 0.80f, 0.80f, 1.0f), "%us", s);
+        any = true;
+    }
+    if (any) ImGui::SameLine(0, 3);
+    ImGui::TextColored(ImVec4(0.72f, 0.45f, 0.20f, 1.0f), "%uc", c);
+}
 } // namespace
 
 InventoryScreen::~InventoryScreen() {
@@ -2197,7 +2212,8 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         uint32_t g = item.sellPrice / 10000;
         uint32_t s = (item.sellPrice / 100) % 100;
         uint32_t c = item.sellPrice % 100;
-        ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "Sell: %ug %us %uc", g, s, c);
+        ImGui::TextDisabled("Sell:"); ImGui::SameLine(0, 4);
+        renderCoinsText(g, s, c);
     }
 
     // Shift-hover comparison with currently equipped equivalent.
@@ -2477,7 +2493,8 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
         uint32_t g = info.sellPrice / 10000;
         uint32_t s = (info.sellPrice / 100) % 100;
         uint32_t c = info.sellPrice % 100;
-        ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "Sell: %ug %us %uc", g, s, c);
+        ImGui::TextDisabled("Sell:"); ImGui::SameLine(0, 4);
+        renderCoinsText(g, s, c);
     }
 
     // Shift-hover: compare with currently equipped item
