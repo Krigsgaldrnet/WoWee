@@ -1599,6 +1599,28 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
     }
     int32_t totalArmor = (serverArmor > 0) ? serverArmor : itemQueryArmor;
 
+    // Average item level (exclude shirt/tabard as WoW convention)
+    {
+        uint32_t iLvlSum = 0;
+        int iLvlCount = 0;
+        for (int s = 0; s < game::Inventory::NUM_EQUIP_SLOTS; s++) {
+            auto eslot = static_cast<game::EquipSlot>(s);
+            if (eslot == game::EquipSlot::SHIRT || eslot == game::EquipSlot::TABARD) continue;
+            const auto& slot = inventory.getEquipSlot(eslot);
+            if (!slot.empty() && slot.item.itemLevel > 0) {
+                iLvlSum += slot.item.itemLevel;
+                ++iLvlCount;
+            }
+        }
+        if (iLvlCount > 0) {
+            float avg = static_cast<float>(iLvlSum) / static_cast<float>(iLvlCount);
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f),
+                "Average Item Level: %.1f  (%d/%d slots)", avg, iLvlCount,
+                game::Inventory::NUM_EQUIP_SLOTS - 2);  // -2 for shirt/tabard
+        }
+        ImGui::Separator();
+    }
+
     ImVec4 green(0.0f, 1.0f, 0.0f, 1.0f);
     ImVec4 white(1.0f, 1.0f, 1.0f, 1.0f);
     ImVec4 gold(1.0f, 0.84f, 0.0f, 1.0f);
