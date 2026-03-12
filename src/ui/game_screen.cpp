@@ -5395,10 +5395,14 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             // Fall back to level as placeholder while the name query is pending.
             if (!unitName.empty())
                 snprintf(labelBuf, sizeof(labelBuf), "%s", unitName.c_str());
-            else if (level > 0)
-                snprintf(labelBuf, sizeof(labelBuf), "Player (%u)", level);
-            else
-                snprintf(labelBuf, sizeof(labelBuf), "Player");
+            else {
+                // Name query may be pending; request it now to ensure it gets resolved
+                gameHandler.queryPlayerName(unit->getGuid());
+                if (level > 0)
+                    snprintf(labelBuf, sizeof(labelBuf), "Player (%u)", level);
+                else
+                    snprintf(labelBuf, sizeof(labelBuf), "Player");
+            }
         } else if (level > 0) {
             uint32_t playerLevel = gameHandler.getPlayerLevel();
             // Show skull for units more than 10 levels above the player
