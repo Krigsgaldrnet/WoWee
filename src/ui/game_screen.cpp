@@ -7076,8 +7076,26 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
 
                     // Context menu popup
                     if (ImGui::BeginPopup("GuildMemberContext")) {
-                        ImGui::Text("%s", selectedGuildMember_.c_str());
+                        ImGui::TextDisabled("%s", selectedGuildMember_.c_str());
                         ImGui::Separator();
+                        // Social actions — only for online members
+                        bool memberOnline = false;
+                        for (const auto& mem : roster.members) {
+                            if (mem.name == selectedGuildMember_) { memberOnline = mem.online; break; }
+                        }
+                        if (memberOnline) {
+                            if (ImGui::MenuItem("Whisper")) {
+                                selectedChatType = 4;
+                                strncpy(whisperTargetBuffer, selectedGuildMember_.c_str(),
+                                        sizeof(whisperTargetBuffer) - 1);
+                                whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                                refocusChatInput = true;
+                            }
+                            if (ImGui::MenuItem("Invite to Group")) {
+                                gameHandler.inviteToGroup(selectedGuildMember_);
+                            }
+                            ImGui::Separator();
+                        }
                         if (ImGui::MenuItem("Promote")) {
                             gameHandler.promoteGuildMember(selectedGuildMember_);
                         }
