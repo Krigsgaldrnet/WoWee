@@ -7916,6 +7916,7 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
 
     auto* window = core::Application::getInstance().getWindow();
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    auto* assetMgr = core::Application::getInstance().getAssetManager();
 
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - 225, 100), ImGuiCond_Appearing);
     ImGui::SetNextWindowSize(ImVec2(500, 450), ImGuiCond_Appearing);
@@ -8015,8 +8016,23 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                         statusLabel = "Unavailable";
                     }
 
-                    // Spell name
+                    // Icon column
                     ImGui::TableSetColumnIndex(0);
+                    {
+                        VkDescriptorSet spellIcon = getSpellIcon(spell->spellId, assetMgr);
+                        if (spellIcon) {
+                            if (effectiveState == 1 && !alreadyKnown) {
+                                ImGui::ImageWithBg((ImTextureID)(uintptr_t)spellIcon, ImVec2(18, 18),
+                                    ImVec2(0, 0), ImVec2(1, 1),
+                                    ImVec4(0, 0, 0, 0), ImVec4(0.5f, 0.5f, 0.5f, 0.6f));
+                            } else {
+                                ImGui::Image((ImTextureID)(uintptr_t)spellIcon, ImVec2(18, 18));
+                            }
+                        }
+                    }
+
+                    // Spell name
+                    ImGui::TableSetColumnIndex(1);
                     const std::string& name = gameHandler.getSpellName(spell->spellId);
                     const std::string& rank = gameHandler.getSpellRank(spell->spellId);
                     if (!name.empty()) {
@@ -8057,11 +8073,11 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                     }
 
                     // Level
-                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TableSetColumnIndex(2);
                     ImGui::TextColored(color, "%u", spell->reqLevel);
 
                     // Cost
-                    ImGui::TableSetColumnIndex(2);
+                    ImGui::TableSetColumnIndex(3);
                     if (spell->spellCost > 0) {
                         uint32_t g = spell->spellCost / 10000;
                         uint32_t s = (spell->spellCost / 100) % 100;
@@ -8074,7 +8090,7 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                     }
 
                     // Train button - only enabled if available, affordable, prereqs met
-                    ImGui::TableSetColumnIndex(3);
+                    ImGui::TableSetColumnIndex(4);
                     // Use effectiveState so newly available spells (after learning prereqs) can be trained
                     bool canTrain = !alreadyKnown && effectiveState == 0
                                   && prereqsMet && levelMet
@@ -8110,8 +8126,9 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
             };
 
             auto renderSpellTable = [&](const char* tableId, const std::vector<const game::TrainerSpell*>& spells) {
-                if (ImGui::BeginTable(tableId, 4,
+                if (ImGui::BeginTable(tableId, 5,
                         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+                    ImGui::TableSetupColumn("##icon", ImGuiTableColumnFlags_WidthFixed, 22.0f);
                     ImGui::TableSetupColumn("Spell", ImGuiTableColumnFlags_WidthStretch);
                     ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, 40.0f);
                     ImGui::TableSetupColumn("Cost", ImGuiTableColumnFlags_WidthFixed, 120.0f);
