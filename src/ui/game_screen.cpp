@@ -14200,6 +14200,21 @@ void GameScreen::renderMailWindow(game::GameHandler& gameHandler) {
                     ImGui::SameLine();
                     ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), " [A]");
                 }
+                // Expiry warning if within 3 days
+                if (mail.expirationTime > 0.0f) {
+                    auto nowSec = static_cast<float>(std::time(nullptr));
+                    float secsLeft = mail.expirationTime - nowSec;
+                    if (secsLeft < 3.0f * 86400.0f && secsLeft > 0.0f) {
+                        ImGui::SameLine();
+                        int daysLeft = static_cast<int>(secsLeft / 86400.0f);
+                        if (daysLeft == 0) {
+                            ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), " [expires today!]");
+                        } else {
+                            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.1f, 1.0f),
+                                " [expires in %dd]", daysLeft);
+                        }
+                    }
+                }
 
                 ImGui::PopID();
             }
@@ -14219,6 +14234,35 @@ void GameScreen::renderMailWindow(game::GameHandler& gameHandler) {
 
                 if (mail.messageType == 2) {
                     ImGui::TextColored(ImVec4(0.8f, 0.6f, 0.2f, 1.0f), "[Auction House]");
+                }
+
+                // Show expiry date in the detail panel
+                if (mail.expirationTime > 0.0f) {
+                    auto nowSec = static_cast<float>(std::time(nullptr));
+                    float secsLeft = mail.expirationTime - nowSec;
+                    // Format absolute expiry as a date using struct tm
+                    time_t expT = static_cast<time_t>(mail.expirationTime);
+                    struct tm* tmExp = std::localtime(&expT);
+                    if (tmExp) {
+                        static const char* kMon[12] = {
+                            "Jan","Feb","Mar","Apr","May","Jun",
+                            "Jul","Aug","Sep","Oct","Nov","Dec"
+                        };
+                        const char* mname = kMon[tmExp->tm_mon];
+                        int daysLeft = static_cast<int>(secsLeft / 86400.0f);
+                        if (secsLeft <= 0.0f) {
+                            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                "Expired: %s %d, %d", mname, tmExp->tm_mday, 1900 + tmExp->tm_year);
+                        } else if (secsLeft < 3.0f * 86400.0f) {
+                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                "Expires: %s %d, %d (%d day%s!)",
+                                mname, tmExp->tm_mday, 1900 + tmExp->tm_year,
+                                daysLeft, daysLeft == 1 ? "" : "s");
+                        } else {
+                            ImGui::TextDisabled("Expires: %s %d, %d",
+                                mname, tmExp->tm_mday, 1900 + tmExp->tm_year);
+                        }
+                    }
                 }
                 ImGui::Separator();
 
