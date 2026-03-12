@@ -4007,6 +4007,42 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                           ImVec2(ImGui::CalcTextSize(focusName.c_str()).x, 0));
         ImGui::PopStyleColor(4);
 
+        // Quest giver indicator and classification badge for NPC focus targets
+        if (focus->getType() == game::ObjectType::UNIT) {
+            auto focusUnit = std::static_pointer_cast<game::Unit>(focus);
+
+            // Quest indicator: ! / ?
+            {
+                using QGS = game::QuestGiverStatus;
+                QGS qgs = gameHandler.getQuestGiverStatus(focus->getGuid());
+                if (qgs == QGS::AVAILABLE) {
+                    ImGui::SameLine(0, 4);
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "!");
+                } else if (qgs == QGS::AVAILABLE_LOW) {
+                    ImGui::SameLine(0, 4);
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "!");
+                } else if (qgs == QGS::REWARD || qgs == QGS::REWARD_REP) {
+                    ImGui::SameLine(0, 4);
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "?");
+                } else if (qgs == QGS::INCOMPLETE) {
+                    ImGui::SameLine(0, 4);
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "?");
+                }
+            }
+
+            // Classification badge
+            int fRank = gameHandler.getCreatureRank(focusUnit->getEntry());
+            if (fRank == 1)      { ImGui::SameLine(0,4); ImGui::TextColored(ImVec4(1.0f,0.8f,0.2f,1.0f), "[Elite]"); }
+            else if (fRank == 2) { ImGui::SameLine(0,4); ImGui::TextColored(ImVec4(0.8f,0.4f,1.0f,1.0f), "[Rare Elite]"); }
+            else if (fRank == 3) { ImGui::SameLine(0,4); ImGui::TextColored(ImVec4(1.0f,0.3f,0.3f,1.0f), "[Boss]"); }
+            else if (fRank == 4) { ImGui::SameLine(0,4); ImGui::TextColored(ImVec4(0.5f,0.9f,1.0f,1.0f), "[Rare]"); }
+
+            // Creature subtitle
+            const std::string fSub = gameHandler.getCachedCreatureSubName(focusUnit->getEntry());
+            if (!fSub.empty())
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 0.9f), "<%s>", fSub.c_str());
+        }
+
         if (ImGui::BeginPopupContextItem("##FocusNameCtx")) {
             const bool focusIsPlayer = (focus->getType() == game::ObjectType::PLAYER);
             const uint64_t fGuid = focus->getGuid();
