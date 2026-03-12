@@ -14416,54 +14416,83 @@ void GameScreen::renderAchievementWindow(game::GameHandler& gameHandler) {
     }
 
     const auto& earned = gameHandler.getEarnedAchievements();
-    ImGui::Text("Earned: %u", static_cast<unsigned>(earned.size()));
-    ImGui::SameLine();
+    const auto& criteria = gameHandler.getCriteriaProgress();
+
     ImGui::SetNextItemWidth(180.0f);
     ImGui::InputText("##achsearch", achievementSearchBuf_, sizeof(achievementSearchBuf_));
     ImGui::SameLine();
     if (ImGui::Button("Clear")) achievementSearchBuf_[0] = '\0';
     ImGui::Separator();
 
-    if (earned.empty()) {
-        ImGui::TextDisabled("No achievements earned yet.");
-        ImGui::End();
-        return;
-    }
-
-    ImGui::BeginChild("##achlist", ImVec2(0, 0), false);
-
     std::string filter(achievementSearchBuf_);
-    // lower-case filter for case-insensitive matching
     for (char& c : filter) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
 
-    // Collect and sort ids for stable display
-    std::vector<uint32_t> ids(earned.begin(), earned.end());
-    std::sort(ids.begin(), ids.end());
-
-    for (uint32_t id : ids) {
-        const std::string& name = gameHandler.getAchievementName(id);
-        const std::string& display = name.empty() ? std::to_string(id) : name;
-
-        if (!filter.empty()) {
-            std::string lower = display;
-            for (char& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-            if (lower.find(filter) == std::string::npos) continue;
+    if (ImGui::BeginTabBar("##achtabs")) {
+        // --- Earned tab ---
+        char earnedLabel[32];
+        snprintf(earnedLabel, sizeof(earnedLabel), "Earned (%u)###earned", (unsigned)earned.size());
+        if (ImGui::BeginTabItem(earnedLabel)) {
+            if (earned.empty()) {
+                ImGui::TextDisabled("No achievements earned yet.");
+            } else {
+                ImGui::BeginChild("##achlist", ImVec2(0, 0), false);
+                std::vector<uint32_t> ids(earned.begin(), earned.end());
+                std::sort(ids.begin(), ids.end());
+                for (uint32_t id : ids) {
+                    const std::string& name = gameHandler.getAchievementName(id);
+                    const std::string& display = name.empty() ? std::to_string(id) : name;
+                    if (!filter.empty()) {
+                        std::string lower = display;
+                        for (char& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+                        if (lower.find(filter) == std::string::npos) continue;
+                    }
+                    ImGui::PushID(static_cast<int>(id));
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "\xE2\x98\x85");
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted(display.c_str());
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("ID: %u", id);
+                        ImGui::EndTooltip();
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndChild();
+            }
+            ImGui::EndTabItem();
         }
 
-        ImGui::PushID(static_cast<int>(id));
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "[Achievement]");
-        ImGui::SameLine();
-        ImGui::TextUnformatted(display.c_str());
-        if (ImGui::IsItemHovered()) {
-            ImGui::BeginTooltip();
-            ImGui::Text("ID: %u", id);
-            if (!name.empty()) ImGui::TextDisabled("%s", name.c_str());
-            ImGui::EndTooltip();
+        // --- Criteria progress tab ---
+        char critLabel[32];
+        snprintf(critLabel, sizeof(critLabel), "Criteria (%u)###crit", (unsigned)criteria.size());
+        if (ImGui::BeginTabItem(critLabel)) {
+            if (criteria.empty()) {
+                ImGui::TextDisabled("No criteria progress received yet.");
+            } else {
+                ImGui::BeginChild("##critlist", ImVec2(0, 0), false);
+                // Sort criteria by id for stable display
+                std::vector<std::pair<uint32_t, uint64_t>> clist(criteria.begin(), criteria.end());
+                std::sort(clist.begin(), clist.end());
+                for (const auto& [cid, cval] : clist) {
+                    std::string label = std::to_string(cid);
+                    if (!filter.empty()) {
+                        std::string lower = label;
+                        for (char& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+                        if (lower.find(filter) == std::string::npos) continue;
+                    }
+                    ImGui::PushID(static_cast<int>(cid));
+                    ImGui::TextDisabled("Criteria %u:", cid);
+                    ImGui::SameLine();
+                    ImGui::Text("%llu", static_cast<unsigned long long>(cval));
+                    ImGui::PopID();
+                }
+                ImGui::EndChild();
+            }
+            ImGui::EndTabItem();
         }
-        ImGui::PopID();
+        ImGui::EndTabBar();
     }
 
-    ImGui::EndChild();
     ImGui::End();
 }
 

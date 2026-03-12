@@ -4153,12 +4153,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
         case Opcode::SMSG_CRITERIA_UPDATE: {
             // uint32 criteriaId + uint64 progress + uint32 elapsedTime + uint32 creationTime
-            // Achievement criteria progress (informational — no criteria UI yet).
             if (packet.getSize() - packet.getReadPos() >= 20) {
                 uint32_t criteriaId    = packet.readUInt32();
                 uint64_t progress      = packet.readUInt64();
-                /*uint32_t elapsedTime =*/ packet.readUInt32();
-                /*uint32_t createTime  =*/ packet.readUInt32();
+                packet.readUInt32(); // elapsedTime
+                packet.readUInt32(); // creationTime
+                criteriaProgress_[criteriaId] = progress;
                 LOG_DEBUG("SMSG_CRITERIA_UPDATE: id=", criteriaId, " progress=", progress);
             }
             break;
@@ -20080,18 +20080,21 @@ void GameHandler::handleAllAchievementData(network::Packet& packet) {
         earnedAchievements_.insert(id);
     }
 
-    // Skip criteria block (id + uint64 counter + uint32 date + uint32 flags until 0xFFFFFFFF)
+    // Parse criteria block: id + uint64 counter + uint32 date + uint32 flags, sentinel 0xFFFFFFFF
+    criteriaProgress_.clear();
     while (packet.getSize() - packet.getReadPos() >= 4) {
         uint32_t id = packet.readUInt32();
         if (id == 0xFFFFFFFF) break;
         // counter(8) + date(4) + unknown(4) = 16 bytes
         if (packet.getSize() - packet.getReadPos() < 16) break;
-        packet.readUInt64();  // counter
+        uint64_t counter = packet.readUInt64();
         packet.readUInt32();  // date
         packet.readUInt32();  // unknown / flags
+        criteriaProgress_[id] = counter;
     }
 
-    LOG_INFO("SMSG_ALL_ACHIEVEMENT_DATA: loaded ", earnedAchievements_.size(), " earned achievements");
+    LOG_INFO("SMSG_ALL_ACHIEVEMENT_DATA: loaded ", earnedAchievements_.size(),
+             " achievements, ", criteriaProgress_.size(), " criteria");
 }
 
 // ---------------------------------------------------------------------------

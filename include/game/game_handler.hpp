@@ -1294,6 +1294,7 @@ public:
     using AchievementEarnedCallback = std::function<void(uint32_t achievementId, const std::string& name)>;
     void setAchievementEarnedCallback(AchievementEarnedCallback cb) { achievementEarnedCallback_ = std::move(cb); }
     const std::unordered_set<uint32_t>& getEarnedAchievements() const { return earnedAchievements_; }
+    const std::unordered_map<uint32_t, uint64_t>& getCriteriaProgress() const { return criteriaProgress_; }
     /// Returns the name of an achievement by ID, or empty string if unknown.
     const std::string& getAchievementName(uint32_t id) const {
         auto it = achievementNameCache_.find(id);
@@ -2439,6 +2440,8 @@ private:
     void loadAchievementNameCache();
     // Set of achievement IDs earned by the player (populated from SMSG_ALL_ACHIEVEMENT_DATA)
     std::unordered_set<uint32_t> earnedAchievements_;
+    // Criteria progress: criteriaId → current value (from SMSG_CRITERIA_UPDATE)
+    std::unordered_map<uint32_t, uint64_t> criteriaProgress_;
     void handleAllAchievementData(network::Packet& packet);
 
     // Area name cache (lazy-loaded from WorldMapArea.dbc; maps AreaTable ID → display name)
