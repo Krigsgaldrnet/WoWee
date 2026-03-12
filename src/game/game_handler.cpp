@@ -20127,7 +20127,7 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
 
     uint64_t guid          = packet.readUInt64();
     uint32_t achievementId = packet.readUInt32();
-    /*uint32_t date =*/ packet.readUInt32();  // PackedTime — not displayed
+    uint32_t earnDate      = packet.readUInt32();  // WoW PackedTime bitfield
 
     loadAchievementNameCache();
     auto nameIt = achievementNameCache_.find(achievementId);
@@ -20146,6 +20146,7 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
         addSystemChatMessage(buf);
 
         earnedAchievements_.insert(achievementId);
+        achievementDates_[achievementId] = earnDate;
         if (achievementEarnedCallback_) {
             achievementEarnedCallback_(achievementId, achName);
         }
@@ -20186,14 +20187,16 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
 void GameHandler::handleAllAchievementData(network::Packet& packet) {
     loadAchievementNameCache();
     earnedAchievements_.clear();
+    achievementDates_.clear();
 
     // Parse achievement entries (id + packedDate pairs, sentinel 0xFFFFFFFF)
     while (packet.getSize() - packet.getReadPos() >= 4) {
         uint32_t id = packet.readUInt32();
         if (id == 0xFFFFFFFF) break;
         if (packet.getSize() - packet.getReadPos() < 4) break;
-        /*uint32_t date =*/ packet.readUInt32();
+        uint32_t date = packet.readUInt32();
         earnedAchievements_.insert(id);
+        achievementDates_[id] = date;
     }
 
     // Parse criteria block: id + uint64 counter + uint32 date + uint32 flags, sentinel 0xFFFFFFFF

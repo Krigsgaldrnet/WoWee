@@ -16038,7 +16038,22 @@ void GameScreen::renderAchievementWindow(game::GameHandler& gameHandler) {
                     ImGui::TextUnformatted(display.c_str());
                     if (ImGui::IsItemHovered()) {
                         ImGui::BeginTooltip();
-                        ImGui::Text("ID: %u", id);
+                        ImGui::Text("Achievement ID: %u", id);
+                        uint32_t packed = gameHandler.getAchievementDate(id);
+                        if (packed != 0) {
+                            // WoW PackedTime: year[31:25] month[24:21] day[20:17] weekday[16:14] hour[13:9] minute[8:3]
+                            int minute  = (packed >>  3) & 0x3F;
+                            int hour    = (packed >>  9) & 0x1F;
+                            int day     = (packed >> 17) & 0x1F;
+                            int month   = (packed >> 21) & 0x0F;
+                            int year    = ((packed >> 25) & 0x7F) + 2000;
+                            static const char* kMonths[12] = {
+                                "Jan","Feb","Mar","Apr","May","Jun",
+                                "Jul","Aug","Sep","Oct","Nov","Dec"
+                            };
+                            const char* mname = (month >= 1 && month <= 12) ? kMonths[month - 1] : "?";
+                            ImGui::Text("Earned: %s %d, %d  %02d:%02d", mname, day, year, hour, minute);
+                        }
                         ImGui::EndTooltip();
                     }
                     ImGui::PopID();

@@ -1340,6 +1340,11 @@ public:
     void setAchievementEarnedCallback(AchievementEarnedCallback cb) { achievementEarnedCallback_ = std::move(cb); }
     const std::unordered_set<uint32_t>& getEarnedAchievements() const { return earnedAchievements_; }
     const std::unordered_map<uint32_t, uint64_t>& getCriteriaProgress() const { return criteriaProgress_; }
+    /// Returns the WoW PackedTime earn date for an achievement, or 0 if unknown.
+    uint32_t getAchievementDate(uint32_t id) const {
+        auto it = achievementDates_.find(id);
+        return (it != achievementDates_.end()) ? it->second : 0u;
+    }
     /// Returns the name of an achievement by ID, or empty string if unknown.
     const std::string& getAchievementName(uint32_t id) const {
         auto it = achievementNameCache_.find(id);
@@ -2498,6 +2503,8 @@ private:
     void loadAchievementNameCache();
     // Set of achievement IDs earned by the player (populated from SMSG_ALL_ACHIEVEMENT_DATA)
     std::unordered_set<uint32_t> earnedAchievements_;
+    // Earn dates: achievementId → WoW PackedTime (from SMSG_ACHIEVEMENT_EARNED / SMSG_ALL_ACHIEVEMENT_DATA)
+    std::unordered_map<uint32_t, uint32_t> achievementDates_;
     // Criteria progress: criteriaId → current value (from SMSG_CRITERIA_UPDATE)
     std::unordered_map<uint32_t, uint64_t> criteriaProgress_;
     void handleAllAchievementData(network::Packet& packet);
