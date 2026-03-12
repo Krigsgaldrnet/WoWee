@@ -1450,6 +1450,9 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                 whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
                 refocusChatInput = true;
             }
+            if (ImGui::MenuItem("Invite to Group")) {
+                gameHandler.inviteToGroup(resolvedSenderName);
+            }
             if (ImGui::MenuItem("Add Friend")) {
                 gameHandler.addFriend(resolvedSenderName);
             }
