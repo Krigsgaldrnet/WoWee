@@ -380,6 +380,8 @@ public:
     // Display toggles
     void toggleHelm();
     void toggleCloak();
+    bool isHelmVisible() const { return helmVisible_; }
+    bool isCloakVisible() const { return cloakVisible_; }
 
     // Follow/Assist
     void followTarget();

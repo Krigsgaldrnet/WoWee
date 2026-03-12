@@ -1121,6 +1121,18 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
     if (ImGui::BeginTabBar("##CharacterTabs")) {
         if (ImGui::BeginTabItem("Equipment")) {
             renderEquipmentPanel(inventory);
+            ImGui::Spacing();
+            ImGui::Separator();
+            // Appearance visibility toggles
+            bool helmVis = gameHandler.isHelmVisible();
+            bool cloakVis = gameHandler.isCloakVisible();
+            if (ImGui::Checkbox("Show Helm", &helmVis)) {
+                gameHandler.toggleHelm();
+            }
+            ImGui::SameLine();
+            if (ImGui::Checkbox("Show Cloak", &cloakVis)) {
+                gameHandler.toggleCloak();
+            }
             ImGui::EndTabItem();
         }
 
