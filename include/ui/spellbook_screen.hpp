@@ -58,6 +58,12 @@ public:
     /// Triggers DBC load if needed. Used by the action bar for out-of-range tinting.
     uint32_t getSpellMaxRange(uint32_t spellId, pipeline::AssetManager* assetManager);
 
+    /// Returns the power cost and type for a spell (cost=0 if unknown/free).
+    /// powerType: 0=mana, 1=rage, 2=focus, 3=energy, 6=runic power.
+    /// Triggers DBC load if needed. Used by the action bar for insufficient-power tinting.
+    void getSpellPowerInfo(uint32_t spellId, pipeline::AssetManager* assetManager,
+                           uint32_t& outCost, uint32_t& outPowerType);
+
     /// Returns a WoW spell link string if the user shift-clicked a spell, then clears it.
     std::string getAndClearPendingChatLink() {
         std::string out = std::move(pendingChatSpellLink_);

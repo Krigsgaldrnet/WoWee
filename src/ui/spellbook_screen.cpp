@@ -212,6 +212,20 @@ uint32_t SpellbookScreen::getSpellMaxRange(uint32_t spellId, pipeline::AssetMana
     return 0;
 }
 
+void SpellbookScreen::getSpellPowerInfo(uint32_t spellId, pipeline::AssetManager* assetManager,
+                                        uint32_t& outCost, uint32_t& outPowerType) {
+    outCost = 0;
+    outPowerType = 0;
+    if (!dbcLoadAttempted) {
+        loadSpellDBC(assetManager);
+    }
+    auto it = spellData.find(spellId);
+    if (it != spellData.end()) {
+        outCost = it->second.manaCost;
+        outPowerType = it->second.powerType;
+    }
+}
+
 void SpellbookScreen::loadSpellIconDBC(pipeline::AssetManager* assetManager) {
     if (iconDbLoaded) return;
     iconDbLoaded = true;

@@ -4990,6 +4990,26 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             }
         }
 
+        // Insufficient-power check: orange tint when player doesn't have enough power to cast.
+        // Only applies to SPELL slots with a known power cost and when not already on cooldown.
+        bool insufficientPower = false;
+        if (!slot.isEmpty() && slot.type == game::ActionBarSlot::SPELL && slot.id != 0
+            && !onCooldown) {
+            uint32_t spellCost = 0, spellPowerType = 0;
+            spellbookScreen.getSpellPowerInfo(slot.id, assetMgr, spellCost, spellPowerType);
+            if (spellCost > 0) {
+                auto playerEnt = gameHandler.getEntityManager().getEntity(gameHandler.getPlayerGuid());
+                if (playerEnt && (playerEnt->getType() == game::ObjectType::PLAYER ||
+                                  playerEnt->getType() == game::ObjectType::UNIT)) {
+                    auto unit = std::static_pointer_cast<game::Unit>(playerEnt);
+                    if (unit->getPowerType() == static_cast<uint8_t>(spellPowerType)) {
+                        if (unit->getPower() < spellCost)
+                            insufficientPower = true;
+                    }
+                }
+            }
+        }
+
         auto getSpellName = [&](uint32_t spellId) -> std::string {
             std::string name = spellbookScreen.lookupSpellName(spellId, assetMgr);
             if (!name.empty()) return name;
@@ -5043,16 +5063,18 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             if (onCooldown) { tintColor = ImVec4(0.4f, 0.4f, 0.4f, 0.8f); }
             else if (onGCD) { tintColor = ImVec4(0.6f, 0.6f, 0.6f, 0.85f); }
             else if (outOfRange) { tintColor = ImVec4(0.85f, 0.35f, 0.35f, 0.9f); }
+            else if (insufficientPower) { tintColor = ImVec4(0.6f, 0.5f, 0.9f, 0.85f); }
             clicked = ImGui::ImageButton("##icon",
                 (ImTextureID)(uintptr_t)iconTex,
                 ImVec2(slotSize, slotSize),
                 ImVec2(0, 0), ImVec2(1, 1),
                 bgColor, tintColor);
         } else {
-            if (onCooldown)         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.2f, 0.8f));
-            else if (outOfRange)    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.15f, 0.15f, 0.9f));
-            else if (slot.isEmpty())ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 0.8f));
-            else                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.5f, 0.9f));
+            if (onCooldown)            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.2f, 0.8f));
+            else if (outOfRange)       ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.15f, 0.15f, 0.9f));
+            else if (insufficientPower)ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.15f, 0.4f, 0.9f));
+            else if (slot.isEmpty())   ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 0.8f));
+            else                       ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.5f, 0.9f));
 
             char label[32];
             if (slot.type == game::ActionBarSlot::SPELL) {
@@ -5162,6 +5184,9 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 }
                 if (outOfRange) {
                     ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Out of range");
+                }
+                if (insufficientPower) {
+                    ImGui::TextColored(ImVec4(0.75f, 0.55f, 1.0f, 1.0f), "Not enough power");
                 }
                 if (onCooldown) {
                     float cd = slot.cooldownRemaining;
