@@ -5462,19 +5462,28 @@ void GameScreen::renderCastBar(game::GameHandler& gameHandler) {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.1f, 0.9f));
 
     if (ImGui::Begin("##CastBar", nullptr, flags)) {
-        float progress = gameHandler.getCastProgress();
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.8f, 0.6f, 0.2f, 1.0f));
+        const bool channeling = gameHandler.isChanneling();
+        // Channels drain right-to-left; regular casts fill left-to-right
+        float progress = channeling
+            ? (1.0f - gameHandler.getCastProgress())
+            : gameHandler.getCastProgress();
+
+        ImVec4 barColor = channeling
+            ? ImVec4(0.3f, 0.6f, 0.9f, 1.0f)   // blue for channels
+            : ImVec4(0.8f, 0.6f, 0.2f, 1.0f);   // gold for casts
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
 
         char overlay[64];
         uint32_t currentSpellId = gameHandler.getCurrentCastSpellId();
-        if (gameHandler.getCurrentCastSpellId() == 0) {
+        if (currentSpellId == 0) {
             snprintf(overlay, sizeof(overlay), "Opening... (%.1fs)", gameHandler.getCastTimeRemaining());
         } else {
             const std::string& spellName = gameHandler.getSpellName(currentSpellId);
+            const char* verb = channeling ? "Channeling" : "Casting";
             if (!spellName.empty())
                 snprintf(overlay, sizeof(overlay), "%s (%.1fs)", spellName.c_str(), gameHandler.getCastTimeRemaining());
             else
-                snprintf(overlay, sizeof(overlay), "Casting... (%.1fs)", gameHandler.getCastTimeRemaining());
+                snprintf(overlay, sizeof(overlay), "%s... (%.1fs)", verb, gameHandler.getCastTimeRemaining());
         }
         ImGui::ProgressBar(progress, ImVec2(-1, 20), overlay);
         ImGui::PopStyleColor();

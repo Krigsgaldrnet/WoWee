@@ -904,6 +904,7 @@ void GameHandler::update(float deltaTime) {
             (autoAttacking || autoAttackRequested_)) {
             pendingGameObjectInteractGuid_ = 0;
             casting = false;
+            castIsChannel = false;
             currentCastSpellId = 0;
             castTimeRemaining = 0.0f;
             addSystemChatMessage("Interrupted.");
@@ -917,6 +918,7 @@ void GameHandler::update(float deltaTime) {
                     performGameObjectInteractionNow(interactGuid);
                 }
                 casting = false;
+                castIsChannel = false;
                 currentCastSpellId = 0;
                 castTimeRemaining = 0.0f;
             }
@@ -1947,6 +1949,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packetParsers_->parseCastResult(packet, castResultSpellId, castResult)) {
                 if (castResult != 0) {
                     casting = false;
+                    castIsChannel = false;
                     currentCastSpellId = 0;
                     castTimeRemaining  = 0.0f;
                     // Pass player's power type so result 85 says "Not enough rage/energy/etc."
@@ -2837,6 +2840,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (failGuid == playerGuid || failGuid == 0) {
                 // Player's own cast failed
                 casting = false;
+                castIsChannel = false;
                 currentCastSpellId = 0;
                 if (auto* renderer = core::Application::getInstance().getRenderer()) {
                     if (auto* ssm = renderer->getSpellSoundManager()) {
@@ -5528,6 +5532,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (totalMs > 0) {
                 if (caster == playerGuid) {
                     casting            = true;
+                    castIsChannel      = false;
                     currentCastSpellId = spellId;
                     castTimeTotal      = totalMs  / 1000.0f;
                     castTimeRemaining  = remainMs / 1000.0f;
@@ -5556,6 +5561,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (chanTotalMs > 0 && chanCaster != 0) {
                 if (chanCaster == playerGuid) {
                     casting            = true;
+                    castIsChannel      = true;
                     currentCastSpellId = chanSpellId;
                     castTimeTotal      = chanTotalMs / 1000.0f;
                     castTimeRemaining  = castTimeTotal;
@@ -5583,6 +5589,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 castTimeRemaining = chanRemainMs / 1000.0f;
                 if (chanRemainMs == 0) {
                     casting = false;
+                    castIsChannel = false;
                     currentCastSpellId = 0;
                 }
             } else if (chanCaster2 != 0) {
@@ -6585,6 +6592,7 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     autoAttacking = false;
     autoAttackTarget = 0;
     casting = false;
+    castIsChannel = false;
     currentCastSpellId = 0;
     pendingGameObjectInteractGuid_ = 0;
     castTimeRemaining = 0.0f;
@@ -10633,6 +10641,7 @@ void GameHandler::stopCasting() {
 
     // Reset casting state
     casting = false;
+    castIsChannel = false;
     currentCastSpellId = 0;
     pendingGameObjectInteractGuid_ = 0;
     castTimeRemaining = 0.0f;
@@ -13937,6 +13946,7 @@ void GameHandler::cancelCast() {
     }
     pendingGameObjectInteractGuid_ = 0;
     casting = false;
+    castIsChannel = false;
     currentCastSpellId = 0;
     castTimeRemaining = 0.0f;
 }
@@ -14075,6 +14085,7 @@ void GameHandler::handleCastFailed(network::Packet& packet) {
     if (!ok) return;
 
     casting = false;
+    castIsChannel = false;
     currentCastSpellId = 0;
     castTimeRemaining = 0.0f;
 
@@ -14133,6 +14144,7 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
     // If this is the player's own cast, start cast bar
     if (data.casterUnit == playerGuid && data.castTime > 0) {
         casting = true;
+        castIsChannel = false;
         currentCastSpellId = data.spellId;
         castTimeTotal = data.castTime / 1000.0f;
         castTimeRemaining = castTimeTotal;
@@ -14203,6 +14215,7 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         }
 
         casting = false;
+        castIsChannel = false;
         currentCastSpellId = 0;
         castTimeRemaining = 0.0f;
 
@@ -17206,6 +17219,7 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
     areaTriggerSuppressFirst_ = true;  // first check just marks active triggers, doesn't fire
     stopAutoAttack();
     casting = false;
+    castIsChannel = false;
     currentCastSpellId = 0;
     pendingGameObjectInteractGuid_ = 0;
     castTimeRemaining = 0.0f;

@@ -553,6 +553,7 @@ public:
     }
 
     bool isCasting() const { return casting; }
+    bool isChanneling() const { return casting && castIsChannel; }
     bool isGameObjectInteractionCasting() const {
         return casting && currentCastSpellId == 0 && pendingGameObjectInteractGuid_ != 0;
     }
@@ -2046,6 +2047,7 @@ private:
     std::vector<MinimapPing> minimapPings_;
     uint8_t castCount = 0;
     bool casting = false;
+    bool castIsChannel = false;
     uint32_t currentCastSpellId = 0;
     float castTimeRemaining = 0.0f;
     // Per-unit cast state (keyed by GUID, populated from SMSG_SPELL_START)
