@@ -17603,24 +17603,98 @@ void GameScreen::renderAchievementWindow(game::GameHandler& gameHandler) {
         char critLabel[32];
         snprintf(critLabel, sizeof(critLabel), "Criteria (%u)###crit", (unsigned)criteria.size());
         if (ImGui::BeginTabItem(critLabel)) {
+            // Lazy-load AchievementCriteria.dbc for descriptions
+            struct CriteriaEntry { uint32_t achievementId; uint64_t quantity; std::string description; };
+            static std::unordered_map<uint32_t, CriteriaEntry> s_criteriaData;
+            static bool s_criteriaDataLoaded = false;
+            if (!s_criteriaDataLoaded) {
+                s_criteriaDataLoaded = true;
+                auto* am = core::Application::getInstance().getAssetManager();
+                if (am && am->isInitialized()) {
+                    auto dbc = am->loadDBC("AchievementCriteria.dbc");
+                    if (dbc && dbc->isLoaded() && dbc->getFieldCount() >= 10) {
+                        const auto* acL = pipeline::getActiveDBCLayout()
+                            ? pipeline::getActiveDBCLayout()->getLayout("AchievementCriteria") : nullptr;
+                        uint32_t achField  = acL ? acL->field("AchievementID") : 1u;
+                        uint32_t qtyField  = acL ? acL->field("Quantity")      : 4u;
+                        uint32_t descField = acL ? acL->field("Description")   : 9u;
+                        if (achField  == 0xFFFFFFFF) achField  = 1;
+                        if (qtyField  == 0xFFFFFFFF) qtyField  = 4;
+                        if (descField == 0xFFFFFFFF) descField = 9;
+                        uint32_t fc = dbc->getFieldCount();
+                        for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                            uint32_t cid = dbc->getUInt32(r, 0);
+                            if (cid == 0) continue;
+                            CriteriaEntry ce;
+                            ce.achievementId = (achField  < fc) ? dbc->getUInt32(r, achField)  : 0;
+                            ce.quantity      = (qtyField  < fc) ? dbc->getUInt32(r, qtyField)  : 0;
+                            ce.description   = (descField < fc) ? dbc->getString(r, descField) : std::string{};
+                            s_criteriaData[cid] = std::move(ce);
+                        }
+                    }
+                }
+            }
+
             if (criteria.empty()) {
                 ImGui::TextDisabled("No criteria progress received yet.");
             } else {
                 ImGui::BeginChild("##critlist", ImVec2(0, 0), false);
-                // Sort criteria by id for stable display
                 std::vector<std::pair<uint32_t, uint64_t>> clist(criteria.begin(), criteria.end());
                 std::sort(clist.begin(), clist.end());
                 for (const auto& [cid, cval] : clist) {
-                    std::string label = std::to_string(cid);
-                    if (!filter.empty()) {
-                        std::string lower = label;
-                        for (char& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-                        if (lower.find(filter) == std::string::npos) continue;
+                    auto ceIt = s_criteriaData.find(cid);
+
+                    // Build display text for filtering
+                    std::string display;
+                    if (ceIt != s_criteriaData.end() && !ceIt->second.description.empty()) {
+                        display = ceIt->second.description;
+                    } else {
+                        display = std::to_string(cid);
                     }
+                    if (!filter.empty()) {
+                        std::string lower = display;
+                        for (char& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+                        // Also allow filtering by achievement name
+                        if (lower.find(filter) == std::string::npos && ceIt != s_criteriaData.end()) {
+                            const std::string& achName = gameHandler.getAchievementName(ceIt->second.achievementId);
+                            std::string achLower = achName;
+                            for (char& c : achLower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+                            if (achLower.find(filter) == std::string::npos) continue;
+                        } else if (lower.find(filter) == std::string::npos) {
+                            continue;
+                        }
+                    }
+
                     ImGui::PushID(static_cast<int>(cid));
-                    ImGui::TextDisabled("Criteria %u:", cid);
-                    ImGui::SameLine();
-                    ImGui::Text("%llu", static_cast<unsigned long long>(cval));
+                    if (ceIt != s_criteriaData.end()) {
+                        // Show achievement name as header (dim)
+                        const std::string& achName = gameHandler.getAchievementName(ceIt->second.achievementId);
+                        if (!achName.empty()) {
+                            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 0.8f), "%s", achName.c_str());
+                            ImGui::SameLine();
+                            ImGui::TextDisabled(">");
+                            ImGui::SameLine();
+                        }
+                        if (!ceIt->second.description.empty()) {
+                            ImGui::TextUnformatted(ceIt->second.description.c_str());
+                        } else {
+                            ImGui::TextDisabled("Criteria %u", cid);
+                        }
+                        ImGui::SameLine();
+                        if (ceIt->second.quantity > 0) {
+                            ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.6f, 1.0f),
+                                "%llu/%llu",
+                                static_cast<unsigned long long>(cval),
+                                static_cast<unsigned long long>(ceIt->second.quantity));
+                        } else {
+                            ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.6f, 1.0f),
+                                "%llu", static_cast<unsigned long long>(cval));
+                        }
+                    } else {
+                        ImGui::TextDisabled("Criteria %u:", cid);
+                        ImGui::SameLine();
+                        ImGui::Text("%llu", static_cast<unsigned long long>(cval));
+                    }
                     ImGui::PopID();
                 }
                 ImGui::EndChild();
