@@ -371,6 +371,7 @@ private:
     std::vector<ChatBubble> chatBubbles_;
     bool chatBubbleCallbackSet_ = false;
     bool levelUpCallbackSet_ = false;
+    bool achievementCallbackSet_ = false;
 
     // Mail compose state
     char mailRecipientBuffer_[256] = "";

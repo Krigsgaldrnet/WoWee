@@ -214,8 +214,17 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         gameHandler.setLevelUpCallback([this](uint32_t newLevel) {
             levelUpFlashAlpha_ = 1.0f;
             levelUpDisplayLevel_ = newLevel;
+            triggerDing(newLevel);
         });
         levelUpCallbackSet_ = true;
+    }
+
+    // Set up achievement toast callback (once)
+    if (!achievementCallbackSet_) {
+        gameHandler.setAchievementEarnedCallback([this](uint32_t id, const std::string& name) {
+            triggerAchievementToast(id, name);
+        });
+        achievementCallbackSet_ = true;
     }
 
     // Apply UI transparency setting
