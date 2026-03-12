@@ -11967,22 +11967,29 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         break;  // Show at most one queue slot indicator
     }
 
-    // Latency indicator (toggleable in Interface settings)
+    // Latency indicator — centered at top of screen
     uint32_t latMs = gameHandler.getLatencyMs();
     if (showLatencyMeter_ && latMs > 0 && gameHandler.getState() == game::WorldState::IN_WORLD) {
         ImVec4 latColor;
-        if      (latMs < 100) latColor = ImVec4(0.3f, 1.0f, 0.3f, 0.8f);   // Green < 100ms
-        else if (latMs < 250) latColor = ImVec4(1.0f, 1.0f, 0.3f, 0.8f);   // Yellow < 250ms
-        else if (latMs < 500) latColor = ImVec4(1.0f, 0.6f, 0.1f, 0.8f);   // Orange < 500ms
-        else                  latColor = ImVec4(1.0f, 0.2f, 0.2f, 0.8f);   // Red >= 500ms
+        if      (latMs < 100) latColor = ImVec4(0.3f, 1.0f, 0.3f, 0.9f);
+        else if (latMs < 250) latColor = ImVec4(1.0f, 1.0f, 0.3f, 0.9f);
+        else if (latMs < 500) latColor = ImVec4(1.0f, 0.6f, 0.1f, 0.9f);
+        else                  latColor = ImVec4(1.0f, 0.2f, 0.2f, 0.9f);
 
-        ImGui::SetNextWindowPos(ImVec2(indicatorX, nextIndicatorY), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(indicatorW, kIndicatorH), ImGuiCond_Always);
+        char latBuf[32];
+        snprintf(latBuf, sizeof(latBuf), "%u ms", latMs);
+        ImVec2 textSize = ImGui::CalcTextSize(latBuf);
+        float latW = textSize.x + 16.0f;
+        float latH = textSize.y + 8.0f;
+        ImGuiIO& lio = ImGui::GetIO();
+        float latX = (lio.DisplaySize.x - latW) * 0.5f;
+        ImGui::SetNextWindowPos(ImVec2(latX, 4.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(latW, latH), ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.45f);
         if (ImGui::Begin("##LatencyIndicator", nullptr, indicatorFlags)) {
-            ImGui::TextColored(latColor, "%u ms", latMs);
+            ImGui::TextColored(latColor, "%s", latBuf);
         }
         ImGui::End();
-        nextIndicatorY += kIndicatorH;
     }
 
     // Low durability warning — shown when any equipped item has < 20% durability
