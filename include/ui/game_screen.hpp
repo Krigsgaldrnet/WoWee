@@ -312,6 +312,7 @@ private:
     void renderGuildBankWindow(game::GameHandler& gameHandler);
     void renderAuctionHouseWindow(game::GameHandler& gameHandler);
     void renderDungeonFinderWindow(game::GameHandler& gameHandler);
+    void renderObjectiveTracker(game::GameHandler& gameHandler);
     void renderInstanceLockouts(game::GameHandler& gameHandler);
     void renderNameplates(game::GameHandler& gameHandler);
     void renderBattlegroundScore(game::GameHandler& gameHandler);

@@ -501,6 +501,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderGmTicketWindow(gameHandler);
     renderInspectWindow(gameHandler);
     renderThreatWindow(gameHandler);
+    renderObjectiveTracker(gameHandler);
     // renderQuestMarkers(gameHandler);  // Disabled - using 3D billboard markers now
     if (showMinimap_) {
         renderMinimapMarkers(gameHandler);
@@ -14627,6 +14628,106 @@ void GameScreen::renderThreatWindow(game::GameHandler& gameHandler) {
     }
 
     ImGui::End();
+}
+
+// ─── Quest Objective Tracker ──────────────────────────────────────────────────
+void GameScreen::renderObjectiveTracker(game::GameHandler& gameHandler) {
+    if (gameHandler.getState() != game::WorldState::IN_WORLD) return;
+
+    const auto& questLog  = gameHandler.getQuestLog();
+    const auto& tracked   = gameHandler.getTrackedQuestIds();
+
+    // Collect quests to show: tracked ones first, then in-progress quests up to a max of 5 total.
+    std::vector<const game::GameHandler::QuestLogEntry*> toShow;
+    for (const auto& q : questLog) {
+        if (q.questId == 0) continue;
+        if (tracked.count(q.questId)) toShow.push_back(&q);
+    }
+    if (toShow.empty()) {
+        // No explicitly tracked quests — show up to 5 in-progress quests
+        for (const auto& q : questLog) {
+            if (q.questId == 0) continue;
+            if (!tracked.count(q.questId)) toShow.push_back(&q);
+            if (toShow.size() >= 5) break;
+        }
+    }
+
+    if (toShow.empty()) return;
+
+    ImVec2 display = ImGui::GetIO().DisplaySize;
+    float screenW  = display.x > 0.0f ? display.x : 1280.0f;
+    float trackerW = 220.0f;
+    float trackerX = screenW - trackerW - 12.0f;
+    float trackerY = 230.0f;  // below minimap
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse |
+                             ImGuiWindowFlags_NoFocusOnAppearing;
+
+    ImGui::SetNextWindowPos(ImVec2(trackerX, trackerY), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(trackerW, 0.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.5f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 2.0f));
+
+    if (ImGui::Begin("##ObjectiveTracker", nullptr, flags)) {
+        for (const auto* q : toShow) {
+            // Quest title
+            ImVec4 titleColor = q->complete ? ImVec4(0.45f, 1.0f, 0.45f, 1.0f)
+                                            : ImVec4(1.0f, 0.84f, 0.0f, 1.0f);
+            std::string titleStr = q->title.empty()
+                ? ("Quest #" + std::to_string(q->questId)) : q->title;
+            // Truncate to fit
+            if (titleStr.size() > 26) { titleStr.resize(23); titleStr += "..."; }
+            ImGui::TextColored(titleColor, "%s", titleStr.c_str());
+
+            // Kill/entity objectives
+            bool hasObjectives = false;
+            for (const auto& ko : q->killObjectives) {
+                if (ko.npcOrGoId == 0 || ko.required == 0) continue;
+                hasObjectives = true;
+                uint32_t entry = (uint32_t)std::abs(ko.npcOrGoId);
+                auto it = q->killCounts.find(entry);
+                uint32_t cur = it != q->killCounts.end() ? it->second.first : 0;
+                std::string name = gameHandler.getCachedCreatureName(entry);
+                if (name.empty()) {
+                    if (ko.npcOrGoId < 0) {
+                        const auto* goInfo = gameHandler.getCachedGameObjectInfo(entry);
+                        if (goInfo) name = goInfo->name;
+                    }
+                    if (name.empty()) name = "Objective";
+                }
+                if (name.size() > 20) { name.resize(17); name += "..."; }
+                bool done = (cur >= ko.required);
+                ImVec4 c = done ? ImVec4(0.5f, 0.9f, 0.5f, 1.0f) : ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
+                ImGui::TextColored(c, "  %s: %u/%u", name.c_str(), cur, ko.required);
+            }
+
+            // Item objectives
+            for (const auto& io : q->itemObjectives) {
+                if (io.itemId == 0 || io.required == 0) continue;
+                hasObjectives = true;
+                auto it = q->itemCounts.find(io.itemId);
+                uint32_t cur = it != q->itemCounts.end() ? it->second : 0;
+                std::string name;
+                if (const auto* info = gameHandler.getItemInfo(io.itemId)) name = info->name;
+                if (name.empty()) name = "Item #" + std::to_string(io.itemId);
+                if (name.size() > 20) { name.resize(17); name += "..."; }
+                bool done = (cur >= io.required);
+                ImVec4 c = done ? ImVec4(0.5f, 0.9f, 0.5f, 1.0f) : ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
+                ImGui::TextColored(c, "  %s: %u/%u", name.c_str(), cur, io.required);
+            }
+
+            if (!hasObjectives && q->complete) {
+                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "  Ready to turn in!");
+            }
+
+            ImGui::Dummy(ImVec2(0.0f, 2.0f));
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
 }
 
 // ─── Inspect Window ───────────────────────────────────────────────────────────
