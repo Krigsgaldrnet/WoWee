@@ -13667,6 +13667,43 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         }
     }
 
+    // Lootable corpse dots: small yellow-green diamonds on dead, lootable units.
+    // Shown whenever NPC dots are enabled (or always, since they're always useful).
+    {
+        constexpr uint32_t UNIT_DYNFLAG_LOOTABLE = 0x0001;
+        for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
+            if (!entity || entity->getType() != game::ObjectType::UNIT) continue;
+            auto unit = std::static_pointer_cast<game::Unit>(entity);
+            if (!unit) continue;
+            // Must be dead (health == 0) and marked lootable
+            if (unit->getHealth() != 0) continue;
+            if (!(unit->getDynamicFlags() & UNIT_DYNFLAG_LOOTABLE)) continue;
+
+            glm::vec3 npcRender = core::coords::canonicalToRender(
+                glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
+            float sx = 0.0f, sy = 0.0f;
+            if (!projectToMinimap(npcRender, sx, sy)) continue;
+
+            // Draw a small diamond (rotated square) in light yellow-green
+            const float dr = 3.5f;
+            ImVec2 top  (sx,      sy - dr);
+            ImVec2 right(sx + dr, sy     );
+            ImVec2 bot  (sx,      sy + dr);
+            ImVec2 left (sx - dr, sy     );
+            drawList->AddQuadFilled(top, right, bot, left, IM_COL32(180, 230, 80, 230));
+            drawList->AddQuad      (top, right, bot, left, IM_COL32(60,  80,  20, 200), 1.0f);
+
+            // Tooltip on hover
+            if (ImGui::IsMouseHoveringRect(ImVec2(sx - dr, sy - dr), ImVec2(sx + dr, sy + dr))) {
+                const std::string& nm = unit->getName();
+                ImGui::BeginTooltip();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.3f, 1.0f), "%s",
+                                   nm.empty() ? "Lootable corpse" : nm.c_str());
+                ImGui::EndTooltip();
+            }
+        }
+    }
+
     for (const auto& [guid, status] : statuses) {
         ImU32 dotColor;
         const char* marker = nullptr;
