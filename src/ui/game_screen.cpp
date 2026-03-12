@@ -4302,6 +4302,17 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                             ImGui::GetWindowDrawList()->AddText(ImVec2(cx, cy), IM_COL32(255, 255, 255, 220), ts);
                         }
 
+                        // Stack / charge count — upper-left corner (parity with target frame)
+                        if (aura.charges > 1) {
+                            ImVec2 faMin = ImGui::GetItemRectMin();
+                            char chargeStr[8];
+                            snprintf(chargeStr, sizeof(chargeStr), "%u", static_cast<unsigned>(aura.charges));
+                            ImGui::GetWindowDrawList()->AddText(ImVec2(faMin.x + 3, faMin.y + 3),
+                                IM_COL32(0, 0, 0, 200), chargeStr);
+                            ImGui::GetWindowDrawList()->AddText(ImVec2(faMin.x + 2, faMin.y + 2),
+                                IM_COL32(255, 220, 50, 255), chargeStr);
+                        }
+
                         // Tooltip
                         if (ImGui::IsItemHovered()) {
                             ImGui::BeginTooltip();
