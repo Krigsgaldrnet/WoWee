@@ -15082,9 +15082,11 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         drawList->AddCircleFilled(ImVec2(centerX, centerY), 2.5f, IM_COL32(255, 255, 255, 220));
     }
 
-    // Build set of NPC entries that are incomplete kill objectives for tracked quests.
-    // Used both for minimap dot highlighting and tooltip annotation.
+    // Build sets of entries that are incomplete objectives for tracked quests.
+    // minimapQuestEntries: NPC creature entries (npcOrGoId > 0)
+    // minimapQuestGoEntries: game object entries (npcOrGoId < 0, stored as abs value)
     std::unordered_set<uint32_t> minimapQuestEntries;
+    std::unordered_set<uint32_t> minimapQuestGoEntries;
     {
         const auto& ql = gameHandler.getQuestLog();
         const auto& tq = gameHandler.getTrackedQuestIds();
@@ -15092,10 +15094,17 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             if (q.complete || q.questId == 0) continue;
             if (!tq.empty() && !tq.count(q.questId)) continue;
             for (const auto& obj : q.killObjectives) {
-                if (obj.npcOrGoId <= 0 || obj.required == 0) continue;
-                auto it = q.killCounts.find(static_cast<uint32_t>(obj.npcOrGoId));
-                if (it == q.killCounts.end() || it->second.first < it->second.second)
-                    minimapQuestEntries.insert(static_cast<uint32_t>(obj.npcOrGoId));
+                if (obj.required == 0) continue;
+                if (obj.npcOrGoId > 0) {
+                    auto it = q.killCounts.find(static_cast<uint32_t>(obj.npcOrGoId));
+                    if (it == q.killCounts.end() || it->second.first < it->second.second)
+                        minimapQuestEntries.insert(static_cast<uint32_t>(obj.npcOrGoId));
+                } else if (obj.npcOrGoId < 0) {
+                    uint32_t goEntry = static_cast<uint32_t>(-obj.npcOrGoId);
+                    auto it = q.killCounts.find(goEntry);
+                    if (it == q.killCounts.end() || it->second.first < it->second.second)
+                        minimapQuestGoEntries.insert(goEntry);
+                }
             }
         }
     }
@@ -15218,18 +15227,27 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             float sx = 0.0f, sy = 0.0f;
             if (!projectToMinimap(goRender, sx, sy)) continue;
 
-            // Small upward triangle in gold/amber for interactable objects
-            const float ts = 3.5f;
+            // Triangle size and color: bright cyan for quest objectives, amber for others
+            bool isQuestGO = minimapQuestGoEntries.count(go->getEntry()) != 0;
+            const float ts = isQuestGO ? 4.5f : 3.5f;
             ImVec2 goTip  (sx,        sy - ts);
             ImVec2 goLeft (sx - ts,   sy + ts * 0.6f);
             ImVec2 goRight(sx + ts,   sy + ts * 0.6f);
-            drawList->AddTriangleFilled(goTip, goLeft, goRight, IM_COL32(255, 185, 30, 220));
-            drawList->AddTriangle(goTip, goLeft, goRight, IM_COL32(100, 60, 0, 180), 1.0f);
+            if (isQuestGO) {
+                drawList->AddTriangleFilled(goTip, goLeft, goRight, IM_COL32(50, 230, 255, 240));
+                drawList->AddTriangle(goTip, goLeft, goRight, IM_COL32(0, 60, 80, 200), 1.5f);
+            } else {
+                drawList->AddTriangleFilled(goTip, goLeft, goRight, IM_COL32(255, 185, 30, 220));
+                drawList->AddTriangle(goTip, goLeft, goRight, IM_COL32(100, 60, 0, 180), 1.0f);
+            }
 
             // Tooltip on hover
             float mdx = mouse.x - sx, mdy = mouse.y - sy;
             if (mdx * mdx + mdy * mdy < 64.0f) {
-                ImGui::SetTooltip("%s", goInfo->name.c_str());
+                if (isQuestGO)
+                    ImGui::SetTooltip("%s (quest)", goInfo->name.c_str());
+                else
+                    ImGui::SetTooltip("%s", goInfo->name.c_str());
             }
         }
     }
