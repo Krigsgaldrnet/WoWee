@@ -5831,28 +5831,33 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
             if (q.complete) {
                 ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "  (Complete)");
             } else {
-                // Kill counts
+                // Kill counts — green when complete, gray when in progress
                 for (const auto& [entry, progress] : q.killCounts) {
+                    bool objDone = (progress.first >= progress.second && progress.second > 0);
+                    ImVec4 objColor = objDone ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
+                                              : ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
                     std::string name = gameHandler.getCachedCreatureName(entry);
                     if (name.empty()) {
-                        // May be a game object objective; fall back to GO name cache.
                         const auto* goInfo = gameHandler.getCachedGameObjectInfo(entry);
                         if (goInfo && !goInfo->name.empty()) name = goInfo->name;
                     }
                     if (!name.empty()) {
-                        ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f),
+                        ImGui::TextColored(objColor,
                                            "  %s: %u/%u", name.c_str(),
                                            progress.first, progress.second);
                     } else {
-                        ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f),
+                        ImGui::TextColored(objColor,
                                            "  %u/%u", progress.first, progress.second);
                     }
                 }
-                // Item counts
+                // Item counts — green when complete, gray when in progress
                 for (const auto& [itemId, count] : q.itemCounts) {
                     uint32_t required = 1;
                     auto reqIt = q.requiredItemCounts.find(itemId);
                     if (reqIt != q.requiredItemCounts.end()) required = reqIt->second;
+                    bool objDone = (count >= required);
+                    ImVec4 objColor = objDone ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
+                                              : ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
                     const auto* info = gameHandler.getItemInfo(itemId);
                     const char* itemName = (info && !info->name.empty()) ? info->name.c_str() : nullptr;
 
@@ -5862,13 +5867,13 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
                     if (iconTex) {
                         ImGui::Image((ImTextureID)(uintptr_t)iconTex, ImVec2(12, 12));
                         ImGui::SameLine(0, 3);
-                        ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f),
+                        ImGui::TextColored(objColor,
                                            "%s: %u/%u", itemName ? itemName : "Item", count, required);
                     } else if (itemName) {
-                        ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f),
+                        ImGui::TextColored(objColor,
                                            "  %s: %u/%u", itemName, count, required);
                     } else {
-                        ImGui::TextColored(ImVec4(0.75f, 0.75f, 0.75f, 1.0f),
+                        ImGui::TextColored(objColor,
                                            "  Item: %u/%u", count, required);
                     }
                 }
