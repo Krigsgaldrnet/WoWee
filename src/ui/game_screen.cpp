@@ -6815,8 +6815,29 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
             float baseX = outgoing ? outgoingX : incomingX;
             float xOffset = baseX + (idx % 3 - 1) * 60.0f;
             ++idx;
+
+            // Crits render at 1.35× normal font size for visual impact
+            bool isCrit = (entry.type == game::CombatTextEntry::CRIT_DAMAGE ||
+                           entry.type == game::CombatTextEntry::CRIT_HEAL);
+            ImFont* font = ImGui::GetFont();
+            float baseFontSize = ImGui::GetFontSize();
+            float renderFontSize = isCrit ? baseFontSize * 1.35f : baseFontSize;
+
+            // Advance cursor so layout accounting is correct, then read screen pos
             ImGui::SetCursorPos(ImVec2(xOffset, yOffset));
-            ImGui::TextColored(color, "%s", text);
+            ImVec2 screenPos = ImGui::GetCursorScreenPos();
+
+            // Drop shadow for readability over complex backgrounds
+            ImU32 shadowCol = IM_COL32(0, 0, 0, static_cast<int>(alpha * 180));
+            ImU32 textCol   = ImGui::ColorConvertFloat4ToU32(color);
+            ImDrawList* dl  = ImGui::GetWindowDrawList();
+            dl->AddText(font, renderFontSize, ImVec2(screenPos.x + 1.0f, screenPos.y + 1.0f),
+                        shadowCol, text);
+            dl->AddText(font, renderFontSize, screenPos, textCol, text);
+
+            // Reserve space so ImGui doesn't clip the window prematurely
+            ImVec2 ts = font->CalcTextSizeA(renderFontSize, FLT_MAX, 0.0f, text);
+            ImGui::Dummy(ts);
         }
     }
     ImGui::End();
