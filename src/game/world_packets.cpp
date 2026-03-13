@@ -3241,17 +3241,25 @@ bool AttackerStateUpdateParser::parse(network::Packet& packet, AttackerStateUpda
     data.totalDamage = static_cast<int32_t>(packet.readUInt32());
     data.subDamageCount = packet.readUInt8();
 
-    // Cap subDamageCount to prevent OOM (each entry is 20 bytes: 4+4+4+4+4)
-    if (data.subDamageCount > 64) {
-        LOG_WARNING("AttackerStateUpdate: subDamageCount capped (requested=", (int)data.subDamageCount, ")");
-        data.subDamageCount = 64;
+    // Cap subDamageCount: each entry is 20 bytes.  If the claimed count
+    // exceeds what the remaining bytes can hold, a GUID was mis-parsed
+    // (off by one byte), causing the school-mask byte to be read as count.
+    // In that case silently clamp to the number of full entries that fit.
+    {
+        size_t remaining = packet.getSize() - packet.getReadPos();
+        size_t maxFit    = remaining / 20;
+        if (data.subDamageCount > maxFit) {
+            data.subDamageCount = static_cast<uint8_t>(maxFit > 0 ? 1 : 0);
+        } else if (data.subDamageCount > 64) {
+            data.subDamageCount = 64;
+        }
     }
+    if (data.subDamageCount == 0) return false;
 
     data.subDamages.reserve(data.subDamageCount);
     for (uint8_t i = 0; i < data.subDamageCount; ++i) {
         // Each sub-damage entry needs 20 bytes: schoolMask(4) + damage(4) + intDamage(4) + absorbed(4) + resisted(4)
         if (packet.getSize() - packet.getReadPos() < 20) {
-            LOG_WARNING("AttackerStateUpdate: truncated subDamage at index ", (int)i, "/", (int)data.subDamageCount);
             data.subDamageCount = i;
             break;
         }
@@ -3266,21 +3274,25 @@ bool AttackerStateUpdateParser::parse(network::Packet& packet, AttackerStateUpda
 
     // Validate victimState + overkill fields (8 bytes)
     if (packet.getSize() - packet.getReadPos() < 8) {
-        LOG_WARNING("AttackerStateUpdate: truncated victimState/overkill");
         data.victimState = 0;
         data.overkill = 0;
         return !data.subDamages.empty();
     }
 
     data.victimState = packet.readUInt32();
-    data.overkill = static_cast<int32_t>(packet.readUInt32());
+    // WotLK (AzerothCore): two unknown uint32 fields follow victimState before overkill.
+    // Older parsers omitted these, reading overkill from the wrong offset.
+    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    if (rem() >= 4) packet.readUInt32(); // unk1 (always 0)
+    if (rem() >= 4) packet.readUInt32(); // unk2 (melee spell ID, 0 for auto-attack)
+    data.overkill = (rem() >= 4) ? static_cast<int32_t>(packet.readUInt32()) : -1;
 
-    // Read blocked amount (optional, 4 bytes)
-    if (packet.getSize() - packet.getReadPos() >= 4) {
-        data.blocked = packet.readUInt32();
-    } else {
-        data.blocked = 0;
-    }
+    // hitInfo-conditional fields: HITINFO_BLOCK(0x2000), RAGE_GAIN(0x20000), FAKE_DAMAGE(0x40)
+    if ((data.hitInfo & 0x2000) && rem() >= 4)  data.blocked  = packet.readUInt32();
+    else data.blocked = 0;
+    // RAGE_GAIN and FAKE_DAMAGE both add a uint32 we can skip
+    if ((data.hitInfo & 0x20000) && rem() >= 4) packet.readUInt32(); // rage gain
+    if ((data.hitInfo & 0x40)    && rem() >= 4) packet.readUInt32(); // fake damage total
 
     LOG_DEBUG("Melee hit: ", data.totalDamage, " damage",
               data.isCrit() ? " (CRIT)" : "",
