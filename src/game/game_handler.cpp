@@ -1845,9 +1845,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // uint32 questId
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t questId = packet.readUInt32();
-                char buf[128];
-                std::snprintf(buf, sizeof(buf), "Quest %u failed!", questId);
-                addSystemChatMessage(buf);
+                std::string questTitle;
+                for (const auto& q : questLog_)
+                    if (q.questId == questId && !q.title.empty()) { questTitle = q.title; break; }
+                addSystemChatMessage(questTitle.empty()
+                    ? std::string("Quest failed!")
+                    : ('"' + questTitle + "\" failed!"));
             }
             break;
         }
@@ -1855,9 +1858,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // uint32 questId
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t questId = packet.readUInt32();
-                char buf[128];
-                std::snprintf(buf, sizeof(buf), "Quest %u timed out!", questId);
-                addSystemChatMessage(buf);
+                std::string questTitle;
+                for (const auto& q : questLog_)
+                    if (q.questId == questId && !q.title.empty()) { questTitle = q.title; break; }
+                addSystemChatMessage(questTitle.empty()
+                    ? std::string("Quest timed out!")
+                    : ('"' + questTitle + "\" has timed out."));
             }
             break;
         }
