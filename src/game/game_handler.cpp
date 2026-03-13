@@ -3720,11 +3720,40 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
-        case Opcode::SMSG_SET_FACTION_ATWAR:
-        case Opcode::SMSG_SET_FACTION_VISIBLE:
-            // uint32 factionId [+ uint8 flags for ATWAR] — consume; hostility is tracked via update fields
-            packet.setReadPos(packet.getSize());
+        case Opcode::SMSG_SET_FACTION_ATWAR: {
+            // uint32 repListId + uint8 set (1=set at-war, 0=clear at-war)
+            if (packet.getSize() - packet.getReadPos() < 5) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint32_t repListId = packet.readUInt32();
+            uint8_t  setAtWar  = packet.readUInt8();
+            if (repListId < initialFactions_.size()) {
+                if (setAtWar)
+                    initialFactions_[repListId].flags |=  FACTION_FLAG_AT_WAR;
+                else
+                    initialFactions_[repListId].flags &= ~FACTION_FLAG_AT_WAR;
+                LOG_DEBUG("SMSG_SET_FACTION_ATWAR: repListId=", repListId,
+                          " atWar=", (int)setAtWar);
+            }
             break;
+        }
+        case Opcode::SMSG_SET_FACTION_VISIBLE: {
+            // uint32 repListId + uint8 visible (1=show, 0=hide)
+            if (packet.getSize() - packet.getReadPos() < 5) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint32_t repListId = packet.readUInt32();
+            uint8_t  visible   = packet.readUInt8();
+            if (repListId < initialFactions_.size()) {
+                if (visible)
+                    initialFactions_[repListId].flags |=  FACTION_FLAG_VISIBLE;
+                else
+                    initialFactions_[repListId].flags &= ~FACTION_FLAG_VISIBLE;
+                LOG_DEBUG("SMSG_SET_FACTION_VISIBLE: repListId=", repListId,
+                          " visible=", (int)visible);
+            }
+            break;
+        }
 
         case Opcode::SMSG_FEATURE_SYSTEM_STATUS:
         case Opcode::SMSG_SET_FLAT_SPELL_MODIFIER:
@@ -22153,32 +22182,60 @@ void GameHandler::loadFactionNameCache() {
 
     // Faction.dbc WotLK 3.3.5a field layout:
     //   0: ID
-    //   1-4:  ReputationRaceMask[4]
-    //   5-8:  ReputationClassMask[4]
-    //   9-12: ReputationBase[4]
-    //  13-16: ReputationFlags[4]
-    //  17:    ParentFactionID
-    //  18-19: Spillover rates (floats)
-    //  20-21: MaxRank
-    //  22:    Name (English locale, string ref)
-    constexpr uint32_t ID_FIELD   = 0;
-    constexpr uint32_t NAME_FIELD = 22;  // enUS name string
+    //   1: ReputationListID  (-1 / 0xFFFFFFFF = no reputation tracking)
+    //   2-5:  ReputationRaceMask[4]
+    //   6-9:  ReputationClassMask[4]
+    //  10-13: ReputationBase[4]
+    //  14-17: ReputationFlags[4]
+    //  18:    ParentFactionID
+    //  19-20: SpilloverRateIn, SpilloverRateOut (floats)
+    //  21-22: SpilloverMaxRankIn, SpilloverMaxRankOut
+    //  23:    Name (English locale, string ref)
+    constexpr uint32_t ID_FIELD      = 0;
+    constexpr uint32_t REPLIST_FIELD = 1;
+    constexpr uint32_t NAME_FIELD    = 23;  // enUS name string
 
+    // Classic/TBC have fewer fields; fall back gracefully
+    const bool hasRepListField = dbc->getFieldCount() > REPLIST_FIELD;
     if (dbc->getFieldCount() <= NAME_FIELD) {
         LOG_WARNING("Faction.dbc: unexpected field count ", dbc->getFieldCount());
-        return;
+        // Don't abort — still try to load names from a shorter layout
     }
+    const uint32_t nameField = (dbc->getFieldCount() > NAME_FIELD) ? NAME_FIELD : 22u;
 
     uint32_t count = dbc->getRecordCount();
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t factionId = dbc->getUInt32(i, ID_FIELD);
         if (factionId == 0) continue;
-        std::string name = dbc->getString(i, NAME_FIELD);
-        if (!name.empty()) {
-            factionNameCache_[factionId] = std::move(name);
+        if (dbc->getFieldCount() > nameField) {
+            std::string name = dbc->getString(i, nameField);
+            if (!name.empty()) {
+                factionNameCache_[factionId] = std::move(name);
+            }
+        }
+        // Build repListId ↔ factionId mapping (WotLK field 1)
+        if (hasRepListField) {
+            uint32_t repListId = dbc->getUInt32(i, REPLIST_FIELD);
+            if (repListId != 0xFFFFFFFFu) {
+                factionRepListToId_[repListId] = factionId;
+                factionIdToRepList_[factionId] = repListId;
+            }
         }
     }
-    LOG_INFO("Faction.dbc: loaded ", factionNameCache_.size(), " faction names");
+    LOG_INFO("Faction.dbc: loaded ", factionNameCache_.size(), " faction names, ",
+             factionRepListToId_.size(), " with reputation tracking");
+}
+
+uint32_t GameHandler::getFactionIdByRepListId(uint32_t repListId) const {
+    const_cast<GameHandler*>(this)->loadFactionNameCache();
+    auto it = factionRepListToId_.find(repListId);
+    return (it != factionRepListToId_.end()) ? it->second : 0u;
+}
+
+uint32_t GameHandler::getRepListIdByFactionId(uint32_t factionId) const {
+    const_cast<GameHandler*>(this)->loadFactionNameCache();
+    auto it = factionIdToRepList_.find(factionId);
+    return (it != factionIdToRepList_.end()) ? it->second : 0xFFFFFFFFu;
 }
 
 std::string GameHandler::getFactionName(uint32_t factionId) const {

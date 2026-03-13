@@ -1488,8 +1488,33 @@ public:
         uint8_t flags = 0;
         int32_t standing = 0;
     };
+    // Faction flag bitmask constants (from Faction.dbc ReputationFlags / SMSG_INITIALIZE_FACTIONS)
+    static constexpr uint8_t FACTION_FLAG_VISIBLE    = 0x01; // shown in reputation list
+    static constexpr uint8_t FACTION_FLAG_AT_WAR     = 0x02; // player is at war
+    static constexpr uint8_t FACTION_FLAG_HIDDEN      = 0x04; // never shown
+    static constexpr uint8_t FACTION_FLAG_INVISIBLE_FORCED = 0x08;
+    static constexpr uint8_t FACTION_FLAG_PEACE_FORCED     = 0x10;
+
     const std::vector<FactionStandingInit>& getInitialFactions() const { return initialFactions_; }
     const std::unordered_map<uint32_t, int32_t>& getFactionStandings() const { return factionStandings_; }
+
+    // Returns true if the player has "at war" toggled for the faction at repListId
+    bool isFactionAtWar(uint32_t repListId) const {
+        if (repListId >= initialFactions_.size()) return false;
+        return (initialFactions_[repListId].flags & FACTION_FLAG_AT_WAR) != 0;
+    }
+    // Returns true if the faction is visible in the reputation list
+    bool isFactionVisible(uint32_t repListId) const {
+        if (repListId >= initialFactions_.size()) return false;
+        const uint8_t f = initialFactions_[repListId].flags;
+        if (f & FACTION_FLAG_HIDDEN) return false;
+        if (f & FACTION_FLAG_INVISIBLE_FORCED) return false;
+        return (f & FACTION_FLAG_VISIBLE) != 0;
+    }
+    // Returns the faction ID for a given repListId (0 if unknown)
+    uint32_t getFactionIdByRepListId(uint32_t repListId) const;
+    // Returns the repListId for a given faction ID (0xFFFFFFFF if not found)
+    uint32_t getRepListIdByFactionId(uint32_t factionId) const;
     // Shaman totems (4 slots: 0=Earth, 1=Fire, 2=Water, 3=Air)
     struct TotemSlot {
         uint32_t spellId     = 0;
@@ -2566,6 +2591,10 @@ private:
     std::unordered_map<uint32_t, int32_t> factionStandings_;
     // Faction name cache (factionId → name), populated lazily from Faction.dbc
     std::unordered_map<uint32_t, std::string> factionNameCache_;
+    // repListId → factionId mapping (populated with factionNameCache)
+    std::unordered_map<uint32_t, uint32_t> factionRepListToId_;
+    // factionId → repListId reverse mapping
+    std::unordered_map<uint32_t, uint32_t> factionIdToRepList_;
     bool factionNameCacheLoaded_ = false;
     void loadFactionNameCache();
     std::string getFactionName(uint32_t factionId) const;

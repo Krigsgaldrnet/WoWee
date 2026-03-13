@@ -1420,10 +1420,13 @@ void InventoryScreen::renderReputationPanel(game::GameHandler& gameHandler) {
 
     ImGui::BeginChild("##ReputationList", ImVec2(0, 0), true);
 
-    // Sort factions alphabetically by name
+    // Sort: watched faction first, then alphabetically by name
+    uint32_t watchedFactionId = gameHandler.getWatchedFactionId();
     std::vector<std::pair<uint32_t, int32_t>> sortedFactions(standings.begin(), standings.end());
     std::sort(sortedFactions.begin(), sortedFactions.end(),
         [&](const auto& a, const auto& b) {
+            if (a.first == watchedFactionId) return true;
+            if (b.first == watchedFactionId) return false;
             const std::string& na = gameHandler.getFactionNamePublic(a.first);
             const std::string& nb = gameHandler.getFactionNamePublic(b.first);
             return na < nb;
@@ -1435,10 +1438,25 @@ void InventoryScreen::renderReputationPanel(game::GameHandler& gameHandler) {
         const std::string& factionName = gameHandler.getFactionNamePublic(factionId);
         const char* displayName = factionName.empty() ? "Unknown Faction" : factionName.c_str();
 
-        // Faction name + tier label on same line
+        // Determine at-war status via repListId lookup
+        uint32_t repListId = gameHandler.getRepListIdByFactionId(factionId);
+        bool atWar = (repListId != 0xFFFFFFFFu) && gameHandler.isFactionAtWar(repListId);
+        bool isWatched = (factionId == watchedFactionId);
+
+        // Faction name + tier label on same line; mark at-war and watched factions
         ImGui::TextColored(tier.color, "[%s]", tier.name);
         ImGui::SameLine(90.0f);
-        ImGui::Text("%s", displayName);
+        if (atWar) {
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", displayName);
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "(At War)");
+        } else if (isWatched) {
+            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), "%s", displayName);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(Tracked)");
+        } else {
+            ImGui::Text("%s", displayName);
+        }
 
         // Progress bar showing position within current tier
         float ratio = 0.0f;
