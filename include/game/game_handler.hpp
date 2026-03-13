@@ -1451,6 +1451,17 @@ public:
     };
     const LevelUpDeltas& getLastLevelUpDeltas() const { return lastLevelUpDeltas_; }
 
+    // Temporary weapon enchant timers (from SMSG_ITEM_ENCHANT_TIME_UPDATE)
+    // Slot: 0=main-hand, 1=off-hand, 2=ranged. Value: expire time (steady_clock ms).
+    struct TempEnchantTimer {
+        uint32_t slot     = 0;
+        uint64_t expireMs = 0;   // std::chrono::steady_clock ms timestamp when it expires
+    };
+    const std::vector<TempEnchantTimer>& getTempEnchantTimers() const { return tempEnchantTimers_; }
+    // Returns remaining ms for a given slot, or 0 if absent/expired.
+    uint32_t getTempEnchantRemainingMs(uint32_t slot) const;
+    static constexpr const char* kTempEnchantSlotNames[] = { "Main Hand", "Off Hand", "Ranged" };
+
     // Other player level-up callback — fires when another player gains a level
     using OtherPlayerLevelUpCallback = std::function<void(uint64_t guid, uint32_t newLevel)>;
     void setOtherPlayerLevelUpCallback(OtherPlayerLevelUpCallback cb) { otherPlayerLevelUpCallback_ = std::move(cb); }
@@ -2808,6 +2819,7 @@ private:
     ChargeCallback chargeCallback_;
     LevelUpCallback levelUpCallback_;
     LevelUpDeltas lastLevelUpDeltas_;
+    std::vector<TempEnchantTimer> tempEnchantTimers_;
     OtherPlayerLevelUpCallback otherPlayerLevelUpCallback_;
     AchievementEarnedCallback achievementEarnedCallback_;
     AreaDiscoveryCallback areaDiscoveryCallback_;

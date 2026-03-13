@@ -5698,9 +5698,56 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
 
         // ---- Misc consume ----
+        case Opcode::SMSG_ITEM_ENCHANT_TIME_UPDATE: {
+            // Format: uint64 itemGuid + uint32 slot + uint32 durationSec + uint64 playerGuid
+            // slot: 0=main-hand, 1=off-hand, 2=ranged
+            if (packet.getSize() - packet.getReadPos() < 24) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            /*uint64_t itemGuid =*/ packet.readUInt64();
+            uint32_t enchSlot    = packet.readUInt32();
+            uint32_t durationSec = packet.readUInt32();
+            /*uint64_t playerGuid =*/ packet.readUInt64();
+
+            // Clamp to known slots (0-2)
+            if (enchSlot > 2) { break; }
+
+            uint64_t nowMs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+
+            if (durationSec == 0) {
+                // Enchant expired / removed — erase the slot entry
+                tempEnchantTimers_.erase(
+                    std::remove_if(tempEnchantTimers_.begin(), tempEnchantTimers_.end(),
+                                   [enchSlot](const TempEnchantTimer& t) { return t.slot == enchSlot; }),
+                    tempEnchantTimers_.end());
+            } else {
+                uint64_t expireMs = nowMs + static_cast<uint64_t>(durationSec) * 1000u;
+                bool found = false;
+                for (auto& t : tempEnchantTimers_) {
+                    if (t.slot == enchSlot) { t.expireMs = expireMs; found = true; break; }
+                }
+                if (!found) tempEnchantTimers_.push_back({enchSlot, expireMs});
+
+                // Warn at important thresholds
+                if (durationSec <= 60 && durationSec > 55) {
+                    const char* slotName = (enchSlot < 3) ? kTempEnchantSlotNames[enchSlot] : "weapon";
+                    char buf[80];
+                    std::snprintf(buf, sizeof(buf), "Weapon enchant (%s) expires in 1 minute!", slotName);
+                    addSystemChatMessage(buf);
+                } else if (durationSec <= 300 && durationSec > 295) {
+                    const char* slotName = (enchSlot < 3) ? kTempEnchantSlotNames[enchSlot] : "weapon";
+                    char buf[80];
+                    std::snprintf(buf, sizeof(buf), "Weapon enchant (%s) expires in 5 minutes.", slotName);
+                    addSystemChatMessage(buf);
+                }
+            }
+            LOG_DEBUG("SMSG_ITEM_ENCHANT_TIME_UPDATE: slot=", enchSlot, " dur=", durationSec, "s");
+            break;
+        }
         case Opcode::SMSG_COMPLAIN_RESULT:
         case Opcode::SMSG_ITEM_REFUND_INFO_RESPONSE:
-        case Opcode::SMSG_ITEM_ENCHANT_TIME_UPDATE:
         case Opcode::SMSG_LOOT_LIST:
             // Consume — not yet processed
             packet.setReadPos(packet.getSize());
@@ -6212,10 +6259,58 @@ void GameHandler::handlePacket(network::Packet& packet) {
             packet.setReadPos(packet.getSize());
             break;
 
-        // ---- Inspect (full character inspection) ----
-        case Opcode::SMSG_INSPECT:
-            packet.setReadPos(packet.getSize());
+        // ---- Inspect (Classic 1.12 gear inspection) ----
+        case Opcode::SMSG_INSPECT: {
+            // Classic 1.12: PackedGUID + 19×uint32 itemEntries (EQUIPMENT_SLOT_END=19)
+            // This opcode is only reachable on Classic servers; TBC/WotLK wire 0x115 maps to
+            // SMSG_INSPECT_RESULTS_UPDATE which is handled separately.
+            if (packet.getSize() - packet.getReadPos() < 2) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+            if (guid == 0) { packet.setReadPos(packet.getSize()); break; }
+
+            constexpr int kGearSlots = 19;
+            size_t needed = kGearSlots * sizeof(uint32_t);
+            if (packet.getSize() - packet.getReadPos() < needed) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+
+            std::array<uint32_t, 19> items{};
+            for (int s = 0; s < kGearSlots; ++s)
+                items[s] = packet.readUInt32();
+
+            // Resolve player name
+            auto ent = entityManager.getEntity(guid);
+            std::string playerName = "Target";
+            if (ent) {
+                auto pl = std::dynamic_pointer_cast<Player>(ent);
+                if (pl && !pl->getName().empty()) playerName = pl->getName();
+            }
+
+            // Populate inspect result immediately (no talent data in Classic SMSG_INSPECT)
+            inspectResult_.guid           = guid;
+            inspectResult_.playerName     = playerName;
+            inspectResult_.totalTalents   = 0;
+            inspectResult_.unspentTalents = 0;
+            inspectResult_.talentGroups   = 0;
+            inspectResult_.activeTalentGroup = 0;
+            inspectResult_.itemEntries    = items;
+            inspectResult_.enchantIds     = {};
+
+            // Also cache for future talent-inspect cross-reference
+            inspectedPlayerItemEntries_[guid] = items;
+
+            // Trigger item queries for non-empty slots
+            for (int s = 0; s < kGearSlots; ++s) {
+                if (items[s] != 0) queryItemInfo(items[s], 0);
+            }
+
+            LOG_INFO("SMSG_INSPECT (Classic): ", playerName, " has gear in ",
+                     std::count_if(items.begin(), items.end(),
+                                   [](uint32_t e) { return e != 0; }), "/19 slots");
             break;
+        }
 
         // ---- Multiple aggregated packets/moves ----
         case Opcode::SMSG_MULTIPLE_MOVES:
@@ -14381,6 +14476,19 @@ void GameHandler::cancelAura(uint32_t spellId) {
     if (state != WorldState::IN_WORLD || !socket) return;
     auto packet = CancelAuraPacket::build(spellId);
     socket->send(packet);
+}
+
+uint32_t GameHandler::getTempEnchantRemainingMs(uint32_t slot) const {
+    uint64_t nowMs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    for (const auto& t : tempEnchantTimers_) {
+        if (t.slot == slot) {
+            return (t.expireMs > nowMs)
+                ? static_cast<uint32_t>(t.expireMs - nowMs) : 0u;
+        }
+    }
+    return 0u;
 }
 
 void GameHandler::handlePetSpells(network::Packet& packet) {

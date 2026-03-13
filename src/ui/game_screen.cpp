@@ -12036,6 +12036,60 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
             }
             ImGui::PopStyleColor(2);
         }
+
+        // Temporary weapon enchant timers (Shaman imbues, Rogue poisons, whetstones, etc.)
+        {
+            const auto& timers = gameHandler.getTempEnchantTimers();
+            if (!timers.empty()) {
+                ImGui::Spacing();
+                ImGui::Separator();
+                static const ImVec4 kEnchantSlotColors[] = {
+                    ImVec4(0.9f, 0.6f, 0.1f, 1.0f),  // main-hand: gold
+                    ImVec4(0.5f, 0.8f, 0.9f, 1.0f),  // off-hand:  teal
+                    ImVec4(0.7f, 0.5f, 0.9f, 1.0f),  // ranged:    purple
+                };
+                uint64_t enchNowMs = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count());
+
+                for (const auto& t : timers) {
+                    if (t.slot > 2) continue;
+                    uint64_t remMs = (t.expireMs > enchNowMs) ? (t.expireMs - enchNowMs) : 0;
+                    if (remMs == 0) continue;
+
+                    ImVec4 col = kEnchantSlotColors[t.slot];
+                    // Flash red when < 60s remaining
+                    if (remMs < 60000) {
+                        float pulse = 0.6f + 0.4f * std::sin(
+                            static_cast<float>(ImGui::GetTime()) * 4.0f);
+                        col = ImVec4(pulse, 0.2f, 0.1f, 1.0f);
+                    }
+
+                    // Format remaining time
+                    uint32_t secs = static_cast<uint32_t>((remMs + 999) / 1000);
+                    char timeStr[16];
+                    if (secs >= 3600)
+                        snprintf(timeStr, sizeof(timeStr), "%dh%02dm", secs / 3600, (secs % 3600) / 60);
+                    else if (secs >= 60)
+                        snprintf(timeStr, sizeof(timeStr), "%d:%02d", secs / 60, secs % 60);
+                    else
+                        snprintf(timeStr, sizeof(timeStr), "%ds", secs);
+
+                    ImGui::PushID(static_cast<int>(t.slot) + 5000);
+                    ImGui::PushStyleColor(ImGuiCol_Button, col);
+                    char label[40];
+                    snprintf(label, sizeof(label), "~%s  %s",
+                             game::GameHandler::kTempEnchantSlotNames[t.slot], timeStr);
+                    ImGui::Button(label, ImVec2(-1, 16));
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Temporary weapon enchant: %s\nRemaining: %s",
+                                          game::GameHandler::kTempEnchantSlotNames[t.slot],
+                                          timeStr);
+                    ImGui::PopStyleColor();
+                    ImGui::PopID();
+                }
+            }
+        }
     }
     ImGui::End();
 
