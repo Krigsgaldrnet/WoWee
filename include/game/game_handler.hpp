@@ -1438,6 +1438,14 @@ public:
     using LevelUpCallback = std::function<void(uint32_t newLevel)>;
     void setLevelUpCallback(LevelUpCallback cb) { levelUpCallback_ = std::move(cb); }
 
+    // Stat deltas from the last SMSG_LEVELUP_INFO (valid until next level-up)
+    struct LevelUpDeltas {
+        uint32_t hp   = 0;
+        uint32_t mana = 0;
+        uint32_t str = 0, agi = 0, sta = 0, intel = 0, spi = 0;
+    };
+    const LevelUpDeltas& getLastLevelUpDeltas() const { return lastLevelUpDeltas_; }
+
     // Other player level-up callback — fires when another player gains a level
     using OtherPlayerLevelUpCallback = std::function<void(uint64_t guid, uint32_t newLevel)>;
     void setOtherPlayerLevelUpCallback(OtherPlayerLevelUpCallback cb) { otherPlayerLevelUpCallback_ = std::move(cb); }
@@ -2793,6 +2801,7 @@ private:
     NpcVendorCallback npcVendorCallback_;
     ChargeCallback chargeCallback_;
     LevelUpCallback levelUpCallback_;
+    LevelUpDeltas lastLevelUpDeltas_;
     OtherPlayerLevelUpCallback otherPlayerLevelUpCallback_;
     AchievementEarnedCallback achievementEarnedCallback_;
     AreaDiscoveryCallback areaDiscoveryCallback_;

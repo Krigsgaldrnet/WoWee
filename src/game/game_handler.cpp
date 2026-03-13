@@ -3823,10 +3823,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_LEVELUP_INFO:
         case Opcode::SMSG_LEVELUP_INFO_ALT: {
             // Server-authoritative level-up event.
-            // First field is always the new level in Classic/TBC/WotLK-era layouts.
+            // WotLK layout: uint32 newLevel + uint32 hpDelta + uint32 manaDelta + 5x uint32 statDeltas
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t newLevel = packet.readUInt32();
                 if (newLevel > 0) {
+                    // Parse stat deltas (WotLK layout has 7 more uint32s)
+                    lastLevelUpDeltas_ = {};
+                    if (packet.getSize() - packet.getReadPos() >= 28) {
+                        lastLevelUpDeltas_.hp    = packet.readUInt32();
+                        lastLevelUpDeltas_.mana  = packet.readUInt32();
+                        lastLevelUpDeltas_.str   = packet.readUInt32();
+                        lastLevelUpDeltas_.agi   = packet.readUInt32();
+                        lastLevelUpDeltas_.sta   = packet.readUInt32();
+                        lastLevelUpDeltas_.intel = packet.readUInt32();
+                        lastLevelUpDeltas_.spi   = packet.readUInt32();
+                    }
                     uint32_t oldLevel = serverPlayerLevel_;
                     serverPlayerLevel_ = std::max(serverPlayerLevel_, newLevel);
                     for (auto& ch : characters) {
@@ -3840,7 +3851,6 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     }
                 }
             }
-            // Remaining payload (hp/mana/stat deltas) is optional for our client.
             packet.setReadPos(packet.getSize());
             break;
         }

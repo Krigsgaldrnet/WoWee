@@ -284,10 +284,11 @@ void GameScreen::render(game::GameHandler& gameHandler) {
 
     // Set up level-up callback (once)
     if (!levelUpCallbackSet_) {
-        gameHandler.setLevelUpCallback([this](uint32_t newLevel) {
+        gameHandler.setLevelUpCallback([this, &gameHandler](uint32_t newLevel) {
             levelUpFlashAlpha_ = 1.0f;
             levelUpDisplayLevel_ = newLevel;
-            triggerDing(newLevel);
+            const auto& d = gameHandler.getLastLevelUpDeltas();
+            triggerDing(newLevel, d.hp, d.mana, d.str, d.agi, d.sta, d.intel, d.spi);
         });
         levelUpCallbackSet_ = true;
     }
@@ -18058,9 +18059,18 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
 // Level-Up Ding Animation
 // ============================================================
 
-void GameScreen::triggerDing(uint32_t newLevel) {
-    dingTimer_ = DING_DURATION;
-    dingLevel_ = newLevel;
+void GameScreen::triggerDing(uint32_t newLevel, uint32_t hpDelta, uint32_t manaDelta,
+                              uint32_t str, uint32_t agi, uint32_t sta,
+                              uint32_t intel, uint32_t spi) {
+    dingTimer_     = DING_DURATION;
+    dingLevel_     = newLevel;
+    dingHpDelta_   = hpDelta;
+    dingManaDelta_ = manaDelta;
+    dingStats_[0]  = str;
+    dingStats_[1]  = agi;
+    dingStats_[2]  = sta;
+    dingStats_[3]  = intel;
+    dingStats_[4]  = spi;
 
     auto* renderer = core::Application::getInstance().getRenderer();
     if (renderer) {
@@ -18106,6 +18116,43 @@ void GameScreen::renderDingEffect() {
     // Gold text
     draw->AddText(font, fontSize, ImVec2(tx, ty),
                   IM_COL32(255, 210, 0, (int)(alpha * 255)), buf);
+
+    // Stat gains below the main text (shown only if server sent deltas)
+    bool hasStatGains = (dingHpDelta_ > 0 || dingManaDelta_ > 0 ||
+                         dingStats_[0] || dingStats_[1] || dingStats_[2] ||
+                         dingStats_[3] || dingStats_[4]);
+    if (hasStatGains) {
+        float smallSize = baseSize * 0.95f;
+        float yOff = ty + sz.y + 6.0f;
+
+        // Build stat delta string: "+150 HP  +80 Mana  +2 Str  +2 Agi ..."
+        static const char* kStatLabels[] = { "Str", "Agi", "Sta", "Int", "Spi" };
+        char statBuf[128];
+        int written = 0;
+        if (dingHpDelta_ > 0)
+            written += snprintf(statBuf + written, sizeof(statBuf) - written,
+                                "+%u HP  ", dingHpDelta_);
+        if (dingManaDelta_ > 0)
+            written += snprintf(statBuf + written, sizeof(statBuf) - written,
+                                "+%u Mana  ", dingManaDelta_);
+        for (int i = 0; i < 5 && written < (int)sizeof(statBuf) - 1; ++i) {
+            if (dingStats_[i] > 0)
+                written += snprintf(statBuf + written, sizeof(statBuf) - written,
+                                    "+%u %s  ", dingStats_[i], kStatLabels[i]);
+        }
+        // Trim trailing spaces
+        while (written > 0 && statBuf[written - 1] == ' ') --written;
+        statBuf[written] = '\0';
+
+        if (written > 0) {
+            ImVec2 ssz = font->CalcTextSizeA(smallSize, FLT_MAX, 0.0f, statBuf);
+            float stx = cx - ssz.x * 0.5f;
+            draw->AddText(font, smallSize, ImVec2(stx + 1, yOff + 1),
+                          IM_COL32(0, 0, 0, (int)(alpha * 160)), statBuf);
+            draw->AddText(font, smallSize, ImVec2(stx, yOff),
+                          IM_COL32(100, 220, 100, (int)(alpha * 230)), statBuf);
+        }
+    }
 }
 
 void GameScreen::triggerAchievementToast(uint32_t achievementId, std::string name) {

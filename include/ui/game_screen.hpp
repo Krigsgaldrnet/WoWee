@@ -511,9 +511,12 @@ private:
     bool leftClickWasPress_ = false;
 
     // Level-up ding animation
-    static constexpr float DING_DURATION = 3.0f;
+    static constexpr float DING_DURATION = 4.0f;
     float dingTimer_ = 0.0f;
     uint32_t dingLevel_ = 0;
+    uint32_t dingHpDelta_   = 0;
+    uint32_t dingManaDelta_ = 0;
+    uint32_t dingStats_[5]  = {};  // str/agi/sta/int/spi deltas
     void renderDingEffect();
 
     // Achievement toast banner
@@ -616,7 +619,9 @@ private:
     size_t dpsLogSeenCount_   = 0;     // log entries already scanned
 
 public:
-    void triggerDing(uint32_t newLevel);
+    void triggerDing(uint32_t newLevel, uint32_t hpDelta = 0, uint32_t manaDelta = 0,
+                     uint32_t str = 0, uint32_t agi = 0, uint32_t sta = 0,
+                     uint32_t intel = 0, uint32_t spi = 0);
     void triggerAchievementToast(uint32_t achievementId, std::string name = {});
 };
 
