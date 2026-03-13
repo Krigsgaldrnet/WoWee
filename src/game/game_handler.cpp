@@ -2261,7 +2261,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (result == 0) {
                     addSystemChatMessage("Character name changed to: " + newName);
                 } else {
-                    addSystemChatMessage("Character rename failed (error " + std::to_string(result) + ").");
+                    // ResponseCodes for name changes (shared with char create)
+                    static const char* kRenameErrors[] = {
+                        nullptr,                                         // 0 = success
+                        "Name already in use.",                          // 1
+                        "Name too short.",                               // 2
+                        "Name too long.",                                // 3
+                        "Name contains invalid characters.",             // 4
+                        "Name contains a profanity.",                    // 5
+                        "Name is reserved.",                             // 6
+                        "Character name does not meet requirements.",    // 7
+                    };
+                    const char* errMsg = (result < 8) ? kRenameErrors[result] : nullptr;
+                    addSystemChatMessage(errMsg ? std::string("Rename failed: ") + errMsg
+                                               : "Character rename failed.");
                 }
                 LOG_INFO("SMSG_CHAR_RENAME: result=", result, " newName=", newName);
             }
@@ -7458,10 +7471,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 uint32_t mapId     = packet.readUInt32();
                 uint32_t difficulty = packet.readUInt32();
                 /*uint64_t resetTime =*/ packet.readUInt64();
-                char buf[128];
-                std::snprintf(buf, sizeof(buf),
-                    "Calendar: Raid lockout added for map %u (difficulty %u).", mapId, difficulty);
-                addSystemChatMessage(buf);
+                std::string mapLabel = getMapName(mapId);
+                if (mapLabel.empty()) mapLabel = "map #" + std::to_string(mapId);
+                static const char* kDiff[] = {"Normal","Heroic","25-Man","25-Man Heroic"};
+                const char* diffStr = (difficulty < 4) ? kDiff[difficulty] : nullptr;
+                std::string msg = "Calendar: Raid lockout added for " + mapLabel;
+                if (diffStr) msg += std::string(" (") + diffStr + ")";
+                msg += '.';
+                addSystemChatMessage(msg);
                 LOG_DEBUG("SMSG_CALENDAR_RAID_LOCKOUT_ADDED: mapId=", mapId, " difficulty=", difficulty);
             }
             packet.setReadPos(packet.getSize());
@@ -7474,7 +7491,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 /*uint64_t eventId  =*/ packet.readUInt64();
                 uint32_t mapId     = packet.readUInt32();
                 uint32_t difficulty = packet.readUInt32();
-                (void)mapId; (void)difficulty;
+                std::string mapLabel = getMapName(mapId);
+                if (mapLabel.empty()) mapLabel = "map #" + std::to_string(mapId);
+                static const char* kDiff[] = {"Normal","Heroic","25-Man","25-Man Heroic"};
+                const char* diffStr = (difficulty < 4) ? kDiff[difficulty] : nullptr;
+                std::string msg = "Calendar: Raid lockout removed for " + mapLabel;
+                if (diffStr) msg += std::string(" (") + diffStr + ")";
+                msg += '.';
+                addSystemChatMessage(msg);
                 LOG_DEBUG("SMSG_CALENDAR_RAID_LOCKOUT_REMOVED: mapId=", mapId,
                           " difficulty=", difficulty);
             }
