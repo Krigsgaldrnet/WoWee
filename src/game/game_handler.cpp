@@ -17446,6 +17446,11 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
     }
     if (shouldSendLoot) {
         lootTarget(guid);
+    } else {
+        // Non-lootable interaction (mailbox, door, button, etc.) — no CMSG_LOOT will be
+        // sent, and no SMSG_LOOT_RESPONSE will arrive to clear it.  Clear the gather-loot
+        // guid now so a subsequent timed cast completion can't fire a spurious CMSG_LOOT.
+        lastInteractedGoGuid_ = 0;
     }
     // Retry use briefly to survive packet loss/order races.
     const bool retryLoot = shouldSendLoot;
