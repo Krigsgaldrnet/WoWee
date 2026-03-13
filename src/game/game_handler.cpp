@@ -16164,6 +16164,7 @@ void GameHandler::handleCastFailed(network::Packet& packet) {
     castIsChannel = false;
     currentCastSpellId = 0;
     castTimeRemaining = 0.0f;
+    lastInteractedGoGuid_ = 0;
 
     // Stop precast sound — spell failed before completing
     if (auto* renderer = core::Application::getInstance().getRenderer()) {
