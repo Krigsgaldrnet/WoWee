@@ -6320,10 +6320,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         /*float    drainMult =*/ packet.readFloat();
                         if (drainAmount > 0) {
                             if (drainTarget == playerGuid)
-                                addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(drainAmount), exeSpellId, false);
+                                addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(drainAmount), exeSpellId, false, 0,
+                                              exeCaster, drainTarget);
                             else if (isPlayerCaster)
                                 addCombatText(CombatTextEntry::ENERGIZE, static_cast<int32_t>(drainAmount), exeSpellId, true,
-                                              static_cast<uint8_t>(drainPower));
+                                              static_cast<uint8_t>(drainPower), exeCaster, drainTarget);
                         }
                         LOG_DEBUG("SMSG_SPELLLOGEXECUTE POWER_DRAIN: spell=", exeSpellId,
                                   " power=", drainPower, " amount=", drainAmount);
@@ -6340,9 +6341,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         /*float    leechMult =*/ packet.readFloat();
                         if (leechAmount > 0) {
                             if (leechTarget == playerGuid)
-                                addCombatText(CombatTextEntry::SPELL_DAMAGE, static_cast<int32_t>(leechAmount), exeSpellId, false);
+                                addCombatText(CombatTextEntry::SPELL_DAMAGE, static_cast<int32_t>(leechAmount), exeSpellId, false, 0,
+                                              exeCaster, leechTarget);
                             else if (isPlayerCaster)
-                                addCombatText(CombatTextEntry::HEAL, static_cast<int32_t>(leechAmount), exeSpellId, true);
+                                addCombatText(CombatTextEntry::HEAL, static_cast<int32_t>(leechAmount), exeSpellId, true, 0,
+                                              exeCaster, leechTarget);
                         }
                         LOG_DEBUG("SMSG_SPELLLOGEXECUTE HEALTH_LEECH: spell=", exeSpellId, " amount=", leechAmount);
                     }
