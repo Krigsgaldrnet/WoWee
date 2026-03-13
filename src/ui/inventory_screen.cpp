@@ -1594,6 +1594,8 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
     // Secondary stat sums from extraStats
     int32_t itemAP = 0, itemSP = 0, itemHit = 0, itemCrit = 0, itemHaste = 0;
     int32_t itemResil = 0, itemExpertise = 0, itemMp5 = 0, itemHp5 = 0;
+    int32_t itemDefense = 0, itemDodge = 0, itemParry = 0, itemBlock = 0, itemBlockVal = 0;
+    int32_t itemArmorPen = 0, itemSpellPen = 0;
     for (int s = 0; s < game::Inventory::NUM_EQUIP_SLOTS; s++) {
         const auto& slot = inventory.getEquipSlot(static_cast<game::EquipSlot>(s));
         if (slot.empty()) continue;
@@ -1604,15 +1606,22 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
         itemSpi += slot.item.spirit;
         for (const auto& es : slot.item.extraStats) {
             switch (es.statType) {
-                case 16: case 17: case 18: case 31: itemHit   += es.statValue; break;
-                case 19: case 20: case 21: case 32: itemCrit  += es.statValue; break;
-                case 28: case 29: case 30: case 36: itemHaste += es.statValue; break;
-                case 35:                             itemResil += es.statValue; break;
+                case 12:                             itemDefense  += es.statValue; break;
+                case 13:                             itemDodge    += es.statValue; break;
+                case 14:                             itemParry    += es.statValue; break;
+                case 15:                             itemBlock    += es.statValue; break;
+                case 16: case 17: case 18: case 31: itemHit      += es.statValue; break;
+                case 19: case 20: case 21: case 32: itemCrit     += es.statValue; break;
+                case 28: case 29: case 30: case 36: itemHaste    += es.statValue; break;
+                case 35:                             itemResil    += es.statValue; break;
                 case 37:                             itemExpertise += es.statValue; break;
-                case 38: case 39:                    itemAP    += es.statValue; break;
-                case 41: case 42: case 45:           itemSP    += es.statValue; break;
-                case 43:                             itemMp5   += es.statValue; break;
-                case 46:                             itemHp5   += es.statValue; break;
+                case 38: case 39:                    itemAP       += es.statValue; break;
+                case 41: case 42: case 45:           itemSP       += es.statValue; break;
+                case 43:                             itemMp5      += es.statValue; break;
+                case 44:                             itemArmorPen += es.statValue; break;
+                case 46:                             itemHp5      += es.statValue; break;
+                case 47:                             itemSpellPen += es.statValue; break;
+                case 48:                             itemBlockVal += es.statValue; break;
                 default: break;
             }
         }
@@ -1699,7 +1708,9 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
 
     // Secondary stats from equipped items
     bool hasSecondary = itemAP || itemSP || itemHit || itemCrit || itemHaste ||
-                        itemResil || itemExpertise || itemMp5 || itemHp5;
+                        itemResil || itemExpertise || itemMp5 || itemHp5 ||
+                        itemDefense || itemDodge || itemParry || itemBlock || itemBlockVal ||
+                        itemArmorPen || itemSpellPen;
     if (hasSecondary) {
         ImGui::Spacing();
         ImGui::Separator();
@@ -1708,15 +1719,22 @@ void InventoryScreen::renderStatsPanel(game::Inventory& inventory, uint32_t play
                 ImGui::TextColored(green, "+%d %s", val, name);
             }
         };
-        renderSecondary("Attack Power",    itemAP);
-        renderSecondary("Spell Power",     itemSP);
-        renderSecondary("Hit Rating",      itemHit);
-        renderSecondary("Crit Rating",     itemCrit);
-        renderSecondary("Haste Rating",    itemHaste);
-        renderSecondary("Resilience",      itemResil);
-        renderSecondary("Expertise",       itemExpertise);
-        renderSecondary("Mana per 5 sec",  itemMp5);
-        renderSecondary("Health per 5 sec",itemHp5);
+        renderSecondary("Attack Power",     itemAP);
+        renderSecondary("Spell Power",      itemSP);
+        renderSecondary("Hit Rating",       itemHit);
+        renderSecondary("Crit Rating",      itemCrit);
+        renderSecondary("Haste Rating",     itemHaste);
+        renderSecondary("Resilience",       itemResil);
+        renderSecondary("Expertise",        itemExpertise);
+        renderSecondary("Defense Rating",   itemDefense);
+        renderSecondary("Dodge Rating",     itemDodge);
+        renderSecondary("Parry Rating",     itemParry);
+        renderSecondary("Block Rating",     itemBlock);
+        renderSecondary("Block Value",      itemBlockVal);
+        renderSecondary("Armor Penetration",itemArmorPen);
+        renderSecondary("Spell Penetration",itemSpellPen);
+        renderSecondary("Mana per 5 sec",   itemMp5);
+        renderSecondary("Health per 5 sec", itemHp5);
     }
 
     // Elemental resistances from server update fields
