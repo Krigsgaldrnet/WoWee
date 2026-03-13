@@ -19533,6 +19533,7 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
     castIsChannel = false;
     currentCastSpellId = 0;
     pendingGameObjectInteractGuid_ = 0;
+    lastInteractedGoGuid_ = 0;
     castTimeRemaining = 0.0f;
 
     // Send MSG_MOVE_WORLDPORT_ACK to tell the server we're ready
