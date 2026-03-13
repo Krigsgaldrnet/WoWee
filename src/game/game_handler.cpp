@@ -16435,44 +16435,67 @@ void GameHandler::handleUnlearnSpells(network::Packet& packet) {
 // ============================================================
 
 void GameHandler::handleTalentsInfo(network::Packet& packet) {
-    TalentsInfoData data;
-    if (!TalentsInfoParser::parse(packet, data)) return;
+    // SMSG_TALENTS_INFO (WotLK 3.3.5a) correct wire format:
+    // uint8  talentType  (0 = own talents, 1 = inspect result — own talent packets always 0)
+    // uint32 unspentTalents
+    // uint8  talentGroupCount
+    // uint8  activeTalentGroup
+    // Per group: uint8 talentCount, [uint32 talentId + uint8 rank] × count,
+    //            uint8 glyphCount, [uint16 glyphId] × count
+
+    if (packet.getSize() - packet.getReadPos() < 1) return;
+    uint8_t talentType = packet.readUInt8();
+    if (talentType != 0) {
+        // type 1 = inspect result; handled by handleInspectResults — ignore here
+        return;
+    }
+    if (packet.getSize() - packet.getReadPos() < 6) {
+        LOG_WARNING("handleTalentsInfo: packet too short for header");
+        return;
+    }
+
+    uint32_t unspentTalents    = packet.readUInt32();
+    uint8_t  talentGroupCount  = packet.readUInt8();
+    uint8_t  activeTalentGroup = packet.readUInt8();
+    if (activeTalentGroup > 1) activeTalentGroup = 0;
 
     // Ensure talent DBCs are loaded
     loadTalentDbc();
 
-    // Validate spec number
-    if (data.talentSpec > 1) {
-        LOG_WARNING("Invalid talent spec: ", (int)data.talentSpec);
-        return;
+    activeTalentSpec_ = activeTalentGroup;
+
+    for (uint8_t g = 0; g < talentGroupCount && g < 2; ++g) {
+        if (packet.getSize() - packet.getReadPos() < 1) break;
+        uint8_t talentCount = packet.readUInt8();
+        learnedTalents_[g].clear();
+        for (uint8_t t = 0; t < talentCount; ++t) {
+            if (packet.getSize() - packet.getReadPos() < 5) break;
+            uint32_t talentId = packet.readUInt32();
+            uint8_t  rank     = packet.readUInt8();
+            learnedTalents_[g][talentId] = rank;
+        }
+        learnedGlyphs_[g].fill(0);
+        if (packet.getSize() - packet.getReadPos() < 1) break;
+        uint8_t glyphCount = packet.readUInt8();
+        for (uint8_t gl = 0; gl < glyphCount; ++gl) {
+            if (packet.getSize() - packet.getReadPos() < 2) break;
+            uint16_t glyphId = packet.readUInt16();
+            if (gl < MAX_GLYPH_SLOTS) learnedGlyphs_[g][gl] = glyphId;
+        }
     }
 
-    // Store talents for this spec
-    unspentTalentPoints_[data.talentSpec] = data.unspentPoints;
+    unspentTalentPoints_[activeTalentGroup] =
+        static_cast<uint8_t>(unspentTalents > 255 ? 255 : unspentTalents);
 
-    // Clear and rebuild learned talents map for this spec
-    // Note: If a talent appears in the packet, it's learned (ranks are 0-indexed)
-    learnedTalents_[data.talentSpec].clear();
-    for (const auto& talent : data.talents) {
-        learnedTalents_[data.talentSpec][talent.talentId] = talent.currentRank;
-    }
+    LOG_INFO("handleTalentsInfo: unspent=", unspentTalents,
+             " groups=", (int)talentGroupCount, " active=", (int)activeTalentGroup,
+             " learned=", learnedTalents_[activeTalentGroup].size());
 
-    LOG_INFO("Talents loaded: spec=", (int)data.talentSpec,
-             " unspent=", (int)unspentTalentPoints_[data.talentSpec],
-             " learned=", learnedTalents_[data.talentSpec].size());
-
-    // If this is the first spec received after login, set it as the active spec
     if (!talentsInitialized_) {
         talentsInitialized_ = true;
-        activeTalentSpec_ = data.talentSpec;
-
-        // Show message to player about active spec
-        if (unspentTalentPoints_[data.talentSpec] > 0) {
-            std::string msg = "You have " + std::to_string(unspentTalentPoints_[data.talentSpec]) +
-                             " unspent talent point";
-            if (unspentTalentPoints_[data.talentSpec] > 1) msg += "s";
-            msg += " in spec " + std::to_string(data.talentSpec + 1);
-            addSystemChatMessage(msg);
+        if (unspentTalents > 0) {
+            addSystemChatMessage("You have " + std::to_string(unspentTalents)
+                + " unspent talent point" + (unspentTalents != 1 ? "s" : "") + ".");
         }
     }
 }
