@@ -21936,7 +21936,7 @@ void GameHandler::handleSummonRequest(network::Packet& packet) {
     if (packet.getSize() - packet.getReadPos() < 16) return;
 
     summonerGuid_        = packet.readUInt64();
-    /*uint32_t zoneId =*/ packet.readUInt32();
+    uint32_t zoneId      = packet.readUInt32();
     uint32_t timeoutMs   = packet.readUInt32();
     summonTimeoutSec_    = timeoutMs / 1000.0f;
     pendingSummonRequest_= true;
@@ -21947,15 +21947,25 @@ void GameHandler::handleSummonRequest(network::Packet& packet) {
         summonerName_ = unit->getName();
     }
     if (summonerName_.empty()) {
+        auto nit = playerNameCache.find(summonerGuid_);
+        if (nit != playerNameCache.end())
+            summonerName_ = nit->second;
+    }
+    if (summonerName_.empty()) {
         char tmp[32];
         std::snprintf(tmp, sizeof(tmp), "0x%llX",
                       static_cast<unsigned long long>(summonerGuid_));
         summonerName_ = tmp;
     }
 
-    addSystemChatMessage(summonerName_ + " is summoning you.");
+    std::string msg = summonerName_ + " is summoning you";
+    std::string zoneName = getAreaName(zoneId);
+    if (!zoneName.empty())
+        msg += " to " + zoneName;
+    msg += '.';
+    addSystemChatMessage(msg);
     LOG_INFO("SMSG_SUMMON_REQUEST: summoner=", summonerName_,
-             " timeout=", summonTimeoutSec_, "s");
+             " zoneId=", zoneId, " timeout=", summonTimeoutSec_, "s");
 }
 
 void GameHandler::acceptSummon() {
@@ -22000,6 +22010,11 @@ void GameHandler::handleTradeStatus(network::Packet& packet) {
             auto entity = entityManager.getEntity(tradePeerGuid_);
             if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
                 tradePeerName_ = unit->getName();
+            }
+            if (tradePeerName_.empty()) {
+                auto nit = playerNameCache.find(tradePeerGuid_);
+                if (nit != playerNameCache.end())
+                    tradePeerName_ = nit->second;
             }
             if (tradePeerName_.empty()) {
                 char tmp[32];
