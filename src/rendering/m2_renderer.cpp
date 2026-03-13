@@ -3905,7 +3905,14 @@ void M2Renderer::cleanupUnusedModels() {
         }
     }
 
-    // Delete GPU resources and remove from map
+    // Delete GPU resources and remove from map.
+    // Wait for the GPU to finish all in-flight frames before destroying any
+    // buffers — the previous frame's command buffer may still be referencing
+    // vertex/index buffers that are about to be freed. Without this wait,
+    // the GPU reads freed memory, which can cause VK_ERROR_DEVICE_LOST.
+    if (!toRemove.empty() && vkCtx_) {
+        vkDeviceWaitIdle(vkCtx_->getDevice());
+    }
     for (uint32_t id : toRemove) {
         auto it = models.find(id);
         if (it != models.end()) {
