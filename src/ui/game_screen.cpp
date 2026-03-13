@@ -20187,31 +20187,60 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                     color = ImVec4(0.4f, 0.9f, 0.4f, 1.0f);
                     break;
                 case T::MISS:
-                    snprintf(desc, sizeof(desc), "%s misses %s", src, tgt);
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s's %s misses %s", src, spell, tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s misses %s", src, tgt);
                     color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
                     break;
                 case T::DODGE:
-                    snprintf(desc, sizeof(desc), "%s dodges %s's attack", tgt, src);
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s dodges %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s dodges %s's attack", tgt, src);
                     color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
                     break;
                 case T::PARRY:
-                    snprintf(desc, sizeof(desc), "%s parries %s's attack", tgt, src);
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s parries %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s parries %s's attack", tgt, src);
                     color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
                     break;
                 case T::BLOCK:
-                    snprintf(desc, sizeof(desc), "%s blocks %s's attack (%d blocked)", tgt, src, e.amount);
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s blocks %s's %s (%d blocked)", tgt, src, spell, e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "%s blocks %s's attack (%d blocked)", tgt, src, e.amount);
                     color = ImVec4(0.65f, 0.75f, 0.65f, 1.0f);
                     break;
                 case T::IMMUNE:
-                    snprintf(desc, sizeof(desc), "%s is immune", tgt);
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s is immune to %s", tgt, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s is immune", tgt);
                     color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
                     break;
                 case T::ABSORB:
-                    snprintf(desc, sizeof(desc), "%d absorbed", e.amount);
+                    if (spell && e.amount > 0)
+                        snprintf(desc, sizeof(desc), "%s's %s absorbs %d", src, spell, e.amount);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s absorbs %s", tgt, spell);
+                    else if (e.amount > 0)
+                        snprintf(desc, sizeof(desc), "%d absorbed", e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "Absorbed");
                     color = ImVec4(0.5f, 0.8f, 1.0f, 1.0f);
                     break;
                 case T::RESIST:
-                    snprintf(desc, sizeof(desc), "%d resisted", e.amount);
+                    if (spell && e.amount > 0)
+                        snprintf(desc, sizeof(desc), "%s resists %s's %s (%d resisted)", tgt, src, spell, e.amount);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s resists %s's %s", tgt, src, spell);
+                    else if (e.amount > 0)
+                        snprintf(desc, sizeof(desc), "%d resisted", e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "Resisted");
                     color = ImVec4(0.6f, 0.6f, 0.9f, 1.0f);
                     break;
                 case T::ENVIRONMENTAL:
