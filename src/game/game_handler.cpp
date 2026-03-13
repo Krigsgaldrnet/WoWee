@@ -6267,10 +6267,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Show kill/death feedback for the local player
             if (ikCaster == playerGuid) {
                 // We killed a target instantly — show a KILL combat text hit
-                addCombatText(CombatTextEntry::MELEE_DAMAGE, 0, ikSpell, true);
+                addCombatText(CombatTextEntry::MELEE_DAMAGE, 0, ikSpell, true, 0, ikCaster, ikVictim);
             } else if (ikVictim == playerGuid) {
                 // We were instantly killed — show a large incoming hit
-                addCombatText(CombatTextEntry::MELEE_DAMAGE, 0, ikSpell, false);
+                addCombatText(CombatTextEntry::MELEE_DAMAGE, 0, ikSpell, false, 0, ikCaster, ikVictim);
                 addSystemChatMessage("You were killed by an instant-kill effect.");
             }
             LOG_DEBUG("SMSG_SPELLINSTAKILLLOG: caster=0x", std::hex, ikCaster,
