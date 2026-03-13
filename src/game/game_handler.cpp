@@ -14786,7 +14786,10 @@ void GameHandler::handleLfgPlayerReward(network::Packet& packet) {
             uint32_t itemCount = packet.readUInt32();
             packet.readUInt8();  // unk
             if (i == 0) {
-                rewardMsg += ", item #" + std::to_string(itemId);
+                std::string itemLabel = "item #" + std::to_string(itemId);
+                if (const ItemQueryResponseData* info = getItemInfo(itemId))
+                    if (!info->name.empty()) itemLabel = info->name;
+                rewardMsg += ", " + itemLabel;
                 if (itemCount > 1) rewardMsg += " x" + std::to_string(itemCount);
             }
         }
@@ -14802,14 +14805,12 @@ void GameHandler::handleLfgBootProposalUpdate(network::Packet& packet) {
     if (remaining < 7 + 4 + 4 + 4 + 4) return;
 
     bool inProgress = packet.readUInt8() != 0;
-    bool myVote     = packet.readUInt8() != 0;
-    bool myAnswer   = packet.readUInt8() != 0;
+    /*bool myVote   =*/ packet.readUInt8();   // whether local player has voted
+    /*bool myAnswer =*/ packet.readUInt8();   // local player's vote (yes/no) — unused; result derived from counts
     uint32_t totalVotes  = packet.readUInt32();
     uint32_t bootVotes   = packet.readUInt32();
     uint32_t timeLeft    = packet.readUInt32();
     uint32_t votesNeeded = packet.readUInt32();
-
-    (void)myVote;
 
     lfgBootVotes_    = bootVotes;
     lfgBootTotal_    = totalVotes;
@@ -14825,12 +14826,14 @@ void GameHandler::handleLfgBootProposalUpdate(network::Packet& packet) {
     if (inProgress) {
         lfgState_ = LfgState::Boot;
     } else {
-        // Boot vote ended — return to InDungeon state regardless of outcome
+        // Boot vote ended — pass/fail determined by whether enough yes votes were cast,
+        // not by the local player's own vote (myAnswer = what *I* voted, not the result).
+        const bool bootPassed = (bootVotes >= votesNeeded);
         lfgBootVotes_ = lfgBootTotal_ = lfgBootTimeLeft_ = lfgBootNeeded_ = 0;
         lfgBootTargetName_.clear();
         lfgBootReason_.clear();
         lfgState_ = LfgState::InDungeon;
-        if (myAnswer) {
+        if (bootPassed) {
             addSystemChatMessage("Dungeon Finder: Vote kick passed — member removed.");
         } else {
             addSystemChatMessage("Dungeon Finder: Vote kick failed.");
