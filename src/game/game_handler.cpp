@@ -3847,11 +3847,27 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
-        case Opcode::SMSG_EQUIPMENT_SET_SAVED:
+        case Opcode::SMSG_EQUIPMENT_SET_SAVED: {
             // uint32 setIndex + uint64 guid — equipment set was successfully saved
-            addSystemChatMessage("Equipment set saved.");
+            std::string setName;
+            if (packet.getSize() - packet.getReadPos() >= 12) {
+                uint32_t setIndex = packet.readUInt32();
+                uint64_t setGuid  = packet.readUInt64();
+                for (const auto& es : equipmentSets_) {
+                    if (es.setGuid == setGuid ||
+                        (es.setGuid == 0 && es.setId == setIndex)) {
+                        setName = es.name;
+                        break;
+                    }
+                }
+                (void)setIndex;
+            }
+            addSystemChatMessage(setName.empty()
+                ? std::string("Equipment set saved.")
+                : "Equipment set \"" + setName + "\" saved.");
             LOG_DEBUG("Equipment set saved");
             break;
+        }
         case Opcode::SMSG_PERIODICAURALOG: {
             // WotLK: packed_guid victim + packed_guid caster + uint32 spellId + uint32 count + effects
             // TBC: full uint64 victim + uint64 caster + uint32 spellId + uint32 count + effects
