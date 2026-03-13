@@ -11854,11 +11854,11 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
                 ImGui::EndTabItem();
             }
 
-            // ---- Arena tab (WotLK: shows per-team rating/record) ----
+            // ---- Arena tab (WotLK: shows per-team rating/record + roster) ----
             const auto& arenaStats = gameHandler.getArenaTeamStats();
             if (!arenaStats.empty()) {
                 if (ImGui::BeginTabItem("Arena")) {
-                    ImGui::BeginChild("##ArenaList", ImVec2(200, 200), false);
+                    ImGui::BeginChild("##ArenaList", ImVec2(0, 0), false);
 
                     for (size_t ai = 0; ai < arenaStats.size(); ++ai) {
                         const auto& ts = arenaStats[ai];
@@ -11886,6 +11886,49 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
                         uint32_t seasLosses = ts.seasonGames > ts.seasonWins
                                               ? ts.seasonGames - ts.seasonWins : 0;
                         ImGui::Text("Season: %u W / %u L", ts.seasonWins, seasLosses);
+
+                        // Roster members (from SMSG_ARENA_TEAM_ROSTER)
+                        const auto* roster = gameHandler.getArenaTeamRoster(ts.teamId);
+                        if (roster && !roster->members.empty()) {
+                            ImGui::Spacing();
+                            ImGui::TextDisabled("-- Roster (%zu members) --",
+                                                roster->members.size());
+                            // Column headers
+                            ImGui::Columns(4, "##arenaRosterCols", false);
+                            ImGui::SetColumnWidth(0, 110.0f);
+                            ImGui::SetColumnWidth(1, 60.0f);
+                            ImGui::SetColumnWidth(2, 60.0f);
+                            ImGui::SetColumnWidth(3, 60.0f);
+                            ImGui::TextDisabled("Name");      ImGui::NextColumn();
+                            ImGui::TextDisabled("Rating");    ImGui::NextColumn();
+                            ImGui::TextDisabled("Week");      ImGui::NextColumn();
+                            ImGui::TextDisabled("Season");    ImGui::NextColumn();
+                            ImGui::Separator();
+
+                            for (const auto& m : roster->members) {
+                                // Name coloured green (online) or grey (offline)
+                                if (m.online)
+                                    ImGui::TextColored(ImVec4(0.4f,1.0f,0.4f,1.0f),
+                                                       "%s", m.name.c_str());
+                                else
+                                    ImGui::TextDisabled("%s", m.name.c_str());
+                                ImGui::NextColumn();
+
+                                ImGui::Text("%u", m.personalRating);
+                                ImGui::NextColumn();
+
+                                uint32_t wL = m.weekGames > m.weekWins
+                                              ? m.weekGames - m.weekWins : 0;
+                                ImGui::Text("%uW/%uL", m.weekWins, wL);
+                                ImGui::NextColumn();
+
+                                uint32_t sL = m.seasonGames > m.seasonWins
+                                              ? m.seasonGames - m.seasonWins : 0;
+                                ImGui::Text("%uW/%uL", m.seasonWins, sL);
+                                ImGui::NextColumn();
+                            }
+                            ImGui::Columns(1);
+                        }
 
                         ImGui::Unindent(8.0f);
 

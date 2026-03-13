@@ -1247,6 +1247,29 @@ public:
     };
     const std::vector<ArenaTeamStats>& getArenaTeamStats() const { return arenaTeamStats_; }
 
+    // ---- Arena Team Roster ----
+    struct ArenaTeamMember {
+        uint64_t    guid            = 0;
+        std::string name;
+        bool        online          = false;
+        uint32_t    weekGames       = 0;
+        uint32_t    weekWins        = 0;
+        uint32_t    seasonGames     = 0;
+        uint32_t    seasonWins      = 0;
+        uint32_t    personalRating  = 0;
+    };
+    struct ArenaTeamRoster {
+        uint32_t teamId = 0;
+        std::vector<ArenaTeamMember> members;
+    };
+    // Returns roster for the given teamId, or nullptr if not yet received
+    const ArenaTeamRoster* getArenaTeamRoster(uint32_t teamId) const {
+        for (const auto& r : arenaTeamRosters_) {
+            if (r.teamId == teamId) return &r;
+        }
+        return nullptr;
+    }
+
     // ---- Phase 5: Loot ----
     void lootTarget(uint64_t guid);
     void lootItem(uint8_t slotIndex);
@@ -2080,6 +2103,7 @@ private:
     void handleInstanceDifficulty(network::Packet& packet);
     void handleArenaTeamCommandResult(network::Packet& packet);
     void handleArenaTeamQueryResponse(network::Packet& packet);
+    void handleArenaTeamRoster(network::Packet& packet);
     void handleArenaTeamInvite(network::Packet& packet);
     void handleArenaTeamEvent(network::Packet& packet);
     void handleArenaTeamStats(network::Packet& packet);
@@ -2454,7 +2478,9 @@ private:
     std::vector<InstanceLockout> instanceLockouts_;
 
     // Arena team stats (indexed by team slot, updated by SMSG_ARENA_TEAM_STATS)
-    std::vector<ArenaTeamStats> arenaTeamStats_;
+    std::vector<ArenaTeamStats>  arenaTeamStats_;
+    // Arena team rosters (updated by SMSG_ARENA_TEAM_ROSTER)
+    std::vector<ArenaTeamRoster> arenaTeamRosters_;
 
     // BG scoreboard (MSG_PVP_LOG_DATA)
     BgScoreboardData bgScoreboard_;

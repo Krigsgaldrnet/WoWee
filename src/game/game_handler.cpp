@@ -5113,7 +5113,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleArenaTeamQueryResponse(packet);
             break;
         case Opcode::SMSG_ARENA_TEAM_ROSTER:
-            LOG_INFO("Received SMSG_ARENA_TEAM_ROSTER");
+            handleArenaTeamRoster(packet);
             break;
         case Opcode::SMSG_ARENA_TEAM_INVITE:
             handleArenaTeamInvite(packet);
@@ -13690,6 +13690,70 @@ void GameHandler::handleArenaTeamQueryResponse(network::Packet& packet) {
     uint32_t teamId = packet.readUInt32();
     std::string teamName = packet.readString();
     LOG_INFO("Arena team query response: id=", teamId, " name=", teamName);
+}
+
+void GameHandler::handleArenaTeamRoster(network::Packet& packet) {
+    // SMSG_ARENA_TEAM_ROSTER (WotLK 3.3.5a):
+    //   uint32 teamId
+    //   uint8  unk (0 = not captainship packet)
+    //   uint32 memberCount
+    //   For each member:
+    //     uint64 guid
+    //     uint8  online (1=online, 0=offline)
+    //     string name (null-terminated)
+    //     uint32 gamesWeek
+    //     uint32 winsWeek
+    //     uint32 gamesSeason
+    //     uint32 winsSeason
+    //     uint32 personalRating
+    //     float  modDay   (unused here)
+    //     float  modWeek  (unused here)
+    if (packet.getSize() - packet.getReadPos() < 9) return;
+
+    uint32_t teamId     = packet.readUInt32();
+    /*uint8_t unk =*/    packet.readUInt8();
+    uint32_t memberCount = packet.readUInt32();
+
+    // Sanity cap to avoid huge allocations from malformed packets
+    if (memberCount > 100) memberCount = 100;
+
+    ArenaTeamRoster roster;
+    roster.teamId = teamId;
+    roster.members.reserve(memberCount);
+
+    for (uint32_t i = 0; i < memberCount; ++i) {
+        if (packet.getSize() - packet.getReadPos() < 12) break;
+
+        ArenaTeamMember m;
+        m.guid           = packet.readUInt64();
+        m.online         = (packet.readUInt8() != 0);
+        m.name           = packet.readString();
+        if (packet.getSize() - packet.getReadPos() < 20) break;
+        m.weekGames      = packet.readUInt32();
+        m.weekWins       = packet.readUInt32();
+        m.seasonGames    = packet.readUInt32();
+        m.seasonWins     = packet.readUInt32();
+        m.personalRating = packet.readUInt32();
+        // skip 2 floats (modDay, modWeek)
+        if (packet.getSize() - packet.getReadPos() >= 8) {
+            packet.readFloat();
+            packet.readFloat();
+        }
+        roster.members.push_back(std::move(m));
+    }
+
+    // Replace existing roster for this team or append
+    for (auto& r : arenaTeamRosters_) {
+        if (r.teamId == teamId) {
+            r = std::move(roster);
+            LOG_INFO("SMSG_ARENA_TEAM_ROSTER: updated teamId=", teamId,
+                     " members=", r.members.size());
+            return;
+        }
+    }
+    LOG_INFO("SMSG_ARENA_TEAM_ROSTER: new teamId=", teamId,
+             " members=", roster.members.size());
+    arenaTeamRosters_.push_back(std::move(roster));
 }
 
 void GameHandler::handleArenaTeamInvite(network::Packet& packet) {
