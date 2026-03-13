@@ -20674,7 +20674,13 @@ void GameHandler::activateTaxi(uint32_t destNodeId) {
         dismount();
     }
 
-    addSystemChatMessage("Taxi: requesting flight...");
+    {
+        auto destIt = taxiNodes_.find(destNodeId);
+        if (destIt != taxiNodes_.end() && !destIt->second.name.empty())
+            addSystemChatMessage("Requesting flight to " + destIt->second.name + "...");
+        else
+            addSystemChatMessage("Taxi: requesting flight...");
+    }
 
     // BFS to find path from startNode to destNodeId
     std::unordered_map<uint32_t, std::vector<uint32_t>> adj;
@@ -20792,10 +20798,13 @@ void GameHandler::activateTaxi(uint32_t destNodeId) {
         taxiActivateTimer_ = 0.0f;
     }
 
-    addSystemChatMessage("Flight started.");
-
     // Save recovery target in case of disconnect during taxi.
     auto destIt = taxiNodes_.find(destNodeId);
+    if (destIt != taxiNodes_.end() && !destIt->second.name.empty())
+        addSystemChatMessage("Flight to " + destIt->second.name + " started.");
+    else
+        addSystemChatMessage("Flight started.");
+
     if (destIt != taxiNodes_.end()) {
         taxiRecoverMapId_ = destIt->second.mapId;
         taxiRecoverPos_ = core::coords::serverToCanonical(
