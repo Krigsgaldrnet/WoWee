@@ -16923,17 +16923,23 @@ void GameHandler::handleGroupList(network::Packet& packet) {
     // WotLK 3.3.5a added a roles byte (group level + per-member) for the dungeon finder.
     // Classic 1.12 and TBC 2.4.3 do not send the roles byte.
     const bool hasRoles = isActiveExpansion("wotlk");
+    // Snapshot state before reset so we can detect transitions.
+    const uint32_t prevCount = partyData.memberCount;
+    const bool wasInGroup = !partyData.isEmpty();
     // Reset before parsing — SMSG_GROUP_LIST is a full replacement, not a delta.
     // Without this, repeated GROUP_LIST packets push duplicate members.
     partyData = GroupListData{};
     if (!GroupListParser::parse(packet, partyData, hasRoles)) return;
 
-    if (partyData.isEmpty()) {
+    const bool nowInGroup = !partyData.isEmpty();
+    if (!nowInGroup && wasInGroup) {
         LOG_INFO("No longer in a group");
         addSystemChatMessage("You are no longer in a group.");
-    } else {
-        LOG_INFO("In group with ", partyData.memberCount, " members");
-        addSystemChatMessage("You are now in a group with " + std::to_string(partyData.memberCount) + " members.");
+    } else if (nowInGroup && !wasInGroup) {
+        LOG_INFO("Joined group with ", partyData.memberCount, " members");
+        addSystemChatMessage("You are now in a group.");
+    } else if (nowInGroup && partyData.memberCount != prevCount) {
+        LOG_INFO("Group updated: ", partyData.memberCount, " members");
     }
 }
 
