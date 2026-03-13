@@ -960,6 +960,12 @@ void GameHandler::update(float deltaTime) {
         updateCombatText(deltaTime);
         tickMinimapPings(deltaTime);
 
+        // Tick logout countdown
+        if (loggingOut_ && logoutCountdown_ > 0.0f) {
+            logoutCountdown_ -= deltaTime;
+            if (logoutCountdown_ < 0.0f) logoutCountdown_ = 0.0f;
+        }
+
         // Update taxi landing cooldown
         if (taxiLandingCooldown_ > 0.0f) {
             taxiLandingCooldown_ -= deltaTime;
@@ -11992,6 +11998,7 @@ void GameHandler::cancelLogout() {
     auto packet = LogoutCancelPacket::build();
     socket->send(packet);
     loggingOut_ = false;
+    logoutCountdown_ = 0.0f;
     addSystemChatMessage("Logout cancelled.");
     LOG_INFO("Cancelled logout");
 }
@@ -21256,14 +21263,17 @@ void GameHandler::handleLogoutResponse(network::Packet& packet) {
         // Success - logout initiated
         if (data.instant) {
             addSystemChatMessage("Logging out...");
+            logoutCountdown_ = 0.0f;
         } else {
             addSystemChatMessage("Logging out in 20 seconds...");
+            logoutCountdown_ = 20.0f;
         }
         LOG_INFO("Logout response: success, instant=", (int)data.instant);
     } else {
         // Failure
         addSystemChatMessage("Cannot logout right now.");
         loggingOut_ = false;
+        logoutCountdown_ = 0.0f;
         LOG_WARNING("Logout failed, result=", data.result);
     }
 }
@@ -21271,6 +21281,7 @@ void GameHandler::handleLogoutResponse(network::Packet& packet) {
 void GameHandler::handleLogoutComplete(network::Packet& /*packet*/) {
     addSystemChatMessage("Logout complete.");
     loggingOut_ = false;
+    logoutCountdown_ = 0.0f;
     LOG_INFO("Logout complete");
     // Server will disconnect us
 }

@@ -726,6 +726,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     if (showMinimap_) {
         renderMinimapMarkers(gameHandler);
     }
+    renderLogoutCountdown(gameHandler);
     renderDeathScreen(gameHandler);
     renderReclaimCorpseButton(gameHandler);
     renderResurrectDialog(gameHandler);
@@ -14087,6 +14088,68 @@ void GameScreen::renderTaxiWindow(game::GameHandler& gameHandler) {
     if (!open) {
         gameHandler.closeTaxi();
     }
+}
+
+// ============================================================
+// Logout Countdown
+// ============================================================
+
+void GameScreen::renderLogoutCountdown(game::GameHandler& gameHandler) {
+    if (!gameHandler.isLoggingOut()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth())  : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    constexpr float W = 280.0f;
+    constexpr float H = 80.0f;
+    ImGui::SetNextWindowPos(ImVec2((screenW - W) * 0.5f, screenH * 0.5f - H * 0.5f - 60.0f),
+                            ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(W, H), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.88f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.18f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_Border,   ImVec4(0.5f, 0.5f, 0.8f, 1.0f));
+
+    if (ImGui::Begin("##LogoutCountdown", nullptr,
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus)) {
+
+        float cd = gameHandler.getLogoutCountdown();
+        if (cd > 0.0f) {
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0f);
+            ImGui::SetCursorPosX((W - ImGui::CalcTextSize("Logging out in 20s...").x) * 0.5f);
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f),
+                               "Logging out in %ds...", static_cast<int>(std::ceil(cd)));
+
+            // Progress bar (20 second countdown)
+            float frac = 1.0f - std::min(cd / 20.0f, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.5f, 0.5f, 0.9f, 1.0f));
+            ImGui::ProgressBar(frac, ImVec2(-1.0f, 8.0f), "");
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        } else {
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 14.0f);
+            ImGui::SetCursorPosX((W - ImGui::CalcTextSize("Logging out...").x) * 0.5f);
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Logging out...");
+            ImGui::Spacing();
+        }
+
+        // Cancel button — only while countdown is still running
+        if (cd > 0.0f) {
+            float btnW = 100.0f;
+            ImGui::SetCursorPosX((W - btnW) * 0.5f);
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.5f, 0.1f, 0.1f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.15f, 0.15f, 1.0f));
+            if (ImGui::Button("Cancel", ImVec2(btnW, 0))) {
+                gameHandler.cancelLogout();
+            }
+            ImGui::PopStyleColor(2);
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
 }
 
 // ============================================================

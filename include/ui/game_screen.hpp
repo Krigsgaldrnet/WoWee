@@ -348,6 +348,7 @@ private:
     void renderTrainerWindow(game::GameHandler& gameHandler);
     void renderStableWindow(game::GameHandler& gameHandler);
     void renderTaxiWindow(game::GameHandler& gameHandler);
+    void renderLogoutCountdown(game::GameHandler& gameHandler);
     void renderDeathScreen(game::GameHandler& gameHandler);
     void renderReclaimCorpseButton(game::GameHandler& gameHandler);
     void renderResurrectDialog(game::GameHandler& gameHandler);

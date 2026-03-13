@@ -497,6 +497,8 @@ public:
     // Logout commands
     void requestLogout();
     void cancelLogout();
+    bool  isLoggingOut()        const { return loggingOut_; }
+    float getLogoutCountdown()  const { return logoutCountdown_; }
 
     // Stand state
     void setStandState(uint8_t state);  // 0=stand, 1=sit, 2=sit_chair, 3=sleep, 4=sit_low_chair, 5=sit_medium_chair, 6=sit_high_chair, 7=dead, 8=kneel, 9=submerged
@@ -2491,7 +2493,8 @@ private:
     std::unordered_map<std::string, uint64_t> ignoreCache;  // name -> guid
 
     // ---- Logout state ----
-    bool loggingOut_ = false;
+    bool  loggingOut_        = false;
+    float logoutCountdown_   = 0.0f;   // seconds remaining before server logs us out (0 = instant/done)
 
     // ---- Display state ----
     bool helmVisible_ = true;
