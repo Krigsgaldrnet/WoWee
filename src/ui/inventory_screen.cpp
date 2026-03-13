@@ -1245,18 +1245,35 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
                                 snprintf(label, sizeof(label), "%s", name.c_str());
                             }
 
-                            // Show progress bar with value/max overlay
+                            // Effective value includes temporary and permanent bonuses
+                            uint16_t effective = skill->effectiveValue();
+                            uint16_t bonus = skill->bonusTemp + skill->bonusPerm;
+
+                            // Progress bar reflects effective / max; cap visual fill at 1.0
                             float ratio = (skill->maxValue > 0)
-                                ? static_cast<float>(skill->value) / static_cast<float>(skill->maxValue)
+                                ? std::min(1.0f, static_cast<float>(effective) / static_cast<float>(skill->maxValue))
                                 : 0.0f;
 
                             char overlay[64];
-                            snprintf(overlay, sizeof(overlay), "%u / %u", skill->value, skill->maxValue);
+                            if (bonus > 0)
+                                snprintf(overlay, sizeof(overlay), "%u / %u (+%u)", effective, skill->maxValue, bonus);
+                            else
+                                snprintf(overlay, sizeof(overlay), "%u / %u", effective, skill->maxValue);
 
-                            ImGui::Text("%s", label);
+                            // Gold name when maxed out, cyan when buffed above base, default otherwise
+                            bool isMaxed  = (effective >= skill->maxValue && skill->maxValue > 0);
+                            bool isBuffed = (bonus > 0);
+                            ImVec4 nameColor = isMaxed  ? ImVec4(1.0f, 0.82f, 0.0f, 1.0f)
+                                             : isBuffed ? ImVec4(0.4f, 0.9f,  1.0f, 1.0f)
+                                             :            ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+                            ImGui::TextColored(nameColor, "%s", label);
                             ImGui::SameLine(180.0f);
                             ImGui::SetNextItemWidth(-1.0f);
+                            // Bar color: gold when maxed, green otherwise
+                            ImVec4 barColor = isMaxed ? ImVec4(1.0f, 0.82f, 0.0f, 1.0f) : ImVec4(0.2f, 0.7f, 0.2f, 1.0f);
+                            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
                             ImGui::ProgressBar(ratio, ImVec2(0, 14.0f), overlay);
+                            ImGui::PopStyleColor();
                         }
                     }
                 }

@@ -21382,10 +21382,20 @@ void GameHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields)
         uint16_t value = raw1 & 0xFFFF;
         uint16_t maxValue = (raw1 >> 16) & 0xFFFF;
 
+        uint16_t bonusTemp = 0;
+        uint16_t bonusPerm = 0;
+        auto bonusIt = fields.find(static_cast<uint16_t>(baseField + 2));
+        if (bonusIt != fields.end()) {
+            bonusTemp = bonusIt->second & 0xFFFF;
+            bonusPerm = (bonusIt->second >> 16) & 0xFFFF;
+        }
+
         PlayerSkill skill;
         skill.skillId = skillId;
         skill.value = value;
         skill.maxValue = maxValue;
+        skill.bonusTemp = bonusTemp;
+        skill.bonusPerm = bonusPerm;
         newSkills[skillId] = skill;
     }
 
