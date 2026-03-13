@@ -842,45 +842,47 @@ void WorldMap::render(const glm::vec3& playerRenderPos, int screenWidth, int scr
 
     if (!zones.empty()) updateExploration(playerRenderPos);
 
-    if (open) {
-        if (input.isKeyJustPressed(SDL_SCANCODE_M) ||
-            input.isKeyJustPressed(SDL_SCANCODE_ESCAPE)) {
-            open = false;
-            return;
+    // game_screen owns the open/close toggle (via showWorldMap_ + TOGGLE_WORLD_MAP keybinding).
+    // render() is only called when showWorldMap_ is true, so treat each call as "should be open".
+    if (!open) {
+        // First time shown: load zones and navigate to player's location.
+        open = true;
+        if (zones.empty()) loadZonesFromDBC();
+
+        int bestContinent = findBestContinentForPlayer(playerRenderPos);
+        if (bestContinent >= 0 && bestContinent != continentIdx) {
+            continentIdx = bestContinent;
+            compositedIdx = -1;
         }
 
+        int playerZone = findZoneForPlayer(playerRenderPos);
+        if (playerZone >= 0 && continentIdx >= 0 &&
+            zoneBelongsToContinent(playerZone, continentIdx)) {
+            loadZoneTextures(playerZone);
+            requestComposite(playerZone);
+            currentIdx = playerZone;
+            viewLevel = ViewLevel::ZONE;
+        } else if (continentIdx >= 0) {
+            loadZoneTextures(continentIdx);
+            requestComposite(continentIdx);
+            currentIdx = continentIdx;
+            viewLevel = ViewLevel::CONTINENT;
+        }
+    }
+
+    // ESC closes the map; game_screen will sync showWorldMap_ via wm->isOpen() next frame.
+    if (input.isKeyJustPressed(SDL_SCANCODE_ESCAPE)) {
+        open = false;
+        return;
+    }
+
+    {
         auto& io = ImGui::GetIO();
         float wheelDelta = io.MouseWheel;
         if (std::abs(wheelDelta) < 0.001f)
             wheelDelta = input.getMouseWheelDelta();
         if (wheelDelta > 0.0f) zoomIn(playerRenderPos);
         else if (wheelDelta < 0.0f) zoomOut();
-    } else {
-        auto& io = ImGui::GetIO();
-        if (!io.WantCaptureKeyboard && input.isKeyJustPressed(SDL_SCANCODE_M)) {
-            open = true;
-            if (zones.empty()) loadZonesFromDBC();
-
-            int bestContinent = findBestContinentForPlayer(playerRenderPos);
-            if (bestContinent >= 0 && bestContinent != continentIdx) {
-                continentIdx = bestContinent;
-                compositedIdx = -1;
-            }
-
-            int playerZone = findZoneForPlayer(playerRenderPos);
-            if (playerZone >= 0 && continentIdx >= 0 &&
-                zoneBelongsToContinent(playerZone, continentIdx)) {
-                loadZoneTextures(playerZone);
-                requestComposite(playerZone);
-                currentIdx = playerZone;
-                viewLevel = ViewLevel::ZONE;
-            } else if (continentIdx >= 0) {
-                loadZoneTextures(continentIdx);
-                requestComposite(continentIdx);
-                currentIdx = continentIdx;
-                viewLevel = ViewLevel::CONTINENT;
-            }
-        }
     }
 
     if (!open) return;

@@ -22,15 +22,15 @@ void KeybindingManager::initializeDefaults() {
     bindings_[static_cast<int>(Action::TOGGLE_SPELLBOOK)] = ImGuiKey_P;  // WoW standard key
     bindings_[static_cast<int>(Action::TOGGLE_TALENTS)] = ImGuiKey_N;     // WoW standard key
     bindings_[static_cast<int>(Action::TOGGLE_QUESTS)] = ImGuiKey_L;
-    bindings_[static_cast<int>(Action::TOGGLE_MINIMAP)] = ImGuiKey_M;
+    bindings_[static_cast<int>(Action::TOGGLE_MINIMAP)] = ImGuiKey_None;  // minimap is always visible; no default toggle
     bindings_[static_cast<int>(Action::TOGGLE_SETTINGS)] = ImGuiKey_Escape;
     bindings_[static_cast<int>(Action::TOGGLE_CHAT)] = ImGuiKey_Enter;
     bindings_[static_cast<int>(Action::TOGGLE_GUILD_ROSTER)] = ImGuiKey_O;
     bindings_[static_cast<int>(Action::TOGGLE_DUNGEON_FINDER)] = ImGuiKey_J;  // Originally I, reassigned to avoid conflict
-    bindings_[static_cast<int>(Action::TOGGLE_WORLD_MAP)] = ImGuiKey_W;
+    bindings_[static_cast<int>(Action::TOGGLE_WORLD_MAP)] = ImGuiKey_M;  // WoW standard: M opens world map
     bindings_[static_cast<int>(Action::TOGGLE_NAMEPLATES)] = ImGuiKey_V;
     bindings_[static_cast<int>(Action::TOGGLE_RAID_FRAMES)] = ImGuiKey_F;  // Reassigned from R (now camera reset)
-    bindings_[static_cast<int>(Action::TOGGLE_QUEST_LOG)] = ImGuiKey_Q;
+    bindings_[static_cast<int>(Action::TOGGLE_QUEST_LOG)] = ImGuiKey_None;  // Q conflicts with strafe-left; quest log accessible via TOGGLE_QUESTS (L)
     bindings_[static_cast<int>(Action::TOGGLE_ACHIEVEMENTS)] = ImGuiKey_Y;  // WoW standard key (Shift+Y in retail)
 }
 

@@ -2341,10 +2341,6 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             showTitlesWindow_ = !showTitlesWindow_;
         }
 
-        // Toggle Equipment Set Manager with ` (backtick / grave — unused in standard WoW)
-        if (input.isKeyJustPressed(SDL_SCANCODE_GRAVE) && !ImGui::GetIO().WantCaptureKeyboard) {
-            showEquipSetWindow_ = !showEquipSetWindow_;
-        }
 
         // Action bar keys (1-9, 0, -, =)
         static const SDL_Scancode actionBarKeys[] = {
@@ -6387,6 +6383,9 @@ void GameScreen::renderWorldMap(game::GameHandler& gameHandler) {
     int screenW = window ? window->getWidth() : 1280;
     int screenH = window ? window->getHeight() : 720;
     wm->render(playerPos, screenW, screenH);
+
+    // Sync showWorldMap_ if the map closed itself (e.g. ESC key inside the overlay).
+    if (!wm->isOpen()) showWorldMap_ = false;
 }
 
 // ============================================================
