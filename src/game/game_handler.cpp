@@ -14716,6 +14716,7 @@ void GameHandler::handleInstanceDifficulty(network::Packet& packet) {
     // MSG_SET_DUNGEON_DIFFICULTY:  uint32 difficulty[, uint32 isInGroup, uint32 savedBool] (4 or 12 bytes)
     auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
     if (rem() < 4) return;
+    uint32_t prevDifficulty = instanceDifficulty_;
     instanceDifficulty_ = packet.readUInt32();
     if (rem() >= 4) {
         uint32_t secondField = packet.readUInt32();
@@ -14734,6 +14735,15 @@ void GameHandler::handleInstanceDifficulty(network::Packet& packet) {
         instanceIsHeroic_ = (instanceDifficulty_ == 1);
     }
     LOG_INFO("Instance difficulty: ", instanceDifficulty_, " heroic=", instanceIsHeroic_);
+
+    // Announce difficulty change to the player (only when it actually changes)
+    // difficulty values: 0=Normal, 1=Heroic, 2=25-Man Normal, 3=25-Man Heroic
+    if (instanceDifficulty_ != prevDifficulty) {
+        static const char* kDiffLabels[] = {"Normal", "Heroic", "25-Man Normal", "25-Man Heroic"};
+        const char* diffLabel = (instanceDifficulty_ < 4) ? kDiffLabels[instanceDifficulty_] : nullptr;
+        if (diffLabel)
+            addSystemChatMessage(std::string("Dungeon difficulty set to ") + diffLabel + ".");
+    }
 }
 
 // ---------------------------------------------------------------------------
