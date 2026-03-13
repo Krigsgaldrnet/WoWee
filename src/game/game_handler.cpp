@@ -4501,10 +4501,26 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 float wIntensity = packet.readFloat();
                 if (packet.getSize() - packet.getReadPos() >= 1)
                     /*uint8_t isAbrupt =*/ packet.readUInt8();
+                uint32_t prevWeatherType = weatherType_;
                 weatherType_ = wType;
                 weatherIntensity_ = wIntensity;
                 const char* typeName = (wType == 1) ? "Rain" : (wType == 2) ? "Snow" : (wType == 3) ? "Storm" : "Clear";
                 LOG_INFO("Weather changed: type=", wType, " (", typeName, "), intensity=", wIntensity);
+                // Announce weather changes (including initial zone weather)
+                if (wType != prevWeatherType) {
+                    const char* weatherMsg = nullptr;
+                    if (wIntensity < 0.05f || wType == 0) {
+                        if (prevWeatherType != 0)
+                            weatherMsg = "The weather clears.";
+                    } else if (wType == 1) {
+                        weatherMsg = "It begins to rain.";
+                    } else if (wType == 2) {
+                        weatherMsg = "It begins to snow.";
+                    } else if (wType == 3) {
+                        weatherMsg = "A storm rolls in.";
+                    }
+                    if (weatherMsg) addSystemChatMessage(weatherMsg);
+                }
                 // Storm transition: trigger a low-frequency thunder rumble shake
                 if (wType == 3 && wIntensity > 0.3f && cameraShakeCallback_) {
                     float mag = 0.03f + wIntensity * 0.04f; // 0.03–0.07 units
