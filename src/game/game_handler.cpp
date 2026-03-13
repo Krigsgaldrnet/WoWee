@@ -6750,7 +6750,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
 
-        // ---- Misc consume ----
+        // ---- Misc consume (no state change needed) ----
         case Opcode::SMSG_SET_PLAYER_DECLINED_NAMES_RESULT:
         case Opcode::SMSG_PROPOSE_LEVEL_GRANT:
         case Opcode::SMSG_REFER_A_FRIEND_EXPIRED:
@@ -6761,6 +6761,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_NOTIFY_DEST_LOC_SPELL_CAST:
         case Opcode::SMSG_RESPOND_INSPECT_ACHIEVEMENTS:
         case Opcode::SMSG_PLAYER_SKINNED:
+            packet.setReadPos(packet.getSize());
+            break;
         case Opcode::SMSG_QUEST_POI_QUERY_RESPONSE:
             handleQuestPoiQueryResponse(packet);
             break;
@@ -7180,6 +7182,175 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_CALENDAR_EVENT_MODERATOR_STATUS_ALERT:
         case Opcode::SMSG_CALENDAR_EVENT_REMOVED_ALERT:
         case Opcode::SMSG_CALENDAR_EVENT_UPDATED_ALERT:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        case Opcode::SMSG_SERVERTIME: {
+            // uint32 unixTime — server's current unix timestamp; use to sync gameTime_
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t srvTime = packet.readUInt32();
+                if (srvTime > 0) {
+                    gameTime_ = static_cast<float>(srvTime);
+                    LOG_DEBUG("SMSG_SERVERTIME: serverTime=", srvTime);
+                }
+            }
+            break;
+        }
+
+        case Opcode::SMSG_KICK_REASON: {
+            // uint64 kickerGuid + uint32 kickReasonType + null-terminated reason string
+            // kickReasonType: 0=other, 1=afk, 2=vote kick
+            if (packet.getSize() - packet.getReadPos() < 12) {
+                packet.setReadPos(packet.getSize());
+                break;
+            }
+            uint64_t kickerGuid   = packet.readUInt64();
+            uint32_t reasonType   = packet.readUInt32();
+            std::string reason;
+            if (packet.getSize() - packet.getReadPos() > 0)
+                reason = packet.readString();
+            (void)kickerGuid;
+            (void)reasonType;
+            std::string msg = "You have been removed from the group.";
+            if (!reason.empty())
+                msg = "You have been removed from the group: " + reason;
+            else if (reasonType == 1)
+                msg = "You have been removed from the group for being AFK.";
+            addSystemChatMessage(msg);
+            addUIError(msg);
+            LOG_INFO("SMSG_KICK_REASON: reasonType=", reasonType,
+                     " reason='", reason, "'");
+            break;
+        }
+
+        case Opcode::SMSG_GROUPACTION_THROTTLED: {
+            // uint32 throttleMs — rate-limited group action; notify the player
+            if (packet.getSize() - packet.getReadPos() >= 4) {
+                uint32_t throttleMs = packet.readUInt32();
+                char buf[128];
+                if (throttleMs > 0) {
+                    std::snprintf(buf, sizeof(buf),
+                                  "Group action throttled. Please wait %.1f seconds.",
+                                  throttleMs / 1000.0f);
+                } else {
+                    std::snprintf(buf, sizeof(buf), "Group action throttled.");
+                }
+                addSystemChatMessage(buf);
+                LOG_DEBUG("SMSG_GROUPACTION_THROTTLED: throttleMs=", throttleMs);
+            }
+            break;
+        }
+
+        case Opcode::SMSG_GMRESPONSE_RECEIVED: {
+            // WotLK 3.3.5a: uint32 ticketId + string subject + string body + uint32 count
+            //   per count: string responseText
+            if (packet.getSize() - packet.getReadPos() < 4) {
+                packet.setReadPos(packet.getSize());
+                break;
+            }
+            uint32_t ticketId = packet.readUInt32();
+            std::string subject;
+            std::string body;
+            if (packet.getSize() - packet.getReadPos() > 0) subject = packet.readString();
+            if (packet.getSize() - packet.getReadPos() > 0) body    = packet.readString();
+            uint32_t responseCount = 0;
+            if (packet.getSize() - packet.getReadPos() >= 4)
+                responseCount = packet.readUInt32();
+            std::string responseText;
+            for (uint32_t i = 0; i < responseCount && i < 10; ++i) {
+                if (packet.getSize() - packet.getReadPos() > 0) {
+                    std::string t = packet.readString();
+                    if (i == 0) responseText = t;
+                }
+            }
+            (void)ticketId;
+            std::string msg;
+            if (!responseText.empty())
+                msg = "[GM Response] " + responseText;
+            else if (!body.empty())
+                msg = "[GM Response] " + body;
+            else if (!subject.empty())
+                msg = "[GM Response] " + subject;
+            else
+                msg = "[GM Response] Your ticket has been answered.";
+            addSystemChatMessage(msg);
+            addUIError(msg);
+            LOG_INFO("SMSG_GMRESPONSE_RECEIVED: ticketId=", ticketId,
+                     " subject='", subject, "'");
+            break;
+        }
+
+        case Opcode::SMSG_GMRESPONSE_STATUS_UPDATE: {
+            // uint32 ticketId + uint8 status (1=open, 2=surveyed, 3=need_more_help)
+            if (packet.getSize() - packet.getReadPos() >= 5) {
+                uint32_t ticketId = packet.readUInt32();
+                uint8_t  status   = packet.readUInt8();
+                const char* statusStr = (status == 1) ? "open"
+                                      : (status == 2) ? "answered"
+                                      : (status == 3) ? "needs more info"
+                                      : "updated";
+                char buf[128];
+                std::snprintf(buf, sizeof(buf),
+                              "[GM Ticket #%u] Status: %s.", ticketId, statusStr);
+                addSystemChatMessage(buf);
+                LOG_DEBUG("SMSG_GMRESPONSE_STATUS_UPDATE: ticketId=", ticketId,
+                          " status=", static_cast<int>(status));
+            }
+            break;
+        }
+
+        // ---- Voice chat (WotLK built-in voice) — consume silently ----
+        case Opcode::SMSG_VOICE_SESSION_ROSTER_UPDATE:
+        case Opcode::SMSG_VOICE_SESSION_LEAVE:
+        case Opcode::SMSG_VOICE_SESSION_ADJUST_PRIORITY:
+        case Opcode::SMSG_VOICE_SET_TALKER_MUTED:
+        case Opcode::SMSG_VOICE_SESSION_ENABLE:
+        case Opcode::SMSG_VOICE_PARENTAL_CONTROLS:
+        case Opcode::SMSG_AVAILABLE_VOICE_CHANNEL:
+        case Opcode::SMSG_VOICE_CHAT_STATUS:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Dance / custom emote system (WotLK) — consume silently ----
+        case Opcode::SMSG_NOTIFY_DANCE:
+        case Opcode::SMSG_PLAY_DANCE:
+        case Opcode::SMSG_STOP_DANCE:
+        case Opcode::SMSG_DANCE_QUERY_RESPONSE:
+        case Opcode::SMSG_INVALIDATE_DANCE:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Commentator / spectator mode — consume silently ----
+        case Opcode::SMSG_COMMENTATOR_STATE_CHANGED:
+        case Opcode::SMSG_COMMENTATOR_MAP_INFO:
+        case Opcode::SMSG_COMMENTATOR_GET_PLAYER_INFO:
+        case Opcode::SMSG_COMMENTATOR_PLAYER_INFO:
+        case Opcode::SMSG_COMMENTATOR_SKIRMISH_QUEUE_RESULT1:
+        case Opcode::SMSG_COMMENTATOR_SKIRMISH_QUEUE_RESULT2:
+            packet.setReadPos(packet.getSize());
+            break;
+
+        // ---- Debug / cheat / GM-only opcodes — consume silently ----
+        case Opcode::SMSG_DBLOOKUP:
+        case Opcode::SMSG_CHECK_FOR_BOTS:
+        case Opcode::SMSG_GODMODE:
+        case Opcode::SMSG_PETGODMODE:
+        case Opcode::SMSG_DEBUG_AISTATE:
+        case Opcode::SMSG_DEBUGAURAPROC:
+        case Opcode::SMSG_TEST_DROP_RATE_RESULT:
+        case Opcode::SMSG_COOLDOWN_CHEAT:
+        case Opcode::SMSG_GM_PLAYER_INFO:
+        case Opcode::SMSG_CHEAT_DUMP_ITEMS_DEBUG_ONLY_RESPONSE:
+        case Opcode::SMSG_CHEAT_DUMP_ITEMS_DEBUG_ONLY_RESPONSE_WRITE_FILE:
+        case Opcode::SMSG_CHEAT_PLAYER_LOOKUP:
+        case Opcode::SMSG_IGNORE_REQUIREMENTS_CHEAT:
+        case Opcode::SMSG_IGNORE_DIMINISHING_RETURNS_CHEAT:
+        case Opcode::SMSG_DEBUG_LIST_TARGETS:
+        case Opcode::SMSG_DEBUG_SERVER_GEO:
+        case Opcode::SMSG_DUMP_OBJECTS_DATA:
+        case Opcode::SMSG_AFK_MONITOR_INFO_RESPONSE:
+        case Opcode::SMSG_FORCEACTIONSHOW:
+        case Opcode::SMSG_MOVE_CHARACTER_CHEAT:
             packet.setReadPos(packet.getSize());
             break;
 
