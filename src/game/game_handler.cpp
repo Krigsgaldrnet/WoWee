@@ -16835,11 +16835,36 @@ void GameHandler::handlePartyCommandResult(network::Packet& packet) {
     if (!PartyCommandResultParser::parse(packet, data)) return;
 
     if (data.result != PartyResult::OK) {
+        const char* errText = nullptr;
+        switch (data.result) {
+            case PartyResult::BAD_PLAYER_NAME:       errText = "No player named \"%s\" is currently online."; break;
+            case PartyResult::TARGET_NOT_IN_GROUP:   errText = "%s is not in your group."; break;
+            case PartyResult::TARGET_NOT_IN_INSTANCE:errText = "%s is not in your instance."; break;
+            case PartyResult::GROUP_FULL:            errText = "Your party is full."; break;
+            case PartyResult::ALREADY_IN_GROUP:      errText = "%s is already in a group."; break;
+            case PartyResult::NOT_IN_GROUP:          errText = "You are not in a group."; break;
+            case PartyResult::NOT_LEADER:            errText = "You are not the group leader."; break;
+            case PartyResult::PLAYER_WRONG_FACTION:  errText = "%s is the wrong faction for this group."; break;
+            case PartyResult::IGNORING_YOU:          errText = "%s is ignoring you."; break;
+            case PartyResult::LFG_PENDING:           errText = "You cannot do that while in a LFG queue."; break;
+            case PartyResult::INVITE_RESTRICTED:     errText = "Target is not accepting group invites."; break;
+            default:                                 errText = "Party command failed."; break;
+        }
+
+        char buf[256];
+        if (!data.name.empty() && errText && std::strstr(errText, "%s")) {
+            std::snprintf(buf, sizeof(buf), errText, data.name.c_str());
+        } else if (errText) {
+            std::snprintf(buf, sizeof(buf), "%s", errText);
+        } else {
+            std::snprintf(buf, sizeof(buf), "Party command failed (error %u).",
+                          static_cast<uint32_t>(data.result));
+        }
+
         MessageChatData msg;
         msg.type = ChatType::SYSTEM;
         msg.language = ChatLanguage::UNIVERSAL;
-        msg.message = "Party command failed (error " + std::to_string(static_cast<uint32_t>(data.result)) + ")";
-        if (!data.name.empty()) msg.message += " for " + data.name;
+        msg.message = buf;
         addLocalChatMessage(msg);
     }
 }
