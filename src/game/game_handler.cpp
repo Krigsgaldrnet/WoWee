@@ -14269,9 +14269,35 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
     if (packet.getSize() - packet.getReadPos() < 4) return;
     uint32_t statusId = packet.readUInt32();
 
-    std::string bgName = "Battleground #" + std::to_string(bgTypeId);
+    // Map BG type IDs to their names (stable across all three expansions)
+    static const std::pair<uint32_t, const char*> kBgNames[] = {
+        {1,  "Alterac Valley"},
+        {2,  "Warsong Gulch"},
+        {3,  "Arathi Basin"},
+        {6,  "Eye of the Storm"},
+        {9,  "Strand of the Ancients"},
+        {11, "Isle of Conquest"},
+        {30, "Nagrand Arena"},
+        {31, "Blade's Edge Arena"},
+        {32, "Dalaran Sewers"},
+        {33, "Ring of Valor"},
+        {34, "Ruins of Lordaeron"},
+    };
+    std::string bgName = "Battleground";
+    for (const auto& kv : kBgNames) {
+        if (kv.first == bgTypeId) { bgName = kv.second; break; }
+    }
+    if (bgName == "Battleground")
+        bgName = "Battleground #" + std::to_string(bgTypeId);
     if (arenaType > 0) {
         bgName = std::to_string(arenaType) + "v" + std::to_string(arenaType) + " Arena";
+        // If bgTypeId matches a named arena, prefer that name
+        for (const auto& kv : kBgNames) {
+            if (kv.first == bgTypeId) {
+                bgName += " (" + std::string(kv.second) + ")";
+                break;
+            }
+        }
     }
 
     // Parse status-specific fields
