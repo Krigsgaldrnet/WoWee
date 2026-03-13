@@ -2699,5 +2699,24 @@ public:
     static bool parse(network::Packet& packet, AuctionCommandResult& data);
 };
 
+/** Pet Stable packet builders */
+class ListStabledPetsPacket {
+public:
+    /** MSG_LIST_STABLED_PETS (CMSG): request list from stable master */
+    static network::Packet build(uint64_t stableMasterGuid);
+};
+
+class StablePetPacket {
+public:
+    /** CMSG_STABLE_PET: store active pet in the given stable slot (1-based) */
+    static network::Packet build(uint64_t stableMasterGuid, uint8_t slot);
+};
+
+class UnstablePetPacket {
+public:
+    /** CMSG_UNSTABLE_PET: retrieve a stabled pet by its server-side petNumber */
+    static network::Packet build(uint64_t stableMasterGuid, uint32_t petNumber);
+};
+
 } // namespace game
 } // namespace wowee

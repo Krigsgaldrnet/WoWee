@@ -2070,6 +2070,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
 
+        // ---- Pet stable list ----
+        case Opcode::MSG_LIST_STABLED_PETS:
+            if (state == WorldState::IN_WORLD) handleListStabledPets(packet);
+            break;
+
         // ---- Pet stable result ----
         case Opcode::SMSG_STABLE_RESULT: {
             // uint8 result
@@ -2086,6 +2091,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             if (msg) addSystemChatMessage(msg);
             LOG_INFO("SMSG_STABLE_RESULT: result=", static_cast<int>(result));
+            // Refresh the stable list after a result to reflect the new state
+            if (stableWindowOpen_ && stableMasterGuid_ != 0 && socket && result <= 0x08) {
+                auto refreshPkt = ListStabledPetsPacket::build(stableMasterGuid_);
+                socket->send(refreshPkt);
+            }
             break;
         }
 
@@ -6916,6 +6926,10 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     unitAurasCache_.clear();
     unitCastStates_.clear();
     petGuid_ = 0;
+    stableWindowOpen_  = false;
+    stableMasterGuid_  = 0;
+    stableNumSlots_    = 0;
+    stabledPets_.clear();
     playerXp_ = 0;
     playerNextLevelXp_ = 0;
     serverPlayerLevel_ = 1;
@@ -14622,6 +14636,78 @@ void GameHandler::dismissPet() {
     socket->send(packet);
 }
 
+void GameHandler::requestStabledPetList() {
+    if (state != WorldState::IN_WORLD || !socket || stableMasterGuid_ == 0) return;
+    auto pkt = ListStabledPetsPacket::build(stableMasterGuid_);
+    socket->send(pkt);
+    LOG_INFO("Sent MSG_LIST_STABLED_PETS to npc=0x", std::hex, stableMasterGuid_, std::dec);
+}
+
+void GameHandler::stablePet(uint8_t slot) {
+    if (state != WorldState::IN_WORLD || !socket || stableMasterGuid_ == 0) return;
+    if (petGuid_ == 0) {
+        addSystemChatMessage("You do not have an active pet to stable.");
+        return;
+    }
+    auto pkt = StablePetPacket::build(stableMasterGuid_, slot);
+    socket->send(pkt);
+    LOG_INFO("Sent CMSG_STABLE_PET: slot=", static_cast<int>(slot));
+}
+
+void GameHandler::unstablePet(uint32_t petNumber) {
+    if (state != WorldState::IN_WORLD || !socket || stableMasterGuid_ == 0 || petNumber == 0) return;
+    auto pkt = UnstablePetPacket::build(stableMasterGuid_, petNumber);
+    socket->send(pkt);
+    LOG_INFO("Sent CMSG_UNSTABLE_PET: petNumber=", petNumber);
+}
+
+void GameHandler::handleListStabledPets(network::Packet& packet) {
+    // SMSG MSG_LIST_STABLED_PETS:
+    //   uint64 stableMasterGuid
+    //   uint8  petCount
+    //   uint8  numSlots
+    //   per pet:
+    //     uint32 petNumber
+    //     uint32 entry
+    //     uint32 level
+    //     string name (null-terminated)
+    //     uint32 displayId
+    //     uint8  isActive  (1 = active/summoned, 0 = stabled)
+    constexpr size_t kMinHeader = 8 + 1 + 1;
+    if (packet.getSize() - packet.getReadPos() < kMinHeader) {
+        LOG_WARNING("MSG_LIST_STABLED_PETS: packet too short (", packet.getSize(), ")");
+        return;
+    }
+    stableMasterGuid_ = packet.readUInt64();
+    uint8_t petCount  = packet.readUInt8();
+    stableNumSlots_   = packet.readUInt8();
+
+    stabledPets_.clear();
+    stabledPets_.reserve(petCount);
+
+    for (uint8_t i = 0; i < petCount; ++i) {
+        if (packet.getSize() - packet.getReadPos() < 4 + 4 + 4) break;
+        StabledPet pet;
+        pet.petNumber = packet.readUInt32();
+        pet.entry     = packet.readUInt32();
+        pet.level     = packet.readUInt32();
+        pet.name      = packet.readString();
+        if (packet.getSize() - packet.getReadPos() < 4 + 1) break;
+        pet.displayId = packet.readUInt32();
+        pet.isActive  = (packet.readUInt8() != 0);
+        stabledPets_.push_back(std::move(pet));
+    }
+
+    stableWindowOpen_ = true;
+    LOG_INFO("MSG_LIST_STABLED_PETS: stableMasterGuid=0x", std::hex, stableMasterGuid_, std::dec,
+             " petCount=", (int)petCount, " numSlots=", (int)stableNumSlots_);
+    for (const auto& p : stabledPets_) {
+        LOG_DEBUG("  Pet: number=", p.petNumber, " entry=", p.entry,
+                  " level=", p.level, " name='", p.name, "' displayId=", p.displayId,
+                  " active=", p.isActive);
+    }
+}
+
 void GameHandler::setActionBarSlot(int slot, ActionBarSlot::Type type, uint32_t id) {
     if (slot < 0 || slot >= ACTION_BAR_SLOTS) return;
     actionBar[slot].type = type;
@@ -15957,6 +16043,18 @@ void GameHandler::selectGossipOption(uint32_t optionId) {
             auto bindPkt = BinderActivatePacket::build(currentGossip.npcGuid);
             socket->send(bindPkt);
             LOG_INFO("Sent CMSG_BINDER_ACTIVATE for npc=0x", std::hex, currentGossip.npcGuid, std::dec);
+        }
+
+        // Stable master detection: GOSSIP_OPTION_STABLE or text keywords
+        if (text == "GOSSIP_OPTION_STABLE" ||
+            textLower.find("stable") != std::string::npos ||
+            textLower.find("my pet") != std::string::npos) {
+            stableMasterGuid_ = currentGossip.npcGuid;
+            stableWindowOpen_ = false;  // will open when list arrives
+            auto listPkt = ListStabledPetsPacket::build(currentGossip.npcGuid);
+            socket->send(listPkt);
+            LOG_INFO("Sent MSG_LIST_STABLED_PETS (gossip) to npc=0x",
+                     std::hex, currentGossip.npcGuid, std::dec);
         }
         break;
     }

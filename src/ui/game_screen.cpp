@@ -698,6 +698,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderQuestOfferRewardWindow(gameHandler);
     renderVendorWindow(gameHandler);
     renderTrainerWindow(gameHandler);
+    renderStableWindow(gameHandler);
     renderTaxiWindow(gameHandler);
     renderMailWindow(gameHandler);
     renderMailComposeWindow(gameHandler);
@@ -13591,6 +13592,123 @@ void GameScreen::renderEscapeMenu() {
         ImGui::PopStyleVar();
     }
     ImGui::End();
+}
+
+// ============================================================
+// Pet Stable Window
+// ============================================================
+
+void GameScreen::renderStableWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isStableWindowOpen()) return;
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth())  : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(screenW / 2.0f - 240.0f, screenH / 2.0f - 180.0f),
+                            ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(480.0f, 360.0f), ImGuiCond_Once);
+
+    bool open = true;
+    if (!ImGui::Begin("Pet Stable", &open,
+                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+        ImGui::End();
+        if (!open) {
+            // User closed the window; clear stable state
+            gameHandler.closeStableWindow();
+        }
+        return;
+    }
+
+    const auto& pets      = gameHandler.getStabledPets();
+    uint8_t numSlots      = gameHandler.getStableSlots();
+
+    ImGui::TextDisabled("Stable slots: %u", static_cast<unsigned>(numSlots));
+    ImGui::Separator();
+
+    // Active pets section
+    bool hasActivePets = false;
+    for (const auto& p : pets) {
+        if (p.isActive) { hasActivePets = true; break; }
+    }
+
+    if (hasActivePets) {
+        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "Active / Summoned");
+        for (const auto& p : pets) {
+            if (!p.isActive) continue;
+            ImGui::PushID(static_cast<int>(p.petNumber) * -1 - 1);
+
+            const std::string displayName = p.name.empty()
+                ? ("Pet #" + std::to_string(p.petNumber))
+                : p.name;
+            ImGui::Text("  %s  (Level %u)", displayName.c_str(), p.level);
+            ImGui::SameLine();
+            ImGui::TextDisabled("[Active]");
+
+            // Offer to stable the active pet if there are free slots
+            uint8_t usedSlots = 0;
+            for (const auto& sp : pets) { if (!sp.isActive) ++usedSlots; }
+            if (usedSlots < numSlots) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Store in stable")) {
+                    // Slot 1 is first stable slot; server handles free slot assignment.
+                    gameHandler.stablePet(1);
+                }
+            }
+            ImGui::PopID();
+        }
+        ImGui::Separator();
+    }
+
+    // Stabled pets section
+    ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.4f, 1.0f), "Stabled Pets");
+
+    bool hasStabledPets = false;
+    for (const auto& p : pets) {
+        if (!p.isActive) { hasStabledPets = true; break; }
+    }
+
+    if (!hasStabledPets) {
+        ImGui::TextDisabled("  (No pets in stable)");
+    } else {
+        for (const auto& p : pets) {
+            if (p.isActive) continue;
+            ImGui::PushID(static_cast<int>(p.petNumber));
+
+            const std::string displayName = p.name.empty()
+                ? ("Pet #" + std::to_string(p.petNumber))
+                : p.name;
+            ImGui::Text("  %s  (Level %u, Entry %u)",
+                        displayName.c_str(), p.level, p.entry);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Retrieve")) {
+                gameHandler.unstablePet(p.petNumber);
+            }
+            ImGui::PopID();
+        }
+    }
+
+    // Empty slots
+    uint8_t usedStableSlots = 0;
+    for (const auto& p : pets) { if (!p.isActive) ++usedStableSlots; }
+    if (usedStableSlots < numSlots) {
+        ImGui::TextDisabled("  %u empty slot(s) available",
+                            static_cast<unsigned>(numSlots - usedStableSlots));
+    }
+
+    ImGui::Separator();
+    if (ImGui::Button("Refresh")) {
+        gameHandler.requestStabledPetList();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Close")) {
+        gameHandler.closeStableWindow();
+    }
+
+    ImGui::End();
+    if (!open) {
+        gameHandler.closeStableWindow();
+    }
 }
 
 // ============================================================

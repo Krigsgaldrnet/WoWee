@@ -5397,5 +5397,29 @@ bool AuctionCommandResultParser::parse(network::Packet& packet, AuctionCommandRe
     return true;
 }
 
+// ============================================================
+// Pet Stable System
+// ============================================================
+
+network::Packet ListStabledPetsPacket::build(uint64_t stableMasterGuid) {
+    network::Packet p(wireOpcode(Opcode::MSG_LIST_STABLED_PETS));
+    p.writeUInt64(stableMasterGuid);
+    return p;
+}
+
+network::Packet StablePetPacket::build(uint64_t stableMasterGuid, uint8_t slot) {
+    network::Packet p(wireOpcode(Opcode::CMSG_STABLE_PET));
+    p.writeUInt64(stableMasterGuid);
+    p.writeUInt8(slot);
+    return p;
+}
+
+network::Packet UnstablePetPacket::build(uint64_t stableMasterGuid, uint32_t petNumber) {
+    network::Packet p(wireOpcode(Opcode::CMSG_UNSTABLE_PET));
+    p.writeUInt64(stableMasterGuid);
+    p.writeUInt32(petNumber);
+    return p;
+}
+
 } // namespace game
 } // namespace wowee

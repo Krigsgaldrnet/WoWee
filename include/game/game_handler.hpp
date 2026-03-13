@@ -634,6 +634,24 @@ public:
     void sendPetAction(uint32_t action, uint64_t targetGuid = 0);
     const std::unordered_set<uint32_t>& getKnownSpells() const { return knownSpells; }
 
+    // ---- Pet Stable ----
+    struct StabledPet {
+        uint32_t petNumber  = 0;   // server-side pet number (used for unstable/swap)
+        uint32_t entry      = 0;   // creature entry ID
+        uint32_t level      = 0;
+        std::string name;
+        uint32_t displayId  = 0;
+        bool     isActive   = false;  // true = currently summoned/active slot
+    };
+    bool isStableWindowOpen() const { return stableWindowOpen_; }
+    void closeStableWindow() { stableWindowOpen_ = false; }
+    uint64_t getStableMasterGuid() const { return stableMasterGuid_; }
+    uint8_t  getStableSlots() const { return stableNumSlots_; }
+    const std::vector<StabledPet>& getStabledPets() const { return stabledPets_; }
+    void requestStabledPetList();          // CMSG MSG_LIST_STABLED_PETS
+    void stablePet(uint8_t slot);          // CMSG_STABLE_PET (store active pet in slot)
+    void unstablePet(uint32_t petNumber);  // CMSG_UNSTABLE_PET (retrieve to active)
+
     // Player proficiency bitmasks (from SMSG_SET_PROFICIENCY)
     // itemClass 2 = Weapon (subClassMask bits: 0=Axe1H,1=Axe2H,2=Bow,3=Gun,4=Mace1H,5=Mace2H,6=Polearm,7=Sword1H,8=Sword2H,10=Staff,13=Fist,14=Misc,15=Dagger,16=Thrown,17=Crossbow,18=Wand,19=Fishing)
     // itemClass 4 = Armor (subClassMask bits: 1=Cloth,2=Leather,3=Mail,4=Plate,6=Shield)
@@ -2389,6 +2407,13 @@ private:
     uint8_t  petReact_   = 1;            // 0=passive,1=defensive,2=aggressive
     std::vector<uint32_t> petSpellList_; // known pet spells
     std::unordered_set<uint32_t> petAutocastSpells_;  // spells with autocast on
+
+    // ---- Pet Stable ----
+    bool stableWindowOpen_    = false;
+    uint64_t stableMasterGuid_ = 0;
+    uint8_t  stableNumSlots_   = 0;
+    std::vector<StabledPet> stabledPets_;
+    void handleListStabledPets(network::Packet& packet);
 
     // ---- Battleground queue state ----
     std::array<BgQueueSlot, 3> bgQueues_{};
