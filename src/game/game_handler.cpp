@@ -11304,6 +11304,46 @@ void GameHandler::handleChannelNotify(network::Packet& packet) {
         case ChannelNotifyType::INVALID_NAME:
             addSystemChatMessage("Invalid channel name '" + data.channelName + "'.");
             break;
+        case ChannelNotifyType::PLAYER_NOT_FOUND:
+            addSystemChatMessage("Player not found.");
+            break;
+        case ChannelNotifyType::ANNOUNCEMENTS_ON:
+            addSystemChatMessage("Channel '" + data.channelName + "': announcements enabled.");
+            break;
+        case ChannelNotifyType::ANNOUNCEMENTS_OFF:
+            addSystemChatMessage("Channel '" + data.channelName + "': announcements disabled.");
+            break;
+        case ChannelNotifyType::MODERATION_ON:
+            addSystemChatMessage("Channel '" + data.channelName + "' is now moderated.");
+            break;
+        case ChannelNotifyType::MODERATION_OFF:
+            addSystemChatMessage("Channel '" + data.channelName + "' is no longer moderated.");
+            break;
+        case ChannelNotifyType::PLAYER_BANNED:
+            addSystemChatMessage("A player was banned from '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::PLAYER_UNBANNED:
+            addSystemChatMessage("A player was unbanned from '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::PLAYER_NOT_BANNED:
+            addSystemChatMessage("That player is not banned from '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::INVITE:
+            addSystemChatMessage("You have been invited to join channel '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::INVITE_WRONG_FACTION:
+        case ChannelNotifyType::WRONG_FACTION:
+            addSystemChatMessage("Wrong faction for channel '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::NOT_MODERATED:
+            addSystemChatMessage("Channel '" + data.channelName + "' is not moderated.");
+            break;
+        case ChannelNotifyType::PLAYER_INVITED:
+            addSystemChatMessage("Player invited to channel '" + data.channelName + "'.");
+            break;
+        case ChannelNotifyType::PLAYER_INVITE_BANNED:
+            addSystemChatMessage("That player is banned from '" + data.channelName + "'.");
+            break;
         default:
             LOG_DEBUG("Channel notify type ", static_cast<int>(data.notifyType),
                      " for channel ", data.channelName);
