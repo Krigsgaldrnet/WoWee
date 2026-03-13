@@ -6066,7 +6066,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // WotLK: packed_guid caster + uint32 spellId + uint32 effectCount
             // TBC/Classic: uint64 caster + uint32 spellId + uint32 effectCount
             // Per-effect: uint8 effectType + uint32 effectLogCount + effect-specific data
-            // Effect 24 = SPELL_EFFECT_CREATE_ITEM: uint32 itemEntry per entry
+            // Effect 10 = POWER_DRAIN:   packed_guid target + uint32 amount + uint32 powerType + float multiplier
+            // Effect 11 = HEALTH_LEECH:  packed_guid target + uint32 amount + float multiplier
+            // Effect 24 = CREATE_ITEM:   uint32 itemEntry
+            // Effect 26 = INTERRUPT_CAST: packed_guid target + uint32 interrupted_spell_id
+            // Effect 49 = FEED_PET:      uint32 itemEntry
+            // Effect 114= CREATE_ITEM2:  uint32 itemEntry (same layout as CREATE_ITEM)
             const bool exeTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
             if (packet.getSize() - packet.getReadPos() < (exeTbcLike ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
@@ -6086,8 +6091,46 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 uint8_t  effectType     = packet.readUInt8();
                 uint32_t effectLogCount = packet.readUInt32();
                 effectLogCount = std::min(effectLogCount, 64u); // sanity
-                if (effectType == 24) {
-                    // SPELL_EFFECT_CREATE_ITEM: uint32 itemEntry per log entry
+                if (effectType == 10) {
+                    // SPELL_EFFECT_POWER_DRAIN: packed_guid target + uint32 amount + uint32 powerType + float multiplier
+                    for (uint32_t li = 0; li < effectLogCount; ++li) {
+                        if (packet.getSize() - packet.getReadPos() < 1) break;
+                        uint64_t drainTarget = exeTbcLike
+                            ? (packet.getSize() - packet.getReadPos() >= 8 ? packet.readUInt64() : 0)
+                            : UpdateObjectParser::readPackedGuid(packet);
+                        if (packet.getSize() - packet.getReadPos() < 12) { packet.setReadPos(packet.getSize()); break; }
+                        uint32_t drainAmount = packet.readUInt32();
+                        uint32_t drainPower  = packet.readUInt32(); // 0=mana,1=rage,3=energy,6=runic
+                        /*float    drainMult =*/ packet.readFloat();
+                        if (drainAmount > 0) {
+                            if (drainTarget == playerGuid)
+                                addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(drainAmount), exeSpellId, false);
+                            else if (isPlayerCaster)
+                                addCombatText(CombatTextEntry::ENERGIZE, static_cast<int32_t>(drainAmount), exeSpellId, true);
+                        }
+                        LOG_DEBUG("SMSG_SPELLLOGEXECUTE POWER_DRAIN: spell=", exeSpellId,
+                                  " power=", drainPower, " amount=", drainAmount);
+                    }
+                } else if (effectType == 11) {
+                    // SPELL_EFFECT_HEALTH_LEECH: packed_guid target + uint32 amount + float multiplier
+                    for (uint32_t li = 0; li < effectLogCount; ++li) {
+                        if (packet.getSize() - packet.getReadPos() < 1) break;
+                        uint64_t leechTarget = exeTbcLike
+                            ? (packet.getSize() - packet.getReadPos() >= 8 ? packet.readUInt64() : 0)
+                            : UpdateObjectParser::readPackedGuid(packet);
+                        if (packet.getSize() - packet.getReadPos() < 8) { packet.setReadPos(packet.getSize()); break; }
+                        uint32_t leechAmount = packet.readUInt32();
+                        /*float    leechMult =*/ packet.readFloat();
+                        if (leechAmount > 0) {
+                            if (leechTarget == playerGuid)
+                                addCombatText(CombatTextEntry::SPELL_DAMAGE, static_cast<int32_t>(leechAmount), exeSpellId, false);
+                            else if (isPlayerCaster)
+                                addCombatText(CombatTextEntry::HEAL, static_cast<int32_t>(leechAmount), exeSpellId, true);
+                        }
+                        LOG_DEBUG("SMSG_SPELLLOGEXECUTE HEALTH_LEECH: spell=", exeSpellId, " amount=", leechAmount);
+                    }
+                } else if (effectType == 24 || effectType == 114) {
+                    // SPELL_EFFECT_CREATE_ITEM / CREATE_ITEM2: uint32 itemEntry per log entry
                     for (uint32_t li = 0; li < effectLogCount; ++li) {
                         if (packet.getSize() - packet.getReadPos() < 4) break;
                         uint32_t itemEntry = packet.readUInt32();
@@ -6108,11 +6151,36 @@ void GameHandler::handlePacket(network::Packet& packet) {
                                       " item=", itemEntry, " name=", itemName);
                         }
                     }
+                } else if (effectType == 26) {
+                    // SPELL_EFFECT_INTERRUPT_CAST: packed_guid target + uint32 interrupted_spell_id
+                    for (uint32_t li = 0; li < effectLogCount; ++li) {
+                        if (packet.getSize() - packet.getReadPos() < 1) break;
+                        uint64_t icTarget = exeTbcLike
+                            ? (packet.getSize() - packet.getReadPos() >= 8 ? packet.readUInt64() : 0)
+                            : UpdateObjectParser::readPackedGuid(packet);
+                        if (packet.getSize() - packet.getReadPos() < 4) { packet.setReadPos(packet.getSize()); break; }
+                        uint32_t icSpellId = packet.readUInt32();
+                        // Clear the interrupted unit's cast bar immediately
+                        unitCastStates_.erase(icTarget);
+                        LOG_DEBUG("SMSG_SPELLLOGEXECUTE INTERRUPT_CAST: spell=", exeSpellId,
+                                  " interrupted=", icSpellId, " target=0x", std::hex, icTarget, std::dec);
+                    }
+                } else if (effectType == 49) {
+                    // SPELL_EFFECT_FEED_PET: uint32 itemEntry per log entry
+                    for (uint32_t li = 0; li < effectLogCount; ++li) {
+                        if (packet.getSize() - packet.getReadPos() < 4) break;
+                        uint32_t feedItem = packet.readUInt32();
+                        if (isPlayerCaster && feedItem != 0) {
+                            ensureItemInfo(feedItem);
+                            const ItemQueryResponseData* info = getItemInfo(feedItem);
+                            std::string itemName = info && !info->name.empty()
+                                ? info->name : ("item #" + std::to_string(feedItem));
+                            addSystemChatMessage("You feed your pet " + itemName + ".");
+                            LOG_DEBUG("SMSG_SPELLLOGEXECUTE FEED_PET: item=", feedItem, " name=", itemName);
+                        }
+                    }
                 } else {
-                    // Other effect types: consume their data safely
-                    // Most effects have no trailing per-entry data beyond the count header,
-                    // or use variable-length sub-records we cannot safely skip.
-                    // Stop parsing at first unknown effect to avoid misalignment.
+                    // Unknown effect type — stop parsing to avoid misalignment
                     packet.setReadPos(packet.getSize());
                     break;
                 }
