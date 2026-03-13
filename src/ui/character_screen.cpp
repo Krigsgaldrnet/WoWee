@@ -184,7 +184,7 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
         ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, 45.0f);
         ImGui::TableSetupColumn("Race",  ImGuiTableColumnFlags_WidthStretch, 1.0f);
         ImGui::TableSetupColumn("Class", ImGuiTableColumnFlags_WidthStretch, 1.2f);
-        ImGui::TableSetupColumn("Zone",  ImGuiTableColumnFlags_WidthFixed, 55.0f);
+        ImGui::TableSetupColumn("Zone",  ImGuiTableColumnFlags_WidthStretch, 1.5f);
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
 
@@ -227,7 +227,13 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
             ImGui::Text("%s", game::getClassName(character.characterClass));
 
             ImGui::TableSetColumnIndex(4);
-            ImGui::Text("%d", character.zoneId);
+            {
+                std::string zoneName = gameHandler.getWhoAreaName(character.zoneId);
+                if (!zoneName.empty())
+                    ImGui::TextUnformatted(zoneName.c_str());
+                else
+                    ImGui::Text("%u", character.zoneId);
+            }
         }
 
         ImGui::EndTable();
@@ -328,7 +334,18 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
         ImGui::Text("%s", game::getClassName(character.characterClass));
         ImGui::Text("%s", game::getGenderName(character.gender));
         ImGui::Spacing();
-        ImGui::Text("Map %d, Zone %d", character.mapId, character.zoneId);
+        {
+            std::string mapName  = gameHandler.getMapName(character.mapId);
+            std::string zoneName = gameHandler.getWhoAreaName(character.zoneId);
+            if (!mapName.empty() && !zoneName.empty())
+                ImGui::Text("%s — %s", mapName.c_str(), zoneName.c_str());
+            else if (!mapName.empty())
+                ImGui::Text("%s (Zone %u)", mapName.c_str(), character.zoneId);
+            else if (!zoneName.empty())
+                ImGui::Text("Map %u — %s", character.mapId, zoneName.c_str());
+            else
+                ImGui::Text("Map %u, Zone %u", character.mapId, character.zoneId);
+        }
 
         if (character.hasGuild()) {
             ImGui::Text("Guild ID: %d", character.guildId);
