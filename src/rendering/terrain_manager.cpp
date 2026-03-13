@@ -1377,6 +1377,10 @@ void TerrainManager::unloadTile(int x, int y) {
     // Water may have already been loaded in TERRAIN phase, so clean it up.
     for (auto fit = finalizingTiles_.begin(); fit != finalizingTiles_.end(); ++fit) {
         if (fit->pending && fit->pending->coord == coord) {
+            // If terrain chunks were already uploaded, free their descriptor sets
+            if (fit->terrainMeshDone && terrainRenderer) {
+                terrainRenderer->removeTile(x, y);
+            }
             // If past TERRAIN phase, water was already loaded — remove it
             if (fit->phase != FinalizationPhase::TERRAIN && waterRenderer) {
                 waterRenderer->removeTile(x, y);
