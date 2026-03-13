@@ -4890,9 +4890,23 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_QUESTGIVER_OFFER_REWARD:
             handleQuestOfferReward(packet);
             break;
-        case Opcode::SMSG_GROUP_SET_LEADER:
-            LOG_DEBUG("Ignoring known opcode: 0x", std::hex, opcode, std::dec);
+        case Opcode::SMSG_GROUP_SET_LEADER: {
+            // SMSG_GROUP_SET_LEADER: string leaderName (null-terminated)
+            if (packet.getSize() > packet.getReadPos()) {
+                std::string leaderName = packet.readString();
+                // Update leaderGuid by name lookup in party members
+                for (const auto& m : partyData.members) {
+                    if (m.name == leaderName) {
+                        partyData.leaderGuid = m.guid;
+                        break;
+                    }
+                }
+                if (!leaderName.empty())
+                    addSystemChatMessage(leaderName + " is now the group leader.");
+                LOG_INFO("SMSG_GROUP_SET_LEADER: ", leaderName);
+            }
             break;
+        }
 
         // ---- Teleport / Transfer ----
         case Opcode::MSG_MOVE_TELEPORT_ACK:
@@ -4983,12 +4997,30 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_JOINED_BATTLEGROUND_QUEUE:
             addSystemChatMessage("You have joined the battleground queue.");
             break;
-        case Opcode::SMSG_BATTLEGROUND_PLAYER_JOINED:
-            LOG_INFO("Battleground player joined");
+        case Opcode::SMSG_BATTLEGROUND_PLAYER_JOINED: {
+            // SMSG_BATTLEGROUND_PLAYER_JOINED: uint64 guid
+            if (packet.getSize() - packet.getReadPos() >= 8) {
+                uint64_t guid = packet.readUInt64();
+                auto it = playerNameCache.find(guid);
+                std::string name = (it != playerNameCache.end()) ? it->second : "";
+                if (!name.empty())
+                    addSystemChatMessage(name + " has entered the battleground.");
+                LOG_INFO("SMSG_BATTLEGROUND_PLAYER_JOINED: guid=0x", std::hex, guid, std::dec);
+            }
             break;
-        case Opcode::SMSG_BATTLEGROUND_PLAYER_LEFT:
-            LOG_INFO("Battleground player left");
+        }
+        case Opcode::SMSG_BATTLEGROUND_PLAYER_LEFT: {
+            // SMSG_BATTLEGROUND_PLAYER_LEFT: uint64 guid
+            if (packet.getSize() - packet.getReadPos() >= 8) {
+                uint64_t guid = packet.readUInt64();
+                auto it = playerNameCache.find(guid);
+                std::string name = (it != playerNameCache.end()) ? it->second : "";
+                if (!name.empty())
+                    addSystemChatMessage(name + " has left the battleground.");
+                LOG_INFO("SMSG_BATTLEGROUND_PLAYER_LEFT: guid=0x", std::hex, guid, std::dec);
+            }
             break;
+        }
         case Opcode::SMSG_INSTANCE_DIFFICULTY:
         case Opcode::MSG_SET_DUNGEON_DIFFICULTY:
             handleInstanceDifficulty(packet);
