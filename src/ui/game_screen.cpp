@@ -19555,24 +19555,6 @@ void GameScreen::renderInstanceLockouts(game::GameHandler& gameHandler) {
     if (lockouts.empty()) {
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No active instance lockouts.");
     } else {
-        // Build map name lookup from Map.dbc (cached after first call)
-        static std::unordered_map<uint32_t, std::string> sMapNames;
-        static bool sMapNamesLoaded = false;
-        if (!sMapNamesLoaded) {
-            sMapNamesLoaded = true;
-            if (auto* am = core::Application::getInstance().getAssetManager()) {
-                if (auto dbc = am->loadDBC("Map.dbc"); dbc && dbc->isLoaded()) {
-                    for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
-                        uint32_t id = dbc->getUInt32(i, 0);
-                        // Field 2 = MapName_enUS (first localized), field 1 = InternalName
-                        std::string name = dbc->getString(i, 2);
-                        if (name.empty()) name = dbc->getString(i, 1);
-                        if (!name.empty()) sMapNames[id] = std::move(name);
-                    }
-                }
-            }
-        }
-
         auto difficultyLabel = [](uint32_t diff) -> const char* {
             switch (diff) {
                 case 0: return "Normal";
@@ -19598,11 +19580,11 @@ void GameScreen::renderInstanceLockouts(game::GameHandler& gameHandler) {
             for (const auto& lo : lockouts) {
                 ImGui::TableNextRow();
 
-                // Instance name
+                // Instance name — use GameHandler's Map.dbc cache (avoids duplicate DBC load)
                 ImGui::TableSetColumnIndex(0);
-                auto it = sMapNames.find(lo.mapId);
-                if (it != sMapNames.end()) {
-                    ImGui::TextUnformatted(it->second.c_str());
+                std::string mapName = gameHandler.getMapName(lo.mapId);
+                if (!mapName.empty()) {
+                    ImGui::TextUnformatted(mapName.c_str());
                 } else {
                     ImGui::Text("Map %u", lo.mapId);
                 }

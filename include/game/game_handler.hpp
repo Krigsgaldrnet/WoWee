@@ -1275,6 +1275,7 @@ public:
     bool isLfgInDungeon() const { return lfgState_ == LfgState::InDungeon; }
     uint32_t getLfgDungeonId()   const { return lfgDungeonId_; }
     std::string getCurrentLfgDungeonName() const { return getLfgDungeonName(lfgDungeonId_); }
+    std::string getMapName(uint32_t mapId) const;
     uint32_t getLfgProposalId()  const { return lfgProposalId_; }
     int32_t  getLfgAvgWaitSec()  const { return lfgAvgWaitSec_; }
     uint32_t getLfgTimeInQueueMs() const { return lfgTimeInQueueMs_; }
@@ -2977,7 +2978,6 @@ private:
     std::unordered_map<uint32_t, std::string> mapNameCache_;
     bool mapNameCacheLoaded_ = false;
     void loadMapNameCache();
-    std::string getMapName(uint32_t mapId) const;
 
     // LFG dungeon name cache (lazy-loaded from LFGDungeons.dbc; WotLK only)
     std::unordered_map<uint32_t, std::string> lfgDungeonNameCache_;
