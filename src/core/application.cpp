@@ -8247,7 +8247,7 @@ void Application::processPendingTransportDoodads() {
             }
             if (!m2Model.isValid()) continue;
 
-            m2Renderer->loadModel(m2Model, doodadModelId);
+            if (!m2Renderer->loadModel(m2Model, doodadModelId)) continue;
             uint32_t m2InstanceId = m2Renderer->createInstance(doodadModelId, glm::vec3(0.0f), glm::vec3(0.0f), 1.0f);
             if (m2InstanceId == 0) continue;
             m2Renderer->setSkipCollision(m2InstanceId, true);

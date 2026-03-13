@@ -944,8 +944,9 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
 
     bool hasGeometry = !model.vertices.empty() && !model.indices.empty();
     bool hasParticles = !model.particleEmitters.empty();
-    if (!hasGeometry && !hasParticles) {
-        LOG_WARNING("M2 model has no geometry and no particles: ", model.name);
+    bool hasRibbons   = !model.ribbonEmitters.empty();
+    if (!hasGeometry && !hasParticles && !hasRibbons) {
+        LOG_WARNING("M2 model has no renderable content: ", model.name);
         return false;
     }
 
