@@ -16565,6 +16565,16 @@ void GameHandler::handleRemovedSpell(network::Packet& packet) {
     uint32_t spellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
     knownSpells.erase(spellId);
     LOG_INFO("Removed spell: ", spellId);
+
+    // Clear any action bar slots referencing this spell
+    bool barChanged = false;
+    for (auto& slot : actionBar) {
+        if (slot.type == ActionBarSlot::SPELL && slot.id == spellId) {
+            slot = ActionBarSlot{};
+            barChanged = true;
+        }
+    }
+    if (barChanged) saveCharacterConfig();
 }
 
 void GameHandler::handleSupercededSpell(network::Packet& packet) {
@@ -16622,11 +16632,19 @@ void GameHandler::handleUnlearnSpells(network::Packet& packet) {
     uint32_t spellCount = packet.readUInt32();
     LOG_INFO("Unlearning ", spellCount, " spells");
 
+    bool barChanged = false;
     for (uint32_t i = 0; i < spellCount && packet.getSize() - packet.getReadPos() >= 4; ++i) {
         uint32_t spellId = packet.readUInt32();
         knownSpells.erase(spellId);
         LOG_INFO("  Unlearned spell: ", spellId);
+        for (auto& slot : actionBar) {
+            if (slot.type == ActionBarSlot::SPELL && slot.id == spellId) {
+                slot = ActionBarSlot{};
+                barChanged = true;
+            }
+        }
     }
+    if (barChanged) saveCharacterConfig();
 
     if (spellCount > 0) {
         addSystemChatMessage("Unlearned " + std::to_string(spellCount) + " spells");
