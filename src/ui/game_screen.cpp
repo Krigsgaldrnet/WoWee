@@ -7911,18 +7911,25 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
 
     float screenH = ImGui::GetIO().DisplaySize.y > 0.0f ? ImGui::GetIO().DisplaySize.y : 720.0f;
 
-    // Default position: top-right, below minimap + buff bar space
-    if (!questTrackerPosInit_ || questTrackerPos_.x < 0.0f) {
-        questTrackerPos_ = ImVec2(screenW - TRACKER_W - RIGHT_MARGIN, 320.0f);
+    // Default position: top-right, below minimap + buff bar space.
+    // questTrackerRightOffset_ stores pixels from the right edge so the tracker
+    // stays anchored to the right side when the window is resized.
+    if (!questTrackerPosInit_ || questTrackerRightOffset_ < 0.0f) {
+        questTrackerRightOffset_ = TRACKER_W + RIGHT_MARGIN; // default: right-aligned
+        questTrackerPos_.y = 320.0f;
         questTrackerPosInit_ = true;
     }
+    // Recompute X from right offset every frame (handles window resize)
+    questTrackerPos_.x = screenW - questTrackerRightOffset_;
 
     ImGui::SetNextWindowPos(questTrackerPos_, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(TRACKER_W, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(questTrackerSize_, ImGuiCond_FirstUseEver);
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
+                             ImGuiWindowFlags_NoScrollbar |
+                             ImGuiWindowFlags_NoCollapse |
                              ImGuiWindowFlags_NoNav |
-                             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoBringToFrontOnFocus;
+                             ImGuiWindowFlags_NoBringToFrontOnFocus;
 
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.55f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.0f, 6.0f));
@@ -7938,7 +7945,7 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
                                          : ImVec4(1.0f, 1.0f, 0.85f, 1.0f);
             ImGui::PushStyleColor(ImGuiCol_Text, titleCol);
             if (ImGui::Selectable(q.title.c_str(), false,
-                                   ImGuiSelectableFlags_DontClosePopups, ImVec2(TRACKER_W - 12.0f, 0))) {
+                                   ImGuiSelectableFlags_DontClosePopups, ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
                 questLogScreen.openAndSelectQuest(q.questId);
             }
             if (ImGui::IsItemHovered() && !ImGui::IsPopupOpen("##QTCtx")) {
@@ -8061,15 +8068,28 @@ void GameScreen::renderQuestObjectiveTracker(game::GameHandler& gameHandler) {
             }
         }
 
-        // Capture position after drag
-        ImVec2 newPos = ImGui::GetWindowPos();
+        // Capture position and size after drag/resize
+        ImVec2 newPos  = ImGui::GetWindowPos();
+        ImVec2 newSize = ImGui::GetWindowSize();
+        bool changed = false;
+
+        // Clamp within screen
+        newPos.x = std::clamp(newPos.x, 0.0f, screenW - newSize.x);
+        newPos.y = std::clamp(newPos.y, 0.0f, screenH - 40.0f);
+
         if (std::abs(newPos.x - questTrackerPos_.x) > 0.5f ||
             std::abs(newPos.y - questTrackerPos_.y) > 0.5f) {
-            newPos.x = std::clamp(newPos.x, 0.0f, screenW - TRACKER_W);
-            newPos.y = std::clamp(newPos.y, 0.0f, screenH - 40.0f);
             questTrackerPos_ = newPos;
-            saveSettings();
+            // Update right offset so resizes keep the new position anchored
+            questTrackerRightOffset_ = screenW - newPos.x;
+            changed = true;
         }
+        if (std::abs(newSize.x - questTrackerSize_.x) > 0.5f ||
+            std::abs(newSize.y - questTrackerSize_.y) > 0.5f) {
+            questTrackerSize_ = newSize;
+            changed = true;
+        }
+        if (changed) saveSettings();
     }
     ImGui::End();
 
@@ -16960,9 +16980,11 @@ void GameScreen::saveSettings() {
     out << "extended_zoom=" << (pendingExtendedZoom ? 1 : 0) << "\n";
     out << "fov=" << pendingFov << "\n";
 
-    // Quest tracker position
-    out << "quest_tracker_x=" << questTrackerPos_.x << "\n";
+    // Quest tracker position/size
+    out << "quest_tracker_right_offset=" << questTrackerRightOffset_ << "\n";
     out << "quest_tracker_y=" << questTrackerPos_.y << "\n";
+    out << "quest_tracker_w=" << questTrackerSize_.x << "\n";
+    out << "quest_tracker_h=" << questTrackerSize_.y << "\n";
 
     // Chat
     out << "chat_active_tab=" << activeChatTab_ << "\n";
@@ -17108,14 +17130,24 @@ void GameScreen::loadSettings() {
                     if (auto* camera = renderer->getCamera()) camera->setFov(pendingFov);
                 }
             }
-            // Quest tracker position
+            // Quest tracker position/size
             else if (key == "quest_tracker_x") {
-                questTrackerPos_.x = std::stof(val);
+                // Legacy: ignore absolute X (right_offset supersedes it)
+                (void)val;
+            }
+            else if (key == "quest_tracker_right_offset") {
+                questTrackerRightOffset_ = std::stof(val);
                 questTrackerPosInit_ = true;
             }
             else if (key == "quest_tracker_y") {
                 questTrackerPos_.y = std::stof(val);
                 questTrackerPosInit_ = true;
+            }
+            else if (key == "quest_tracker_w") {
+                questTrackerSize_.x = std::max(100.0f, std::stof(val));
+            }
+            else if (key == "quest_tracker_h") {
+                questTrackerSize_.y = std::max(60.0f, std::stof(val));
             }
             // Chat
             else if (key == "chat_active_tab") activeChatTab_ = std::clamp(std::stoi(val), 0, 3);

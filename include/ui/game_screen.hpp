@@ -158,6 +158,8 @@ private:
     ImVec2 chatWindowPos_ = ImVec2(0.0f, 0.0f);
     bool chatWindowPosInit_ = false;
     ImVec2 questTrackerPos_ = ImVec2(-1.0f, -1.0f);  // <0 = use default
+    ImVec2 questTrackerSize_ = ImVec2(220.0f, 200.0f); // saved size
+    float questTrackerRightOffset_ = -1.0f;            // pixels from right edge; <0 = use default
     bool questTrackerPosInit_ = false;
     bool showEscapeMenu = false;
     bool showEscapeSettingsNotice = false;
