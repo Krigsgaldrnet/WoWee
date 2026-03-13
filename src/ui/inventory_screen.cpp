@@ -1444,6 +1444,8 @@ void InventoryScreen::renderReputationPanel(game::GameHandler& gameHandler) {
         bool atWar = (repListId != 0xFFFFFFFFu) && gameHandler.isFactionAtWar(repListId);
         bool isWatched = (factionId == watchedFactionId);
 
+        ImGui::PushID(static_cast<int>(factionId));
+
         // Faction name + tier label on same line; mark at-war and watched factions
         ImGui::TextColored(tier.color, "[%s]", tier.name);
         ImGui::SameLine(90.0f);
@@ -1479,7 +1481,23 @@ void InventoryScreen::renderReputationPanel(game::GameHandler& gameHandler) {
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::ProgressBar(ratio, ImVec2(0, 12.0f), overlay);
         ImGui::PopStyleColor();
+
+        // Right-click context menu on the progress bar
+        if (ImGui::BeginPopupContextItem("##RepCtx")) {
+            ImGui::TextDisabled("%s", displayName);
+            ImGui::Separator();
+            if (isWatched) {
+                if (ImGui::MenuItem("Untrack"))
+                    gameHandler.setWatchedFactionId(0);
+            } else {
+                if (ImGui::MenuItem("Track on Rep Bar"))
+                    gameHandler.setWatchedFactionId(factionId);
+            }
+            ImGui::EndPopup();
+        }
+
         ImGui::Spacing();
+        ImGui::PopID();
     }
 
     ImGui::EndChild();
