@@ -20265,6 +20265,28 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                         snprintf(desc, sizeof(desc), "Proc triggered");
                     color = ImVec4(1.0f, 0.85f, 0.3f, 1.0f);
                     break;
+                case T::DISPEL:
+                    if (spell && e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You dispel %s from %s", spell, tgt);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s dispels %s from %s", src, spell, tgt);
+                    else if (e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You dispel from %s", tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s dispels from %s", src, tgt);
+                    color = ImVec4(0.6f, 0.9f, 1.0f, 1.0f);
+                    break;
+                case T::INTERRUPT:
+                    if (spell && e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You interrupt %s's %s", tgt, spell);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s interrupts %s's %s", src, tgt, spell);
+                    else if (e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You interrupt %s", tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s interrupted", tgt);
+                    color = ImVec4(1.0f, 0.6f, 0.9f, 1.0f);
+                    break;
                 default:
                     snprintf(desc, sizeof(desc), "Combat event (type %d, amount %d)", (int)e.type, e.amount);
                     color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);

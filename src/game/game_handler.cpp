@@ -6160,20 +6160,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
             /*uint32_t dispelSpell =*/ packet.readUInt32();
             uint8_t isStolen = packet.readUInt8();
             uint32_t count   = packet.readUInt32();
+            // Collect first dispelled spell id/name; process all entries for combat log
+            // Each entry: uint32 spellId + uint8 isPositive (5 bytes in WotLK/TBC/Classic)
+            uint32_t firstDispelledId = 0;
+            std::string firstSpellName;
+            for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= 5; ++i) {
+                uint32_t dispelledId = packet.readUInt32();
+                /*uint8_t isPositive =*/ packet.readUInt8();
+                if (i == 0) {
+                    firstDispelledId = dispelledId;
+                    const std::string& nm = getSpellName(dispelledId);
+                    firstSpellName = nm.empty() ? ("spell " + std::to_string(dispelledId)) : nm;
+                }
+            }
             // Show system message if player was victim or caster
             if (victimGuid == playerGuid || casterGuid == playerGuid) {
                 const char* verb = isStolen ? "stolen" : "dispelled";
-                // Collect first dispelled spell name for the message
-                // Each entry: uint32 spellId + uint8 isPositive (5 bytes in WotLK/TBC/Classic)
-                std::string firstSpellName;
-                for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= 5; ++i) {
-                    uint32_t dispelledId = packet.readUInt32();
-                    /*uint8_t isPositive =*/ packet.readUInt8();
-                    if (i == 0) {
-                        const std::string& nm = getSpellName(dispelledId);
-                        firstSpellName = nm.empty() ? ("spell " + std::to_string(dispelledId)) : nm;
-                    }
-                }
                 if (!firstSpellName.empty()) {
                     char buf[256];
                     if (victimGuid == playerGuid && casterGuid != playerGuid)
@@ -6183,6 +6185,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     else
                         std::snprintf(buf, sizeof(buf), "%s %s.", firstSpellName.c_str(), verb);
                     addSystemChatMessage(buf);
+                }
+                // Add dispel event to combat log
+                if (firstDispelledId != 0) {
+                    bool isPlayerCaster = (casterGuid == playerGuid);
+                    addCombatText(CombatTextEntry::DISPEL, 0, firstDispelledId, isPlayerCaster, 0,
+                                  casterGuid, victimGuid);
                 }
             }
             packet.setReadPos(packet.getSize());
@@ -6198,7 +6206,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() < (stealTbcLike ? 8u : 2u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            /*uint64_t stealVictim =*/ stealTbcLike
+            uint64_t stealVictim = stealTbcLike
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < (stealTbcLike ? 8u : 2u)) {
                 packet.setReadPos(packet.getSize()); break;
@@ -6211,21 +6219,32 @@ void GameHandler::handlePacket(network::Packet& packet) {
             /*uint32_t stealSpellId =*/ packet.readUInt32();
             /*uint8_t  isStolen    =*/ packet.readUInt8();
             uint32_t stealCount   = packet.readUInt32();
-            // Show feedback only when we are the caster (we stole something)
-            if (stealCaster == playerGuid) {
-                std::string stolenName;
-                for (uint32_t i = 0; i < stealCount && packet.getSize() - packet.getReadPos() >= 5; ++i) {
-                    uint32_t stolenId = packet.readUInt32();
-                    /*uint8_t isPos  =*/ packet.readUInt8();
-                    if (i == 0) {
-                        const std::string& nm = getSpellName(stolenId);
-                        stolenName = nm.empty() ? ("spell " + std::to_string(stolenId)) : nm;
-                    }
+            // Collect stolen spell info; show feedback when we are caster or victim
+            uint32_t firstStolenId = 0;
+            std::string stolenName;
+            for (uint32_t i = 0; i < stealCount && packet.getSize() - packet.getReadPos() >= 5; ++i) {
+                uint32_t stolenId = packet.readUInt32();
+                /*uint8_t isPos  =*/ packet.readUInt8();
+                if (i == 0) {
+                    firstStolenId = stolenId;
+                    const std::string& nm = getSpellName(stolenId);
+                    stolenName = nm.empty() ? ("spell " + std::to_string(stolenId)) : nm;
                 }
+            }
+            if (stealCaster == playerGuid || stealVictim == playerGuid) {
                 if (!stolenName.empty()) {
                     char buf[256];
-                    std::snprintf(buf, sizeof(buf), "You stole %s.", stolenName.c_str());
+                    if (stealCaster == playerGuid)
+                        std::snprintf(buf, sizeof(buf), "You stole %s.", stolenName.c_str());
+                    else
+                        std::snprintf(buf, sizeof(buf), "%s was stolen.", stolenName.c_str());
                     addSystemChatMessage(buf);
+                }
+                // Add dispel/steal to combat log using DISPEL type (isStolen=true for steals)
+                if (firstStolenId != 0) {
+                    bool isPlayerCaster = (stealCaster == playerGuid);
+                    addCombatText(CombatTextEntry::DISPEL, 0, firstStolenId, isPlayerCaster, 0,
+                                  stealCaster, stealVictim);
                 }
             }
             packet.setReadPos(packet.getSize());
@@ -6383,6 +6402,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         uint32_t icSpellId = packet.readUInt32();
                         // Clear the interrupted unit's cast bar immediately
                         unitCastStates_.erase(icTarget);
+                        // Record interrupt in combat log when player is involved
+                        if (isPlayerCaster || icTarget == playerGuid)
+                            addCombatText(CombatTextEntry::INTERRUPT, 0, icSpellId, isPlayerCaster, 0,
+                                          exeCaster, icTarget);
                         LOG_DEBUG("SMSG_SPELLLOGEXECUTE INTERRUPT_CAST: spell=", exeSpellId,
                                   " interrupted=", icSpellId, " target=0x", std::hex, icTarget, std::dec);
                     }
