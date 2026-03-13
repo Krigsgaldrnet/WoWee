@@ -2756,6 +2756,18 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("You are in combat");
         }
 
+        // Active title — shown in gold below the name/level line
+        {
+            int32_t titleBit = gameHandler.getChosenTitleBit();
+            if (titleBit >= 0) {
+                const std::string titleText = gameHandler.getFormattedTitle(
+                    static_cast<uint32_t>(titleBit));
+                if (!titleText.empty()) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 0.9f), "%s", titleText.c_str());
+                }
+            }
+        }
+
         // Try to get real HP/mana from the player entity
         auto playerEntity = gameHandler.getEntityManager().getEntity(gameHandler.getPlayerGuid());
         if (playerEntity && (playerEntity->getType() == game::ObjectType::PLAYER || playerEntity->getType() == game::ObjectType::UNIT)) {
