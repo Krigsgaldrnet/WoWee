@@ -7914,6 +7914,14 @@ void GameHandler::sendRequestVehicleExit() {
     vehicleId_ = 0;  // Optimistically clear; server will confirm via SMSG_PLAYER_VEHICLE_DATA(0)
 }
 
+void GameHandler::useEquipmentSet(uint32_t setId) {
+    if (state != WorldState::IN_WORLD) return;
+    // CMSG_EQUIPMENT_SET_USE: uint32 setId
+    network::Packet pkt(wireOpcode(Opcode::CMSG_EQUIPMENT_SET_USE));
+    pkt.writeUInt32(setId);
+    socket->send(pkt);
+}
+
 void GameHandler::sendMinimapPing(float wowX, float wowY) {
     if (state != WorldState::IN_WORLD) return;
 
@@ -20632,6 +20640,17 @@ void GameHandler::handleEquipmentSetList(network::Packet& packet) {
             es.itemGuids[slot] = packet.readUInt64();
         }
         equipmentSets_.push_back(std::move(es));
+    }
+    // Populate public-facing info
+    equipmentSetInfo_.clear();
+    equipmentSetInfo_.reserve(equipmentSets_.size());
+    for (const auto& es : equipmentSets_) {
+        EquipmentSetInfo info;
+        info.setGuid  = es.setGuid;
+        info.setId    = es.setId;
+        info.name     = es.name;
+        info.iconName = es.iconName;
+        equipmentSetInfo_.push_back(std::move(info));
     }
     LOG_INFO("SMSG_EQUIPMENT_SET_LIST: ", equipmentSets_.size(), " equipment sets received");
 }

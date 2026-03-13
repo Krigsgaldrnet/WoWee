@@ -1342,6 +1342,34 @@ void InventoryScreen::renderCharacterScreen(game::GameHandler& gameHandler) {
             ImGui::EndTabItem();
         }
 
+        // Equipment Sets tab (WotLK only)
+        const auto& eqSets = gameHandler.getEquipmentSets();
+        if (!eqSets.empty()) {
+            if (ImGui::BeginTabItem("Outfits")) {
+                ImGui::Spacing();
+                ImGui::TextDisabled("Saved Equipment Sets");
+                ImGui::Separator();
+                ImGui::BeginChild("##EqSetsList", ImVec2(0, 0), false);
+                for (const auto& es : eqSets) {
+                    ImGui::PushID(static_cast<int>(es.setId));
+                    // Icon placeholder or name
+                    const char* displayName = es.name.empty() ? "(Unnamed)" : es.name.c_str();
+                    ImGui::Text("%s", displayName);
+                    if (!es.iconName.empty()) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("(%s)", es.iconName.c_str());
+                    }
+                    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 60.0f);
+                    if (ImGui::SmallButton("Equip")) {
+                        gameHandler.useEquipmentSet(es.setId);
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
+        }
+
         ImGui::EndTabBar();
     }
 

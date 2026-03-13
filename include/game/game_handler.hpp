@@ -1252,6 +1252,16 @@ public:
     void sendLootRoll(uint64_t objectGuid, uint32_t slot, uint8_t rollType);
     // rollType: 0=need, 1=greed, 2=disenchant, 96=pass
 
+    // Equipment Sets (WotLK): saved gear loadouts
+    struct EquipmentSetInfo {
+        uint64_t setGuid = 0;
+        uint32_t setId = 0;
+        std::string name;
+        std::string iconName;
+    };
+    const std::vector<EquipmentSetInfo>& getEquipmentSets() const { return equipmentSetInfo_; }
+    void useEquipmentSet(uint32_t setId);
+
     // NPC Gossip
     void interactWithNpc(uint64_t guid);
     void interactWithGameObject(uint64_t guid);
@@ -2840,6 +2850,7 @@ private:
         std::array<uint64_t, 19> itemGuids{};
     };
     std::vector<EquipmentSet> equipmentSets_;
+    std::vector<EquipmentSetInfo> equipmentSetInfo_;  // public-facing copy
 
     // ---- Forced faction reactions (SMSG_SET_FORCED_REACTIONS) ----
     std::unordered_map<uint32_t, uint8_t> forcedReactions_;  // factionId -> reaction tier
