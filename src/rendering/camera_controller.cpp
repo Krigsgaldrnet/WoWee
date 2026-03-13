@@ -1903,7 +1903,9 @@ void CameraController::processMouseMotion(const SDL_MouseMotionEvent& event) {
 
     // Directly update stored yaw/pitch (no lossy forward-vector derivation)
     yaw -= event.xrel * mouseSensitivity;
-    float invert = invertMouse ? -1.0f : 1.0f;
+    // SDL yrel > 0 = mouse moved DOWN. In WoW, mouse-down = look down = pitch decreases.
+    // invertMouse flips to flight-sim style (mouse-down = look up).
+    float invert = invertMouse ? 1.0f : -1.0f;
     pitch += event.yrel * mouseSensitivity * invert;
 
     // WoW-style pitch limits: can look almost straight down, limited upward
