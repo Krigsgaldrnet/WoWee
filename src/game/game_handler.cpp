@@ -16559,6 +16559,18 @@ void GameHandler::handleSupercededSpell(network::Packet& packet) {
 
     LOG_INFO("Spell superceded: ", oldSpellId, " -> ", newSpellId);
 
+    // Update all action bar slots that reference the old spell rank to the new rank.
+    // This matches the WoW client behaviour: the action bar automatically upgrades
+    // to the new rank when you train it.
+    for (auto& slot : actionBar) {
+        if (slot.type == ActionBarSlot::SPELL && slot.id == oldSpellId) {
+            slot.id = newSpellId;
+            slot.cooldownRemaining = 0.0f;
+            slot.cooldownTotal = 0.0f;
+            LOG_DEBUG("Action bar slot upgraded: spell ", oldSpellId, " -> ", newSpellId);
+        }
+    }
+
     const std::string& newName = getSpellName(newSpellId);
     if (!newName.empty()) {
         addSystemChatMessage("Upgraded to " + newName);
