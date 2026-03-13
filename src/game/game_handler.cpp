@@ -6236,7 +6236,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() < 3) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            /*uint64_t targetGuid =*/ UpdateObjectParser::readPackedGuid(packet);
+            uint64_t procTargetGuid = UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 2) {
                 packet.setReadPos(packet.getSize()); break;
             }
@@ -6247,7 +6247,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint32_t procSpellId = packet.readUInt32();
             // Show a "PROC!" floating text when the player triggers the proc
             if (procCasterGuid == playerGuid && procSpellId > 0)
-                addCombatText(CombatTextEntry::PROC_TRIGGER, 0, procSpellId, true);
+                addCombatText(CombatTextEntry::PROC_TRIGGER, 0, procSpellId, true, 0,
+                              procCasterGuid, procTargetGuid);
             packet.setReadPos(packet.getSize());
             break;
         }
