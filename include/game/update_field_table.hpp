@@ -56,6 +56,7 @@ enum class UF : uint16_t {
     PLAYER_FIELD_BANKBAG_SLOT_1,
     PLAYER_SKILL_INFO_START,
     PLAYER_EXPLORED_ZONES_START,
+    PLAYER_CHOSEN_TITLE,         // Active title index (-1 = no title)
 
     // GameObject fields
     GAMEOBJECT_DISPLAYID,

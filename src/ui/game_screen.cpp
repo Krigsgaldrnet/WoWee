@@ -710,6 +710,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderWhoWindow(gameHandler);
     renderCombatLog(gameHandler);
     renderAchievementWindow(gameHandler);
+    renderTitlesWindow(gameHandler);
     renderGmTicketWindow(gameHandler);
     renderInspectWindow(gameHandler);
     renderBookWindow(gameHandler);
@@ -2331,6 +2332,11 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
 
         if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_ACHIEVEMENTS)) {
             showAchievementWindow_ = !showAchievementWindow_;
+        }
+
+        // Toggle Titles window with H (hero/title screen — no conflicting keybinding)
+        if (input.isKeyJustPressed(SDL_SCANCODE_H) && !ImGui::GetIO().WantCaptureKeyboard) {
+            showTitlesWindow_ = !showTitlesWindow_;
         }
 
         // Action bar keys (1-9, 0, -, =)
@@ -20641,6 +20647,74 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
         }
         ImGui::EndChild();
     }
+
+    ImGui::End();
+}
+
+// ─── Titles Window ────────────────────────────────────────────────────────────
+void GameScreen::renderTitlesWindow(game::GameHandler& gameHandler) {
+    if (!showTitlesWindow_) return;
+
+    ImGui::SetNextWindowSize(ImVec2(320, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(240, 170), ImGuiCond_FirstUseEver);
+
+    if (!ImGui::Begin("Titles", &showTitlesWindow_)) {
+        ImGui::End();
+        return;
+    }
+
+    const auto& knownBits = gameHandler.getKnownTitleBits();
+    const int32_t chosen  = gameHandler.getChosenTitleBit();
+
+    if (knownBits.empty()) {
+        ImGui::TextDisabled("No titles earned yet.");
+        ImGui::End();
+        return;
+    }
+
+    ImGui::TextUnformatted("Select a title to display:");
+    ImGui::Separator();
+
+    // "No Title" option
+    bool noTitle = (chosen < 0);
+    if (ImGui::Selectable("(No Title)", noTitle)) {
+        if (!noTitle) gameHandler.sendSetTitle(-1);
+    }
+    if (noTitle) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "<-- active");
+    }
+
+    ImGui::Separator();
+
+    // Sort known bits for stable display order
+    std::vector<uint32_t> sortedBits(knownBits.begin(), knownBits.end());
+    std::sort(sortedBits.begin(), sortedBits.end());
+
+    ImGui::BeginChild("##titlelist", ImVec2(0, 0), false);
+    for (uint32_t bit : sortedBits) {
+        const std::string title = gameHandler.getFormattedTitle(bit);
+        const std::string display = title.empty()
+            ? ("Title #" + std::to_string(bit)) : title;
+
+        bool isActive = (chosen >= 0 && static_cast<uint32_t>(chosen) == bit);
+        ImGui::PushID(static_cast<int>(bit));
+
+        if (isActive) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.0f, 1.0f));
+        }
+        if (ImGui::Selectable(display.c_str(), isActive)) {
+            if (!isActive) gameHandler.sendSetTitle(static_cast<int32_t>(bit));
+        }
+        if (isActive) {
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            ImGui::TextDisabled("<-- active");
+        }
+
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
 
     ImGui::End();
 }

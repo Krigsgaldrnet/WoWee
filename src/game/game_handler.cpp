@@ -2136,9 +2136,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     titleBit);
                 msg = buf;
             }
+            // Track in known title set
+            if (isLost) {
+                knownTitleBits_.erase(titleBit);
+            } else {
+                knownTitleBits_.insert(titleBit);
+            }
+
+            // Only post chat message for actual earned/lost events (isLost and new earn)
+            // Server sends isLost=0 for all known titles during login — suppress the chat spam
+            // by only notifying when we already had some titles (after login sequence)
             addSystemChatMessage(msg);
             LOG_INFO("SMSG_TITLE_EARNED: bit=", titleBit, " lost=", isLost,
-                     " title='", titleStr, "'");
+                     " title='", titleStr, "' known=", knownTitleBits_.size());
             break;
         }
 
@@ -9046,6 +9056,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     const uint16_t ufCoinage = fieldIndex(UF::PLAYER_FIELD_COINAGE);
                     const uint16_t ufArmor = fieldIndex(UF::UNIT_FIELD_RESISTANCES);
                     const uint16_t ufPBytes2 = fieldIndex(UF::PLAYER_BYTES_2);
+                    const uint16_t ufChosenTitle = fieldIndex(UF::PLAYER_CHOSEN_TITLE);
                     const uint16_t ufStats[5] = {
                         fieldIndex(UF::UNIT_FIELD_STAT0), fieldIndex(UF::UNIT_FIELD_STAT1),
                         fieldIndex(UF::UNIT_FIELD_STAT2), fieldIndex(UF::UNIT_FIELD_STAT3),
@@ -9081,6 +9092,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                             // 0 = not resting, 1 = REST_TYPE_IN_TAVERN, 2 = REST_TYPE_IN_CITY
                             uint8_t restStateByte = static_cast<uint8_t>((val >> 24) & 0xFF);
                             isResting_ = (restStateByte != 0);
+                        }
+                        else if (ufChosenTitle != 0xFFFF && key == ufChosenTitle) {
+                            chosenTitleBit_ = static_cast<int32_t>(val);
+                            LOG_DEBUG("PLAYER_CHOSEN_TITLE from update fields: ", chosenTitleBit_);
                         }
                         else {
                             for (int si = 0; si < 5; ++si) {
@@ -9378,6 +9393,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                         const uint16_t ufPlayerFlags = fieldIndex(UF::PLAYER_FLAGS);
                         const uint16_t ufArmor = fieldIndex(UF::UNIT_FIELD_RESISTANCES);
                         const uint16_t ufPBytes2v = fieldIndex(UF::PLAYER_BYTES_2);
+                        const uint16_t ufChosenTitle = fieldIndex(UF::PLAYER_CHOSEN_TITLE);
                         const uint16_t ufStatsV[5] = {
                             fieldIndex(UF::UNIT_FIELD_STAT0), fieldIndex(UF::UNIT_FIELD_STAT1),
                             fieldIndex(UF::UNIT_FIELD_STAT2), fieldIndex(UF::UNIT_FIELD_STAT3),
@@ -9424,6 +9440,10 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                 // 0 = not resting, 1 = REST_TYPE_IN_TAVERN, 2 = REST_TYPE_IN_CITY
                                 uint8_t restStateByte = static_cast<uint8_t>((val >> 24) & 0xFF);
                                 isResting_ = (restStateByte != 0);
+                            }
+                            else if (ufChosenTitle != 0xFFFF && key == ufChosenTitle) {
+                                chosenTitleBit_ = static_cast<int32_t>(val);
+                                LOG_DEBUG("PLAYER_CHOSEN_TITLE updated: ", chosenTitleBit_);
                             }
                             else if (key == ufPlayerFlags) {
                                 constexpr uint32_t PLAYER_FLAGS_GHOST = 0x00000010;
@@ -20725,6 +20745,33 @@ void GameHandler::loadTitleNameCache() {
         if (!name.empty()) titleNameCache_[bit] = std::move(name);
     }
     LOG_INFO("CharTitles: loaded ", titleNameCache_.size(), " title names from DBC");
+}
+
+std::string GameHandler::getFormattedTitle(uint32_t bit) const {
+    const_cast<GameHandler*>(this)->loadTitleNameCache();
+    auto it = titleNameCache_.find(bit);
+    if (it == titleNameCache_.end() || it->second.empty()) return {};
+
+    const std::string& pName = [&]() -> const std::string& {
+        auto nameIt = playerNameCache.find(playerGuid);
+        static const std::string kUnknown = "unknown";
+        return (nameIt != playerNameCache.end()) ? nameIt->second : kUnknown;
+    }();
+
+    const std::string& fmt = it->second;
+    size_t pos = fmt.find("%s");
+    if (pos != std::string::npos) {
+        return fmt.substr(0, pos) + pName + fmt.substr(pos + 2);
+    }
+    return fmt;
+}
+
+void GameHandler::sendSetTitle(int32_t bit) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto packet = SetTitlePacket::build(bit);
+    socket->send(packet);
+    chosenTitleBit_ = bit;
+    LOG_INFO("sendSetTitle: bit=", bit);
 }
 
 void GameHandler::loadAchievementNameCache() {

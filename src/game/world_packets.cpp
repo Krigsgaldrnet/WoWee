@@ -5429,5 +5429,12 @@ network::Packet PetRenamePacket::build(uint64_t petGuid, const std::string& name
     return p;
 }
 
+network::Packet SetTitlePacket::build(int32_t titleBit) {
+    // CMSG_SET_TITLE: int32 titleBit (-1 = remove active title)
+    network::Packet p(wireOpcode(Opcode::CMSG_SET_TITLE));
+    p.writeUInt32(static_cast<uint32_t>(titleBit));
+    return p;
+}
+
 } // namespace game
 } // namespace wowee

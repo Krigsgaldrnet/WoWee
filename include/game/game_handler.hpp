@@ -1505,6 +1505,14 @@ public:
     void setAchievementEarnedCallback(AchievementEarnedCallback cb) { achievementEarnedCallback_ = std::move(cb); }
     const std::unordered_set<uint32_t>& getEarnedAchievements() const { return earnedAchievements_; }
 
+    // Title system — earned title bits and the currently displayed title
+    const std::unordered_set<uint32_t>& getKnownTitleBits() const { return knownTitleBits_; }
+    int32_t getChosenTitleBit() const { return chosenTitleBit_; }
+    /// Returns the formatted title string for a given bit (replaces %s with player name), or empty.
+    std::string getFormattedTitle(uint32_t bit) const;
+    /// Send CMSG_SET_TITLE to activate a title (bit >= 0) or clear it (bit = -1).
+    void sendSetTitle(int32_t bit);
+
     // Area discovery callback — fires when SMSG_EXPLORATION_EXPERIENCE is received
     using AreaDiscoveryCallback = std::function<void(const std::string& areaName, uint32_t xpGained)>;
     void setAreaDiscoveryCallback(AreaDiscoveryCallback cb) { areaDiscoveryCallback_ = std::move(cb); }
@@ -2734,6 +2742,10 @@ private:
     std::unordered_map<uint32_t, std::string> titleNameCache_;
     bool titleNameCacheLoaded_ = false;
     void loadTitleNameCache();
+    // Set of title bit-indices known to the player (from SMSG_TITLE_EARNED).
+    std::unordered_set<uint32_t> knownTitleBits_;
+    // Currently selected title bit, or -1 for no title. Updated from PLAYER_CHOSEN_TITLE.
+    int32_t chosenTitleBit_ = -1;
 
     // Achievement caches (lazy-loaded from Achievement.dbc on first earned event)
     std::unordered_map<uint32_t, std::string> achievementNameCache_;

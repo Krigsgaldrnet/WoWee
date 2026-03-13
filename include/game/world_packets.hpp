@@ -2727,5 +2727,13 @@ public:
     static network::Packet build(uint64_t petGuid, const std::string& name, uint8_t isDeclined = 0);
 };
 
+/** CMSG_SET_TITLE packet builder.
+ *  titleBit >= 0: activate the title with that bit index.
+ *  titleBit == -1: clear the current title (show no title). */
+class SetTitlePacket {
+public:
+    static network::Packet build(int32_t titleBit);
+};
+
 } // namespace game
 } // namespace wowee

@@ -429,6 +429,10 @@ private:
     char  achievementSearchBuf_[128] = {};
     void  renderAchievementWindow(game::GameHandler& gameHandler);
 
+    // Titles window
+    bool  showTitlesWindow_ = false;
+    void  renderTitlesWindow(game::GameHandler& gameHandler);
+
     // GM Ticket window
     bool  showGmTicketWindow_ = false;
     char  gmTicketBuf_[2048] = {};
