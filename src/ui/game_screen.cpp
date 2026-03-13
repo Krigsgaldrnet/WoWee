@@ -2977,6 +2977,47 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
             ImGui::SetCursorScreenPos(ImVec2(cursor.x, cursor.y + slotH + 2.0f));
         }
     }
+
+    // Melee swing timer — shown when player is auto-attacking
+    if (gameHandler.isAutoAttacking()) {
+        const uint64_t lastSwingMs = gameHandler.getLastMeleeSwingMs();
+        if (lastSwingMs > 0) {
+            // Determine weapon speed from the equipped main-hand weapon
+            uint32_t weaponDelayMs = 2000;  // Default: 2.0s unarmed
+            const auto& mainSlot = gameHandler.getInventory().getEquipSlot(game::EquipSlot::MAIN_HAND);
+            if (!mainSlot.empty() && mainSlot.item.itemId != 0) {
+                const auto* info = gameHandler.getItemInfo(mainSlot.item.itemId);
+                if (info && info->delayMs > 0) {
+                    weaponDelayMs = info->delayMs;
+                }
+            }
+
+            // Compute elapsed since last swing
+            uint64_t nowMs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            uint64_t elapsedMs = (nowMs >= lastSwingMs) ? (nowMs - lastSwingMs) : 0;
+
+            // Clamp to weapon delay (cap at 1.0 so the bar fills but doesn't exceed)
+            float pct = std::min(static_cast<float>(elapsedMs) / static_cast<float>(weaponDelayMs), 1.0f);
+
+            // Light silver-orange color indicating auto-attack readiness
+            ImVec4 swingColor = (pct >= 0.95f)
+                ? ImVec4(1.0f, 0.75f, 0.15f, 1.0f)   // gold when ready to swing
+                : ImVec4(0.65f, 0.55f, 0.40f, 1.0f);  // muted brown-orange while filling
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, swingColor);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.12f, 0.08f, 0.8f));
+            char swingLabel[24];
+            float remainSec = std::max(0.0f, (weaponDelayMs - static_cast<float>(elapsedMs)) / 1000.0f);
+            if (pct >= 0.98f)
+                snprintf(swingLabel, sizeof(swingLabel), "Swing!");
+            else
+                snprintf(swingLabel, sizeof(swingLabel), "%.1fs", remainSec);
+            ImGui::ProgressBar(pct, ImVec2(-1.0f, 8.0f), swingLabel);
+            ImGui::PopStyleColor(2);
+        }
+    }
+
     ImGui::End();
 
     ImGui::PopStyleColor(2);

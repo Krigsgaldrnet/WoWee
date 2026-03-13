@@ -14328,8 +14328,11 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
     bool isPlayerTarget = (data.targetGuid == playerGuid);
     if (!isPlayerAttacker && !isPlayerTarget) return;  // Not our combat
 
-    if (isPlayerAttacker && meleeSwingCallback_) {
-        meleeSwingCallback_();
+    if (isPlayerAttacker) {
+        lastMeleeSwingMs_ = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        if (meleeSwingCallback_) meleeSwingCallback_();
     }
     if (!isPlayerAttacker && npcSwingCallback_) {
         npcSwingCallback_(data.attackerGuid);

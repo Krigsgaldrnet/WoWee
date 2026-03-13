@@ -573,6 +573,9 @@ public:
     }
     uint64_t getAutoAttackTargetGuid() const { return autoAttackTarget; }
     bool isAggressiveTowardPlayer(uint64_t guid) const { return hostileAttackers_.count(guid) > 0; }
+    // Timestamp (ms since epoch) of the most recent player melee auto-attack.
+    // Zero if no swing has occurred this session.
+    uint64_t getLastMeleeSwingMs() const { return lastMeleeSwingMs_; }
     const std::vector<CombatTextEntry>& getCombatText() const { return combatText; }
     void updateCombatText(float deltaTime);
 
@@ -2854,6 +2857,7 @@ private:
     StandStateCallback standStateCallback_;
     GhostStateCallback ghostStateCallback_;
     MeleeSwingCallback meleeSwingCallback_;
+    uint64_t lastMeleeSwingMs_ = 0;   // system_clock ms at last player auto-attack swing
     SpellCastAnimCallback spellCastAnimCallback_;
     UnitAnimHintCallback unitAnimHintCallback_;
     UnitMoveFlagsCallback unitMoveFlagsCallback_;
