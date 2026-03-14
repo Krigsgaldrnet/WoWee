@@ -2656,7 +2656,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             };
             // spellId prefix present in all expansions
             if (packet.getSize() - packet.getReadPos() < 4) break;
-            /*uint32_t spellId =*/ packet.readUInt32();
+            uint32_t spellId = packet.readUInt32();
             if (packet.getSize() - packet.getReadPos() < (spellMissTbcLike ? 8 : 1)) break;
             uint64_t casterGuid = readSpellMissGuid();
             if (packet.getSize() - packet.getReadPos() < 5) break;
@@ -2692,10 +2692,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 CombatTextEntry::Type ct = (missInfo < 9) ? missTypes[missInfo] : CombatTextEntry::MISS;
                 if (casterGuid == playerGuid) {
                     // We cast a spell and it missed the target
-                    addCombatText(ct, 0, 0, true, 0, casterGuid, victimGuid);
+                    addCombatText(ct, 0, spellId, true, 0, casterGuid, victimGuid);
                 } else if (victimGuid == playerGuid) {
                     // Enemy spell missed us (we dodged/parried/blocked/resisted/etc.)
-                    addCombatText(ct, 0, 0, false, 0, casterGuid, victimGuid);
+                    addCombatText(ct, 0, spellId, false, 0, casterGuid, victimGuid);
                 }
             }
             break;
