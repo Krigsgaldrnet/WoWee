@@ -1245,7 +1245,11 @@ bool TbcPacketParsers::parseSpellStart(network::Packet& packet, SpellStartData& 
 
     if (packet.getReadPos() + 4 <= packet.getSize()) {
         uint32_t targetFlags = packet.readUInt32();
-        if ((targetFlags & 0x02) && packet.getReadPos() + 8 <= packet.getSize()) {
+        const bool needsTargetGuid = (targetFlags & 0x02) || (targetFlags & 0x800); // UNIT/OBJECT
+        if (needsTargetGuid) {
+            if (packet.getReadPos() + 8 > packet.getSize()) {
+                return false;
+            }
             data.targetGuid = packet.readUInt64();  // full GUID in TBC
         }
     }

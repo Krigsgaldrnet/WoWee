@@ -3715,7 +3715,12 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
     // Read target flags and target (simplified)
     if (packet.getSize() - packet.getReadPos() >= 4) {
         uint32_t targetFlags = packet.readUInt32();
-        if ((targetFlags & 0x02) && hasFullPackedGuid(packet)) { // TARGET_FLAG_UNIT
+        const bool needsTargetGuid = (targetFlags & 0x02) || (targetFlags & 0x800); // UNIT/OBJECT
+        if (needsTargetGuid) {
+            if (!hasFullPackedGuid(packet)) {
+                packet.setReadPos(startPos);
+                return false;
+            }
             data.targetGuid = UpdateObjectParser::readPackedGuid(packet);
         }
     }

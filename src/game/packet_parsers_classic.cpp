@@ -374,7 +374,8 @@ bool ClassicPacketParsers::parseSpellStart(network::Packet& packet, SpellStartDa
     if (rem() < 2) return true;
     uint16_t targetFlags = packet.readUInt16();
     // TARGET_FLAG_UNIT (0x02) or TARGET_FLAG_OBJECT (0x800) carry a packed GUID
-    if (((targetFlags & 0x02) || (targetFlags & 0x800)) && hasFullPackedGuid(packet)) {
+    if ((targetFlags & 0x02) || (targetFlags & 0x800)) {
+        if (!hasFullPackedGuid(packet)) return false;
         data.targetGuid = UpdateObjectParser::readPackedGuid(packet);
     }
 
