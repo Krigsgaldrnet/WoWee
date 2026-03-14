@@ -7002,19 +7002,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
 
         // ---- Resistance/combat log ----
         case Opcode::SMSG_RESISTLOG: {
-            // WotLK: uint32 hitInfo + packed_guid attacker + packed_guid victim + uint32 spellId
-            //        + float resistFactor + uint32 targetRes + uint32 resistedValue + ...
-            // TBC/Classic: same but full uint64 GUIDs
+            // WotLK/Classic/Turtle: uint32 hitInfo + packed_guid attacker + packed_guid victim + uint32 spellId
+            //                      + float resistFactor + uint32 targetRes + uint32 resistedValue + ...
+            // TBC:                 same layout but full uint64 GUIDs
             // Show RESIST combat text when player resists an incoming spell.
-            const bool rlTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            const bool rlUsesFullGuid = isActiveExpansion("tbc");
             auto rl_rem = [&]() { return packet.getSize() - packet.getReadPos(); };
             if (rl_rem() < 4) { packet.setReadPos(packet.getSize()); break; }
             /*uint32_t hitInfo =*/ packet.readUInt32();
-            if (rl_rem() < (rlTbcLike ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
-            uint64_t attackerGuid = rlTbcLike
+            if (rl_rem() < (rlUsesFullGuid ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
+            uint64_t attackerGuid = rlUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (rl_rem() < (rlTbcLike ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
-            uint64_t victimGuid = rlTbcLike
+            if (rl_rem() < (rlUsesFullGuid ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
+            uint64_t victimGuid = rlUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (rl_rem() < 4) { packet.setReadPos(packet.getSize()); break; }
             uint32_t spellId = packet.readUInt32();
