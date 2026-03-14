@@ -1031,13 +1031,15 @@ void Renderer::beginFrame() {
 
     // FXAA resource management — FXAA can coexist with FSR1 and FSR3.
     // When both FXAA and FSR3 are enabled, FXAA runs as a post-FSR3 pass.
-    // When both FXAA and FSR1 are enabled, FXAA takes priority (native res render).
-    if (fxaa_.needsRecreate && fxaa_.sceneFramebuffer) {
+    // Ghost mode also reuses this post pass for true grayscale when FXAA is
+    // disabled in settings.
+    const bool useFXAAPostPass = (fxaa_.enabled || ghostMode_);
+    if ((fxaa_.needsRecreate || !useFXAAPostPass) && fxaa_.sceneFramebuffer) {
         destroyFXAAResources();
         fxaa_.needsRecreate = false;
-        if (!fxaa_.enabled) LOG_INFO("FXAA: disabled");
+        if (!useFXAAPostPass) LOG_INFO("FXAA: disabled");
     }
-    if (fxaa_.enabled && !fxaa_.sceneFramebuffer) {
+    if (useFXAAPostPass && !fxaa_.sceneFramebuffer) {
         if (!initFXAAResources()) {
             LOG_ERROR("FXAA: initialization failed, disabling");
             fxaa_.enabled = false;
@@ -1060,9 +1062,8 @@ void Renderer::beginFrame() {
             destroyFSR2Resources();
             initFSR2Resources();
         }
-        // Recreate FXAA resources for new swapchain dimensions
-        // FXAA can coexist with FSR1 and FSR3 simultaneously.
-        if (fxaa_.enabled) {
+        // Recreate FXAA resources for new swapchain dimensions.
+        if (useFXAAPostPass) {
             destroyFXAAResources();
             initFXAAResources();
         }
@@ -1152,7 +1153,7 @@ void Renderer::beginFrame() {
     if (fsr2_.enabled && fsr2_.sceneFramebuffer) {
         rpInfo.framebuffer = fsr2_.sceneFramebuffer;
         renderExtent = { fsr2_.internalWidth, fsr2_.internalHeight };
-    } else if (fxaa_.enabled && fxaa_.sceneFramebuffer) {
+    } else if (useFXAAPostPass && fxaa_.sceneFramebuffer) {
         // FXAA takes priority over FSR1: renders at native res with AA post-process.
         // When both FSR1 and FXAA are enabled, FXAA wins (native res, no downscale).
         rpInfo.framebuffer = fxaa_.sceneFramebuffer;
@@ -1249,7 +1250,7 @@ void Renderer::endFrame() {
         // FSR3+FXAA combined: re-point FXAA's descriptor to the FSR3 temporal output
         // so renderFXAAPass() applies spatial AA on the temporally-stabilized frame.
         // This must happen outside the render pass (descriptor updates are CPU-side).
-        if (fxaa_.enabled && fxaa_.descSet && fxaa_.sceneSampler) {
+        if ((fxaa_.enabled || ghostMode_) && fxaa_.descSet && fxaa_.sceneSampler) {
             VkImageView fsr3OutputView = VK_NULL_HANDLE;
             if (fsr2_.useAmdBackend) {
                 if (fsr2_.amdFsr3FramegenRuntimeActive && fsr2_.framegenOutput.image)
@@ -1308,7 +1309,7 @@ void Renderer::endFrame() {
         // of RCAS sharpening. FXAA descriptor is temporarily pointed to the FSR3
         // history buffer (which is already in SHADER_READ_ONLY_OPTIMAL). This gives
         // FSR3 temporal stability + FXAA spatial edge smoothing ("ultra quality native").
-        if (fxaa_.enabled && fxaa_.pipeline && fxaa_.descSet) {
+        if ((fxaa_.enabled || ghostMode_) && fxaa_.pipeline && fxaa_.descSet) {
             renderFXAAPass();
         } else {
             // Draw RCAS sharpening from accumulated history buffer
@@ -1317,7 +1318,7 @@ void Renderer::endFrame() {
 
         // Restore FXAA descriptor to its normal scene color source so standalone
         // FXAA frames are not affected by the FSR3 history pointer set above.
-        if (fxaa_.enabled && fxaa_.descSet && fxaa_.sceneSampler && fxaa_.sceneColor.imageView) {
+        if ((fxaa_.enabled || ghostMode_) && fxaa_.descSet && fxaa_.sceneSampler && fxaa_.sceneColor.imageView) {
             VkDescriptorImageInfo restoreInfo{};
             restoreInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             restoreInfo.imageView   = fxaa_.sceneColor.imageView;
@@ -1341,7 +1342,7 @@ void Renderer::endFrame() {
         }
         fsr2_.frameIndex = (fsr2_.frameIndex + 1) % 256;  // Wrap to keep Halton values well-distributed
 
-    } else if (fxaa_.enabled && fxaa_.sceneFramebuffer) {
+    } else if ((fxaa_.enabled || ghostMode_) && fxaa_.sceneFramebuffer) {
         // End the off-screen scene render pass
         vkCmdEndRenderPass(currentCmd);
 
@@ -5275,7 +5276,7 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             // Ghost mode desaturation overlay (non-FXAA path approximation).
             // When FXAA is active the FXAA shader applies true per-pixel desaturation;
             // otherwise a high-opacity gray overlay gives a similar washed-out effect.
-            if (ghostMode_ && overlayPipeline && !fxaa_.enabled) {
+            if (ghostMode_ && overlayPipeline && !(fxaa_.enabled || fxaa_.sceneFramebuffer)) {
                 renderOverlay(glm::vec4(0.5f, 0.5f, 0.55f, 0.82f), cmd);
             }
             if (minimap && minimap->isEnabled() && camera && window) {
@@ -5413,7 +5414,7 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             }
         }
         // Ghost mode desaturation overlay (non-FXAA path approximation).
-        if (ghostMode_ && overlayPipeline && !fxaa_.enabled) {
+        if (ghostMode_ && overlayPipeline && !(fxaa_.enabled || fxaa_.sceneFramebuffer)) {
             renderOverlay(glm::vec4(0.5f, 0.5f, 0.55f, 0.82f));
         }
         if (minimap && minimap->isEnabled() && camera && window) {

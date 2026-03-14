@@ -2441,6 +2441,12 @@ public:
     static network::Packet build();
 };
 
+/** CMSG_RECLAIM_CORPSE packet builder */
+class ReclaimCorpsePacket {
+public:
+    static network::Packet build(uint64_t guid);
+};
+
 /** CMSG_SPIRIT_HEALER_ACTIVATE packet builder */
 class SpiritHealerActivatePacket {
 public:

@@ -12908,9 +12908,9 @@ bool GameHandler::canReclaimCorpse() const {
 
 void GameHandler::reclaimCorpse() {
     if (!canReclaimCorpse() || !socket) return;
-    network::Packet packet(wireOpcode(Opcode::CMSG_RECLAIM_CORPSE));
+    auto packet = ReclaimCorpsePacket::build(playerGuid);
     socket->send(packet);
-    LOG_INFO("Sent CMSG_RECLAIM_CORPSE");
+    LOG_INFO("Sent CMSG_RECLAIM_CORPSE for guid=0x", std::hex, playerGuid, std::dec);
 }
 
 void GameHandler::activateSpiritHealer(uint64_t npcGuid) {

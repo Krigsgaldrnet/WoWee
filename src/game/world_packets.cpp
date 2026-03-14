@@ -4881,6 +4881,12 @@ network::Packet RepopRequestPacket::build() {
     return packet;
 }
 
+network::Packet ReclaimCorpsePacket::build(uint64_t guid) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_RECLAIM_CORPSE));
+    packet.writeUInt64(guid);
+    return packet;
+}
+
 network::Packet SpiritHealerActivatePacket::build(uint64_t npcGuid) {
     network::Packet packet(wireOpcode(Opcode::CMSG_SPIRIT_HEALER_ACTIVATE));
     packet.writeUInt64(npcGuid);
