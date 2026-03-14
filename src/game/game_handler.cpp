@@ -6306,15 +6306,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_SPELL_CHANCE_PROC_LOG: {
-            // Format (all expansions): PackedGuid target + PackedGuid caster + uint32 spellId + ...
-            if (packet.getSize() - packet.getReadPos() < 3) {
+            // WotLK:       packed_guid target + packed_guid caster + uint32 spellId + ...
+            // TBC/Classic: uint64 target + uint64 caster + uint32 spellId + ...
+            const bool procChanceTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            auto readProcChanceGuid = [&]() -> uint64_t {
+                if (procChanceTbcLike)
+                    return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
+                return UpdateObjectParser::readPackedGuid(packet);
+            };
+            if (packet.getSize() - packet.getReadPos() < (procChanceTbcLike ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t procTargetGuid = UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 2) {
+            uint64_t procTargetGuid = readProcChanceGuid();
+            if (packet.getSize() - packet.getReadPos() < (procChanceTbcLike ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t procCasterGuid = UpdateObjectParser::readPackedGuid(packet);
+            uint64_t procCasterGuid = readProcChanceGuid();
             if (packet.getSize() - packet.getReadPos() < 4) {
                 packet.setReadPos(packet.getSize()); break;
             }
