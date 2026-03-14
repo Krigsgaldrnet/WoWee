@@ -831,6 +831,13 @@ void GameHandler::update(float deltaTime) {
         it->timer -= deltaTime;
         if (it->timer <= 0.0f) {
             if (state == WorldState::IN_WORLD && socket) {
+                // Avoid sending CMSG_LOOT while a timed cast is active (e.g. gathering).
+                // handleSpellGo will trigger loot after the cast completes.
+                if (casting && currentCastSpellId != 0) {
+                    it->timer = 0.20f;
+                    ++it;
+                    continue;
+                }
                 lootTarget(it->guid);
             }
             it = pendingGameObjectLootOpens_.erase(it);
@@ -18373,6 +18380,13 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
     }
     if (shouldSendLoot) {
         lootTarget(guid);
+        // Some servers/scripts only make certain quest/chest GOs lootable after a short delay
+        // (use animation, state change). Queue one delayed loot attempt to catch that case.
+        pendingGameObjectLootOpens_.erase(
+            std::remove_if(pendingGameObjectLootOpens_.begin(), pendingGameObjectLootOpens_.end(),
+                           [&](const PendingLootOpen& p) { return p.guid == guid; }),
+            pendingGameObjectLootOpens_.end());
+        pendingGameObjectLootOpens_.push_back(PendingLootOpen{guid, 0.75f});
     } else {
         // Non-lootable interaction (mailbox, door, button, etc.) — no CMSG_LOOT will be
         // sent, and no SMSG_LOOT_RESPONSE will arrive to clear it.  Clear the gather-loot
@@ -19545,6 +19559,10 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
     if (!LootResponseParser::parse(packet, currentLoot, wotlkLoot)) return;
     lootWindowOpen = true;
     lastInteractedGoGuid_ = 0; // loot opened — no need to re-send in handleSpellGo
+    pendingGameObjectLootOpens_.erase(
+        std::remove_if(pendingGameObjectLootOpens_.begin(), pendingGameObjectLootOpens_.end(),
+                       [&](const PendingLootOpen& p) { return p.guid == currentLoot.lootGuid; }),
+        pendingGameObjectLootOpens_.end());
     localLootState_[currentLoot.lootGuid] = LocalLootState{currentLoot, false};
 
     // Query item info so loot window can show names instead of IDs
