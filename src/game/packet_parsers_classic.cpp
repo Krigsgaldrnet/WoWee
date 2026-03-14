@@ -510,6 +510,8 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
 //       + uint32(victimState) + int32(overkill) [+ uint32(blocked)]
 // ============================================================================
 bool ClassicPacketParsers::parseAttackerStateUpdate(network::Packet& packet, AttackerStateUpdateData& data) {
+    data = AttackerStateUpdateData{};
+
     auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
     if (rem() < 5) return false;  // hitInfo(4) + at least GUID mask byte(1)
 
@@ -526,11 +528,24 @@ bool ClassicPacketParsers::parseAttackerStateUpdate(network::Packet& packet, Att
     }
     data.targetGuid   = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
 
-    if (rem() < 5) return false;  // int32 totalDamage + uint8 subDamageCount
+    if (rem() < 5) {
+        packet.setReadPos(startPos);
+        return false;
+    }  // int32 totalDamage + uint8 subDamageCount
     data.totalDamage    = static_cast<int32_t>(packet.readUInt32());
     data.subDamageCount = packet.readUInt8();
 
-    for (uint8_t i = 0; i < data.subDamageCount && rem() >= 20; ++i) {
+    const uint8_t maxSubDamageCount = static_cast<uint8_t>(std::min<size_t>(rem() / 20, 64));
+    if (data.subDamageCount > maxSubDamageCount) {
+        data.subDamageCount = maxSubDamageCount;
+    }
+
+    data.subDamages.reserve(data.subDamageCount);
+    for (uint8_t i = 0; i < data.subDamageCount; ++i) {
+        if (rem() < 20) {
+            packet.setReadPos(startPos);
+            return false;
+        }
         SubDamage sub;
         sub.schoolMask = packet.readUInt32();
         sub.damage     = packet.readFloat();
@@ -539,8 +554,12 @@ bool ClassicPacketParsers::parseAttackerStateUpdate(network::Packet& packet, Att
         sub.resisted   = packet.readUInt32();
         data.subDamages.push_back(sub);
     }
+    data.subDamageCount = static_cast<uint8_t>(data.subDamages.size());
 
-    if (rem() < 8) return true;
+    if (rem() < 8) {
+        packet.setReadPos(startPos);
+        return false;
+    }
     data.victimState = packet.readUInt32();
     data.overkill    = static_cast<int32_t>(packet.readUInt32());
 
