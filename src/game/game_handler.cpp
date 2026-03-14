@@ -6202,17 +6202,17 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_SPELLDISPELLOG: {
-            // WotLK: packed casterGuid + packed victimGuid + uint32 dispelSpell + uint8 isStolen
-            // TBC/Classic: full uint64 casterGuid + full uint64 victimGuid + ...
+            // WotLK/Classic/Turtle: packed casterGuid + packed victimGuid + uint32 dispelSpell + uint8 isStolen
+            // TBC:                  full uint64 casterGuid + full uint64 victimGuid + ...
             // + uint32 count + count × (uint32 dispelled_spellId + uint32 unk)
-            const bool dispelTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
-            if (packet.getSize() - packet.getReadPos() < (dispelTbcLike ? 8u : 2u)) {
+            const bool dispelUsesFullGuid = isActiveExpansion("tbc");
+            if (packet.getSize() - packet.getReadPos() < (dispelUsesFullGuid ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t casterGuid = dispelTbcLike
+            uint64_t casterGuid = dispelUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < (dispelTbcLike ? 8u : 2u)) break;
-            uint64_t victimGuid = dispelTbcLike
+            if (packet.getSize() - packet.getReadPos() < (dispelUsesFullGuid ? 8u : 1u)) break;
+            uint64_t victimGuid = dispelUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 9) break;
             /*uint32_t dispelSpell =*/ packet.readUInt32();
@@ -6220,12 +6220,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint32_t count   = packet.readUInt32();
             // Preserve every dispelled aura in the combat log instead of collapsing
             // multi-aura packets down to the first entry only.
-            const size_t dispelEntrySize = dispelTbcLike ? 8u : 5u;
+            const size_t dispelEntrySize = dispelUsesFullGuid ? 8u : 5u;
             std::vector<uint32_t> dispelledIds;
             dispelledIds.reserve(count);
             for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= dispelEntrySize; ++i) {
                 uint32_t dispelledId = packet.readUInt32();
-                if (dispelTbcLike) {
+                if (dispelUsesFullGuid) {
                     /*uint32_t unk =*/ packet.readUInt32();
                 } else {
                     /*uint8_t isPositive =*/ packet.readUInt8();
@@ -6288,19 +6288,19 @@ void GameHandler::handlePacket(network::Packet& packet) {
         case Opcode::SMSG_SPELLSTEALLOG: {
             // Sent to the CASTER (Mage) when Spellsteal succeeds.
             // Wire format mirrors SPELLDISPELLOG:
-            // WotLK: packed victim + packed caster + uint32 spellId + uint8 isStolen + uint32 count
-            //        + count × (uint32 stolenSpellId + uint8 isPositive)
-            // TBC/Classic: full uint64 victim + full uint64 caster + same tail
-            const bool stealTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
-            if (packet.getSize() - packet.getReadPos() < (stealTbcLike ? 8u : 2u)) {
+            // WotLK/Classic/Turtle: packed victim + packed caster + uint32 spellId + uint8 isStolen + uint32 count
+            //                        + count × (uint32 stolenSpellId + uint8 isPositive)
+            // TBC:                   full uint64 victim + full uint64 caster + same tail
+            const bool stealUsesFullGuid = isActiveExpansion("tbc");
+            if (packet.getSize() - packet.getReadPos() < (stealUsesFullGuid ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t stealVictim = stealTbcLike
+            uint64_t stealVictim = stealUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < (stealTbcLike ? 8u : 2u)) {
+            if (packet.getSize() - packet.getReadPos() < (stealUsesFullGuid ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t stealCaster = stealTbcLike
+            uint64_t stealCaster = stealUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (packet.getSize() - packet.getReadPos() < 9) {
                 packet.setReadPos(packet.getSize()); break;
@@ -6309,12 +6309,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             /*uint8_t  isStolen    =*/ packet.readUInt8();
             uint32_t stealCount   = packet.readUInt32();
             // Preserve every stolen aura in the combat log instead of only the first.
-            const size_t stealEntrySize = stealTbcLike ? 8u : 5u;
+            const size_t stealEntrySize = stealUsesFullGuid ? 8u : 5u;
             std::vector<uint32_t> stolenIds;
             stolenIds.reserve(stealCount);
             for (uint32_t i = 0; i < stealCount && packet.getSize() - packet.getReadPos() >= stealEntrySize; ++i) {
                 uint32_t stolenId = packet.readUInt32();
-                if (stealTbcLike) {
+                if (stealUsesFullGuid) {
                     /*uint32_t unk =*/ packet.readUInt32();
                 } else {
                     /*uint8_t isPos  =*/ packet.readUInt8();
