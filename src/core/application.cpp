@@ -847,6 +847,7 @@ void Application::logoutToLogin() {
     world.reset();
 
     if (renderer) {
+        renderer->resetCombatVisualState();
         // Remove old player model so it doesn't persist into next session
         if (auto* charRenderer = renderer->getCharacterRenderer()) {
             charRenderer->removeInstance(1);
@@ -1114,6 +1115,15 @@ void Application::update(float deltaTime) {
                                gameHandler->isTaxiMountActive() ||
                                gameHandler->isTaxiActivationPending());
                 bool onTransportNow = gameHandler && gameHandler->isOnTransport();
+                // Clear stale client-side transport state when the tracked transport no longer exists.
+                if (onTransportNow && gameHandler->getTransportManager()) {
+                    auto* currentTracked = gameHandler->getTransportManager()->getTransport(
+                        gameHandler->getPlayerTransportGuid());
+                    if (!currentTracked) {
+                        gameHandler->clearPlayerTransport();
+                        onTransportNow = false;
+                    }
+                }
                 // M2 transports (trams) use position-delta approach: player keeps normal
                 // movement and the transport's frame-to-frame delta is applied on top.
                 // Only WMO transports (ships) use full external-driven mode.
@@ -1349,24 +1359,12 @@ void Application::update(float deltaTime) {
                 } else {
                     glm::vec3 renderPos = renderer->getCharacterPosition();
 
-                    // M2 transport riding: apply transport's frame-to-frame position delta
-                    // so the player moves with the tram while retaining normal movement input.
+                    // M2 transport riding: resolve in canonical space and lock once per frame.
+                    // This avoids visible jitter from mixed render/canonical delta application.
                     if (isM2Transport && gameHandler->getTransportManager()) {
                         auto* tr = gameHandler->getTransportManager()->getTransport(
                             gameHandler->getPlayerTransportGuid());
                         if (tr) {
-                            static glm::vec3 lastTransportCanonical(0);
-                            static uint64_t lastTransportGuid = 0;
-                            if (lastTransportGuid == gameHandler->getPlayerTransportGuid()) {
-                                glm::vec3 deltaCanonical = tr->position - lastTransportCanonical;
-                                glm::vec3 deltaRender = core::coords::canonicalToRender(deltaCanonical)
-                                                      - core::coords::canonicalToRender(glm::vec3(0));
-                                renderPos += deltaRender;
-                                renderer->getCharacterPosition() = renderPos;
-                            }
-                            lastTransportCanonical = tr->position;
-                            lastTransportGuid = gameHandler->getPlayerTransportGuid();
-
                             // Keep passenger locked to elevator vertical motion while grounded.
                             // Without this, floor clamping can hold world-Z static unless the
                             // player is jumping, which makes lifts appear to not move vertically.
@@ -1428,8 +1426,8 @@ void Application::update(float deltaTime) {
                         glm::vec3 playerCanonical = core::coords::renderToCanonical(renderPos);
                         constexpr float kM2BoardHorizDistSq = 12.0f * 12.0f;
                         constexpr float kM2BoardVertDist = 15.0f;
-                        constexpr float kTbLiftBoardHorizDistSq = 95.0f * 95.0f;
-                        constexpr float kTbLiftBoardVertDist = 80.0f;
+                        constexpr float kTbLiftBoardHorizDistSq = 22.0f * 22.0f;
+                        constexpr float kTbLiftBoardVertDist = 14.0f;
 
                         uint64_t bestGuid = 0;
                         float bestScore = 1e30f;
@@ -1474,11 +1472,16 @@ void Application::update(float deltaTime) {
                             const bool isThunderBluffLift =
                                 (tr->entry >= 20649u && tr->entry <= 20657u);
                             constexpr float kM2DisembarkHorizDistSq = 15.0f * 15.0f;
-                            constexpr float kTbLiftDisembarkHorizDistSq = 120.0f * 120.0f;
+                            constexpr float kTbLiftDisembarkHorizDistSq = 28.0f * 28.0f;
+                            constexpr float kM2DisembarkVertDist = 18.0f;
+                            constexpr float kTbLiftDisembarkVertDist = 16.0f;
                             const float disembarkHorizDistSq = isThunderBluffLift
                                 ? kTbLiftDisembarkHorizDistSq
                                 : kM2DisembarkHorizDistSq;
-                            if (horizDistSq > disembarkHorizDistSq) {
+                            const float disembarkVertDist = isThunderBluffLift
+                                ? kTbLiftDisembarkVertDist
+                                : kM2DisembarkVertDist;
+                            if (horizDistSq > disembarkHorizDistSq || std::abs(diff.z) > disembarkVertDist) {
                                 gameHandler->clearPlayerTransport();
                                 LOG_DEBUG("M2 transport disembark");
                             }
@@ -1911,6 +1914,9 @@ void Application::setupUICallbacks() {
     gameHandler->setWorldEntryCallback([this](uint32_t mapId, float x, float y, float z, bool isInitialEntry) {
         LOG_INFO("Online world entry: mapId=", mapId, " pos=(", x, ", ", y, ", ", z, ")"
                  " initial=", isInitialEntry);
+        if (renderer) {
+            renderer->resetCombatVisualState();
+        }
 
         // Reconnect to the same map: terrain stays loaded but all online entities are stale.
         // Despawn them properly so the server's fresh CREATE_OBJECTs will re-populate the world.

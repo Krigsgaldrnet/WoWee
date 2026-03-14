@@ -2718,6 +2718,13 @@ void Renderer::setTargetPosition(const glm::vec3* pos) {
     targetPosition = pos;
 }
 
+void Renderer::resetCombatVisualState() {
+    inCombat_ = false;
+    targetPosition = nullptr;
+    meleeSwingTimer = 0.0f;
+    meleeSwingCooldown = 0.0f;
+}
+
 bool Renderer::isMoving() const {
     return cameraController && cameraController->isMoving();
 }

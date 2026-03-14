@@ -161,6 +161,7 @@ public:
     // Targeting support
     void setTargetPosition(const glm::vec3* pos);
     void setInCombat(bool combat) { inCombat_ = combat; }
+    void resetCombatVisualState();
     bool isMoving() const;
     void triggerMeleeSwing();
     void setEquippedWeaponType(uint32_t inventoryType) { equippedWeaponInvType_ = inventoryType; meleeAnimId = 0; }
