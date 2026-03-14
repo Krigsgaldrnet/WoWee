@@ -6240,10 +6240,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         std::snprintf(buf, sizeof(buf), "%s was stolen.", stolenName.c_str());
                     addSystemChatMessage(buf);
                 }
-                // Add dispel/steal to combat log using DISPEL type (isStolen=true for steals)
+                // Preserve spellsteal as a distinct event so the UI wording stays accurate.
                 if (firstStolenId != 0) {
                     bool isPlayerCaster = (stealCaster == playerGuid);
-                    addCombatText(CombatTextEntry::DISPEL, 0, firstStolenId, isPlayerCaster, 0,
+                    addCombatText(CombatTextEntry::STEAL, 0, firstStolenId, isPlayerCaster, 0,
                                   stealCaster, stealVictim);
                 }
             }

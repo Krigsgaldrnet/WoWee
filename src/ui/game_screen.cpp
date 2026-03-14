@@ -8397,6 +8397,14 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     color = ImVec4(1.0f, 0.85f, 0.0f, alpha);  // Gold for proc
                     break;
                 }
+                case game::CombatTextEntry::DISPEL:
+                    snprintf(text, sizeof(text), "Dispel");
+                    color = ImVec4(0.6f, 0.9f, 1.0f, alpha);
+                    break;
+                case game::CombatTextEntry::STEAL:
+                    snprintf(text, sizeof(text), "Spellsteal");
+                    color = ImVec4(0.8f, 0.7f, 1.0f, alpha);
+                    break;
                 default:
                     snprintf(text, sizeof(text), "%d", entry.amount);
                     color = ImVec4(1.0f, 1.0f, 1.0f, alpha);
@@ -20275,6 +20283,17 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                     else
                         snprintf(desc, sizeof(desc), "%s dispels from %s", src, tgt);
                     color = ImVec4(0.6f, 0.9f, 1.0f, 1.0f);
+                    break;
+                case T::STEAL:
+                    if (spell && e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You steal %s from %s", spell, tgt);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s steals %s from %s", src, spell, tgt);
+                    else if (e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You steal from %s", tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s steals from %s", src, tgt);
+                    color = ImVec4(0.8f, 0.7f, 1.0f, 1.0f);
                     break;
                 case T::INTERRUPT:
                     if (spell && e.isPlayerSource)
