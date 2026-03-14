@@ -6503,16 +6503,26 @@ void GameHandler::handlePacket(network::Packet& packet) {
                             : UpdateObjectParser::readPackedGuid(packet);
                         if (packet.getSize() - packet.getReadPos() < 8) { packet.setReadPos(packet.getSize()); break; }
                         uint32_t leechAmount = packet.readUInt32();
-                        /*float    leechMult =*/ packet.readFloat();
+                        float leechMult = packet.readFloat();
                         if (leechAmount > 0) {
-                            if (leechTarget == playerGuid)
+                            if (leechTarget == playerGuid) {
                                 addCombatText(CombatTextEntry::SPELL_DAMAGE, static_cast<int32_t>(leechAmount), exeSpellId, false, 0,
                                               exeCaster, leechTarget);
-                            else if (isPlayerCaster)
-                                addCombatText(CombatTextEntry::HEAL, static_cast<int32_t>(leechAmount), exeSpellId, true, 0,
-                                              exeCaster, exeCaster);
+                            } else if (isPlayerCaster) {
+                                addCombatText(CombatTextEntry::SPELL_DAMAGE, static_cast<int32_t>(leechAmount), exeSpellId, true, 0,
+                                              exeCaster, leechTarget);
+                            }
+                            if (isPlayerCaster && leechMult > 0.0f && std::isfinite(leechMult)) {
+                                const uint32_t gainedAmount = static_cast<uint32_t>(
+                                    std::lround(static_cast<double>(leechAmount) * static_cast<double>(leechMult)));
+                                if (gainedAmount > 0) {
+                                    addCombatText(CombatTextEntry::HEAL, static_cast<int32_t>(gainedAmount), exeSpellId, true, 0,
+                                                  exeCaster, exeCaster);
+                                }
+                            }
                         }
-                        LOG_DEBUG("SMSG_SPELLLOGEXECUTE HEALTH_LEECH: spell=", exeSpellId, " amount=", leechAmount);
+                        LOG_DEBUG("SMSG_SPELLLOGEXECUTE HEALTH_LEECH: spell=", exeSpellId,
+                                  " amount=", leechAmount, " multiplier=", leechMult);
                     }
                 } else if (effectType == 24 || effectType == 114) {
                     // SPELL_EFFECT_CREATE_ITEM / CREATE_ITEM2: uint32 itemEntry per log entry
