@@ -6165,11 +6165,16 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint32_t count   = packet.readUInt32();
             // Preserve every dispelled aura in the combat log instead of collapsing
             // multi-aura packets down to the first entry only.
+            const size_t dispelEntrySize = dispelTbcLike ? 8u : 5u;
             std::vector<uint32_t> dispelledIds;
             dispelledIds.reserve(count);
-            for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= 5; ++i) {
+            for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= dispelEntrySize; ++i) {
                 uint32_t dispelledId = packet.readUInt32();
-                /*uint8_t isPositive =*/ packet.readUInt8();
+                if (dispelTbcLike) {
+                    /*uint32_t unk =*/ packet.readUInt32();
+                } else {
+                    /*uint8_t isPositive =*/ packet.readUInt8();
+                }
                 if (dispelledId != 0) {
                     dispelledIds.push_back(dispelledId);
                 }
@@ -6250,11 +6255,16 @@ void GameHandler::handlePacket(network::Packet& packet) {
             /*uint8_t  isStolen    =*/ packet.readUInt8();
             uint32_t stealCount   = packet.readUInt32();
             // Preserve every stolen aura in the combat log instead of only the first.
+            const size_t stealEntrySize = stealTbcLike ? 8u : 5u;
             std::vector<uint32_t> stolenIds;
             stolenIds.reserve(stealCount);
-            for (uint32_t i = 0; i < stealCount && packet.getSize() - packet.getReadPos() >= 5; ++i) {
+            for (uint32_t i = 0; i < stealCount && packet.getSize() - packet.getReadPos() >= stealEntrySize; ++i) {
                 uint32_t stolenId = packet.readUInt32();
-                /*uint8_t isPos  =*/ packet.readUInt8();
+                if (stealTbcLike) {
+                    /*uint32_t unk =*/ packet.readUInt32();
+                } else {
+                    /*uint8_t isPos  =*/ packet.readUInt8();
+                }
                 if (stolenId != 0) {
                     stolenIds.push_back(stolenId);
                 }
