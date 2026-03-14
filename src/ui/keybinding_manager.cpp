@@ -5,6 +5,11 @@
 
 namespace wowee::ui {
 
+static bool isReservedMovementKey(ImGuiKey key) {
+    return key == ImGuiKey_W || key == ImGuiKey_A || key == ImGuiKey_S ||
+           key == ImGuiKey_D || key == ImGuiKey_Q || key == ImGuiKey_E;
+}
+
 KeybindingManager& KeybindingManager::getInstance() {
     static KeybindingManager instance;
     return instance;
@@ -47,8 +52,9 @@ ImGuiKey KeybindingManager::getKeyForAction(Action action) const {
 }
 
 void KeybindingManager::setKeyForAction(Action action, ImGuiKey key) {
-    // Q is reserved for movement (strafe-left) and must never open quest log.
-    if (action == Action::TOGGLE_QUEST_LOG && key == ImGuiKey_Q) {
+    // Reserve movement keys so they cannot be used as UI shortcuts.
+    (void)action;
+    if (isReservedMovementKey(key)) {
         key = ImGuiKey_None;
     }
     bindings_[static_cast<int>(action)] = key;
@@ -181,8 +187,8 @@ void KeybindingManager::loadFromConfigFile(const std::string& filePath) {
 
         if (key == ImGuiKey_None) continue;
 
-        // Q is reserved for movement (strafe-left) and must never open quest log.
-        if (actionIdx == static_cast<int>(Action::TOGGLE_QUEST_LOG) && key == ImGuiKey_Q) {
+        // Reserve movement keys so they cannot be used as UI shortcuts.
+        if (isReservedMovementKey(key)) {
             continue;
         }
 
