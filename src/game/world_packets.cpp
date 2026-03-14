@@ -3683,7 +3683,14 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
     if (packet.getSize() - packet.getReadPos() < 22) return false;
 
     size_t startPos = packet.getReadPos();
+    if (!hasFullPackedGuid(packet)) {
+        return false;
+    }
     data.casterGuid = UpdateObjectParser::readPackedGuid(packet);
+    if (!hasFullPackedGuid(packet)) {
+        packet.setReadPos(startPos);
+        return false;
+    }
     data.casterUnit = UpdateObjectParser::readPackedGuid(packet);
 
     // Validate remaining fixed fields (castCount + spellId + castFlags + castTime = 9 bytes)
