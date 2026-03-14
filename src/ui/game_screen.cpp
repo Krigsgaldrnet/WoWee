@@ -8414,6 +8414,11 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     color = ImVec4(1.0f, 0.6f, 0.9f, alpha);
                     break;
                 }
+                case game::CombatTextEntry::INSTAKILL:
+                    snprintf(text, sizeof(text), outgoing ? "Kill!" : "Killed!");
+                    color = outgoing ? ImVec4(1.0f, 0.25f, 0.25f, alpha)
+                                     : ImVec4(1.0f, 0.1f, 0.1f, alpha);
+                    break;
                 default:
                     snprintf(text, sizeof(text), "%d", entry.amount);
                     color = ImVec4(1.0f, 1.0f, 1.0f, alpha);
@@ -20314,6 +20319,17 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                     else
                         snprintf(desc, sizeof(desc), "%s interrupted", tgt);
                     color = ImVec4(1.0f, 0.6f, 0.9f, 1.0f);
+                    break;
+                case T::INSTAKILL:
+                    if (spell && e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You instantly kill %s with %s", tgt, spell);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s instantly kills %s with %s", src, tgt, spell);
+                    else if (e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You instantly kill %s", tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s instantly kills %s", src, tgt);
+                    color = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
                     break;
                 default:
                     snprintf(desc, sizeof(desc), "Combat event (type %d, amount %d)", (int)e.type, e.amount);
