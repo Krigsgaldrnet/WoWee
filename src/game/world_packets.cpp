@@ -3660,12 +3660,13 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
 
     data.hitTargets.reserve(data.hitCount);
     for (uint8_t i = 0; i < data.hitCount; ++i) {
-        if (packet.getSize() - packet.getReadPos() < 8) {
+        // WotLK hit targets are packed GUIDs, like the caster and miss targets.
+        if (packet.getSize() - packet.getReadPos() < 1) {
             LOG_WARNING("Spell go: truncated hit targets at index ", (int)i, "/", (int)data.hitCount);
             data.hitCount = i;
             break;
         }
-        data.hitTargets.push_back(packet.readUInt64());
+        data.hitTargets.push_back(UpdateObjectParser::readPackedGuid(packet));
     }
 
     // Validate missCount field exists
