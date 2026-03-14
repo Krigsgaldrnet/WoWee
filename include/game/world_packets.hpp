@@ -1858,7 +1858,7 @@ public:
 /** SMSG_SPELL_GO data (simplified) */
 struct SpellGoMissEntry {
     uint64_t targetGuid = 0;
-    uint8_t  missType   = 0;  // 0=MISS 1=DODGE 2=PARRY 3=BLOCK 4=EVADE 5=IMMUNE 6=DEFLECT 7=ABSORB 8=RESIST
+    uint8_t  missType   = 0;  // 0=MISS 1=DODGE 2=PARRY 3=BLOCK 4=EVADE 5=IMMUNE 6=DEFLECT 7=ABSORB 8=RESIST 11=REFLECT
 };
 
 struct SpellGoData {

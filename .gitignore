@@ -100,3 +100,10 @@ node_modules/
 # Python cache artifacts
 tools/__pycache__/
 *.pyc
+
+# artifacts
+.codex-loop/
+
+# Local agent instructions
+AGENTS.md
+codex-loop.sh

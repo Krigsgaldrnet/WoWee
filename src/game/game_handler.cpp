@@ -123,6 +123,40 @@ std::string formatCopperAmount(uint32_t amount) {
     return oss.str();
 }
 
+std::string displaySpellName(GameHandler& handler, uint32_t spellId) {
+    if (spellId == 0) return {};
+    const std::string& name = handler.getSpellName(spellId);
+    if (!name.empty()) return name;
+    return "spell " + std::to_string(spellId);
+}
+
+std::string formatSpellNameList(GameHandler& handler,
+                                const std::vector<uint32_t>& spellIds,
+                                size_t maxShown = 3) {
+    if (spellIds.empty()) return {};
+
+    const size_t shownCount = std::min(spellIds.size(), maxShown);
+    std::ostringstream oss;
+    for (size_t i = 0; i < shownCount; ++i) {
+        if (i > 0) {
+            if (shownCount == 2) {
+                oss << " and ";
+            } else if (i == shownCount - 1) {
+                oss << ", and ";
+            } else {
+                oss << ", ";
+            }
+        }
+        oss << displaySpellName(handler, spellIds[i]);
+    }
+
+    if (spellIds.size() > shownCount) {
+        oss << ", and " << (spellIds.size() - shownCount) << " more";
+    }
+
+    return oss.str();
+}
+
 bool readCStringAt(const std::vector<uint8_t>& data, size_t start, std::string& out, size_t& nextPos) {
     out.clear();
     if (start >= data.size()) return false;
@@ -2066,8 +2100,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint64_t victim = readPrGuid();
             if (packet.getSize() - packet.getReadPos() < 4) break;
             uint32_t spellId = packet.readUInt32();
-            if (victim == playerGuid)
+            if (victim == playerGuid) {
                 addCombatText(CombatTextEntry::RESIST, 0, spellId, false, 0, caster, victim);
+            } else if (caster == playerGuid) {
+                addCombatText(CombatTextEntry::RESIST, 0, spellId, true, 0, caster, victim);
+            }
             packet.setReadPos(packet.getSize());
             break;
         }
@@ -2643,33 +2680,34 @@ void GameHandler::handlePacket(network::Packet& packet) {
         // ---- Spell log miss ----
         case Opcode::SMSG_SPELLLOGMISS: {
             // All expansions: uint32 spellId first.
-            // WotLK:       spellId(4) + packed_guid caster + uint8 unk + uint32 count
-            //              + count × (packed_guid victim + uint8 missInfo)
-            //              [missInfo==11(REFLECT): + uint32 reflectSpellId + uint8 reflectResult]
-            // TBC/Classic: spellId(4) + uint64 caster + uint8 unk + uint32 count
-            //              + count × (uint64 victim + uint8 missInfo)
-            const bool spellMissTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            // WotLK/Classic: spellId(4) + packed_guid caster + uint8 unk + uint32 count
+            //                 + count × (packed_guid victim + uint8 missInfo)
+            // TBC:            spellId(4) + uint64 caster + uint8 unk + uint32 count
+            //                 + count × (uint64 victim + uint8 missInfo)
+            // All expansions append uint32 reflectSpellId + uint8 reflectResult when
+            // missInfo==11 (REFLECT).
+            const bool spellMissUsesFullGuid = isActiveExpansion("tbc");
             auto readSpellMissGuid = [&]() -> uint64_t {
-                if (spellMissTbcLike)
+                if (spellMissUsesFullGuid)
                     return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
                 return UpdateObjectParser::readPackedGuid(packet);
             };
             // spellId prefix present in all expansions
             if (packet.getSize() - packet.getReadPos() < 4) break;
-            /*uint32_t spellId =*/ packet.readUInt32();
-            if (packet.getSize() - packet.getReadPos() < (spellMissTbcLike ? 8 : 1)) break;
+            uint32_t spellId = packet.readUInt32();
+            if (packet.getSize() - packet.getReadPos() < (spellMissUsesFullGuid ? 8u : 1u)) break;
             uint64_t casterGuid = readSpellMissGuid();
             if (packet.getSize() - packet.getReadPos() < 5) break;
             /*uint8_t unk =*/ packet.readUInt8();
             uint32_t count = packet.readUInt32();
             count = std::min(count, 32u);
             for (uint32_t i = 0; i < count; ++i) {
-                if (packet.getSize() - packet.getReadPos() < (spellMissTbcLike ? 9u : 2u)) break;
+                if (packet.getSize() - packet.getReadPos() < (spellMissUsesFullGuid ? 9u : 2u)) break;
                 uint64_t victimGuid = readSpellMissGuid();
                 if (packet.getSize() - packet.getReadPos() < 1) break;
                 uint8_t missInfo = packet.readUInt8();
                 // REFLECT (11): extra uint32 reflectSpellId + uint8 reflectResult
-                if (missInfo == 11 && !spellMissTbcLike) {
+                if (missInfo == 11) {
                     if (packet.getSize() - packet.getReadPos() >= 5) {
                         /*uint32_t reflectSpellId =*/ packet.readUInt32();
                         /*uint8_t  reflectResult  =*/ packet.readUInt8();
@@ -2683,19 +2721,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     CombatTextEntry::DODGE,   // 1=DODGE
                     CombatTextEntry::PARRY,   // 2=PARRY
                     CombatTextEntry::BLOCK,   // 3=BLOCK
-                    CombatTextEntry::MISS,    // 4=EVADE
+                    CombatTextEntry::EVADE,   // 4=EVADE
                     CombatTextEntry::IMMUNE,  // 5=IMMUNE
-                    CombatTextEntry::MISS,    // 6=DEFLECT
+                    CombatTextEntry::DEFLECT, // 6=DEFLECT
                     CombatTextEntry::ABSORB,  // 7=ABSORB
                     CombatTextEntry::RESIST,  // 8=RESIST
                 };
-                CombatTextEntry::Type ct = (missInfo < 9) ? missTypes[missInfo] : CombatTextEntry::MISS;
+                CombatTextEntry::Type ct = (missInfo < 9) ? missTypes[missInfo]
+                    : (missInfo == 11 ? CombatTextEntry::REFLECT : CombatTextEntry::MISS);
                 if (casterGuid == playerGuid) {
                     // We cast a spell and it missed the target
-                    addCombatText(ct, 0, 0, true, 0, casterGuid, victimGuid);
+                    addCombatText(ct, 0, spellId, true, 0, casterGuid, victimGuid);
                 } else if (victimGuid == playerGuid) {
                     // Enemy spell missed us (we dodged/parried/blocked/resisted/etc.)
-                    addCombatText(ct, 0, 0, false, 0, casterGuid, victimGuid);
+                    addCombatText(ct, 0, spellId, false, 0, casterGuid, victimGuid);
                 }
             }
             break;
@@ -3954,13 +3993,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 } else if (auraType == 98) {
                     // PERIODIC_MANA_LEECH: miscValue(powerType) + amount + float multiplier
                     if (packet.getSize() - packet.getReadPos() < 12) break;
-                    /*uint32_t powerType =*/ packet.readUInt32();
+                    uint8_t powerType = static_cast<uint8_t>(packet.readUInt32());
                     uint32_t amount = packet.readUInt32();
-                    /*float multiplier =*/ packet.readUInt32();  // read as raw uint32 (float bits)
-                    // Show as periodic damage from victim's perspective (mana drained)
+                    float multiplier = packet.readFloat();
                     if (isPlayerVictim && amount > 0)
-                        addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(amount),
-                                      spellId, false, 0, casterGuid, victimGuid);
+                        addCombatText(CombatTextEntry::POWER_DRAIN, static_cast<int32_t>(amount),
+                                      spellId, false, powerType, casterGuid, victimGuid);
+                    if (isPlayerCaster && amount > 0 && multiplier > 0.0f && std::isfinite(multiplier)) {
+                        const uint32_t gainedAmount = static_cast<uint32_t>(
+                            std::lround(static_cast<double>(amount) * static_cast<double>(multiplier)));
+                        if (gainedAmount > 0) {
+                            addCombatText(CombatTextEntry::ENERGIZE, static_cast<int32_t>(gainedAmount),
+                                          spellId, true, powerType, casterGuid, casterGuid);
+                        }
+                    }
                 } else {
                     // Unknown/untracked aura type — stop parsing this event safely
                     packet.setReadPos(packet.getSize());
@@ -3975,14 +4021,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // TBC: full uint64 victim + uint64 caster + uint32 spellId + uint8 powerType + int32 amount
             // Classic/Vanilla: packed_guid (same as WotLK)
             const bool energizeTbc = isActiveExpansion("tbc");
-            size_t rem = packet.getSize() - packet.getReadPos();
-            if (rem < (energizeTbc ? 8u : 2u)) { packet.setReadPos(packet.getSize()); break; }
-            uint64_t victimGuid = energizeTbc
-                ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            uint64_t casterGuid = energizeTbc
-                ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            rem = packet.getSize() - packet.getReadPos();
-            if (rem < 6) { packet.setReadPos(packet.getSize()); break; }
+            auto readEnergizeGuid = [&]() -> uint64_t {
+                if (energizeTbc)
+                    return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
+                return UpdateObjectParser::readPackedGuid(packet);
+            };
+            if (packet.getSize() - packet.getReadPos() < (energizeTbc ? 8u : 1u)) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t victimGuid = readEnergizeGuid();
+            if (packet.getSize() - packet.getReadPos() < (energizeTbc ? 8u : 1u)) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            uint64_t casterGuid = readEnergizeGuid();
+            if (packet.getSize() - packet.getReadPos() < 9) {
+                packet.setReadPos(packet.getSize()); break;
+            }
             uint32_t spellId       = packet.readUInt32();
             uint8_t  energizePowerType = packet.readUInt8();
             int32_t  amount        = static_cast<int32_t>(packet.readUInt32());
@@ -6087,8 +6141,6 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
 
         // ---- Spell combat logs (consume) ----
-        case Opcode::SMSG_AURACASTLOG:
-        case Opcode::SMSG_SPELLBREAKLOG:
         case Opcode::SMSG_SPELLDAMAGESHIELD: {
             // Classic/TBC: uint64 victim + uint64 caster + spellId(4) + damage(4) + schoolMask(4)
             // WotLK:       packed_guid victim + packed_guid caster + spellId(4) + damage(4) + absorbed(4) + schoolMask(4)
@@ -6119,6 +6171,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
             }
             break;
         }
+        case Opcode::SMSG_AURACASTLOG:
+        case Opcode::SMSG_SPELLBREAKLOG:
+            // These packets are not damage-shield events. Consume them without
+            // synthesizing reflected damage entries or misattributing GUIDs.
+            packet.setReadPos(packet.getSize());
+            break;
         case Opcode::SMSG_SPELLORDAMAGE_IMMUNE: {
             // WotLK: packed casterGuid + packed victimGuid + uint32 spellId + uint8 saveType
             // TBC/Classic: full uint64 casterGuid + full uint64 victimGuid + uint32 + uint8
@@ -6160,37 +6218,68 @@ void GameHandler::handlePacket(network::Packet& packet) {
             /*uint32_t dispelSpell =*/ packet.readUInt32();
             uint8_t isStolen = packet.readUInt8();
             uint32_t count   = packet.readUInt32();
-            // Collect first dispelled spell id/name; process all entries for combat log
-            // Each entry: uint32 spellId + uint8 isPositive (5 bytes in WotLK/TBC/Classic)
-            uint32_t firstDispelledId = 0;
-            std::string firstSpellName;
-            for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= 5; ++i) {
+            // Preserve every dispelled aura in the combat log instead of collapsing
+            // multi-aura packets down to the first entry only.
+            const size_t dispelEntrySize = dispelTbcLike ? 8u : 5u;
+            std::vector<uint32_t> dispelledIds;
+            dispelledIds.reserve(count);
+            for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= dispelEntrySize; ++i) {
                 uint32_t dispelledId = packet.readUInt32();
-                /*uint8_t isPositive =*/ packet.readUInt8();
-                if (i == 0) {
-                    firstDispelledId = dispelledId;
-                    const std::string& nm = getSpellName(dispelledId);
-                    firstSpellName = nm.empty() ? ("spell " + std::to_string(dispelledId)) : nm;
+                if (dispelTbcLike) {
+                    /*uint32_t unk =*/ packet.readUInt32();
+                } else {
+                    /*uint8_t isPositive =*/ packet.readUInt8();
+                }
+                if (dispelledId != 0) {
+                    dispelledIds.push_back(dispelledId);
                 }
             }
             // Show system message if player was victim or caster
             if (victimGuid == playerGuid || casterGuid == playerGuid) {
-                const char* verb = isStolen ? "stolen" : "dispelled";
-                if (!firstSpellName.empty()) {
+                std::vector<uint32_t> loggedIds;
+                if (isStolen) {
+                    loggedIds.reserve(dispelledIds.size());
+                    for (uint32_t dispelledId : dispelledIds) {
+                        if (shouldLogSpellstealAura(casterGuid, victimGuid, dispelledId))
+                            loggedIds.push_back(dispelledId);
+                    }
+                } else {
+                    loggedIds = dispelledIds;
+                }
+
+                const std::string displaySpellNames = formatSpellNameList(*this, loggedIds);
+                if (!displaySpellNames.empty()) {
                     char buf[256];
-                    if (victimGuid == playerGuid && casterGuid != playerGuid)
-                        std::snprintf(buf, sizeof(buf), "%s was %s.", firstSpellName.c_str(), verb);
-                    else if (casterGuid == playerGuid)
-                        std::snprintf(buf, sizeof(buf), "You %s %s.", verb, firstSpellName.c_str());
-                    else
-                        std::snprintf(buf, sizeof(buf), "%s %s.", firstSpellName.c_str(), verb);
+                    const char* passiveVerb = loggedIds.size() == 1 ? "was" : "were";
+                    if (isStolen) {
+                        if (victimGuid == playerGuid && casterGuid != playerGuid)
+                            std::snprintf(buf, sizeof(buf), "%s %s stolen.",
+                                          displaySpellNames.c_str(), passiveVerb);
+                        else if (casterGuid == playerGuid)
+                            std::snprintf(buf, sizeof(buf), "You steal %s.", displaySpellNames.c_str());
+                        else
+                            std::snprintf(buf, sizeof(buf), "%s %s stolen.",
+                                          displaySpellNames.c_str(), passiveVerb);
+                    } else {
+                        if (victimGuid == playerGuid && casterGuid != playerGuid)
+                            std::snprintf(buf, sizeof(buf), "%s %s dispelled.",
+                                          displaySpellNames.c_str(), passiveVerb);
+                        else if (casterGuid == playerGuid)
+                            std::snprintf(buf, sizeof(buf), "You dispel %s.", displaySpellNames.c_str());
+                        else
+                            std::snprintf(buf, sizeof(buf), "%s %s dispelled.",
+                                          displaySpellNames.c_str(), passiveVerb);
+                    }
                     addSystemChatMessage(buf);
                 }
-                // Add dispel event to combat log
-                if (firstDispelledId != 0) {
+                // Preserve stolen auras as spellsteal events so the log wording stays accurate.
+                if (!loggedIds.empty()) {
                     bool isPlayerCaster = (casterGuid == playerGuid);
-                    addCombatText(CombatTextEntry::DISPEL, 0, firstDispelledId, isPlayerCaster, 0,
-                                  casterGuid, victimGuid);
+                    for (uint32_t dispelledId : loggedIds) {
+                        addCombatText(isStolen ? CombatTextEntry::STEAL : CombatTextEntry::DISPEL,
+                                      0, dispelledId, isPlayerCaster, 0,
+                                      casterGuid, victimGuid);
+                    }
                 }
             }
             packet.setReadPos(packet.getSize());
@@ -6219,47 +6308,69 @@ void GameHandler::handlePacket(network::Packet& packet) {
             /*uint32_t stealSpellId =*/ packet.readUInt32();
             /*uint8_t  isStolen    =*/ packet.readUInt8();
             uint32_t stealCount   = packet.readUInt32();
-            // Collect stolen spell info; show feedback when we are caster or victim
-            uint32_t firstStolenId = 0;
-            std::string stolenName;
-            for (uint32_t i = 0; i < stealCount && packet.getSize() - packet.getReadPos() >= 5; ++i) {
+            // Preserve every stolen aura in the combat log instead of only the first.
+            const size_t stealEntrySize = stealTbcLike ? 8u : 5u;
+            std::vector<uint32_t> stolenIds;
+            stolenIds.reserve(stealCount);
+            for (uint32_t i = 0; i < stealCount && packet.getSize() - packet.getReadPos() >= stealEntrySize; ++i) {
                 uint32_t stolenId = packet.readUInt32();
-                /*uint8_t isPos  =*/ packet.readUInt8();
-                if (i == 0) {
-                    firstStolenId = stolenId;
-                    const std::string& nm = getSpellName(stolenId);
-                    stolenName = nm.empty() ? ("spell " + std::to_string(stolenId)) : nm;
+                if (stealTbcLike) {
+                    /*uint32_t unk =*/ packet.readUInt32();
+                } else {
+                    /*uint8_t isPos  =*/ packet.readUInt8();
+                }
+                if (stolenId != 0) {
+                    stolenIds.push_back(stolenId);
                 }
             }
             if (stealCaster == playerGuid || stealVictim == playerGuid) {
-                if (!stolenName.empty()) {
+                std::vector<uint32_t> loggedIds;
+                loggedIds.reserve(stolenIds.size());
+                for (uint32_t stolenId : stolenIds) {
+                    if (shouldLogSpellstealAura(stealCaster, stealVictim, stolenId))
+                        loggedIds.push_back(stolenId);
+                }
+
+                const std::string displaySpellNames = formatSpellNameList(*this, loggedIds);
+                if (!displaySpellNames.empty()) {
                     char buf[256];
                     if (stealCaster == playerGuid)
-                        std::snprintf(buf, sizeof(buf), "You stole %s.", stolenName.c_str());
+                        std::snprintf(buf, sizeof(buf), "You stole %s.", displaySpellNames.c_str());
                     else
-                        std::snprintf(buf, sizeof(buf), "%s was stolen.", stolenName.c_str());
+                        std::snprintf(buf, sizeof(buf), "%s %s stolen.", displaySpellNames.c_str(),
+                                      loggedIds.size() == 1 ? "was" : "were");
                     addSystemChatMessage(buf);
                 }
-                // Add dispel/steal to combat log using DISPEL type (isStolen=true for steals)
-                if (firstStolenId != 0) {
+                // Some servers emit both SPELLDISPELLOG(isStolen=1) and SPELLSTEALLOG
+                // for the same aura. Keep the first event and suppress the duplicate.
+                if (!loggedIds.empty()) {
                     bool isPlayerCaster = (stealCaster == playerGuid);
-                    addCombatText(CombatTextEntry::DISPEL, 0, firstStolenId, isPlayerCaster, 0,
-                                  stealCaster, stealVictim);
+                    for (uint32_t stolenId : loggedIds) {
+                        addCombatText(CombatTextEntry::STEAL, 0, stolenId, isPlayerCaster, 0,
+                                      stealCaster, stealVictim);
+                    }
                 }
             }
             packet.setReadPos(packet.getSize());
             break;
         }
         case Opcode::SMSG_SPELL_CHANCE_PROC_LOG: {
-            // Format (all expansions): PackedGuid target + PackedGuid caster + uint32 spellId + ...
-            if (packet.getSize() - packet.getReadPos() < 3) {
+            // WotLK:       packed_guid target + packed_guid caster + uint32 spellId + ...
+            // TBC/Classic: uint64 target + uint64 caster + uint32 spellId + ...
+            const bool procChanceTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            auto readProcChanceGuid = [&]() -> uint64_t {
+                if (procChanceTbcLike)
+                    return (packet.getSize() - packet.getReadPos() >= 8) ? packet.readUInt64() : 0;
+                return UpdateObjectParser::readPackedGuid(packet);
+            };
+            if (packet.getSize() - packet.getReadPos() < (procChanceTbcLike ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t procTargetGuid = UpdateObjectParser::readPackedGuid(packet);
-            if (packet.getSize() - packet.getReadPos() < 2) {
+            uint64_t procTargetGuid = readProcChanceGuid();
+            if (packet.getSize() - packet.getReadPos() < (procChanceTbcLike ? 8u : 1u)) {
                 packet.setReadPos(packet.getSize()); break;
             }
-            uint64_t procCasterGuid = UpdateObjectParser::readPackedGuid(packet);
+            uint64_t procCasterGuid = readProcChanceGuid();
             if (packet.getSize() - packet.getReadPos() < 4) {
                 packet.setReadPos(packet.getSize()); break;
             }
@@ -6286,11 +6397,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint32_t ikSpell = (ik_rem() >= 4) ? packet.readUInt32() : 0;
             // Show kill/death feedback for the local player
             if (ikCaster == playerGuid) {
-                // We killed a target instantly — show a KILL combat text hit
-                addCombatText(CombatTextEntry::MELEE_DAMAGE, 0, ikSpell, true, 0, ikCaster, ikVictim);
+                addCombatText(CombatTextEntry::INSTAKILL, 0, ikSpell, true, 0, ikCaster, ikVictim);
             } else if (ikVictim == playerGuid) {
-                // We were instantly killed — show a large incoming hit
-                addCombatText(CombatTextEntry::MELEE_DAMAGE, 0, ikSpell, false, 0, ikCaster, ikVictim);
+                addCombatText(CombatTextEntry::INSTAKILL, 0, ikSpell, false, 0, ikCaster, ikVictim);
                 addSystemChatMessage("You were killed by an instant-kill effect.");
             }
             LOG_DEBUG("SMSG_SPELLINSTAKILLLOG: caster=0x", std::hex, ikCaster,
@@ -6309,7 +6418,24 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Effect 49 = FEED_PET:      uint32 itemEntry
             // Effect 114= CREATE_ITEM2:  uint32 itemEntry (same layout as CREATE_ITEM)
             const bool exeTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            const auto hasFullPackedGuid = [&packet]() -> bool {
+                if (packet.getReadPos() >= packet.getSize()) {
+                    return false;
+                }
+                const auto& rawData = packet.getData();
+                const uint8_t mask = rawData[packet.getReadPos()];
+                size_t guidBytes = 1;
+                for (int bit = 0; bit < 8; ++bit) {
+                    if ((mask & (1u << bit)) != 0) {
+                        ++guidBytes;
+                    }
+                }
+                return packet.getSize() - packet.getReadPos() >= guidBytes;
+            };
             if (packet.getSize() - packet.getReadPos() < (exeTbcLike ? 8u : 1u)) {
+                packet.setReadPos(packet.getSize()); break;
+            }
+            if (!exeTbcLike && !hasFullPackedGuid()) {
                 packet.setReadPos(packet.getSize()); break;
             }
             uint64_t exeCaster = exeTbcLike
@@ -6330,31 +6456,50 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (effectType == 10) {
                     // SPELL_EFFECT_POWER_DRAIN: packed_guid target + uint32 amount + uint32 powerType + float multiplier
                     for (uint32_t li = 0; li < effectLogCount; ++li) {
-                        if (packet.getSize() - packet.getReadPos() < 1) break;
+                        if (packet.getSize() - packet.getReadPos() < (exeTbcLike ? 8u : 1u)
+                            || (!exeTbcLike && !hasFullPackedGuid())) {
+                            packet.setReadPos(packet.getSize()); break;
+                        }
                         uint64_t drainTarget = exeTbcLike
-                            ? (packet.getSize() - packet.getReadPos() >= 8 ? packet.readUInt64() : 0)
+                            ? packet.readUInt64()
                             : UpdateObjectParser::readPackedGuid(packet);
                         if (packet.getSize() - packet.getReadPos() < 12) { packet.setReadPos(packet.getSize()); break; }
                         uint32_t drainAmount = packet.readUInt32();
                         uint32_t drainPower  = packet.readUInt32(); // 0=mana,1=rage,3=energy,6=runic
-                        /*float    drainMult =*/ packet.readFloat();
+                        float drainMult = packet.readFloat();
                         if (drainAmount > 0) {
                             if (drainTarget == playerGuid)
-                                addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(drainAmount), exeSpellId, false, 0,
+                                addCombatText(CombatTextEntry::POWER_DRAIN, static_cast<int32_t>(drainAmount), exeSpellId, false,
+                                              static_cast<uint8_t>(drainPower),
                                               exeCaster, drainTarget);
-                            else if (isPlayerCaster)
-                                addCombatText(CombatTextEntry::ENERGIZE, static_cast<int32_t>(drainAmount), exeSpellId, true,
-                                              static_cast<uint8_t>(drainPower), exeCaster, drainTarget);
+                            if (isPlayerCaster) {
+                                if (drainTarget != playerGuid) {
+                                    addCombatText(CombatTextEntry::POWER_DRAIN, static_cast<int32_t>(drainAmount), exeSpellId, true,
+                                                  static_cast<uint8_t>(drainPower), exeCaster, drainTarget);
+                                }
+                                if (drainMult > 0.0f && std::isfinite(drainMult)) {
+                                    const uint32_t gainedAmount = static_cast<uint32_t>(
+                                        std::lround(static_cast<double>(drainAmount) * static_cast<double>(drainMult)));
+                                    if (gainedAmount > 0) {
+                                        addCombatText(CombatTextEntry::ENERGIZE, static_cast<int32_t>(gainedAmount), exeSpellId, true,
+                                                      static_cast<uint8_t>(drainPower), exeCaster, exeCaster);
+                                    }
+                                }
+                            }
                         }
                         LOG_DEBUG("SMSG_SPELLLOGEXECUTE POWER_DRAIN: spell=", exeSpellId,
-                                  " power=", drainPower, " amount=", drainAmount);
+                                  " power=", drainPower, " amount=", drainAmount,
+                                  " multiplier=", drainMult);
                     }
                 } else if (effectType == 11) {
                     // SPELL_EFFECT_HEALTH_LEECH: packed_guid target + uint32 amount + float multiplier
                     for (uint32_t li = 0; li < effectLogCount; ++li) {
-                        if (packet.getSize() - packet.getReadPos() < 1) break;
+                        if (packet.getSize() - packet.getReadPos() < (exeTbcLike ? 8u : 1u)
+                            || (!exeTbcLike && !hasFullPackedGuid())) {
+                            packet.setReadPos(packet.getSize()); break;
+                        }
                         uint64_t leechTarget = exeTbcLike
-                            ? (packet.getSize() - packet.getReadPos() >= 8 ? packet.readUInt64() : 0)
+                            ? packet.readUInt64()
                             : UpdateObjectParser::readPackedGuid(packet);
                         if (packet.getSize() - packet.getReadPos() < 8) { packet.setReadPos(packet.getSize()); break; }
                         uint32_t leechAmount = packet.readUInt32();
@@ -6365,7 +6510,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                                               exeCaster, leechTarget);
                             else if (isPlayerCaster)
                                 addCombatText(CombatTextEntry::HEAL, static_cast<int32_t>(leechAmount), exeSpellId, true, 0,
-                                              exeCaster, leechTarget);
+                                              exeCaster, exeCaster);
                         }
                         LOG_DEBUG("SMSG_SPELLLOGEXECUTE HEALTH_LEECH: spell=", exeSpellId, " amount=", leechAmount);
                     }
@@ -6394,9 +6539,12 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 } else if (effectType == 26) {
                     // SPELL_EFFECT_INTERRUPT_CAST: packed_guid target + uint32 interrupted_spell_id
                     for (uint32_t li = 0; li < effectLogCount; ++li) {
-                        if (packet.getSize() - packet.getReadPos() < 1) break;
+                        if (packet.getSize() - packet.getReadPos() < (exeTbcLike ? 8u : 1u)
+                            || (!exeTbcLike && !hasFullPackedGuid())) {
+                            packet.setReadPos(packet.getSize()); break;
+                        }
                         uint64_t icTarget = exeTbcLike
-                            ? (packet.getSize() - packet.getReadPos() >= 8 ? packet.readUInt64() : 0)
+                            ? packet.readUInt64()
                             : UpdateObjectParser::readPackedGuid(packet);
                         if (packet.getSize() - packet.getReadPos() < 4) { packet.setReadPos(packet.getSize()); break; }
                         uint32_t icSpellId = packet.readUInt32();
@@ -6860,11 +7008,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             if (rl_rem() < 4) { packet.setReadPos(packet.getSize()); break; }
             uint32_t spellId = packet.readUInt32();
-            // Show RESIST when player is the victim; show as caster-side MISS when player is attacker
+            // Show RESIST when the player is involved on either side.
             if (victimGuid == playerGuid) {
-                addCombatText(CombatTextEntry::MISS, 0, spellId, false, 0, attackerGuid, victimGuid);
+                addCombatText(CombatTextEntry::RESIST, 0, spellId, false, 0, attackerGuid, victimGuid);
             } else if (attackerGuid == playerGuid) {
-                addCombatText(CombatTextEntry::MISS, 0, spellId, true, 0, attackerGuid, victimGuid);
+                addCombatText(CombatTextEntry::RESIST, 0, spellId, true, 0, attackerGuid, victimGuid);
             }
             packet.setReadPos(packet.getSize());
             break;
@@ -14061,6 +14209,31 @@ void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint
     combatLog_.push_back(std::move(log));
 }
 
+bool GameHandler::shouldLogSpellstealAura(uint64_t casterGuid, uint64_t victimGuid, uint32_t spellId) {
+    if (spellId == 0) return false;
+
+    const auto now = std::chrono::steady_clock::now();
+    constexpr auto kRecentWindow = std::chrono::seconds(1);
+    while (!recentSpellstealLogs_.empty() &&
+           now - recentSpellstealLogs_.front().timestamp > kRecentWindow) {
+        recentSpellstealLogs_.pop_front();
+    }
+
+    for (auto it = recentSpellstealLogs_.begin(); it != recentSpellstealLogs_.end(); ++it) {
+        if (it->casterGuid == casterGuid &&
+            it->victimGuid == victimGuid &&
+            it->spellId == spellId) {
+            recentSpellstealLogs_.erase(it);
+            return false;
+        }
+    }
+
+    if (recentSpellstealLogs_.size() >= MAX_RECENT_SPELLSTEAL_LOGS)
+        recentSpellstealLogs_.pop_front();
+    recentSpellstealLogs_.push_back({casterGuid, victimGuid, spellId, now});
+    return true;
+}
+
 void GameHandler::updateCombatText(float deltaTime) {
     for (auto& entry : combatText) {
         entry.age += deltaTime;
@@ -16253,14 +16426,14 @@ void GameHandler::handleAttackerStateUpdate(network::Packet& packet) {
             addCombatText(CombatTextEntry::MELEE_DAMAGE, data.totalDamage, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
         addCombatText(CombatTextEntry::BLOCK, static_cast<int32_t>(data.blocked), 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else if (data.victimState == 5) {
-        // VICTIMSTATE_EVADE: NPC evaded (out of combat zone). Show as miss.
-        addCombatText(CombatTextEntry::MISS, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
+        // VICTIMSTATE_EVADE: NPC evaded (out of combat zone).
+        addCombatText(CombatTextEntry::EVADE, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else if (data.victimState == 6) {
         // VICTIMSTATE_IS_IMMUNE: Target is immune to this attack.
         addCombatText(CombatTextEntry::IMMUNE, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else if (data.victimState == 7) {
         // VICTIMSTATE_DEFLECT: Attack was deflected (e.g. shield slam reflect).
-        addCombatText(CombatTextEntry::MISS, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
+        addCombatText(CombatTextEntry::DEFLECT, 0, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     } else {
         auto type = data.isCrit() ? CombatTextEntry::CRIT_DAMAGE : CombatTextEntry::MELEE_DAMAGE;
         addCombatText(type, data.totalDamage, 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
@@ -16862,23 +17035,30 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
     // Clear unit cast bar when the spell lands (for any tracked unit)
     unitCastStates_.erase(data.casterUnit);
 
-    // Show miss/dodge/parry/etc combat text when player's spells miss targets
-    if (data.casterUnit == playerGuid && !data.missTargets.empty()) {
+    // Preserve spellId and actual participants for spell-go miss results.
+    // This keeps the persistent combat log aligned with the later GUID fixes.
+    if (!data.missTargets.empty()) {
         static const CombatTextEntry::Type missTypes[] = {
             CombatTextEntry::MISS,    // 0=MISS
             CombatTextEntry::DODGE,   // 1=DODGE
             CombatTextEntry::PARRY,   // 2=PARRY
             CombatTextEntry::BLOCK,   // 3=BLOCK
-            CombatTextEntry::MISS,    // 4=EVADE
+            CombatTextEntry::EVADE,   // 4=EVADE
             CombatTextEntry::IMMUNE,  // 5=IMMUNE
-            CombatTextEntry::MISS,    // 6=DEFLECT
+            CombatTextEntry::DEFLECT, // 6=DEFLECT
             CombatTextEntry::ABSORB,  // 7=ABSORB
             CombatTextEntry::RESIST,  // 8=RESIST
         };
-        // Show text for each miss (usually just 1 target per spell go)
+        const uint64_t spellCasterGuid = data.casterUnit != 0 ? data.casterUnit : data.casterGuid;
+        const bool playerIsCaster = (spellCasterGuid == playerGuid);
+
         for (const auto& m : data.missTargets) {
-            CombatTextEntry::Type ct = (m.missType < 9) ? missTypes[m.missType] : CombatTextEntry::MISS;
-            addCombatText(ct, 0, 0, true);
+            if (!playerIsCaster && m.targetGuid != playerGuid) {
+                continue;
+            }
+            CombatTextEntry::Type ct = (m.missType < 9) ? missTypes[m.missType]
+                : (m.missType == 11 ? CombatTextEntry::REFLECT : CombatTextEntry::MISS);
+            addCombatText(ct, 0, data.spellId, playerIsCaster, 0, spellCasterGuid, m.targetGuid);
         }
     }
 

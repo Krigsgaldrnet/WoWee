@@ -2369,6 +2369,7 @@ private:
 
     void addCombatText(CombatTextEntry::Type type, int32_t amount, uint32_t spellId, bool isPlayerSource, uint8_t powerType = 0,
                        uint64_t srcGuid = 0, uint64_t dstGuid = 0);
+    bool shouldLogSpellstealAura(uint64_t casterGuid, uint64_t victimGuid, uint32_t spellId);
     void addSystemChatMessage(const std::string& message);
 
     /**
@@ -2575,7 +2576,15 @@ private:
     std::unordered_set<uint64_t> hostileAttackers_;
     std::vector<CombatTextEntry> combatText;
     static constexpr size_t MAX_COMBAT_LOG = 500;
+    struct RecentSpellstealLogEntry {
+        uint64_t casterGuid = 0;
+        uint64_t victimGuid = 0;
+        uint32_t spellId = 0;
+        std::chrono::steady_clock::time_point timestamp{};
+    };
+    static constexpr size_t MAX_RECENT_SPELLSTEAL_LOGS = 32;
     std::deque<CombatLogEntry> combatLog_;
+    std::deque<RecentSpellstealLogEntry> recentSpellstealLogs_;
     std::deque<std::string>    areaTriggerMsgs_;
     // unitGuid → sorted threat list (descending by threat value)
     std::unordered_map<uint64_t, std::vector<ThreatEntry>> threatLists_;

@@ -421,6 +421,11 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
         m.targetGuid = UpdateObjectParser::readPackedGuid(packet);
         if (rem() < 1) break;
         m.missType = packet.readUInt8();
+        if (m.missType == 11) {
+            if (rem() < 5) break;
+            (void)packet.readUInt32();
+            (void)packet.readUInt8();
+        }
         data.missTargets.push_back(m);
     }
     // Check if we read all expected misses

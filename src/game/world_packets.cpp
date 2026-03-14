@@ -3632,8 +3632,9 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
 }
 
 bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
-    // Upfront validation: packed GUID(1-8) + packed GUID(1-8) + castCount(1) + spellId(4) + castFlags(4) + timestamp(4) + hitCount(1) + missCount(1) = 24 bytes minimum
-    if (packet.getSize() - packet.getReadPos() < 24) return false;
+    // Packed GUIDs are variable-length, so only require the smallest possible
+    // shape up front: 2 GUID masks + fixed fields through missCount.
+    if (packet.getSize() - packet.getReadPos() < 17) return false;
 
     size_t startPos = packet.getReadPos();
     data.casterGuid = UpdateObjectParser::readPackedGuid(packet);
@@ -3660,12 +3661,13 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
 
     data.hitTargets.reserve(data.hitCount);
     for (uint8_t i = 0; i < data.hitCount; ++i) {
-        if (packet.getSize() - packet.getReadPos() < 8) {
+        // WotLK hit targets are packed GUIDs, like the caster and miss targets.
+        if (packet.getSize() - packet.getReadPos() < 1) {
             LOG_WARNING("Spell go: truncated hit targets at index ", (int)i, "/", (int)data.hitCount);
             data.hitCount = i;
             break;
         }
-        data.hitTargets.push_back(packet.readUInt64());
+        data.hitTargets.push_back(UpdateObjectParser::readPackedGuid(packet));
     }
 
     // Validate missCount field exists
@@ -3682,7 +3684,8 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
 
     data.missTargets.reserve(data.missCount);
     for (uint8_t i = 0; i < data.missCount; ++i) {
-        // Each miss entry: packed GUID(1-8 bytes) + missType(1 byte), validate before reading
+        // Each miss entry: packed GUID(1-8 bytes) + missType(1 byte).
+        // REFLECT additionally appends uint32 reflectSpellId + uint8 reflectResult.
         if (packet.getSize() - packet.getReadPos() < 2) {
             LOG_WARNING("Spell go: truncated miss targets at index ", (int)i, "/", (int)data.missCount);
             data.missCount = i;
@@ -3691,6 +3694,15 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
         SpellGoMissEntry m;
         m.targetGuid = UpdateObjectParser::readPackedGuid(packet);  // packed GUID in WotLK
         m.missType   = (packet.getSize() - packet.getReadPos() >= 1) ? packet.readUInt8() : 0;
+        if (m.missType == 11) {
+            if (packet.getSize() - packet.getReadPos() < 5) {
+                LOG_WARNING("Spell go: truncated reflect payload at miss index ", (int)i, "/", (int)data.missCount);
+                data.missCount = i;
+                break;
+            }
+            (void)packet.readUInt32();
+            (void)packet.readUInt8();
+        }
         data.missTargets.push_back(m);
     }
 

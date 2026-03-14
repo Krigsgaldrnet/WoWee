@@ -8342,6 +8342,11 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     color = outgoing ? ImVec4(0.6f, 0.6f, 0.6f, alpha)
                                      : ImVec4(0.4f, 0.9f, 1.0f, alpha);
                     break;
+                case game::CombatTextEntry::EVADE:
+                    snprintf(text, sizeof(text), outgoing ? "Evade" : "You Evade");
+                    color = outgoing ? ImVec4(0.6f, 0.6f, 0.6f, alpha)
+                                     : ImVec4(0.4f, 0.9f, 1.0f, alpha);
+                    break;
                 case game::CombatTextEntry::PERIODIC_DAMAGE:
                     snprintf(text, sizeof(text), "-%d", entry.amount);
                     color = outgoing ?
@@ -8366,6 +8371,16 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                         default: color = ImVec4(0.3f, 0.6f, 1.0f, alpha); break; // Mana (0): blue
                     }
                     break;
+                case game::CombatTextEntry::POWER_DRAIN:
+                    snprintf(text, sizeof(text), "-%d", entry.amount);
+                    switch (entry.powerType) {
+                        case 1:  color = ImVec4(1.0f, 0.35f, 0.35f, alpha); break;
+                        case 2:  color = ImVec4(1.0f, 0.7f, 0.2f, alpha); break;
+                        case 3:  color = ImVec4(1.0f, 0.95f, 0.35f, alpha); break;
+                        case 6:  color = ImVec4(0.45f, 0.95f, 0.85f, alpha); break;
+                        default: color = ImVec4(0.45f, 0.75f, 1.0f, alpha); break;
+                    }
+                    break;
                 case game::CombatTextEntry::XP_GAIN:
                     snprintf(text, sizeof(text), "+%d XP", entry.amount);
                     color = ImVec4(0.7f, 0.3f, 1.0f, alpha);  // Purple for XP
@@ -8388,6 +8403,16 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                         snprintf(text, sizeof(text), "Resisted");
                     color = ImVec4(0.7f, 0.7f, 0.7f, alpha);  // Grey for resist
                     break;
+                case game::CombatTextEntry::DEFLECT:
+                    snprintf(text, sizeof(text), outgoing ? "Deflect" : "You Deflect");
+                    color = outgoing ? ImVec4(0.7f, 0.7f, 0.7f, alpha)
+                                     : ImVec4(0.5f, 0.9f, 1.0f, alpha);
+                    break;
+                case game::CombatTextEntry::REFLECT:
+                    snprintf(text, sizeof(text), outgoing ? "Reflected" : "You Reflect");
+                    color = outgoing ? ImVec4(0.85f, 0.75f, 1.0f, alpha)
+                                     : ImVec4(0.75f, 0.85f, 1.0f, alpha);
+                    break;
                 case game::CombatTextEntry::PROC_TRIGGER: {
                     const std::string& procName = entry.spellId ? gameHandler.getSpellName(entry.spellId) : "";
                     if (!procName.empty())
@@ -8397,6 +8422,44 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     color = ImVec4(1.0f, 0.85f, 0.0f, alpha);  // Gold for proc
                     break;
                 }
+                case game::CombatTextEntry::DISPEL:
+                    if (entry.spellId != 0) {
+                        const std::string& dispelledName = gameHandler.getSpellName(entry.spellId);
+                        if (!dispelledName.empty())
+                            snprintf(text, sizeof(text), "Dispel %s", dispelledName.c_str());
+                        else
+                            snprintf(text, sizeof(text), "Dispel");
+                    } else {
+                        snprintf(text, sizeof(text), "Dispel");
+                    }
+                    color = ImVec4(0.6f, 0.9f, 1.0f, alpha);
+                    break;
+                case game::CombatTextEntry::STEAL:
+                    if (entry.spellId != 0) {
+                        const std::string& stolenName = gameHandler.getSpellName(entry.spellId);
+                        if (!stolenName.empty())
+                            snprintf(text, sizeof(text), "Spellsteal %s", stolenName.c_str());
+                        else
+                            snprintf(text, sizeof(text), "Spellsteal");
+                    } else {
+                        snprintf(text, sizeof(text), "Spellsteal");
+                    }
+                    color = ImVec4(0.8f, 0.7f, 1.0f, alpha);
+                    break;
+                case game::CombatTextEntry::INTERRUPT: {
+                    const std::string& interruptedName = entry.spellId ? gameHandler.getSpellName(entry.spellId) : "";
+                    if (!interruptedName.empty())
+                        snprintf(text, sizeof(text), "Interrupt %s", interruptedName.c_str());
+                    else
+                        snprintf(text, sizeof(text), "Interrupt");
+                    color = ImVec4(1.0f, 0.6f, 0.9f, alpha);
+                    break;
+                }
+                case game::CombatTextEntry::INSTAKILL:
+                    snprintf(text, sizeof(text), outgoing ? "Kill!" : "Killed!");
+                    color = outgoing ? ImVec4(1.0f, 0.25f, 0.25f, alpha)
+                                     : ImVec4(1.0f, 0.1f, 0.1f, alpha);
+                    break;
                 default:
                     snprintf(text, sizeof(text), "%d", entry.amount);
                     color = ImVec4(1.0f, 1.0f, 1.0f, alpha);
@@ -20214,6 +20277,13 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                         snprintf(desc, sizeof(desc), "%s blocks %s's attack (%d blocked)", tgt, src, e.amount);
                     color = ImVec4(0.65f, 0.75f, 0.65f, 1.0f);
                     break;
+                case T::EVADE:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s evades %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s evades %s's attack", tgt, src);
+                    color = ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
+                    break;
                 case T::IMMUNE:
                     if (spell)
                         snprintf(desc, sizeof(desc), "%s is immune to %s", tgt, spell);
@@ -20243,6 +20313,20 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                         snprintf(desc, sizeof(desc), "Resisted");
                     color = ImVec4(0.6f, 0.6f, 0.9f, 1.0f);
                     break;
+                case T::DEFLECT:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s deflects %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s deflects %s's attack", tgt, src);
+                    color = ImVec4(0.65f, 0.8f, 0.95f, 1.0f);
+                    break;
+                case T::REFLECT:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s reflects %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s reflects %s's attack", tgt, src);
+                    color = ImVec4(0.8f, 0.7f, 1.0f, 1.0f);
+                    break;
                 case T::ENVIRONMENTAL:
                     snprintf(desc, sizeof(desc), "Environmental damage: %d", e.amount);
                     color = ImVec4(1.0f, 0.5f, 0.2f, 1.0f);
@@ -20253,6 +20337,13 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                     else
                         snprintf(desc, sizeof(desc), "%s gains %d power", tgt, e.amount);
                     color = ImVec4(0.4f, 0.6f, 1.0f, 1.0f);
+                    break;
+                case T::POWER_DRAIN:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s loses %d power to %s's %s", tgt, e.amount, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s loses %d power", tgt, e.amount);
+                    color = ImVec4(0.45f, 0.75f, 1.0f, 1.0f);
                     break;
                 case T::XP_GAIN:
                     snprintf(desc, sizeof(desc), "You gain %d experience", e.amount);
@@ -20276,6 +20367,17 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                         snprintf(desc, sizeof(desc), "%s dispels from %s", src, tgt);
                     color = ImVec4(0.6f, 0.9f, 1.0f, 1.0f);
                     break;
+                case T::STEAL:
+                    if (spell && e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You steal %s from %s", spell, tgt);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s steals %s from %s", src, spell, tgt);
+                    else if (e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You steal from %s", tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s steals from %s", src, tgt);
+                    color = ImVec4(0.8f, 0.7f, 1.0f, 1.0f);
+                    break;
                 case T::INTERRUPT:
                     if (spell && e.isPlayerSource)
                         snprintf(desc, sizeof(desc), "You interrupt %s's %s", tgt, spell);
@@ -20286,6 +20388,17 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                     else
                         snprintf(desc, sizeof(desc), "%s interrupted", tgt);
                     color = ImVec4(1.0f, 0.6f, 0.9f, 1.0f);
+                    break;
+                case T::INSTAKILL:
+                    if (spell && e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You instantly kill %s with %s", tgt, spell);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s instantly kills %s with %s", src, tgt, spell);
+                    else if (e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You instantly kill %s", tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s instantly kills %s", src, tgt);
+                    color = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
                     break;
                 default:
                     snprintf(desc, sizeof(desc), "Combat event (type %d, amount %d)", (int)e.type, e.amount);
