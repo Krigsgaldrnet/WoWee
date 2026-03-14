@@ -1168,7 +1168,6 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     gpuModel.isLanternLike =
         (lowerName.find("lantern") != std::string::npos) ||
         (lowerName.find("lamp") != std::string::npos) ||
-        (lowerName.find("torch") != std::string::npos) ||
         (lowerName.find("light") != std::string::npos);
     gpuModel.isKoboldFlame =
         (lowerName.find("kobold") != std::string::npos) &&
@@ -1545,7 +1544,6 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             const bool modelLanternFamily =
                 (lowerName.find("lantern") != std::string::npos) ||
                 (lowerName.find("lamp") != std::string::npos) ||
-                (lowerName.find("torch") != std::string::npos) ||
                 (lowerName.find("light") != std::string::npos);
             bgpu.lanternGlowHint =
                 exactLanternGlowTexture ||
@@ -2656,7 +2654,12 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     (batch.blendMode >= 3) ||
                     batch.colorKeyBlack ||
                     ((batch.materialFlags & 0x01) != 0);
-                if (cardLikeSkipMesh || (batch.glowCardLike && lanternLikeModel)) {
+                const bool lanternGlowCardSkip =
+                    lanternLikeModel &&
+                    batch.lanternGlowHint &&
+                    smallCardLikeBatch &&
+                    cardLikeSkipMesh;
+                if (lanternGlowCardSkip || (cardLikeSkipMesh && !lanternLikeModel)) {
                     continue;
                 }
             }
@@ -2852,16 +2855,25 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
             // Skip glow sprites (handled after loop)
             const bool batchUnlit = (batch.materialFlags & 0x01) != 0;
+            const bool koboldFlameCard = batch.colorKeyBlack && model.isKoboldFlame;
+            const bool smallCardLikeBatch =
+                (batch.glowSize <= 1.35f) ||
+                (batch.lanternGlowHint && batch.glowSize <= 6.0f);
             const bool shouldUseGlowSprite =
-                !batch.colorKeyBlack &&
+                !koboldFlameCard &&
                 (model.isElvenLike || model.isLanternLike) &&
                 !model.isSpellEffect &&
-                (batch.glowSize <= 1.35f || (batch.lanternGlowHint && batch.glowSize <= 6.0f)) &&
+                smallCardLikeBatch &&
                 (batch.lanternGlowHint || (batch.blendMode >= 3) ||
                  (batch.colorKeyBlack && batchUnlit && batch.blendMode >= 1));
             if (shouldUseGlowSprite) {
                 const bool cardLikeSkipMesh = (batch.blendMode >= 3) || batch.colorKeyBlack || batchUnlit;
-                if (cardLikeSkipMesh || (batch.glowCardLike && model.isLanternLike))
+                const bool lanternGlowCardSkip =
+                    model.isLanternLike &&
+                    batch.lanternGlowHint &&
+                    smallCardLikeBatch &&
+                    cardLikeSkipMesh;
+                if (lanternGlowCardSkip || (cardLikeSkipMesh && !model.isLanternLike))
                     continue;
             }
 
