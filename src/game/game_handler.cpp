@@ -2682,9 +2682,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // All expansions: uint32 spellId first.
             // WotLK:       spellId(4) + packed_guid caster + uint8 unk + uint32 count
             //              + count × (packed_guid victim + uint8 missInfo)
-            //              [missInfo==11(REFLECT): + uint32 reflectSpellId + uint8 reflectResult]
             // TBC/Classic: spellId(4) + uint64 caster + uint8 unk + uint32 count
             //              + count × (uint64 victim + uint8 missInfo)
+            // All expansions append uint32 reflectSpellId + uint8 reflectResult when
+            // missInfo==11 (REFLECT).
             const bool spellMissTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
             auto readSpellMissGuid = [&]() -> uint64_t {
                 if (spellMissTbcLike)
@@ -2706,7 +2707,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (packet.getSize() - packet.getReadPos() < 1) break;
                 uint8_t missInfo = packet.readUInt8();
                 // REFLECT (11): extra uint32 reflectSpellId + uint8 reflectResult
-                if (missInfo == 11 && !spellMissTbcLike) {
+                if (missInfo == 11) {
                     if (packet.getSize() - packet.getReadPos() >= 5) {
                         /*uint32_t reflectSpellId =*/ packet.readUInt32();
                         /*uint8_t  reflectResult  =*/ packet.readUInt8();
