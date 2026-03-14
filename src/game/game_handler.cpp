@@ -6430,10 +6430,16 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // TBC:                  full uint64 caster + full uint64 victim + uint32 spellId
             const bool ikUsesFullGuid = isActiveExpansion("tbc");
             auto ik_rem = [&]() { return packet.getSize() - packet.getReadPos(); };
-            if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
+            if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)
+                || (!ikUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
             uint64_t ikCaster = ikUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
+            if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)
+                || (!ikUsesFullGuid && !hasFullPackedGuid(packet))) {
+                packet.setReadPos(packet.getSize()); break;
+            }
             uint64_t ikVictim = ikUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             uint32_t ikSpell = (ik_rem() >= 4) ? packet.readUInt32() : 0;
