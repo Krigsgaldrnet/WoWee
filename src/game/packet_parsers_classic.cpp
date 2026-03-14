@@ -396,6 +396,9 @@ bool ClassicPacketParsers::parseSpellStart(network::Packet& packet, SpellStartDa
 //       + uint8(missCount) + [PackedGuid(missTarget) + uint8(missType)] × missCount
 // ============================================================================
 bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) {
+    // Always reset output to avoid stale targets when callers reuse buffers.
+    data = SpellGoData{};
+
     auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
     const size_t startPos = packet.getReadPos();
     if (rem() < 2) return false;

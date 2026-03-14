@@ -1261,6 +1261,9 @@ bool TbcPacketParsers::parseSpellStart(network::Packet& packet, SpellStartData& 
 // WotLK uses packed GUIDs and adds a timestamp (u32) after castFlags.
 // ============================================================================
 bool TbcPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) {
+    // Always reset output to avoid stale targets when callers reuse buffers.
+    data = SpellGoData{};
+
     const size_t startPos = packet.getReadPos();
     // Fixed header before hit/miss lists:
     // casterGuid(u64) + casterUnit(u64) + castCount(u8) + spellId(u32) + castFlags(u32)

@@ -3725,6 +3725,9 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
 }
 
 bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
+    // Always reset output to avoid stale targets when callers reuse buffers.
+    data = SpellGoData{};
+
     // Packed GUIDs are variable-length, so only require the smallest possible
     // shape up front: 2 GUID masks + fixed fields through missCount.
     if (packet.getSize() - packet.getReadPos() < 17) return false;
