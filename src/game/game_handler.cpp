@@ -309,6 +309,16 @@ bool isPlaceholderQuestTitle(const std::string& s) {
     return s.rfind("Quest #", 0) == 0;
 }
 
+float mergeCooldownSeconds(float current, float incoming) {
+    constexpr float kEpsilon = 0.05f;
+    if (incoming <= 0.0f) return 0.0f;
+    if (current <= 0.0f) return incoming;
+    // Cooldowns should normally tick down. If a duplicate/late packet reports a
+    // larger value, keep the local remaining time to avoid visible timer resets.
+    if (incoming > current + kEpsilon) return current;
+    return incoming;
+}
+
 bool looksLikeQuestDescriptionText(const std::string& s) {
     int spaces = 0;
     int commas = 0;
@@ -3208,7 +3218,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 uint32_t cdMs     = packet.readUInt32();
                 float cdSec = cdMs / 1000.0f;
                 if (cdSec > 0.0f) {
-                    if (spellId != 0) spellCooldowns[spellId] = cdSec;
+                    if (spellId != 0) {
+                        auto it = spellCooldowns.find(spellId);
+                        if (it == spellCooldowns.end()) {
+                            spellCooldowns[spellId] = cdSec;
+                        } else {
+                            it->second = mergeCooldownSeconds(it->second, cdSec);
+                        }
+                    }
                     // Resolve itemId from the GUID so item-type slots are also updated
                     uint32_t itemId = 0;
                     auto iit = onlineItems_.find(itemGuid);
@@ -3217,8 +3234,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         bool match = (spellId != 0 && slot.type == ActionBarSlot::SPELL && slot.id == spellId)
                                   || (itemId  != 0 && slot.type == ActionBarSlot::ITEM  && slot.id == itemId);
                         if (match) {
-                            slot.cooldownTotal     = cdSec;
-                            slot.cooldownRemaining = cdSec;
+                            float prevRemaining = slot.cooldownRemaining;
+                            float merged = mergeCooldownSeconds(slot.cooldownRemaining, cdSec);
+                            slot.cooldownRemaining = merged;
+                            if (slot.cooldownTotal <= 0.0f || prevRemaining <= 0.0f) {
+                                slot.cooldownTotal = cdSec;
+                            } else {
+                                slot.cooldownTotal = std::max(slot.cooldownTotal, merged);
+                            }
                         }
                     }
                     LOG_DEBUG("SMSG_ITEM_COOLDOWN: itemGuid=0x", std::hex, itemGuid, std::dec,
@@ -9849,8 +9872,17 @@ void GameHandler::sendMovement(Opcode opcode) {
         sanitizeMovementForTaxi();
     }
 
-    // Add transport data if player is on a transport
-    if (isOnTransport()) {
+    bool includeTransportInWire = isOnTransport();
+    if (includeTransportInWire && transportManager_) {
+        if (auto* tr = transportManager_->getTransport(playerTransportGuid_); tr && tr->isM2) {
+            // Client-detected M2 elevators/trams are not always server-recognized transports.
+            // Sending ONTRANSPORT for these can trigger bad fall-state corrections server-side.
+            includeTransportInWire = false;
+        }
+    }
+
+    // Add transport data if player is on a server-recognized transport
+    if (includeTransportInWire) {
         // Keep authoritative world position synchronized to parent transport transform
         // so heartbeats/corrections don't drag the passenger through geometry.
         if (transportManager_) {
@@ -9892,7 +9924,7 @@ void GameHandler::sendMovement(Opcode opcode) {
 
     LOG_DEBUG("Sending movement packet: opcode=0x", std::hex,
               wireOpcode(opcode), std::dec,
-              (isOnTransport() ? " ONTRANSPORT" : ""));
+              (includeTransportInWire ? " ONTRANSPORT" : ""));
 
     // Convert canonical → server coordinates for the wire
     MovementInfo wireInfo = movementInfo;
@@ -9905,7 +9937,7 @@ void GameHandler::sendMovement(Opcode opcode) {
     wireInfo.orientation = core::coords::canonicalToServerYaw(wireInfo.orientation);
 
     // Also convert transport local position to server coordinates if on transport
-    if (isOnTransport()) {
+    if (includeTransportInWire) {
         glm::vec3 serverTransportPos = core::coords::canonicalToServer(
             glm::vec3(wireInfo.transportX, wireInfo.transportY, wireInfo.transportZ));
         wireInfo.transportX = serverTransportPos.x;
@@ -16744,9 +16776,12 @@ void GameHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     socket->send(packet);
     LOG_INFO("Casting spell: ", spellId, " on 0x", std::hex, target, std::dec);
 
-    // Optimistically start GCD immediately on cast — server will confirm or override
-    gcdTotal_ = 1.5f;
-    gcdStartedAt_ = std::chrono::steady_clock::now();
+    // Optimistically start GCD immediately on cast, but do not restart it while
+    // already active (prevents timeout animation reset on repeated key presses).
+    if (!isGCDActive()) {
+        gcdTotal_ = 1.5f;
+        gcdStartedAt_ = std::chrono::steady_clock::now();
+    }
 }
 
 void GameHandler::cancelCast() {
@@ -17261,13 +17296,24 @@ void GameHandler::handleSpellCooldown(network::Packet& packet) {
             continue;
         }
 
-        spellCooldowns[spellId] = seconds;
+        auto it = spellCooldowns.find(spellId);
+        if (it == spellCooldowns.end()) {
+            spellCooldowns[spellId] = seconds;
+        } else {
+            it->second = mergeCooldownSeconds(it->second, seconds);
+        }
         for (auto& slot : actionBar) {
             bool match = (slot.type == ActionBarSlot::SPELL && slot.id == spellId)
                       || (cdItemId != 0 && slot.type == ActionBarSlot::ITEM && slot.id == cdItemId);
             if (match) {
-                slot.cooldownTotal     = seconds;
-                slot.cooldownRemaining = seconds;
+                float prevRemaining = slot.cooldownRemaining;
+                float merged = mergeCooldownSeconds(slot.cooldownRemaining, seconds);
+                slot.cooldownRemaining = merged;
+                if (slot.cooldownTotal <= 0.0f || prevRemaining <= 0.0f) {
+                    slot.cooldownTotal = seconds;
+                } else {
+                    slot.cooldownTotal = std::max(slot.cooldownTotal, merged);
+                }
             }
         }
     }

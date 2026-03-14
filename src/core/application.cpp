@@ -504,16 +504,6 @@ void Application::run() {
                             LOG_INFO("Shadows: ", enabled ? "ON" : "OFF");
                         }
                     }
-                    // F7: Test level-up effect (ignore key repeat)
-                    else if (event.key.keysym.scancode == SDL_SCANCODE_F7 && event.key.repeat == 0) {
-                        if (renderer) {
-                            renderer->triggerLevelUpEffect(renderer->getCharacterPosition());
-                            LOG_INFO("Triggered test level-up effect");
-                        }
-                        if (uiManager) {
-                            uiManager->getGameScreen().triggerDing(99);
-                        }
-                    }
                     // F8: Debug WMO floor at current position
                     else if (event.key.keysym.scancode == SDL_SCANCODE_F8 && event.key.repeat == 0) {
                         if (renderer && renderer->getWMORenderer()) {
@@ -1376,6 +1366,24 @@ void Application::update(float deltaTime) {
                             }
                             lastTransportCanonical = tr->position;
                             lastTransportGuid = gameHandler->getPlayerTransportGuid();
+
+                            // Keep passenger locked to elevator vertical motion while grounded.
+                            // Without this, floor clamping can hold world-Z static unless the
+                            // player is jumping, which makes lifts appear to not move vertically.
+                            glm::vec3 tentativeCanonical = core::coords::renderToCanonical(renderPos);
+                            glm::vec3 localOffset = gameHandler->getPlayerTransportOffset();
+                            localOffset.x = tentativeCanonical.x - tr->position.x;
+                            localOffset.y = tentativeCanonical.y - tr->position.y;
+                            if (renderer->getCameraController() &&
+                                !renderer->getCameraController()->isGrounded()) {
+                                // While airborne (jump/fall), allow local Z offset to change.
+                                localOffset.z = tentativeCanonical.z - tr->position.z;
+                            }
+                            gameHandler->setPlayerTransportOffset(localOffset);
+
+                            glm::vec3 lockedCanonical = tr->position + localOffset;
+                            renderPos = core::coords::canonicalToRender(lockedCanonical);
+                            renderer->getCharacterPosition() = renderPos;
                         }
                     }
 
@@ -1420,9 +1428,11 @@ void Application::update(float deltaTime) {
                         glm::vec3 playerCanonical = core::coords::renderToCanonical(renderPos);
                         constexpr float kM2BoardHorizDistSq = 12.0f * 12.0f;
                         constexpr float kM2BoardVertDist = 15.0f;
-                        constexpr float kTbLiftBoardHorizDistSq = 42.0f * 42.0f;
+                        constexpr float kTbLiftBoardHorizDistSq = 95.0f * 95.0f;
                         constexpr float kTbLiftBoardVertDist = 80.0f;
 
+                        uint64_t bestGuid = 0;
+                        float bestScore = 1e30f;
                         for (auto& [guid, transport] : tm->getTransports()) {
                             if (!transport.isM2) continue;
                             const bool isThunderBluffLift =
@@ -1437,9 +1447,18 @@ void Application::update(float deltaTime) {
                             float horizDistSq = diff.x * diff.x + diff.y * diff.y;
                             float vertDist = std::abs(diff.z);
                             if (horizDistSq < maxHorizDistSq && vertDist < maxVertDist) {
-                                gameHandler->setPlayerOnTransport(guid, playerCanonical - transport.position);
-                                LOG_DEBUG("M2 transport boarding: guid=0x", std::hex, guid, std::dec);
-                                break;
+                                float score = horizDistSq + vertDist * vertDist;
+                                if (score < bestScore) {
+                                    bestScore = score;
+                                    bestGuid = guid;
+                                }
+                            }
+                        }
+                        if (bestGuid != 0) {
+                            auto* tr = tm->getTransport(bestGuid);
+                            if (tr) {
+                                gameHandler->setPlayerOnTransport(bestGuid, playerCanonical - tr->position);
+                                LOG_DEBUG("M2 transport boarding: guid=0x", std::hex, bestGuid, std::dec);
                             }
                         }
                     }
@@ -1455,7 +1474,7 @@ void Application::update(float deltaTime) {
                             const bool isThunderBluffLift =
                                 (tr->entry >= 20649u && tr->entry <= 20657u);
                             constexpr float kM2DisembarkHorizDistSq = 15.0f * 15.0f;
-                            constexpr float kTbLiftDisembarkHorizDistSq = 52.0f * 52.0f;
+                            constexpr float kTbLiftDisembarkHorizDistSq = 120.0f * 120.0f;
                             const float disembarkHorizDistSq = isThunderBluffLift
                                 ? kTbLiftDisembarkHorizDistSq
                                 : kM2DisembarkHorizDistSq;
@@ -2902,6 +2921,12 @@ void Application::setupUICallbacks() {
                     }
 
                     transportManager->registerTransport(guid, wmoInstanceId, pathId, canonicalSpawnPos, entry);
+                    // Keep type in sync with the spawned instance; needed for M2 lift boarding/motion.
+                    if (!it->second.isWmo) {
+                        if (auto* tr = transportManager->getTransport(guid)) {
+                            tr->isM2 = true;
+                        }
+                    }
                 } else {
                     pendingTransportMoves_[guid] = PendingTransportMove{x, y, z, orientation};
                     LOG_DEBUG("Cannot auto-spawn transport 0x", std::hex, guid, std::dec,
