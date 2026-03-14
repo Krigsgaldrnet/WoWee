@@ -116,6 +116,23 @@ bool hasFullPackedGuid(const network::Packet& packet) {
     return packet.getSize() - packet.getReadPos() >= guidBytes;
 }
 
+CombatTextEntry::Type combatTextTypeFromSpellMissInfo(uint8_t missInfo) {
+    switch (missInfo) {
+        case 0: return CombatTextEntry::MISS;
+        case 1: return CombatTextEntry::DODGE;
+        case 2: return CombatTextEntry::PARRY;
+        case 3: return CombatTextEntry::BLOCK;
+        case 4: return CombatTextEntry::EVADE;
+        case 5: return CombatTextEntry::IMMUNE;
+        case 6: return CombatTextEntry::DEFLECT;
+        case 7: return CombatTextEntry::ABSORB;
+        case 8: return CombatTextEntry::RESIST;
+        case 10: return CombatTextEntry::IMMUNE;  // Seen on some cores as a secondary immune result.
+        case 11: return CombatTextEntry::REFLECT;
+        default: return CombatTextEntry::MISS;
+    }
+}
+
 std::string formatCopperAmount(uint32_t amount) {
     uint32_t gold = amount / 10000;
     uint32_t silver = (amount / 100) % 100;
@@ -2761,19 +2778,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         break;
                     }
                 }
-                static const CombatTextEntry::Type missTypes[] = {
-                    CombatTextEntry::MISS,    // 0=MISS
-                    CombatTextEntry::DODGE,   // 1=DODGE
-                    CombatTextEntry::PARRY,   // 2=PARRY
-                    CombatTextEntry::BLOCK,   // 3=BLOCK
-                    CombatTextEntry::EVADE,   // 4=EVADE
-                    CombatTextEntry::IMMUNE,  // 5=IMMUNE
-                    CombatTextEntry::DEFLECT, // 6=DEFLECT
-                    CombatTextEntry::ABSORB,  // 7=ABSORB
-                    CombatTextEntry::RESIST,  // 8=RESIST
-                };
-                CombatTextEntry::Type ct = (missInfo < 9) ? missTypes[missInfo]
-                    : (missInfo == 11 ? CombatTextEntry::REFLECT : CombatTextEntry::MISS);
+                CombatTextEntry::Type ct = combatTextTypeFromSpellMissInfo(missInfo);
                 if (casterGuid == playerGuid) {
                     // We cast a spell and it missed the target
                     addCombatText(ct, 0, spellId, true, 0, casterGuid, victimGuid);
@@ -17236,17 +17241,6 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
     // Preserve spellId and actual participants for spell-go miss results.
     // This keeps the persistent combat log aligned with the later GUID fixes.
     if (!data.missTargets.empty()) {
-        static const CombatTextEntry::Type missTypes[] = {
-            CombatTextEntry::MISS,    // 0=MISS
-            CombatTextEntry::DODGE,   // 1=DODGE
-            CombatTextEntry::PARRY,   // 2=PARRY
-            CombatTextEntry::BLOCK,   // 3=BLOCK
-            CombatTextEntry::EVADE,   // 4=EVADE
-            CombatTextEntry::IMMUNE,  // 5=IMMUNE
-            CombatTextEntry::DEFLECT, // 6=DEFLECT
-            CombatTextEntry::ABSORB,  // 7=ABSORB
-            CombatTextEntry::RESIST,  // 8=RESIST
-        };
         const uint64_t spellCasterGuid = data.casterUnit != 0 ? data.casterUnit : data.casterGuid;
         const bool playerIsCaster = (spellCasterGuid == playerGuid);
 
@@ -17254,8 +17248,7 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
             if (!playerIsCaster && m.targetGuid != playerGuid) {
                 continue;
             }
-            CombatTextEntry::Type ct = (m.missType < 9) ? missTypes[m.missType]
-                : (m.missType == 11 ? CombatTextEntry::REFLECT : CombatTextEntry::MISS);
+            CombatTextEntry::Type ct = combatTextTypeFromSpellMissInfo(m.missType);
             addCombatText(ct, 0, data.spellId, playerIsCaster, 0, spellCasterGuid, m.targetGuid);
         }
     }
