@@ -3201,6 +3201,7 @@ private:
     bool releasedSpirit_ = false;
     uint32_t corpseMapId_ = 0;
     float corpseX_ = 0.0f, corpseY_ = 0.0f, corpseZ_ = 0.0f;
+    uint64_t corpseGuid_ = 0;
     // Death Knight runes (class 6): slots 0-1=Blood, 2-3=Unholy, 4-5=Frost initially
     std::array<RuneSlot, 6> playerRunes_ = [] {
         std::array<RuneSlot, 6> r{};

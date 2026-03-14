@@ -3081,9 +3081,11 @@ void Application::setupUICallbacks() {
         if (charInstId == 0) return;
         // WoW stand state → M2 animation ID mapping
         // 0=Stand→0, 1-6=Sit variants→27 (SitGround), 7=Dead→1, 8=Kneel→72
+        // Do not force Stand(0) here: locomotion state machine already owns standing/running.
+        // Forcing Stand on packet timing causes visible run-cycle hitching while steering.
         uint32_t animId = 0;
         if (standState == 0) {
-            animId = 0;   // Stand
+            return;
         } else if (standState >= 1 && standState <= 6) {
             animId = 27;  // SitGround (covers sit-chair too; correct visual differs by chair height)
         } else if (standState == 7) {

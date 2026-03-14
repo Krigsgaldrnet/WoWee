@@ -8506,6 +8506,7 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     castTimeTotal = 0.0f;
     playerDead_ = false;
     releasedSpirit_ = false;
+    corpseGuid_ = 0;
     targetGuid = 0;
     focusGuid = 0;
     lastTargetGuid = 0;
@@ -9963,6 +9964,7 @@ void GameHandler::forceClearTaxiAndMovementState() {
     resurrectRequestPending_ = false;
     playerDead_ = false;
     releasedSpirit_ = false;
+    corpseGuid_ = 0;
     repopPending_ = false;
     pendingSpiritHealerGuid_ = 0;
     resurrectCasterGuid_ = 0;
@@ -10580,11 +10582,13 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                     uint64_t ownerGuid = (static_cast<uint64_t>(ownerHigh) << 32) | ownerLow;
                     if (ownerGuid == playerGuid || ownerLow == static_cast<uint32_t>(playerGuid)) {
                         // Server coords from movement block
+                        corpseGuid_  = block.guid;
                         corpseX_     = block.x;
                         corpseY_     = block.y;
                         corpseZ_     = block.z;
                         corpseMapId_ = currentMapId_;
-                        LOG_INFO("Corpse object detected: server=(", block.x, ", ", block.y, ", ", block.z,
+                        LOG_INFO("Corpse object detected: guid=0x", std::hex, corpseGuid_, std::dec,
+                                 " server=(", block.x, ", ", block.y, ", ", block.z,
                                  ") map=", corpseMapId_);
                     }
                 }
@@ -11136,6 +11140,7 @@ void GameHandler::handleUpdateObject(network::Packet& packet) {
                                     repopPending_ = false;
                                     resurrectPending_ = false;
                                     corpseMapId_ = 0;  // corpse reclaimed
+                                    corpseGuid_ = 0;
                                     LOG_INFO("Player resurrected (PLAYER_FLAGS ghost cleared)");
                                     if (ghostStateCallback_) ghostStateCallback_(false);
                                 }
@@ -12908,9 +12913,12 @@ bool GameHandler::canReclaimCorpse() const {
 
 void GameHandler::reclaimCorpse() {
     if (!canReclaimCorpse() || !socket) return;
-    auto packet = ReclaimCorpsePacket::build(playerGuid);
+    // Reclaim expects the corpse object guid when known; fallback to player guid.
+    uint64_t reclaimGuid = (corpseGuid_ != 0) ? corpseGuid_ : playerGuid;
+    auto packet = ReclaimCorpsePacket::build(reclaimGuid);
     socket->send(packet);
-    LOG_INFO("Sent CMSG_RECLAIM_CORPSE for guid=0x", std::hex, playerGuid, std::dec);
+    LOG_INFO("Sent CMSG_RECLAIM_CORPSE for guid=0x", std::hex, reclaimGuid, std::dec,
+             (corpseGuid_ == 0 ? " (fallback player guid)" : ""));
 }
 
 void GameHandler::activateSpiritHealer(uint64_t npcGuid) {
@@ -20420,6 +20428,7 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
         pendingSpiritHealerGuid_ = 0;
         resurrectCasterGuid_    = 0;
         corpseMapId_            = 0;
+        corpseGuid_             = 0;
         hostileAttackers_.clear();
         stopAutoAttack();
         tabCycleStale = true;

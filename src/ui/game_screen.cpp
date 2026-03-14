@@ -845,7 +845,9 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // Update renderer face-target position and selection circle
     auto* renderer = core::Application::getInstance().getRenderer();
     if (renderer) {
-        renderer->setInCombat(gameHandler.isInCombat());
+        renderer->setInCombat(gameHandler.isInCombat() &&
+                              !gameHandler.isPlayerDead() &&
+                              !gameHandler.isPlayerGhost());
         static glm::vec3 targetGLPos;
         if (gameHandler.hasTarget()) {
             auto target = gameHandler.getTarget();
