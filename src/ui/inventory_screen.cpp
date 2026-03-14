@@ -743,17 +743,6 @@ void InventoryScreen::render(game::Inventory& inventory, uint64_t moneyCopper) {
     bool bToggled = bagsDown && !bKeyWasDown;
     bKeyWasDown = bagsDown;
 
-    // Character screen toggle (C key, edge-triggered)
-    bool characterDown = KeybindingManager::getInstance().isActionPressed(
-        KeybindingManager::Action::TOGGLE_CHARACTER_SCREEN, false);
-    if (characterDown && !cKeyWasDown) {
-        characterOpen = !characterOpen;
-        if (characterOpen && gameHandler_) {
-            gameHandler_->requestPlayedTime();
-        }
-    }
-    cKeyWasDown = characterDown;
-
     bool wantsTextInput = ImGui::GetIO().WantTextInput;
 
     if (separateBags_) {

@@ -391,143 +391,193 @@ void Application::run() {
     }
 
     auto lastTime = std::chrono::high_resolution_clock::now();
+    std::atomic<bool> watchdogRunning{true};
+    std::atomic<int64_t> watchdogHeartbeatMs{
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count()
+    };
+    std::thread watchdogThread([this, &watchdogRunning, &watchdogHeartbeatMs]() {
+        bool releasedForCurrentStall = false;
+        while (watchdogRunning.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            const int64_t lastBeatMs = watchdogHeartbeatMs.load(std::memory_order_acquire);
+            const int64_t stallMs = nowMs - lastBeatMs;
 
-    while (running && !window->shouldClose()) {
-        // Calculate delta time
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<float> deltaTimeDuration = currentTime - lastTime;
-        float deltaTime = deltaTimeDuration.count();
-        lastTime = currentTime;
-
-        // Cap delta time to prevent large jumps
-        if (deltaTime > 0.1f) {
-            deltaTime = 0.1f;
+            // Failsafe: if the main loop stalls while relative mouse mode is active,
+            // forcibly release grab so the user can move the cursor and close the app.
+            if (stallMs > 1500) {
+                if (!releasedForCurrentStall) {
+                    SDL_SetRelativeMouseMode(SDL_FALSE);
+                    SDL_ShowCursor(SDL_ENABLE);
+                    if (window && window->getSDLWindow()) {
+                        SDL_SetWindowGrab(window->getSDLWindow(), SDL_FALSE);
+                    }
+                    LOG_WARNING("Main-loop stall detected (", stallMs,
+                                "ms) — force-released mouse capture failsafe");
+                    releasedForCurrentStall = true;
+                }
+            } else {
+                releasedForCurrentStall = false;
+            }
         }
+    });
 
-        // Poll events
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            // Pass event to UI manager first
-            if (uiManager) {
-                uiManager->processEvent(event);
+    try {
+        while (running && !window->shouldClose()) {
+            watchdogHeartbeatMs.store(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count(),
+                std::memory_order_release);
+
+            // Calculate delta time
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<float> deltaTimeDuration = currentTime - lastTime;
+            float deltaTime = deltaTimeDuration.count();
+            lastTime = currentTime;
+
+            // Cap delta time to prevent large jumps
+            if (deltaTime > 0.1f) {
+                deltaTime = 0.1f;
             }
 
-            // Pass mouse events to camera controller (skip when UI has mouse focus)
-            if (renderer && renderer->getCameraController() && !ImGui::GetIO().WantCaptureMouse) {
-                if (event.type == SDL_MOUSEMOTION) {
-                    renderer->getCameraController()->processMouseMotion(event.motion);
+            // Poll events
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                // Pass event to UI manager first
+                if (uiManager) {
+                    uiManager->processEvent(event);
                 }
-                else if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) {
-                    renderer->getCameraController()->processMouseButton(event.button);
+
+                // Pass mouse events to camera controller (skip when UI has mouse focus)
+                if (renderer && renderer->getCameraController() && !ImGui::GetIO().WantCaptureMouse) {
+                    if (event.type == SDL_MOUSEMOTION) {
+                        renderer->getCameraController()->processMouseMotion(event.motion);
+                    }
+                    else if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) {
+                        renderer->getCameraController()->processMouseButton(event.button);
+                    }
+                    else if (event.type == SDL_MOUSEWHEEL) {
+                        renderer->getCameraController()->processMouseWheel(static_cast<float>(event.wheel.y));
+                    }
                 }
-                else if (event.type == SDL_MOUSEWHEEL) {
-                    renderer->getCameraController()->processMouseWheel(static_cast<float>(event.wheel.y));
+
+                // Handle window events
+                if (event.type == SDL_QUIT) {
+                    window->setShouldClose(true);
+                }
+                else if (event.type == SDL_WINDOWEVENT) {
+                    if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+                        int newWidth = event.window.data1;
+                        int newHeight = event.window.data2;
+                        window->setSize(newWidth, newHeight);
+                        // Vulkan viewport set in command buffer, not globally
+                        if (renderer && renderer->getCamera()) {
+                            renderer->getCamera()->setAspectRatio(static_cast<float>(newWidth) / newHeight);
+                        }
+                    }
+                }
+                // Debug controls
+                else if (event.type == SDL_KEYDOWN) {
+                    // Skip non-function-key input when UI (chat) has keyboard focus
+                    bool uiHasKeyboard = ImGui::GetIO().WantCaptureKeyboard;
+                    auto sc = event.key.keysym.scancode;
+                    bool isFKey = (sc >= SDL_SCANCODE_F1 && sc <= SDL_SCANCODE_F12);
+                    if (uiHasKeyboard && !isFKey) {
+                        continue;  // Let ImGui handle the keystroke
+                    }
+
+                    // F1: Toggle performance HUD
+                    if (event.key.keysym.scancode == SDL_SCANCODE_F1) {
+                        if (renderer && renderer->getPerformanceHUD()) {
+                            renderer->getPerformanceHUD()->toggle();
+                            bool enabled = renderer->getPerformanceHUD()->isEnabled();
+                            LOG_INFO("Performance HUD: ", enabled ? "ON" : "OFF");
+                        }
+                    }
+                    // F4: Toggle shadows
+                    else if (event.key.keysym.scancode == SDL_SCANCODE_F4) {
+                        if (renderer) {
+                            bool enabled = !renderer->areShadowsEnabled();
+                            renderer->setShadowsEnabled(enabled);
+                            LOG_INFO("Shadows: ", enabled ? "ON" : "OFF");
+                        }
+                    }
+                    // F7: Test level-up effect (ignore key repeat)
+                    else if (event.key.keysym.scancode == SDL_SCANCODE_F7 && event.key.repeat == 0) {
+                        if (renderer) {
+                            renderer->triggerLevelUpEffect(renderer->getCharacterPosition());
+                            LOG_INFO("Triggered test level-up effect");
+                        }
+                        if (uiManager) {
+                            uiManager->getGameScreen().triggerDing(99);
+                        }
+                    }
+                    // F8: Debug WMO floor at current position
+                    else if (event.key.keysym.scancode == SDL_SCANCODE_F8 && event.key.repeat == 0) {
+                        if (renderer && renderer->getWMORenderer()) {
+                            glm::vec3 pos = renderer->getCharacterPosition();
+                            LOG_WARNING("F8: WMO floor debug at render pos (", pos.x, ", ", pos.y, ", ", pos.z, ")");
+                            renderer->getWMORenderer()->debugDumpGroupsAtPosition(pos.x, pos.y, pos.z);
+                        }
+                    }
                 }
             }
 
-            // Handle window events
-            if (event.type == SDL_QUIT) {
+            // Update input
+            Input::getInstance().update();
+
+            // Update application state
+            try {
+                update(deltaTime);
+            } catch (const std::bad_alloc& e) {
+                LOG_ERROR("OOM during Application::update (state=", static_cast<int>(state),
+                          ", dt=", deltaTime, "): ", e.what());
+                throw;
+            } catch (const std::exception& e) {
+                LOG_ERROR("Exception during Application::update (state=", static_cast<int>(state),
+                          ", dt=", deltaTime, "): ", e.what());
+                throw;
+            }
+            // Render
+            try {
+                render();
+            } catch (const std::bad_alloc& e) {
+                LOG_ERROR("OOM during Application::render (state=", static_cast<int>(state), "): ", e.what());
+                throw;
+            } catch (const std::exception& e) {
+                LOG_ERROR("Exception during Application::render (state=", static_cast<int>(state), "): ", e.what());
+                throw;
+            }
+            // Swap buffers
+            try {
+                window->swapBuffers();
+            } catch (const std::bad_alloc& e) {
+                LOG_ERROR("OOM during swapBuffers: ", e.what());
+                throw;
+            } catch (const std::exception& e) {
+                LOG_ERROR("Exception during swapBuffers: ", e.what());
+                throw;
+            }
+
+            // Exit gracefully on GPU device lost (unrecoverable)
+            if (renderer && renderer->getVkContext() && renderer->getVkContext()->isDeviceLost()) {
+                LOG_ERROR("GPU device lost — exiting application");
                 window->setShouldClose(true);
             }
-            else if (event.type == SDL_WINDOWEVENT) {
-                if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-                    int newWidth = event.window.data1;
-                    int newHeight = event.window.data2;
-                    window->setSize(newWidth, newHeight);
-                    // Vulkan viewport set in command buffer, not globally
-                    if (renderer && renderer->getCamera()) {
-                        renderer->getCamera()->setAspectRatio(static_cast<float>(newWidth) / newHeight);
-                    }
-                }
-            }
-            // Debug controls
-            else if (event.type == SDL_KEYDOWN) {
-                // Skip non-function-key input when UI (chat) has keyboard focus
-                bool uiHasKeyboard = ImGui::GetIO().WantCaptureKeyboard;
-                auto sc = event.key.keysym.scancode;
-                bool isFKey = (sc >= SDL_SCANCODE_F1 && sc <= SDL_SCANCODE_F12);
-                if (uiHasKeyboard && !isFKey) {
-                    continue;  // Let ImGui handle the keystroke
-                }
+        }
+    } catch (...) {
+        watchdogRunning.store(false, std::memory_order_release);
+        if (watchdogThread.joinable()) {
+            watchdogThread.join();
+        }
+        throw;
+    }
 
-                // F1: Toggle performance HUD
-                if (event.key.keysym.scancode == SDL_SCANCODE_F1) {
-                    if (renderer && renderer->getPerformanceHUD()) {
-                        renderer->getPerformanceHUD()->toggle();
-                        bool enabled = renderer->getPerformanceHUD()->isEnabled();
-                        LOG_INFO("Performance HUD: ", enabled ? "ON" : "OFF");
-                    }
-                }
-                // F4: Toggle shadows
-                else if (event.key.keysym.scancode == SDL_SCANCODE_F4) {
-                    if (renderer) {
-                        bool enabled = !renderer->areShadowsEnabled();
-                        renderer->setShadowsEnabled(enabled);
-                        LOG_INFO("Shadows: ", enabled ? "ON" : "OFF");
-                    }
-                }
-                // F7: Test level-up effect (ignore key repeat)
-                else if (event.key.keysym.scancode == SDL_SCANCODE_F7 && event.key.repeat == 0) {
-                    if (renderer) {
-                        renderer->triggerLevelUpEffect(renderer->getCharacterPosition());
-                        LOG_INFO("Triggered test level-up effect");
-                    }
-                    if (uiManager) {
-                        uiManager->getGameScreen().triggerDing(99);
-                    }
-                }
-                // F8: Debug WMO floor at current position
-                else if (event.key.keysym.scancode == SDL_SCANCODE_F8 && event.key.repeat == 0) {
-                    if (renderer && renderer->getWMORenderer()) {
-                        glm::vec3 pos = renderer->getCharacterPosition();
-                        LOG_WARNING("F8: WMO floor debug at render pos (", pos.x, ", ", pos.y, ", ", pos.z, ")");
-                        renderer->getWMORenderer()->debugDumpGroupsAtPosition(pos.x, pos.y, pos.z);
-                    }
-                }
-            }
-        }
-
-        // Update input
-        Input::getInstance().update();
-
-        // Update application state
-        try {
-            update(deltaTime);
-        } catch (const std::bad_alloc& e) {
-            LOG_ERROR("OOM during Application::update (state=", static_cast<int>(state),
-                      ", dt=", deltaTime, "): ", e.what());
-            throw;
-        } catch (const std::exception& e) {
-            LOG_ERROR("Exception during Application::update (state=", static_cast<int>(state),
-                      ", dt=", deltaTime, "): ", e.what());
-            throw;
-        }
-        // Render
-        try {
-            render();
-        } catch (const std::bad_alloc& e) {
-            LOG_ERROR("OOM during Application::render (state=", static_cast<int>(state), "): ", e.what());
-            throw;
-        } catch (const std::exception& e) {
-            LOG_ERROR("Exception during Application::render (state=", static_cast<int>(state), "): ", e.what());
-            throw;
-        }
-        // Swap buffers
-        try {
-            window->swapBuffers();
-        } catch (const std::bad_alloc& e) {
-            LOG_ERROR("OOM during swapBuffers: ", e.what());
-            throw;
-        } catch (const std::exception& e) {
-            LOG_ERROR("Exception during swapBuffers: ", e.what());
-            throw;
-        }
-
-        // Exit gracefully on GPU device lost (unrecoverable)
-        if (renderer && renderer->getVkContext() && renderer->getVkContext()->isDeviceLost()) {
-            LOG_ERROR("GPU device lost — exiting application");
-            window->setShouldClose(true);
-        }
+    watchdogRunning.store(false, std::memory_order_release);
+    if (watchdogThread.joinable()) {
+        watchdogThread.join();
     }
 
     LOG_INFO("Main loop ended");

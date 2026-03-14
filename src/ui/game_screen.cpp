@@ -2319,7 +2319,11 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
         if (!textFocus) {
             // Toggle character screen (C) and inventory/bags (I)
             if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_CHARACTER_SCREEN)) {
+                const bool wasOpen = inventoryScreen.isCharacterOpen();
                 inventoryScreen.toggleCharacter();
+                if (!wasOpen && gameHandler.isConnected()) {
+                    gameHandler.requestPlayedTime();
+                }
             }
 
             if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_INVENTORY)) {
@@ -2348,10 +2352,6 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
 
             if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_RAID_FRAMES)) {
                 showRaidFrames_ = !showRaidFrames_;
-            }
-
-            if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_QUEST_LOG)) {
-                questLogScreen.toggle();
             }
 
             if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_ACHIEVEMENTS)) {

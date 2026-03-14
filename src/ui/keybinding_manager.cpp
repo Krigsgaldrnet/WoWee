@@ -35,7 +35,6 @@ void KeybindingManager::initializeDefaults() {
     bindings_[static_cast<int>(Action::TOGGLE_WORLD_MAP)] = ImGuiKey_M;  // WoW standard: M opens world map
     bindings_[static_cast<int>(Action::TOGGLE_NAMEPLATES)] = ImGuiKey_V;
     bindings_[static_cast<int>(Action::TOGGLE_RAID_FRAMES)] = ImGuiKey_F;  // Reassigned from R (now camera reset)
-    bindings_[static_cast<int>(Action::TOGGLE_QUEST_LOG)] = ImGuiKey_None;  // Q conflicts with strafe-left; quest log accessible via TOGGLE_QUESTS (L)
     bindings_[static_cast<int>(Action::TOGGLE_ACHIEVEMENTS)] = ImGuiKey_Y;  // WoW standard key (Shift+Y in retail)
 }
 
@@ -93,7 +92,6 @@ const char* KeybindingManager::getActionName(Action action) {
         case Action::TOGGLE_WORLD_MAP: return "World Map";
         case Action::TOGGLE_NAMEPLATES: return "Nameplates";
         case Action::TOGGLE_RAID_FRAMES: return "Raid Frames";
-        case Action::TOGGLE_QUEST_LOG: return "Quest Log";
         case Action::TOGGLE_ACHIEVEMENTS: return "Achievements";
         case Action::ACTION_COUNT: break;
     }
@@ -158,7 +156,7 @@ void KeybindingManager::loadFromConfigFile(const std::string& filePath) {
         else if (action == "toggle_world_map") actionIdx = static_cast<int>(Action::TOGGLE_WORLD_MAP);
         else if (action == "toggle_nameplates") actionIdx = static_cast<int>(Action::TOGGLE_NAMEPLATES);
         else if (action == "toggle_raid_frames") actionIdx = static_cast<int>(Action::TOGGLE_RAID_FRAMES);
-        else if (action == "toggle_quest_log") actionIdx = static_cast<int>(Action::TOGGLE_QUEST_LOG);
+        else if (action == "toggle_quest_log") actionIdx = static_cast<int>(Action::TOGGLE_QUESTS);  // legacy alias
         else if (action == "toggle_achievements") actionIdx = static_cast<int>(Action::TOGGLE_ACHIEVEMENTS);
 
         if (actionIdx < 0) continue;
@@ -255,7 +253,6 @@ void KeybindingManager::saveToConfigFile(const std::string& filePath) const {
         {Action::TOGGLE_WORLD_MAP, "toggle_world_map"},
         {Action::TOGGLE_NAMEPLATES, "toggle_nameplates"},
         {Action::TOGGLE_RAID_FRAMES, "toggle_raid_frames"},
-        {Action::TOGGLE_QUEST_LOG, "toggle_quest_log"},
         {Action::TOGGLE_ACHIEVEMENTS, "toggle_achievements"},
     };
 
