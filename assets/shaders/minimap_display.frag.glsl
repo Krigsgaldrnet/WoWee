@@ -44,19 +44,8 @@ void main() {
 
     vec4 mapColor = texture(uComposite, mapUV);
 
-    // Player arrow
-    float acs = cos(push.arrowRotation);
-    float asn = sin(push.arrowRotation);
-    vec2 ac = center;
-    vec2 arrowPos = vec2(-(ac.x * acs - ac.y * asn), ac.x * asn + ac.y * acs);
-
-    vec2 tip = vec2(0.0, -0.04);
-    vec2 left = vec2(-0.02, 0.02);
-    vec2 right = vec2(0.02, 0.02);
-
-    if (pointInTriangle(arrowPos, tip, left, right)) {
-        mapColor = vec4(1.0, 0.8, 0.0, 1.0);
-    }
+    // Player direction arrow is rendered by GameScreen minimap overlays.
+    // Keep shader output to map imagery only to avoid duplicate indicators.
 
     // Dark border ring
     float border = smoothstep(0.48, 0.5, dist);
