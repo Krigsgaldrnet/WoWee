@@ -6384,15 +6384,15 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
         case Opcode::SMSG_SPELLINSTAKILLLOG: {
             // Sent when a unit is killed by a spell with SPELL_ATTR_EX2_INSTAKILL (e.g. Execute, Obliterate, etc.)
-            // WotLK: packed_guid caster + packed_guid victim + uint32 spellId
-            // TBC/Classic: full uint64 caster + full uint64 victim + uint32 spellId
-            const bool ikTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
+            // WotLK/Classic/Turtle: packed_guid caster + packed_guid victim + uint32 spellId
+            // TBC:                  full uint64 caster + full uint64 victim + uint32 spellId
+            const bool ikUsesFullGuid = isActiveExpansion("tbc");
             auto ik_rem = [&]() { return packet.getSize() - packet.getReadPos(); };
-            if (ik_rem() < (ikTbcLike ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
-            uint64_t ikCaster = ikTbcLike
+            if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
+            uint64_t ikCaster = ikUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
-            if (ik_rem() < (ikTbcLike ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
-            uint64_t ikVictim = ikTbcLike
+            if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)) { packet.setReadPos(packet.getSize()); break; }
+            uint64_t ikVictim = ikUsesFullGuid
                 ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
             uint32_t ikSpell = (ik_rem() >= 4) ? packet.readUInt32() : 0;
             // Show kill/death feedback for the local player
