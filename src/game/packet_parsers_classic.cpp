@@ -1,5 +1,8 @@
 #include "game/packet_parsers.hpp"
 #include "core/logger.hpp"
+#include <cstdio>
+#include <functional>
+#include <string>
 
 namespace wowee {
 namespace game {
@@ -20,6 +23,99 @@ bool hasFullPackedGuid(const network::Packet& packet) {
         }
     }
     return packet.getSize() - packet.getReadPos() >= guidBytes;
+}
+
+std::string formatPacketBytes(const network::Packet& packet, size_t startPos) {
+    const auto& rawData = packet.getData();
+    if (startPos >= rawData.size()) {
+        return {};
+    }
+
+    std::string hex;
+    hex.reserve((rawData.size() - startPos) * 3);
+    for (size_t i = startPos; i < rawData.size(); ++i) {
+        char buf[4];
+        std::snprintf(buf, sizeof(buf), "%02x ", rawData[i]);
+        hex += buf;
+    }
+    if (!hex.empty()) {
+        hex.pop_back();
+    }
+    return hex;
+}
+
+bool skipClassicSpellCastTargets(network::Packet& packet, uint64_t* primaryTargetGuid = nullptr) {
+    if (packet.getSize() - packet.getReadPos() < 2) {
+        return false;
+    }
+
+    const uint16_t targetFlags = packet.readUInt16();
+
+    const auto readPackedTargetGuid = [&](bool capture) -> bool {
+        if (!hasFullPackedGuid(packet)) {
+            return false;
+        }
+        const uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
+        if (capture && primaryTargetGuid && *primaryTargetGuid == 0) {
+            *primaryTargetGuid = guid;
+        }
+        return true;
+    };
+
+    // Common Classic/Turtle SpellCastTargets payloads.
+    if ((targetFlags & 0x0002) != 0 && !readPackedTargetGuid(true)) {   // UNIT
+        return false;
+    }
+    if ((targetFlags & 0x0004) != 0 && !readPackedTargetGuid(false)) {  // UNIT_MINIPET/extra guid
+        return false;
+    }
+    if ((targetFlags & 0x0010) != 0 && !readPackedTargetGuid(false)) {  // ITEM
+        return false;
+    }
+    if ((targetFlags & 0x0800) != 0 && !readPackedTargetGuid(true)) {   // OBJECT
+        return false;
+    }
+    if ((targetFlags & 0x8000) != 0 && !readPackedTargetGuid(false)) {  // CORPSE
+        return false;
+    }
+
+    if ((targetFlags & 0x0020) != 0) {                                  // SOURCE_LOCATION
+        if (packet.getSize() - packet.getReadPos() < 12) {
+            return false;
+        }
+        (void)packet.readFloat();
+        (void)packet.readFloat();
+        (void)packet.readFloat();
+    }
+    if ((targetFlags & 0x0040) != 0) {                                  // DEST_LOCATION
+        if (packet.getSize() - packet.getReadPos() < 12) {
+            return false;
+        }
+        (void)packet.readFloat();
+        (void)packet.readFloat();
+        (void)packet.readFloat();
+    }
+
+    if ((targetFlags & 0x1000) != 0) {                                  // TRADE_ITEM
+        if (packet.getSize() - packet.getReadPos() < 1) {
+            return false;
+        }
+        (void)packet.readUInt8();
+    }
+
+    if ((targetFlags & 0x2000) != 0) {                                  // STRING
+        const auto& rawData = packet.getData();
+        size_t pos = packet.getReadPos();
+        while (pos < rawData.size() && rawData[pos] != 0) {
+            ++pos;
+        }
+        if (pos >= rawData.size()) {
+            return false;
+        }
+        packet.setReadPos(pos + 1);
+    }
+
+    return true;
 }
 
 const char* updateTypeName(UpdateType type) {
@@ -51,6 +147,36 @@ namespace ClassicMoveFlags {
     constexpr uint32_t SWIMMING         = 0x00200000;  // Gates pitch
     constexpr uint32_t SPLINE_ENABLED   = 0x00400000;  // TBC/WotLK: 0x08000000
     constexpr uint32_t SPLINE_ELEVATION = 0x04000000;  // Same as TBC
+}
+
+uint32_t classicWireMoveFlags(uint32_t internalFlags) {
+    uint32_t wireFlags = internalFlags;
+
+    // Internal movement state is tracked with WotLK-era bits. Classic/Turtle
+    // movement packets still use the older transport/jump flag layout.
+    const uint32_t kInternalOnTransport = static_cast<uint32_t>(MovementFlags::ONTRANSPORT);
+    const uint32_t kInternalFalling =
+        static_cast<uint32_t>(MovementFlags::FALLING) |
+        static_cast<uint32_t>(MovementFlags::FALLINGFAR);
+    const uint32_t kClassicConflicts =
+        static_cast<uint32_t>(MovementFlags::ASCENDING) |
+        static_cast<uint32_t>(MovementFlags::CAN_FLY) |
+        static_cast<uint32_t>(MovementFlags::FLYING) |
+        static_cast<uint32_t>(MovementFlags::HOVER);
+
+    wireFlags &= ~kClassicConflicts;
+
+    if ((internalFlags & kInternalOnTransport) != 0) {
+        wireFlags &= ~kInternalOnTransport;
+        wireFlags |= ClassicMoveFlags::ONTRANSPORT;
+    }
+
+    if ((internalFlags & kInternalFalling) != 0) {
+        wireFlags &= ~kInternalFalling;
+        wireFlags |= ClassicMoveFlags::JUMPING;
+    }
+
+    return wireFlags;
 }
 
 // ============================================================================
@@ -226,8 +352,10 @@ bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlo
 // - Pitch: only SWIMMING (no ONTRANSPORT pitch)
 // ============================================================================
 void ClassicPacketParsers::writeMovementPayload(network::Packet& packet, const MovementInfo& info) {
+    const uint32_t wireFlags = classicWireMoveFlags(info.flags);
+
     // Movement flags (uint32)
-    packet.writeUInt32(info.flags);
+    packet.writeUInt32(wireFlags);
 
     // Classic: NO flags2 byte (TBC has u8, WotLK has u16)
 
@@ -241,7 +369,7 @@ void ClassicPacketParsers::writeMovementPayload(network::Packet& packet, const M
     packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.orientation), sizeof(float));
 
     // Transport data (Classic ONTRANSPORT = 0x02000000, no timestamp)
-    if (info.flags & ClassicMoveFlags::ONTRANSPORT) {
+    if (wireFlags & ClassicMoveFlags::ONTRANSPORT) {
         // Packed transport GUID
         uint8_t transMask = 0;
         uint8_t transGuidBytes[8];
@@ -269,7 +397,7 @@ void ClassicPacketParsers::writeMovementPayload(network::Packet& packet, const M
     }
 
     // Pitch (Classic: only SWIMMING)
-    if (info.flags & ClassicMoveFlags::SWIMMING) {
+    if (wireFlags & ClassicMoveFlags::SWIMMING) {
         packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.pitch), sizeof(float));
     }
 
@@ -277,7 +405,7 @@ void ClassicPacketParsers::writeMovementPayload(network::Packet& packet, const M
     packet.writeUInt32(info.fallTime);
 
     // Jump data (Classic JUMPING = 0x2000)
-    if (info.flags & ClassicMoveFlags::JUMPING) {
+    if (wireFlags & ClassicMoveFlags::JUMPING) {
         packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.jumpVelocity), sizeof(float));
         packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.jumpSinAngle), sizeof(float));
         packet.writeBytes(reinterpret_cast<const uint8_t*>(&info.jumpCosAngle), sizeof(float));
@@ -362,7 +490,7 @@ network::Packet ClassicPacketParsers::buildUseItem(uint8_t bagIndex, uint8_t slo
 //   - castFlags is uint16 (NOT uint32 as in TBC/WotLK).
 //   - SpellCastTargets uses uint16 targetFlags (NOT uint32 as in TBC).
 //
-// Format: PackedGuid(casterObj) + PackedGuid(casterUnit) + uint8(castCount)
+// Format: PackedGuid(casterObj) + PackedGuid(casterUnit)
 //       + uint32(spellId) + uint16(castFlags) + uint32(castTime)
 //       + uint16(targetFlags) [+ PackedGuid(unitTarget) if TARGET_FLAG_UNIT]
 // ============================================================================
@@ -384,9 +512,10 @@ bool ClassicPacketParsers::parseSpellStart(network::Packet& packet, SpellStartDa
     }
     data.casterUnit = UpdateObjectParser::readPackedGuid(packet);
 
-    // uint8 castCount + uint32 spellId + uint16 castFlags + uint32 castTime = 11 bytes
-    if (rem() < 11) return false;
-    data.castCount = packet.readUInt8();
+    // Vanilla/Turtle SMSG_SPELL_START does not include castCount here.
+    // Layout after the two packed GUIDs is spellId(u32) + castFlags(u16) + castTime(u32).
+    if (rem() < 10) return false;
+    data.castCount = 0;
     data.spellId   = packet.readUInt32();
     data.castFlags = packet.readUInt16();   // uint16 in Vanilla (uint32 in TBC/WotLK)
     data.castTime  = packet.readUInt32();
@@ -419,7 +548,7 @@ bool ClassicPacketParsers::parseSpellStart(network::Packet& packet, SpellStartDa
 //   - castFlags is uint16 (not uint32)
 //   - Hit/miss target GUIDs are also PackedGuid in Vanilla
 //
-// Format: PackedGuid(casterObj) + PackedGuid(casterUnit) + uint8(castCount)
+// Format: PackedGuid(casterObj) + PackedGuid(casterUnit)
 //       + uint32(spellId) + uint16(castFlags)
 //       + uint8(hitCount) + [PackedGuid(hitTarget) × hitCount]
 //       + uint8(missCount) + [PackedGuid(missTarget) + uint8(missType)] × missCount
@@ -430,6 +559,24 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
 
     auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
     const size_t startPos = packet.getReadPos();
+    const bool traceSmallSpellGo = (packet.getSize() - startPos) <= 48;
+    const auto traceFailure = [&](const char* stage, size_t pos, uint32_t value = 0) {
+        if (!traceSmallSpellGo) {
+            return;
+        }
+        static uint32_t smallSpellGoTraceCount = 0;
+        ++smallSpellGoTraceCount;
+        if (smallSpellGoTraceCount > 12 && (smallSpellGoTraceCount % 50) != 0) {
+            return;
+        }
+        LOG_WARNING("[Classic] Spell go trace: stage=", stage,
+                    " pos=", pos,
+                    " size=", packet.getSize() - startPos,
+                    " spell=", data.spellId,
+                    " castFlags=0x", std::hex, data.castFlags, std::dec,
+                    " value=", value,
+                    " bytes=[", formatPacketBytes(packet, startPos), "]");
+    };
     if (rem() < 2) return false;
 
     if (!hasFullPackedGuid(packet)) return false;
@@ -437,113 +584,186 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
     if (!hasFullPackedGuid(packet)) return false;
     data.casterUnit = UpdateObjectParser::readPackedGuid(packet);
 
-    // uint8 castCount + uint32 spellId + uint16 castFlags = 7 bytes
-    if (rem() < 7) return false;
-    data.castCount = packet.readUInt8();
+    // Vanilla/Turtle SMSG_SPELL_GO does not include castCount here.
+    // Layout after the two packed GUIDs is spellId(u32) + castFlags(u16).
+    if (rem() < 6) return false;
+    data.castCount = 0;
     data.spellId   = packet.readUInt32();
     data.castFlags = packet.readUInt16();   // uint16 in Vanilla (uint32 in TBC/WotLK)
 
-    // hitCount is mandatory in SMSG_SPELL_GO. Missing byte means truncation.
-    if (rem() < 1) {
-        LOG_WARNING("[Classic] Spell go: missing hitCount after fixed fields");
-        packet.setReadPos(startPos);
-        return false;
-    }
-    const uint8_t rawHitCount = packet.readUInt8();
-    if (rawHitCount > 128) {
-        LOG_WARNING("[Classic] Spell go: hitCount capped (requested=", (int)rawHitCount, ")");
-    }
-    // Packed GUIDs are variable length, but each target needs at least 1 byte (mask).
-    // Require the minimum bytes before entering per-target parsing loops.
-    if (rem() < static_cast<size_t>(rawHitCount) + 1u) { // +1 for mandatory missCount byte
-        static uint32_t badHitCountTrunc = 0;
-        ++badHitCountTrunc;
-        if (badHitCountTrunc <= 10 || (badHitCountTrunc % 100) == 0) {
-            LOG_WARNING("[Classic] Spell go: invalid hitCount/remaining (hits=", (int)rawHitCount,
-                        " remaining=", rem(), " occurrence=", badHitCountTrunc, ")");
-        }
-        packet.setReadPos(startPos);
-        return false;
-    }
-    const uint8_t storedHitLimit = std::min<uint8_t>(rawHitCount, 128);
-    data.hitTargets.reserve(storedHitLimit);
-    bool truncatedTargets = false;
-    for (uint16_t i = 0; i < rawHitCount; ++i) {
-        if (!hasFullPackedGuid(packet)) {
-            LOG_WARNING("[Classic] Spell go: truncated hit targets at index ", i,
-                        "/", (int)rawHitCount);
-            truncatedTargets = true;
-            break;
-        }
-        const uint64_t targetGuid = UpdateObjectParser::readPackedGuid(packet);
-        if (i < storedHitLimit) {
-            data.hitTargets.push_back(targetGuid);
-        }
-    }
-    if (truncatedTargets) {
-        packet.setReadPos(startPos);
-        return false;
-    }
-    data.hitCount = static_cast<uint8_t>(data.hitTargets.size());
+    const size_t countsPos = packet.getReadPos();
+    uint64_t ignoredTargetGuid = 0;
+    std::function<bool(bool)> parseHitAndMissLists = [&](bool allowTargetsFallback) -> bool {
+        packet.setReadPos(countsPos);
+        data.hitTargets.clear();
+        data.missTargets.clear();
+        ignoredTargetGuid = 0;
 
-    // missCount is mandatory in SMSG_SPELL_GO. Missing byte means truncation.
-    if (rem() < 1) {
-        LOG_WARNING("[Classic] Spell go: missing missCount after hit target list");
-        packet.setReadPos(startPos);
-        return false;
-    }
-    const uint8_t rawMissCount = packet.readUInt8();
-    if (rawMissCount > 128) {
-        LOG_WARNING("[Classic] Spell go: missCount capped (requested=", (int)rawMissCount, ")");
-    }
-    // Each miss entry needs at least packed-guid mask (1) + missType (1).
-    if (rem() < static_cast<size_t>(rawMissCount) * 2u) {
-        static uint32_t badMissCountTrunc = 0;
-        ++badMissCountTrunc;
-        if (badMissCountTrunc <= 10 || (badMissCountTrunc % 100) == 0) {
-            LOG_WARNING("[Classic] Spell go: invalid missCount/remaining (misses=", (int)rawMissCount,
-                        " remaining=", rem(), " occurrence=", badMissCountTrunc, ")");
-        }
-        packet.setReadPos(startPos);
-        return false;
-    }
-    const uint8_t storedMissLimit = std::min<uint8_t>(rawMissCount, 128);
-    data.missTargets.reserve(storedMissLimit);
-    for (uint16_t i = 0; i < rawMissCount; ++i) {
-        if (!hasFullPackedGuid(packet)) {
-            LOG_WARNING("[Classic] Spell go: truncated miss targets at index ", i,
-                        "/", (int)rawMissCount);
-            truncatedTargets = true;
-            break;
-        }
-        SpellGoMissEntry m;
-        m.targetGuid = UpdateObjectParser::readPackedGuid(packet);
+        // hitCount is mandatory in SMSG_SPELL_GO. Missing byte means truncation.
         if (rem() < 1) {
-            LOG_WARNING("[Classic] Spell go: missing missType at miss index ", i,
-                        "/", (int)rawMissCount);
-            truncatedTargets = true;
-            break;
+            LOG_WARNING("[Classic] Spell go: missing hitCount after fixed fields");
+            traceFailure("missing_hit_count", packet.getReadPos());
+            packet.setReadPos(startPos);
+            return false;
         }
-        m.missType = packet.readUInt8();
-        if (m.missType == 11) {
-            if (rem() < 5) {
-                LOG_WARNING("[Classic] Spell go: truncated reflect payload at miss index ", i,
-                            "/", (int)rawMissCount);
-                truncatedTargets = true;
-                break;
+        const uint8_t rawHitCount = packet.readUInt8();
+        if (rawHitCount > 128) {
+            LOG_WARNING("[Classic] Spell go: hitCount capped (requested=", (int)rawHitCount, ")");
+        }
+        if (rem() < static_cast<size_t>(rawHitCount) + 1u) {
+            static uint32_t badHitCountTrunc = 0;
+            ++badHitCountTrunc;
+            if (badHitCountTrunc <= 10 || (badHitCountTrunc % 100) == 0) {
+                LOG_WARNING("[Classic] Spell go: invalid hitCount/remaining (hits=", (int)rawHitCount,
+                            " remaining=", rem(), " occurrence=", badHitCountTrunc, ")");
             }
-            (void)packet.readUInt32();
-            (void)packet.readUInt8();
+            traceFailure("invalid_hit_count", packet.getReadPos(), rawHitCount);
+            packet.setReadPos(startPos);
+            return false;
         }
-        if (i < storedMissLimit) {
-            data.missTargets.push_back(m);
+
+        const auto parseHitList = [&](bool usePackedGuids) -> bool {
+            packet.setReadPos(countsPos + 1); // after hitCount
+            data.hitTargets.clear();
+            const uint8_t storedHitLimit = std::min<uint8_t>(rawHitCount, 128);
+            data.hitTargets.reserve(storedHitLimit);
+            for (uint16_t i = 0; i < rawHitCount; ++i) {
+                uint64_t targetGuid = 0;
+                if (usePackedGuids) {
+                    if (!hasFullPackedGuid(packet)) {
+                        return false;
+                    }
+                    targetGuid = UpdateObjectParser::readPackedGuid(packet);
+                } else {
+                    if (rem() < 8) {
+                        return false;
+                    }
+                    targetGuid = packet.readUInt64();
+                }
+                if (i < storedHitLimit) {
+                    data.hitTargets.push_back(targetGuid);
+                }
+            }
+            data.hitCount = static_cast<uint8_t>(data.hitTargets.size());
+            return true;
+        };
+
+        if (!parseHitList(false) && !parseHitList(true)) {
+            LOG_WARNING("[Classic] Spell go: truncated hit targets at index 0/", (int)rawHitCount);
+            traceFailure("truncated_hit_target", packet.getReadPos(), rawHitCount);
+            packet.setReadPos(startPos);
+            return false;
         }
-    }
-    if (truncatedTargets) {
-        packet.setReadPos(startPos);
+
+        std::function<bool(size_t, bool)> parseMissListFrom = [&](size_t missStartPos,
+                                                                  bool allowMidTargetsFallback) -> bool {
+            packet.setReadPos(missStartPos);
+            data.missTargets.clear();
+
+            if (rem() < 1) {
+                LOG_WARNING("[Classic] Spell go: missing missCount after hit target list");
+                traceFailure("missing_miss_count", packet.getReadPos());
+                packet.setReadPos(startPos);
+                return false;
+            }
+            const uint8_t rawMissCount = packet.readUInt8();
+            if (rawMissCount > 128) {
+                LOG_WARNING("[Classic] Spell go: missCount capped (requested=", (int)rawMissCount, ")");
+                traceFailure("miss_count_capped", packet.getReadPos() - 1, rawMissCount);
+            }
+            if (rem() < static_cast<size_t>(rawMissCount) * 2u) {
+                if (allowMidTargetsFallback) {
+                    packet.setReadPos(missStartPos);
+                    if (skipClassicSpellCastTargets(packet, &ignoredTargetGuid)) {
+                        traceFailure("mid_targets_fallback", missStartPos, ignoredTargetGuid != 0 ? 1u : 0u);
+                        return parseMissListFrom(packet.getReadPos(), false);
+                    }
+                }
+                if (allowTargetsFallback) {
+                    packet.setReadPos(countsPos);
+                    if (skipClassicSpellCastTargets(packet, &ignoredTargetGuid)) {
+                        traceFailure("pre_targets_fallback", countsPos, ignoredTargetGuid != 0 ? 1u : 0u);
+                        return parseHitAndMissLists(false);
+                    }
+                }
+
+                static uint32_t badMissCountTrunc = 0;
+                ++badMissCountTrunc;
+                if (badMissCountTrunc <= 10 || (badMissCountTrunc % 100) == 0) {
+                    LOG_WARNING("[Classic] Spell go: invalid missCount/remaining (misses=", (int)rawMissCount,
+                                " remaining=", rem(), " occurrence=", badMissCountTrunc, ")");
+                }
+                traceFailure("invalid_miss_count", packet.getReadPos(), rawMissCount);
+                packet.setReadPos(startPos);
+                return false;
+            }
+
+            const uint8_t storedMissLimit = std::min<uint8_t>(rawMissCount, 128);
+            data.missTargets.reserve(storedMissLimit);
+            bool truncatedMissTargets = false;
+            const auto parseMissEntry = [&](SpellGoMissEntry& m, bool usePackedGuid) -> bool {
+                if (usePackedGuid) {
+                    if (!hasFullPackedGuid(packet)) {
+                        return false;
+                    }
+                    m.targetGuid = UpdateObjectParser::readPackedGuid(packet);
+                } else {
+                    if (rem() < 8) {
+                        return false;
+                    }
+                    m.targetGuid = packet.readUInt64();
+                }
+                return true;
+            };
+            for (uint16_t i = 0; i < rawMissCount; ++i) {
+                SpellGoMissEntry m;
+                const size_t missEntryPos = packet.getReadPos();
+                if (!parseMissEntry(m, false)) {
+                    packet.setReadPos(missEntryPos);
+                    if (!parseMissEntry(m, true)) {
+                        LOG_WARNING("[Classic] Spell go: truncated miss targets at index ", i,
+                                    "/", (int)rawMissCount);
+                        traceFailure("truncated_miss_target", packet.getReadPos(), i);
+                        truncatedMissTargets = true;
+                        break;
+                    }
+                }
+                if (rem() < 1) {
+                    LOG_WARNING("[Classic] Spell go: missing missType at miss index ", i,
+                                "/", (int)rawMissCount);
+                    traceFailure("missing_miss_type", packet.getReadPos(), i);
+                    truncatedMissTargets = true;
+                    break;
+                }
+                m.missType = packet.readUInt8();
+                if (m.missType == 11) {
+                    if (rem() < 1) {
+                        LOG_WARNING("[Classic] Spell go: truncated reflect payload at miss index ", i,
+                                    "/", (int)rawMissCount);
+                        traceFailure("truncated_reflect", packet.getReadPos(), i);
+                        truncatedMissTargets = true;
+                        break;
+                    }
+                    (void)packet.readUInt8();
+                }
+                if (i < storedMissLimit) {
+                    data.missTargets.push_back(m);
+                }
+            }
+            if (truncatedMissTargets) {
+                packet.setReadPos(startPos);
+                return false;
+            }
+            data.missCount = static_cast<uint8_t>(data.missTargets.size());
+            return true;
+        };
+
+        return parseMissListFrom(packet.getReadPos(), true);
+    };
+
+    if (!parseHitAndMissLists(true)) {
         return false;
     }
-    data.missCount = static_cast<uint8_t>(data.missTargets.size());
 
     LOG_DEBUG("[Classic] Spell go: spell=", data.spellId, " hits=", (int)data.hitCount,
               " misses=", (int)data.missCount);

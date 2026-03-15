@@ -14,6 +14,7 @@
 #include <mutex>
 #include <atomic>
 #include <string>
+#include <array>
 
 namespace wowee {
 namespace network {
@@ -90,6 +91,8 @@ private:
     void startAsyncPump();
     void stopAsyncPump();
     void closeSocketNoJoin();
+    void recordRecentPacket(bool outbound, uint16_t opcode, uint16_t payloadLen);
+    void dumpRecentPacketHistoryLocked(const char* reason, size_t bufferedBytes);
 
     socket_t sockfd = INVALID_SOCK;
     bool connected = false;
@@ -130,6 +133,14 @@ private:
     std::chrono::steady_clock::time_point packetTraceStart_{};
     std::chrono::steady_clock::time_point packetTraceUntil_{};
     std::string packetTraceReason_;
+
+    struct RecentPacketTrace {
+        std::chrono::steady_clock::time_point when{};
+        bool outbound = false;
+        uint16_t opcode = 0;
+        uint16_t payloadLen = 0;
+    };
+    std::deque<RecentPacketTrace> recentPacketHistory_;
 
     // Packet callback
     std::function<void(const Packet&)> packetCallback;

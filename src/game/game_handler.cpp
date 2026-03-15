@@ -1045,9 +1045,27 @@ void GameHandler::update(float deltaTime) {
 
         const bool classicLikeCombatSync =
             autoAttackRequested_ && (isClassicLikeExpansion() || isActiveExpansion("tbc"));
+        const uint32_t locomotionFlags =
+            static_cast<uint32_t>(MovementFlags::FORWARD) |
+            static_cast<uint32_t>(MovementFlags::BACKWARD) |
+            static_cast<uint32_t>(MovementFlags::STRAFE_LEFT) |
+            static_cast<uint32_t>(MovementFlags::STRAFE_RIGHT) |
+            static_cast<uint32_t>(MovementFlags::TURN_LEFT) |
+            static_cast<uint32_t>(MovementFlags::TURN_RIGHT) |
+            static_cast<uint32_t>(MovementFlags::ASCENDING) |
+            static_cast<uint32_t>(MovementFlags::FALLING) |
+            static_cast<uint32_t>(MovementFlags::FALLINGFAR);
+        const bool classicLikeStationaryCombatSync =
+            classicLikeCombatSync &&
+            !onTaxiFlight_ &&
+            !taxiActivatePending_ &&
+            !taxiClientActive_ &&
+            (movementInfo.flags & locomotionFlags) == 0;
         float heartbeatInterval = (onTaxiFlight_ || taxiActivatePending_ || taxiClientActive_)
                                       ? 0.25f
-                                      : (classicLikeCombatSync ? 0.05f : moveHeartbeatInterval_);
+                                      : (classicLikeStationaryCombatSync ? 0.75f
+                                                                         : (classicLikeCombatSync ? 0.20f
+                                                                                                  : moveHeartbeatInterval_));
         if (timeSinceLastMoveHeartbeat_ >= heartbeatInterval) {
             sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
             timeSinceLastMoveHeartbeat_ = 0.0f;
@@ -1310,26 +1328,28 @@ void GameHandler::update(float deltaTime) {
                         autoAttackResendTimer_ += deltaTime;
                         autoAttackFacingSyncTimer_ += deltaTime;
 
-                        // Re-request swing more aggressively until server confirms active loop.
-                        float resendInterval = 1.0f;
-                        if (!autoAttacking || autoAttackOutOfRange_) {
-                            resendInterval = classicLike ? 0.25f : 0.50f;
-                        }
-                        if (autoAttackResendTimer_ >= resendInterval) {
+                        // Classic/Turtle servers do not tolerate steady attack-start
+                        // reissues well. Only retry once after local start or an
+                        // explicit server-side attack stop while intent is still set.
+                        const float resendInterval = classicLike ? 1.0f : 0.50f;
+                        if (!autoAttacking && !autoAttackOutOfRange_ && autoAttackRetryPending_ &&
+                            autoAttackResendTimer_ >= resendInterval) {
                             autoAttackResendTimer_ = 0.0f;
+                            autoAttackRetryPending_ = false;
                             auto pkt = AttackSwingPacket::build(autoAttackTarget);
                             socket->send(pkt);
                         }
 
-                        // Keep server-facing aligned with our current melee target.
-                        // Some vanilla-family realms become strict about front-arc checks unless
-                        // the client sends explicit facing updates while stationary.
-                        const float facingSyncInterval = classicLike ? 0.10f : 0.20f;
-                        if (autoAttackFacingSyncTimer_ >= facingSyncInterval) {
+                        // Keep server-facing aligned while trying to acquire melee.
+                        // Once the server confirms auto-attack, rely on explicit
+                        // bad-facing feedback instead of periodic steady-state facing spam.
+                        const float facingSyncInterval = classicLike ? 0.25f : 0.20f;
+                        const bool allowPeriodicFacingSync = !classicLike || !autoAttacking;
+                        if (allowPeriodicFacingSync &&
+                            autoAttackFacingSyncTimer_ >= facingSyncInterval) {
                             autoAttackFacingSyncTimer_ = 0.0f;
                             float toTargetX = targetX - movementInfo.x;
                             float toTargetY = targetY - movementInfo.y;
-                            bool sentMovement = false;
                             if (std::abs(toTargetX) > 0.01f || std::abs(toTargetY) > 0.01f) {
                                 float desired = std::atan2(-toTargetY, toTargetX);
                                 float diff = desired - movementInfo.orientation;
@@ -1339,20 +1359,7 @@ void GameHandler::update(float deltaTime) {
                                 if (std::abs(diff) > facingThreshold) {
                                     movementInfo.orientation = desired;
                                     sendMovement(Opcode::MSG_MOVE_SET_FACING);
-                                    // Follow facing update with a heartbeat to tighten server range/facing checks.
-                                    sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
-                                    sentMovement = true;
                                 }
-                            } else if (classicLike) {
-                                // Keep stationary melee position/facing fresh for strict vanilla-family checks.
-                                sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
-                                sentMovement = true;
-                            }
-
-                            // Even when facing is already correct, keep position fresh while
-                            // trying to connect melee hits so servers don't require a step.
-                            if (!sentMovement && (!autoAttacking || autoAttackOutOfRange_)) {
-                                sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
                             }
                         }
                     }
@@ -3129,21 +3136,6 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 addSystemChatMessage("Target is too far away.");
                 autoAttackRangeWarnCooldown_ = 1.25f;
             }
-            if (autoAttackRequested_ && autoAttackTarget != 0 && socket) {
-                // Avoid blind immediate resend loops when target is clearly out of melee range.
-                bool likelyInRange = true;
-                if (auto target = entityManager.getEntity(autoAttackTarget)) {
-                    float dx = movementInfo.x - target->getLatestX();
-                    float dy = movementInfo.y - target->getLatestY();
-                    float dz = movementInfo.z - target->getLatestZ();
-                    float dist3d = std::sqrt(dx * dx + dy * dy + dz * dz);
-                    likelyInRange = (dist3d <= 7.5f);
-                }
-                if (likelyInRange) {
-                    auto pkt = AttackSwingPacket::build(autoAttackTarget);
-                    socket->send(pkt);
-                }
-            }
             break;
         case Opcode::SMSG_ATTACKSWING_BADFACING:
             if (autoAttackRequested_ && autoAttackTarget != 0) {
@@ -3154,12 +3146,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     if (std::abs(toTargetX) > 0.01f || std::abs(toTargetY) > 0.01f) {
                         movementInfo.orientation = std::atan2(-toTargetY, toTargetX);
                         sendMovement(Opcode::MSG_MOVE_SET_FACING);
-                        sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
                     }
-                }
-                if (socket) {
-                    auto pkt = AttackSwingPacket::build(autoAttackTarget);
-                    socket->send(pkt);
                 }
             }
             break;
@@ -5361,6 +5348,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
 
         // ---- Teleport / Transfer ----
+        case Opcode::MSG_MOVE_TELEPORT:
         case Opcode::MSG_MOVE_TELEPORT_ACK:
             handleTeleportAck(packet);
             break;
@@ -8968,7 +8956,7 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
     // can close the session before our default 30s ping cadence fires.
     timeSinceLastPing = 0.0f;
     if (socket) {
-        LOG_WARNING("World entry keepalive: sending immediate ping after LOGIN_VERIFY_WORLD");
+        LOG_DEBUG("World entry keepalive: sending immediate ping after LOGIN_VERIFY_WORLD");
         sendPing();
     }
 
@@ -10000,8 +9988,8 @@ void GameHandler::sendPing() {
     // Increment sequence number
     pingSequence++;
 
-    LOG_WARNING("Sending CMSG_PING: sequence=", pingSequence,
-                " latencyHintMs=", lastLatency);
+    LOG_DEBUG("Sending CMSG_PING: sequence=", pingSequence,
+              " latencyHintMs=", lastLatency);
 
     // Record send time for RTT measurement
     pingTimestamp_ = std::chrono::steady_clock::now();
@@ -10051,7 +10039,7 @@ void GameHandler::sendMinimapPing(float wowX, float wowY) {
 }
 
 void GameHandler::handlePong(network::Packet& packet) {
-    LOG_WARNING("Handling SMSG_PONG");
+    LOG_DEBUG("Handling SMSG_PONG");
 
     PongData data;
     if (!PongParser::parse(packet, data)) {
@@ -10071,8 +10059,8 @@ void GameHandler::handlePong(network::Packet& packet) {
     lastLatency = static_cast<uint32_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(rtt).count());
 
-    LOG_WARNING("SMSG_PONG acknowledged: sequence=", data.sequence,
-                " latencyMs=", lastLatency);
+    LOG_DEBUG("SMSG_PONG acknowledged: sequence=", data.sequence,
+              " latencyMs=", lastLatency);
 }
 
 uint32_t GameHandler::nextMovementTimestampMs() {
@@ -10116,7 +10104,21 @@ void GameHandler::sendMovement(Opcode opcode) {
     if (resurrectPending_ && !taxiAllowed) return;
 
     // Always send a strictly increasing non-zero client movement clock value.
-    movementInfo.time = nextMovementTimestampMs();
+    const uint32_t movementTime = nextMovementTimestampMs();
+    movementInfo.time = movementTime;
+
+    if (opcode == Opcode::MSG_MOVE_SET_FACING &&
+        (isClassicLikeExpansion() || isActiveExpansion("tbc"))) {
+        const float facingDelta = core::coords::normalizeAngleRad(
+            movementInfo.orientation - lastFacingSentOrientation_);
+        const uint32_t sinceLastFacingMs =
+            lastFacingSendTimeMs_ != 0 && movementTime >= lastFacingSendTimeMs_
+                ? (movementTime - lastFacingSendTimeMs_)
+                : std::numeric_limits<uint32_t>::max();
+        if (std::abs(facingDelta) < 0.02f && sinceLastFacingMs < 200U) {
+            return;
+        }
+    }
 
     // Update movement flags based on opcode
     switch (opcode) {
@@ -10190,6 +10192,7 @@ void GameHandler::sendMovement(Opcode opcode) {
             break;
         case Opcode::MSG_MOVE_HEARTBEAT:
             // No flag changes — just sends current position
+            timeSinceLastMoveHeartbeat_ = 0.0f;
             break;
         case Opcode::MSG_MOVE_START_ASCEND:
             movementInfo.flags |= static_cast<uint32_t>(MovementFlags::ASCENDING);
@@ -10204,6 +10207,11 @@ void GameHandler::sendMovement(Opcode opcode) {
             break;
         default:
             break;
+    }
+
+    if (opcode == Opcode::MSG_MOVE_SET_FACING) {
+        lastFacingSendTimeMs_ = movementInfo.time;
+        lastFacingSentOrientation_ = movementInfo.orientation;
     }
 
     // Keep fallTime current: it must equal the elapsed milliseconds since FALLING
@@ -10278,6 +10286,49 @@ void GameHandler::sendMovement(Opcode opcode) {
         movementInfo.transportSeat = -1;
     }
 
+    if (opcode == Opcode::MSG_MOVE_HEARTBEAT && isClassicLikeExpansion()) {
+        const uint32_t locomotionFlags =
+            static_cast<uint32_t>(MovementFlags::FORWARD) |
+            static_cast<uint32_t>(MovementFlags::BACKWARD) |
+            static_cast<uint32_t>(MovementFlags::STRAFE_LEFT) |
+            static_cast<uint32_t>(MovementFlags::STRAFE_RIGHT) |
+            static_cast<uint32_t>(MovementFlags::TURN_LEFT) |
+            static_cast<uint32_t>(MovementFlags::TURN_RIGHT) |
+            static_cast<uint32_t>(MovementFlags::ASCENDING) |
+            static_cast<uint32_t>(MovementFlags::FALLING) |
+            static_cast<uint32_t>(MovementFlags::FALLINGFAR) |
+            static_cast<uint32_t>(MovementFlags::SWIMMING);
+        const bool stationaryIdle =
+            !onTaxiFlight_ &&
+            !taxiMountActive_ &&
+            !taxiActivatePending_ &&
+            !taxiClientActive_ &&
+            !includeTransportInWire &&
+            (movementInfo.flags & locomotionFlags) == 0;
+        const uint32_t sinceLastHeartbeatMs =
+            lastHeartbeatSendTimeMs_ != 0 && movementTime >= lastHeartbeatSendTimeMs_
+                ? (movementTime - lastHeartbeatSendTimeMs_)
+                : std::numeric_limits<uint32_t>::max();
+        const bool unchangedState =
+            std::abs(movementInfo.x - lastHeartbeatX_) < 0.01f &&
+            std::abs(movementInfo.y - lastHeartbeatY_) < 0.01f &&
+            std::abs(movementInfo.z - lastHeartbeatZ_) < 0.01f &&
+            movementInfo.flags == lastHeartbeatFlags_ &&
+            movementInfo.transportGuid == lastHeartbeatTransportGuid_;
+        if (stationaryIdle && unchangedState && sinceLastHeartbeatMs < 1500U) {
+            timeSinceLastMoveHeartbeat_ = 0.0f;
+            return;
+        }
+        const uint32_t sinceLastNonHeartbeatMoveMs =
+            lastNonHeartbeatMoveSendTimeMs_ != 0 && movementTime >= lastNonHeartbeatMoveSendTimeMs_
+                ? (movementTime - lastNonHeartbeatMoveSendTimeMs_)
+                : std::numeric_limits<uint32_t>::max();
+        if (sinceLastNonHeartbeatMoveMs < 350U) {
+            timeSinceLastMoveHeartbeat_ = 0.0f;
+            return;
+        }
+    }
+
     LOG_DEBUG("Sending movement packet: opcode=0x", std::hex,
               wireOpcode(opcode), std::dec,
               (includeTransportInWire ? " ONTRANSPORT" : ""));
@@ -10308,6 +10359,17 @@ void GameHandler::sendMovement(Opcode opcode) {
         ? packetParsers_->buildMovementPacket(opcode, wireInfo, playerGuid)
         : MovementPacket::build(opcode, wireInfo, playerGuid);
     socket->send(packet);
+
+    if (opcode == Opcode::MSG_MOVE_HEARTBEAT) {
+        lastHeartbeatSendTimeMs_ = movementInfo.time;
+        lastHeartbeatX_ = movementInfo.x;
+        lastHeartbeatY_ = movementInfo.y;
+        lastHeartbeatZ_ = movementInfo.z;
+        lastHeartbeatFlags_ = movementInfo.flags;
+        lastHeartbeatTransportGuid_ = movementInfo.transportGuid;
+    } else {
+        lastNonHeartbeatMoveSendTimeMs_ = movementInfo.time;
+    }
 }
 
 void GameHandler::sanitizeMovementForTaxi() {
@@ -14692,6 +14754,7 @@ void GameHandler::startAutoAttack(uint64_t targetGuid) {
     }
 
     autoAttackRequested_ = true;
+    autoAttackRetryPending_ = true;
     // Keep combat animation/state server-authoritative. We only flip autoAttacking
     // on SMSG_ATTACKSTART where attackerGuid == playerGuid.
     autoAttacking = false;
@@ -14711,6 +14774,7 @@ void GameHandler::stopAutoAttack() {
     if (!autoAttacking && !autoAttackRequested_) return;
     autoAttackRequested_ = false;
     autoAttacking = false;
+    autoAttackRetryPending_ = false;
     autoAttackTarget = 0;
     autoAttackOutOfRange_ = false;
     autoAttackOutOfRangeTime_ = 0.0f;
@@ -14805,6 +14869,7 @@ void GameHandler::handleAttackStart(network::Packet& packet) {
     if (data.attackerGuid == playerGuid) {
         autoAttackRequested_ = true;
         autoAttacking = true;
+        autoAttackRetryPending_ = false;
         autoAttackTarget = data.victimGuid;
     } else if (data.victimGuid == playerGuid && data.attackerGuid != 0) {
         hostileAttackers_.insert(data.attackerGuid);
@@ -14842,13 +14907,9 @@ void GameHandler::handleAttackStop(network::Packet& packet) {
     // Keep intent, but clear server-confirmed active state until ATTACKSTART resumes.
     if (data.attackerGuid == playerGuid) {
         autoAttacking = false;
+        autoAttackRetryPending_ = autoAttackRequested_;
+        autoAttackResendTimer_ = 0.0f;
         LOG_DEBUG("SMSG_ATTACKSTOP received (keeping auto-attack intent)");
-        if (autoAttackRequested_ && autoAttackTarget != 0 && socket) {
-            // Classic-family servers may emit transient ATTACKSTOP when range/facing jitters.
-            // Reassert melee intent immediately instead of waiting for periodic resend.
-            auto pkt = AttackSwingPacket::build(autoAttackTarget);
-            socket->send(pkt);
-        }
     } else if (data.victimGuid == playerGuid) {
         hostileAttackers_.erase(data.attackerGuid);
     }

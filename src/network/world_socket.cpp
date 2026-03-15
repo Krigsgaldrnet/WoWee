@@ -25,6 +25,9 @@ constexpr int kMaxRecvCallsPerUpdate = 64;
 constexpr size_t kMaxRecvBytesPerUpdate = 512 * 1024;
 constexpr size_t kMaxQueuedPacketCallbacks = 4096;
 constexpr int kAsyncPumpSleepMs = 2;
+constexpr size_t kRecentPacketHistoryLimit = 96;
+constexpr auto kRecentPacketHistoryWindow = std::chrono::seconds(15);
+constexpr const char* kCloseTraceEnv = "WOWEE_NET_CLOSE_TRACE";
 
 inline int parsedPacketsBudgetPerUpdate() {
     static int budget = []() {
@@ -250,8 +253,8 @@ void WorldSocket::tracePacketsFor(std::chrono::milliseconds duration, const std:
     packetTraceStart_ = std::chrono::steady_clock::now();
     packetTraceUntil_ = packetTraceStart_ + duration;
     packetTraceReason_ = reason;
-    LOG_WARNING("WS TRACE enabled: reason='", packetTraceReason_,
-                "' durationMs=", duration.count());
+    LOG_DEBUG("WS TRACE enabled: reason='", packetTraceReason_,
+              "' durationMs=", duration.count());
 }
 
 bool WorldSocket::isConnected() const {
@@ -265,6 +268,40 @@ void WorldSocket::closeSocketNoJoin() {
         sockfd = INVALID_SOCK;
     }
     connected = false;
+}
+
+void WorldSocket::recordRecentPacket(bool outbound, uint16_t opcode, uint16_t payloadLen) {
+    const auto now = std::chrono::steady_clock::now();
+    recentPacketHistory_.push_back(RecentPacketTrace{now, outbound, opcode, payloadLen});
+    while (!recentPacketHistory_.empty() &&
+           (recentPacketHistory_.size() > kRecentPacketHistoryLimit ||
+            (now - recentPacketHistory_.front().when) > kRecentPacketHistoryWindow)) {
+        recentPacketHistory_.pop_front();
+    }
+}
+
+void WorldSocket::dumpRecentPacketHistoryLocked(const char* reason, size_t bufferedBytes) {
+    static const bool closeTraceEnabled = envFlagEnabled(kCloseTraceEnv, false);
+    if (!closeTraceEnabled) return;
+
+    if (recentPacketHistory_.empty()) {
+        LOG_DEBUG("WS CLOSE TRACE reason='", reason, "' buffered=", bufferedBytes,
+                  " no recent packet history");
+        return;
+    }
+
+    const auto lastWhen = recentPacketHistory_.back().when;
+    LOG_DEBUG("WS CLOSE TRACE reason='", reason, "' buffered=", bufferedBytes,
+              " recentPackets=", recentPacketHistory_.size());
+    for (const auto& entry : recentPacketHistory_) {
+        const auto ageMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            lastWhen - entry.when).count();
+        LOG_DEBUG("WS CLOSE TRACE ", entry.outbound ? "TX" : "RX",
+                  " -", ageMs, "ms opcode=0x",
+                  std::hex, entry.opcode, std::dec,
+                  " logical=", opcodeNameForTrace(entry.opcode),
+                  " payload=", entry.payloadLen);
+    }
 }
 
 void WorldSocket::send(const Packet& packet) {
@@ -336,14 +373,15 @@ void WorldSocket::send(const Packet& packet) {
     }
 
     const auto traceNow = std::chrono::steady_clock::now();
+    recordRecentPacket(true, opcode, payloadLen);
     if (packetTraceUntil_ > traceNow) {
         const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             traceNow - packetTraceStart_).count();
-        LOG_WARNING("WS TRACE TX +", elapsedMs, "ms opcode=0x",
-                    std::hex, opcode, std::dec,
-                    " logical=", opcodeNameForTrace(opcode),
-                    " payload=", payloadLen,
-                    " reason='", packetTraceReason_, "'");
+        LOG_DEBUG("WS TRACE TX +", elapsedMs, "ms opcode=0x",
+                  std::hex, opcode, std::dec,
+                  " logical=", opcodeNameForTrace(opcode),
+                  " payload=", payloadLen,
+                  " reason='", packetTraceReason_, "'");
     }
 
     // WotLK 3.3.5 CMSG header (6 bytes total):
@@ -572,6 +610,7 @@ void WorldSocket::pumpNetworkIO() {
     }
 
     if (sawClose) {
+        dumpRecentPacketHistoryLocked("peer_closed", bufferedBytes());
         LOG_INFO("World server connection closed (receivedAny=", receivedAny,
                  " buffered=", bufferedBytes(), ")");
         closeSocketNoJoin();
@@ -673,15 +712,16 @@ void WorldSocket::tryParsePackets() {
                      " buffered=", (receiveBuffer.size() - parseOffset),
                      " enc=", encryptionEnabled ? "yes" : "no");
         }
+        recordRecentPacket(false, opcode, payloadLen);
         const auto traceNow = std::chrono::steady_clock::now();
         if (packetTraceUntil_ > traceNow) {
             const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 traceNow - packetTraceStart_).count();
-            LOG_WARNING("WS TRACE RX +", elapsedMs, "ms opcode=0x",
-                        std::hex, opcode, std::dec,
-                        " logical=", opcodeNameForTrace(opcode),
-                        " payload=", payloadLen,
-                        " reason='", packetTraceReason_, "'");
+            LOG_DEBUG("WS TRACE RX +", elapsedMs, "ms opcode=0x",
+                      std::hex, opcode, std::dec,
+                      " logical=", opcodeNameForTrace(opcode),
+                      " payload=", payloadLen,
+                      " reason='", packetTraceReason_, "'");
         }
 
         if ((receiveBuffer.size() - parseOffset) < totalSize) {

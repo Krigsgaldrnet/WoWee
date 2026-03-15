@@ -2488,6 +2488,15 @@ private:
     float pingInterval = 30.0f;              // Ping interval (30 seconds)
     float timeSinceLastMoveHeartbeat_ = 0.0f; // Periodic movement heartbeat to keep server position synced
     float moveHeartbeatInterval_ = 0.5f;
+    uint32_t lastHeartbeatSendTimeMs_ = 0;
+    float lastHeartbeatX_ = 0.0f;
+    float lastHeartbeatY_ = 0.0f;
+    float lastHeartbeatZ_ = 0.0f;
+    uint32_t lastHeartbeatFlags_ = 0;
+    uint64_t lastHeartbeatTransportGuid_ = 0;
+    uint32_t lastNonHeartbeatMoveSendTimeMs_ = 0;
+    uint32_t lastFacingSendTimeMs_ = 0;
+    float lastFacingSentOrientation_ = 0.0f;
     uint32_t lastLatency = 0;                // Last measured latency (milliseconds)
     std::chrono::steady_clock::time_point pingTimestamp_;  // Time CMSG_PING was sent
 
@@ -2588,6 +2597,7 @@ private:
     // ---- Phase 2: Combat ----
     bool autoAttacking = false;
     bool autoAttackRequested_ = false;   // local intent (CMSG_ATTACKSWING sent)
+    bool autoAttackRetryPending_ = false; // one-shot retry after local start or server stop
     uint64_t autoAttackTarget = 0;
     bool autoAttackOutOfRange_ = false;
     float autoAttackOutOfRangeTime_ = 0.0f;

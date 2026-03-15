@@ -1883,15 +1883,16 @@ network::Packet RequestPlayedTimePacket::build(bool sendToChat) {
 }
 
 bool PlayedTimeParser::parse(network::Packet& packet, PlayedTimeData& data) {
-    // Validate minimum packet size: totalTime(4) + levelTime(4) + triggerMsg(1)
-    if (packet.getSize() - packet.getReadPos() < 9) {
+    // Classic/Turtle may omit the trailing trigger-message byte and send only
+    // totalTime(4) + levelTime(4). Later expansions append triggerMsg(1).
+    if (packet.getSize() - packet.getReadPos() < 8) {
         LOG_WARNING("SMSG_PLAYED_TIME: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
 
     data.totalTimePlayed = packet.readUInt32();
     data.levelTimePlayed = packet.readUInt32();
-    data.triggerMessage = packet.readUInt8() != 0;
+    data.triggerMessage = (packet.getSize() - packet.getReadPos() >= 1) && (packet.readUInt8() != 0);
     LOG_DEBUG("Parsed SMSG_PLAYED_TIME: total=", data.totalTimePlayed, " level=", data.levelTimePlayed);
     return true;
 }
