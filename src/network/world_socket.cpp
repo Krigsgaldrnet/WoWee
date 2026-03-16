@@ -281,22 +281,19 @@ void WorldSocket::recordRecentPacket(bool outbound, uint16_t opcode, uint16_t pa
 }
 
 void WorldSocket::dumpRecentPacketHistoryLocked(const char* reason, size_t bufferedBytes) {
-    static const bool closeTraceEnabled = envFlagEnabled(kCloseTraceEnv, false);
-    if (!closeTraceEnabled) return;
-
     if (recentPacketHistory_.empty()) {
-        LOG_DEBUG("WS CLOSE TRACE reason='", reason, "' buffered=", bufferedBytes,
+        LOG_WARNING("WS CLOSE TRACE reason='", reason, "' buffered=", bufferedBytes,
                   " no recent packet history");
         return;
     }
 
     const auto lastWhen = recentPacketHistory_.back().when;
-    LOG_DEBUG("WS CLOSE TRACE reason='", reason, "' buffered=", bufferedBytes,
+    LOG_WARNING("WS CLOSE TRACE reason='", reason, "' buffered=", bufferedBytes,
               " recentPackets=", recentPacketHistory_.size());
     for (const auto& entry : recentPacketHistory_) {
         const auto ageMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             lastWhen - entry.when).count();
-        LOG_DEBUG("WS CLOSE TRACE ", entry.outbound ? "TX" : "RX",
+        LOG_WARNING("WS CLOSE TRACE ", entry.outbound ? "TX" : "RX",
                   " -", ageMs, "ms opcode=0x",
                   std::hex, entry.opcode, std::dec,
                   " logical=", opcodeNameForTrace(entry.opcode),
@@ -611,7 +608,7 @@ void WorldSocket::pumpNetworkIO() {
 
     if (sawClose) {
         dumpRecentPacketHistoryLocked("peer_closed", bufferedBytes());
-        LOG_INFO("World server connection closed (receivedAny=", receivedAny,
+        LOG_WARNING("World server connection closed by peer (receivedAny=", receivedAny,
                  " buffered=", bufferedBytes(), ")");
         closeSocketNoJoin();
         return;

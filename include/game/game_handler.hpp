@@ -22,6 +22,7 @@
 #include <optional>
 #include <algorithm>
 #include <chrono>
+#include <future>
 
 namespace wowee::game {
     class TransportManager;
@@ -3143,6 +3144,10 @@ private:
     // Module-specific check type opcodes [9]: MEM, PAGE_A, PAGE_B, MPQ, LUA, DRIVER, TIMING, PROC, MODULE
     uint8_t wardenCheckOpcodes_[9] = {};
     bool loadWardenCRFile(const std::string& moduleHashHex);
+
+    // Async Warden response: avoids 5-second main-loop stalls from PAGE_A/PAGE_B code pattern searches
+    std::future<std::vector<uint8_t>> wardenPendingEncrypted_;  // encrypted response bytes
+    bool wardenResponsePending_ = false;
 
     // ---- XP tracking ----
     uint32_t playerXp_ = 0;

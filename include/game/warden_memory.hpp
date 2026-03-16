@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 
 namespace wowee {
 namespace game {
@@ -18,8 +19,9 @@ public:
     ~WardenMemory();
 
     /** Search standard candidate dirs for WoW.exe and load it.
-     *  @param build Client build number (e.g. 5875 for Classic 1.12.1) to select the right exe. */
-    bool load(uint16_t build = 0);
+     *  @param build Client build number (e.g. 5875 for Classic 1.12.1) to select the right exe.
+     *  @param isTurtle If true, prefer the Turtle WoW custom exe (different code bytes). */
+    bool load(uint16_t build = 0, bool isTurtle = false);
 
     /** Load PE image from a specific file path. */
     bool loadFromFile(const std::string& exePath);
@@ -31,6 +33,21 @@ public:
     bool readMemory(uint32_t va, uint8_t length, uint8_t* outBuf) const;
 
     bool isLoaded() const { return loaded_; }
+
+    /**
+     * Search PE image for a byte pattern matching HMAC-SHA1(seed, pattern).
+     * Used for FIND_MEM_IMAGE_CODE_BY_HASH and FIND_CODE_BY_HASH scans.
+     * @param seed 4-byte HMAC key
+     * @param expectedHash 20-byte expected HMAC-SHA1 digest
+     * @param patternLen Length of the pattern to search for
+     * @param imageOnly If true, search only executable sections (.text)
+     * @return true if a matching pattern was found in the PE image
+     */
+    bool searchCodePattern(const uint8_t seed[4], const uint8_t expectedHash[20],
+                           uint8_t patternLen, bool imageOnly) const;
+
+    /** Write a little-endian uint32 at the given virtual address in the PE image. */
+    void writeLE32(uint32_t va, uint32_t value);
 
 private:
     bool loaded_ = false;
@@ -46,9 +63,15 @@ private:
     bool parsePE(const std::vector<uint8_t>& fileData);
     void initKuserSharedData();
     void patchRuntimeGlobals();
-    void writeLE32(uint32_t va, uint32_t value);
+    void patchTurtleWowBinary();
+    void verifyWardenScanEntries();
+    bool isTurtle_ = false;
     std::string findWowExe(uint16_t build) const;
-    static uint32_t expectedImageSizeForBuild(uint16_t build);
+    static uint32_t expectedImageSizeForBuild(uint16_t build, bool isTurtle);
+
+    // Cache for searchCodePattern results to avoid repeated 5-second brute-force searches.
+    // Key: hex string of seed(4)+hash(20)+patLen(1)+imageOnly(1) = 26 bytes.
+    mutable std::unordered_map<std::string, bool> codePatternCache_;
 };
 
 } // namespace game

@@ -2899,18 +2899,9 @@ void Renderer::update(float deltaTime) {
             }
             weather->setEnabled(true);
 
-            // Enable lightning during storms (wType==3) and heavy rain
+            // Lightning flash disabled
             if (lightning) {
-                uint32_t wType2 = gh->getWeatherType();
-                float wInt2 = gh->getWeatherIntensity();
-                bool stormActive = (wType2 == 3 && wInt2 > 0.1f)
-                                || (wType2 == 1 && wInt2 > 0.7f);
-                lightning->setEnabled(stormActive);
-                if (stormActive) {
-                    // Scale intensity: storm at full, heavy rain proportionally
-                    float lIntensity = (wType2 == 3) ? wInt2 : (wInt2 - 0.7f) / 0.3f;
-                    lightning->setIntensity(lIntensity);
-                }
+                lightning->setEnabled(false);
             }
         } else if (weather) {
             // No game handler (single-player without network) — zone weather only
