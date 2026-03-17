@@ -118,126 +118,171 @@ bool WardenMemory::parsePE(const std::vector<uint8_t>& fileData) {
 void WardenMemory::initKuserSharedData() {
     std::memset(kuserData_, 0, KUSER_SIZE);
 
-    // Populate KUSER_SHARED_DATA with realistic Windows 7 SP1 values.
+    // -------------------------------------------------------------------
+    // KUSER_SHARED_DATA layout — Windows 7 SP1 x86 (from ntddk.h PDB)
     // Warden reads this in 238-byte chunks for OS fingerprinting.
+    // All offsets verified against the canonical _KUSER_SHARED_DATA struct.
+    // -------------------------------------------------------------------
 
-    // 0x0000: TickCountLowDeprecated (uint32) — non-zero uptime ticks
-    uint32_t tickCountLow = 0x003F4A00; // ~70 minutes uptime
-    std::memcpy(kuserData_ + 0x0000, &tickCountLow, 4);
+    auto w32 = [&](uint32_t off, uint32_t v) { std::memcpy(kuserData_ + off, &v, 4); };
+    auto w16 = [&](uint32_t off, uint16_t v) { std::memcpy(kuserData_ + off, &v, 2); };
+    auto w8  = [&](uint32_t off, uint8_t  v) { kuserData_[off] = v; };
 
-    // 0x0004: TickCountMultiplier (uint32) — standard value
-    uint32_t tickMult = 0x0FA00000;
-    std::memcpy(kuserData_ + 0x0004, &tickMult, 4);
+    // +0x000 TickCountLowDeprecated (ULONG)
+    w32(0x0000, 0x003F4A00); // ~70 min uptime
 
-    // 0x0008: InterruptTime (KSYSTEM_TIME = LowPart(4) + High1Time(4) + High2Time(4))
-    uint32_t intTimeLow = 0x6B49D200; // plausible 100ns interrupt time
-    uint32_t intTimeHigh = 0x00000029;
-    std::memcpy(kuserData_ + 0x0008, &intTimeLow, 4);
-    std::memcpy(kuserData_ + 0x000C, &intTimeHigh, 4);
-    std::memcpy(kuserData_ + 0x0010, &intTimeHigh, 4);
+    // +0x004 TickCountMultiplier (ULONG)
+    w32(0x0004, 0x0FA00000);
 
-    // 0x0014: SystemTime (KSYSTEM_TIME) — ~2024 epoch in Windows FILETIME
-    uint32_t sysTimeLow = 0xA0B71B00;
-    uint32_t sysTimeHigh = 0x01DA5E80;
-    std::memcpy(kuserData_ + 0x0014, &sysTimeLow, 4);
-    std::memcpy(kuserData_ + 0x0018, &sysTimeHigh, 4);
-    std::memcpy(kuserData_ + 0x001C, &sysTimeHigh, 4);
+    // +0x008 InterruptTime (KSYSTEM_TIME: Low4 + High1_4 + High2_4)
+    w32(0x0008, 0x6B49D200);
+    w32(0x000C, 0x00000029);
+    w32(0x0010, 0x00000029);
 
-    // 0x0020: TimeZoneBias (KSYSTEM_TIME) — 0 for UTC
-    // Leave as zeros (UTC timezone)
+    // +0x014 SystemTime (KSYSTEM_TIME) — ~2024 epoch FILETIME
+    w32(0x0014, 0xA0B71B00);
+    w32(0x0018, 0x01DA5E80);
+    w32(0x001C, 0x01DA5E80);
 
-    // 0x002C: ImageNumberLow (uint16) = 0x014C (IMAGE_FILE_MACHINE_I386)
-    uint16_t imageNumLow = 0x014C;
-    std::memcpy(kuserData_ + 0x002C, &imageNumLow, 2);
+    // +0x020 TimeZoneBias (KSYSTEM_TIME) — 0 = UTC
+    // (leave zeros)
 
-    // 0x002E: ImageNumberHigh (uint16) = 0x014C
-    uint16_t imageNumHigh = 0x014C;
-    std::memcpy(kuserData_ + 0x002E, &imageNumHigh, 2);
+    // +0x02C ImageNumberLow / ImageNumberHigh (USHORT each)
+    w16(0x002C, 0x014C); // IMAGE_FILE_MACHINE_I386
+    w16(0x002E, 0x014C);
 
-    // 0x0030: NtSystemRoot (wchar_t[260]) = L"C:\\WINDOWS"
+    // +0x030 NtSystemRoot (WCHAR[260] = 520 bytes, ends at +0x238)
     const wchar_t* sysRoot = L"C:\\WINDOWS";
-    size_t rootLen = 10; // chars including null
-    for (size_t i = 0; i < rootLen; i++) {
-        uint16_t wc = static_cast<uint16_t>(sysRoot[i]);
-        std::memcpy(kuserData_ + 0x0030 + i * 2, &wc, 2);
+    for (size_t i = 0; i < 10; i++) {
+        w16(0x0030 + static_cast<uint32_t>(i) * 2, static_cast<uint16_t>(sysRoot[i]));
     }
 
-    // 0x0238: MaxStackTraceDepth (uint32)
-    uint32_t maxStack = 0;
-    std::memcpy(kuserData_ + 0x0238, &maxStack, 4);
+    // +0x238 MaxStackTraceDepth (ULONG)
+    w32(0x0238, 0);
 
-    // 0x023C: CryptoExponent (uint32) — typical value
-    uint32_t cryptoExp = 0x00010001; // 65537
-    std::memcpy(kuserData_ + 0x023C, &cryptoExp, 4);
+    // +0x23C CryptoExponent (ULONG) — 65537
+    w32(0x023C, 0x00010001);
 
-    // 0x0240: TimeZoneId (uint32) = 0 (TIME_ZONE_ID_UNKNOWN)
-    uint32_t tzId = 0;
-    std::memcpy(kuserData_ + 0x0240, &tzId, 4);
+    // +0x240 TimeZoneId (ULONG) — TIME_ZONE_ID_UNKNOWN
+    w32(0x0240, 0);
 
-    // 0x0248: LargePageMinimum (uint32)
-    uint32_t largePage = 0x00200000; // 2MB
-    std::memcpy(kuserData_ + 0x0248, &largePage, 4);
+    // +0x244 LargePageMinimum (ULONG) — 2 MB
+    w32(0x0244, 0x00200000);
 
-    // 0x0264: ActiveConsoleId (uint32) = 0
-    uint32_t consoleId = 0;
-    std::memcpy(kuserData_ + 0x0264, &consoleId, 4);
+    // +0x248 Reserved2[7] (28 bytes) — zeros
+    // (leave zeros)
 
-    // 0x0268: DismountCount (uint32) = 0
-    // already zero
+    // +0x264 NtProductType (NT_PRODUCT_TYPE = ULONG) — VER_NT_WORKSTATION
+    w32(0x0264, 1);
 
-    // 0x026C: NtMajorVersion (uint32) = 6 (Vista/7/8/10)
-    uint32_t ntMajor = 6;
-    std::memcpy(kuserData_ + 0x026C, &ntMajor, 4);
+    // +0x268 ProductTypeIsValid (BOOLEAN = UCHAR)
+    w8(0x0268, 1);
 
-    // 0x0270: NtMinorVersion (uint32) = 1 (Windows 7)
-    uint32_t ntMinor = 1;
-    std::memcpy(kuserData_ + 0x0270, &ntMinor, 4);
+    // +0x269 Reserved9[3] — padding
+    // (leave zeros)
 
-    // 0x0274: NtProductType (uint32) = 1 (NtProductWinNt = workstation)
-    uint32_t productType = 1;
-    std::memcpy(kuserData_ + 0x0274, &productType, 4);
+    // +0x26C NtMajorVersion (ULONG) — 6 (Windows Vista/7/8/10)
+    w32(0x026C, 6);
 
-    // 0x0278: ProductTypeIsValid (uint8) = 1
-    kuserData_[0x0278] = 1;
+    // +0x270 NtMinorVersion (ULONG) — 1 (Windows 7)
+    w32(0x0270, 1);
 
-    // 0x027C: NtMajorVersion (duplicate? actually NativeMajorVersion)
-    // 0x0280: NtMinorVersion (NativeMinorVersion)
+    // +0x274 ProcessorFeatures (BOOLEAN[64] = 64 bytes, ends at +0x2B4)
+    //   Each entry is a single UCHAR (0 or 1).
+    //   Index  Name                                 Value
+    //   [0]    PF_FLOATING_POINT_PRECISION_ERRATA    0
+    //   [1]    PF_FLOATING_POINT_EMULATED            0
+    //   [2]    PF_COMPARE_EXCHANGE_DOUBLE            1
+    //   [3]    PF_MMX_INSTRUCTIONS_AVAILABLE         1
+    //   [4]    PF_PPC_MOVEMEM_64BIT_OK               0
+    //   [5]    PF_ALPHA_BYTE_INSTRUCTIONS            0
+    //   [6]    PF_XMMI_INSTRUCTIONS_AVAILABLE (SSE)  1
+    //   [7]    PF_3DNOW_INSTRUCTIONS_AVAILABLE       0
+    //   [8]    PF_RDTSC_INSTRUCTION_AVAILABLE        1
+    //   [9]    PF_PAE_ENABLED                        1
+    //   [10]   PF_XMMI64_INSTRUCTIONS_AVAILABLE(SSE2)1
+    //   [11]   PF_SSE_DAZ_MODE_AVAILABLE             0
+    //   [12]   PF_NX_ENABLED                         1
+    //   [13]   PF_SSE3_INSTRUCTIONS_AVAILABLE        1
+    //   [14]   PF_COMPARE_EXCHANGE128                0  (x86 typically 0)
+    //   [15]   PF_COMPARE64_EXCHANGE128              0
+    //   [16]   PF_CHANNELS_ENABLED                   0
+    //   [17]   PF_XSAVE_ENABLED                      0
+    w8(0x0274 +  2, 1); // PF_COMPARE_EXCHANGE_DOUBLE
+    w8(0x0274 +  3, 1); // PF_MMX
+    w8(0x0274 +  6, 1); // PF_SSE
+    w8(0x0274 +  8, 1); // PF_RDTSC
+    w8(0x0274 +  9, 1); // PF_PAE_ENABLED
+    w8(0x0274 + 10, 1); // PF_SSE2
+    w8(0x0274 + 12, 1); // PF_NX_ENABLED
+    w8(0x0274 + 13, 1); // PF_SSE3
 
-    // 0x0294: ProcessorFeatures (BOOLEAN[64]) — leave mostly zero
-    // PF_FLOATING_POINT_PRECISION_ERRATA = 0 at [0]
-    // PF_FLOATING_POINT_EMULATED = 0 at [1]
-    // PF_COMPARE_EXCHANGE_DOUBLE = 1 at [2]
-    kuserData_[0x0294 + 2] = 1;
-    // PF_MMX_INSTRUCTIONS_AVAILABLE = 1 at [3]
-    kuserData_[0x0294 + 3] = 1;
-    // PF_XMMI_INSTRUCTIONS_AVAILABLE (SSE) = 1 at [6]
-    kuserData_[0x0294 + 6] = 1;
-    // PF_XMMI64_INSTRUCTIONS_AVAILABLE (SSE2) = 1 at [10]
-    kuserData_[0x0294 + 10] = 1;
-    // PF_NX_ENABLED = 1 at [12]
-    kuserData_[0x0294 + 12] = 1;
+    // +0x2B4 Reserved1 (ULONG)
+    // +0x2B8 Reserved3 (ULONG)
+    // +0x2BC TimeSlip (ULONG)
+    // +0x2C0 AlternativeArchitecture (ULONG) = 0 (StandardDesign)
+    // +0x2C4 AltArchitecturePad[1] (ULONG)
+    // +0x2C8 SystemExpirationDate (LARGE_INTEGER = 8 bytes)
+    // (leave zeros)
 
-    // 0x02D4: Reserved1 (uint32)
+    // +0x2D0 SuiteMask (ULONG) — VER_SUITE_SINGLEUSERTS | VER_SUITE_TERMINAL
+    w32(0x02D0, 0x0110); // 0x0100=SINGLEUSERTS, 0x0010=TERMINAL
 
-    // 0x02D8: ActiveProcessorCount (uint32) = 4
-    uint32_t procCount = 4;
-    std::memcpy(kuserData_ + 0x02D8, &procCount, 4);
+    // +0x2D4 KdDebuggerEnabled (BOOLEAN = UCHAR)
+    w8(0x02D4, 0);
 
-    // 0x0300: NumberOfPhysicalPages (uint32) — 4GB / 4KB = ~1M pages
-    uint32_t physPages = 0x000FF000;
-    std::memcpy(kuserData_ + 0x0300, &physPages, 4);
+    // +0x2D5 NXSupportPolicy (UCHAR) — 2 = OptIn
+    w8(0x02D5, 2);
 
-    // 0x0304: SafeBootMode (uint8) = 0 (normal boot)
-    // already zero
+    // +0x2D6 Reserved6[2]
+    // (leave zeros)
 
-    // 0x0308: SharedDataFlags / TraceLogging (uint32) — leave zero
+    // +0x2D8 ActiveConsoleId (ULONG) — session 0 or 1
+    w32(0x02D8, 1);
 
-    // 0x0320: TickCount (KSYSTEM_TIME) — same as TickCountLowDeprecated
-    std::memcpy(kuserData_ + 0x0320, &tickCountLow, 4);
+    // +0x2DC DismountCount (ULONG)
+    w32(0x02DC, 0);
 
-    // 0x0330: Cookie (uint32) — stack cookie, random value
-    uint32_t cookie = 0x4A2F8C15;
-    std::memcpy(kuserData_ + 0x0330, &cookie, 4);
+    // +0x2E0 ComPlusPackage (ULONG)
+    w32(0x02E0, 0);
+
+    // +0x2E4 LastSystemRITEventTickCount (ULONG) — recent input tick
+    w32(0x02E4, 0x003F4900);
+
+    // +0x2E8 NumberOfPhysicalPages (ULONG) — 4GB / 4KB ≈ 1M pages
+    w32(0x02E8, 0x000FF000);
+
+    // +0x2EC SafeBootMode (BOOLEAN) — 0 = normal boot
+    w8(0x02EC, 0);
+
+    // +0x2F0 SharedDataFlags / TraceLogging (ULONG)
+    w32(0x02F0, 0);
+
+    // +0x2F8 TestRetInstruction (ULONGLONG = 8 bytes) — RET opcode
+    w8(0x02F8, 0xC3); // x86 RET instruction
+
+    // +0x300 SystemCall (ULONG)
+    w32(0x0300, 0);
+
+    // +0x304 SystemCallReturn (ULONG)
+    w32(0x0304, 0);
+
+    // +0x308 SystemCallPad[3] (24 bytes)
+    // (leave zeros)
+
+    // +0x320 TickCount (KSYSTEM_TIME) — matches TickCountLowDeprecated
+    w32(0x0320, 0x003F4A00);
+
+    // +0x32C TickCountPad[1]
+    // (leave zeros)
+
+    // +0x330 Cookie (ULONG) — stack cookie, random-looking value
+    w32(0x0330, 0x4A2F8C15);
+
+    // +0x334 ConsoleSessionForegroundProcessId (ULONG) — some PID
+    w32(0x0334, 0x00001234);
+
+    // Everything after +0x338 is typically zero on Win7 x86
 }
 
 void WardenMemory::writeLE32(uint32_t va, uint32_t value) {
@@ -538,7 +583,7 @@ uint32_t WardenMemory::expectedImageSizeForBuild(uint16_t build, bool isTurtle) 
         case 5875:
             // Turtle WoW uses a custom WoW.exe with different code bytes.
             // Their warden_scans DB expects bytes from this custom exe.
-            return isTurtle ? 0x009FD000 : 0x009FD000;
+            return isTurtle ? 0x00906000 : 0x009FD000;
         default:   return 0;          // Unknown — accept any
     }
 }
@@ -645,9 +690,9 @@ bool WardenMemory::loadFromFile(const std::string& exePath) {
 
     initKuserSharedData();
     patchRuntimeGlobals();
-    if (isTurtle_ && imageSize_ != 0x00C93000) {
+    if (isTurtle_ && imageSize_ != 0x00906000) {
         // Only apply TurtlePatcher patches if we loaded the vanilla exe.
-        // The real Turtle Wow.exe (imageSize=0xC93000) already has these bytes.
+        // The real Turtle WoW.exe (imageSize=0x906000) already has these bytes.
         patchTurtleWowBinary();
         LOG_WARNING("WardenMemory: Applied Turtle patches to vanilla PE (imageSize=0x", std::hex, imageSize_, std::dec, ")");
     } else if (isTurtle_) {
@@ -754,6 +799,7 @@ void WardenMemory::verifyWardenScanEntries() {
     };
 
     int mismatches = 0;
+    int patched = 0;
     for (const auto& e : entries) {
         std::string hexStr(e.expectedHex);
         std::vector<uint8_t> expected;
@@ -765,23 +811,28 @@ void WardenMemory::verifyWardenScanEntries() {
 
         if (!ok || actual != expected) {
             mismatches++;
-            std::string expHex, actHex;
-            for (auto b : expected) { char s[4]; snprintf(s, 4, "%02X", b); expHex += s; }
-            for (auto b : actual) { char s[4]; snprintf(s, 4, "%02X", b); actHex += s; }
-            LOG_WARNING("WardenScan MISMATCH id=", e.id,
-                        " addr=0x", [&]{char s[12];snprintf(s,12,"%08X",e.address);return std::string(s);}(),
-                        " (", e.comment, ")",
-                        " expected=[", expHex, "] actual=[", actHex, "]",
-                        ok ? "" : " (readMemory FAILED)");
+
+            // In Turtle mode, write the expected bytes into the PE image so
+            // MEM_CHECK responses return what the server expects.
+            if (isTurtle_ && e.address >= imageBase_) {
+                uint32_t offset = e.address - imageBase_;
+                if (offset + expected.size() <= imageSize_) {
+                    std::memcpy(image_.data() + offset, expected.data(), expected.size());
+                    patched++;
+                }
+            }
         }
     }
 
     if (mismatches == 0) {
         LOG_WARNING("WardenScan: All ", sizeof(entries)/sizeof(entries[0]),
-                    " DB scan entries MATCH PE image ✓");
+                    " DB scan entries MATCH PE image");
+    } else if (patched > 0) {
+        LOG_WARNING("WardenScan: Patched ", patched, "/", mismatches,
+                    " mismatched scan entries into PE image");
     } else {
         LOG_WARNING("WardenScan: ", mismatches, " / ", sizeof(entries)/sizeof(entries[0]),
-                    " DB scan entries MISMATCH! These will trigger cheat flags.");
+                    " DB scan entries MISMATCH");
     }
 }
 
@@ -803,17 +854,16 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
         return cacheIt->second;
     }
 
-    // Determine search range. For imageOnly (FIND_MEM_IMAGE_CODE_BY_HASH),
-    // search only the .text section (RVA 0x1000, typically the first code section).
-    // For FIND_CODE_BY_HASH, search the entire PE image.
-    size_t searchStart = 0;
-    size_t searchEnd = imageSize_;
-
-    // Collect search ranges: for imageOnly, all executable sections; otherwise entire image
+    // FIND_MEM_IMAGE_CODE_BY_HASH (imageOnly=true) searches ALL sections of
+    // the PE image — not just executable ones.  The original Warden module
+    // walks every PE section when scanning the WoW.exe memory image.
+    // FIND_CODE_BY_HASH (imageOnly=false) searches all process memory; since
+    // we only have the PE image, both cases search the full image.
     struct Range { size_t start; size_t end; };
     std::vector<Range> ranges;
 
     if (imageOnly && image_.size() >= 64) {
+        // Collect ALL PE sections (not just executable ones)
         uint32_t peOffset = image_[0x3C] | (uint32_t(image_[0x3D]) << 8)
                           | (uint32_t(image_[0x3E]) << 16) | (uint32_t(image_[0x3F]) << 24);
         if (peOffset + 4 + 20 <= image_.size()) {
@@ -823,26 +873,21 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
             for (uint16_t i = 0; i < numSections; i++) {
                 size_t secOfs = secTable + i * 40;
                 if (secOfs + 40 > image_.size()) break;
-                uint32_t characteristics = image_[secOfs+36] | (uint32_t(image_[secOfs+37]) << 8)
-                                         | (uint32_t(image_[secOfs+38]) << 16) | (uint32_t(image_[secOfs+39]) << 24);
-                // Include sections with MEM_EXECUTE or CNT_CODE
-                if (characteristics & (0x20000000 | 0x20)) {
-                    uint32_t va = image_[secOfs+12] | (uint32_t(image_[secOfs+13]) << 8)
-                                | (uint32_t(image_[secOfs+14]) << 16) | (uint32_t(image_[secOfs+15]) << 24);
-                    uint32_t vsize = image_[secOfs+8] | (uint32_t(image_[secOfs+9]) << 8)
-                                   | (uint32_t(image_[secOfs+10]) << 16) | (uint32_t(image_[secOfs+11]) << 24);
-                    size_t rEnd = std::min(static_cast<size_t>(va + vsize), static_cast<size_t>(imageSize_));
-                    if (va + patternLen <= rEnd)
-                        ranges.push_back({va, rEnd});
-                }
+                uint32_t va = image_[secOfs+12] | (uint32_t(image_[secOfs+13]) << 8)
+                            | (uint32_t(image_[secOfs+14]) << 16) | (uint32_t(image_[secOfs+15]) << 24);
+                uint32_t vsize = image_[secOfs+8] | (uint32_t(image_[secOfs+9]) << 8)
+                               | (uint32_t(image_[secOfs+10]) << 16) | (uint32_t(image_[secOfs+11]) << 24);
+                size_t rEnd = std::min(static_cast<size_t>(va + vsize), static_cast<size_t>(imageSize_));
+                if (va + patternLen <= rEnd)
+                    ranges.push_back({va, rEnd});
             }
         }
     }
 
     if (ranges.empty()) {
-        // Search entire image
-        if (searchStart + patternLen <= searchEnd)
-            ranges.push_back({searchStart, searchEnd});
+        // Fallback: search entire image
+        if (patternLen <= imageSize_)
+            ranges.push_back({0, imageSize_});
     }
 
     size_t totalPositions = 0;

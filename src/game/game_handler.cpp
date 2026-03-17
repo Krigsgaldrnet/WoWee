@@ -9358,16 +9358,7 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                 }
 
                 if (match) {
-                    LOG_DEBUG("Warden: Found matching CR entry for seed");
-
-                    // Log the reply we're sending
-                    {
-                        std::string replyHex;
-                        for (int i = 0; i < 20; i++) {
-                            char s[4]; snprintf(s, 4, "%02x", match->reply[i]); replyHex += s;
-                        }
-                        LOG_DEBUG("Warden: Sending pre-computed reply=", replyHex);
-                    }
+                    LOG_WARNING("Warden: HASH_REQUEST — CR entry MATCHED, sending pre-computed reply");
 
                     // Send HASH_RESULT (opcode 0x04 + 20-byte reply)
                     std::vector<uint8_t> resp;
@@ -9381,7 +9372,7 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                     std::vector<uint8_t> newDecryptKey(match->serverKey, match->serverKey + 16);
                     wardenCrypto_->replaceKeys(newEncryptKey, newDecryptKey);
 
-                    LOG_DEBUG("Warden: Switched to CR key set");
+                    LOG_WARNING("Warden: Switched to CR key set");
 
                     wardenState_ = WardenState::WAIT_CHECKS;
                     break;
@@ -9597,6 +9588,20 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                                             LOG_WARNING("Warden:   Applying 4-byte ULONG alignment padding for WinVersionGet");
                                         resultData.push_back(0x00);
                                         resultData.insert(resultData.end(), memBuf.begin(), memBuf.end());
+                                    } else if (wardenLoadedModule_ && wardenLoadedModule_->isLoaded()) {
+                                        // Try Warden module memory
+                                        uint32_t modBase = offset & ~0xFFFFu;
+                                        uint32_t modOfs = offset - modBase;
+                                        const auto& modData = wardenLoadedModule_->getDecompressedData();
+                                        if (modOfs + readLen <= modData.size()) {
+                                            std::memcpy(memBuf.data(), modData.data() + modOfs, readLen);
+                                            LOG_WARNING("Warden:   MEM_CHECK served from Warden module (offset=0x",
+                                                        [&]{char s[12];snprintf(s,12,"%x",modOfs);return std::string(s);}(), ")");
+                                            resultData.push_back(0x00);
+                                            resultData.insert(resultData.end(), memBuf.begin(), memBuf.end());
+                                        } else {
+                                            resultData.push_back(0xE9);
+                                        }
                                     } else {
                                         resultData.push_back(0xE9);
                                     }
@@ -9614,16 +9619,29 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                                     uint32_t off = uint32_t(p[24])|(uint32_t(p[25])<<8)|(uint32_t(p[26])<<16)|(uint32_t(p[27])<<24);
                                     uint8_t patLen = p[28];
                                     bool found = false;
+                                    bool turtleFallback = false;
+                                    // Turtle fallback: if offset is within PE image range,
+                                    // this is an integrity check — skip the expensive 25-second
+                                    // brute-force search and return "found" immediately to stay
+                                    // within the server's Warden response timeout.
+                                    bool canTurtleFallback = (ct == CT_PAGE_A && isActiveExpansion("turtle") &&
+                                        wardenMemory_ && wardenMemory_->isLoaded() && off < 0x600000);
                                     if (isKnownWantedCodeScan(seed, sha1, off, patLen)) {
                                         found = true;
+                                    } else if (canTurtleFallback) {
+                                        // Skip the expensive 25-second brute-force search;
+                                        // the turtle fallback will return "found" instantly.
+                                        found = true;
+                                        turtleFallback = true;
                                     } else if (wardenMemory_ && wardenMemory_->isLoaded() && patLen > 0) {
                                         found = wardenMemory_->searchCodePattern(seed, sha1, patLen, isImageOnly);
                                         if (!found && wardenLoadedModule_ && wardenLoadedModule_->isLoaded()) {
-                                            const auto& md = wardenLoadedModule_->getDecompressedData();
-                                            if (md.size() >= patLen) {
-                                                for (size_t i = 0; i < md.size() - patLen + 1; i++) {
+                                            const uint8_t* modMem = static_cast<const uint8_t*>(wardenLoadedModule_->getModuleMemory());
+                                            size_t modSize = wardenLoadedModule_->getModuleSize();
+                                            if (modMem && modSize >= patLen) {
+                                                for (size_t i = 0; i < modSize - patLen + 1; i++) {
                                                     uint8_t h[20]; unsigned int hl = 0;
-                                                    HMAC(EVP_sha1(), seed, 4, md.data()+i, patLen, h, &hl);
+                                                    HMAC(EVP_sha1(), seed, 4, modMem+i, patLen, h, &hl);
                                                     if (hl == 20 && !std::memcmp(h, sha1, 20)) { found = true; break; }
                                                 }
                                             }
@@ -9632,7 +9650,8 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                                     uint8_t pageResult = found ? 0x4A : 0x00;
                                     LOG_WARNING("Warden:   ", pageName, " offset=0x",
                                                 [&]{char s[12];snprintf(s,12,"%08x",off);return std::string(s);}(),
-                                                " patLen=", (int)patLen, " found=", found ? "yes" : "no");
+                                                " patLen=", (int)patLen, " found=", found ? "yes" : "no",
+                                                turtleFallback ? " (turtle-fallback)" : "");
                                     pos += kPageSize;
                                     resultData.push_back(pageResult);
                                     break;
@@ -9887,11 +9906,9 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                                         | (uint32_t(decrypted[pos+2])<<16) | (uint32_t(decrypted[pos+3])<<24);
                         pos += 4;
                         uint8_t readLen = decrypted[pos++];
-                        LOG_DEBUG("Warden:   MEM offset=0x", [&]{char s[12];snprintf(s,12,"%08x",offset);return std::string(s);}(),
-                                 " len=", (int)readLen);
-                        if (!moduleName.empty()) {
-                            LOG_DEBUG("Warden:   MEM module=\"", moduleName, "\"");
-                        }
+                        LOG_WARNING("Warden:   (sync) MEM offset=0x", [&]{char s[12];snprintf(s,12,"%08x",offset);return std::string(s);}(),
+                                 " len=", (int)readLen,
+                                 moduleName.empty() ? "" : (" module=\"" + moduleName + "\""));
 
                         // Lazy-load WoW.exe PE image on first MEM_CHECK
                         if (!wardenMemory_) {
@@ -9905,6 +9922,21 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                         std::vector<uint8_t> memBuf(readLen, 0);
                         if (wardenMemory_->isLoaded() && wardenMemory_->readMemory(offset, readLen, memBuf.data())) {
                             LOG_DEBUG("Warden:   MEM_CHECK served from PE image");
+                        } else if (wardenLoadedModule_ && wardenLoadedModule_->isLoaded()) {
+                            // Try Warden module memory (addresses outside PE range)
+                            uint32_t modBase = offset & ~0xFFFFu; // 64KB-aligned base guess
+                            uint32_t modOfs = offset - modBase;
+                            const auto& modData = wardenLoadedModule_->getDecompressedData();
+                            if (modOfs + readLen <= modData.size()) {
+                                std::memcpy(memBuf.data(), modData.data() + modOfs, readLen);
+                                LOG_WARNING("Warden:   MEM_CHECK served from Warden module (base=0x",
+                                            [&]{char s[12];snprintf(s,12,"%08x",modBase);return std::string(s);}(),
+                                            " offset=0x",
+                                            [&]{char s[12];snprintf(s,12,"%x",modOfs);return std::string(s);}(), ")");
+                            } else {
+                                LOG_WARNING("Warden:   MEM_CHECK fallback to zeros for 0x",
+                                            [&]{char s[12];snprintf(s,12,"%08x",offset);return std::string(s);}());
+                            }
                         } else {
                             LOG_WARNING("Warden:   MEM_CHECK fallback to zeros for 0x",
                                         [&]{char s[12];snprintf(s,12,"%08x",offset);return std::string(s);}());
@@ -9954,7 +9986,16 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                                            (uint32_t(p[26]) << 16) | (uint32_t(p[27]) << 24);
                             uint8_t len = p[28];
                             if (isKnownWantedCodeScan(seedBytes, reqHash, off, len)) {
-                                pageResult = 0x4A; // PatternFound
+                                pageResult = 0x4A;
+                            } else if (wardenMemory_ && wardenMemory_->isLoaded() && len > 0) {
+                                if (wardenMemory_->searchCodePattern(seedBytes, reqHash, len, true))
+                                    pageResult = 0x4A;
+                            }
+                            // Turtle fallback for integrity checks
+                            if (pageResult == 0x00 && isActiveExpansion("turtle") && off < 0x600000) {
+                                pageResult = 0x4A;
+                                LOG_WARNING("Warden:   PAGE_A turtle-fallback for offset=0x",
+                                            [&]{char s[12];snprintf(s,12,"%08x",off);return std::string(s);}());
                             }
                         }
                         LOG_DEBUG("Warden:   PAGE_A request bytes=", consume,
@@ -10122,7 +10163,18 @@ void GameHandler::handleWardenData(network::Packet& packet) {
                 }
             }
 
-            LOG_DEBUG("Warden: Parsed ", checkCount, " checks, result data size=", resultData.size());
+            // Log synchronous round summary at WARNING level for diagnostics
+            {
+                int syncCounts[10] = {};
+                // Re-count (we don't have per-check counters in sync path yet)
+                LOG_WARNING("Warden: (sync) Parsed ", checkCount, " checks, resultSize=", resultData.size());
+                std::string fullHex;
+                for (size_t bi = 0; bi < resultData.size(); bi++) {
+                    char hx[4]; snprintf(hx, 4, "%02x ", resultData[bi]); fullHex += hx;
+                    if ((bi + 1) % 32 == 0 && bi + 1 < resultData.size()) fullHex += "\n                    ";
+                }
+                LOG_WARNING("Warden: (sync) RESPONSE_HEX [", fullHex, "]");
+            }
 
             // --- Compute checksum: XOR of 5 uint32s from SHA1(resultData) ---
             auto resultHash = auth::Crypto::sha1(resultData);
