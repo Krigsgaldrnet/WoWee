@@ -1228,7 +1228,7 @@ bool TbcPacketParsers::parseMailList(network::Packet& packet, std::vector<MailMe
         }
     }
 
-    return !inbox.empty();
+    return true;
 }
 
 // ============================================================================
