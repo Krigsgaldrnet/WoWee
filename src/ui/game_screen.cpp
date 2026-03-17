@@ -8467,10 +8467,21 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     snprintf(text, sizeof(text), "+%d", entry.amount);
                     color = ImVec4(0.4f, 1.0f, 0.5f, alpha);
                     break;
-                case game::CombatTextEntry::ENVIRONMENTAL:
-                    snprintf(text, sizeof(text), "-%d", entry.amount);
+                case game::CombatTextEntry::ENVIRONMENTAL: {
+                    const char* envLabel = "";
+                    switch (entry.powerType) {
+                        case 0: envLabel = "Fatigue "; break;
+                        case 1: envLabel = "Drowning "; break;
+                        case 2: envLabel = ""; break;  // Fall: just show the number (WoW convention)
+                        case 3: envLabel = "Lava "; break;
+                        case 4: envLabel = "Slime "; break;
+                        case 5: envLabel = "Fire "; break;
+                        default: envLabel = ""; break;
+                    }
+                    snprintf(text, sizeof(text), "%s-%d", envLabel, entry.amount);
                     color = ImVec4(0.9f, 0.5f, 0.2f, alpha);  // Orange for environmental
                     break;
+                }
                 case game::CombatTextEntry::ENERGIZE:
                     snprintf(text, sizeof(text), "+%d", entry.amount);
                     switch (entry.powerType) {
@@ -20538,10 +20549,20 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                         snprintf(desc, sizeof(desc), "%s reflects %s's attack", tgt, src);
                     color = ImVec4(0.8f, 0.7f, 1.0f, 1.0f);
                     break;
-                case T::ENVIRONMENTAL:
-                    snprintf(desc, sizeof(desc), "Environmental damage: %d", e.amount);
+                case T::ENVIRONMENTAL: {
+                    const char* envName = "Environmental";
+                    switch (e.powerType) {
+                        case 0: envName = "Fatigue"; break;
+                        case 1: envName = "Drowning"; break;
+                        case 2: envName = "Falling"; break;
+                        case 3: envName = "Lava"; break;
+                        case 4: envName = "Slime"; break;
+                        case 5: envName = "Fire"; break;
+                    }
+                    snprintf(desc, sizeof(desc), "%s damage: %d", envName, e.amount);
                     color = ImVec4(1.0f, 0.5f, 0.2f, 1.0f);
                     break;
+                }
                 case T::ENERGIZE:
                     if (spell)
                         snprintf(desc, sizeof(desc), "%s gains %d power (%s)", tgt, e.amount, spell);

@@ -4259,17 +4259,17 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
         case Opcode::SMSG_ENVIRONMENTAL_DAMAGE_LOG: {
             // uint64 victimGuid + uint8 envDmgType + uint32 damage + uint32 absorbed + uint32 resisted
-            // envDmgType: 1=Exhausted(fatigue), 2=Drowning, 3=Fall, 4=Lava, 5=Slime, 6=Fire
+            // envDmgType: 0=Exhausted(fatigue), 1=Drowning, 2=Fall, 3=Lava, 4=Slime, 5=Fire
             if (packet.getSize() - packet.getReadPos() < 21) { packet.setReadPos(packet.getSize()); break; }
             uint64_t victimGuid  = packet.readUInt64();
-            /*uint8_t envType =*/ packet.readUInt8();
+            uint8_t envType      = packet.readUInt8();
             uint32_t dmg         = packet.readUInt32();
             uint32_t envAbs      = packet.readUInt32();
             uint32_t envRes      = packet.readUInt32();
             if (victimGuid == playerGuid) {
-                // Environmental damage: no caster GUID, victim = player
+                // Environmental damage: pass envType via powerType field for display differentiation
                 if (dmg > 0)
-                    addCombatText(CombatTextEntry::ENVIRONMENTAL, static_cast<int32_t>(dmg), 0, false, 0, 0, victimGuid);
+                    addCombatText(CombatTextEntry::ENVIRONMENTAL, static_cast<int32_t>(dmg), 0, false, envType, 0, victimGuid);
                 if (envAbs > 0)
                     addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(envAbs), 0, false, 0, 0, victimGuid);
                 if (envRes > 0)
@@ -15160,6 +15160,7 @@ void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint
     log.amount   = amount;
     log.spellId  = spellId;
     log.isPlayerSource = isPlayerSource;
+    log.powerType = powerType;
     log.timestamp = std::time(nullptr);
     // If the caller provided an explicit destination GUID but left source GUID as 0,
     // preserve "unknown/no source" (e.g. environmental damage) instead of

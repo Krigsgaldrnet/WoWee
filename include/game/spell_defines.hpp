@@ -74,6 +74,7 @@ struct CombatLogEntry {
     int32_t  amount       = 0;
     uint32_t spellId      = 0;
     bool     isPlayerSource = false;
+    uint8_t  powerType    = 0;   // For ENERGIZE/DRAIN: power type; for ENVIRONMENTAL: env damage type
     time_t   timestamp    = 0;   // Wall-clock time (std::time(nullptr))
     std::string sourceName;      // Resolved display name of attacker/caster
     std::string targetName;      // Resolved display name of victim/target
