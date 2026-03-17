@@ -4257,10 +4257,9 @@ bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data, 
     data.gold = packet.readUInt32();
     uint8_t itemCount = packet.readUInt8();
 
-    // Item wire size:
-    //   WotLK 3.3.5a: slot(1)+itemId(4)+count(4)+displayInfo(4)+randSuffix(4)+randProp(4)+slotType(1) = 22
-    //   Classic/TBC:  slot(1)+itemId(4)+count(4)+displayInfo(4)+slotType(1)                          = 14
-    const size_t kItemSize = isWotlkFormat ? 22u : 14u;
+    // Per-item wire size is 22 bytes across all expansions:
+    //   slot(1)+itemId(4)+count(4)+displayInfo(4)+randSuffix(4)+randProp(4)+slotType(1) = 22
+    constexpr size_t kItemSize = 22u;
 
     auto parseLootItemList = [&](uint8_t listCount, bool markQuestItems) -> bool {
         for (uint8_t i = 0; i < listCount; ++i) {
@@ -4270,21 +4269,14 @@ bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data, 
             }
 
             LootItem item;
-            item.slotIndex     = packet.readUInt8();
-            item.itemId        = packet.readUInt32();
-            item.count         = packet.readUInt32();
-            item.displayInfoId = packet.readUInt32();
-
-            if (isWotlkFormat) {
-                item.randomSuffix     = packet.readUInt32();
-                item.randomPropertyId = packet.readUInt32();
-            } else {
-                item.randomSuffix     = 0;
-                item.randomPropertyId = 0;
-            }
-
-            item.lootSlotType = packet.readUInt8();
-            item.isQuestItem  = markQuestItems;
+            item.slotIndex        = packet.readUInt8();
+            item.itemId           = packet.readUInt32();
+            item.count            = packet.readUInt32();
+            item.displayInfoId    = packet.readUInt32();
+            item.randomSuffix     = packet.readUInt32();
+            item.randomPropertyId = packet.readUInt32();
+            item.lootSlotType     = packet.readUInt8();
+            item.isQuestItem      = markQuestItems;
             data.items.push_back(item);
         }
         return true;
@@ -4296,8 +4288,9 @@ bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data, 
         return false;
     }
 
+    // Quest item section only present in WotLK 3.3.5a
     uint8_t questItemCount = 0;
-    if (packet.getSize() - packet.getReadPos() >= 1) {
+    if (isWotlkFormat && packet.getSize() - packet.getReadPos() >= 1) {
         questItemCount = packet.readUInt8();
         data.items.reserve(data.items.size() + questItemCount);
         if (!parseLootItemList(questItemCount, true)) {

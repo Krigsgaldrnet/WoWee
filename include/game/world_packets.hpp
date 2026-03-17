@@ -2060,8 +2060,9 @@ public:
 /** SMSG_LOOT_RESPONSE parser */
 class LootResponseParser {
 public:
-    // isWotlkFormat: true for WotLK 3.3.5a (22 bytes/item with randomSuffix+randomProp),
-    //                false for Classic 1.12 and TBC 2.4.3 (14 bytes/item).
+    // isWotlkFormat: true for WotLK (has trailing quest item section),
+    //                false for Classic/TBC (no quest item section).
+    //                Per-item size is 22 bytes across all expansions.
     static bool parse(network::Packet& packet, LootResponseData& data, bool isWotlkFormat = true);
 };
 
