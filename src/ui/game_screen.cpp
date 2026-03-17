@@ -1560,6 +1560,76 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                     ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "Socket Bonus: (id %u)", info->socketBonus);
             }
         }
+        // Item set membership
+        if (info->itemSetId != 0) {
+            struct SetEntry {
+                std::string name;
+                std::array<uint32_t, 10> itemIds{};
+                std::array<uint32_t, 10> spellIds{};
+                std::array<uint32_t, 10> thresholds{};
+            };
+            static std::unordered_map<uint32_t, SetEntry> s_setData;
+            static bool s_setDataLoaded = false;
+            if (!s_setDataLoaded && assetMgr) {
+                s_setDataLoaded = true;
+                auto dbc = assetMgr->loadDBC("ItemSet.dbc");
+                if (dbc && dbc->isLoaded()) {
+                    const auto* layout = pipeline::getActiveDBCLayout()
+                        ? pipeline::getActiveDBCLayout()->getLayout("ItemSet") : nullptr;
+                    auto lf = [&](const char* k, uint32_t def) -> uint32_t {
+                        return layout ? (*layout)[k] : def;
+                    };
+                    uint32_t idF = lf("ID", 0), nameF = lf("Name", 1);
+                    static const char* itemKeys[10]  = {"Item0","Item1","Item2","Item3","Item4","Item5","Item6","Item7","Item8","Item9"};
+                    static const char* spellKeys[10] = {"Spell0","Spell1","Spell2","Spell3","Spell4","Spell5","Spell6","Spell7","Spell8","Spell9"};
+                    static const char* thrKeys[10]   = {"Threshold0","Threshold1","Threshold2","Threshold3","Threshold4","Threshold5","Threshold6","Threshold7","Threshold8","Threshold9"};
+                    for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                        uint32_t id = dbc->getUInt32(r, idF);
+                        if (!id) continue;
+                        SetEntry e;
+                        e.name = dbc->getString(r, nameF);
+                        for (int i = 0; i < 10; ++i) {
+                            e.itemIds[i]    = dbc->getUInt32(r, layout ? (*layout)[itemKeys[i]]  : uint32_t(18 + i));
+                            e.spellIds[i]   = dbc->getUInt32(r, layout ? (*layout)[spellKeys[i]] : uint32_t(28 + i));
+                            e.thresholds[i] = dbc->getUInt32(r, layout ? (*layout)[thrKeys[i]]   : uint32_t(38 + i));
+                        }
+                        s_setData[id] = std::move(e);
+                    }
+                }
+            }
+            ImGui::Spacing();
+            const auto& inv = gameHandler.getInventory();
+            auto setIt = s_setData.find(info->itemSetId);
+            if (setIt != s_setData.end()) {
+                const SetEntry& se = setIt->second;
+                int equipped = 0, total = 0;
+                for (int i = 0; i < 10; ++i) {
+                    if (se.itemIds[i] == 0) continue;
+                    ++total;
+                    for (int sl = 0; sl < game::Inventory::NUM_EQUIP_SLOTS; sl++) {
+                        const auto& eq = inv.getEquipSlot(static_cast<game::EquipSlot>(sl));
+                        if (!eq.empty() && eq.item.itemId == se.itemIds[i]) { ++equipped; break; }
+                    }
+                }
+                if (total > 0)
+                    ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f),
+                        "%s (%d/%d)", se.name.empty() ? "Set" : se.name.c_str(), equipped, total);
+                else if (!se.name.empty())
+                    ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "%s", se.name.c_str());
+                for (int i = 0; i < 10; ++i) {
+                    if (se.spellIds[i] == 0 || se.thresholds[i] == 0) continue;
+                    const std::string& bname = gameHandler.getSpellName(se.spellIds[i]);
+                    bool active = (equipped >= static_cast<int>(se.thresholds[i]));
+                    ImVec4 col = active ? ImVec4(0.5f, 1.0f, 0.5f, 1.0f) : ImVec4(0.55f, 0.55f, 0.55f, 1.0f);
+                    if (!bname.empty())
+                        ImGui::TextColored(col, "(%u) %s", se.thresholds[i], bname.c_str());
+                    else
+                        ImGui::TextColored(col, "(%u) Set Bonus", se.thresholds[i]);
+                }
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Set (id %u)", info->itemSetId);
+            }
+        }
         // Item spell effects (Use / Equip / Chance on Hit / Teaches)
         for (const auto& sp : info->spells) {
             if (sp.spellId == 0) continue;
