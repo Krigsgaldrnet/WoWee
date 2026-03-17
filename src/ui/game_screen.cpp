@@ -8631,6 +8631,10 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     color = outgoing ? ImVec4(1.0f, 0.25f, 0.25f, alpha)
                                      : ImVec4(1.0f, 0.1f, 0.1f, alpha);
                     break;
+                case game::CombatTextEntry::HONOR_GAIN:
+                    snprintf(text, sizeof(text), "+%d Honor", entry.amount);
+                    color = ImVec4(1.0f, 0.85f, 0.0f, alpha);  // Gold for honor
+                    break;
                 default:
                     snprintf(text, sizeof(text), "%d", entry.amount);
                     color = ImVec4(1.0f, 1.0f, 1.0f, alpha);
@@ -20722,6 +20726,10 @@ void GameScreen::renderCombatLog(game::GameHandler& gameHandler) {
                     else
                         snprintf(desc, sizeof(desc), "%s instantly kills %s", src, tgt);
                     color = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+                    break;
+                case T::HONOR_GAIN:
+                    snprintf(desc, sizeof(desc), "You gain %d honor", e.amount);
+                    color = ImVec4(1.0f, 0.85f, 0.0f, 1.0f);
                     break;
                 default:
                     snprintf(desc, sizeof(desc), "Combat event (type %d, amount %d)", (int)e.type, e.amount);
