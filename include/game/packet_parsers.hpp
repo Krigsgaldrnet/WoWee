@@ -370,6 +370,9 @@ public:
     bool parseGuildRoster(network::Packet& packet, GuildRosterData& data) override;
     // TBC 2.4.3 SMSG_QUESTGIVER_STATUS: uint32 status (WotLK uses uint8)
     uint8_t readQuestGiverStatus(network::Packet& packet) override;
+    // TBC 2.4.3 SMSG_GAMEOBJECT_QUERY_RESPONSE: 2 extra strings after names
+    // (iconName + castBarCaption); WotLK has 3 (adds unk1)
+    bool parseGameObjectQueryResponse(network::Packet& packet, GameObjectQueryResponseData& data) override;
     // TBC 2.4.3 CMSG_JOIN_CHANNEL: name+password only (WotLK prepends channelId+hasVoice+joinedByZone)
     network::Packet buildJoinChannel(const std::string& channelName, const std::string& password) override;
     // TBC 2.4.3 CMSG_LEAVE_CHANNEL: name only (WotLK prepends channelId)

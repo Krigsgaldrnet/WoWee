@@ -1581,6 +1581,71 @@ network::Packet TbcPacketParsers::buildLeaveChannel(const std::string& channelNa
 }
 
 // ============================================================================
+// TBC 2.4.3 SMSG_GAMEOBJECT_QUERY_RESPONSE
+// TBC has 2 extra strings after name[4] (iconName + castBarCaption).
+// WotLK has 3 (adds unk1). Classic has 0.
+// ============================================================================
+
+bool TbcPacketParsers::parseGameObjectQueryResponse(network::Packet& packet, GameObjectQueryResponseData& data) {
+    if (packet.getSize() < 4) {
+        LOG_ERROR("TBC SMSG_GAMEOBJECT_QUERY_RESPONSE: packet too small (", packet.getSize(), " bytes)");
+        return false;
+    }
+
+    data.entry = packet.readUInt32();
+
+    if (data.entry & 0x80000000) {
+        data.entry &= ~0x80000000;
+        data.name = "";
+        return true;
+    }
+
+    if (packet.getSize() - packet.getReadPos() < 8) {
+        LOG_ERROR("TBC SMSG_GAMEOBJECT_QUERY_RESPONSE: truncated before names (entry=", data.entry, ")");
+        return false;
+    }
+
+    data.type = packet.readUInt32();
+    data.displayId = packet.readUInt32();
+    // 4 name strings
+    data.name = packet.readString();
+    packet.readString();
+    packet.readString();
+    packet.readString();
+
+    // TBC: 2 extra strings (iconName + castBarCaption) — WotLK has 3, Classic has 0
+    packet.readString();  // iconName
+    packet.readString();  // castBarCaption
+
+    // Read 24 type-specific data fields
+    size_t remaining = packet.getSize() - packet.getReadPos();
+    if (remaining >= 24 * 4) {
+        for (int i = 0; i < 24; i++) {
+            data.data[i] = packet.readUInt32();
+        }
+        data.hasData = true;
+    } else if (remaining > 0) {
+        uint32_t fieldsToRead = remaining / 4;
+        for (uint32_t i = 0; i < fieldsToRead && i < 24; i++) {
+            data.data[i] = packet.readUInt32();
+        }
+        if (fieldsToRead < 24) {
+            LOG_WARNING("TBC SMSG_GAMEOBJECT_QUERY_RESPONSE: truncated in data fields (", fieldsToRead,
+                        " of 24, entry=", data.entry, ")");
+        }
+    }
+
+    if (data.type == 15) { // MO_TRANSPORT
+        LOG_DEBUG("TBC GO query: MO_TRANSPORT entry=", data.entry,
+                  " name=\"", data.name, "\" displayId=", data.displayId,
+                  " taxiPathId=", data.data[0], " moveSpeed=", data.data[1]);
+    } else {
+        LOG_DEBUG("TBC GO query: ", data.name, " type=", data.type, " entry=", data.entry);
+    }
+    return true;
+}
+
+// ============================================================================
 // TBC 2.4.3 guild roster parser
 // Same rank structure as WotLK (variable rankCount + goldLimit + bank tabs),
 // but NO gender byte per member (WotLK added it).
