@@ -4785,10 +4785,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 // Show purchase confirmation with item name if available
                 if (pendingBuyItemId_ != 0) {
                     std::string itemLabel;
-                    if (const ItemQueryResponseData* info = getItemInfo(pendingBuyItemId_))
+                    uint32_t buyQuality = 1;
+                    if (const ItemQueryResponseData* info = getItemInfo(pendingBuyItemId_)) {
                         if (!info->name.empty()) itemLabel = info->name;
+                        buyQuality = info->quality;
+                    }
                     if (itemLabel.empty()) itemLabel = "item #" + std::to_string(pendingBuyItemId_);
-                    std::string msg = "Purchased: " + itemLabel;
+                    std::string msg = "Purchased: " + buildItemLink(pendingBuyItemId_, buyQuality, itemLabel);
                     if (itemCount > 1) msg += " x" + std::to_string(itemCount);
                     addSystemChatMessage(msg);
                     if (auto* renderer = core::Application::getInstance().getRenderer()) {
@@ -6904,7 +6907,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
                             const ItemQueryResponseData* info = getItemInfo(feedItem);
                             std::string itemName = info && !info->name.empty()
                                 ? info->name : ("item #" + std::to_string(feedItem));
-                            addSystemChatMessage("You feed your pet " + itemName + ".");
+                            uint32_t feedQuality = info ? info->quality : 1u;
+                            addSystemChatMessage("You feed your pet " + buildItemLink(feedItem, feedQuality, itemName) + ".");
                             LOG_DEBUG("SMSG_SPELLLOGEXECUTE FEED_PET: item=", feedItem, " name=", itemName);
                         }
                     }
@@ -16334,9 +16338,12 @@ void GameHandler::handleLfgPlayerReward(network::Packet& packet) {
             packet.readUInt8();  // unk
             if (i == 0) {
                 std::string itemLabel = "item #" + std::to_string(itemId);
-                if (const ItemQueryResponseData* info = getItemInfo(itemId))
+                uint32_t lfgItemQuality = 1;
+                if (const ItemQueryResponseData* info = getItemInfo(itemId)) {
                     if (!info->name.empty()) itemLabel = info->name;
-                rewardMsg += ", " + itemLabel;
+                    lfgItemQuality = info->quality;
+                }
+                rewardMsg += ", " + buildItemLink(itemId, lfgItemQuality, itemLabel);
                 if (itemCount > 1) rewardMsg += " x" + std::to_string(itemCount);
             }
         }
