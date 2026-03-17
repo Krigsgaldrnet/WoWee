@@ -2499,9 +2499,43 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 SDL_SCANCODE_9, SDL_SCANCODE_0, SDL_SCANCODE_MINUS, SDL_SCANCODE_EQUALS
             };
             const bool shiftDown = input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT);
+            const bool ctrlDown  = input.isKeyPressed(SDL_SCANCODE_LCTRL)  || input.isKeyPressed(SDL_SCANCODE_RCTRL);
             const auto& bar = gameHandler.getActionBar();
+
+            // Ctrl+1..Ctrl+8 → switch stance/form/presence (WoW default bindings).
+            // Only fires for classes that use a stance bar; same slot ordering as
+            // renderStanceBar: Warrior, DK, Druid, Rogue, Priest.
+            if (ctrlDown) {
+                static const uint32_t warriorStances[]  = { 2457, 71, 2458 };
+                static const uint32_t dkPresences[]     = { 48266, 48263, 48265 };
+                static const uint32_t druidForms[]      = { 5487, 9634, 768, 783, 1066, 24858, 33891, 33943, 40120 };
+                static const uint32_t rogueForms[]      = { 1784 };
+                static const uint32_t priestForms[]     = { 15473 };
+                const uint32_t* stArr = nullptr; int stCnt = 0;
+                switch (gameHandler.getPlayerClass()) {
+                    case 1:  stArr = warriorStances; stCnt = 3; break;
+                    case 6:  stArr = dkPresences;    stCnt = 3; break;
+                    case 11: stArr = druidForms;     stCnt = 9; break;
+                    case 4:  stArr = rogueForms;     stCnt = 1; break;
+                    case 5:  stArr = priestForms;    stCnt = 1; break;
+                }
+                if (stArr) {
+                    const auto& known = gameHandler.getKnownSpells();
+                    // Build available list (same order as UI)
+                    std::vector<uint32_t> avail;
+                    avail.reserve(stCnt);
+                    for (int i = 0; i < stCnt; ++i)
+                        if (known.count(stArr[i])) avail.push_back(stArr[i]);
+                    // Ctrl+1 = first stance, Ctrl+2 = second, …
+                    for (int i = 0; i < static_cast<int>(avail.size()) && i < 8; ++i) {
+                        if (input.isKeyJustPressed(actionBarKeys[i]))
+                            gameHandler.castSpell(avail[i]);
+                    }
+                }
+            }
+
             for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i) {
-                if (input.isKeyJustPressed(actionBarKeys[i])) {
+                if (!ctrlDown && input.isKeyJustPressed(actionBarKeys[i])) {
                     int slotIdx = shiftDown ? (game::GameHandler::SLOTS_PER_BAR + i) : i;
                     if (bar[slotIdx].type == game::ActionBarSlot::SPELL && bar[slotIdx].isReady()) {
                         uint64_t target = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
