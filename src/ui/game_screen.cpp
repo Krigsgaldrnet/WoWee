@@ -8574,11 +8574,16 @@ void GameScreen::renderCombatText(game::GameHandler& gameHandler) {
                     color = outgoing ? ImVec4(0.7f, 0.7f, 0.7f, alpha)
                                      : ImVec4(0.5f, 0.9f, 1.0f, alpha);
                     break;
-                case game::CombatTextEntry::REFLECT:
-                    snprintf(text, sizeof(text), outgoing ? "Reflected" : "You Reflect");
+                case game::CombatTextEntry::REFLECT: {
+                    const std::string& reflectName = entry.spellId ? gameHandler.getSpellName(entry.spellId) : "";
+                    if (!reflectName.empty())
+                        snprintf(text, sizeof(text), outgoing ? "Reflected: %s" : "Reflect: %s", reflectName.c_str());
+                    else
+                        snprintf(text, sizeof(text), outgoing ? "Reflected" : "You Reflect");
                     color = outgoing ? ImVec4(0.85f, 0.75f, 1.0f, alpha)
                                      : ImVec4(0.75f, 0.85f, 1.0f, alpha);
                     break;
+                }
                 case game::CombatTextEntry::PROC_TRIGGER: {
                     const std::string& procName = entry.spellId ? gameHandler.getSpellName(entry.spellId) : "";
                     if (!procName.empty())
