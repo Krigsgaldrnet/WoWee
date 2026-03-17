@@ -381,6 +381,13 @@ private:
     void initOverlayPipeline();
     void renderOverlay(const glm::vec4& color, VkCommandBuffer overrideCmd = VK_NULL_HANDLE);
 
+    // Brightness (1.0 = default, <1 darkens, >1 brightens)
+    float brightness_ = 1.0f;
+public:
+    void setBrightness(float b) { brightness_ = b; }
+    float getBrightness() const { return brightness_; }
+private:
+
     // FSR 1.0 upscaling state
     struct FSRState {
         bool enabled = false;

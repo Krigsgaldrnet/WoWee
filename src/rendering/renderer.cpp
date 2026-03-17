@@ -5287,6 +5287,13 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                     renderOverlay(tint, cmd);
                 }
             }
+            // Brightness overlay (applied before minimap so it doesn't affect UI)
+            if (brightness_ < 0.99f) {
+                renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - brightness_), cmd);
+            } else if (brightness_ > 1.01f) {
+                float alpha = (brightness_ - 1.0f) / 1.0f; // maps 1.0-2.0 → 0.0-1.0
+                renderOverlay(glm::vec4(1.0f, 1.0f, 1.0f, alpha), cmd);
+            }
             if (minimap && minimap->isEnabled() && camera && window) {
                 glm::vec3 minimapCenter = camera->getPosition();
                 if (cameraController && cameraController->isThirdPerson())
@@ -5420,6 +5427,13 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                     : glm::vec4(0.03f, 0.09f, 0.18f, fogStrength);
                 renderOverlay(tint);
             }
+        }
+        // Brightness overlay (applied before minimap so it doesn't affect UI)
+        if (brightness_ < 0.99f) {
+            renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - brightness_));
+        } else if (brightness_ > 1.01f) {
+            float alpha = (brightness_ - 1.0f) / 1.0f;
+            renderOverlay(glm::vec4(1.0f, 1.0f, 1.0f, alpha));
         }
         if (minimap && minimap->isEnabled() && camera && window) {
             glm::vec3 minimapCenter = camera->getPosition();

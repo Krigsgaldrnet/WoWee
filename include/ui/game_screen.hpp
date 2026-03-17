@@ -171,6 +171,7 @@ private:
     bool pendingShadows = true;
     float pendingShadowDistance = 300.0f;
     bool pendingWaterRefraction = false;
+    int pendingBrightness = 50; // 0-100, maps to 0.0-2.0 (50 = 1.0 default)
     int pendingMasterVolume = 100;
     int pendingMusicVolume = 30;
     int pendingAmbientVolume = 100;

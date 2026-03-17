@@ -14900,6 +14900,16 @@ void GameScreen::renderSettingsWindow() {
                 ImGui::Separator();
                 ImGui::Spacing();
 
+                ImGui::SetNextItemWidth(200.0f);
+                if (ImGui::SliderInt("Brightness", &pendingBrightness, 0, 100, "%d%%")) {
+                    if (renderer) renderer->setBrightness(static_cast<float>(pendingBrightness) / 50.0f);
+                    saveSettings();
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
                 if (ImGui::Button("Restore Video Defaults", ImVec2(-1, 0))) {
                     pendingFullscreen = kDefaultFullscreen;
                     pendingVsync = kDefaultVsync;
@@ -14912,9 +14922,11 @@ void GameScreen::renderSettingsWindow() {
                     pendingPOM = true;
                     pendingPOMQuality = 1;
                     pendingResIndex = defaultResIndex;
+                    pendingBrightness = 50;
                     window->setFullscreen(pendingFullscreen);
                     window->setVsync(pendingVsync);
                     window->applyResolution(kResolutions[pendingResIndex][0], kResolutions[pendingResIndex][1]);
+                    if (renderer) renderer->setBrightness(1.0f);
                     pendingWaterRefraction = false;
                     if (renderer) {
                         renderer->setShadowsEnabled(pendingShadows);
@@ -17284,6 +17296,7 @@ void GameScreen::saveSettings() {
     out << "ground_clutter_density=" << pendingGroundClutterDensity << "\n";
     out << "shadows=" << (pendingShadows ? 1 : 0) << "\n";
     out << "shadow_distance=" << pendingShadowDistance << "\n";
+    out << "brightness=" << pendingBrightness << "\n";
     out << "water_refraction=" << (pendingWaterRefraction ? 1 : 0) << "\n";
     out << "antialiasing=" << pendingAntiAliasing << "\n";
     out << "fxaa=" << (pendingFXAA ? 1 : 0) << "\n";
@@ -17428,6 +17441,11 @@ void GameScreen::loadSettings() {
             else if (key == "ground_clutter_density") pendingGroundClutterDensity = std::clamp(std::stoi(val), 0, 150);
             else if (key == "shadows") pendingShadows = (std::stoi(val) != 0);
             else if (key == "shadow_distance") pendingShadowDistance = std::clamp(std::stof(val), 40.0f, 500.0f);
+            else if (key == "brightness") {
+                pendingBrightness = std::clamp(std::stoi(val), 0, 100);
+                if (auto* r = core::Application::getInstance().getRenderer())
+                    r->setBrightness(static_cast<float>(pendingBrightness) / 50.0f);
+            }
             else if (key == "water_refraction") pendingWaterRefraction = (std::stoi(val) != 0);
             else if (key == "antialiasing") pendingAntiAliasing = std::clamp(std::stoi(val), 0, 3);
             else if (key == "fxaa") pendingFXAA = (std::stoi(val) != 0);
