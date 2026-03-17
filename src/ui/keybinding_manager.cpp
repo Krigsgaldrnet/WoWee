@@ -1,7 +1,7 @@
 #include "ui/keybinding_manager.hpp"
+#include "core/logger.hpp"
 #include <fstream>
 #include <sstream>
-#include <iostream>
 
 namespace wowee::ui {
 
@@ -101,7 +101,7 @@ const char* KeybindingManager::getActionName(Action action) {
 void KeybindingManager::loadFromConfigFile(const std::string& filePath) {
     std::ifstream file(filePath);
     if (!file.is_open()) {
-        std::cerr << "[KeybindingManager] Failed to open config file: " << filePath << std::endl;
+        LOG_ERROR("KeybindingManager: Failed to open config file: ", filePath);
         return;
     }
 
@@ -206,7 +206,7 @@ void KeybindingManager::loadFromConfigFile(const std::string& filePath) {
     }
 
     file.close();
-    std::cout << "[KeybindingManager] Loaded keybindings from " << filePath << std::endl;
+    LOG_INFO("KeybindingManager: Loaded keybindings from ", filePath);
 }
 
 void KeybindingManager::saveToConfigFile(const std::string& filePath) const {
@@ -301,9 +301,9 @@ void KeybindingManager::saveToConfigFile(const std::string& filePath) const {
     if (outFile.is_open()) {
         outFile << content;
         outFile.close();
-        std::cout << "[KeybindingManager] Saved keybindings to " << filePath << std::endl;
+        LOG_INFO("KeybindingManager: Saved keybindings to ", filePath);
     } else {
-        std::cerr << "[KeybindingManager] Failed to write config file: " << filePath << std::endl;
+        LOG_ERROR("KeybindingManager: Failed to write config file: ", filePath);
     }
 }
 

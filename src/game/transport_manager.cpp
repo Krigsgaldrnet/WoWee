@@ -9,7 +9,6 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <cmath>
-#include <iostream>
 #include <map>
 #include <algorithm>
 
@@ -31,13 +30,13 @@ void TransportManager::update(float deltaTime) {
 void TransportManager::registerTransport(uint64_t guid, uint32_t wmoInstanceId, uint32_t pathId, const glm::vec3& spawnWorldPos, uint32_t entry) {
     auto pathIt = paths_.find(pathId);
     if (pathIt == paths_.end()) {
-        std::cerr << "TransportManager: Path " << pathId << " not found for transport " << guid << std::endl;
+        LOG_ERROR("TransportManager: Path ", pathId, " not found for transport ", guid);
         return;
     }
 
     const auto& path = pathIt->second;
     if (path.points.empty()) {
-        std::cerr << "TransportManager: Path " << pathId << " has no waypoints" << std::endl;
+        LOG_ERROR("TransportManager: Path ", pathId, " has no waypoints");
         return;
     }
 
@@ -128,7 +127,7 @@ void TransportManager::registerTransport(uint64_t guid, uint32_t wmoInstanceId, 
 
 void TransportManager::unregisterTransport(uint64_t guid) {
     transports_.erase(guid);
-    std::cout << "TransportManager: Unregistered transport " << guid << std::endl;
+    LOG_INFO("TransportManager: Unregistered transport ", guid);
 }
 
 ActiveTransport* TransportManager::getTransport(uint64_t guid) {
@@ -168,7 +167,7 @@ glm::mat4 TransportManager::getTransportInvTransform(uint64_t transportGuid) {
 
 void TransportManager::loadPathFromNodes(uint32_t pathId, const std::vector<glm::vec3>& waypoints, bool looping, float speed) {
     if (waypoints.empty()) {
-        std::cerr << "TransportManager: Cannot load empty path " << pathId << std::endl;
+        LOG_ERROR("TransportManager: Cannot load empty path ", pathId);
         return;
     }
 
@@ -227,7 +226,7 @@ void TransportManager::loadPathFromNodes(uint32_t pathId, const std::vector<glm:
 void TransportManager::setDeckBounds(uint64_t guid, const glm::vec3& min, const glm::vec3& max) {
     auto* transport = getTransport(guid);
     if (!transport) {
-        std::cerr << "TransportManager: Cannot set deck bounds for unknown transport " << guid << std::endl;
+        LOG_ERROR("TransportManager: Cannot set deck bounds for unknown transport ", guid);
         return;
     }
 
