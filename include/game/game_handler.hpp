@@ -786,6 +786,12 @@ public:
     float getCastProgress() const { return castTimeTotal > 0 ? (castTimeTotal - castTimeRemaining) / castTimeTotal : 0.0f; }
     float getCastTimeRemaining() const { return castTimeRemaining; }
 
+    // Repeat-craft queue
+    void startCraftQueue(uint32_t spellId, int count);
+    void cancelCraftQueue();
+    int getCraftQueueRemaining() const { return craftQueueRemaining_; }
+    uint32_t getCraftQueueSpellId() const { return craftQueueSpellId_; }
+
     // Unit cast state (tracked per GUID for target frame + boss frames)
     struct UnitCastState {
         bool     casting         = false;
@@ -970,6 +976,7 @@ public:
     const std::map<uint32_t, PlayerSkill>& getPlayerSkills() const { return playerSkills_; }
     const std::string& getSkillName(uint32_t skillId) const;
     uint32_t getSkillCategory(uint32_t skillId) const;
+    bool isProfessionSpell(uint32_t spellId) const;
 
     // World entry callback (online mode - triggered when entering world)
     // Parameters: mapId, x, y, z (canonical WoW coords), isInitialEntry=true on first login or reconnect
@@ -2669,6 +2676,9 @@ private:
     bool castIsChannel = false;
     uint32_t currentCastSpellId = 0;
     float castTimeRemaining = 0.0f;
+    // Repeat-craft queue: re-cast the same profession spell N more times after current cast finishes
+    uint32_t craftQueueSpellId_ = 0;
+    int craftQueueRemaining_ = 0;
     // Per-unit cast state (keyed by GUID, populated from SMSG_SPELL_START)
     std::unordered_map<uint64_t, UnitCastState> unitCastStates_;
     uint64_t pendingGameObjectInteractGuid_ = 0;

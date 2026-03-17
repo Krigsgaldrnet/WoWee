@@ -2091,18 +2091,20 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                 std::string cmd = buf.substr(1, sp - 1);
                 for (char& c : cmd) c = std::tolower(c);
                 int detected = -1;
+                bool isReply = false;
                 if (cmd == "s" || cmd == "say") detected = 0;
                 else if (cmd == "y" || cmd == "yell" || cmd == "shout") detected = 1;
                 else if (cmd == "p" || cmd == "party") detected = 2;
                 else if (cmd == "g" || cmd == "guild") detected = 3;
                 else if (cmd == "w" || cmd == "whisper" || cmd == "tell" || cmd == "t") detected = 4;
+                else if (cmd == "r" || cmd == "reply") { detected = 4; isReply = true; }
                 else if (cmd == "raid" || cmd == "rsay" || cmd == "ra") detected = 5;
                 else if (cmd == "o" || cmd == "officer" || cmd == "osay") detected = 6;
                 else if (cmd == "bg" || cmd == "battleground") detected = 7;
                 else if (cmd == "rw" || cmd == "raidwarning") detected = 8;
                 else if (cmd == "i" || cmd == "instance") detected = 9;
                 else if (cmd.size() == 1 && cmd[0] >= '1' && cmd[0] <= '9') detected = 10; // /1, /2 etc.
-                if (detected >= 0 && (selectedChatType != detected || detected == 10)) {
+                if (detected >= 0 && (selectedChatType != detected || detected == 10 || isReply)) {
                     // For channel shortcuts, also update selectedChannelIdx
                     if (detected == 10) {
                         int chanIdx = cmd[0] - '1'; // /1 -> index 0, /2 -> index 1, etc.
@@ -2114,8 +2116,16 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                     selectedChatType = detected;
                     // Strip the prefix, keep only the message part
                     std::string remaining = buf.substr(sp + 1);
-                    // For whisper, first word after /w is the target
-                    if (detected == 4) {
+                    // /r reply: pre-fill whisper target from last whisper sender
+                    if (detected == 4 && isReply) {
+                        std::string lastSender = gameHandler.getLastWhisperSender();
+                        if (!lastSender.empty()) {
+                            strncpy(whisperTargetBuffer, lastSender.c_str(), sizeof(whisperTargetBuffer) - 1);
+                            whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                        }
+                        // remaining is the message — don't extract a target from it
+                    } else if (detected == 4) {
+                        // For whisper, first word after /w is the target
                         size_t msgStart = remaining.find(' ');
                         if (msgStart != std::string::npos) {
                             std::string wTarget = remaining.substr(0, msgStart);
@@ -2576,6 +2586,8 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 uint64_t closestHostileUnitGuid = 0;
                 float closestQuestGoT = 1e30f;
                 uint64_t closestQuestGoGuid = 0;
+                float closestGoT = 1e30f;
+                uint64_t closestGoGuid = 0;
                 const uint64_t myGuid = gameHandler.getPlayerGuid();
                 for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
                     auto t = entity->getType();
@@ -2598,16 +2610,8 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                                 heightOffset = 0.3f;
                             }
                         } else if (t == game::ObjectType::GAMEOBJECT) {
-                            // For GOs with no renderer instance yet, use a tight fallback
-                            // sphere so invisible/unloaded doodads aren't accidentally clicked.
-                            hitRadius = 1.2f;
-                            heightOffset = 1.0f;
-                            // Quest objective GOs should be easier to click.
-                            auto go = std::static_pointer_cast<game::GameObject>(entity);
-                            if (questObjectiveGoEntries.count(go->getEntry())) {
-                                hitRadius = 2.2f;
-                                heightOffset = 1.2f;
-                            }
+                            hitRadius = 2.5f;
+                            heightOffset = 1.2f;
                         }
                         hitCenter = core::coords::canonicalToRender(
                             glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
@@ -2626,12 +2630,18 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                                 closestHostileUnitGuid = guid;
                             }
                         }
-                        if (t == game::ObjectType::GAMEOBJECT && !questObjectiveGoEntries.empty()) {
-                            auto go = std::static_pointer_cast<game::GameObject>(entity);
-                            if (questObjectiveGoEntries.count(go->getEntry())) {
-                                if (hitT < closestQuestGoT) {
-                                    closestQuestGoT = hitT;
-                                    closestQuestGoGuid = guid;
+                        if (t == game::ObjectType::GAMEOBJECT) {
+                            if (hitT < closestGoT) {
+                                closestGoT = hitT;
+                                closestGoGuid = guid;
+                            }
+                            if (!questObjectiveGoEntries.empty()) {
+                                auto go = std::static_pointer_cast<game::GameObject>(entity);
+                                if (questObjectiveGoEntries.count(go->getEntry())) {
+                                    if (hitT < closestQuestGoT) {
+                                        closestQuestGoT = hitT;
+                                        closestQuestGoGuid = guid;
+                                    }
                                 }
                             }
                         }
@@ -2643,12 +2653,23 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                     }
                 }
 
-                // Prefer quest objective GOs over hostile monsters when both are hittable.
+                // Priority: quest GO > closer of (GO, hostile unit) > closest anything.
                 if (closestQuestGoGuid != 0) {
                     closestGuid = closestQuestGoGuid;
                     closestType = game::ObjectType::GAMEOBJECT;
+                } else if (closestGoGuid != 0 && closestHostileUnitGuid != 0) {
+                    // Both a GO and hostile unit were hit — prefer whichever is closer.
+                    if (closestGoT <= closestHostileUnitT) {
+                        closestGuid = closestGoGuid;
+                        closestType = game::ObjectType::GAMEOBJECT;
+                    } else {
+                        closestGuid = closestHostileUnitGuid;
+                        closestType = game::ObjectType::UNIT;
+                    }
+                } else if (closestGoGuid != 0) {
+                    closestGuid = closestGoGuid;
+                    closestType = game::ObjectType::GAMEOBJECT;
                 } else if (closestHostileUnitGuid != 0) {
-                    // Prefer hostile monsters over nearby gameobjects/others when right-click picking.
                     closestGuid = closestHostileUnitGuid;
                     closestType = game::ObjectType::UNIT;
                 }
@@ -5951,6 +5972,28 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     message = "";
                     isChannelCommand = true;
                 }
+            } else if (cmdLower == "r" || cmdLower == "reply") {
+                switchChatType = 4;
+                std::string lastSender = gameHandler.getLastWhisperSender();
+                if (lastSender.empty()) {
+                    game::MessageChatData sysMsg;
+                    sysMsg.type = game::ChatType::SYSTEM;
+                    sysMsg.language = game::ChatLanguage::UNIVERSAL;
+                    sysMsg.message = "No one has whispered you yet.";
+                    gameHandler.addLocalChatMessage(sysMsg);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+                target = lastSender;
+                strncpy(whisperTargetBuffer, target.c_str(), sizeof(whisperTargetBuffer) - 1);
+                whisperTargetBuffer[sizeof(whisperTargetBuffer) - 1] = '\0';
+                if (spacePos != std::string::npos) {
+                    message = command.substr(spacePos + 1);
+                    type = game::ChatType::WHISPER;
+                } else {
+                    message = "";
+                }
+                isChannelCommand = true;
             }
 
             // Check for emote commands
@@ -13624,6 +13667,7 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
         }
 
         const auto& trainer = gameHandler.getTrainerSpells();
+        const bool isProfessionTrainer = (trainer.trainerType == 2);
 
         // NPC name
         auto npcEntity = gameHandler.getEntityManager().getEntity(trainer.trainerGuid);
@@ -13844,11 +13888,21 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                         logCount++;
                     }
 
-                    if (!canTrain) ImGui::BeginDisabled();
-                    if (ImGui::SmallButton("Train")) {
-                        gameHandler.trainSpell(spell->spellId);
+                    if (isProfessionTrainer && alreadyKnown) {
+                        // Profession trainer: known recipes show "Create" button to craft
+                        bool isCasting = gameHandler.isCasting();
+                        if (isCasting) ImGui::BeginDisabled();
+                        if (ImGui::SmallButton("Create")) {
+                            gameHandler.castSpell(spell->spellId, 0);
+                        }
+                        if (isCasting) ImGui::EndDisabled();
+                    } else {
+                        if (!canTrain) ImGui::BeginDisabled();
+                        if (ImGui::SmallButton("Train")) {
+                            gameHandler.trainSpell(spell->spellId);
+                        }
+                        if (!canTrain) ImGui::EndDisabled();
                     }
-                    if (!canTrain) ImGui::EndDisabled();
 
                     ImGui::PopID();
                 }
@@ -13952,6 +14006,79 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
                 }
             }
             if (!hasTrainable) ImGui::EndDisabled();
+
+            // Profession trainer: craft quantity controls
+            if (isProfessionTrainer) {
+                ImGui::Separator();
+                static int craftQuantity = 1;
+                static uint32_t selectedCraftSpell = 0;
+
+                // Show craft queue status if active
+                int queueRemaining = gameHandler.getCraftQueueRemaining();
+                if (queueRemaining > 0) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f),
+                        "Crafting... %d remaining", queueRemaining);
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Stop")) {
+                        gameHandler.cancelCraftQueue();
+                        gameHandler.cancelCast();
+                    }
+                } else {
+                    // Spell selector + quantity input
+                    // Build list of known (craftable) spells
+                    std::vector<const game::TrainerSpell*> craftable;
+                    for (const auto& spell : trainer.spells) {
+                        if (isKnown(spell.spellId)) {
+                            craftable.push_back(&spell);
+                        }
+                    }
+                    if (!craftable.empty()) {
+                        // Combo box for recipe selection
+                        const char* previewName = "Select recipe...";
+                        for (const auto* sp : craftable) {
+                            if (sp->spellId == selectedCraftSpell) {
+                                const std::string& n = gameHandler.getSpellName(sp->spellId);
+                                if (!n.empty()) previewName = n.c_str();
+                                break;
+                            }
+                        }
+                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+                        if (ImGui::BeginCombo("##CraftSelect", previewName)) {
+                            for (const auto* sp : craftable) {
+                                const std::string& n = gameHandler.getSpellName(sp->spellId);
+                                const std::string& r = gameHandler.getSpellRank(sp->spellId);
+                                char label[128];
+                                if (!r.empty())
+                                    snprintf(label, sizeof(label), "%s (%s)##%u",
+                                        n.empty() ? "???" : n.c_str(), r.c_str(), sp->spellId);
+                                else
+                                    snprintf(label, sizeof(label), "%s##%u",
+                                        n.empty() ? "???" : n.c_str(), sp->spellId);
+                                if (ImGui::Selectable(label, sp->spellId == selectedCraftSpell)) {
+                                    selectedCraftSpell = sp->spellId;
+                                }
+                            }
+                            ImGui::EndCombo();
+                        }
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(50.0f);
+                        ImGui::InputInt("##CraftQty", &craftQuantity, 0, 0);
+                        if (craftQuantity < 1) craftQuantity = 1;
+                        if (craftQuantity > 99) craftQuantity = 99;
+                        ImGui::SameLine();
+                        bool canCraft = selectedCraftSpell != 0 && !gameHandler.isCasting();
+                        if (!canCraft) ImGui::BeginDisabled();
+                        if (ImGui::Button("Create")) {
+                            if (craftQuantity == 1) {
+                                gameHandler.castSpell(selectedCraftSpell, 0);
+                            } else {
+                                gameHandler.startCraftQueue(selectedCraftSpell, craftQuantity);
+                            }
+                        }
+                        if (!canCraft) ImGui::EndDisabled();
+                    }
+                }
+            }
         }
     }
     ImGui::End();

@@ -2217,6 +2217,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     currentCastSpellId = 0;
                     castTimeRemaining  = 0.0f;
                     lastInteractedGoGuid_ = 0;
+                    // Cancel craft queue on cast failure
+                    craftQueueSpellId_ = 0;
+                    craftQueueRemaining_ = 0;
                     // Pass player's power type so result 85 says "Not enough rage/energy/etc."
                     int playerPowerType = -1;
                     if (auto pe = entityManager.getEntity(playerGuid)) {
@@ -6774,6 +6777,16 @@ void GameHandler::handlePacket(network::Packet& packet) {
                             addSystemChatMessage(msg);
                             LOG_DEBUG("SMSG_SPELLLOGEXECUTE CREATE_ITEM: spell=", exeSpellId,
                                       " item=", itemEntry, " name=", itemName);
+
+                            // Repeat-craft queue: re-cast if more crafts remaining
+                            if (craftQueueRemaining_ > 0 && craftQueueSpellId_ == exeSpellId) {
+                                --craftQueueRemaining_;
+                                if (craftQueueRemaining_ > 0) {
+                                    castSpell(craftQueueSpellId_, 0);
+                                } else {
+                                    craftQueueSpellId_ = 0;
+                                }
+                            }
                         }
                     }
                 } else if (effectType == 26) {
@@ -17696,6 +17709,21 @@ void GameHandler::cancelCast() {
     castIsChannel = false;
     currentCastSpellId = 0;
     castTimeRemaining = 0.0f;
+    // Cancel craft queue when player manually cancels cast
+    craftQueueSpellId_ = 0;
+    craftQueueRemaining_ = 0;
+}
+
+void GameHandler::startCraftQueue(uint32_t spellId, int count) {
+    craftQueueSpellId_ = spellId;
+    craftQueueRemaining_ = count;
+    // Cast the first one immediately
+    castSpell(spellId, 0);
+}
+
+void GameHandler::cancelCraftQueue() {
+    craftQueueSpellId_ = 0;
+    craftQueueRemaining_ = 0;
 }
 
 void GameHandler::cancelAura(uint32_t spellId) {
@@ -18022,14 +18050,17 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
         castTimeRemaining = castTimeTotal;
 
         // Play precast (channeling) sound with correct magic school
-        if (auto* renderer = core::Application::getInstance().getRenderer()) {
-            if (auto* ssm = renderer->getSpellSoundManager()) {
-                loadSpellNameCache();
-                auto it = spellNameCache_.find(data.spellId);
-                auto school = (it != spellNameCache_.end() && it->second.schoolMask)
-                    ? schoolMaskToMagicSchool(it->second.schoolMask)
-                    : audio::SpellSoundManager::MagicSchool::ARCANE;
-                ssm->playPrecast(school, audio::SpellSoundManager::SpellPower::MEDIUM);
+        // Skip sound for profession/tradeskill spells (crafting should be silent)
+        if (!isProfessionSpell(data.spellId)) {
+            if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                if (auto* ssm = renderer->getSpellSoundManager()) {
+                    loadSpellNameCache();
+                    auto it = spellNameCache_.find(data.spellId);
+                    auto school = (it != spellNameCache_.end() && it->second.schoolMask)
+                        ? schoolMaskToMagicSchool(it->second.schoolMask)
+                        : audio::SpellSoundManager::MagicSchool::ARCANE;
+                    ssm->playPrecast(school, audio::SpellSoundManager::SpellPower::MEDIUM);
+                }
             }
         }
 
@@ -18055,14 +18086,17 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
     // Cast completed
     if (data.casterUnit == playerGuid) {
         // Play cast-complete sound with correct magic school
-        if (auto* renderer = core::Application::getInstance().getRenderer()) {
-            if (auto* ssm = renderer->getSpellSoundManager()) {
-                loadSpellNameCache();
-                auto it = spellNameCache_.find(data.spellId);
-                auto school = (it != spellNameCache_.end() && it->second.schoolMask)
-                    ? schoolMaskToMagicSchool(it->second.schoolMask)
-                    : audio::SpellSoundManager::MagicSchool::ARCANE;
-                ssm->playCast(school);
+        // Skip sound for profession/tradeskill spells (crafting should be silent)
+        if (!isProfessionSpell(data.spellId)) {
+            if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                if (auto* ssm = renderer->getSpellSoundManager()) {
+                    loadSpellNameCache();
+                    auto it = spellNameCache_.find(data.spellId);
+                    auto school = (it != spellNameCache_.end() && it->second.schoolMask)
+                        ? schoolMaskToMagicSchool(it->second.schoolMask)
+                        : audio::SpellSoundManager::MagicSchool::ARCANE;
+                    ssm->playCast(school);
+                }
             }
         }
 
@@ -18082,8 +18116,16 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
                 isMeleeAbility = (currentCastSpellId != sid);
             }
         }
-        if (isMeleeAbility && meleeSwingCallback_) {
-            meleeSwingCallback_();
+        if (isMeleeAbility) {
+            if (meleeSwingCallback_) meleeSwingCallback_();
+            // Play weapon swing + impact sound for instant melee abilities (Sinister Strike, etc.)
+            if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                if (auto* csm = renderer->getCombatSoundManager()) {
+                    csm->playWeaponSwing(audio::CombatSoundManager::WeaponSize::MEDIUM, false);
+                    csm->playImpact(audio::CombatSoundManager::WeaponSize::MEDIUM,
+                                    audio::CombatSoundManager::ImpactType::FLESH, false);
+                }
+            }
         }
 
         // Capture cast state before clearing.  Guard with spellId match so that
@@ -18110,9 +18152,28 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         if (spellCastAnimCallback_) {
             spellCastAnimCallback_(playerGuid, false, false);
         }
-    } else if (spellCastAnimCallback_) {
-        // End cast animation on other unit
-        spellCastAnimCallback_(data.casterUnit, false, false);
+    } else {
+        if (spellCastAnimCallback_) {
+            // End cast animation on other unit
+            spellCastAnimCallback_(data.casterUnit, false, false);
+        }
+        // Play cast-complete sound for enemy spells targeting the player
+        bool targetsPlayer = false;
+        for (const auto& tgt : data.hitTargets) {
+            if (tgt == playerGuid) { targetsPlayer = true; break; }
+        }
+        if (targetsPlayer) {
+            if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                if (auto* ssm = renderer->getSpellSoundManager()) {
+                    loadSpellNameCache();
+                    auto it = spellNameCache_.find(data.spellId);
+                    auto school = (it != spellNameCache_.end() && it->second.schoolMask)
+                        ? schoolMaskToMagicSchool(it->second.schoolMask)
+                        : audio::SpellSoundManager::MagicSchool::ARCANE;
+                    ssm->playCast(school);
+                }
+            }
+        }
     }
 
     // Clear unit cast bar when the spell lands (for any tracked unit)
@@ -18133,12 +18194,16 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         }
     }
 
-    // Play impact sound when player is hit by any spell (from self or others)
+    // Play impact sound for spell hits involving the player
+    // - When player is hit by an enemy spell
+    // - When player's spell hits an enemy target
     bool playerIsHit = false;
+    bool playerHitEnemy = false;
     for (const auto& tgt : data.hitTargets) {
-        if (tgt == playerGuid) { playerIsHit = true; break; }
+        if (tgt == playerGuid) { playerIsHit = true; }
+        if (data.casterUnit == playerGuid && tgt != playerGuid && tgt != 0) { playerHitEnemy = true; }
     }
-    if (playerIsHit && data.casterUnit != playerGuid) {
+    if (playerIsHit || playerHitEnemy) {
         if (auto* renderer = core::Application::getInstance().getRenderer()) {
             if (auto* ssm = renderer->getSpellSoundManager()) {
                 loadSpellNameCache();
@@ -19327,7 +19392,7 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         float dy = entity->getY() - movementInfo.y;
         float dz = entity->getZ() - movementInfo.z;
         float dist3d = std::sqrt(dx * dx + dy * dy + dz * dz);
-        if (dist3d > 6.0f) {
+        if (dist3d > 10.0f) {
             addSystemChatMessage("Too far away.");
             return;
         }
@@ -19391,13 +19456,17 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         }
     }
     if (shouldSendLoot) {
-        lootTarget(guid);
-        // Some servers/scripts only make certain quest/chest GOs lootable after a short delay
-        // (use animation, state change). Queue one delayed loot attempt to catch that case.
+        // Don't send CMSG_LOOT immediately — give the server time to process
+        // CMSG_GAMEOBJ_USE first (chests need to transition to lootable state,
+        // gathering nodes start a spell cast).  A premature CMSG_LOOT can cause
+        // an empty SMSG_LOOT_RESPONSE that clears our gather-cast loot state.
         pendingGameObjectLootOpens_.erase(
             std::remove_if(pendingGameObjectLootOpens_.begin(), pendingGameObjectLootOpens_.end(),
                            [&](const PendingLootOpen& p) { return p.guid == guid; }),
             pendingGameObjectLootOpens_.end());
+        // Short delay for chests (server makes them lootable quickly after USE),
+        // plus a longer retry to catch slow state transitions.
+        pendingGameObjectLootOpens_.push_back(PendingLootOpen{guid, 0.20f});
         pendingGameObjectLootOpens_.push_back(PendingLootOpen{guid, 0.75f});
     } else {
         // Non-lootable interaction (mailbox, door, button, etc.) — no CMSG_LOOT will be
@@ -19405,12 +19474,9 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         // guid now so a subsequent timed cast completion can't fire a spurious CMSG_LOOT.
         lastInteractedGoGuid_ = 0;
     }
-    // Retry use briefly to survive packet loss/order races.
-    const bool retryLoot = shouldSendLoot;
-    const bool retryUse = turtleMode || isActiveExpansion("classic");
-    if (retryUse || retryLoot) {
-        pendingGameObjectLootRetries_.push_back(PendingLootRetry{guid, 0.15f, 2, retryLoot});
-    }
+    // Don't retry CMSG_GAMEOBJ_USE — resending can toggle chest state on some
+    // servers (opening→closing the chest).  The delayed CMSG_LOOT retries above
+    // handle the case where the first loot attempt arrives too early.
 }
 
 void GameHandler::selectGossipOption(uint32_t optionId) {
@@ -20584,6 +20650,13 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
     // WotLK 3.3.5a uses 22 bytes/item.
     const bool wotlkLoot = isActiveExpansion("wotlk");
     if (!LootResponseParser::parse(packet, currentLoot, wotlkLoot)) return;
+    const bool hasLoot = !currentLoot.items.empty() || currentLoot.gold > 0;
+    // If we're mid-gather-cast and got an empty loot response (premature CMSG_LOOT
+    // before the node became lootable), ignore it — don't clear our gather state.
+    if (!hasLoot && casting && currentCastSpellId != 0 && lastInteractedGoGuid_ != 0) {
+        LOG_DEBUG("Ignoring empty SMSG_LOOT_RESPONSE during gather cast");
+        return;
+    }
     lootWindowOpen = true;
     lastInteractedGoGuid_ = 0; // loot opened — no need to re-send in handleSpellGo
     pendingGameObjectLootOpens_.erase(
@@ -22665,6 +22738,15 @@ const std::string& GameHandler::getSkillName(uint32_t skillId) const {
 uint32_t GameHandler::getSkillCategory(uint32_t skillId) const {
     auto it = skillLineCategories_.find(skillId);
     return (it != skillLineCategories_.end()) ? it->second : 0;
+}
+
+bool GameHandler::isProfessionSpell(uint32_t spellId) const {
+    auto slIt = spellToSkillLine_.find(spellId);
+    if (slIt == spellToSkillLine_.end()) return false;
+    auto catIt = skillLineCategories_.find(slIt->second);
+    if (catIt == skillLineCategories_.end()) return false;
+    // Category 11 = profession (Blacksmithing, etc.), 9 = secondary (Cooking, First Aid, Fishing)
+    return catIt->second == 11 || catIt->second == 9;
 }
 
 void GameHandler::loadSkillLineDbc() {
