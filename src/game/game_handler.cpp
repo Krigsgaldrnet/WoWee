@@ -1940,6 +1940,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     std::string msg = "Received: " + itemName;
                     if (count > 1) msg += " x" + std::to_string(count);
                     addSystemChatMessage(msg);
+                    if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                        if (auto* sfx = renderer->getUiSoundManager())
+                            sfx->playLootItem();
+                    }
                     if (itemLootCallback_) {
                         itemLootCallback_(itemId, count, quality, itemName);
                     }
@@ -3899,6 +3903,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 addSystemChatMessage("You have learned " + name + ".");
             else
                 addSystemChatMessage("Spell learned.");
+            if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                if (auto* sfx = renderer->getUiSoundManager())
+                    sfx->playQuestActivate();
+            }
             break;
         }
         case Opcode::SMSG_TRAINER_BUY_FAILED: {
@@ -4504,6 +4512,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                          " result=", static_cast<int>(result));
                 if (result == 0) {
                     pendingSellToBuyback_.erase(itemGuid);
+                    if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                        if (auto* sfx = renderer->getUiSoundManager())
+                            sfx->playDropOnGround();
+                    }
                 } else {
                     bool removedPending = false;
                     auto it = pendingSellToBuyback_.find(itemGuid);
@@ -4748,6 +4760,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     std::string msg = "Purchased: " + itemLabel;
                     if (itemCount > 1) msg += " x" + std::to_string(itemCount);
                     addSystemChatMessage(msg);
+                    if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                        if (auto* sfx = renderer->getUiSoundManager())
+                            sfx->playPickupBag();
+                    }
                 }
                 pendingBuyItemId_   = 0;
                 pendingBuyItemSlot_ = 0;
@@ -20800,6 +20816,10 @@ void GameHandler::handleLootRemoved(network::Packet& packet) {
                 msg << " x" << it->count;
             }
             addSystemChatMessage(msg.str());
+            if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                if (auto* sfx = renderer->getUiSoundManager())
+                    sfx->playLootItem();
+            }
             currentLoot.items.erase(it);
             break;
         }
