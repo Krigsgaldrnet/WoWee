@@ -4395,6 +4395,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     }
                     if (newLevel > oldLevel) {
                         addSystemChatMessage("You have reached level " + std::to_string(newLevel) + "!");
+                        if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                            if (auto* sfx = renderer->getUiSoundManager())
+                                sfx->playLevelUp();
+                        }
                         if (levelUpCallback_) levelUpCallback_(newLevel);
                     }
                 }
@@ -4649,6 +4653,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     }
                     std::string msg = errMsg ? errMsg : "Inventory error (" + std::to_string(error) + ").";
                     addSystemChatMessage(msg);
+                    if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                        if (auto* sfx = renderer->getUiSoundManager())
+                            sfx->playError();
+                    }
                 }
             }
             break;
@@ -13440,6 +13448,10 @@ void GameHandler::handleDuelRequested(network::Packet& packet) {
     pendingDuelRequest_ = true;
 
     addSystemChatMessage(duelChallengerName_ + " challenges you to a duel!");
+    if (auto* renderer = core::Application::getInstance().getRenderer()) {
+        if (auto* sfx = renderer->getUiSoundManager())
+            sfx->playTargetSelect();
+    }
     LOG_INFO("SMSG_DUEL_REQUESTED: challenger=0x", std::hex, duelChallengerGuid_,
              " flag=0x", duelFlagGuid_, std::dec, " name=", duelChallengerName_);
 }
@@ -18744,6 +18756,10 @@ void GameHandler::handleGroupInvite(network::Packet& packet) {
     LOG_INFO("Group invite from: ", data.inviterName);
     if (!data.inviterName.empty()) {
         addSystemChatMessage(data.inviterName + " has invited you to a group.");
+    }
+    if (auto* renderer = core::Application::getInstance().getRenderer()) {
+        if (auto* sfx = renderer->getUiSoundManager())
+            sfx->playTargetSelect();
     }
 }
 
@@ -24480,6 +24496,10 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
 
         earnedAchievements_.insert(achievementId);
         achievementDates_[achievementId] = earnDate;
+        if (auto* renderer = core::Application::getInstance().getRenderer()) {
+            if (auto* sfx = renderer->getUiSoundManager())
+                sfx->playAchievementAlert();
+        }
         if (achievementEarnedCallback_) {
             achievementEarnedCallback_(achievementId, achName);
         }
