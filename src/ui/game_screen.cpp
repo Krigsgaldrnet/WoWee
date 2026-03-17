@@ -1580,6 +1580,28 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                 if (!eqBonusLine.empty()) {
                     ImGui::TextColored(green, "%s", eqBonusLine.c_str());
                 }
+                // Extra stats for the equipped item
+                for (const auto& es : eq->item.extraStats) {
+                    const char* nm = nullptr;
+                    switch (es.statType) {
+                        case 12: nm = "Defense Rating"; break;
+                        case 13: nm = "Dodge Rating"; break;
+                        case 14: nm = "Parry Rating"; break;
+                        case 16: case 17: case 18: case 31: nm = "Hit Rating"; break;
+                        case 19: case 20: case 21: case 32: nm = "Critical Strike Rating"; break;
+                        case 28: case 29: case 30: case 35: nm = "Haste Rating"; break;
+                        case 34: nm = "Resilience Rating"; break;
+                        case 36: nm = "Expertise Rating"; break;
+                        case 37: nm = "Attack Power"; break;
+                        case 38: nm = "Ranged Attack Power"; break;
+                        case 45: nm = "Spell Power"; break;
+                        case 46: nm = "Healing Power"; break;
+                        case 49: nm = "Mana per 5 sec."; break;
+                        default: break;
+                    }
+                    if (nm && es.statValue > 0)
+                        ImGui::TextColored(green, "+%d %s", es.statValue, nm);
+                }
             }
         }
         ImGui::EndTooltip();
