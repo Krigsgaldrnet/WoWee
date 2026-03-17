@@ -7903,8 +7903,12 @@ void GameScreen::renderBagBar(game::GameHandler& gameHandler) {
 // ============================================================
 
 void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
-    uint32_t nextLevelXp = gameHandler.getPlayerNextLevelXp();
-    if (nextLevelXp == 0) return; // No XP data yet (level 80 or not initialized)
+    uint32_t nextLevelXp  = gameHandler.getPlayerNextLevelXp();
+    uint32_t playerLevel  = gameHandler.getPlayerLevel();
+    // At max level, server sends nextLevelXp=0. Only skip entirely when we have
+    // no level info at all (not yet logged in / no update-field data).
+    const bool isMaxLevel = (nextLevelXp == 0 && playerLevel > 0);
+    if (nextLevelXp == 0 && !isMaxLevel) return;
 
     uint32_t currentXp  = gameHandler.getPlayerXp();
     uint32_t restedXp   = gameHandler.getPlayerRestedXp();
@@ -7950,15 +7954,32 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
     ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.3f, 0.3f, 0.8f));
 
     if (ImGui::Begin("##XpBar", nullptr, flags)) {
+        ImVec2 barMin  = ImGui::GetCursorScreenPos();
+        ImVec2 barSize = ImVec2(ImGui::GetContentRegionAvail().x, xpBarH - 4.0f);
+        ImVec2 barMax  = ImVec2(barMin.x + barSize.x, barMin.y + barSize.y);
+        auto*  drawList = ImGui::GetWindowDrawList();
+
+        if (isMaxLevel) {
+            // Max-level bar: fully filled in muted gold with "Max Level" label
+            ImU32 bgML  = IM_COL32(15, 12, 5, 220);
+            ImU32 fgML  = IM_COL32(180, 140, 40, 200);
+            drawList->AddRectFilled(barMin, barMax, bgML, 2.0f);
+            drawList->AddRectFilled(barMin, barMax, fgML, 2.0f);
+            drawList->AddRect(barMin, barMax, IM_COL32(100, 80, 20, 220), 2.0f);
+            const char* mlLabel = "Max Level";
+            ImVec2 mlSz = ImGui::CalcTextSize(mlLabel);
+            drawList->AddText(
+                ImVec2(barMin.x + (barSize.x - mlSz.x) * 0.5f,
+                       barMin.y + (barSize.y - mlSz.y) * 0.5f),
+                IM_COL32(255, 230, 120, 255), mlLabel);
+            ImGui::Dummy(barSize);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Level %u — Maximum level reached", playerLevel);
+        } else {
         float pct = static_cast<float>(currentXp) / static_cast<float>(nextLevelXp);
         if (pct > 1.0f) pct = 1.0f;
 
         // Custom segmented XP bar (20 bubbles)
-        ImVec2 barMin = ImGui::GetCursorScreenPos();
-        ImVec2 barSize = ImVec2(ImGui::GetContentRegionAvail().x, xpBarH - 4.0f);
-        ImVec2 barMax = ImVec2(barMin.x + barSize.x, barMin.y + barSize.y);
-        auto* drawList = ImGui::GetWindowDrawList();
-
         ImU32 bg      = IM_COL32(15, 15, 20, 220);
         ImU32 fg      = IM_COL32(148, 51, 238, 255);
         ImU32 fgRest  = IM_COL32(200, 170, 255, 220); // lighter purple for rested portion
@@ -8033,6 +8054,7 @@ void GameScreen::renderXpBar(game::GameHandler& gameHandler) {
             }
             ImGui::EndTooltip();
         }
+    }
     }
     ImGui::End();
 
