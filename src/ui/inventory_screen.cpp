@@ -2401,12 +2401,15 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         if (ImGui::IsItemHovered() && !holdingItem) {
             // Pass inventory for backpack/bag items only; equipped items compare against themselves otherwise
             const game::Inventory* tooltipInv = (kind == SlotKind::EQUIPMENT) ? nullptr : &inventory;
-            renderItemTooltip(item, tooltipInv);
+            uint64_t slotGuid = 0;
+            if (kind == SlotKind::EQUIPMENT && gameHandler_)
+                slotGuid = gameHandler_->getEquipSlotGuid(static_cast<int>(equipSlot));
+            renderItemTooltip(item, tooltipInv, slotGuid);
         }
     }
 }
 
-void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::Inventory* inventory) {
+void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::Inventory* inventory, uint64_t itemGuid) {
     ImGui::BeginTooltip();
 
     ImVec4 qColor = getQualityColor(item.quality);
@@ -2915,6 +2918,42 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         }
     }
 
+    // Weapon/armor enchant display for equipped items (reads from item update fields)
+    if (itemGuid != 0 && gameHandler_) {
+        auto [permId, tempId] = gameHandler_->getItemEnchantIds(itemGuid);
+        if (permId != 0 || tempId != 0) {
+            static std::unordered_map<uint32_t, std::string> s_enchNamesB;
+            static bool s_enchNamesLoadedB = false;
+            if (!s_enchNamesLoadedB && assetManager_) {
+                s_enchNamesLoadedB = true;
+                auto dbc = assetManager_->loadDBC("SpellItemEnchantment.dbc");
+                if (dbc && dbc->isLoaded()) {
+                    const auto* lay = pipeline::getActiveDBCLayout()
+                        ? pipeline::getActiveDBCLayout()->getLayout("SpellItemEnchantment") : nullptr;
+                    uint32_t nf = lay ? lay->field("Name") : 8u;
+                    if (nf == 0xFFFFFFFF) nf = 8;
+                    uint32_t fc = dbc->getFieldCount();
+                    for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                        uint32_t eid = dbc->getUInt32(r, 0);
+                        if (eid == 0 || nf >= fc) continue;
+                        std::string en = dbc->getString(r, nf);
+                        if (!en.empty()) s_enchNamesB[eid] = std::move(en);
+                    }
+                }
+            }
+            if (permId != 0) {
+                auto it2 = s_enchNamesB.find(permId);
+                const char* ename = (it2 != s_enchNamesB.end()) ? it2->second.c_str() : nullptr;
+                if (ename) ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Enchanted: %s", ename);
+            }
+            if (tempId != 0) {
+                auto it2 = s_enchNamesB.find(tempId);
+                const char* ename = (it2 != s_enchNamesB.end()) ? it2->second.c_str() : nullptr;
+                if (ename) ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.4f, 1.0f), "%s (temporary)", ename);
+            }
+        }
+    }
+
     // "Begins a Quest" line (shown in yellow-green like the game)
     if (item.startQuestId != 0) {
         ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 1.0f), "Begins a Quest");
@@ -3067,7 +3106,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
 // ---------------------------------------------------------------------------
 // Tooltip overload for ItemQueryResponseData (used by loot window, etc.)
 // ---------------------------------------------------------------------------
-void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info, const game::Inventory* inventory) {
+void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info, const game::Inventory* inventory, uint64_t itemGuid) {
     ImGui::BeginTooltip();
 
     ImVec4 qColor = getQualityColor(static_cast<game::ItemQuality>(info.quality));
@@ -3439,6 +3478,43 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
                 ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "Socket Bonus: %s", enchIt->second.c_str());
             else
                 ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "Socket Bonus: (id %u)", info.socketBonus);
+        }
+    }
+
+    // Weapon/armor enchant display for equipped items
+    if (itemGuid != 0 && gameHandler_) {
+        auto [permId, tempId] = gameHandler_->getItemEnchantIds(itemGuid);
+        if (permId != 0 || tempId != 0) {
+            // Lazy-load SpellItemEnchantment.dbc for enchant name lookup
+            static std::unordered_map<uint32_t, std::string> s_enchNames;
+            static bool s_enchNamesLoaded = false;
+            if (!s_enchNamesLoaded && assetManager_) {
+                s_enchNamesLoaded = true;
+                auto dbc = assetManager_->loadDBC("SpellItemEnchantment.dbc");
+                if (dbc && dbc->isLoaded()) {
+                    const auto* lay = pipeline::getActiveDBCLayout()
+                        ? pipeline::getActiveDBCLayout()->getLayout("SpellItemEnchantment") : nullptr;
+                    uint32_t nf = lay ? lay->field("Name") : 8u;
+                    if (nf == 0xFFFFFFFF) nf = 8;
+                    uint32_t fc = dbc->getFieldCount();
+                    for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
+                        uint32_t eid = dbc->getUInt32(r, 0);
+                        if (eid == 0 || nf >= fc) continue;
+                        std::string en = dbc->getString(r, nf);
+                        if (!en.empty()) s_enchNames[eid] = std::move(en);
+                    }
+                }
+            }
+            if (permId != 0) {
+                auto it2 = s_enchNames.find(permId);
+                const char* ename = (it2 != s_enchNames.end()) ? it2->second.c_str() : nullptr;
+                if (ename) ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Enchanted: %s", ename);
+            }
+            if (tempId != 0) {
+                auto it2 = s_enchNames.find(tempId);
+                const char* ename = (it2 != s_enchNames.end()) ? it2->second.c_str() : nullptr;
+                if (ename) ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.4f, 1.0f), "%s (temporary)", ename);
+            }
         }
     }
 

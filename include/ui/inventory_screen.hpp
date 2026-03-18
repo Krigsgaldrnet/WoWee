@@ -99,7 +99,7 @@ private:
     std::unordered_map<uint32_t, VkDescriptorSet> iconCache_;
 public:
     VkDescriptorSet getItemIcon(uint32_t displayInfoId);
-    void renderItemTooltip(const game::ItemQueryResponseData& info, const game::Inventory* inventory = nullptr);
+    void renderItemTooltip(const game::ItemQueryResponseData& info, const game::Inventory* inventory = nullptr, uint64_t itemGuid = 0);
 private:
 
     // Character model preview
@@ -161,7 +161,7 @@ private:
                         SlotKind kind, int backpackIndex,
                         game::EquipSlot equipSlot,
                         int bagIndex = -1, int bagSlotIndex = -1);
-    void renderItemTooltip(const game::ItemDef& item, const game::Inventory* inventory = nullptr);
+    void renderItemTooltip(const game::ItemDef& item, const game::Inventory* inventory = nullptr, uint64_t itemGuid = 0);
 
     // Held item helpers
     void pickupFromBackpack(game::Inventory& inv, int index);

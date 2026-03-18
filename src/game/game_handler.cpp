@@ -11677,14 +11677,20 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                 auto stackIt = block.fields.find(fieldIndex(UF::ITEM_FIELD_STACK_COUNT));
                 auto durIt   = block.fields.find(fieldIndex(UF::ITEM_FIELD_DURABILITY));
                 auto maxDurIt= block.fields.find(fieldIndex(UF::ITEM_FIELD_MAXDURABILITY));
+                const uint16_t enchBase = (fieldIndex(UF::ITEM_FIELD_STACK_COUNT) != 0xFFFF)
+                    ? static_cast<uint16_t>(fieldIndex(UF::ITEM_FIELD_STACK_COUNT) + 8u) : 0xFFFFu;
+                auto permEnchIt = (enchBase != 0xFFFF) ? block.fields.find(enchBase)       : block.fields.end();
+                auto tempEnchIt = (enchBase != 0xFFFF) ? block.fields.find(enchBase + 3u)  : block.fields.end();
                 if (entryIt != block.fields.end() && entryIt->second != 0) {
                     // Preserve existing info when doing partial updates
                     OnlineItemInfo info = onlineItems_.count(block.guid)
                         ? onlineItems_[block.guid] : OnlineItemInfo{};
                     info.entry = entryIt->second;
-                    if (stackIt != block.fields.end()) info.stackCount = stackIt->second;
-                    if (durIt   != block.fields.end()) info.curDurability  = durIt->second;
-                    if (maxDurIt!= block.fields.end()) info.maxDurability  = maxDurIt->second;
+                    if (stackIt    != block.fields.end()) info.stackCount         = stackIt->second;
+                    if (durIt      != block.fields.end()) info.curDurability      = durIt->second;
+                    if (maxDurIt   != block.fields.end()) info.maxDurability      = maxDurIt->second;
+                    if (permEnchIt != block.fields.end()) info.permanentEnchantId = permEnchIt->second;
+                    if (tempEnchIt != block.fields.end()) info.temporaryEnchantId = tempEnchIt->second;
                     bool isNew = (onlineItems_.find(block.guid) == onlineItems_.end());
                     onlineItems_[block.guid] = info;
                     if (isNew) newItemCreated = true;
@@ -12269,6 +12275,12 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     const uint16_t itemMaxDurField  = fieldIndex(UF::ITEM_FIELD_MAXDURABILITY);
                     const uint16_t containerNumSlotsField = fieldIndex(UF::CONTAINER_FIELD_NUM_SLOTS);
                     const uint16_t containerSlot1Field = fieldIndex(UF::CONTAINER_FIELD_SLOT_1);
+                    // ITEM_FIELD_ENCHANTMENT starts 8 fields after ITEM_FIELD_STACK_COUNT (fixed offset
+                    // across all expansions: +DURATION, +5×SPELL_CHARGES, +FLAGS = +8).
+                    // Slot 0 = permanent enchant (field +0), slot 1 = temp enchant (field +3).
+                    const uint16_t itemEnchBase    = (itemStackField != 0xFFFF) ? (itemStackField + 8u) : 0xFFFF;
+                    const uint16_t itemPermEnchField = itemEnchBase;
+                    const uint16_t itemTempEnchField = (itemEnchBase != 0xFFFF) ? (itemEnchBase + 3u) : 0xFFFF;
 
                     auto it = onlineItems_.find(block.guid);
                     bool isItemInInventory = (it != onlineItems_.end());
@@ -12287,6 +12299,16 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         } else if (key == itemMaxDurField && isItemInInventory) {
                             if (it->second.maxDurability != val) {
                                 it->second.maxDurability = val;
+                                inventoryChanged = true;
+                            }
+                        } else if (isItemInInventory && itemPermEnchField != 0xFFFF && key == itemPermEnchField) {
+                            if (it->second.permanentEnchantId != val) {
+                                it->second.permanentEnchantId = val;
+                                inventoryChanged = true;
+                            }
+                        } else if (isItemInInventory && itemTempEnchField != 0xFFFF && key == itemTempEnchField) {
+                            if (it->second.temporaryEnchantId != val) {
+                                it->second.temporaryEnchantId = val;
                                 inventoryChanged = true;
                             }
                         }

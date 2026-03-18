@@ -2125,6 +2125,16 @@ public:
         if (index < 0 || index >= static_cast<int>(backpackSlotGuids_.size())) return 0;
         return backpackSlotGuids_[index];
     }
+    uint64_t getEquipSlotGuid(int slot) const {
+        if (slot < 0 || slot >= static_cast<int>(equipSlotGuids_.size())) return 0;
+        return equipSlotGuids_[slot];
+    }
+    // Returns the permanent and temporary enchant IDs for an item by GUID (0 if unknown).
+    std::pair<uint32_t, uint32_t> getItemEnchantIds(uint64_t guid) const {
+        auto it = onlineItems_.find(guid);
+        if (it == onlineItems_.end()) return {0, 0};
+        return {it->second.permanentEnchantId, it->second.temporaryEnchantId};
+    }
     uint64_t getVendorGuid() const { return currentVendorItems.vendorGuid; }
 
     /**
@@ -2621,6 +2631,8 @@ private:
         uint32_t stackCount = 1;
         uint32_t curDurability = 0;
         uint32_t maxDurability = 0;
+        uint32_t permanentEnchantId = 0;  // ITEM_ENCHANTMENT_SLOT 0 (enchanting)
+        uint32_t temporaryEnchantId = 0;  // ITEM_ENCHANTMENT_SLOT 1 (sharpening stones, poisons)
     };
     std::unordered_map<uint64_t, OnlineItemInfo> onlineItems_;
     std::unordered_map<uint32_t, ItemQueryResponseData> itemInfoCache_;
