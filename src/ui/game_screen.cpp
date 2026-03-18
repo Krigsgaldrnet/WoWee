@@ -5572,6 +5572,18 @@ void GameScreen::executeMacroText(game::GameHandler& gameHandler, const std::str
     }
 }
 
+// /castsequence persistent state — shared across all macros using the same spell list.
+// Keyed by the normalized (lowercase, comma-joined) spell sequence string.
+namespace {
+struct CastSeqState {
+    size_t   index = 0;
+    float    lastPressSec = 0.0f;
+    uint64_t lastTargetGuid = 0;
+    bool     lastInCombat = false;
+};
+std::unordered_map<std::string, CastSeqState> s_castSeqStates;
+}  // namespace
+
 void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
     if (strlen(chatInputBuffer) > 0) {
         std::string input(chatInputBuffer);
@@ -6537,6 +6549,137 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             if (cmdLower == "stopcasting") {
                 gameHandler.stopCasting();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /castsequence [conds] [reset=N/target/combat] Spell1, Spell2, ...
+            // Cycles through the spell list on successive presses; resets per the reset= spec.
+            if (cmdLower == "castsequence" && spacePos != std::string::npos) {
+                std::string seqArg = command.substr(spacePos + 1);
+                while (!seqArg.empty() && seqArg.front() == ' ') seqArg.erase(seqArg.begin());
+
+                // Macro conditionals
+                uint64_t seqTgtOver = static_cast<uint64_t>(-1);
+                if (!seqArg.empty() && seqArg.front() == '[') {
+                    seqArg = evaluateMacroConditionals(seqArg, gameHandler, seqTgtOver);
+                    if (seqArg.empty() && seqTgtOver == static_cast<uint64_t>(-1)) {
+                        chatInputBuffer[0] = '\0'; return;
+                    }
+                    while (!seqArg.empty() && seqArg.front() == ' ') seqArg.erase(seqArg.begin());
+                    while (!seqArg.empty() && seqArg.back()  == ' ') seqArg.pop_back();
+                }
+
+                // Optional reset= spec (may contain slash-separated conditions: reset=5/target)
+                std::string resetSpec;
+                if (seqArg.rfind("reset=", 0) == 0) {
+                    size_t spAfter = seqArg.find(' ');
+                    if (spAfter != std::string::npos) {
+                        resetSpec = seqArg.substr(6, spAfter - 6);
+                        seqArg = seqArg.substr(spAfter + 1);
+                        while (!seqArg.empty() && seqArg.front() == ' ') seqArg.erase(seqArg.begin());
+                    }
+                }
+
+                // Parse comma-separated spell list
+                std::vector<std::string> seqSpells;
+                {
+                    std::string cur;
+                    for (char c : seqArg) {
+                        if (c == ',') {
+                            while (!cur.empty() && cur.front() == ' ') cur.erase(cur.begin());
+                            while (!cur.empty() && cur.back()  == ' ') cur.pop_back();
+                            if (!cur.empty()) seqSpells.push_back(cur);
+                            cur.clear();
+                        } else { cur += c; }
+                    }
+                    while (!cur.empty() && cur.front() == ' ') cur.erase(cur.begin());
+                    while (!cur.empty() && cur.back()  == ' ') cur.pop_back();
+                    if (!cur.empty()) seqSpells.push_back(cur);
+                }
+                if (seqSpells.empty()) { chatInputBuffer[0] = '\0'; return; }
+
+                // Build stable key from lowercase spell list
+                std::string seqKey;
+                for (size_t k = 0; k < seqSpells.size(); ++k) {
+                    if (k) seqKey += ',';
+                    std::string sl = seqSpells[k];
+                    for (char& c : sl) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    seqKey += sl;
+                }
+
+                auto& seqState = s_castSeqStates[seqKey];
+
+                // Check reset conditions (slash-separated: e.g. "5/target")
+                float nowSec = static_cast<float>(ImGui::GetTime());
+                bool shouldReset = false;
+                if (!resetSpec.empty()) {
+                    size_t rpos = 0;
+                    while (rpos <= resetSpec.size()) {
+                        size_t slash = resetSpec.find('/', rpos);
+                        std::string part = (slash != std::string::npos)
+                            ? resetSpec.substr(rpos, slash - rpos)
+                            : resetSpec.substr(rpos);
+                        std::string plow = part;
+                        for (char& c : plow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        bool isNum = !plow.empty() && std::all_of(plow.begin(), plow.end(),
+                            [](unsigned char c){ return std::isdigit(c) || c == '.'; });
+                        if (isNum) {
+                            float rSec = 0.0f;
+                            try { rSec = std::stof(plow); } catch (...) {}
+                            if (rSec > 0.0f && nowSec - seqState.lastPressSec > rSec) shouldReset = true;
+                        } else if (plow == "target") {
+                            if (gameHandler.getTargetGuid() != seqState.lastTargetGuid) shouldReset = true;
+                        } else if (plow == "combat") {
+                            if (gameHandler.isInCombat() != seqState.lastInCombat) shouldReset = true;
+                        }
+                        if (slash == std::string::npos) break;
+                        rpos = slash + 1;
+                    }
+                }
+                if (shouldReset || seqState.index >= seqSpells.size()) seqState.index = 0;
+
+                const std::string& seqSpell = seqSpells[seqState.index];
+                seqState.index = (seqState.index + 1) % seqSpells.size();
+                seqState.lastPressSec  = nowSec;
+                seqState.lastTargetGuid = gameHandler.getTargetGuid();
+                seqState.lastInCombat   = gameHandler.isInCombat();
+
+                // Cast the selected spell — mirrors /cast spell lookup
+                std::string ssLow = seqSpell;
+                for (char& c : ssLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                if (!ssLow.empty() && ssLow.front() == '!') ssLow.erase(ssLow.begin());
+
+                uint64_t seqTargetGuid = (seqTgtOver != static_cast<uint64_t>(-1) && seqTgtOver != 0)
+                    ? seqTgtOver : (gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0);
+
+                // Numeric ID
+                if (!ssLow.empty() && ssLow.front() == '#') ssLow.erase(ssLow.begin());
+                bool ssNumeric = !ssLow.empty() && std::all_of(ssLow.begin(), ssLow.end(),
+                    [](unsigned char c){ return std::isdigit(c); });
+                if (ssNumeric) {
+                    uint32_t ssId = 0;
+                    try { ssId = static_cast<uint32_t>(std::stoul(ssLow)); } catch (...) {}
+                    if (ssId) gameHandler.castSpell(ssId, seqTargetGuid);
+                } else {
+                    uint32_t ssBest = 0; int ssBestRank = -1;
+                    for (uint32_t sid : gameHandler.getKnownSpells()) {
+                        const std::string& sn = gameHandler.getSpellName(sid);
+                        if (sn.empty()) continue;
+                        std::string snl = sn;
+                        for (char& c : snl) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        if (snl != ssLow) continue;
+                        int sRnk = 0;
+                        const std::string& rk = gameHandler.getSpellRank(sid);
+                        if (!rk.empty()) {
+                            std::string rkl = rk;
+                            for (char& c : rkl) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                            if (rkl.rfind("rank ", 0) == 0) { try { sRnk = std::stoi(rkl.substr(5)); } catch (...) {} }
+                        }
+                        if (sRnk > ssBestRank) { ssBestRank = sRnk; ssBest = sid; }
+                    }
+                    if (ssBest) gameHandler.castSpell(ssBest, seqTargetGuid);
+                }
                 chatInputBuffer[0] = '\0';
                 return;
             }
