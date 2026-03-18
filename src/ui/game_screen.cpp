@@ -259,6 +259,9 @@ bool GameScreen::shouldShowMessage(const game::MessageChatData& msg, int tabInde
 // Forward declaration — defined near sendChatMessage below
 static std::string firstMacroCommand(const std::string& macroText);
 static std::vector<std::string> allMacroCommands(const std::string& macroText);
+static std::string evaluateMacroConditionals(const std::string& rawArg,
+                                              game::GameHandler& gameHandler,
+                                              uint64_t& targetOverride);
 
 void GameScreen::render(game::GameHandler& gameHandler) {
     // Set up chat bubble callback (once)
@@ -5277,6 +5280,170 @@ static std::vector<std::string> allMacroCommands(const std::string& macroText) {
     return cmds;
 }
 
+// ---------------------------------------------------------------------------
+// WoW macro conditional evaluator
+// Parses:  [cond1,cond2] Spell1; [cond3] Spell2; DefaultSpell
+// Returns the first matching alternative's argument, or "" if none matches.
+// targetOverride is set to a specific GUID if [target=X] was in the conditions,
+// or left as UINT64_MAX to mean "use the normal target".
+// ---------------------------------------------------------------------------
+static std::string evaluateMacroConditionals(const std::string& rawArg,
+                                              game::GameHandler& gameHandler,
+                                              uint64_t& targetOverride) {
+    targetOverride = static_cast<uint64_t>(-1);
+
+    auto& input = core::Input::getInstance();
+
+    const bool shiftHeld = input.isKeyPressed(SDL_SCANCODE_LSHIFT) ||
+                           input.isKeyPressed(SDL_SCANCODE_RSHIFT);
+    const bool ctrlHeld  = input.isKeyPressed(SDL_SCANCODE_LCTRL)  ||
+                           input.isKeyPressed(SDL_SCANCODE_RCTRL);
+    const bool altHeld   = input.isKeyPressed(SDL_SCANCODE_LALT)   ||
+                           input.isKeyPressed(SDL_SCANCODE_RALT);
+    const bool anyMod    = shiftHeld || ctrlHeld || altHeld;
+
+    // Split rawArg on ';' → alternatives
+    std::vector<std::string> alts;
+    {
+        std::string cur;
+        for (char c : rawArg) {
+            if (c == ';') { alts.push_back(cur); cur.clear(); }
+            else            cur += c;
+        }
+        alts.push_back(cur);
+    }
+
+    // Evaluate a single comma-separated condition token.
+    // tgt is updated if a target= or @ specifier is found.
+    auto evalCond = [&](const std::string& raw, uint64_t& tgt) -> bool {
+        std::string c = raw;
+        // trim
+        size_t s = c.find_first_not_of(" \t"); if (s) c = (s != std::string::npos) ? c.substr(s) : "";
+        size_t e = c.find_last_not_of(" \t");  if (e != std::string::npos) c.resize(e + 1);
+        if (c.empty()) return true;
+
+        // @target specifiers: @player, @focus, @mouseover (mouseover → skip, no tracking)
+        if (!c.empty() && c[0] == '@') {
+            std::string spec = c.substr(1);
+            if (spec == "player")  tgt = gameHandler.getPlayerGuid();
+            else if (spec == "focus")   tgt = gameHandler.getFocusGuid();
+            else if (spec == "target")  tgt = gameHandler.getTargetGuid();
+            // mouseover: no tracking yet — treat as "use current target"
+            return true;
+        }
+        // target=X specifiers
+        if (c.rfind("target=", 0) == 0) {
+            std::string spec = c.substr(7);
+            if (spec == "player")  tgt = gameHandler.getPlayerGuid();
+            else if (spec == "focus")  tgt = gameHandler.getFocusGuid();
+            else if (spec == "target") tgt = gameHandler.getTargetGuid();
+            return true;
+        }
+
+        // mod / nomod
+        if (c == "nomod" || c == "mod:none") return !anyMod;
+        if (c.rfind("mod:", 0) == 0) {
+            std::string mods = c.substr(4);
+            bool ok = true;
+            if (mods.find("shift") != std::string::npos && !shiftHeld) ok = false;
+            if (mods.find("ctrl")  != std::string::npos && !ctrlHeld)  ok = false;
+            if (mods.find("alt")   != std::string::npos && !altHeld)   ok = false;
+            return ok;
+        }
+
+        // combat / nocombat
+        if (c == "combat")   return gameHandler.isInCombat();
+        if (c == "nocombat") return !gameHandler.isInCombat();
+
+        // Helper to get the effective target entity
+        auto effTarget = [&]() -> std::shared_ptr<game::Entity> {
+            if (tgt != static_cast<uint64_t>(-1) && tgt != 0)
+                return gameHandler.getEntityManager().getEntity(tgt);
+            return gameHandler.getTarget();
+        };
+
+        // exists / noexists
+        if (c == "exists")   return effTarget() != nullptr;
+        if (c == "noexists") return effTarget() == nullptr;
+
+        // dead / nodead
+        if (c == "dead")   {
+            auto t = effTarget();
+            auto u = t ? std::dynamic_pointer_cast<game::Unit>(t) : nullptr;
+            return u && u->getHealth() == 0;
+        }
+        if (c == "nodead") {
+            auto t = effTarget();
+            auto u = t ? std::dynamic_pointer_cast<game::Unit>(t) : nullptr;
+            return u && u->getHealth() > 0;
+        }
+
+        // help (friendly) / harm (hostile) and their no- variants
+        auto unitHostile = [&](const std::shared_ptr<game::Entity>& t) -> bool {
+            if (!t) return false;
+            auto u = std::dynamic_pointer_cast<game::Unit>(t);
+            return u && gameHandler.isHostileFactionPublic(u->getFactionTemplate());
+        };
+        if (c == "harm" || c == "nohelp") { return unitHostile(effTarget()); }
+        if (c == "help" || c == "noharm") { return !unitHostile(effTarget()); }
+
+        // noform / nostance — player is NOT in a shapeshift/stance
+        if (c == "noform" || c == "nostance") {
+            for (const auto& a : gameHandler.getPlayerAuras())
+                if (!a.isEmpty() && a.maxDurationMs == -1) return false;
+            return true;
+        }
+        // form:0 same as noform
+        if (c == "form:0" || c == "stance:0") {
+            for (const auto& a : gameHandler.getPlayerAuras())
+                if (!a.isEmpty() && a.maxDurationMs == -1) return false;
+            return true;
+        }
+
+        // Unknown → permissive (don't block)
+        return true;
+    };
+
+    for (auto& alt : alts) {
+        // trim
+        size_t fs = alt.find_first_not_of(" \t");
+        if (fs == std::string::npos) continue;
+        alt = alt.substr(fs);
+        size_t ls = alt.find_last_not_of(" \t");
+        if (ls != std::string::npos) alt.resize(ls + 1);
+
+        if (!alt.empty() && alt[0] == '[') {
+            size_t close = alt.find(']');
+            if (close == std::string::npos) continue;
+            std::string condStr  = alt.substr(1, close - 1);
+            std::string argPart  = alt.substr(close + 1);
+            // Trim argPart
+            size_t as = argPart.find_first_not_of(" \t");
+            argPart = (as != std::string::npos) ? argPart.substr(as) : "";
+
+            // Evaluate comma-separated conditions
+            uint64_t tgt = static_cast<uint64_t>(-1);
+            bool pass = true;
+            size_t cp = 0;
+            while (pass) {
+                size_t comma = condStr.find(',', cp);
+                std::string tok = condStr.substr(cp, comma == std::string::npos ? std::string::npos : comma - cp);
+                if (!evalCond(tok, tgt)) { pass = false; break; }
+                if (comma == std::string::npos) break;
+                cp = comma + 1;
+            }
+            if (pass) {
+                if (tgt != static_cast<uint64_t>(-1)) targetOverride = tgt;
+                return argPart;
+            }
+        } else {
+            // No condition block — default fallback always matches
+            return alt;
+        }
+    }
+    return {};
+}
+
 // Execute all non-comment lines of a macro body in sequence.
 // In WoW, every line executes per click; the server enforces spell-cast limits.
 void GameScreen::executeMacroText(game::GameHandler& gameHandler, const std::string& macroText) {
@@ -6175,6 +6342,18 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 while (!spellArg.empty() && spellArg.front() == ' ') spellArg.erase(spellArg.begin());
                 while (!spellArg.empty() && spellArg.back()  == ' ') spellArg.pop_back();
 
+                // Evaluate WoW macro conditionals: /cast [mod:shift] Greater Heal; Flash Heal
+                uint64_t castTargetOverride = static_cast<uint64_t>(-1);
+                if (!spellArg.empty() && spellArg.front() == '[') {
+                    spellArg = evaluateMacroConditionals(spellArg, gameHandler, castTargetOverride);
+                    if (spellArg.empty()) {
+                        chatInputBuffer[0] = '\0';
+                        return;  // No conditional matched — skip cast
+                    }
+                    while (!spellArg.empty() && spellArg.front() == ' ') spellArg.erase(spellArg.begin());
+                    while (!spellArg.empty() && spellArg.back()  == ' ') spellArg.pop_back();
+                }
+
                 // Support numeric spell ID: /cast 133 or /cast #133
                 {
                     std::string numStr = spellArg;
@@ -6186,7 +6365,9 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                         uint32_t spellId = 0;
                         try { spellId = static_cast<uint32_t>(std::stoul(numStr)); } catch (...) {}
                         if (spellId != 0) {
-                            uint64_t targetGuid = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
+                            uint64_t targetGuid = (castTargetOverride != static_cast<uint64_t>(-1))
+                                ? castTargetOverride
+                                : (gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0);
                             gameHandler.castSpell(spellId, targetGuid);
                         }
                         chatInputBuffer[0] = '\0';
@@ -6246,7 +6427,9 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 }
 
                 if (bestSpellId) {
-                    uint64_t targetGuid = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
+                    uint64_t targetGuid = (castTargetOverride != static_cast<uint64_t>(-1))
+                        ? castTargetOverride
+                        : (gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0);
                     gameHandler.castSpell(bestSpellId, targetGuid);
                 } else {
                     game::MessageChatData sysMsg;

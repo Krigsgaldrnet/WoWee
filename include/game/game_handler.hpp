@@ -1888,6 +1888,7 @@ public:
 
     bool isMounted() const { return currentMountDisplayId_ != 0; }
     bool isHostileAttacker(uint64_t guid) const { return hostileAttackers_.count(guid) > 0; }
+    bool isHostileFactionPublic(uint32_t factionTemplateId) const { return isHostileFaction(factionTemplateId); }
     float getServerRunSpeed() const { return serverRunSpeed_; }
     float getServerWalkSpeed() const { return serverWalkSpeed_; }
     float getServerSwimSpeed() const { return serverSwimSpeed_; }
