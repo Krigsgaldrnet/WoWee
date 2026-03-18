@@ -7116,10 +7116,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     castTimeRemaining  = castTimeTotal;
                 } else {
                     auto& s = unitCastStates_[chanCaster];
-                    s.casting       = true;
-                    s.spellId       = chanSpellId;
-                    s.timeTotal     = chanTotalMs / 1000.0f;
-                    s.timeRemaining = s.timeTotal;
+                    s.casting        = true;
+                    s.spellId        = chanSpellId;
+                    s.timeTotal      = chanTotalMs / 1000.0f;
+                    s.timeRemaining  = s.timeTotal;
+                    s.interruptible  = isSpellInterruptible(chanSpellId);
                 }
                 LOG_DEBUG("MSG_CHANNEL_START: caster=0x", std::hex, chanCaster, std::dec,
                           " spell=", chanSpellId, " total=", chanTotalMs, "ms");
