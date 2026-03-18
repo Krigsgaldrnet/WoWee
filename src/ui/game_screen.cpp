@@ -4182,6 +4182,17 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
             }
         }
 
+        // Player guild name (e.g. "<My Guild>") — mirrors NPC subtitle styling
+        if (target->getType() == game::ObjectType::PLAYER) {
+            uint32_t guildId = gameHandler.getEntityGuildId(target->getGuid());
+            if (guildId != 0) {
+                const std::string& gn = gameHandler.lookupGuildName(guildId);
+                if (!gn.empty()) {
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 0.9f), "<%s>", gn.c_str());
+                }
+            }
+        }
+
         // Right-click context menu on the target name
         if (ImGui::BeginPopupContextItem("##TargetNameCtx")) {
             const bool isPlayer = (target->getType() == game::ObjectType::PLAYER);
