@@ -885,6 +885,10 @@ public:
     const std::array<ActionBarSlot, ACTION_BAR_SLOTS>& getActionBar() const { return actionBar; }
     void setActionBarSlot(int slot, ActionBarSlot::Type type, uint32_t id);
 
+    // Client-side macro text storage (server sends only macro index; text is stored locally)
+    const std::string& getMacroText(uint32_t macroId) const;
+    void setMacroText(uint32_t macroId, const std::string& text);
+
     void saveCharacterConfig();
     void loadCharacterConfig();
     static std::string getCharacterConfigDir();
@@ -2759,6 +2763,7 @@ private:
 
     float castTimeTotal = 0.0f;
     std::array<ActionBarSlot, ACTION_BAR_SLOTS> actionBar{};
+    std::unordered_map<uint32_t, std::string> macros_;  // client-side macro text (persisted in char config)
     std::vector<AuraSlot> playerAuras;
     std::vector<AuraSlot> targetAuras;
     std::unordered_map<uint64_t, std::vector<AuraSlot>> unitAurasCache_; // per-unit aura cache

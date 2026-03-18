@@ -201,6 +201,10 @@ private:
     // Keybinding customization
     int pendingRebindAction = -1;  // -1 = not rebinding, otherwise action index
     bool awaitingKeyPress = false;
+    // Macro editor popup state
+    uint32_t macroEditorId_   = 0;        // macro index being edited
+    bool     macroEditorOpen_ = false;    // deferred OpenPopup flag
+    char     macroEditorBuf_[256] = {};   // edit buffer
     bool pendingUseOriginalSoundtrack = true;
     bool pendingShowActionBar2 = true;   // Show second action bar above main bar
     float pendingActionBarScale = 1.0f;  // Multiplier for action bar slot size (0.5–1.5)

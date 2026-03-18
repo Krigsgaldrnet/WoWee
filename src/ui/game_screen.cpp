@@ -7483,6 +7483,16 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 gameHandler.castSpell(slot.id, target);
             } else if (slot.type == game::ActionBarSlot::ITEM && slot.id != 0) {
                 gameHandler.useItemById(slot.id);
+            } else if (slot.type == game::ActionBarSlot::MACRO) {
+                const std::string& text = gameHandler.getMacroText(slot.id);
+                if (!text.empty()) {
+                    // Execute first line of macro as a chat command
+                    size_t nl = text.find('\n');
+                    std::string firstLine = (nl != std::string::npos) ? text.substr(0, nl) : text;
+                    strncpy(chatInputBuffer, firstLine.c_str(), sizeof(chatInputBuffer) - 1);
+                    chatInputBuffer[sizeof(chatInputBuffer) - 1] = '\0';
+                    sendChatMessage(gameHandler);
+                }
             }
         }
 
@@ -7513,6 +7523,24 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                     }
                 } else if (slot.type == game::ActionBarSlot::MACRO) {
                     ImGui::TextDisabled("Macro #%u", slot.id);
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Execute")) {
+                        const std::string& text = gameHandler.getMacroText(slot.id);
+                        if (!text.empty()) {
+                            size_t nl = text.find('\n');
+                            std::string firstLine = (nl != std::string::npos) ? text.substr(0, nl) : text;
+                            strncpy(chatInputBuffer, firstLine.c_str(), sizeof(chatInputBuffer) - 1);
+                            chatInputBuffer[sizeof(chatInputBuffer) - 1] = '\0';
+                            sendChatMessage(gameHandler);
+                        }
+                    }
+                    if (ImGui::MenuItem("Edit")) {
+                        const std::string& txt = gameHandler.getMacroText(slot.id);
+                        strncpy(macroEditorBuf_, txt.c_str(), sizeof(macroEditorBuf_) - 1);
+                        macroEditorBuf_[sizeof(macroEditorBuf_) - 1] = '\0';
+                        macroEditorId_   = slot.id;
+                        macroEditorOpen_ = true;
+                    }
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Clear Slot")) {
@@ -7574,6 +7602,13 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             } else if (slot.type == game::ActionBarSlot::MACRO) {
                 ImGui::BeginTooltip();
                 ImGui::Text("Macro #%u", slot.id);
+                const std::string& macroText = gameHandler.getMacroText(slot.id);
+                if (!macroText.empty()) {
+                    ImGui::Separator();
+                    ImGui::TextUnformatted(macroText.c_str());
+                } else {
+                    ImGui::TextDisabled("(no text — right-click to Edit)");
+                }
                 ImGui::EndTooltip();
             } else if (slot.type == game::ActionBarSlot::ITEM) {
                 ImGui::BeginTooltip();
@@ -7785,6 +7820,28 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
         for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i) {
             if (i > 0) ImGui::SameLine(0, spacing);
             renderBarSlot(i, keyLabels1[i]);
+        }
+
+        // Macro editor modal — opened by "Edit" in action bar context menus
+        if (macroEditorOpen_) {
+            ImGui::OpenPopup("Edit Macro###MacroEdit");
+            macroEditorOpen_ = false;
+        }
+        if (ImGui::BeginPopupModal("Edit Macro###MacroEdit", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse)) {
+            ImGui::Text("Macro #%u  (first line executes on click)", macroEditorId_);
+            ImGui::SetNextItemWidth(320.0f);
+            ImGui::InputTextMultiline("##MacroText", macroEditorBuf_, sizeof(macroEditorBuf_),
+                                      ImVec2(320.0f, 80.0f));
+            if (ImGui::Button("Save")) {
+                gameHandler.setMacroText(macroEditorId_, std::string(macroEditorBuf_));
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
     }
     ImGui::End();

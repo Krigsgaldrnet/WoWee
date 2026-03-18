@@ -23468,6 +23468,21 @@ std::string GameHandler::getCharacterConfigDir() {
     return dir;
 }
 
+static const std::string EMPTY_MACRO_TEXT;
+
+const std::string& GameHandler::getMacroText(uint32_t macroId) const {
+    auto it = macros_.find(macroId);
+    return (it != macros_.end()) ? it->second : EMPTY_MACRO_TEXT;
+}
+
+void GameHandler::setMacroText(uint32_t macroId, const std::string& text) {
+    if (text.empty())
+        macros_.erase(macroId);
+    else
+        macros_[macroId] = text;
+    saveCharacterConfig();
+}
+
 void GameHandler::saveCharacterConfig() {
     const Character* ch = getActiveCharacter();
     if (!ch || ch->name.empty()) return;
@@ -23492,6 +23507,12 @@ void GameHandler::saveCharacterConfig() {
     for (int i = 0; i < ACTION_BAR_SLOTS; i++) {
         out << "action_bar_" << i << "_type=" << static_cast<int>(actionBar[i].type) << "\n";
         out << "action_bar_" << i << "_id=" << actionBar[i].id << "\n";
+    }
+
+    // Save client-side macro text
+    for (const auto& [id, text] : macros_) {
+        if (!text.empty())
+            out << "macro_" << id << "_text=" << text << "\n";
     }
 
     // Save quest log
@@ -23534,6 +23555,15 @@ void GameHandler::loadCharacterConfig() {
             try { savedGender = std::stoi(val); } catch (...) {}
         } else if (key == "use_female_model") {
             try { savedUseFemaleModel = std::stoi(val); } catch (...) {}
+        } else if (key.rfind("macro_", 0) == 0) {
+            // Parse macro_N_text
+            size_t firstUnder = 6; // length of "macro_"
+            size_t secondUnder = key.find('_', firstUnder);
+            if (secondUnder == std::string::npos) continue;
+            uint32_t macroId = 0;
+            try { macroId = static_cast<uint32_t>(std::stoul(key.substr(firstUnder, secondUnder - firstUnder))); } catch (...) { continue; }
+            if (key.substr(secondUnder + 1) == "text" && !val.empty())
+                macros_[macroId] = val;
         } else if (key.rfind("action_bar_", 0) == 0) {
             // Parse action_bar_N_type or action_bar_N_id
             size_t firstUnderscore = 11; // length of "action_bar_"
