@@ -86,7 +86,8 @@ private:
     bool showEntityWindow = false;
     bool showChatWindow = true;
     bool showMinimap_ = true;  // M key toggles minimap
-    bool showNameplates_ = true;  // V key toggles nameplates
+    bool showNameplates_ = true;  // V key toggles enemy/NPC nameplates
+    bool showFriendlyNameplates_ = true;  // Shift+V toggles friendly player nameplates
     float nameplateScale_ = 1.0f; // Scale multiplier for nameplate bar dimensions
     uint64_t nameplateCtxGuid_ = 0; // GUID of nameplate right-clicked (0 = none)
     ImVec2 nameplateCtxPos_{};      // Screen position of nameplate right-click

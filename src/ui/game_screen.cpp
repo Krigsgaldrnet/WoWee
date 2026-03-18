@@ -2805,7 +2805,10 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             }
 
             if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_NAMEPLATES)) {
-                showNameplates_ = !showNameplates_;
+                if (ImGui::GetIO().KeyShift)
+                    showFriendlyNameplates_ = !showFriendlyNameplates_;
+                else
+                    showNameplates_ = !showNameplates_;
             }
 
             if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_WORLD_MAP)) {
@@ -11072,7 +11075,8 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         bool isPlayer = (entityPtr->getType() == game::ObjectType::PLAYER);
         bool isTarget = (guid == targetGuid);
 
-        // Player nameplates are always shown; NPC nameplates respect the V-key toggle
+        // Player nameplates use Shift+V toggle; NPC/enemy nameplates use V toggle
+        if (isPlayer && !showFriendlyNameplates_) continue;
         if (!isPlayer && !showNameplates_) continue;
 
         // For corpses (dead units), only show a minimal grey nameplate if selected
@@ -20268,6 +20272,7 @@ void GameScreen::saveSettings() {
     out << "show_keyring=" << (pendingShowKeyring ? 1 : 0) << "\n";
     out << "action_bar_scale=" << pendingActionBarScale << "\n";
     out << "nameplate_scale=" << nameplateScale_ << "\n";
+    out << "show_friendly_nameplates=" << (showFriendlyNameplates_ ? 1 : 0) << "\n";
     out << "show_action_bar2=" << (pendingShowActionBar2 ? 1 : 0) << "\n";
     out << "action_bar2_offset_x=" << pendingActionBar2OffsetX << "\n";
     out << "action_bar2_offset_y=" << pendingActionBar2OffsetY << "\n";
@@ -20397,6 +20402,8 @@ void GameScreen::loadSettings() {
                 pendingActionBarScale = std::clamp(std::stof(val), 0.5f, 1.5f);
             } else if (key == "nameplate_scale") {
                 nameplateScale_ = std::clamp(std::stof(val), 0.5f, 2.0f);
+            } else if (key == "show_friendly_nameplates") {
+                showFriendlyNameplates_ = (std::stoi(val) != 0);
             } else if (key == "show_action_bar2") {
                 pendingShowActionBar2 = (std::stoi(val) != 0);
             } else if (key == "action_bar2_offset_x") {
