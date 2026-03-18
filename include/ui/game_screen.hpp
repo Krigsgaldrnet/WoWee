@@ -195,6 +195,7 @@ private:
     bool pendingSeparateBags = true;
     bool pendingShowKeyring = true;
     bool pendingAutoLoot = false;
+    bool pendingAutoSellGrey = false;
 
     // Keybinding customization
     int pendingRebindAction = -1;  // -1 = not rebinding, otherwise action index

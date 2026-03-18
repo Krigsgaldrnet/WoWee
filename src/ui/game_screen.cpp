@@ -592,8 +592,9 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         }
     }
 
-    // Apply auto-loot setting to GameHandler every frame (cheap bool sync)
+    // Apply auto-loot / auto-sell settings to GameHandler every frame (cheap bool sync)
     gameHandler.setAutoLoot(pendingAutoLoot);
+    gameHandler.setAutoSellGrey(pendingAutoSellGrey);
 
     // Zone entry detection — fire a toast when the renderer's zone name changes
     if (auto* rend = core::Application::getInstance().getRenderer()) {
@@ -16328,6 +16329,11 @@ void GameScreen::renderSettingsWindow() {
                 }
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Automatically pick up all items when looting");
+                if (ImGui::Checkbox("Auto Sell Greys", &pendingAutoSellGrey)) {
+                    saveSettings();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Automatically sell all grey (poor quality) items when opening a vendor");
 
                 ImGui::Spacing();
                 ImGui::Text("Bags");
@@ -18328,6 +18334,7 @@ void GameScreen::saveSettings() {
 
     // Gameplay
     out << "auto_loot=" << (pendingAutoLoot ? 1 : 0) << "\n";
+    out << "auto_sell_grey=" << (pendingAutoSellGrey ? 1 : 0) << "\n";
     out << "graphics_preset=" << static_cast<int>(currentGraphicsPreset) << "\n";
     out << "ground_clutter_density=" << pendingGroundClutterDensity << "\n";
     out << "shadows=" << (pendingShadows ? 1 : 0) << "\n";
@@ -18469,6 +18476,7 @@ void GameScreen::loadSettings() {
             else if (key == "activity_volume") pendingActivityVolume = std::clamp(std::stoi(val), 0, 100);
             // Gameplay
             else if (key == "auto_loot") pendingAutoLoot = (std::stoi(val) != 0);
+            else if (key == "auto_sell_grey") pendingAutoSellGrey = (std::stoi(val) != 0);
             else if (key == "graphics_preset") {
                 int presetVal = std::clamp(std::stoi(val), 0, 4);
                 currentGraphicsPreset = static_cast<GraphicsPreset>(presetVal);

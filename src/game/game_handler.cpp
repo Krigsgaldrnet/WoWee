@@ -21197,6 +21197,68 @@ void GameHandler::handleListInventory(network::Packet& packet) {
     vendorWindowOpen = true;
     gossipWindowOpen = false; // Close gossip if vendor opens
 
+    // Auto-sell grey items if enabled
+    if (autoSellGrey_ && currentVendorItems.vendorGuid != 0) {
+        uint32_t totalSellPrice = 0;
+        int itemsSold = 0;
+
+        // Helper lambda to attempt selling a poor-quality slot
+        auto tryAutoSell = [&](const ItemSlot& slot, uint64_t itemGuid) {
+            if (slot.empty()) return;
+            if (slot.item.quality != ItemQuality::POOR) return;
+            // Determine sell price (slot cache first, then item info fallback)
+            uint32_t sp = slot.item.sellPrice;
+            if (sp == 0) {
+                if (auto* info = getItemInfo(slot.item.itemId); info && info->valid)
+                    sp = info->sellPrice;
+            }
+            if (sp == 0 || itemGuid == 0) return;
+            BuybackItem sold;
+            sold.itemGuid = itemGuid;
+            sold.item = slot.item;
+            sold.count = 1;
+            buybackItems_.push_front(sold);
+            if (buybackItems_.size() > 12) buybackItems_.pop_back();
+            pendingSellToBuyback_[itemGuid] = sold;
+            sellItem(currentVendorItems.vendorGuid, itemGuid, 1);
+            totalSellPrice += sp;
+            ++itemsSold;
+        };
+
+        // Backpack slots
+        for (int i = 0; i < inventory.getBackpackSize(); ++i) {
+            uint64_t guid = backpackSlotGuids_[i];
+            if (guid == 0) guid = resolveOnlineItemGuid(inventory.getBackpackSlot(i).item.itemId);
+            tryAutoSell(inventory.getBackpackSlot(i), guid);
+        }
+
+        // Extra bag slots
+        for (int b = 0; b < inventory.NUM_BAG_SLOTS; ++b) {
+            uint64_t bagGuid = equipSlotGuids_[19 + b];
+            for (int s = 0; s < inventory.getBagSize(b); ++s) {
+                uint64_t guid = 0;
+                if (bagGuid != 0) {
+                    auto it = containerContents_.find(bagGuid);
+                    if (it != containerContents_.end() && s < static_cast<int>(it->second.numSlots))
+                        guid = it->second.slotGuids[s];
+                }
+                if (guid == 0) guid = resolveOnlineItemGuid(inventory.getBagSlot(b, s).item.itemId);
+                tryAutoSell(inventory.getBagSlot(b, s), guid);
+            }
+        }
+
+        if (itemsSold > 0) {
+            uint32_t gold = totalSellPrice / 10000;
+            uint32_t silver = (totalSellPrice % 10000) / 100;
+            uint32_t copper = totalSellPrice % 100;
+            char buf[128];
+            std::snprintf(buf, sizeof(buf),
+                "|cffaaaaaaAuto-sold %d grey item%s for %ug %us %uc.|r",
+                itemsSold, itemsSold == 1 ? "" : "s", gold, silver, copper);
+            addSystemChatMessage(buf);
+        }
+    }
+
     // Play vendor sound
     if (npcVendorCallback_ && currentVendorItems.vendorGuid != 0) {
         auto entity = entityManager.getEntity(currentVendorItems.vendorGuid);
