@@ -19650,6 +19650,31 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         }
     }
 
+    // Instance difficulty indicator — just below zone name, inside minimap top edge
+    if (gameHandler.isInInstance()) {
+        static const char* kDiffLabels[] = {"Normal", "Heroic", "25 Normal", "25 Heroic"};
+        uint32_t diff = gameHandler.getInstanceDifficulty();
+        const char* label = (diff < 4) ? kDiffLabels[diff] : "Unknown";
+
+        ImFont* font = ImGui::GetFont();
+        float fontSize = ImGui::GetFontSize() * 0.85f;
+        ImVec2 ts = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
+        float tx = centerX - ts.x * 0.5f;
+        // Position below zone name: top edge + zone font size + small gap
+        float ty = centerY - mapRadius + 4.0f + ImGui::GetFontSize() + 2.0f;
+        float pad = 2.0f;
+
+        // Color-code: heroic=orange, normal=light gray
+        ImU32 bgCol = gameHandler.isInstanceHeroic() ? IM_COL32(120, 60, 0, 180) : IM_COL32(0, 0, 0, 160);
+        ImU32 textCol = gameHandler.isInstanceHeroic() ? IM_COL32(255, 180, 50, 255) : IM_COL32(200, 200, 200, 220);
+
+        drawList->AddRectFilled(
+            ImVec2(tx - pad, ty - pad),
+            ImVec2(tx + ts.x + pad, ty + ts.y + pad),
+            bgCol, 2.0f);
+        drawList->AddText(font, fontSize, ImVec2(tx, ty), textCol, label);
+    }
+
     // Hover tooltip and right-click context menu
     {
         ImVec2 mouse = ImGui::GetMousePos();

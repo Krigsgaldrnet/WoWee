@@ -1230,6 +1230,11 @@ public:
     void closeBarberShop() { barberShopOpen_ = false; }
     void sendAlterAppearance(uint32_t hairStyle, uint32_t hairColor, uint32_t facialHair);
 
+    // Instance difficulty (0=5N, 1=5H, 2=25N, 3=25H for WotLK)
+    uint32_t getInstanceDifficulty() const { return instanceDifficulty_; }
+    bool isInstanceHeroic() const { return instanceIsHeroic_; }
+    bool isInInstance() const { return inInstance_; }
+
     /** True when ghost is within 40 yards of corpse position (same map). */
     bool canReclaimCorpse() const;
     /** Seconds remaining on the PvP corpse-reclaim delay, or 0 if the reclaim is available now. */
@@ -2867,6 +2872,7 @@ private:
     // Instance difficulty
     uint32_t instanceDifficulty_ = 0;
     bool instanceIsHeroic_ = false;
+    bool inInstance_ = false;
 
     // Raid target markers (icon 0-7 -> guid; 0 = empty slot)
     std::array<uint64_t, kRaidMarkCount> raidTargetGuids_ = {};

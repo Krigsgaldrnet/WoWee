@@ -16458,6 +16458,7 @@ void GameHandler::handleInstanceDifficulty(network::Packet& packet) {
     } else {
         instanceIsHeroic_ = (instanceDifficulty_ == 1);
     }
+    inInstance_ = true;
     LOG_INFO("Instance difficulty: ", instanceDifficulty_, " heroic=", instanceIsHeroic_);
 
     // Announce difficulty change to the player (only when it actually changes)
@@ -22386,6 +22387,7 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
     }
 
     currentMapId_ = mapId;
+    inInstance_ = false;  // cleared on map change; re-set if SMSG_INSTANCE_DIFFICULTY follows
     if (socket) {
         socket->tracePacketsFor(std::chrono::seconds(12), "new_world");
     }
