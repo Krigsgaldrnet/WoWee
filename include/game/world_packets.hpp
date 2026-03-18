@@ -1875,6 +1875,7 @@ struct SpellGoData {
     std::vector<uint64_t>       hitTargets;
     uint8_t missCount = 0;
     std::vector<SpellGoMissEntry> missTargets;
+    uint64_t targetGuid = 0;  ///< Primary target GUID from SpellCastTargets (0 = none/AoE)
 
     bool isValid() const { return spellId != 0; }
 };

@@ -3931,6 +3931,50 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     }
     data.missCount = static_cast<uint8_t>(data.missTargets.size());
 
+    // WotLK 3.3.5a SpellCastTargets — consume ALL target payload bytes so that
+    // any trailing fields after the target section are not misaligned for
+    // ground-targeted or AoE spells.  Same layout as SpellStartParser.
+    if (packet.getReadPos() < packet.getSize()) {
+        if (packet.getSize() - packet.getReadPos() >= 4) {
+            uint32_t targetFlags = packet.readUInt32();
+
+            auto readPackedTarget = [&](uint64_t* out) -> bool {
+                if (!hasFullPackedGuid(packet)) return false;
+                uint64_t g = UpdateObjectParser::readPackedGuid(packet);
+                if (out) *out = g;
+                return true;
+            };
+            auto skipPackedAndFloats3 = [&]() -> bool {
+                if (!hasFullPackedGuid(packet)) return false;
+                UpdateObjectParser::readPackedGuid(packet); // transport GUID
+                if (packet.getSize() - packet.getReadPos() < 12) return false;
+                packet.readFloat(); packet.readFloat(); packet.readFloat();
+                return true;
+            };
+
+            // UNIT/UNIT_MINIPET/CORPSE_ALLY/GAMEOBJECT share one object target GUID
+            if (targetFlags & (0x0002u | 0x0004u | 0x0400u | 0x0800u)) {
+                readPackedTarget(&data.targetGuid);
+            }
+            // ITEM/TRADE_ITEM share one item target GUID
+            if (targetFlags & (0x0010u | 0x0100u)) {
+                readPackedTarget(nullptr);
+            }
+            // SOURCE_LOCATION: PackedGuid (transport) + float x,y,z
+            if (targetFlags & 0x0020u) {
+                skipPackedAndFloats3();
+            }
+            // DEST_LOCATION: PackedGuid (transport) + float x,y,z
+            if (targetFlags & 0x0040u) {
+                skipPackedAndFloats3();
+            }
+            // STRING: null-terminated
+            if (targetFlags & 0x0200u) {
+                while (packet.getReadPos() < packet.getSize() && packet.readUInt8() != 0) {}
+            }
+        }
+    }
+
     LOG_DEBUG("Spell go: spell=", data.spellId, " hits=", (int)data.hitCount,
              " misses=", (int)data.missCount);
     return true;
