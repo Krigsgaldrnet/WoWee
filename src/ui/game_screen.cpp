@@ -13484,6 +13484,7 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
                 itemName = "Item #" + std::to_string(item.itemId);
             }
             ImVec4 qColor = InventoryScreen::getQualityColor(quality);
+            bool startsQuest = (info && info->startQuestId != 0);
 
             // Get item icon
             uint32_t displayId = item.displayInfoId;
@@ -13544,6 +13545,14 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
                 drawList->AddRect(cursor, ImVec2(cursor.x + iconSize, cursor.y + iconSize),
                     IM_COL32(80, 80, 80, 200));
             }
+            // Quest-starter: gold outer glow border + "!" badge on top-right corner
+            if (startsQuest) {
+                drawList->AddRect(ImVec2(cursor.x - 2.0f, cursor.y - 2.0f),
+                    ImVec2(cursor.x + iconSize + 2.0f, cursor.y + iconSize + 2.0f),
+                    IM_COL32(255, 210, 0, 210), 0.0f, 0, 2.0f);
+                drawList->AddText(ImVec2(cursor.x + iconSize - 10.0f, cursor.y + 1.0f),
+                    IM_COL32(255, 210, 0, 255), "!");
+            }
 
             // Draw item name
             float textX = cursor.x + iconSize + 6.0f;
@@ -13551,12 +13560,15 @@ void GameScreen::renderLootWindow(game::GameHandler& gameHandler) {
             drawList->AddText(ImVec2(textX, textY),
                 ImGui::ColorConvertFloat4ToU32(qColor), itemName.c_str());
 
-            // Draw count if > 1
-            if (item.count > 1) {
+            // Draw count or "Begins a Quest" label on second line
+            float secondLineY = textY + ImGui::GetTextLineHeight();
+            if (startsQuest) {
+                drawList->AddText(ImVec2(textX, secondLineY),
+                    IM_COL32(255, 210, 0, 255), "Begins a Quest");
+            } else if (item.count > 1) {
                 char countStr[32];
                 snprintf(countStr, sizeof(countStr), "x%u", item.count);
-                float countY = textY + ImGui::GetTextLineHeight();
-                drawList->AddText(ImVec2(textX, countY), IM_COL32(200, 200, 200, 220), countStr);
+                drawList->AddText(ImVec2(textX, secondLineY), IM_COL32(200, 200, 200, 220), countStr);
             }
 
             ImGui::PopID();
