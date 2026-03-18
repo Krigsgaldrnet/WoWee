@@ -6651,7 +6651,35 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             if (cmdLower == "target" && spacePos != std::string::npos) {
                 // Search visible entities for name match (case-insensitive prefix).
                 // Among all matches, pick the nearest living unit to the player.
+                // Supports WoW macro conditionals: /target [target=mouseover]; /target [mod:shift] Boss
                 std::string targetArg = command.substr(spacePos + 1);
+
+                // Evaluate conditionals if present
+                uint64_t targetCmdOverride = static_cast<uint64_t>(-1);
+                if (!targetArg.empty() && targetArg.front() == '[') {
+                    targetArg = evaluateMacroConditionals(targetArg, gameHandler, targetCmdOverride);
+                    if (targetArg.empty() && targetCmdOverride == static_cast<uint64_t>(-1)) {
+                        // No condition matched — silently skip (macro fallthrough)
+                        chatInputBuffer[0] = '\0';
+                        return;
+                    }
+                    while (!targetArg.empty() && targetArg.front() == ' ') targetArg.erase(targetArg.begin());
+                    while (!targetArg.empty() && targetArg.back()  == ' ') targetArg.pop_back();
+                }
+
+                // If conditionals resolved to a specific GUID, target it directly
+                if (targetCmdOverride != static_cast<uint64_t>(-1) && targetCmdOverride != 0) {
+                    gameHandler.setTarget(targetCmdOverride);
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+
+                // If no name remains (bare conditional like [target=mouseover] with 0 guid), skip silently
+                if (targetArg.empty()) {
+                    chatInputBuffer[0] = '\0';
+                    return;
+                }
+
                 std::string targetArgLower = targetArg;
                 for (char& c : targetArgLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 uint64_t bestGuid = 0;
@@ -6726,7 +6754,64 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
             }
 
             if (cmdLower == "focus") {
-                if (gameHandler.hasTarget()) {
+                // /focus                  → set current target as focus
+                // /focus PlayerName       → search for entity by name and set as focus
+                // /focus [target=X] Name  → macro conditional: set focus to resolved target
+                if (spacePos != std::string::npos) {
+                    std::string focusArg = command.substr(spacePos + 1);
+
+                    // Evaluate conditionals if present
+                    uint64_t focusCmdOverride = static_cast<uint64_t>(-1);
+                    if (!focusArg.empty() && focusArg.front() == '[') {
+                        focusArg = evaluateMacroConditionals(focusArg, gameHandler, focusCmdOverride);
+                        if (focusArg.empty() && focusCmdOverride == static_cast<uint64_t>(-1)) {
+                            chatInputBuffer[0] = '\0';
+                            return;
+                        }
+                        while (!focusArg.empty() && focusArg.front() == ' ') focusArg.erase(focusArg.begin());
+                        while (!focusArg.empty() && focusArg.back()  == ' ') focusArg.pop_back();
+                    }
+
+                    if (focusCmdOverride != static_cast<uint64_t>(-1) && focusCmdOverride != 0) {
+                        // Conditional resolved to a specific GUID (e.g. [target=mouseover])
+                        gameHandler.setFocus(focusCmdOverride);
+                    } else if (!focusArg.empty()) {
+                        // Name search — same logic as /target
+                        std::string focusArgLower = focusArg;
+                        for (char& c : focusArgLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        uint64_t bestGuid = 0;
+                        float    bestDist = std::numeric_limits<float>::max();
+                        const auto& pmi = gameHandler.getMovementInfo();
+                        for (const auto& [guid, entity] : gameHandler.getEntityManager().getEntities()) {
+                            if (!entity || entity->getType() == game::ObjectType::OBJECT) continue;
+                            std::string name;
+                            if (entity->getType() == game::ObjectType::PLAYER ||
+                                entity->getType() == game::ObjectType::UNIT) {
+                                auto unit = std::static_pointer_cast<game::Unit>(entity);
+                                name = unit->getName();
+                            }
+                            if (name.empty()) continue;
+                            std::string nameLower = name;
+                            for (char& c : nameLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                            if (nameLower.find(focusArgLower) == 0) {
+                                float dx = entity->getX() - pmi.x;
+                                float dy = entity->getY() - pmi.y;
+                                float dz = entity->getZ() - pmi.z;
+                                float dist = dx*dx + dy*dy + dz*dz;
+                                if (dist < bestDist) { bestDist = dist; bestGuid = guid; }
+                            }
+                        }
+                        if (bestGuid) {
+                            gameHandler.setFocus(bestGuid);
+                        } else {
+                            game::MessageChatData msg;
+                            msg.type = game::ChatType::SYSTEM;
+                            msg.language = game::ChatLanguage::UNIVERSAL;
+                            msg.message = "No unit matching '" + focusArg + "' found.";
+                            gameHandler.addLocalChatMessage(msg);
+                        }
+                    }
+                } else if (gameHandler.hasTarget()) {
                     gameHandler.setFocus(gameHandler.getTargetGuid());
                 } else {
                     game::MessageChatData msg;
