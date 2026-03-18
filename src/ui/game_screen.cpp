@@ -6088,7 +6088,79 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             // /assist command
             if (cmdLower == "assist") {
-                gameHandler.assistTarget();
+                // /assist              → assist current target (use their target)
+                // /assist PlayerName   → find PlayerName, target their target
+                // /assist [target=X]   → evaluate conditional, target that entity's target
+                auto assistEntityTarget = [&](uint64_t srcGuid) {
+                    auto srcEnt = gameHandler.getEntityManager().getEntity(srcGuid);
+                    if (!srcEnt) { gameHandler.assistTarget(); return; }
+                    uint64_t atkGuid = 0;
+                    const auto& flds = srcEnt->getFields();
+                    auto iLo = flds.find(game::fieldIndex(game::UF::UNIT_FIELD_TARGET_LO));
+                    if (iLo != flds.end()) {
+                        atkGuid = iLo->second;
+                        auto iHi = flds.find(game::fieldIndex(game::UF::UNIT_FIELD_TARGET_HI));
+                        if (iHi != flds.end()) atkGuid |= (static_cast<uint64_t>(iHi->second) << 32);
+                    }
+                    if (atkGuid != 0) {
+                        gameHandler.setTarget(atkGuid);
+                    } else {
+                        std::string sn = getEntityName(srcEnt);
+                        game::MessageChatData msg;
+                        msg.type = game::ChatType::SYSTEM;
+                        msg.language = game::ChatLanguage::UNIVERSAL;
+                        msg.message = (sn.empty() ? "Target" : sn) + " has no target.";
+                        gameHandler.addLocalChatMessage(msg);
+                    }
+                };
+
+                if (spacePos != std::string::npos) {
+                    std::string assistArg = command.substr(spacePos + 1);
+                    while (!assistArg.empty() && assistArg.front() == ' ') assistArg.erase(assistArg.begin());
+
+                    // Evaluate conditionals if present
+                    uint64_t assistOver = static_cast<uint64_t>(-1);
+                    if (!assistArg.empty() && assistArg.front() == '[') {
+                        assistArg = evaluateMacroConditionals(assistArg, gameHandler, assistOver);
+                        if (assistArg.empty() && assistOver == static_cast<uint64_t>(-1)) {
+                            chatInputBuffer[0] = '\0'; return;  // no condition matched
+                        }
+                        while (!assistArg.empty() && assistArg.front() == ' ') assistArg.erase(assistArg.begin());
+                        while (!assistArg.empty() && assistArg.back()  == ' ') assistArg.pop_back();
+                    }
+
+                    if (assistOver != static_cast<uint64_t>(-1) && assistOver != 0) {
+                        assistEntityTarget(assistOver);
+                    } else if (!assistArg.empty()) {
+                        // Name search
+                        std::string argLow = assistArg;
+                        for (char& c : argLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        uint64_t bestGuid = 0; float bestDist = std::numeric_limits<float>::max();
+                        const auto& pmi = gameHandler.getMovementInfo();
+                        for (const auto& [guid, ent] : gameHandler.getEntityManager().getEntities()) {
+                            if (!ent || ent->getType() == game::ObjectType::OBJECT) continue;
+                            std::string nm = getEntityName(ent);
+                            std::string nml = nm;
+                            for (char& c : nml) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                            if (nml.find(argLow) != 0) continue;
+                            float d2 = (ent->getX()-pmi.x)*(ent->getX()-pmi.x)
+                                     + (ent->getY()-pmi.y)*(ent->getY()-pmi.y);
+                            if (d2 < bestDist) { bestDist = d2; bestGuid = guid; }
+                        }
+                        if (bestGuid) assistEntityTarget(bestGuid);
+                        else {
+                            game::MessageChatData msg;
+                            msg.type = game::ChatType::SYSTEM;
+                            msg.language = game::ChatLanguage::UNIVERSAL;
+                            msg.message = "No unit matching '" + assistArg + "' found.";
+                            gameHandler.addLocalChatMessage(msg);
+                        }
+                    } else {
+                        gameHandler.assistTarget();
+                    }
+                } else {
+                    gameHandler.assistTarget();
+                }
                 chatInputBuffer[0] = '\0';
                 return;
             }
