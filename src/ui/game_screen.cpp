@@ -5247,6 +5247,61 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
             }
         }
 
+        // Target-of-Focus: who the focus target is currently targeting
+        {
+            uint64_t fofGuid = 0;
+            const auto& fFields = focus->getFields();
+            auto fItLo = fFields.find(game::fieldIndex(game::UF::UNIT_FIELD_TARGET_LO));
+            if (fItLo != fFields.end()) {
+                fofGuid = fItLo->second;
+                auto fItHi = fFields.find(game::fieldIndex(game::UF::UNIT_FIELD_TARGET_HI));
+                if (fItHi != fFields.end())
+                    fofGuid |= (static_cast<uint64_t>(fItHi->second) << 32);
+            }
+            if (fofGuid != 0) {
+                auto fofEnt = gameHandler.getEntityManager().getEntity(fofGuid);
+                std::string fofName;
+                ImVec4 fofColor(0.7f, 0.7f, 0.7f, 1.0f);
+                if (fofGuid == gameHandler.getPlayerGuid()) {
+                    fofName = "You";
+                    fofColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+                } else if (fofEnt) {
+                    fofName = getEntityName(fofEnt);
+                    uint8_t fcid = entityClassId(fofEnt.get());
+                    if (fcid != 0) fofColor = classColorVec4(fcid);
+                }
+                if (!fofName.empty()) {
+                    ImGui::TextDisabled("▶");
+                    ImGui::SameLine(0, 2);
+                    ImGui::TextColored(fofColor, "%s", fofName.c_str());
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Focus's target: %s\nClick to target", fofName.c_str());
+                    if (ImGui::IsItemClicked())
+                        gameHandler.setTarget(fofGuid);
+
+                    // Compact health bar for target-of-focus
+                    if (fofEnt) {
+                        auto fofUnit = std::dynamic_pointer_cast<game::Unit>(fofEnt);
+                        if (fofUnit && fofUnit->getMaxHealth() > 0) {
+                            float fofPct = static_cast<float>(fofUnit->getHealth()) /
+                                           static_cast<float>(fofUnit->getMaxHealth());
+                            ImVec4 fofBarColor =
+                                fofPct > 0.5f ? ImVec4(0.2f, 0.75f, 0.2f, 1.0f) :
+                                fofPct > 0.2f ? ImVec4(0.75f, 0.75f, 0.2f, 1.0f) :
+                                               ImVec4(0.75f, 0.2f, 0.2f, 1.0f);
+                            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, fofBarColor);
+                            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.15f, 0.8f));
+                            char fofOverlay[32];
+                            snprintf(fofOverlay, sizeof(fofOverlay), "%u%%",
+                                     static_cast<unsigned>(fofPct * 100.0f + 0.5f));
+                            ImGui::ProgressBar(fofPct, ImVec2(-1, 10), fofOverlay);
+                            ImGui::PopStyleColor(2);
+                        }
+                    }
+                }
+            }
+        }
+
         // Distance to focus target
         {
             const auto& mv = gameHandler.getMovementInfo();
