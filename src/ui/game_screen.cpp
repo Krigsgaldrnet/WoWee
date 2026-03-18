@@ -9655,9 +9655,25 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             barColor = IM_COL32(60,  200, 80,  A(200));
             bgColor  = IM_COL32(25,  100, 35,  A(160));
         }
+        // Check if this unit is targeting the local player (threat indicator)
+        bool isTargetingPlayer = false;
+        if (unit->isHostile() && !isCorpse) {
+            const auto& fields = entityPtr->getFields();
+            auto loIt = fields.find(game::fieldIndex(game::UF::UNIT_FIELD_TARGET_LO));
+            if (loIt != fields.end() && loIt->second != 0) {
+                uint64_t unitTarget = loIt->second;
+                auto hiIt = fields.find(game::fieldIndex(game::UF::UNIT_FIELD_TARGET_HI));
+                if (hiIt != fields.end())
+                    unitTarget |= (static_cast<uint64_t>(hiIt->second) << 32);
+                isTargetingPlayer = (unitTarget == playerGuid);
+            }
+        }
+        // Border: gold = currently selected, orange = targeting player, dark = default
         ImU32 borderColor = isTarget
             ? IM_COL32(255, 215, 0,  A(255))
-            : IM_COL32(20,  20,  20, A(180));
+            : isTargetingPlayer
+              ? IM_COL32(255, 140, 0,  A(220))   // orange = this mob is targeting you
+              : IM_COL32(20,  20,  20, A(180));
 
         // Bar geometry
         const float barW = 80.0f * nameplateScale_;
