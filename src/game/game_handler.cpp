@@ -16115,18 +16115,21 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
     uint32_t statusId = packet.readUInt32();
 
     // Map BG type IDs to their names (stable across all three expansions)
+    // BattlemasterList.dbc IDs (3.3.5a)
     static const std::pair<uint32_t, const char*> kBgNames[] = {
         {1,  "Alterac Valley"},
         {2,  "Warsong Gulch"},
         {3,  "Arathi Basin"},
+        {4,  "Nagrand Arena"},
+        {5,  "Blade's Edge Arena"},
+        {6,  "All Arenas"},
         {7,  "Eye of the Storm"},
+        {8,  "Ruins of Lordaeron"},
         {9,  "Strand of the Ancients"},
-        {11, "Isle of Conquest"},
-        {30, "Nagrand Arena"},
-        {31, "Blade's Edge Arena"},
-        {32, "Dalaran Sewers"},
-        {33, "Ring of Valor"},
-        {34, "Ruins of Lordaeron"},
+        {10, "Dalaran Sewers"},
+        {11, "Ring of Valor"},
+        {30, "Isle of Conquest"},
+        {32, "Random Battleground"},
     };
     std::string bgName = "Battleground";
     for (const auto& kv : kBgNames) {
