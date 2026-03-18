@@ -5564,12 +5564,16 @@ static std::string evaluateMacroConditionals(const std::string& rawArg,
 
 // Execute all non-comment lines of a macro body in sequence.
 // In WoW, every line executes per click; the server enforces spell-cast limits.
+// /stopmacro (with optional conditionals) halts the remaining commands early.
 void GameScreen::executeMacroText(game::GameHandler& gameHandler, const std::string& macroText) {
+    macroStopped_ = false;
     for (const auto& cmd : allMacroCommands(macroText)) {
         strncpy(chatInputBuffer, cmd.c_str(), sizeof(chatInputBuffer) - 1);
         chatInputBuffer[sizeof(chatInputBuffer) - 1] = '\0';
         sendChatMessage(gameHandler);
+        if (macroStopped_) break;
     }
+    macroStopped_ = false;
 }
 
 // /castsequence persistent state — shared across all macros using the same spell list.
@@ -5629,6 +5633,29 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             if (cmdLower == "clear") {
                 gameHandler.clearChatHistory();
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
+            // /stopmacro [conditions]
+            // Halts execution of the current macro (remaining lines are skipped).
+            // With a condition block, only stops if the conditions evaluate to true.
+            //   /stopmacro            → always stops
+            //   /stopmacro [combat]   → stops only while in combat
+            //   /stopmacro [nocombat] → stops only when not in combat
+            if (cmdLower == "stopmacro") {
+                bool shouldStop = true;
+                if (spacePos != std::string::npos) {
+                    std::string condArg = command.substr(spacePos + 1);
+                    while (!condArg.empty() && condArg.front() == ' ') condArg.erase(condArg.begin());
+                    if (!condArg.empty() && condArg.front() == '[') {
+                        // Append a sentinel action so evaluateMacroConditionals can signal a match.
+                        uint64_t tgtOver = static_cast<uint64_t>(-1);
+                        std::string hit = evaluateMacroConditionals(condArg + " __stop__", gameHandler, tgtOver);
+                        shouldStop = !hit.empty();
+                    }
+                }
+                if (shouldStop) macroStopped_ = true;
                 chatInputBuffer[0] = '\0';
                 return;
             }

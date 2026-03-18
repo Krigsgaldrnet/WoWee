@@ -55,6 +55,9 @@ private:
     std::vector<std::string> chatSentHistory_;
     int chatHistoryIdx_ = -1;  // -1 = not browsing history
 
+    // Set to true by /stopmacro; checked in executeMacroText to halt remaining commands.
+    bool macroStopped_ = false;
+
     // Tab-completion state for slash commands
     std::string chatTabPrefix_;            // prefix captured on first Tab press
     std::vector<std::string> chatTabMatches_;  // matching command list

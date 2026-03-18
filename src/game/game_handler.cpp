@@ -12302,8 +12302,30 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             }
                         } else if (key == itemDurField && isItemInInventory) {
                             if (it->second.curDurability != val) {
+                                const uint32_t prevDur = it->second.curDurability;
                                 it->second.curDurability = val;
                                 inventoryChanged = true;
+                                // Warn once when durability drops below 20% for an equipped item.
+                                const uint32_t maxDur = it->second.maxDurability;
+                                if (maxDur > 0 && val < maxDur / 5u && prevDur >= maxDur / 5u) {
+                                    // Check if this item is in an equip slot (not bag inventory).
+                                    bool isEquipped = false;
+                                    for (uint64_t slotGuid : equipSlotGuids_) {
+                                        if (slotGuid == block.guid) { isEquipped = true; break; }
+                                    }
+                                    if (isEquipped) {
+                                        std::string itemName;
+                                        const auto* info = getItemInfo(it->second.entry);
+                                        if (info) itemName = info->name;
+                                        char buf[128];
+                                        if (!itemName.empty())
+                                            std::snprintf(buf, sizeof(buf), "%s is about to break!", itemName.c_str());
+                                        else
+                                            std::snprintf(buf, sizeof(buf), "An equipped item is about to break!");
+                                        addUIError(buf);
+                                        addSystemChatMessage(buf);
+                                    }
+                                }
                             }
                         } else if (key == itemMaxDurField && isItemInInventory) {
                             if (it->second.maxDurability != val) {
