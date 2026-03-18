@@ -14755,10 +14755,15 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
                         const auto& ts = arenaStats[ai];
                         ImGui::PushID(static_cast<int>(ai));
 
-                        // Team header with rating
-                        char teamLabel[48];
-                        snprintf(teamLabel, sizeof(teamLabel), "Team #%u", ts.teamId);
-                        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%s", teamLabel);
+                        // Team header: "2v2: Team Name" or fallback "Team #id"
+                        std::string teamLabel;
+                        if (ts.teamType > 0)
+                            teamLabel = std::to_string(ts.teamType) + "v" + std::to_string(ts.teamType) + ": ";
+                        if (!ts.teamName.empty())
+                            teamLabel += ts.teamName;
+                        else
+                            teamLabel += "Team #" + std::to_string(ts.teamId);
+                        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%s", teamLabel.c_str());
 
                         ImGui::Indent(8.0f);
                         // Rating and rank
@@ -14784,6 +14789,10 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
                             ImGui::Spacing();
                             ImGui::TextDisabled("-- Roster (%zu members) --",
                                                 roster->members.size());
+                            ImGui::SameLine();
+                            if (ImGui::SmallButton("Refresh"))
+                                gameHandler.requestArenaTeamRoster(ts.teamId);
+
                             // Column headers
                             ImGui::Columns(4, "##arenaRosterCols", false);
                             ImGui::SetColumnWidth(0, 110.0f);
@@ -14819,6 +14828,10 @@ void GameScreen::renderSocialFrame(game::GameHandler& gameHandler) {
                                 ImGui::NextColumn();
                             }
                             ImGui::Columns(1);
+                        } else {
+                            ImGui::Spacing();
+                            if (ImGui::SmallButton("Load Roster"))
+                                gameHandler.requestArenaTeamRoster(ts.teamId);
                         }
 
                         ImGui::Unindent(8.0f);

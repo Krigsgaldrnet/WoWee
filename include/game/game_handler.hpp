@@ -1431,8 +1431,11 @@ public:
         uint32_t seasonGames  = 0;
         uint32_t seasonWins   = 0;
         uint32_t rank         = 0;
+        std::string teamName;
+        uint32_t teamType     = 0; // 2, 3, or 5
     };
     const std::vector<ArenaTeamStats>& getArenaTeamStats() const { return arenaTeamStats_; }
+    void requestArenaTeamRoster(uint32_t teamId);
 
     // ---- Arena Team Roster ----
     struct ArenaTeamMember {

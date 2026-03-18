@@ -17000,7 +17000,25 @@ void GameHandler::handleArenaTeamQueryResponse(network::Packet& packet) {
     if (packet.getSize() - packet.getReadPos() < 4) return;
     uint32_t teamId = packet.readUInt32();
     std::string teamName = packet.readString();
-    LOG_INFO("Arena team query response: id=", teamId, " name=", teamName);
+    uint32_t teamType = 0;
+    if (packet.getSize() - packet.getReadPos() >= 4)
+        teamType = packet.readUInt32();
+    LOG_INFO("Arena team query response: id=", teamId, " name=", teamName, " type=", teamType);
+
+    // Store name and type in matching ArenaTeamStats entry
+    for (auto& s : arenaTeamStats_) {
+        if (s.teamId == teamId) {
+            s.teamName = teamName;
+            s.teamType = teamType;
+            return;
+        }
+    }
+    // No stats entry yet — create a placeholder so we can show the name
+    ArenaTeamStats stub;
+    stub.teamId   = teamId;
+    stub.teamName = teamName;
+    stub.teamType = teamType;
+    arenaTeamStats_.push_back(std::move(stub));
 }
 
 void GameHandler::handleArenaTeamRoster(network::Packet& packet) {
@@ -17144,18 +17162,29 @@ void GameHandler::handleArenaTeamStats(network::Packet& packet) {
     stats.seasonWins  = packet.readUInt32();
     stats.rank        = packet.readUInt32();
 
-    // Update or insert for this team
+    // Update or insert for this team (preserve name/type from query response)
     for (auto& s : arenaTeamStats_) {
         if (s.teamId == stats.teamId) {
-            s = stats;
-            LOG_INFO("SMSG_ARENA_TEAM_STATS: teamId=", stats.teamId,
-                     " rating=", stats.rating, " rank=", stats.rank);
+            stats.teamName = std::move(s.teamName);
+            stats.teamType = s.teamType;
+            s = std::move(stats);
+            LOG_INFO("SMSG_ARENA_TEAM_STATS: teamId=", s.teamId,
+                     " rating=", s.rating, " rank=", s.rank);
             return;
         }
     }
-    arenaTeamStats_.push_back(stats);
-    LOG_INFO("SMSG_ARENA_TEAM_STATS: teamId=", stats.teamId,
-             " rating=", stats.rating, " rank=", stats.rank);
+    arenaTeamStats_.push_back(std::move(stats));
+    LOG_INFO("SMSG_ARENA_TEAM_STATS: teamId=", arenaTeamStats_.back().teamId,
+             " rating=", arenaTeamStats_.back().rating,
+             " rank=", arenaTeamStats_.back().rank);
+}
+
+void GameHandler::requestArenaTeamRoster(uint32_t teamId) {
+    if (!socket) return;
+    network::Packet pkt(wireOpcode(Opcode::CMSG_ARENA_TEAM_ROSTER));
+    pkt.writeUInt32(teamId);
+    socket->send(pkt);
+    LOG_INFO("Requesting arena team roster for teamId=", teamId);
 }
 
 void GameHandler::handleArenaError(network::Packet& packet) {
