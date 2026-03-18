@@ -4461,6 +4461,32 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                         std::chrono::steady_clock::now().time_since_epoch()).count());
                 int32_t tRemainMs = aura.getRemainingMs(tNowMs);
 
+                // Clock-sweep overlay (elapsed = dark area, WoW style)
+                if (tRemainMs > 0 && aura.maxDurationMs > 0) {
+                    ImVec2 tIconMin = ImGui::GetItemRectMin();
+                    ImVec2 tIconMax = ImGui::GetItemRectMax();
+                    float tcx = (tIconMin.x + tIconMax.x) * 0.5f;
+                    float tcy = (tIconMin.y + tIconMax.y) * 0.5f;
+                    float tR  = (tIconMax.x - tIconMin.x) * 0.5f;
+                    float tTot = static_cast<float>(aura.maxDurationMs);
+                    float tFrac = std::clamp(
+                        1.0f - static_cast<float>(tRemainMs) / tTot, 0.0f, 1.0f);
+                    if (tFrac > 0.005f) {
+                        constexpr int TSEGS = 24;
+                        float tSa = -IM_PI * 0.5f;
+                        float tEa = tSa + tFrac * 2.0f * IM_PI;
+                        ImVec2 tPts[TSEGS + 2];
+                        tPts[0] = ImVec2(tcx, tcy);
+                        for (int s = 0; s <= TSEGS; ++s) {
+                            float a = tSa + (tEa - tSa) * s / static_cast<float>(TSEGS);
+                            tPts[s + 1] = ImVec2(tcx + std::cos(a) * tR,
+                                                 tcy + std::sin(a) * tR);
+                        }
+                        ImGui::GetWindowDrawList()->AddConvexPolyFilled(
+                            tPts, TSEGS + 2, IM_COL32(0, 0, 0, 145));
+                    }
+                }
+
                 // Duration countdown overlay
                 if (tRemainMs > 0) {
                     ImVec2 iconMin = ImGui::GetItemRectMin();
@@ -13166,6 +13192,32 @@ void GameScreen::renderBuffBar(game::GameHandler& gameHandler) {
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count());
             int32_t remainMs = aura.getRemainingMs(nowMs);
+
+            // Clock-sweep overlay: dark fan shows elapsed time (WoW style)
+            if (remainMs > 0 && aura.maxDurationMs > 0) {
+                ImVec2 iconMin2 = ImGui::GetItemRectMin();
+                ImVec2 iconMax2 = ImGui::GetItemRectMax();
+                float cx2 = (iconMin2.x + iconMax2.x) * 0.5f;
+                float cy2 = (iconMin2.y + iconMax2.y) * 0.5f;
+                float fanR2 = (iconMax2.x - iconMin2.x) * 0.5f;
+                float total2 = static_cast<float>(aura.maxDurationMs);
+                float elapsedFrac2 = std::clamp(
+                    1.0f - static_cast<float>(remainMs) / total2, 0.0f, 1.0f);
+                if (elapsedFrac2 > 0.005f) {
+                    constexpr int SWEEP_SEGS = 24;
+                    float sa = -IM_PI * 0.5f;
+                    float ea = sa + elapsedFrac2 * 2.0f * IM_PI;
+                    ImVec2 pts[SWEEP_SEGS + 2];
+                    pts[0] = ImVec2(cx2, cy2);
+                    for (int s = 0; s <= SWEEP_SEGS; ++s) {
+                        float a = sa + (ea - sa) * s / static_cast<float>(SWEEP_SEGS);
+                        pts[s + 1] = ImVec2(cx2 + std::cos(a) * fanR2,
+                                            cy2 + std::sin(a) * fanR2);
+                    }
+                    ImGui::GetWindowDrawList()->AddConvexPolyFilled(
+                        pts, SWEEP_SEGS + 2, IM_COL32(0, 0, 0, 145));
+                }
+            }
 
             // Duration countdown overlay — always visible on the icon bottom
             if (remainMs > 0) {
