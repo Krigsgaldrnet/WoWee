@@ -2645,13 +2645,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_CORPSE_RECLAIM_DELAY: {
-            // uint32 delayMs before player can reclaim corpse
+            // uint32 delayMs before player can reclaim corpse (PvP deaths)
             if (packet.getSize() - packet.getReadPos() >= 4) {
                 uint32_t delayMs = packet.readUInt32();
-                uint32_t delaySec = (delayMs + 999) / 1000;
-                addSystemChatMessage("You can reclaim your corpse in " +
-                                     std::to_string(delaySec) + " seconds.");
-                LOG_DEBUG("SMSG_CORPSE_RECLAIM_DELAY: ", delayMs, "ms");
+                auto nowMs = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count());
+                corpseReclaimAvailableMs_ = nowMs + delayMs;
+                LOG_INFO("SMSG_CORPSE_RECLAIM_DELAY: ", delayMs, "ms");
             }
             break;
         }
@@ -9085,6 +9086,7 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     playerDead_ = false;
     releasedSpirit_ = false;
     corpseGuid_ = 0;
+    corpseReclaimAvailableMs_ = 0;
     targetGuid = 0;
     focusGuid = 0;
     lastTargetGuid = 0;
@@ -13939,6 +13941,15 @@ bool GameHandler::canReclaimCorpse() const {
     float dy = movementInfo.y - corpseX_;  // canonical west  - server.x
     float dz = movementInfo.z - corpseZ_;
     return (dx*dx + dy*dy + dz*dz) <= (40.0f * 40.0f);
+}
+
+float GameHandler::getCorpseReclaimDelaySec() const {
+    if (corpseReclaimAvailableMs_ == 0) return 0.0f;
+    auto nowMs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    if (nowMs >= corpseReclaimAvailableMs_) return 0.0f;
+    return static_cast<float>(corpseReclaimAvailableMs_ - nowMs) / 1000.0f;
 }
 
 void GameHandler::reclaimCorpse() {

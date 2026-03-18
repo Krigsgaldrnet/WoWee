@@ -1183,6 +1183,8 @@ public:
     void cancelPetUnlearn() { petUnlearnPending_ = false; }
     /** True when ghost is within 40 yards of corpse position (same map). */
     bool canReclaimCorpse() const;
+    /** Seconds remaining on the PvP corpse-reclaim delay, or 0 if the reclaim is available now. */
+    float getCorpseReclaimDelaySec() const;
     /** Distance (yards) from ghost to corpse, or -1 if no corpse data. */
     float getCorpseDistance() const {
         if (corpseMapId_ == 0 || currentMapId_ != corpseMapId_) return -1.0f;
@@ -3298,6 +3300,9 @@ private:
     uint32_t corpseMapId_ = 0;
     float corpseX_ = 0.0f, corpseY_ = 0.0f, corpseZ_ = 0.0f;
     uint64_t corpseGuid_ = 0;
+    // Absolute time (ms since epoch) when PvP corpse-reclaim delay expires.
+    // 0 means no active delay (reclaim allowed immediately upon proximity).
+    uint64_t corpseReclaimAvailableMs_ = 0;
     // Death Knight runes (class 6): slots 0-1=Blood, 2-3=Unholy, 4-5=Frost initially
     std::array<RuneSlot, 6> playerRunes_ = [] {
         std::array<RuneSlot, 6> r{};

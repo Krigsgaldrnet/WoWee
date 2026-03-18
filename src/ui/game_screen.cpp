@@ -15421,28 +15421,48 @@ void GameScreen::renderReclaimCorpseButton(game::GameHandler& gameHandler) {
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
     float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
 
+    float delaySec = gameHandler.getCorpseReclaimDelaySec();
+    bool onDelay = (delaySec > 0.0f);
+
     float btnW = 220.0f, btnH = 36.0f;
+    float winH = btnH + 16.0f + (onDelay ? 20.0f : 0.0f);
     ImGui::SetNextWindowPos(ImVec2(screenW / 2 - btnW / 2, screenH * 0.72f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(btnW + 16.0f, btnH + 16.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(btnW + 16.0f, winH), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.7f));
     if (ImGui::Begin("##ReclaimCorpse", nullptr,
             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoBringToFrontOnFocus)) {
-        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.35f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.55f, 0.25f, 1.0f));
-        if (ImGui::Button("Resurrect from Corpse", ImVec2(btnW, btnH))) {
-            gameHandler.reclaimCorpse();
-        }
-        ImGui::PopStyleColor(2);
-        float corpDist = gameHandler.getCorpseDistance();
-        if (corpDist >= 0.0f) {
-            char distBuf[48];
-            snprintf(distBuf, sizeof(distBuf), "Corpse: %.0f yards away", corpDist);
-            float dw = ImGui::CalcTextSize(distBuf).x;
-            ImGui::SetCursorPosX((btnW + 16.0f - dw) * 0.5f);
-            ImGui::TextDisabled("%s", distBuf);
+        if (onDelay) {
+            // Greyed-out button while PvP reclaim timer ticks down
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.25f, 0.25f, 0.25f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.25f, 1.0f));
+            ImGui::BeginDisabled(true);
+            char delayLabel[64];
+            snprintf(delayLabel, sizeof(delayLabel), "Resurrect from Corpse (%.0fs)", delaySec);
+            ImGui::Button(delayLabel, ImVec2(btnW, btnH));
+            ImGui::EndDisabled();
+            ImGui::PopStyleColor(2);
+            const char* waitMsg = "You cannot reclaim your corpse yet.";
+            float tw = ImGui::CalcTextSize(waitMsg).x;
+            ImGui::SetCursorPosX((btnW + 16.0f - tw) * 0.5f);
+            ImGui::TextColored(ImVec4(0.8f, 0.5f, 0.2f, 1.0f), "%s", waitMsg);
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.35f, 0.15f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.55f, 0.25f, 1.0f));
+            if (ImGui::Button("Resurrect from Corpse", ImVec2(btnW, btnH))) {
+                gameHandler.reclaimCorpse();
+            }
+            ImGui::PopStyleColor(2);
+            float corpDist = gameHandler.getCorpseDistance();
+            if (corpDist >= 0.0f) {
+                char distBuf[48];
+                snprintf(distBuf, sizeof(distBuf), "Corpse: %.0f yards away", corpDist);
+                float dw = ImGui::CalcTextSize(distBuf).x;
+                ImGui::SetCursorPosX((btnW + 16.0f - dw) * 0.5f);
+                ImGui::TextDisabled("%s", distBuf);
+            }
         }
     }
     ImGui::End();
