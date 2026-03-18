@@ -82,6 +82,14 @@ std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler
         pos += replacement.length();
     }
 
+    // Resolve class and race names for $C and $R placeholders
+    std::string className = "Adventurer";
+    std::string raceName = "Unknown";
+    if (character) {
+        className = game::getClassName(character->characterClass);
+        raceName = game::getRaceName(character->race);
+    }
+
     // Replace simple placeholders
     pos = 0;
     while ((pos = result.find('$', pos)) != std::string::npos) {
@@ -92,11 +100,12 @@ std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler
 
         switch (code) {
             case 'n': case 'N': replacement = playerName; break;
+            case 'c': case 'C': replacement = className; break;
+            case 'r': case 'R': replacement = raceName; break;
             case 'p': replacement = pronouns.subject; break;
             case 'o': replacement = pronouns.object; break;
             case 's': replacement = pronouns.possessive; break;
             case 'S': replacement = pronouns.possessiveP; break;
-            case 'r': replacement = pronouns.object; break;
             case 'b': case 'B': replacement = "\n"; break;
             case 'g': case 'G': pos++; continue;
             default: pos++; continue;
