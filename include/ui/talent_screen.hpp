@@ -45,6 +45,12 @@ private:
     std::unordered_map<uint32_t, std::string> spellTooltips;   // spellId -> description
     std::unordered_map<uint32_t, VkDescriptorSet> bgTextureCache_;  // tabId -> bg texture
 
+    // Talent learn confirmation
+    bool talentConfirmOpen_ = false;
+    uint32_t pendingTalentId_ = 0;
+    uint32_t pendingTalentRank_ = 0;
+    std::string pendingTalentName_;
+
     // GlyphProperties.dbc cache: glyphId -> { spellId, isMajor }
     struct GlyphInfo { uint32_t spellId = 0; bool isMajor = false; };
     std::unordered_map<uint32_t, GlyphInfo> glyphProperties_;  // glyphId -> info

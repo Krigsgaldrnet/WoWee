@@ -176,6 +176,29 @@ void TalentScreen::renderTalentTrees(game::GameHandler& gameHandler) {
 
         ImGui::EndTabBar();
     }
+
+    // Talent learn confirmation popup
+    if (talentConfirmOpen_) {
+        ImGui::OpenPopup("Learn Talent?##talent_confirm");
+        talentConfirmOpen_ = false;
+    }
+    if (ImGui::BeginPopupModal("Learn Talent?##talent_confirm", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "%s", pendingTalentName_.c_str());
+        ImGui::Text("Rank %u", pendingTalentRank_ + 1);
+        ImGui::Spacing();
+        ImGui::TextWrapped("Spend a talent point?");
+        ImGui::Spacing();
+        if (ImGui::Button("Learn", ImVec2(80, 0))) {
+            gameHandler.learnTalent(pendingTalentId_, pendingTalentRank_);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 
 void TalentScreen::renderTalentTree(game::GameHandler& gameHandler, uint32_t tabId,
@@ -574,10 +597,15 @@ void TalentScreen::renderTalent(game::GameHandler& gameHandler,
         ImGui::EndTooltip();
     }
 
-    // Handle click — currentRank is 1-indexed (0=not learned, 1=rank1, ...)
-    // CMSG_LEARN_TALENT requestedRank must equal current count of learned ranks (same value)
+    // Handle click — open confirmation dialog instead of learning directly
     if (clicked && canLearn && prereqsMet) {
-        gameHandler.learnTalent(talent.talentId, currentRank);
+        talentConfirmOpen_ = true;
+        pendingTalentId_ = talent.talentId;
+        pendingTalentRank_ = currentRank;
+        uint32_t nextSpell = (currentRank < 5) ? talent.rankSpells[currentRank] : 0;
+        pendingTalentName_ = nextSpell ? gameHandler.getSpellName(nextSpell) : "";
+        if (pendingTalentName_.empty())
+            pendingTalentName_ = spellId ? gameHandler.getSpellName(spellId) : "Talent";
     }
 
     ImGui::PopID();
