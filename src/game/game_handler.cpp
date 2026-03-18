@@ -3265,10 +3265,24 @@ void GameHandler::handlePacket(network::Packet& packet) {
             handleSpellDamageLog(packet);
             break;
         case Opcode::SMSG_PLAY_SPELL_VISUAL: {
-            // Minimal parse: uint64 casterGuid, uint32 visualId
+            // uint64 casterGuid + uint32 visualId
             if (packet.getSize() - packet.getReadPos() < 12) break;
-            packet.readUInt64();
-            packet.readUInt32();
+            uint64_t casterGuid = packet.readUInt64();
+            uint32_t visualId   = packet.readUInt32();
+            if (visualId == 0) break;
+            // Resolve caster world position and spawn the effect
+            auto* renderer = core::Application::getInstance().getRenderer();
+            if (!renderer) break;
+            glm::vec3 spawnPos;
+            if (casterGuid == playerGuid) {
+                spawnPos = renderer->getCharacterPosition();
+            } else {
+                auto entity = entityManager.getEntity(casterGuid);
+                if (!entity) break;
+                glm::vec3 canonical(entity->getLatestX(), entity->getLatestY(), entity->getLatestZ());
+                spawnPos = core::coords::canonicalToRender(canonical);
+            }
+            renderer->playSpellVisual(visualId, spawnPos);
             break;
         }
         case Opcode::SMSG_SPELLHEALLOG:

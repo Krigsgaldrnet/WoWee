@@ -2627,6 +2627,180 @@ void Renderer::stopChargeEffect() {
     }
 }
 
+// ─── Spell Visual Effects ────────────────────────────────────────────────────
+
+void Renderer::loadSpellVisualDbc() {
+    if (spellVisualDbcLoaded_) return;
+    spellVisualDbcLoaded_ = true; // Set early to prevent re-entry on failure
+
+    if (!cachedAssetManager) {
+        cachedAssetManager = core::Application::getInstance().getAssetManager();
+    }
+    if (!cachedAssetManager) return;
+
+    auto* layout = pipeline::getActiveDBCLayout();
+    const pipeline::DBCFieldMap* svLayout  = layout ? layout->getLayout("SpellVisual")           : nullptr;
+    const pipeline::DBCFieldMap* kitLayout = layout ? layout->getLayout("SpellVisualKit")        : nullptr;
+    const pipeline::DBCFieldMap* fxLayout  = layout ? layout->getLayout("SpellVisualEffectName") : nullptr;
+
+    uint32_t svCastKitField   = svLayout  ? (*svLayout)["CastKit"]       : 2;
+    uint32_t svMissileField   = svLayout  ? (*svLayout)["MissileModel"]  : 8;
+    uint32_t kitSpecial0Field = kitLayout ? (*kitLayout)["SpecialEffect0"] : 11;
+    uint32_t kitBaseField     = kitLayout ? (*kitLayout)["BaseEffect"]     : 5;
+    uint32_t fxFilePathField  = fxLayout  ? (*fxLayout)["FilePath"]       : 2;
+
+    // Load SpellVisualEffectName.dbc — ID → M2 path
+    auto fxDbc = cachedAssetManager->loadDBC("SpellVisualEffectName.dbc");
+    if (!fxDbc || !fxDbc->isLoaded() || fxDbc->getFieldCount() <= fxFilePathField) {
+        LOG_DEBUG("SpellVisual: SpellVisualEffectName.dbc unavailable (fc=",
+                  fxDbc ? fxDbc->getFieldCount() : 0, ")");
+        return;
+    }
+    std::unordered_map<uint32_t, std::string> effectPaths; // effectNameId → path
+    for (uint32_t i = 0; i < fxDbc->getRecordCount(); ++i) {
+        uint32_t id   = fxDbc->getUInt32(i, 0);
+        std::string p = fxDbc->getString(i, fxFilePathField);
+        if (id && !p.empty()) effectPaths[id] = p;
+    }
+
+    // Load SpellVisualKit.dbc — kitId → best SpellVisualEffectName ID
+    auto kitDbc = cachedAssetManager->loadDBC("SpellVisualKit.dbc");
+    std::unordered_map<uint32_t, uint32_t> kitToEffectName; // kitId → effectNameId
+    if (kitDbc && kitDbc->isLoaded()) {
+        uint32_t fc = kitDbc->getFieldCount();
+        for (uint32_t i = 0; i < kitDbc->getRecordCount(); ++i) {
+            uint32_t kitId = kitDbc->getUInt32(i, 0);
+            if (!kitId) continue;
+            // Prefer SpecialEffect0, fall back to BaseEffect
+            uint32_t eff = 0;
+            if (kitSpecial0Field < fc) eff = kitDbc->getUInt32(i, kitSpecial0Field);
+            if (!eff && kitBaseField < fc) eff = kitDbc->getUInt32(i, kitBaseField);
+            if (eff) kitToEffectName[kitId] = eff;
+        }
+    }
+
+    // Load SpellVisual.dbc — visualId → M2 path via kit chain
+    auto svDbc = cachedAssetManager->loadDBC("SpellVisual.dbc");
+    if (!svDbc || !svDbc->isLoaded()) {
+        LOG_DEBUG("SpellVisual: SpellVisual.dbc unavailable");
+        return;
+    }
+    uint32_t svFc = svDbc->getFieldCount();
+    uint32_t loaded = 0;
+    for (uint32_t i = 0; i < svDbc->getRecordCount(); ++i) {
+        uint32_t vid = svDbc->getUInt32(i, 0);
+        if (!vid) continue;
+
+        std::string path;
+
+        // Try CastKit → SpellVisualKit → SpecialEffect0 path
+        if (svCastKitField < svFc) {
+            uint32_t kitId = svDbc->getUInt32(i, svCastKitField);
+            if (kitId) {
+                auto kitIt = kitToEffectName.find(kitId);
+                if (kitIt != kitToEffectName.end()) {
+                    auto fxIt = effectPaths.find(kitIt->second);
+                    if (fxIt != effectPaths.end()) path = fxIt->second;
+                }
+            }
+        }
+        // Fallback: MissileModel directly references SpellVisualEffectName
+        if (path.empty() && svMissileField < svFc) {
+            uint32_t missileEff = svDbc->getUInt32(i, svMissileField);
+            if (missileEff) {
+                auto fxIt = effectPaths.find(missileEff);
+                if (fxIt != effectPaths.end()) path = fxIt->second;
+            }
+        }
+
+        if (!path.empty()) {
+            spellVisualModelPath_[vid] = path;
+            ++loaded;
+        }
+    }
+    LOG_INFO("SpellVisual: loaded ", loaded, " visual→M2 mappings (of ",
+             svDbc->getRecordCount(), " records)");
+}
+
+void Renderer::playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition) {
+    if (!m2Renderer || visualId == 0) return;
+
+    if (!cachedAssetManager)
+        cachedAssetManager = core::Application::getInstance().getAssetManager();
+    if (!cachedAssetManager) return;
+
+    if (!spellVisualDbcLoaded_) loadSpellVisualDbc();
+
+    // Find the M2 path for this visual
+    auto pathIt = spellVisualModelPath_.find(visualId);
+    if (pathIt == spellVisualModelPath_.end()) return; // No model for this visual
+
+    const std::string& modelPath = pathIt->second;
+
+    // Get or assign a model ID for this path
+    auto midIt = spellVisualModelIds_.find(modelPath);
+    uint32_t modelId = 0;
+    if (midIt != spellVisualModelIds_.end()) {
+        modelId = midIt->second;
+    } else {
+        if (nextSpellVisualModelId_ >= 999800) {
+            LOG_WARNING("SpellVisual: model ID pool exhausted");
+            return;
+        }
+        modelId = nextSpellVisualModelId_++;
+        spellVisualModelIds_[modelPath] = modelId;
+    }
+
+    // Load the M2 model if not already loaded
+    if (!m2Renderer->hasModel(modelId)) {
+        auto m2Data = cachedAssetManager->readFile(modelPath);
+        if (m2Data.empty()) {
+            LOG_DEBUG("SpellVisual: could not read model: ", modelPath);
+            return;
+        }
+        pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
+        if (model.vertices.empty() && model.particleEmitters.empty()) {
+            LOG_DEBUG("SpellVisual: empty model: ", modelPath);
+            return;
+        }
+        // Load skin file for WotLK-format M2s
+        if (model.version >= 264) {
+            std::string skinPath = modelPath.substr(0, modelPath.rfind('.')) + "00.skin";
+            auto skinData = cachedAssetManager->readFile(skinPath);
+            if (!skinData.empty()) pipeline::M2Loader::loadSkin(skinData, model);
+        }
+        if (!m2Renderer->loadModel(model, modelId)) {
+            LOG_WARNING("SpellVisual: failed to load model to GPU: ", modelPath);
+            return;
+        }
+        LOG_DEBUG("SpellVisual: loaded model id=", modelId, " path=", modelPath);
+    }
+
+    // Spawn instance at world position
+    uint32_t instanceId = m2Renderer->createInstance(modelId, worldPosition,
+                                                       glm::vec3(0.0f), 1.0f);
+    if (instanceId == 0) {
+        LOG_WARNING("SpellVisual: failed to create instance for visualId=", visualId);
+        return;
+    }
+    activeSpellVisuals_.push_back({instanceId, 0.0f});
+    LOG_DEBUG("SpellVisual: spawned visualId=", visualId, " instanceId=", instanceId,
+              " model=", modelPath);
+}
+
+void Renderer::updateSpellVisuals(float deltaTime) {
+    if (activeSpellVisuals_.empty() || !m2Renderer) return;
+    for (auto it = activeSpellVisuals_.begin(); it != activeSpellVisuals_.end(); ) {
+        it->elapsed += deltaTime;
+        if (it->elapsed >= SPELL_VISUAL_DURATION) {
+            m2Renderer->removeInstance(it->instanceId);
+            it = activeSpellVisuals_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void Renderer::triggerMeleeSwing() {
     if (!characterRenderer || characterInstanceId == 0) return;
     if (meleeSwingCooldown > 0.0f) return;
@@ -3012,6 +3186,8 @@ void Renderer::update(float deltaTime) {
     if (chargeEffect) {
         chargeEffect->update(deltaTime);
     }
+    // Update transient spell visual instances
+    updateSpellVisuals(deltaTime);
 
 
     // Launch M2 doodad animation on background thread (overlaps with character animation + audio)

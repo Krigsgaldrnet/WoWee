@@ -108,5 +108,14 @@
     "Threshold0": 30, "Threshold1": 31, "Threshold2": 32, "Threshold3": 33,
     "Threshold4": 34, "Threshold5": 35, "Threshold6": 36, "Threshold7": 37,
     "Threshold8": 38, "Threshold9": 39
+  },
+  "SpellVisual": {
+    "ID": 0, "CastKit": 2, "ImpactKit": 3, "MissileModel": 8
+  },
+  "SpellVisualKit": {
+    "ID": 0, "BaseEffect": 5, "SpecialEffect0": 11, "SpecialEffect1": 12, "SpecialEffect2": 13
+  },
+  "SpellVisualEffectName": {
+    "ID": 0, "FilePath": 2
   }
 }
