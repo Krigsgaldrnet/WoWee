@@ -5976,7 +5976,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     "Items: /use <item name>  /equip <item name>  /equipset [name]",
                     "Target: /target <name>  /cleartarget  /focus  /clearfocus",
                     "Movement: /sit  /stand  /kneel  /dismount",
-                    "Misc: /played  /time  /zone  /afk [msg]  /dnd [msg]  /inspect",
+                    "Misc: /played  /time  /zone  /loc  /afk [msg]  /dnd [msg]  /inspect",
                     "      /helm  /cloak  /trade  /join <channel>  /leave <channel>",
                     "      /score  /unstuck  /logout  /ticket  /help",
                 };
