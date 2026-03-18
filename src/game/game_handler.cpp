@@ -19932,6 +19932,17 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
             addSystemChatMessage("Too far away.");
             return;
         }
+        // Stop movement before interacting — servers may reject GO use or
+        // immediately cancel the resulting spell cast if the player is moving.
+        const uint32_t moveFlags = movementInfo.flags;
+        const bool isMoving = (moveFlags & 0x00000001u) || // FORWARD
+                              (moveFlags & 0x00000002u) || // BACKWARD
+                              (moveFlags & 0x00000004u) || // STRAFE_LEFT
+                              (moveFlags & 0x00000008u);   // STRAFE_RIGHT
+        if (isMoving) {
+            movementInfo.flags &= ~0x0000000Fu; // clear directional movement flags
+            sendMovement(Opcode::MSG_MOVE_STOP);
+        }
         if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
             movementInfo.orientation = std::atan2(-dy, dx);
             sendMovement(Opcode::MSG_MOVE_SET_FACING);
@@ -19939,6 +19950,12 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
     }
 
+    LOG_INFO("GO interaction: guid=0x", std::hex, guid, std::dec,
+             " entry=", goEntry, " type=", goType,
+             " name='", goName, "' dist=", entity ? std::sqrt(
+                 (entity->getX() - movementInfo.x) * (entity->getX() - movementInfo.x) +
+                 (entity->getY() - movementInfo.y) * (entity->getY() - movementInfo.y) +
+                 (entity->getZ() - movementInfo.z) * (entity->getZ() - movementInfo.z)) : -1.0f);
     auto packet = GameObjectUsePacket::build(guid);
     socket->send(packet);
     lastInteractedGoGuid_ = guid;
