@@ -2999,29 +2999,50 @@ void Application::setupUICallbacks() {
         }
     });
 
-    // NPC death callback (online mode) - play death animation
+    // NPC/player death callback (online mode) - play death animation
     gameHandler->setNpcDeathCallback([this](uint64_t guid) {
         deadCreatureGuids_.insert(guid);
+        if (!renderer || !renderer->getCharacterRenderer()) return;
+        uint32_t instanceId = 0;
         auto it = creatureInstances_.find(guid);
-        if (it != creatureInstances_.end() && renderer && renderer->getCharacterRenderer()) {
-            renderer->getCharacterRenderer()->playAnimation(it->second, 1, false); // Death
+        if (it != creatureInstances_.end()) instanceId = it->second;
+        else {
+            auto pit = playerInstances_.find(guid);
+            if (pit != playerInstances_.end()) instanceId = pit->second;
+        }
+        if (instanceId != 0) {
+            renderer->getCharacterRenderer()->playAnimation(instanceId, 1, false); // Death
         }
     });
 
-    // NPC respawn callback (online mode) - reset to idle animation
+    // NPC/player respawn callback (online mode) - reset to idle animation
     gameHandler->setNpcRespawnCallback([this](uint64_t guid) {
         deadCreatureGuids_.erase(guid);
+        if (!renderer || !renderer->getCharacterRenderer()) return;
+        uint32_t instanceId = 0;
         auto it = creatureInstances_.find(guid);
-        if (it != creatureInstances_.end() && renderer && renderer->getCharacterRenderer()) {
-            renderer->getCharacterRenderer()->playAnimation(it->second, 0, true); // Idle
+        if (it != creatureInstances_.end()) instanceId = it->second;
+        else {
+            auto pit = playerInstances_.find(guid);
+            if (pit != playerInstances_.end()) instanceId = pit->second;
+        }
+        if (instanceId != 0) {
+            renderer->getCharacterRenderer()->playAnimation(instanceId, 0, true); // Idle
         }
     });
 
-    // NPC swing callback (online mode) - play attack animation
+    // NPC/player swing callback (online mode) - play attack animation
     gameHandler->setNpcSwingCallback([this](uint64_t guid) {
+        if (!renderer || !renderer->getCharacterRenderer()) return;
+        uint32_t instanceId = 0;
         auto it = creatureInstances_.find(guid);
-        if (it != creatureInstances_.end() && renderer && renderer->getCharacterRenderer()) {
-            renderer->getCharacterRenderer()->playAnimation(it->second, 16, false); // Attack
+        if (it != creatureInstances_.end()) instanceId = it->second;
+        else {
+            auto pit = playerInstances_.find(guid);
+            if (pit != playerInstances_.end()) instanceId = pit->second;
+        }
+        if (instanceId != 0) {
+            renderer->getCharacterRenderer()->playAnimation(instanceId, 16, false); // Attack
         }
     });
 

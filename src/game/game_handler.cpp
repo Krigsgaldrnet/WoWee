@@ -11562,6 +11562,9 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                           " displayId=", unit->getDisplayId(), " appearance extraction failed — model will not render");
                             }
                         }
+                        if (unitInitiallyDead && npcDeathCallback_) {
+                            npcDeathCallback_(block.guid);
+                        }
                     } else if (creatureSpawnCallback_) {
                         LOG_DEBUG("[Spawn] UNIT guid=0x", std::hex, block.guid, std::dec,
                                   " displayId=", unit->getDisplayId(), " at (",
@@ -11908,7 +11911,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                              corpseX_, ",", corpseY_, ",", corpseZ_,
                                              ") map=", corpseMapId_);
                                 }
-                                if (entity->getType() == ObjectType::UNIT && npcDeathCallback_) {
+                                if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && npcDeathCallback_) {
                                     npcDeathCallback_(block.guid);
                                     npcDeathNotified = true;
                                 }
@@ -11921,7 +11924,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                         LOG_INFO("Player entered ghost form");
                                     }
                                 }
-                                if (entity->getType() == ObjectType::UNIT && npcRespawnCallback_) {
+                                if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && npcRespawnCallback_) {
                                     npcRespawnCallback_(block.guid);
                                     npcRespawnNotified = true;
                                 }
@@ -11952,7 +11955,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                     selfResAvailable_ = false;
                                     LOG_INFO("Player resurrected (dynamic flags)");
                                 }
-                            } else if (entity->getType() == ObjectType::UNIT) {
+                            } else if (entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) {
                                 bool wasDead = (oldDyn & UNIT_DYNFLAG_DEAD) != 0;
                                 bool nowDead = (val & UNIT_DYNFLAG_DEAD) != 0;
                                 if (!wasDead && nowDead) {
@@ -12087,6 +12090,12 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                     LOG_WARNING("[Spawn] PLAYER guid=0x", std::hex, block.guid, std::dec,
                                               " displayId=", unit->getDisplayId(), " appearance extraction failed (VALUES update) — model will not render");
                                 }
+                            }
+                            bool isDeadNow = (unit->getHealth() == 0) ||
+                                ((unit->getDynamicFlags() & (UNIT_DYNFLAG_DEAD | UNIT_DYNFLAG_LOOTABLE)) != 0);
+                            if (isDeadNow && !npcDeathNotified && npcDeathCallback_) {
+                                npcDeathCallback_(block.guid);
+                                npcDeathNotified = true;
                             }
                         } else if (creatureSpawnCallback_) {
                             float unitScale2 = 1.0f;
