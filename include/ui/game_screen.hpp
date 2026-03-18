@@ -366,6 +366,7 @@ private:
     void renderQuestOfferRewardWindow(game::GameHandler& gameHandler);
     void renderVendorWindow(game::GameHandler& gameHandler);
     void renderTrainerWindow(game::GameHandler& gameHandler);
+    void renderBarberShopWindow(game::GameHandler& gameHandler);
     void renderStableWindow(game::GameHandler& gameHandler);
     void renderTaxiWindow(game::GameHandler& gameHandler);
     void renderLogoutCountdown(game::GameHandler& gameHandler);
@@ -542,6 +543,15 @@ private:
     uint32_t vendorConfirmQty_ = 1;
     uint32_t vendorConfirmPrice_ = 0;
     std::string vendorConfirmItemName_;
+
+    // Barber shop UI state
+    int barberHairStyle_ = 0;
+    int barberHairColor_ = 0;
+    int barberFacialHair_ = 0;
+    int barberOrigHairStyle_ = 0;
+    int barberOrigHairColor_ = 0;
+    int barberOrigFacialHair_ = 0;
+    bool barberInitialized_ = false;
 
     // Trainer search filter
     char trainerSearchFilter_[128] = "";

@@ -733,6 +733,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     renderQuestOfferRewardWindow(gameHandler);
     renderVendorWindow(gameHandler);
     renderTrainerWindow(gameHandler);
+    renderBarberShopWindow(gameHandler);
     renderStableWindow(gameHandler);
     renderTaxiWindow(gameHandler);
     renderMailWindow(gameHandler);
@@ -2763,6 +2764,8 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 gameHandler.closeGossip();
             } else if (gameHandler.isVendorWindowOpen()) {
                 gameHandler.closeVendor();
+            } else if (gameHandler.isBarberShopOpen()) {
+                gameHandler.closeBarberShop();
             } else if (gameHandler.isBankOpen()) {
                 gameHandler.closeBank();
             } else if (gameHandler.isTrainerWindowOpen()) {
@@ -16804,6 +16807,119 @@ void GameScreen::renderEscapeMenu() {
         ImGui::PopStyleVar();
     }
     ImGui::End();
+}
+
+// ============================================================
+// Barber Shop Window
+// ============================================================
+
+void GameScreen::renderBarberShopWindow(game::GameHandler& gameHandler) {
+    if (!gameHandler.isBarberShopOpen()) {
+        barberInitialized_ = false;
+        return;
+    }
+
+    const auto* ch = gameHandler.getActiveCharacter();
+    if (!ch) return;
+
+    uint8_t race = static_cast<uint8_t>(ch->race);
+    game::Gender gender = ch->gender;
+    game::Race raceEnum = ch->race;
+
+    // Initialize sliders from current appearance
+    if (!barberInitialized_) {
+        barberOrigHairStyle_ = static_cast<int>((ch->appearanceBytes >> 16) & 0xFF);
+        barberOrigHairColor_ = static_cast<int>((ch->appearanceBytes >> 24) & 0xFF);
+        barberOrigFacialHair_ = static_cast<int>(ch->facialFeatures);
+        barberHairStyle_ = barberOrigHairStyle_;
+        barberHairColor_ = barberOrigHairColor_;
+        barberFacialHair_ = barberOrigFacialHair_;
+        barberInitialized_ = true;
+    }
+
+    int maxHairStyle = static_cast<int>(game::getMaxHairStyle(raceEnum, gender));
+    int maxHairColor = static_cast<int>(game::getMaxHairColor(raceEnum, gender));
+    int maxFacialHair = static_cast<int>(game::getMaxFacialFeature(raceEnum, gender));
+
+    auto* window = core::Application::getInstance().getWindow();
+    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
+    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
+    float winW = 300.0f;
+    float winH = 220.0f;
+    ImGui::SetNextWindowPos(ImVec2((screenW - winW) / 2.0f, (screenH - winH) / 2.0f), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Appearing);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    bool open = true;
+    if (ImGui::Begin("Barber Shop", &open, flags)) {
+        ImGui::Text("Choose your new look:");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::PushItemWidth(-1);
+
+        // Hair Style
+        ImGui::Text("Hair Style");
+        ImGui::SliderInt("##HairStyle", &barberHairStyle_, 0, maxHairStyle,
+                         "%d");
+
+        // Hair Color
+        ImGui::Text("Hair Color");
+        ImGui::SliderInt("##HairColor", &barberHairColor_, 0, maxHairColor,
+                         "%d");
+
+        // Facial Hair / Piercings / Markings
+        const char* facialLabel = (gender == game::Gender::FEMALE) ? "Piercings" : "Facial Hair";
+        // Some races use "Markings" or "Tusks" etc.
+        if (race == 8 || race == 6) facialLabel = "Features"; // Trolls, Tauren
+        ImGui::Text("%s", facialLabel);
+        ImGui::SliderInt("##FacialHair", &barberFacialHair_, 0, maxFacialHair,
+                         "%d");
+
+        ImGui::PopItemWidth();
+
+        ImGui::Spacing();
+        ImGui::Separator();
+
+        // Show whether anything changed
+        bool changed = (barberHairStyle_ != barberOrigHairStyle_ ||
+                        barberHairColor_ != barberOrigHairColor_ ||
+                        barberFacialHair_ != barberOrigFacialHair_);
+
+        // OK / Reset / Cancel buttons
+        float btnW = 80.0f;
+        float totalW = btnW * 3 + ImGui::GetStyle().ItemSpacing.x * 2;
+        ImGui::SetCursorPosX((ImGui::GetWindowWidth() - totalW) / 2.0f);
+
+        if (!changed) ImGui::BeginDisabled();
+        if (ImGui::Button("OK", ImVec2(btnW, 0))) {
+            gameHandler.sendAlterAppearance(
+                static_cast<uint32_t>(barberHairStyle_),
+                static_cast<uint32_t>(barberHairColor_),
+                static_cast<uint32_t>(barberFacialHair_));
+            // Keep window open — server will respond with SMSG_BARBER_SHOP_RESULT
+        }
+        if (!changed) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (!changed) ImGui::BeginDisabled();
+        if (ImGui::Button("Reset", ImVec2(btnW, 0))) {
+            barberHairStyle_ = barberOrigHairStyle_;
+            barberHairColor_ = barberOrigHairColor_;
+            barberFacialHair_ = barberOrigFacialHair_;
+        }
+        if (!changed) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(btnW, 0))) {
+            gameHandler.closeBarberShop();
+        }
+    }
+    ImGui::End();
+
+    if (!open) {
+        gameHandler.closeBarberShop();
+    }
 }
 
 // ============================================================

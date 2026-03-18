@@ -1219,6 +1219,12 @@ public:
     uint32_t getPetUnlearnCost() const { return petUnlearnCost_; }
     void confirmPetUnlearn();
     void cancelPetUnlearn() { petUnlearnPending_ = false; }
+
+    // Barber shop
+    bool isBarberShopOpen() const { return barberShopOpen_; }
+    void closeBarberShop() { barberShopOpen_ = false; }
+    void sendAlterAppearance(uint32_t hairStyle, uint32_t hairColor, uint32_t facialHair);
+
     /** True when ghost is within 40 yards of corpse position (same map). */
     bool canReclaimCorpse() const;
     /** Seconds remaining on the PvP corpse-reclaim delay, or 0 if the reclaim is available now. */
@@ -2982,6 +2988,9 @@ private:
 
     uint64_t activeCharacterGuid_ = 0;
     Race playerRace_ = Race::HUMAN;
+
+    // Barber shop
+    bool barberShopOpen_ = false;
 
     // ---- Phase 5: Loot ----
     bool lootWindowOpen = false;

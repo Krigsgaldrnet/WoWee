@@ -2681,8 +2681,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
         case Opcode::SMSG_ENABLE_BARBER_SHOP:
             // Sent by server when player sits in barber chair — triggers barber shop UI
-            // No payload; we don't have barber shop UI yet, so just log
             LOG_INFO("SMSG_ENABLE_BARBER_SHOP: barber shop available");
+            barberShopOpen_ = true;
             break;
         case Opcode::SMSG_FEIGN_DEATH_RESISTED:
             addUIError("Your Feign Death was resisted.");
@@ -4902,6 +4902,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 uint32_t result = packet.readUInt32();
                 if (result == 0) {
                     addSystemChatMessage("Hairstyle changed.");
+                    barberShopOpen_ = false;
                 } else {
                     const char* msg = (result == 1) ? "Not enough money for new hairstyle."
                                     : (result == 2) ? "You are not at a barber shop."
@@ -19178,6 +19179,13 @@ void GameHandler::confirmTalentWipe() {
     addSystemChatMessage("Talent reset confirmed. The server will update your talents.");
     talentWipeNpcGuid_ = 0;
     talentWipeCost_ = 0;
+}
+
+void GameHandler::sendAlterAppearance(uint32_t hairStyle, uint32_t hairColor, uint32_t facialHair) {
+    if (state != WorldState::IN_WORLD || !socket) return;
+    auto pkt = AlterAppearancePacket::build(hairStyle, hairColor, facialHair);
+    socket->send(pkt);
+    LOG_INFO("sendAlterAppearance: hair=", hairStyle, " color=", hairColor, " facial=", facialHair);
 }
 
 // ============================================================
