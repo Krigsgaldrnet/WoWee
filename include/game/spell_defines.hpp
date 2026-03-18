@@ -61,6 +61,9 @@ struct CombatTextEntry {
     float age = 0.0f;           // Seconds since creation (for fadeout)
     bool isPlayerSource = false; // True if player dealt this
     uint8_t powerType = 0;      // For ENERGIZE/POWER_DRAIN: 0=mana,1=rage,2=focus,3=energy,6=runicpower
+    uint64_t srcGuid = 0;       // Source entity (attacker/caster)
+    uint64_t dstGuid = 0;       // Destination entity (victim/target) — used for world-space positioning
+    float xSeed = 0.0f;         // Random horizontal offset seed (-1..1) to stagger overlapping text
 
     static constexpr float LIFETIME = 2.5f;
     bool isExpired() const { return age >= LIFETIME; }

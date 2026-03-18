@@ -15560,6 +15560,12 @@ void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint
     entry.age = 0.0f;
     entry.isPlayerSource = isPlayerSource;
     entry.powerType = powerType;
+    entry.srcGuid = srcGuid;
+    entry.dstGuid = dstGuid;
+    // Random horizontal stagger so simultaneous hits don't stack vertically
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    entry.xSeed = dist(rng);
     combatText.push_back(entry);
 
     // Persistent combat log — use explicit GUIDs if provided, else fall back to
