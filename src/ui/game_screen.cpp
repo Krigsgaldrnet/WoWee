@@ -17391,6 +17391,55 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
         }
     }
 
+    // BG flag carrier / important player positions (MSG_BATTLEGROUND_PLAYER_POSITIONS)
+    {
+        const auto& bgPositions = gameHandler.getBgPlayerPositions();
+        if (!bgPositions.empty()) {
+            ImVec2 mouse = ImGui::GetMousePos();
+            // group 0 = typically ally-held flag / first list; group 1 = enemy
+            static const ImU32 kBgGroupColors[2] = {
+                IM_COL32( 80, 180, 255, 240),  // group 0: blue (alliance)
+                IM_COL32(220,  50,  50, 240),  // group 1: red  (horde)
+            };
+            for (const auto& bp : bgPositions) {
+                // Packet coords: wowX=canonical X (north), wowY=canonical Y (west)
+                glm::vec3 bpRender = core::coords::canonicalToRender(glm::vec3(bp.wowX, bp.wowY, 0.0f));
+                float sx = 0.0f, sy = 0.0f;
+                if (!projectToMinimap(bpRender, sx, sy)) continue;
+
+                ImU32 col = kBgGroupColors[bp.group & 1];
+
+                // Draw a flag-like diamond icon
+                const float r = 5.0f;
+                ImVec2 top  (sx,       sy - r);
+                ImVec2 right(sx + r,   sy    );
+                ImVec2 bot  (sx,       sy + r);
+                ImVec2 left (sx - r,   sy    );
+                drawList->AddQuadFilled(top, right, bot, left, col);
+                drawList->AddQuad(top, right, bot, left, IM_COL32(255, 255, 255, 180), 1.0f);
+
+                float mdx = mouse.x - sx, mdy = mouse.y - sy;
+                if (mdx * mdx + mdy * mdy < 64.0f) {
+                    // Show entity name if available, otherwise guid
+                    auto ent = gameHandler.getEntityManager().getEntity(bp.guid);
+                    if (ent) {
+                        std::string nm;
+                        if (ent->getType() == game::ObjectType::PLAYER) {
+                            auto pl = std::static_pointer_cast<game::Unit>(ent);
+                            nm = pl ? pl->getName() : "";
+                        }
+                        if (!nm.empty())
+                            ImGui::SetTooltip("Flag carrier: %s", nm.c_str());
+                        else
+                            ImGui::SetTooltip("Flag carrier");
+                    } else {
+                        ImGui::SetTooltip("Flag carrier");
+                    }
+                }
+            }
+        }
+    }
+
     // Corpse direction indicator — shown when player is a ghost
     if (gameHandler.isPlayerGhost()) {
         float corpseCanX = 0.0f, corpseCanY = 0.0f;

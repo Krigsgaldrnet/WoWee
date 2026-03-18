@@ -497,6 +497,15 @@ public:
         return bgScoreboard_.players.empty() ? nullptr : &bgScoreboard_;
     }
 
+    // BG flag carrier / important player positions (MSG_BATTLEGROUND_PLAYER_POSITIONS)
+    struct BgPlayerPosition {
+        uint64_t guid  = 0;
+        float    wowX  = 0.0f;  // canonical WoW X (north)
+        float    wowY  = 0.0f;  // canonical WoW Y (west)
+        int      group = 0;     // 0 = first list (usually ally flag carriers), 1 = second list
+    };
+    const std::vector<BgPlayerPosition>& getBgPlayerPositions() const { return bgPlayerPositions_; }
+
     // Network latency (milliseconds, updated each PONG response)
     uint32_t getLatencyMs() const { return lastLatency; }
 
@@ -2779,6 +2788,9 @@ private:
 
     // BG scoreboard (MSG_PVP_LOG_DATA)
     BgScoreboardData bgScoreboard_;
+
+    // BG flag carrier / player positions (MSG_BATTLEGROUND_PLAYER_POSITIONS)
+    std::vector<BgPlayerPosition> bgPlayerPositions_;
 
     // Instance encounter boss units (slots 0-4 from SMSG_UPDATE_INSTANCE_ENCOUNTER_UNIT)
     std::array<uint64_t, kMaxEncounterSlots> encounterUnitGuids_ = {};  // 0 = empty slot

@@ -5587,10 +5587,22 @@ void GameHandler::handlePacket(network::Packet& packet) {
             addUIError("Battlefield port denied.");
             addSystemChatMessage("Battlefield port denied.");
             break;
-        case Opcode::MSG_BATTLEGROUND_PLAYER_POSITIONS:
-            // Optional map position updates for BG objectives/players.
-            packet.setReadPos(packet.getSize());
+        case Opcode::MSG_BATTLEGROUND_PLAYER_POSITIONS: {
+            bgPlayerPositions_.clear();
+            for (int grp = 0; grp < 2; ++grp) {
+                if (packet.getSize() - packet.getReadPos() < 4) break;
+                uint32_t count = packet.readUInt32();
+                for (uint32_t i = 0; i < count && packet.getSize() - packet.getReadPos() >= 16; ++i) {
+                    BgPlayerPosition pos;
+                    pos.guid  = packet.readUInt64();
+                    pos.wowX  = packet.readFloat();
+                    pos.wowY  = packet.readFloat();
+                    pos.group = grp;
+                    bgPlayerPositions_.push_back(pos);
+                }
+            }
             break;
+        }
         case Opcode::SMSG_REMOVED_FROM_PVP_QUEUE:
             addSystemChatMessage("You have been removed from the PvP queue.");
             break;
