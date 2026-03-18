@@ -11032,6 +11032,10 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
                 isTargetingPlayer = (unitTarget == playerGuid);
             }
         }
+        // Creature rank for border styling (Elite=gold double border, Boss=red, Rare=silver)
+        int creatureRank = -1;
+        if (!isPlayer) creatureRank = gameHandler.getCreatureRank(unit->getEntry());
+
         // Border: gold = currently selected, orange = targeting player, dark = default
         ImU32 borderColor = isTarget
             ? IM_COL32(255, 215, 0,  A(255))
@@ -11054,6 +11058,24 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             drawList->AddRectFilled(ImVec2(barX,                 sy), ImVec2(barX + barW * healthPct,   sy + barH), barColor,   2.0f);
         }
         drawList->AddRect       (ImVec2(barX - 1.0f, sy - 1.0f), ImVec2(barX + barW + 1.0f, sy + barH + 1.0f), borderColor, 2.0f);
+
+        // Elite/Boss/Rare decoration: extra outer border with rank-specific color
+        if (creatureRank == 1 || creatureRank == 2) {
+            // Elite / Rare Elite: gold double border
+            drawList->AddRect(ImVec2(barX - 3.0f, sy - 3.0f),
+                              ImVec2(barX + barW + 3.0f, sy + barH + 3.0f),
+                              IM_COL32(255, 200, 50, A(200)), 3.0f);
+        } else if (creatureRank == 3) {
+            // Boss: red double border
+            drawList->AddRect(ImVec2(barX - 3.0f, sy - 3.0f),
+                              ImVec2(barX + barW + 3.0f, sy + barH + 3.0f),
+                              IM_COL32(255, 40, 40, A(200)), 3.0f);
+        } else if (creatureRank == 4) {
+            // Rare: silver double border
+            drawList->AddRect(ImVec2(barX - 3.0f, sy - 3.0f),
+                              ImVec2(barX + barW + 3.0f, sy + barH + 3.0f),
+                              IM_COL32(170, 200, 230, A(200)), 3.0f);
+        }
 
         // HP % text centered on health bar (non-corpse, non-full-health for readability)
         if (!isCorpse && unit->getMaxHealth() > 0) {
