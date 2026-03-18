@@ -154,6 +154,9 @@ public:
     void triggerLevelUpEffect(const glm::vec3& position);
     void cancelEmote();
 
+    // Screenshot capture — copies swapchain image to PNG file
+    bool captureScreenshot(const std::string& outputPath);
+
     // Spell visual effects (SMSG_PLAY_SPELL_VISUAL / SMSG_PLAY_SPELL_IMPACT)
     // useImpactKit=false → CastKit path; useImpactKit=true → ImpactKit path
     void playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition,

@@ -67,6 +67,10 @@
 #include <cctype>
 #include <cmath>
 #include <chrono>
+#include <filesystem>
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 #include <cstdlib>
 #include <optional>
 #include <unordered_map>
@@ -2572,6 +2576,101 @@ void Renderer::cancelEmote() {
     emoteActive = false;
     emoteAnimId = 0;
     emoteLoop = false;
+}
+
+bool Renderer::captureScreenshot(const std::string& outputPath) {
+    if (!vkCtx) return false;
+
+    VkDevice device     = vkCtx->getDevice();
+    VmaAllocator alloc  = vkCtx->getAllocator();
+    VkExtent2D extent   = vkCtx->getSwapchainExtent();
+    const auto& images  = vkCtx->getSwapchainImages();
+
+    if (images.empty() || currentImageIndex >= images.size()) return false;
+
+    VkImage srcImage = images[currentImageIndex];
+    uint32_t w = extent.width;
+    uint32_t h = extent.height;
+    VkDeviceSize bufSize = static_cast<VkDeviceSize>(w) * h * 4;
+
+    // Stall GPU so the swapchain image is idle
+    vkDeviceWaitIdle(device);
+
+    // Create staging buffer
+    VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufInfo.size  = bufSize;
+    bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    VmaAllocationCreateInfo allocCI{};
+    allocCI.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+
+    VkBuffer stagingBuf = VK_NULL_HANDLE;
+    VmaAllocation stagingAlloc = VK_NULL_HANDLE;
+    if (vmaCreateBuffer(alloc, &bufInfo, &allocCI, &stagingBuf, &stagingAlloc, nullptr) != VK_SUCCESS) {
+        LOG_WARNING("Screenshot: failed to create staging buffer");
+        return false;
+    }
+
+    // Record copy commands
+    VkCommandBuffer cmd = vkCtx->beginSingleTimeCommands();
+
+    // Transition swapchain image: PRESENT_SRC → TRANSFER_SRC
+    VkImageMemoryBarrier toTransfer{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    toTransfer.srcAccessMask       = VK_ACCESS_MEMORY_READ_BIT;
+    toTransfer.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
+    toTransfer.oldLayout           = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    toTransfer.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toTransfer.image               = srcImage;
+    toTransfer.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &toTransfer);
+
+    // Copy image to buffer
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent      = {w, h, 1};
+    vkCmdCopyImageToBuffer(cmd, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           stagingBuf, 1, &region);
+
+    // Transition back: TRANSFER_SRC → PRESENT_SRC
+    VkImageMemoryBarrier toPresent = toTransfer;
+    toPresent.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    toPresent.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    toPresent.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toPresent.newLayout     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &toPresent);
+
+    vkCtx->endSingleTimeCommands(cmd);
+
+    // Map and convert BGRA → RGBA
+    void* mapped = nullptr;
+    vmaMapMemory(alloc, stagingAlloc, &mapped);
+    auto* pixels = static_cast<uint8_t*>(mapped);
+    for (uint32_t i = 0; i < w * h; ++i) {
+        std::swap(pixels[i * 4 + 0], pixels[i * 4 + 2]); // B ↔ R
+    }
+
+    // Ensure output directory exists
+    std::filesystem::path outPath(outputPath);
+    if (outPath.has_parent_path())
+        std::filesystem::create_directories(outPath.parent_path());
+
+    int ok = stbi_write_png(outputPath.c_str(),
+                            static_cast<int>(w), static_cast<int>(h),
+                            4, pixels, static_cast<int>(w * 4));
+
+    vmaUnmapMemory(alloc, stagingAlloc);
+    vmaDestroyBuffer(alloc, stagingBuf, stagingAlloc);
+
+    if (ok) {
+        LOG_INFO("Screenshot saved: ", outputPath);
+    } else {
+        LOG_WARNING("Screenshot: stbi_write_png failed for ", outputPath);
+    }
+    return ok != 0;
 }
 
 void Renderer::triggerLevelUpEffect(const glm::vec3& position) {

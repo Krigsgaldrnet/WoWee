@@ -2809,6 +2809,11 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 showTitlesWindow_ = !showTitlesWindow_;
             }
 
+            // Screenshot (PrintScreen key)
+            if (input.isKeyJustPressed(SDL_SCANCODE_PRINTSCREEN)) {
+                takeScreenshot(gameHandler);
+            }
+
             // Action bar keys (1-9, 0, -, =)
             static const SDL_Scancode actionBarKeys[] = {
                 SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4,
@@ -5899,6 +5904,13 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // /screenshot command — capture current frame to PNG
+            if (cmdLower == "screenshot" || cmdLower == "ss") {
+                takeScreenshot(gameHandler);
+                chatInputBuffer[0] = '\0';
+                return;
+            }
+
             // /zone command — print current zone name
             if (cmdLower == "zone") {
                 std::string zoneName;
@@ -5978,7 +5990,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     "Movement: /sit  /stand  /kneel  /dismount",
                     "Misc: /played  /time  /zone  /loc  /afk [msg]  /dnd [msg]  /inspect",
                     "      /helm  /cloak  /trade  /join <channel>  /leave <channel>",
-                    "      /score  /unstuck  /logout  /ticket  /help",
+                    "      /score  /unstuck  /logout  /ticket  /screenshot  /help",
                 };
                 for (const char* line : kHelpLines) {
                     game::MessageChatData helpMsg;
@@ -12159,6 +12171,42 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
 // ============================================================
 // Durability Warning (equipment damage indicator)
 // ============================================================
+
+void GameScreen::takeScreenshot(game::GameHandler& /*gameHandler*/) {
+    auto* renderer = core::Application::getInstance().getRenderer();
+    if (!renderer) return;
+
+    // Build path: ~/.wowee/screenshots/WoWee_YYYYMMDD_HHMMSS.png
+    const char* home = std::getenv("HOME");
+    if (!home) home = std::getenv("USERPROFILE");
+    if (!home) home = "/tmp";
+    std::string dir = std::string(home) + "/.wowee/screenshots";
+
+    auto now = std::chrono::system_clock::now();
+    auto tt  = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+#ifdef _WIN32
+    localtime_s(&tm, &tt);
+#else
+    localtime_r(&tt, &tm);
+#endif
+
+    char filename[128];
+    std::snprintf(filename, sizeof(filename),
+                  "WoWee_%04d%02d%02d_%02d%02d%02d.png",
+                  tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                  tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+    std::string path = dir + "/" + filename;
+
+    if (renderer->captureScreenshot(path)) {
+        game::MessageChatData sysMsg;
+        sysMsg.type = game::ChatType::SYSTEM;
+        sysMsg.language = game::ChatLanguage::UNIVERSAL;
+        sysMsg.message = "Screenshot saved: " + path;
+        core::Application::getInstance().getGameHandler()->addLocalChatMessage(sysMsg);
+    }
+}
 
 void GameScreen::renderDurabilityWarning(game::GameHandler& gameHandler) {
     if (gameHandler.getPlayerGuid() == 0) return;
