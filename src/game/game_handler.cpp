@@ -2817,7 +2817,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint32_t result = packet.readUInt32();
             if (result != 4) {
                 const char* msgs[] = { "Cannot mount here.", "Invalid mount spell.", "Too far away to mount.", "Already mounted." };
-                addSystemChatMessage(result < 4 ? msgs[result] : "Cannot mount.");
+                std::string mountErr = result < 4 ? msgs[result] : "Cannot mount.";
+                addUIError(mountErr);
+                addSystemChatMessage(mountErr);
             }
             break;
         }
@@ -2825,7 +2827,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // uint32 result: 0=ok, others=error
             if (packet.getSize() - packet.getReadPos() < 4) break;
             uint32_t result = packet.readUInt32();
-            if (result != 0) addSystemChatMessage("Cannot dismount here.");
+            if (result != 0) { addUIError("Cannot dismount here."); addSystemChatMessage("Cannot dismount here."); }
             break;
         }
 
@@ -4677,6 +4679,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         default: break;
                     }
                     std::string msg = errMsg ? errMsg : "Inventory error (" + std::to_string(error) + ").";
+                    addUIError(msg);
                     addSystemChatMessage(msg);
                     if (auto* renderer = core::Application::getInstance().getRenderer()) {
                         if (auto* sfx = renderer->getUiSoundManager())
@@ -4913,6 +4916,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (result == 0) {
                     addSystemChatMessage("Gems socketed successfully.");
                 } else {
+                    addUIError("Failed to socket gems.");
                     addSystemChatMessage("Failed to socket gems.");
                 }
                 LOG_DEBUG("SMSG_SOCKET_GEMS_RESULT: result=", result);
@@ -5440,6 +5444,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
         case Opcode::SMSG_QUESTLOG_FULL:
             // Zero-payload notification: the player's quest log is full (25 quests).
+            addUIError("Your quest log is full.");
             addSystemChatMessage("Your quest log is full.");
             LOG_INFO("SMSG_QUESTLOG_FULL: quest log is at capacity");
             break;
