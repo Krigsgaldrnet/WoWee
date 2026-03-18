@@ -4250,17 +4250,20 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 uint8_t auraType = packet.readUInt8();
                 if (auraType == 3 || auraType == 89) {
                     // Classic/TBC: damage(4)+school(4)+absorbed(4)+resisted(4)  = 16 bytes
-                    // WotLK 3.3.5a: damage(4)+overkill(4)+school(4)+absorbed(4)+resisted(4) = 20 bytes
+                    // WotLK 3.3.5a: damage(4)+overkill(4)+school(4)+absorbed(4)+resisted(4)+isCrit(1) = 21 bytes
                     const bool periodicWotlk = isActiveExpansion("wotlk");
-                    const size_t dotSz = periodicWotlk ? 20u : 16u;
+                    const size_t dotSz = periodicWotlk ? 21u : 16u;
                     if (packet.getSize() - packet.getReadPos() < dotSz) break;
                     uint32_t dmg      = packet.readUInt32();
                     if (periodicWotlk) /*uint32_t overkill=*/ packet.readUInt32();
                     /*uint32_t school=*/ packet.readUInt32();
                     uint32_t abs      = packet.readUInt32();
                     uint32_t res      = packet.readUInt32();
+                    bool dotCrit = false;
+                    if (periodicWotlk) dotCrit = (packet.readUInt8() != 0);
                     if (dmg > 0)
-                        addCombatText(CombatTextEntry::PERIODIC_DAMAGE, static_cast<int32_t>(dmg),
+                        addCombatText(dotCrit ? CombatTextEntry::CRIT_DAMAGE : CombatTextEntry::PERIODIC_DAMAGE,
+                                      static_cast<int32_t>(dmg),
                                       spellId, isPlayerCaster, 0, casterGuid, victimGuid);
                     if (abs > 0)
                         addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(abs),
@@ -4278,11 +4281,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     /*uint32_t max=*/  packet.readUInt32();
                     /*uint32_t over=*/ packet.readUInt32();
                     uint32_t hotAbs  = 0;
+                    bool hotCrit = false;
                     if (healWotlk) {
                         hotAbs = packet.readUInt32();
-                        /*uint8_t isCrit=*/ packet.readUInt8();
+                        hotCrit = (packet.readUInt8() != 0);
                     }
-                    addCombatText(CombatTextEntry::PERIODIC_HEAL, static_cast<int32_t>(heal),
+                    addCombatText(hotCrit ? CombatTextEntry::CRIT_HEAL : CombatTextEntry::PERIODIC_HEAL,
+                                  static_cast<int32_t>(heal),
                                   spellId, isPlayerCaster, 0, casterGuid, victimGuid);
                     if (hotAbs > 0)
                         addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(hotAbs),
