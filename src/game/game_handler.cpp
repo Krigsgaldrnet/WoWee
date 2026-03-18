@@ -10988,6 +10988,7 @@ void GameHandler::forceClearTaxiAndMovementState() {
     playerDead_ = false;
     releasedSpirit_ = false;
     corpseGuid_ = 0;
+    corpseReclaimAvailableMs_ = 0;
     repopPending_ = false;
     pendingSpiritHealerGuid_ = 0;
     resurrectCasterGuid_ = 0;
@@ -12168,6 +12169,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                 resurrectPending_ = false;
                                 corpseMapId_ = 0;  // corpse reclaimed
                                 corpseGuid_ = 0;
+                                corpseReclaimAvailableMs_ = 0;
                                 LOG_INFO("Player resurrected (PLAYER_FLAGS ghost cleared)");
                                 if (ghostStateCallback_) ghostStateCallback_(false);
                             }
