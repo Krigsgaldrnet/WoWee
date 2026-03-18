@@ -1720,6 +1720,110 @@ void Application::update(float deltaTime) {
                 }
             }
 
+            // --- Online player render sync (position, orientation, animation) ---
+            // Mirrors the creature sync loop above but without collision guard or
+            // weapon-attach logic.  Without this, online players never transition
+            // back to Stand after movement stops ("run in place" bug).
+            auto playerSyncStart = std::chrono::steady_clock::now();
+            if (renderer && gameHandler && renderer->getCharacterRenderer()) {
+                auto* charRenderer = renderer->getCharacterRenderer();
+                glm::vec3 pPos(0.0f);
+                bool havePPos = false;
+                if (auto pe = gameHandler->getEntityManager().getEntity(gameHandler->getPlayerGuid())) {
+                    pPos = glm::vec3(pe->getX(), pe->getY(), pe->getZ());
+                    havePPos = true;
+                }
+                const float pSyncRadiusSq = 320.0f * 320.0f;
+
+                for (const auto& [guid, instanceId] : playerInstances_) {
+                    auto entity = gameHandler->getEntityManager().getEntity(guid);
+                    if (!entity || entity->getType() != game::ObjectType::PLAYER) continue;
+
+                    // Distance cull
+                    if (havePPos) {
+                        glm::vec3 latestCanonical(entity->getLatestX(), entity->getLatestY(), entity->getLatestZ());
+                        glm::vec3 d = latestCanonical - pPos;
+                        if (glm::dot(d, d) > pSyncRadiusSq) continue;
+                    }
+
+                    // Position sync
+                    glm::vec3 canonical(entity->getX(), entity->getY(), entity->getZ());
+                    glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
+
+                    auto posIt = creatureRenderPosCache_.find(guid);
+                    if (posIt == creatureRenderPosCache_.end()) {
+                        charRenderer->setInstancePosition(instanceId, renderPos);
+                        creatureRenderPosCache_[guid] = renderPos;
+                    } else {
+                        const glm::vec3 prevPos = posIt->second;
+                        const glm::vec2 delta2(renderPos.x - prevPos.x, renderPos.y - prevPos.y);
+                        float planarDist = glm::length(delta2);
+                        float dz = std::abs(renderPos.z - prevPos.z);
+
+                        auto unitPtr = std::static_pointer_cast<game::Unit>(entity);
+                        const bool deadOrCorpse = unitPtr->getHealth() == 0;
+                        const bool largeCorrection = (planarDist > 6.0f) || (dz > 3.0f);
+                        const bool entityIsMoving = entity->isActivelyMoving();
+                        const bool isMovingNow = !deadOrCorpse && (entityIsMoving || planarDist > 0.03f || dz > 0.08f);
+
+                        if (deadOrCorpse || largeCorrection) {
+                            charRenderer->setInstancePosition(instanceId, renderPos);
+                        } else if (planarDist > 0.03f || dz > 0.08f) {
+                            float duration = std::clamp(planarDist / 5.5f, 0.05f, 0.22f);
+                            charRenderer->moveInstanceTo(instanceId, renderPos, duration);
+                        }
+                        posIt->second = renderPos;
+
+                        // Drive movement animation (same logic as creatures)
+                        const bool isSwimmingNow = creatureSwimmingState_.count(guid) > 0;
+                        const bool isWalkingNow  = creatureWalkingState_.count(guid) > 0;
+                        const bool isFlyingNow   = creatureFlyingState_.count(guid) > 0;
+                        bool prevMoving   = creatureWasMoving_[guid];
+                        bool prevSwimming = creatureWasSwimming_[guid];
+                        bool prevFlying   = creatureWasFlying_[guid];
+                        bool prevWalking  = creatureWasWalking_[guid];
+                        const bool stateChanged = (isMovingNow  != prevMoving)   ||
+                                                  (isSwimmingNow != prevSwimming) ||
+                                                  (isFlyingNow   != prevFlying)   ||
+                                                  (isWalkingNow  != prevWalking && isMovingNow);
+                        if (stateChanged) {
+                            creatureWasMoving_[guid]   = isMovingNow;
+                            creatureWasSwimming_[guid] = isSwimmingNow;
+                            creatureWasFlying_[guid]   = isFlyingNow;
+                            creatureWasWalking_[guid]  = isWalkingNow;
+                            uint32_t curAnimId = 0; float curT = 0.0f, curDur = 0.0f;
+                            bool gotState = charRenderer->getAnimationState(instanceId, curAnimId, curT, curDur);
+                            if (!gotState || curAnimId != 1 /*Death*/) {
+                                uint32_t targetAnim;
+                                if (isMovingNow) {
+                                    if (isFlyingNow)        targetAnim = 159u; // FlyForward
+                                    else if (isSwimmingNow) targetAnim = 42u;  // Swim
+                                    else if (isWalkingNow)  targetAnim = 4u;   // Walk
+                                    else                    targetAnim = 5u;   // Run
+                                } else {
+                                    if (isFlyingNow)        targetAnim = 158u; // FlyIdle (hover)
+                                    else if (isSwimmingNow) targetAnim = 41u;  // SwimIdle
+                                    else                    targetAnim = 0u;   // Stand
+                                }
+                                charRenderer->playAnimation(instanceId, targetAnim, /*loop=*/true);
+                            }
+                        }
+                    }
+
+                    // Orientation sync
+                    float renderYaw = entity->getOrientation() + glm::radians(90.0f);
+                    charRenderer->setInstanceRotation(instanceId, glm::vec3(0.0f, 0.0f, renderYaw));
+                }
+            }
+            {
+                float psMs = std::chrono::duration<float, std::milli>(
+                    std::chrono::steady_clock::now() - playerSyncStart).count();
+                if (psMs > 5.0f) {
+                    LOG_WARNING("SLOW update stage 'player render sync': ", psMs, "ms (",
+                                playerInstances_.size(), " players)");
+                }
+            }
+
             // Movement heartbeat is sent from GameHandler::update() to avoid
             // duplicate packets from multiple update loops.
 
@@ -7050,6 +7154,7 @@ void Application::despawnOnlinePlayer(uint64_t guid) {
     playerInstances_.erase(it);
     onlinePlayerAppearance_.erase(guid);
     pendingOnlinePlayerEquipment_.erase(guid);
+    creatureRenderPosCache_.erase(guid);
     creatureSwimmingState_.erase(guid);
     creatureWalkingState_.erase(guid);
     creatureFlyingState_.erase(guid);
