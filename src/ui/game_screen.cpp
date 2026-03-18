@@ -16036,8 +16036,19 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
                     if (ImGui::SmallButton(buyBtnId.c_str())) {
                         int qty = vendorBuyQty;
                         if (item.maxCount > 0 && qty > item.maxCount) qty = item.maxCount;
-                        gameHandler.buyItem(vendor.vendorGuid, item.itemId, item.slot,
-                                            static_cast<uint32_t>(qty));
+                        uint32_t totalCost = item.buyPrice * static_cast<uint32_t>(qty);
+                        if (totalCost >= 10000) { // >= 1 gold: confirm
+                            vendorConfirmOpen_ = true;
+                            vendorConfirmGuid_ = vendor.vendorGuid;
+                            vendorConfirmItemId_ = item.itemId;
+                            vendorConfirmSlot_ = item.slot;
+                            vendorConfirmQty_ = static_cast<uint32_t>(qty);
+                            vendorConfirmPrice_ = totalCost;
+                            vendorConfirmItemName_ = (info && info->valid) ? info->name : "Item";
+                        } else {
+                            gameHandler.buyItem(vendor.vendorGuid, item.itemId, item.slot,
+                                                static_cast<uint32_t>(qty));
+                        }
                     }
                     if (outOfStock) ImGui::EndDisabled();
 
@@ -16052,6 +16063,33 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
 
     if (!open) {
         gameHandler.closeVendor();
+    }
+
+    // Vendor purchase confirmation popup for expensive items
+    if (vendorConfirmOpen_) {
+        ImGui::OpenPopup("Confirm Purchase##vendor");
+        vendorConfirmOpen_ = false;
+    }
+    if (ImGui::BeginPopupModal("Confirm Purchase##vendor", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+        ImGui::Text("Buy %s", vendorConfirmItemName_.c_str());
+        if (vendorConfirmQty_ > 1)
+            ImGui::Text("Quantity: %u", vendorConfirmQty_);
+        uint32_t g = vendorConfirmPrice_ / 10000;
+        uint32_t s = (vendorConfirmPrice_ / 100) % 100;
+        uint32_t c = vendorConfirmPrice_ % 100;
+        ImGui::Text("Cost: %ug %us %uc", g, s, c);
+        ImGui::Spacing();
+        if (ImGui::Button("Buy", ImVec2(80, 0))) {
+            gameHandler.buyItem(vendorConfirmGuid_, vendorConfirmItemId_,
+                                vendorConfirmSlot_, vendorConfirmQty_);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 }
 

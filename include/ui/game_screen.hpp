@@ -533,6 +533,15 @@ private:
     // Vendor search filter
     char vendorSearchFilter_[128] = "";
 
+    // Vendor purchase confirmation for expensive items
+    bool vendorConfirmOpen_ = false;
+    uint64_t vendorConfirmGuid_ = 0;
+    uint32_t vendorConfirmItemId_ = 0;
+    uint32_t vendorConfirmSlot_ = 0;
+    uint32_t vendorConfirmQty_ = 1;
+    uint32_t vendorConfirmPrice_ = 0;
+    std::string vendorConfirmItemName_;
+
     // Trainer search filter
     char trainerSearchFilter_[128] = "";
 
