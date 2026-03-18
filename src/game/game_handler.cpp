@@ -2541,6 +2541,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (result == 0) {
                     addSystemChatMessage("Your home is now set to this location.");
                 } else {
+                    addUIError("You are too far from the innkeeper.");
                     addSystemChatMessage("You are too far from the innkeeper.");
                 }
             }
@@ -2559,6 +2560,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         "You must be in a raid group", "Player not in group"
                     };
                     const char* msg = (result < 8) ? reasons[result] : "Difficulty change failed.";
+                    addUIError(std::string("Cannot change difficulty: ") + msg);
                     addSystemChatMessage(std::string("Cannot change difficulty: ") + msg);
                 }
             }
@@ -3959,6 +3961,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             else if (errorCode == 2) msg += " (already known)";
             else if (errorCode != 0) msg += " (error " + std::to_string(errorCode) + ")";
 
+            addUIError(msg);
             addSystemChatMessage(msg);
             // Play error sound so the player notices the failure
             if (auto* renderer = core::Application::getInstance().getRenderer()) {
@@ -4616,8 +4619,10 @@ void GameHandler::handlePacket(network::Packet& packet) {
                             if (requiredLevel > 0) {
                                 std::snprintf(levelBuf, sizeof(levelBuf),
                                               "You must reach level %u to use that item.", requiredLevel);
+                                addUIError(levelBuf);
                                 addSystemChatMessage(levelBuf);
                             } else {
+                                addUIError("You must reach a higher level to use that item.");
                                 addSystemChatMessage("You must reach a higher level to use that item.");
                             }
                             break;
@@ -4955,6 +4960,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 const char* msg = (reason == 1) ? "The target cannot be resurrected right now."
                                 : (reason == 2) ? "Cannot resurrect in this area."
                                 : "Resurrection failed.";
+                addUIError(msg);
                 addSystemChatMessage(msg);
                 LOG_DEBUG("SMSG_RESURRECT_FAILED: reason=", reason);
             }
