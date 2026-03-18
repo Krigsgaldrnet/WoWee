@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <sstream>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -6122,11 +6123,56 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
-            // /use <item name> — use an item from backpack/bags by name
+            // /use <item name|#id|bag slot|equip slot>
+            // Supports: item name, numeric item ID (#N or N), bag/slot (/use 0 1 = backpack slot 1,
+            //           /use 1-4 slot = bag slot), equipment slot number (/use 16 = main hand)
             if (cmdLower == "use" && spacePos != std::string::npos) {
                 std::string useArg = command.substr(spacePos + 1);
                 while (!useArg.empty() && useArg.front() == ' ') useArg.erase(useArg.begin());
                 while (!useArg.empty() && useArg.back()  == ' ') useArg.pop_back();
+
+                // Check for bag/slot notation: two numbers separated by whitespace
+                {
+                    std::istringstream iss(useArg);
+                    int bagNum = -1, slotNum = -1;
+                    iss >> bagNum >> slotNum;
+                    if (!iss.fail() && slotNum >= 1) {
+                        if (bagNum == 0) {
+                            // Backpack: bag=0, slot 1-based → 0-based
+                            gameHandler.useItemBySlot(slotNum - 1);
+                            chatInputBuffer[0] = '\0';
+                            return;
+                        } else if (bagNum >= 1 && bagNum <= game::Inventory::NUM_BAG_SLOTS) {
+                            // Equip bag: bags are 1-indexed (bag 1 = bagIndex 0)
+                            gameHandler.useItemInBag(bagNum - 1, slotNum - 1);
+                            chatInputBuffer[0] = '\0';
+                            return;
+                        }
+                    }
+                }
+
+                // Numeric equip slot: /use 16 = slot 16 (1-based, WoW equip slot enum)
+                {
+                    std::string numStr = useArg;
+                    if (!numStr.empty() && numStr.front() == '#') numStr.erase(numStr.begin());
+                    bool isNumeric = !numStr.empty() &&
+                        std::all_of(numStr.begin(), numStr.end(),
+                                    [](unsigned char c){ return std::isdigit(c); });
+                    if (isNumeric) {
+                        // Treat as equip slot (1-based, maps to EquipSlot enum 0-based)
+                        int slotNum = 0;
+                        try { slotNum = std::stoi(numStr); } catch (...) {}
+                        if (slotNum >= 1 && slotNum <= static_cast<int>(game::EquipSlot::BAG4) + 1) {
+                            auto eslot = static_cast<game::EquipSlot>(slotNum - 1);
+                            const auto& esl = gameHandler.getInventory().getEquipSlot(eslot);
+                            if (!esl.empty())
+                                gameHandler.useItemById(esl.item.itemId);
+                        }
+                        chatInputBuffer[0] = '\0';
+                        return;
+                    }
+                }
+
                 std::string useArgLower = useArg;
                 for (char& c : useArgLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
