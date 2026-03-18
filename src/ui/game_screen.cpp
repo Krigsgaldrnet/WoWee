@@ -6363,6 +6363,9 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     while (!spellArg.empty() && spellArg.back()  == ' ') spellArg.pop_back();
                 }
 
+                // Strip leading '!' (WoW /cast !Spell forces recast without toggling off)
+                if (!spellArg.empty() && spellArg.front() == '!') spellArg.erase(spellArg.begin());
+
                 // Support numeric spell ID: /cast 133 or /cast #133
                 {
                     std::string numStr = spellArg;
@@ -8227,7 +8230,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
         }
         if (ImGui::BeginPopupModal("Edit Macro###MacroEdit", nullptr,
                                    ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse)) {
-            ImGui::Text("Macro #%u  (first line executes on click)", macroEditorId_);
+            ImGui::Text("Macro #%u  (all lines execute; [cond] Spell; Default supported)", macroEditorId_);
             ImGui::SetNextItemWidth(320.0f);
             ImGui::InputTextMultiline("##MacroText", macroEditorBuf_, sizeof(macroEditorBuf_),
                                       ImVec2(320.0f, 80.0f));
@@ -10875,6 +10878,10 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
             ImGui::PushStyleColor(ImGuiCol_Text, nameColor);
             if (ImGui::Selectable(label.c_str(), gameHandler.getTargetGuid() == member.guid)) {
                 gameHandler.setTarget(member.guid);
+            }
+            // Set mouseover for [target=mouseover] macro conditionals
+            if (ImGui::IsItemHovered()) {
+                gameHandler.setMouseoverGuid(member.guid);
             }
             // Zone tooltip on name hover
             if (ImGui::IsItemHovered() && member.hasPartyStats && member.zoneId != 0) {
