@@ -68,20 +68,46 @@ static game::Unit* getPlayerUnit(lua_State* L) {
     return dynamic_cast<game::Unit*>(entity.get());
 }
 
-// Helper: resolve "player", "target", "focus", "pet" unit IDs to entity
+// Helper: resolve WoW unit IDs to GUID
+static uint64_t resolveUnitGuid(game::GameHandler* gh, const std::string& uid) {
+    if (uid == "player")      return gh->getPlayerGuid();
+    if (uid == "target")      return gh->getTargetGuid();
+    if (uid == "focus")       return gh->getFocusGuid();
+    if (uid == "pet")         return gh->getPetGuid();
+    // party1-party4, raid1-raid40
+    if (uid.rfind("party", 0) == 0 && uid.size() > 5) {
+        int idx = 0;
+        try { idx = std::stoi(uid.substr(5)); } catch (...) { return 0; }
+        if (idx < 1 || idx > 4) return 0;
+        const auto& pd = gh->getPartyData();
+        // party members exclude self; index 1-based
+        int found = 0;
+        for (const auto& m : pd.members) {
+            if (m.guid == gh->getPlayerGuid()) continue;
+            if (++found == idx) return m.guid;
+        }
+        return 0;
+    }
+    if (uid.rfind("raid", 0) == 0 && uid.size() > 4 && uid[4] != 'p') {
+        int idx = 0;
+        try { idx = std::stoi(uid.substr(4)); } catch (...) { return 0; }
+        if (idx < 1 || idx > 40) return 0;
+        const auto& pd = gh->getPartyData();
+        if (idx <= static_cast<int>(pd.members.size()))
+            return pd.members[idx - 1].guid;
+        return 0;
+    }
+    return 0;
+}
+
+// Helper: resolve "player", "target", "focus", "pet", "partyN", "raidN" unit IDs to entity
 static game::Unit* resolveUnit(lua_State* L, const char* unitId) {
     auto* gh = getGameHandler(L);
     if (!gh || !unitId) return nullptr;
     std::string uid(unitId);
     for (char& c : uid) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-    uint64_t guid = 0;
-    if (uid == "player")      guid = gh->getPlayerGuid();
-    else if (uid == "target") guid = gh->getTargetGuid();
-    else if (uid == "focus")  guid = gh->getFocusGuid();
-    else if (uid == "pet")    guid = gh->getPetGuid();
-    else return nullptr;
-
+    uint64_t guid = resolveUnitGuid(gh, uid);
     if (guid == 0) return nullptr;
     auto entity = gh->getEntityManager().getEntity(guid);
     if (!entity) return nullptr;
@@ -250,11 +276,7 @@ static int lua_UnitGUID(lua_State* L) {
     if (!gh) { lua_pushnil(L); return 1; }
     std::string uidStr(uid);
     for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    uint64_t guid = 0;
-    if (uidStr == "player")      guid = gh->getPlayerGuid();
-    else if (uidStr == "target") guid = gh->getTargetGuid();
-    else if (uidStr == "focus")  guid = gh->getFocusGuid();
-    else if (uidStr == "pet")    guid = gh->getPetGuid();
+    uint64_t guid = resolveUnitGuid(gh, uidStr);
     if (guid == 0) { lua_pushnil(L); return 1; }
     char buf[32];
     snprintf(buf, sizeof(buf), "0x%016llX", (unsigned long long)guid);
@@ -268,10 +290,7 @@ static int lua_UnitIsPlayer(lua_State* L) {
     if (!gh) { lua_pushboolean(L, 0); return 1; }
     std::string uidStr(uid);
     for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    uint64_t guid = 0;
-    if (uidStr == "player")      guid = gh->getPlayerGuid();
-    else if (uidStr == "target") guid = gh->getTargetGuid();
-    else if (uidStr == "focus")  guid = gh->getFocusGuid();
+    uint64_t guid = resolveUnitGuid(gh, uidStr);
     auto entity = guid ? gh->getEntityManager().getEntity(guid) : nullptr;
     lua_pushboolean(L, entity && entity->getType() == game::ObjectType::PLAYER);
     return 1;
@@ -346,6 +365,11 @@ static int lua_UnitAura(lua_State* L, bool wantBuff) {
     const std::vector<game::AuraSlot>* auras = nullptr;
     if (uidStr == "player")      auras = &gh->getPlayerAuras();
     else if (uidStr == "target") auras = &gh->getTargetAuras();
+    else {
+        // Try party/raid/focus via GUID lookup in unitAurasCache
+        uint64_t guid = resolveUnitGuid(gh, uidStr);
+        if (guid != 0) auras = gh->getUnitAuras(guid);
+    }
     if (!auras) { lua_pushnil(L); return 1; }
 
     // Filter to buffs or debuffs and find the Nth one

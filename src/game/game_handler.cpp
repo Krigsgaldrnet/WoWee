@@ -12120,6 +12120,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     bool displayIdChanged = false;
                     bool npcDeathNotified = false;
                     bool npcRespawnNotified = false;
+                    bool healthChanged = false;
+                    bool powerChanged = false;
                     const uint16_t ufHealth = fieldIndex(UF::UNIT_FIELD_HEALTH);
                     const uint16_t ufPowerBase = fieldIndex(UF::UNIT_FIELD_POWER1);
                     const uint16_t ufMaxHealth = fieldIndex(UF::UNIT_FIELD_MAXHEALTH);
@@ -12136,6 +12138,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         if (key == ufHealth) {
                             uint32_t oldHealth = unit->getHealth();
                             unit->setHealth(val);
+                            healthChanged = true;
                             if (val == 0) {
                                 if (block.guid == autoAttackTarget) {
                                     stopAutoAttack();
@@ -12178,7 +12181,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             }
                         // Specific fields checked BEFORE power/maxpower range checks
                         // (Classic packs maxHealth/level/faction adjacent to power indices)
-                        } else if (key == ufMaxHealth) { unit->setMaxHealth(val); }
+                        } else if (key == ufMaxHealth) { unit->setMaxHealth(val); healthChanged = true; }
                         else if (key == ufBytes0) {
                             unit->setPowerType(static_cast<uint8_t>((val >> 24) & 0xFF));
                         } else if (key == ufFlags) { unit->setUnitFlags(val); }
@@ -12272,8 +12275,23 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         // Power/maxpower range checks AFTER all specific fields
                         else if (key >= ufPowerBase && key < ufPowerBase + 7) {
                             unit->setPowerByType(static_cast<uint8_t>(key - ufPowerBase), val);
+                            powerChanged = true;
                         } else if (key >= ufMaxPowerBase && key < ufMaxPowerBase + 7) {
                             unit->setMaxPowerByType(static_cast<uint8_t>(key - ufMaxPowerBase), val);
+                            powerChanged = true;
+                        }
+                    }
+
+                    // Fire UNIT_HEALTH / UNIT_POWER events for Lua addons
+                    if (addonEventCallback_ && (healthChanged || powerChanged)) {
+                        std::string unitId;
+                        if (block.guid == playerGuid) unitId = "player";
+                        else if (block.guid == targetGuid) unitId = "target";
+                        else if (block.guid == focusGuid) unitId = "focus";
+                        else if (block.guid == petGuid_) unitId = "pet";
+                        if (!unitId.empty()) {
+                            if (healthChanged) addonEventCallback_("UNIT_HEALTH", {unitId});
+                            if (powerChanged)  addonEventCallback_("UNIT_POWER", {unitId});
                         }
                     }
 
@@ -18948,6 +18966,16 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
             hearthstonePreloadCallback_(homeBindMapId_, homeBindPos_.x, homeBindPos_.y, homeBindPos_.z);
         }
     }
+
+    // Fire UNIT_SPELLCAST_START for Lua addons
+    if (addonEventCallback_) {
+        std::string unitId;
+        if (data.casterUnit == playerGuid) unitId = "player";
+        else if (data.casterUnit == targetGuid) unitId = "target";
+        else if (data.casterUnit == focusGuid) unitId = "focus";
+        if (!unitId.empty())
+            addonEventCallback_("UNIT_SPELLCAST_START", {unitId, std::to_string(data.spellId)});
+    }
 }
 
 void GameHandler::handleSpellGo(network::Packet& packet) {
@@ -19084,6 +19112,16 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         if (tgt == playerGuid) { playerIsHit = true; }
         if (data.casterUnit == playerGuid && tgt != playerGuid && tgt != 0) { playerHitEnemy = true; }
     }
+    // Fire UNIT_SPELLCAST_SUCCEEDED for Lua addons
+    if (addonEventCallback_) {
+        std::string unitId;
+        if (data.casterUnit == playerGuid) unitId = "player";
+        else if (data.casterUnit == targetGuid) unitId = "target";
+        else if (data.casterUnit == focusGuid) unitId = "focus";
+        if (!unitId.empty())
+            addonEventCallback_("UNIT_SPELLCAST_SUCCEEDED", {unitId, std::to_string(data.spellId)});
+    }
+
     if (playerIsHit || playerHitEnemy) {
         if (auto* renderer = core::Application::getInstance().getRenderer()) {
             if (auto* ssm = renderer->getSpellSoundManager()) {
@@ -19200,6 +19238,17 @@ void GameHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
                 auraList->push_back(AuraSlot{});
             }
             (*auraList)[slot] = aura;
+        }
+
+        // Fire UNIT_AURA event for Lua addons
+        if (addonEventCallback_) {
+            std::string unitId;
+            if (data.guid == playerGuid) unitId = "player";
+            else if (data.guid == targetGuid) unitId = "target";
+            else if (data.guid == focusGuid) unitId = "focus";
+            else if (data.guid == petGuid_) unitId = "pet";
+            if (!unitId.empty())
+                addonEventCallback_("UNIT_AURA", {unitId});
         }
 
         // If player is mounted but we haven't identified the mount aura yet,
@@ -19596,6 +19645,11 @@ void GameHandler::handleGroupList(network::Packet& packet) {
         addSystemChatMessage("You are now in a group.");
     } else if (nowInGroup && partyData.memberCount != prevCount) {
         LOG_INFO("Group updated: ", partyData.memberCount, " members");
+    }
+    // Fire GROUP_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED for Lua addons
+    if (addonEventCallback_) {
+        addonEventCallback_("GROUP_ROSTER_UPDATE", {});
+        addonEventCallback_("PARTY_MEMBERS_CHANGED", {});
     }
 }
 
