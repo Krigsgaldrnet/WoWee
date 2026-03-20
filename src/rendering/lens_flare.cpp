@@ -313,8 +313,12 @@ void LensFlare::render(VkCommandBuffer cmd, const Camera& camera, const glm::vec
         return;
     }
 
+    // Sun height attenuation — flare weakens when sun is near horizon (sunrise/sunset)
+    float sunHeight = sunDir.z;  // z = up in render space; 0 = horizon, 1 = zenith
+    float heightFactor = glm::smoothstep(-0.05f, 0.25f, sunHeight);
+
     // Atmospheric attenuation — fog, clouds, and weather reduce lens flare
-    float atmosphericFactor = 1.0f;
+    float atmosphericFactor = heightFactor;
     atmosphericFactor *= (1.0f - glm::clamp(fogDensity * 0.8f, 0.0f, 0.9f));       // Heavy fog nearly kills flare
     atmosphericFactor *= (1.0f - glm::clamp(cloudDensity * 0.6f, 0.0f, 0.7f));     // Clouds attenuate
     atmosphericFactor *= (1.0f - glm::clamp(weatherIntensity * 0.9f, 0.0f, 0.95f)); // Rain/snow heavily attenuates
@@ -339,6 +343,9 @@ void LensFlare::render(VkCommandBuffer cmd, const Camera& camera, const glm::vec
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &offset);
 
+    // Warm tint at sunrise/sunset — shift flare color toward orange/amber when sun is low
+    float warmTint = 1.0f - glm::smoothstep(0.05f, 0.35f, sunHeight);
+
     // Render each flare element
     for (const auto& element : flareElements) {
         // Calculate position along sun-to-center axis
@@ -347,12 +354,19 @@ void LensFlare::render(VkCommandBuffer cmd, const Camera& camera, const glm::vec
         // Apply visibility, intensity, and atmospheric attenuation
         float brightness = element.brightness * visibility * intensityMultiplier * atmosphericFactor;
 
+        // Apply warm sunset/sunrise color shift
+        glm::vec3 tintedColor = element.color;
+        if (warmTint > 0.01f) {
+            glm::vec3 warmColor(1.0f, 0.6f, 0.25f);  // amber/orange
+            tintedColor = glm::mix(tintedColor, warmColor, warmTint * 0.5f);
+        }
+
         // Set push constants
         FlarePushConstants push{};
         push.position = position;
         push.size = element.size;
         push.aspectRatio = aspectRatio;
-        push.colorBrightness = glm::vec4(element.color, brightness);
+        push.colorBrightness = glm::vec4(tintedColor, brightness);
 
         vkCmdPushConstants(cmd, pipelineLayout,
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
