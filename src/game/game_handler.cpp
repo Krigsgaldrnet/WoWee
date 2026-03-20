@@ -12787,7 +12787,9 @@ void GameHandler::handleCompressedUpdateObject(network::Packet& packet) {
     uint32_t decompressedSize = packet.readUInt32();
     LOG_DEBUG("  Decompressed size: ", decompressedSize);
 
-    if (decompressedSize == 0 || decompressedSize > 1024 * 1024) {
+    // Capital cities and large raids can produce very large update packets.
+    // The real WoW client handles up to ~10MB; 5MB covers all practical cases.
+    if (decompressedSize == 0 || decompressedSize > 5 * 1024 * 1024) {
         LOG_WARNING("Invalid decompressed size: ", decompressedSize);
         return;
     }
