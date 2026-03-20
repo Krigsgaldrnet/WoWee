@@ -8642,11 +8642,10 @@ VkDescriptorSet GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManage
     return ds;
 }
 
-uint32_t GameScreen::resolveMacroPrimarySpellId(int slotIndex, game::GameHandler& gameHandler) {
-    auto cacheIt = macroPrimarySpellCache_.find(slotIndex);
+uint32_t GameScreen::resolveMacroPrimarySpellId(uint32_t macroId, game::GameHandler& gameHandler) {
+    auto cacheIt = macroPrimarySpellCache_.find(macroId);
     if (cacheIt != macroPrimarySpellCache_.end()) return cacheIt->second;
 
-    uint32_t macroId = gameHandler.getActionBar()[slotIndex].id;
     const std::string& macroText = gameHandler.getMacroText(macroId);
     uint32_t result = 0;
     if (!macroText.empty()) {
@@ -8678,7 +8677,7 @@ uint32_t GameScreen::resolveMacroPrimarySpellId(int slotIndex, game::GameHandler
             break;
         }
     }
-    macroPrimarySpellCache_[slotIndex] = result;
+    macroPrimarySpellCache_[macroId] = result;
     return result;
 }
 
@@ -8733,7 +8732,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
         float macroCooldownRemaining = 0.0f;
         float macroCooldownTotal = 0.0f;
         if (slot.type == game::ActionBarSlot::MACRO && slot.id != 0 && !onCooldown) {
-            uint32_t macroSpellId = resolveMacroPrimarySpellId(absSlot, gameHandler);
+            uint32_t macroSpellId = resolveMacroPrimarySpellId(slot.id, gameHandler);
             if (macroSpellId != 0) {
                 float cd = gameHandler.getSpellCooldown(macroSpellId);
                 if (cd > 0.0f) {
