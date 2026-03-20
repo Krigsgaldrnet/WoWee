@@ -7,6 +7,7 @@ on:
     branches: [master]
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   WOWEE_AMD_FSR2_REPO: https://github.com/GPUOpen-Effects/FidelityFX-FSR2.git
   WOWEE_AMD_FSR2_REF: master
   WOWEE_FFX_SDK_REPO: https://github.com/Kelsidavis/FidelityFX-SDK.git
