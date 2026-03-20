@@ -32,6 +32,9 @@ public:
     // Try to dispatch a slash command via SlashCmdList. Returns true if handled.
     bool dispatchSlashCommand(const std::string& command, const std::string& args);
 
+    // Call OnUpdate scripts on all frames that have one.
+    void dispatchOnUpdate(float elapsed);
+
     lua_State* getState() { return L_; }
     bool isInitialized() const { return L_ != nullptr; }
 

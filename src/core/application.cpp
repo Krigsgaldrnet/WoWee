@@ -1002,6 +1002,9 @@ void Application::update(float deltaTime) {
                     gameHandler->update(deltaTime);
                 }
             });
+            if (addonManager_ && addonsLoaded_) {
+                addonManager_->update(deltaTime);
+            }
             // Always unsheath on combat engage.
             inGameStep = "auto-unsheathe";
             updateCheckpoint = "in_game: auto-unsheathe";

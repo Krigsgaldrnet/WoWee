@@ -2,6 +2,7 @@
 #include "game/game_handler.hpp"
 #include "game/entity.hpp"
 #include "core/logger.hpp"
+#include <cstring>
 
 extern "C" {
 #include <lua.h>
@@ -375,6 +376,19 @@ static int lua_Frame_SetScript(lua_State* L) {
     lua_pushvalue(L, 3);
     lua_setfield(L, -2, scriptType);
     lua_pop(L, 1);
+
+    // Track frames with OnUpdate in __WoweeOnUpdateFrames
+    if (strcmp(scriptType, "OnUpdate") == 0) {
+        lua_getglobal(L, "__WoweeOnUpdateFrames");
+        if (!lua_istable(L, -1)) { lua_pop(L, 1); return 0; }
+        if (lua_isfunction(L, 3)) {
+            // Add frame to the list
+            int len = static_cast<int>(lua_objlen(L, -1));
+            lua_pushvalue(L, 1);
+            lua_rawseti(L, -2, len + 1);
+        }
+        lua_pop(L, 1);
+    }
     return 0;
 }
 
@@ -673,6 +687,10 @@ void LuaEngine::registerCoreAPI() {
     // Frame event dispatch table
     lua_newtable(L_);
     lua_setglobal(L_, "__WoweeFrameEvents");
+
+    // OnUpdate frame tracking table
+    lua_newtable(L_);
+    lua_setglobal(L_, "__WoweeOnUpdateFrames");
 }
 
 // ---- Event System ----
@@ -818,6 +836,43 @@ void LuaEngine::fireEvent(const std::string& eventName,
         lua_pop(L_, 1); // pop event frame list
     }
     lua_pop(L_, 1); // pop __WoweeFrameEvents
+}
+
+void LuaEngine::dispatchOnUpdate(float elapsed) {
+    if (!L_) return;
+
+    lua_getglobal(L_, "__WoweeOnUpdateFrames");
+    if (!lua_istable(L_, -1)) { lua_pop(L_, 1); return; }
+
+    int count = static_cast<int>(lua_objlen(L_, -1));
+    for (int i = 1; i <= count; i++) {
+        lua_rawgeti(L_, -1, i);
+        if (!lua_istable(L_, -1)) { lua_pop(L_, 1); continue; }
+
+        // Check if frame is visible
+        lua_getfield(L_, -1, "__visible");
+        bool visible = lua_toboolean(L_, -1);
+        lua_pop(L_, 1);
+        if (!visible) { lua_pop(L_, 1); continue; }
+
+        // Get OnUpdate script
+        lua_getfield(L_, -1, "__scripts");
+        if (lua_istable(L_, -1)) {
+            lua_getfield(L_, -1, "OnUpdate");
+            if (lua_isfunction(L_, -1)) {
+                lua_pushvalue(L_, -3);  // self (frame)
+                lua_pushnumber(L_, static_cast<double>(elapsed));
+                if (lua_pcall(L_, 2, 0, 0) != 0) {
+                    LOG_ERROR("LuaEngine: OnUpdate error: ", lua_tostring(L_, -1));
+                    lua_pop(L_, 1);
+                }
+            } else {
+                lua_pop(L_, 1);
+            }
+        }
+        lua_pop(L_, 2); // pop __scripts + frame
+    }
+    lua_pop(L_, 1); // pop __WoweeOnUpdateFrames
 }
 
 bool LuaEngine::dispatchSlashCommand(const std::string& command, const std::string& args) {

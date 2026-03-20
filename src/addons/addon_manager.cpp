@@ -89,6 +89,10 @@ void AddonManager::fireEvent(const std::string& event, const std::vector<std::st
     luaEngine_.fireEvent(event, args);
 }
 
+void AddonManager::update(float deltaTime) {
+    luaEngine_.dispatchOnUpdate(deltaTime);
+}
+
 void AddonManager::shutdown() {
     addons_.clear();
     luaEngine_.shutdown();
