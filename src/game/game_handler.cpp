@@ -2633,6 +2633,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Server forces player into dead state (GM command, scripted event, etc.)
             playerDead_ = true;
             if (ghostStateCallback_) ghostStateCallback_(false); // dead but not ghost yet
+            if (addonEventCallback_) addonEventCallback_("PLAYER_DEAD", {});
             addSystemChatMessage("You have been killed.");
             LOG_INFO("SMSG_FORCED_DEATH_UPDATE: player force-killed");
             packet.setReadPos(packet.getSize());
@@ -12000,8 +12001,11 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         }
                     }
                     else if (key == ufCoinage) {
+                        uint64_t oldMoney = playerMoneyCopper_;
                         playerMoneyCopper_ = val;
                         LOG_DEBUG("Money set from update fields: ", val, " copper");
+                        if (val != oldMoney && addonEventCallback_)
+                            addonEventCallback_("PLAYER_MONEY", {});
                     }
                     else if (ufHonor != 0xFFFF && key == ufHonor) {
                         playerHonorPoints_ = val;
@@ -12450,8 +12454,11 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             }
                         }
                         else if (key == ufCoinage) {
+                            uint64_t oldM = playerMoneyCopper_;
                             playerMoneyCopper_ = val;
                             LOG_DEBUG("Money updated via VALUES: ", val, " copper");
+                            if (val != oldM && addonEventCallback_)
+                                addonEventCallback_("PLAYER_MONEY", {});
                         }
                         else if (ufHonorV != 0xFFFF && key == ufHonorV) {
                             playerHonorPoints_ = val;
@@ -12522,6 +12529,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                 corpseGuid_ = 0;
                                 corpseReclaimAvailableMs_ = 0;
                                 LOG_INFO("Player resurrected (PLAYER_FLAGS ghost cleared)");
+                                if (addonEventCallback_) addonEventCallback_("PLAYER_ALIVE", {});
                                 if (ghostStateCallback_) ghostStateCallback_(false);
                             }
                         }
