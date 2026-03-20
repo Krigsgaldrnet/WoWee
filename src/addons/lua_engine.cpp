@@ -204,6 +204,82 @@ static int lua_GetPlayerMapPosition(lua_State* L) {
     return 2;
 }
 
+static int lua_UnitRace(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushstring(L, "Unknown"); return 1; }
+    std::string uid(luaL_optstring(L, 1, "player"));
+    for (char& c : uid) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (uid == "player") {
+        uint8_t race = gh->getPlayerRace();
+        static const char* kRaces[] = {"","Human","Orc","Dwarf","Night Elf","Undead",
+            "Tauren","Gnome","Troll","","Blood Elf","Draenei"};
+        lua_pushstring(L, (race < 12) ? kRaces[race] : "Unknown");
+        return 1;
+    }
+    lua_pushstring(L, "Unknown");
+    return 1;
+}
+
+static int lua_UnitPowerType(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* unit = resolveUnit(L, uid);
+    if (unit) {
+        lua_pushnumber(L, unit->getPowerType());
+        static const char* kPowerNames[] = {"MANA","RAGE","FOCUS","ENERGY","HAPPINESS","","RUNIC_POWER"};
+        uint8_t pt = unit->getPowerType();
+        lua_pushstring(L, (pt < 7) ? kPowerNames[pt] : "MANA");
+        return 2;
+    }
+    lua_pushnumber(L, 0);
+    lua_pushstring(L, "MANA");
+    return 2;
+}
+
+static int lua_GetNumGroupMembers(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushnumber(L, gh ? gh->getPartyData().memberCount : 0);
+    return 1;
+}
+
+static int lua_UnitGUID(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnil(L); return 1; }
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    uint64_t guid = 0;
+    if (uidStr == "player")      guid = gh->getPlayerGuid();
+    else if (uidStr == "target") guid = gh->getTargetGuid();
+    else if (uidStr == "focus")  guid = gh->getFocusGuid();
+    else if (uidStr == "pet")    guid = gh->getPetGuid();
+    if (guid == 0) { lua_pushnil(L); return 1; }
+    char buf[32];
+    snprintf(buf, sizeof(buf), "0x%016llX", (unsigned long long)guid);
+    lua_pushstring(L, buf);
+    return 1;
+}
+
+static int lua_UnitIsPlayer(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "player");
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushboolean(L, 0); return 1; }
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    uint64_t guid = 0;
+    if (uidStr == "player")      guid = gh->getPlayerGuid();
+    else if (uidStr == "target") guid = gh->getTargetGuid();
+    else if (uidStr == "focus")  guid = gh->getFocusGuid();
+    auto entity = guid ? gh->getEntityManager().getEntity(guid) : nullptr;
+    lua_pushboolean(L, entity && entity->getType() == game::ObjectType::PLAYER);
+    return 1;
+}
+
+static int lua_InCombatLockdown(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushboolean(L, gh && gh->isInCombat());
+    return 1;
+}
+
 // --- Action API ---
 
 static int lua_SendChatMessage(lua_State* L) {
@@ -627,6 +703,12 @@ void LuaEngine::registerCoreAPI() {
         {"IsSpellKnown",      lua_IsSpellKnown},
         {"GetSpellCooldown",  lua_GetSpellCooldown},
         {"HasTarget",         lua_HasTarget},
+        {"UnitRace",          lua_UnitRace},
+        {"UnitPowerType",     lua_UnitPowerType},
+        {"GetNumGroupMembers", lua_GetNumGroupMembers},
+        {"UnitGUID",          lua_UnitGUID},
+        {"UnitIsPlayer",      lua_UnitIsPlayer},
+        {"InCombatLockdown",  lua_InCombatLockdown},
         // Utilities
         {"strsplit",          lua_strsplit},
         {"strtrim",           lua_strtrim},
