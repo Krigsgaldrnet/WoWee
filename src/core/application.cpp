@@ -366,6 +366,53 @@ bool Application::initialize() {
                     addonManager_->fireEvent(event, args);
                 }
             });
+            // Wire spell icon path resolver for Lua API (GetSpellInfo, UnitBuff icon, etc.)
+            {
+                auto spellIconPaths  = std::make_shared<std::unordered_map<uint32_t, std::string>>();
+                auto spellIconIds    = std::make_shared<std::unordered_map<uint32_t, uint32_t>>();
+                auto loaded          = std::make_shared<bool>(false);
+                auto* am = assetManager.get();
+                gameHandler->setSpellIconPathResolver([spellIconPaths, spellIconIds, loaded, am](uint32_t spellId) -> std::string {
+                    if (!am) return {};
+                    // Lazy-load SpellIcon.dbc + Spell.dbc icon IDs on first call
+                    if (!*loaded) {
+                        *loaded = true;
+                        auto iconDbc = am->loadDBC("SpellIcon.dbc");
+                        const auto* iconL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("SpellIcon") : nullptr;
+                        if (iconDbc && iconDbc->isLoaded()) {
+                            for (uint32_t i = 0; i < iconDbc->getRecordCount(); i++) {
+                                uint32_t id = iconDbc->getUInt32(i, iconL ? (*iconL)["ID"] : 0);
+                                std::string path = iconDbc->getString(i, iconL ? (*iconL)["Path"] : 1);
+                                if (!path.empty() && id > 0) (*spellIconPaths)[id] = path;
+                            }
+                        }
+                        auto spellDbc = am->loadDBC("Spell.dbc");
+                        const auto* spellL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("Spell") : nullptr;
+                        if (spellDbc && spellDbc->isLoaded()) {
+                            uint32_t fieldCount = spellDbc->getFieldCount();
+                            uint32_t iconField = 133; // WotLK default
+                            uint32_t idField = 0;
+                            if (spellL) {
+                                uint32_t layoutIcon = (*spellL)["IconID"];
+                                if (layoutIcon < fieldCount && fieldCount <= layoutIcon + 20) {
+                                    iconField = layoutIcon;
+                                    idField = (*spellL)["ID"];
+                                }
+                            }
+                            for (uint32_t i = 0; i < spellDbc->getRecordCount(); i++) {
+                                uint32_t id = spellDbc->getUInt32(i, idField);
+                                uint32_t iconId = spellDbc->getUInt32(i, iconField);
+                                if (id > 0 && iconId > 0) (*spellIconIds)[id] = iconId;
+                            }
+                        }
+                    }
+                    auto iit = spellIconIds->find(spellId);
+                    if (iit == spellIconIds->end()) return {};
+                    auto pit = spellIconPaths->find(iit->second);
+                    if (pit == spellIconPaths->end()) return {};
+                    return pit->second;
+                });
+            }
             LOG_INFO("Addon system initialized, found ", addonManager_->getAddons().size(), " addon(s)");
         } else {
             LOG_WARNING("Failed to initialize addon system");

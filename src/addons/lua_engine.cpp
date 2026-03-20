@@ -360,7 +360,9 @@ static int lua_UnitAura(lua_State* L, bool wantBuff) {
             std::string name = gh->getSpellName(aura.spellId);
             lua_pushstring(L, name.empty() ? "Unknown" : name.c_str()); // name
             lua_pushstring(L, "");           // rank
-            lua_pushnil(L);                  // icon (texture path — not implemented)
+            std::string iconPath = gh->getSpellIconPath(aura.spellId);
+            if (!iconPath.empty()) lua_pushstring(L, iconPath.c_str());
+            else lua_pushnil(L);             // icon texture path
             lua_pushnumber(L, aura.charges); // count
             lua_pushnil(L);                  // debuffType
             lua_pushnumber(L, aura.maxDurationMs > 0 ? aura.maxDurationMs / 1000.0 : 0); // duration
@@ -474,6 +476,144 @@ static int lua_GetSpellCooldown(lua_State* L) {
 static int lua_HasTarget(lua_State* L) {
     auto* gh = getGameHandler(L);
     lua_pushboolean(L, gh && gh->hasTarget());
+    return 1;
+}
+
+// --- GetSpellInfo / GetSpellTexture ---
+// GetSpellInfo(spellIdOrName) -> name, rank, icon, castTime, minRange, maxRange, spellId
+static int lua_GetSpellInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnil(L); return 1; }
+
+    uint32_t spellId = 0;
+    if (lua_isnumber(L, 1)) {
+        spellId = static_cast<uint32_t>(lua_tonumber(L, 1));
+    } else if (lua_isstring(L, 1)) {
+        const char* name = lua_tostring(L, 1);
+        if (!name || !*name) { lua_pushnil(L); return 1; }
+        std::string nameLow(name);
+        for (char& c : nameLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        int bestRank = -1;
+        for (uint32_t sid : gh->getKnownSpells()) {
+            std::string sn = gh->getSpellName(sid);
+            for (char& c : sn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (sn != nameLow) continue;
+            int rank = 0;
+            const std::string& rk = gh->getSpellRank(sid);
+            if (!rk.empty()) {
+                std::string rkl = rk;
+                for (char& c : rkl) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                if (rkl.rfind("rank ", 0) == 0) {
+                    try { rank = std::stoi(rkl.substr(5)); } catch (...) {}
+                }
+            }
+            if (rank > bestRank) { bestRank = rank; spellId = sid; }
+        }
+    }
+
+    if (spellId == 0) { lua_pushnil(L); return 1; }
+    std::string name = gh->getSpellName(spellId);
+    if (name.empty()) { lua_pushnil(L); return 1; }
+
+    lua_pushstring(L, name.c_str());                        // 1: name
+    const std::string& rank = gh->getSpellRank(spellId);
+    lua_pushstring(L, rank.c_str());                        // 2: rank
+    std::string iconPath = gh->getSpellIconPath(spellId);
+    if (!iconPath.empty()) lua_pushstring(L, iconPath.c_str());
+    else lua_pushnil(L);                                     // 3: icon texture path
+    lua_pushnumber(L, 0);                                    // 4: castTime (ms) — not tracked
+    lua_pushnumber(L, 0);                                    // 5: minRange
+    lua_pushnumber(L, 0);                                    // 6: maxRange
+    lua_pushnumber(L, spellId);                              // 7: spellId
+    return 7;
+}
+
+// GetSpellTexture(spellIdOrName) -> icon texture path string
+static int lua_GetSpellTexture(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnil(L); return 1; }
+
+    uint32_t spellId = 0;
+    if (lua_isnumber(L, 1)) {
+        spellId = static_cast<uint32_t>(lua_tonumber(L, 1));
+    } else if (lua_isstring(L, 1)) {
+        const char* name = lua_tostring(L, 1);
+        if (!name || !*name) { lua_pushnil(L); return 1; }
+        std::string nameLow(name);
+        for (char& c : nameLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (uint32_t sid : gh->getKnownSpells()) {
+            std::string sn = gh->getSpellName(sid);
+            for (char& c : sn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (sn == nameLow) { spellId = sid; break; }
+        }
+    }
+    if (spellId == 0) { lua_pushnil(L); return 1; }
+    std::string iconPath = gh->getSpellIconPath(spellId);
+    if (!iconPath.empty()) lua_pushstring(L, iconPath.c_str());
+    else lua_pushnil(L);
+    return 1;
+}
+
+// GetItemInfo(itemId) -> name, link, quality, iLevel, reqLevel, class, subclass, maxStack, equipSlot, texture, vendorPrice
+static int lua_GetItemInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnil(L); return 1; }
+
+    uint32_t itemId = 0;
+    if (lua_isnumber(L, 1)) {
+        itemId = static_cast<uint32_t>(lua_tonumber(L, 1));
+    } else if (lua_isstring(L, 1)) {
+        // Try to parse "item:12345" link format
+        const char* s = lua_tostring(L, 1);
+        std::string str(s ? s : "");
+        auto pos = str.find("item:");
+        if (pos != std::string::npos) {
+            try { itemId = static_cast<uint32_t>(std::stoul(str.substr(pos + 5))); } catch (...) {}
+        }
+    }
+    if (itemId == 0) { lua_pushnil(L); return 1; }
+
+    const auto* info = gh->getItemInfo(itemId);
+    if (!info) { lua_pushnil(L); return 1; }
+
+    lua_pushstring(L, info->name.c_str());          // 1: name
+    // Build item link string: |cFFFFFFFF|Hitem:ID:0:0:0:0:0:0:0|h[Name]|h|r
+    char link[256];
+    snprintf(link, sizeof(link), "|cFFFFFFFF|Hitem:%u:0:0:0:0:0:0:0|h[%s]|h|r",
+             itemId, info->name.c_str());
+    lua_pushstring(L, link);                         // 2: link
+    lua_pushnumber(L, info->quality);                // 3: quality
+    lua_pushnumber(L, info->itemLevel);              // 4: iLevel
+    lua_pushnumber(L, info->requiredLevel);          // 5: requiredLevel
+    lua_pushstring(L, "");                           // 6: class (type string)
+    lua_pushstring(L, "");                           // 7: subclass
+    lua_pushnumber(L, info->maxStack > 0 ? info->maxStack : 1); // 8: maxStack
+    lua_pushstring(L, "");                           // 9: equipSlot
+    lua_pushnil(L);                                  // 10: texture (icon path — no ItemDisplayInfo icon resolver yet)
+    lua_pushnumber(L, info->sellPrice);              // 11: vendorPrice
+    return 11;
+}
+
+// --- Locale/Build/Realm info ---
+
+static int lua_GetLocale(lua_State* L) {
+    lua_pushstring(L, "enUS");
+    return 1;
+}
+
+static int lua_GetBuildInfo(lua_State* L) {
+    // Return WotLK defaults; expansion-specific version detection would need
+    // access to the expansion registry which isn't available here.
+    lua_pushstring(L, "3.3.5a");    // 1: version
+    lua_pushnumber(L, 12340);       // 2: buildNumber
+    lua_pushstring(L, "Jan 1 2025");// 3: date
+    lua_pushnumber(L, 30300);       // 4: tocVersion
+    return 4;
+}
+
+static int lua_GetCurrentMapAreaID(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushnumber(L, gh ? gh->getCurrentMapId() : 0);
     return 1;
 }
 
@@ -812,6 +952,12 @@ void LuaEngine::registerCoreAPI() {
         {"UnitDebuff",        lua_UnitDebuff},
         {"GetNumAddOns",      lua_GetNumAddOns},
         {"GetAddOnInfo",      lua_GetAddOnInfo},
+        {"GetSpellInfo",      lua_GetSpellInfo},
+        {"GetSpellTexture",   lua_GetSpellTexture},
+        {"GetItemInfo",       lua_GetItemInfo},
+        {"GetLocale",         lua_GetLocale},
+        {"GetBuildInfo",      lua_GetBuildInfo},
+        {"GetCurrentMapAreaID", lua_GetCurrentMapAreaID},
         // Utilities
         {"strsplit",          lua_strsplit},
         {"strtrim",           lua_strtrim},
