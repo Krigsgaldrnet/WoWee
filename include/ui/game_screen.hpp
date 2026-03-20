@@ -435,6 +435,10 @@ private:
     void loadExtendedCostDBC();
     std::string formatExtendedCost(uint32_t extendedCostId, game::GameHandler& gameHandler);
 
+    // Macro cooldown cache: maps macro slot index → resolved primary spell ID (0 = no spell found)
+    std::unordered_map<int, uint32_t> macroPrimarySpellCache_;
+    uint32_t resolveMacroPrimarySpellId(int slotIndex, game::GameHandler& gameHandler);
+
     // Death Knight rune bar: client-predicted fill (0.0=depleted, 1.0=ready) for smooth animation
     float runeClientFill_[6] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
 

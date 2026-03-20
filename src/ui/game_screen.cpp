@@ -8642,6 +8642,46 @@ VkDescriptorSet GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManage
     return ds;
 }
 
+uint32_t GameScreen::resolveMacroPrimarySpellId(int slotIndex, game::GameHandler& gameHandler) {
+    auto cacheIt = macroPrimarySpellCache_.find(slotIndex);
+    if (cacheIt != macroPrimarySpellCache_.end()) return cacheIt->second;
+
+    uint32_t macroId = gameHandler.getActionBar()[slotIndex].id;
+    const std::string& macroText = gameHandler.getMacroText(macroId);
+    uint32_t result = 0;
+    if (!macroText.empty()) {
+        for (const auto& cmdLine : allMacroCommands(macroText)) {
+            std::string cl = cmdLine;
+            for (char& c : cl) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (cl.rfind("/cast ", 0) != 0) continue;
+            size_t sp2 = cmdLine.find(' ');
+            if (sp2 == std::string::npos) continue;
+            std::string spellArg = cmdLine.substr(sp2 + 1);
+            if (!spellArg.empty() && spellArg.front() == '[') {
+                size_t ce = spellArg.find(']');
+                if (ce != std::string::npos) spellArg = spellArg.substr(ce + 1);
+            }
+            size_t semi = spellArg.find(';');
+            if (semi != std::string::npos) spellArg = spellArg.substr(0, semi);
+            size_t ss = spellArg.find_first_not_of(" \t!");
+            if (ss != std::string::npos) spellArg = spellArg.substr(ss);
+            size_t se = spellArg.find_last_not_of(" \t");
+            if (se != std::string::npos) spellArg.resize(se + 1);
+            if (spellArg.empty()) continue;
+            std::string spLow = spellArg;
+            for (char& c : spLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            for (uint32_t sid : gameHandler.getKnownSpells()) {
+                std::string sn = gameHandler.getSpellName(sid);
+                for (char& c : sn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                if (sn == spLow) { result = sid; break; }
+            }
+            break;
+        }
+    }
+    macroPrimarySpellCache_[slotIndex] = result;
+    return result;
+}
+
 void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
     // Use ImGui's display size — always in sync with the current swap-chain/frame,
     // whereas window->getWidth/Height() can lag by one frame on resize events.
@@ -8689,49 +8729,17 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
         const auto& slot = bar[absSlot];
         bool onCooldown = !slot.isReady();
 
-        // Macro cooldown: resolve the macro's primary spell and check its cooldown.
-        // In WoW, a macro like "/cast Fireball" shows Fireball's cooldown on the button.
+        // Macro cooldown: check the cached primary spell's cooldown.
         float macroCooldownRemaining = 0.0f;
         float macroCooldownTotal = 0.0f;
         if (slot.type == game::ActionBarSlot::MACRO && slot.id != 0 && !onCooldown) {
-            const std::string& macroText = gameHandler.getMacroText(slot.id);
-            if (!macroText.empty()) {
-                // Find first /cast spell ID (same logic as icon resolution)
-                for (const auto& cmdLine : allMacroCommands(macroText)) {
-                    std::string cl = cmdLine;
-                    for (char& c : cl) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    if (cl.rfind("/cast ", 0) != 0) continue;
-                    size_t sp2 = cmdLine.find(' ');
-                    if (sp2 == std::string::npos) continue;
-                    std::string spellArg = cmdLine.substr(sp2 + 1);
-                    if (!spellArg.empty() && spellArg.front() == '[') {
-                        size_t ce = spellArg.find(']');
-                        if (ce != std::string::npos) spellArg = spellArg.substr(ce + 1);
-                    }
-                    size_t semi = spellArg.find(';');
-                    if (semi != std::string::npos) spellArg = spellArg.substr(0, semi);
-                    size_t ss = spellArg.find_first_not_of(" \t!");
-                    if (ss != std::string::npos) spellArg = spellArg.substr(ss);
-                    size_t se = spellArg.find_last_not_of(" \t");
-                    if (se != std::string::npos) spellArg.resize(se + 1);
-                    if (spellArg.empty()) continue;
-                    // Find spell ID by name
-                    std::string spLow = spellArg;
-                    for (char& c : spLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    for (uint32_t sid : gameHandler.getKnownSpells()) {
-                        std::string sn = gameHandler.getSpellName(sid);
-                        for (char& c : sn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                        if (sn == spLow) {
-                            float cd = gameHandler.getSpellCooldown(sid);
-                            if (cd > 0.0f) {
-                                macroCooldownRemaining = cd;
-                                macroCooldownTotal = cd;
-                                onCooldown = true;
-                            }
-                            break;
-                        }
-                    }
-                    break;
+            uint32_t macroSpellId = resolveMacroPrimarySpellId(absSlot, gameHandler);
+            if (macroSpellId != 0) {
+                float cd = gameHandler.getSpellCooldown(macroSpellId);
+                if (cd > 0.0f) {
+                    macroCooldownRemaining = cd;
+                    macroCooldownTotal = cd;
+                    onCooldown = true;
                 }
             }
         }
@@ -9336,6 +9344,7 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                                       ImVec2(320.0f, 80.0f));
             if (ImGui::Button("Save")) {
                 gameHandler.setMacroText(macroEditorId_, std::string(macroEditorBuf_));
+                macroPrimarySpellCache_.clear();  // invalidate resolved spell IDs
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
