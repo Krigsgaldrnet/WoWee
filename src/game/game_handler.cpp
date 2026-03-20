@@ -12648,7 +12648,11 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     // Do not auto-create quests from VALUES quest-log slot fields for the
                     // same reason as CREATE_OBJECT2 above (can be misaligned per realm).
                     if (applyInventoryFields(block.fields)) slotsChanged = true;
-                    if (slotsChanged) rebuildOnlineInventory();
+                    if (slotsChanged) {
+                        rebuildOnlineInventory();
+                        if (addonEventCallback_)
+                            addonEventCallback_("PLAYER_EQUIPMENT_CHANGED", {});
+                    }
                     extractSkillFields(lastPlayerFields_);
                     extractExploredZoneFields(lastPlayerFields_);
                     applyQuestStateFromFields(lastPlayerFields_);
@@ -12753,6 +12757,10 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     }
                     if (inventoryChanged) {
                         rebuildOnlineInventory();
+                        if (addonEventCallback_) {
+                            addonEventCallback_("BAG_UPDATE", {});
+                            addonEventCallback_("UNIT_INVENTORY_CHANGED", {"player"});
+                        }
                     }
                 }
                 if (block.hasMovement && entity->getType() == ObjectType::GAMEOBJECT) {
