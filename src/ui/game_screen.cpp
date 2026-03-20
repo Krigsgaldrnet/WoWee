@@ -5796,6 +5796,17 @@ static std::string evaluateMacroConditionals(const std::string& rawArg,
         if (c == "group" || c == "party") return gameHandler.isInGroup();
         if (c == "nogroup")               return !gameHandler.isInGroup();
 
+        // raid / noraid — player is in a raid group (groupType == 1)
+        if (c == "raid") return gameHandler.isInGroup() && gameHandler.getPartyData().groupType == 1;
+        if (c == "noraid") return !gameHandler.isInGroup() || gameHandler.getPartyData().groupType != 1;
+
+        // spec:N — active talent spec (1-based: spec:1 = primary, spec:2 = secondary)
+        if (c.rfind("spec:", 0) == 0) {
+            uint8_t wantSpec = 0;
+            try { wantSpec = static_cast<uint8_t>(std::stoul(c.substr(5))); } catch (...) {}
+            return wantSpec > 0 && gameHandler.getActiveTalentSpec() == (wantSpec - 1);
+        }
+
         // noform / nostance — player is NOT in a shapeshift/stance
         if (c == "noform" || c == "nostance") {
             for (const auto& a : gameHandler.getPlayerAuras())
@@ -6151,7 +6162,8 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     "--- Macro Conditionals ---",
                     "Usage: /cast [cond1,cond2] Spell1; [cond3] Spell2; Default",
                     "State:   [combat] [mounted] [swimming] [flying] [stealthed]",
-                    "         [channeling] [pet] [group] [indoors] [outdoors]",
+                    "         [channeling] [pet] [group] [raid] [indoors] [outdoors]",
+                    "Spec:    [spec:1] [spec:2]  (active talent spec, 1-based)",
                     "         (prefix no- to negate any condition)",
                     "Target:  [harm] [help] [exists] [noexists] [dead] [nodead]",
                     "         [target=focus] [target=pet] [target=player]",
