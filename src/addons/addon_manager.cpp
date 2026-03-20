@@ -89,6 +89,12 @@ bool AddonManager::loadAddon(const TocFile& addon) {
                       "' in addon '", addon.addonName, "' (XML frames not yet implemented)");
         }
     }
+
+    // Fire ADDON_LOADED event after all addon files are executed
+    // This is the standard WoW pattern for addon initialization
+    if (success) {
+        luaEngine_.fireEvent("ADDON_LOADED", {addon.addonName});
+    }
     return success;
 }
 
