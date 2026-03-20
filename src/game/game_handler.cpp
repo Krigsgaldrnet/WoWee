@@ -15912,6 +15912,34 @@ void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint
     if (combatLog_.size() >= MAX_COMBAT_LOG)
         combatLog_.pop_front();
     combatLog_.push_back(std::move(log));
+
+    // Fire COMBAT_LOG_EVENT_UNFILTERED for Lua addons
+    // Args: subevent, sourceGUID, sourceName, 0 (sourceFlags), destGUID, destName, 0 (destFlags), spellId, spellName, amount
+    if (addonEventCallback_) {
+        static const char* kSubevents[] = {
+            "SWING_DAMAGE", "SPELL_DAMAGE", "SPELL_HEAL", "SWING_MISSED", "SWING_MISSED",
+            "SWING_MISSED", "SWING_MISSED", "SWING_MISSED", "SPELL_DAMAGE", "SPELL_HEAL",
+            "SPELL_PERIODIC_DAMAGE", "SPELL_PERIODIC_HEAL", "ENVIRONMENTAL_DAMAGE",
+            "SPELL_ENERGIZE", "SPELL_DRAIN", "PARTY_KILL", "SPELL_MISSED", "SPELL_ABSORBED",
+            "SPELL_MISSED", "SPELL_MISSED", "SPELL_MISSED", "SPELL_AURA_APPLIED",
+            "SPELL_DISPEL", "SPELL_STOLEN", "SPELL_INTERRUPT", "SPELL_INSTAKILL",
+            "PARTY_KILL", "SWING_DAMAGE", "SWING_DAMAGE"
+        };
+        const char* subevent = (type < sizeof(kSubevents)/sizeof(kSubevents[0]))
+            ? kSubevents[type] : "UNKNOWN";
+        char srcBuf[32], dstBuf[32];
+        snprintf(srcBuf, sizeof(srcBuf), "0x%016llX", (unsigned long long)effectiveSrc);
+        snprintf(dstBuf, sizeof(dstBuf), "0x%016llX", (unsigned long long)effectiveDst);
+        std::string spellName = (spellId != 0) ? getSpellName(spellId) : std::string{};
+        std::string timestamp = std::to_string(static_cast<double>(std::time(nullptr)));
+        addonEventCallback_("COMBAT_LOG_EVENT_UNFILTERED", {
+            timestamp, subevent,
+            srcBuf, log.sourceName, "0",
+            dstBuf, log.targetName, "0",
+            std::to_string(spellId), spellName,
+            std::to_string(amount)
+        });
+    }
 }
 
 bool GameHandler::shouldLogSpellstealAura(uint64_t casterGuid, uint64_t victimGuid, uint32_t spellId) {
@@ -19201,6 +19229,10 @@ void GameHandler::handleSpellCooldown(network::Packet& packet) {
     }
     LOG_DEBUG("handleSpellCooldown: parsed for ",
               isClassicFormat ? "Classic" : "TBC/WotLK", " format");
+    if (addonEventCallback_) {
+        addonEventCallback_("SPELL_UPDATE_COOLDOWN", {});
+        addonEventCallback_("ACTIONBAR_UPDATE_COOLDOWN", {});
+    }
 }
 
 void GameHandler::handleCooldownEvent(network::Packet& packet) {
