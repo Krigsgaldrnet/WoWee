@@ -22382,6 +22382,15 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
                         ImGui::SameLine();
                     }
                 }
+                // High bidder indicator
+                bool isHighBidder = (a.bidderGuid != 0 && a.bidderGuid == gameHandler.getPlayerGuid());
+                if (isHighBidder) {
+                    ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.2f, 1.0f), "[Winning]");
+                    ImGui::SameLine();
+                } else if (a.bidderGuid != 0) {
+                    ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[Outbid]");
+                    ImGui::SameLine();
+                }
                 ImGui::TextColored(bqc, "%s", name.c_str());
                 // Tooltip and shift-click
                 if (ImGui::IsItemHovered() && info && info->valid)
@@ -22456,6 +22465,11 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
                         ImGui::Image((void*)(intptr_t)oIcon, ImVec2(16, 16));
                         ImGui::SameLine();
                     }
+                }
+                // Bid activity indicator for seller
+                if (a.bidderGuid != 0) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "[Bid]");
+                    ImGui::SameLine();
                 }
                 ImGui::TextColored(oqc, "%s", name.c_str());
                 if (ImGui::IsItemHovered() && info && info->valid)
