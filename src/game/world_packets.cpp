@@ -3635,8 +3635,10 @@ bool InitialSpellsParser::parse(network::Packet& packet, InitialSpellsData& data
     data.talentSpec = packet.readUInt8();
     uint16_t spellCount = packet.readUInt16();
 
-    // Cap spell count to prevent excessive iteration
-    constexpr uint16_t kMaxSpells = 256;
+    // Cap spell count to prevent excessive iteration.
+    // WotLK characters with all ranks, mounts, professions, and racials can
+    // know 400-600 spells; 1024 covers all practical cases with headroom.
+    constexpr uint16_t kMaxSpells = 1024;
     if (spellCount > kMaxSpells) {
         LOG_WARNING("SMSG_INITIAL_SPELLS: spellCount=", spellCount, " exceeds max ", kMaxSpells,
                     ", capping");
