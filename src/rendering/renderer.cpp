@@ -3023,6 +3023,8 @@ void Renderer::resetCombatVisualState() {
         if (m2Renderer) m2Renderer->removeInstance(sv.instanceId);
     }
     activeSpellVisuals_.clear();
+    // Reset the negative cache so models that failed during asset loading can retry.
+    spellVisualFailedModels_.clear();
 }
 
 bool Renderer::isMoving() const {
