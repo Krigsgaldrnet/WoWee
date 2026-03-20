@@ -2892,16 +2892,21 @@ void Renderer::playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition
         LOG_WARNING("SpellVisual: failed to create instance for visualId=", visualId);
         return;
     }
-    activeSpellVisuals_.push_back({instanceId, 0.0f});
+    // Determine lifetime from M2 animation duration (clamp to reasonable range)
+    float animDurMs = m2Renderer->getInstanceAnimDuration(instanceId);
+    float duration = (animDurMs > 100.0f)
+        ? std::clamp(animDurMs / 1000.0f, 0.5f, SPELL_VISUAL_MAX_DURATION)
+        : SPELL_VISUAL_DEFAULT_DURATION;
+    activeSpellVisuals_.push_back({instanceId, 0.0f, duration});
     LOG_DEBUG("SpellVisual: spawned visualId=", visualId, " instanceId=", instanceId,
-              " model=", modelPath);
+              " duration=", duration, "s model=", modelPath);
 }
 
 void Renderer::updateSpellVisuals(float deltaTime) {
     if (activeSpellVisuals_.empty() || !m2Renderer) return;
     for (auto it = activeSpellVisuals_.begin(); it != activeSpellVisuals_.end(); ) {
         it->elapsed += deltaTime;
-        if (it->elapsed >= SPELL_VISUAL_DURATION) {
+        if (it->elapsed >= it->duration) {
             m2Renderer->removeInstance(it->instanceId);
             it = activeSpellVisuals_.erase(it);
         } else {

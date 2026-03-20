@@ -3956,6 +3956,18 @@ void M2Renderer::setInstanceAnimationFrozen(uint32_t instanceId, bool frozen) {
     }
 }
 
+float M2Renderer::getInstanceAnimDuration(uint32_t instanceId) const {
+    auto idxIt = instanceIndexById.find(instanceId);
+    if (idxIt == instanceIndexById.end()) return 0.0f;
+    const auto& inst = instances[idxIt->second];
+    if (!inst.cachedModel) return 0.0f;
+    const auto& seqs = inst.cachedModel->sequences;
+    if (seqs.empty()) return 0.0f;
+    int seqIdx = inst.currentSequenceIndex;
+    if (seqIdx < 0 || seqIdx >= static_cast<int>(seqs.size())) seqIdx = 0;
+    return seqs[seqIdx].duration; // in milliseconds
+}
+
 void M2Renderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& transform) {
     auto idxIt = instanceIndexById.find(instanceId);
     if (idxIt == instanceIndexById.end()) return;

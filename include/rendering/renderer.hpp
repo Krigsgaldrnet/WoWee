@@ -334,7 +334,11 @@ private:
     pipeline::AssetManager* cachedAssetManager = nullptr;
 
     // Spell visual effects — transient M2 instances spawned by SMSG_PLAY_SPELL_VISUAL/IMPACT
-    struct SpellVisualInstance { uint32_t instanceId; float elapsed; };
+    struct SpellVisualInstance {
+        uint32_t instanceId;
+        float elapsed;
+        float duration;  // per-instance lifetime in seconds (from M2 anim or default)
+    };
     std::vector<SpellVisualInstance> activeSpellVisuals_;
     std::unordered_map<uint32_t, std::string> spellVisualCastPath_;   // visualId → cast M2 path
     std::unordered_map<uint32_t, std::string> spellVisualImpactPath_; // visualId → impact M2 path
@@ -343,7 +347,8 @@ private:
     bool spellVisualDbcLoaded_ = false;
     void loadSpellVisualDbc();
     void updateSpellVisuals(float deltaTime);
-    static constexpr float SPELL_VISUAL_DURATION = 3.5f;
+    static constexpr float SPELL_VISUAL_MAX_DURATION = 5.0f;
+    static constexpr float SPELL_VISUAL_DEFAULT_DURATION = 2.0f;
 
     uint32_t currentZoneId = 0;
     std::string currentZoneName;
