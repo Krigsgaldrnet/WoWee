@@ -10676,11 +10676,58 @@ void GameHandler::sendRequestVehicleExit() {
 }
 
 void GameHandler::useEquipmentSet(uint32_t setId) {
-    if (state != WorldState::IN_WORLD) return;
-    // CMSG_EQUIPMENT_SET_USE: uint32 setId
+    if (state != WorldState::IN_WORLD || !socket) return;
+    // Find the equipment set to get target item GUIDs per slot
+    const EquipmentSet* es = nullptr;
+    for (const auto& s : equipmentSets_) {
+        if (s.setId == setId) { es = &s; break; }
+    }
+    if (!es) {
+        addUIError("Equipment set not found.");
+        return;
+    }
+    // CMSG_EQUIPMENT_SET_USE: 19 × (PackedGuid itemGuid + uint8 srcBag + uint8 srcSlot)
     network::Packet pkt(wireOpcode(Opcode::CMSG_EQUIPMENT_SET_USE));
-    pkt.writeUInt32(setId);
+    for (int slot = 0; slot < 19; ++slot) {
+        uint64_t itemGuid = es->itemGuids[slot];
+        MovementPacket::writePackedGuid(pkt, itemGuid);
+        uint8_t srcBag = 0xFF;
+        uint8_t srcSlot = 0;
+        if (itemGuid != 0) {
+            bool found = false;
+            // Check if item is already in an equipment slot
+            for (int eq = 0; eq < 19 && !found; ++eq) {
+                if (getEquipSlotGuid(eq) == itemGuid) {
+                    srcBag = 0xFF;  // INVENTORY_SLOT_BAG_0
+                    srcSlot = static_cast<uint8_t>(eq);
+                    found = true;
+                }
+            }
+            // Check backpack (slots 23-38 in the body container)
+            for (int bp = 0; bp < 16 && !found; ++bp) {
+                if (getBackpackItemGuid(bp) == itemGuid) {
+                    srcBag = 0xFF;
+                    srcSlot = static_cast<uint8_t>(23 + bp);
+                    found = true;
+                }
+            }
+            // Check extra bags (bag indices 19-22)
+            for (int bag = 0; bag < 4 && !found; ++bag) {
+                int bagSize = inventory.getBagSize(bag);
+                for (int s = 0; s < bagSize && !found; ++s) {
+                    if (getBagItemGuid(bag, s) == itemGuid) {
+                        srcBag = static_cast<uint8_t>(19 + bag);
+                        srcSlot = static_cast<uint8_t>(s);
+                        found = true;
+                    }
+                }
+            }
+        }
+        pkt.writeUInt8(srcBag);
+        pkt.writeUInt8(srcSlot);
+    }
     socket->send(pkt);
+    LOG_INFO("CMSG_EQUIPMENT_SET_USE: setId=", setId);
 }
 
 void GameHandler::saveEquipmentSet(const std::string& name, const std::string& iconName,
