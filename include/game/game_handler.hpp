@@ -3479,6 +3479,8 @@ private:
         std::array<uint64_t, 19> itemGuids{};
     };
     std::vector<EquipmentSet> equipmentSets_;
+    std::string pendingSaveSetName_;   // Saved between CMSG_EQUIPMENT_SET_SAVE and SMSG_EQUIPMENT_SET_SAVED
+    std::string pendingSaveSetIcon_;
     std::vector<EquipmentSetInfo> equipmentSetInfo_;  // public-facing copy
 
     // ---- Forced faction reactions (SMSG_SET_FORCED_REACTIONS) ----

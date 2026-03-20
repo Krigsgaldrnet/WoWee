@@ -4218,19 +4218,52 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() >= 12) {
                 uint32_t setIndex = packet.readUInt32();
                 uint64_t setGuid  = packet.readUInt64();
-                for (const auto& es : equipmentSets_) {
-                    if (es.setGuid == setGuid ||
-                        (es.setGuid == 0 && es.setId == setIndex)) {
+                // Update the local set's GUID so subsequent "Update" calls
+                // use the server-assigned GUID instead of 0 (which would
+                // create a duplicate instead of updating).
+                bool found = false;
+                for (auto& es : equipmentSets_) {
+                    if (es.setGuid == setGuid || es.setId == setIndex) {
+                        es.setGuid = setGuid;
                         setName = es.name;
+                        found = true;
                         break;
                     }
                 }
-                (void)setIndex;
+                // Also update public-facing info
+                for (auto& info : equipmentSetInfo_) {
+                    if (info.setGuid == setGuid || info.setId == setIndex) {
+                        info.setGuid = setGuid;
+                        break;
+                    }
+                }
+                // If the set doesn't exist locally yet (new save), add a
+                // placeholder entry so it shows up in the UI immediately.
+                if (!found && setGuid != 0) {
+                    EquipmentSet newEs;
+                    newEs.setGuid = setGuid;
+                    newEs.setId   = setIndex;
+                    newEs.name    = pendingSaveSetName_;
+                    newEs.iconName = pendingSaveSetIcon_;
+                    for (int s = 0; s < 19; ++s)
+                        newEs.itemGuids[s] = getEquipSlotGuid(s);
+                    equipmentSets_.push_back(std::move(newEs));
+                    EquipmentSetInfo newInfo;
+                    newInfo.setGuid = setGuid;
+                    newInfo.setId   = setIndex;
+                    newInfo.name    = pendingSaveSetName_;
+                    newInfo.iconName = pendingSaveSetIcon_;
+                    equipmentSetInfo_.push_back(std::move(newInfo));
+                    setName = pendingSaveSetName_;
+                }
+                pendingSaveSetName_.clear();
+                pendingSaveSetIcon_.clear();
+                LOG_INFO("SMSG_EQUIPMENT_SET_SAVED: index=", setIndex,
+                         " guid=", setGuid, " name=", setName);
             }
             addSystemChatMessage(setName.empty()
                 ? std::string("Equipment set saved.")
                 : "Equipment set \"" + setName + "\" saved.");
-            LOG_DEBUG("Equipment set saved");
             break;
         }
         case Opcode::SMSG_PERIODICAURALOG: {
@@ -9396,6 +9429,14 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
                 LOG_INFO("Skipping CMSG_QUERY_QUESTS_COMPLETED: opcode not mapped for current expansion");
             }
         }
+
+        // Auto-request played time on login so the character Stats tab is
+        // populated immediately without requiring /played.
+        if (socket) {
+            auto ptPkt = RequestPlayedTimePacket::build(false);  // false = don't show in chat
+            socket->send(ptPkt);
+            LOG_INFO("Auto-requested played time on login");
+        }
     }
 }
 
@@ -10759,6 +10800,9 @@ void GameHandler::saveEquipmentSet(const std::string& name, const std::string& i
         uint64_t guid = getEquipSlotGuid(slot);
         MovementPacket::writePackedGuid(pkt, guid);
     }
+    // Track pending save so SMSG_EQUIPMENT_SET_SAVED can add the new set locally
+    pendingSaveSetName_ = name;
+    pendingSaveSetIcon_ = iconName;
     socket->send(pkt);
     LOG_INFO("CMSG_EQUIPMENT_SET_SAVE: name=\"", name, "\" guid=", existingGuid, " index=", setIndex);
 }
