@@ -26,9 +26,11 @@ public:
     void setGameHandler(game::GameHandler* handler);
 
     // Fire a WoW event to all registered Lua handlers.
-    // Extra string args are pushed as event arguments.
     void fireEvent(const std::string& eventName,
                    const std::vector<std::string>& args = {});
+
+    // Try to dispatch a slash command via SlashCmdList. Returns true if handled.
+    bool dispatchSlashCommand(const std::string& command, const std::string& args);
 
     lua_State* getState() { return L_; }
     bool isInitialized() const { return L_ != nullptr; }

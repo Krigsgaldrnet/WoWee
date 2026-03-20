@@ -6007,6 +6007,20 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                 return;
             }
 
+            // Check addon slash commands (SlashCmdList) before built-in commands
+            {
+                auto* am = core::Application::getInstance().getAddonManager();
+                if (am && am->isInitialized()) {
+                    std::string slashCmd = "/" + cmdLower;
+                    std::string slashArgs;
+                    if (spacePos != std::string::npos) slashArgs = command.substr(spacePos + 1);
+                    if (am->getLuaEngine()->dispatchSlashCommand(slashCmd, slashArgs)) {
+                        chatInputBuffer[0] = '\0';
+                        return;
+                    }
+                }
+            }
+
             // Special commands
             if (cmdLower == "logout") {
                 core::Application::getInstance().logoutToLogin();

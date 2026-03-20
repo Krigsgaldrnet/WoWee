@@ -301,6 +301,78 @@ static int lua_HasTarget(lua_State* L) {
     return 1;
 }
 
+// --- WoW Utility Functions ---
+
+// strsplit(delimiter, str) — WoW's string split
+static int lua_strsplit(lua_State* L) {
+    const char* delim = luaL_checkstring(L, 1);
+    const char* str = luaL_checkstring(L, 2);
+    if (!delim[0]) { lua_pushstring(L, str); return 1; }
+    int count = 0;
+    std::string s(str);
+    size_t pos = 0;
+    while (pos <= s.size()) {
+        size_t found = s.find(delim[0], pos);
+        if (found == std::string::npos) {
+            lua_pushstring(L, s.substr(pos).c_str());
+            count++;
+            break;
+        }
+        lua_pushstring(L, s.substr(pos, found - pos).c_str());
+        count++;
+        pos = found + 1;
+    }
+    return count;
+}
+
+// strtrim(str) — remove leading/trailing whitespace
+static int lua_strtrim(lua_State* L) {
+    const char* str = luaL_checkstring(L, 1);
+    std::string s(str);
+    size_t start = s.find_first_not_of(" \t\r\n");
+    size_t end = s.find_last_not_of(" \t\r\n");
+    lua_pushstring(L, (start == std::string::npos) ? "" : s.substr(start, end - start + 1).c_str());
+    return 1;
+}
+
+// wipe(table) — clear all entries from a table
+static int lua_wipe(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    // Remove all integer keys
+    int len = static_cast<int>(lua_objlen(L, 1));
+    for (int i = len; i >= 1; i--) {
+        lua_pushnil(L);
+        lua_rawseti(L, 1, i);
+    }
+    // Remove all string keys
+    lua_pushnil(L);
+    while (lua_next(L, 1) != 0) {
+        lua_pop(L, 1);       // pop value
+        lua_pushvalue(L, -1); // copy key
+        lua_pushnil(L);
+        lua_rawset(L, 1);    // table[key] = nil
+    }
+    lua_pushvalue(L, 1);
+    return 1;
+}
+
+// date(format) — safe date function (os.date was removed)
+static int lua_wow_date(lua_State* L) {
+    const char* fmt = luaL_optstring(L, 1, "%c");
+    time_t now = time(nullptr);
+    struct tm* tm = localtime(&now);
+    char buf[256];
+    strftime(buf, sizeof(buf), fmt, tm);
+    lua_pushstring(L, buf);
+    return 1;
+}
+
+// time() — current unix timestamp
+static int lua_wow_time(lua_State* L) {
+    lua_pushnumber(L, static_cast<double>(time(nullptr)));
+    return 1;
+}
+
 // Stub for GetTime() — returns elapsed seconds
 static int lua_wow_gettime(lua_State* L) {
     static auto start = std::chrono::steady_clock::now();
@@ -395,11 +467,37 @@ void LuaEngine::registerCoreAPI() {
         {"IsSpellKnown",      lua_IsSpellKnown},
         {"GetSpellCooldown",  lua_GetSpellCooldown},
         {"HasTarget",         lua_HasTarget},
+        // Utilities
+        {"strsplit",          lua_strsplit},
+        {"strtrim",           lua_strtrim},
+        {"wipe",              lua_wipe},
+        {"date",              lua_wow_date},
+        {"time",              lua_wow_time},
     };
     for (const auto& [name, func] : unitAPI) {
         lua_pushcfunction(L_, func);
         lua_setglobal(L_, name);
     }
+
+    // WoW aliases
+    lua_getglobal(L_, "string");
+    lua_getfield(L_, -1, "format");
+    lua_setglobal(L_, "format");
+    lua_pop(L_, 1);  // pop string table
+
+    // tinsert/tremove aliases
+    lua_getglobal(L_, "table");
+    lua_getfield(L_, -1, "insert");
+    lua_setglobal(L_, "tinsert");
+    lua_getfield(L_, -1, "remove");
+    lua_setglobal(L_, "tremove");
+    lua_pop(L_, 1);  // pop table
+
+    // SlashCmdList table — addons register slash commands here
+    lua_newtable(L_);
+    lua_setglobal(L_, "SlashCmdList");
+
+    // SLASH_* globals will be set by addons, dispatched by the /run command handler
 }
 
 // ---- Event System ----
@@ -511,6 +609,54 @@ void LuaEngine::fireEvent(const std::string& eventName,
         }
     }
     lua_pop(L_, 2);  // pop handler list + WoweeEvents
+}
+
+bool LuaEngine::dispatchSlashCommand(const std::string& command, const std::string& args) {
+    if (!L_) return false;
+
+    // Check each SlashCmdList entry: for key NAME, check SLASH_NAME1, SLASH_NAME2, etc.
+    lua_getglobal(L_, "SlashCmdList");
+    if (!lua_istable(L_, -1)) { lua_pop(L_, 1); return false; }
+
+    std::string cmdLower = command;
+    for (char& c : cmdLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    lua_pushnil(L_);
+    while (lua_next(L_, -2) != 0) {
+        // Stack: SlashCmdList, key, handler
+        if (!lua_isfunction(L_, -1) || !lua_isstring(L_, -2)) {
+            lua_pop(L_, 1);
+            continue;
+        }
+        const char* name = lua_tostring(L_, -2);
+
+        // Check SLASH_<NAME>1 through SLASH_<NAME>9
+        for (int i = 1; i <= 9; i++) {
+            std::string globalName = "SLASH_" + std::string(name) + std::to_string(i);
+            lua_getglobal(L_, globalName.c_str());
+            if (lua_isstring(L_, -1)) {
+                std::string slashStr = lua_tostring(L_, -1);
+                for (char& c : slashStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                if (slashStr == cmdLower) {
+                    lua_pop(L_, 1); // pop global
+                    // Call the handler with args
+                    lua_pushvalue(L_, -1); // copy handler
+                    lua_pushstring(L_, args.c_str());
+                    if (lua_pcall(L_, 1, 0, 0) != 0) {
+                        LOG_ERROR("LuaEngine: SlashCmdList['", name, "'] error: ",
+                                  lua_tostring(L_, -1));
+                        lua_pop(L_, 1);
+                    }
+                    lua_pop(L_, 3); // pop handler, key, SlashCmdList
+                    return true;
+                }
+            }
+            lua_pop(L_, 1); // pop global
+        }
+        lua_pop(L_, 1); // pop handler, keep key for next iteration
+    }
+    lua_pop(L_, 1); // pop SlashCmdList
+    return false;
 }
 
 bool LuaEngine::executeFile(const std::string& path) {
