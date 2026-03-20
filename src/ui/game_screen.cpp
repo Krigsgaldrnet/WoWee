@@ -5668,12 +5668,17 @@ static std::string evaluateMacroConditionals(const std::string& rawArg,
         size_t e = c.find_last_not_of(" \t");  if (e != std::string::npos) c.resize(e + 1);
         if (c.empty()) return true;
 
-        // @target specifiers: @player, @focus, @mouseover, @target
+        // @target specifiers: @player, @focus, @pet, @mouseover, @target
         if (!c.empty() && c[0] == '@') {
             std::string spec = c.substr(1);
-            if (spec == "player")       tgt = gameHandler.getPlayerGuid();
+            if (spec == "player")          tgt = gameHandler.getPlayerGuid();
             else if (spec == "focus")      tgt = gameHandler.getFocusGuid();
             else if (spec == "target")     tgt = gameHandler.getTargetGuid();
+            else if (spec == "pet") {
+                uint64_t pg = gameHandler.getPetGuid();
+                if (pg != 0) tgt = pg;
+                else return false;  // no pet — skip this alternative
+            }
             else if (spec == "mouseover") {
                 uint64_t mo = gameHandler.getMouseoverGuid();
                 if (mo != 0) tgt = mo;
@@ -5684,9 +5689,14 @@ static std::string evaluateMacroConditionals(const std::string& rawArg,
         // target=X specifiers
         if (c.rfind("target=", 0) == 0) {
             std::string spec = c.substr(7);
-            if (spec == "player")    tgt = gameHandler.getPlayerGuid();
+            if (spec == "player")          tgt = gameHandler.getPlayerGuid();
             else if (spec == "focus")      tgt = gameHandler.getFocusGuid();
             else if (spec == "target")     tgt = gameHandler.getTargetGuid();
+            else if (spec == "pet") {
+                uint64_t pg = gameHandler.getPetGuid();
+                if (pg != 0) tgt = pg;
+                else return false;  // no pet — skip this alternative
+            }
             else if (spec == "mouseover") {
                 uint64_t mo = gameHandler.getMouseoverGuid();
                 if (mo != 0) tgt = mo;
