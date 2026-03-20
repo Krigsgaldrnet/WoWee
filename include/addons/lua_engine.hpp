@@ -35,6 +35,10 @@ public:
     // Call OnUpdate scripts on all frames that have one.
     void dispatchOnUpdate(float elapsed);
 
+    // SavedVariables: load globals from file, save globals to file
+    bool loadSavedVariables(const std::string& path);
+    bool saveSavedVariables(const std::string& path, const std::vector<std::string>& varNames);
+
     lua_State* getState() { return L_; }
     bool isInitialized() const { return L_ != nullptr; }
 

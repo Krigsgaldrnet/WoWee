@@ -19,6 +19,27 @@ bool TocFile::isLoadOnDemand() const {
     return (it != directives.end()) && it->second == "1";
 }
 
+std::vector<std::string> TocFile::getSavedVariables() const {
+    std::vector<std::string> result;
+    auto it = directives.find("SavedVariables");
+    if (it == directives.end()) return result;
+    // Parse comma-separated variable names
+    std::string val = it->second;
+    size_t pos = 0;
+    while (pos <= val.size()) {
+        size_t comma = val.find(',', pos);
+        std::string name = (comma != std::string::npos) ? val.substr(pos, comma - pos) : val.substr(pos);
+        // Trim whitespace
+        size_t start = name.find_first_not_of(" \t");
+        size_t end = name.find_last_not_of(" \t");
+        if (start != std::string::npos)
+            result.push_back(name.substr(start, end - start + 1));
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+    return result;
+}
+
 std::optional<TocFile> parseTocFile(const std::string& tocPath) {
     std::ifstream f(tocPath);
     if (!f.is_open()) return std::nullopt;

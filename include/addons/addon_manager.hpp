@@ -25,11 +25,14 @@ public:
     LuaEngine* getLuaEngine() { return &luaEngine_; }
     bool isInitialized() const { return luaEngine_.isInitialized(); }
 
+    void saveAllSavedVariables();
+
 private:
     LuaEngine luaEngine_;
     std::vector<TocFile> addons_;
 
     bool loadAddon(const TocFile& addon);
+    std::string getSavedVariablesPath(const TocFile& addon) const;
 };
 
 } // namespace wowee::addons

@@ -61,10 +61,21 @@ void AddonManager::loadAllAddons() {
              (failed > 0 ? (", " + std::to_string(failed) + " failed") : ""));
 }
 
+std::string AddonManager::getSavedVariablesPath(const TocFile& addon) const {
+    return addon.basePath + "/" + addon.addonName + ".lua.saved";
+}
+
 bool AddonManager::loadAddon(const TocFile& addon) {
+    // Load SavedVariables before addon code (so globals are available at load time)
+    auto savedVars = addon.getSavedVariables();
+    if (!savedVars.empty()) {
+        std::string svPath = getSavedVariablesPath(addon);
+        luaEngine_.loadSavedVariables(svPath);
+        LOG_DEBUG("AddonManager: loaded saved variables for '", addon.addonName, "'");
+    }
+
     bool success = true;
     for (const auto& filename : addon.files) {
-        // For Step 1: only load .lua files, skip .xml (frame system not yet implemented)
         std::string lower = filename;
         for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
@@ -93,7 +104,18 @@ void AddonManager::update(float deltaTime) {
     luaEngine_.dispatchOnUpdate(deltaTime);
 }
 
+void AddonManager::saveAllSavedVariables() {
+    for (const auto& addon : addons_) {
+        auto savedVars = addon.getSavedVariables();
+        if (!savedVars.empty()) {
+            std::string svPath = getSavedVariablesPath(addon);
+            luaEngine_.saveSavedVariables(svPath, savedVars);
+        }
+    }
+}
+
 void AddonManager::shutdown() {
+    saveAllSavedVariables();
     addons_.clear();
     luaEngine_.shutdown();
 }

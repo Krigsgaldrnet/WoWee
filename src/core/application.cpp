@@ -693,6 +693,7 @@ void Application::setState(AppState newState) {
             // If we reuse a previously spawned instance without forcing a respawn, appearance (notably hair) can desync.
             if (addonManager_ && addonsLoaded_) {
                 addonManager_->fireEvent("PLAYER_LEAVING_WORLD");
+                addonManager_->saveAllSavedVariables();
             }
             npcsSpawned = false;
             playerCharacterSpawned = false;

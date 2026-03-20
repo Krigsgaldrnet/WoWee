@@ -3,6 +3,8 @@
 #include "game/entity.hpp"
 #include "core/logger.hpp"
 #include <cstring>
+#include <fstream>
+#include <filesystem>
 
 extern "C" {
 #include <lua.h>
@@ -1044,6 +1046,118 @@ bool LuaEngine::dispatchSlashCommand(const std::string& command, const std::stri
     }
     lua_pop(L_, 1); // pop SlashCmdList
     return false;
+}
+
+// ---- SavedVariables serialization ----
+
+static void serializeLuaValue(lua_State* L, int idx, std::string& out, int indent);
+
+static void serializeLuaTable(lua_State* L, int idx, std::string& out, int indent) {
+    out += "{\n";
+    std::string pad(indent + 2, ' ');
+    lua_pushnil(L);
+    while (lua_next(L, idx) != 0) {
+        out += pad;
+        // Key
+        if (lua_type(L, -2) == LUA_TSTRING) {
+            const char* k = lua_tostring(L, -2);
+            out += "[\"";
+            for (const char* p = k; *p; ++p) {
+                if (*p == '"' || *p == '\\') out += '\\';
+                out += *p;
+            }
+            out += "\"] = ";
+        } else if (lua_type(L, -2) == LUA_TNUMBER) {
+            out += "[" + std::to_string(static_cast<long long>(lua_tonumber(L, -2))) + "] = ";
+        } else {
+            lua_pop(L, 1);
+            continue;
+        }
+        // Value
+        serializeLuaValue(L, lua_gettop(L), out, indent + 2);
+        out += ",\n";
+        lua_pop(L, 1);
+    }
+    out += std::string(indent, ' ') + "}";
+}
+
+static void serializeLuaValue(lua_State* L, int idx, std::string& out, int indent) {
+    switch (lua_type(L, idx)) {
+        case LUA_TNIL:     out += "nil"; break;
+        case LUA_TBOOLEAN: out += lua_toboolean(L, idx) ? "true" : "false"; break;
+        case LUA_TNUMBER: {
+            double v = lua_tonumber(L, idx);
+            char buf[64];
+            snprintf(buf, sizeof(buf), "%.17g", v);
+            out += buf;
+            break;
+        }
+        case LUA_TSTRING: {
+            const char* s = lua_tostring(L, idx);
+            out += "\"";
+            for (const char* p = s; *p; ++p) {
+                if (*p == '"' || *p == '\\') out += '\\';
+                else if (*p == '\n') { out += "\\n"; continue; }
+                else if (*p == '\r') continue;
+                out += *p;
+            }
+            out += "\"";
+            break;
+        }
+        case LUA_TTABLE:
+            serializeLuaTable(L, idx, out, indent);
+            break;
+        default:
+            out += "nil"; // Functions, userdata, etc. can't be serialized
+            break;
+    }
+}
+
+bool LuaEngine::loadSavedVariables(const std::string& path) {
+    if (!L_) return false;
+    std::ifstream f(path);
+    if (!f.is_open()) return false; // No saved data yet — not an error
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if (content.empty()) return true;
+    int err = luaL_dostring(L_, content.c_str());
+    if (err != 0) {
+        LOG_WARNING("LuaEngine: error loading saved variables from '", path, "': ",
+                    lua_tostring(L_, -1));
+        lua_pop(L_, 1);
+        return false;
+    }
+    return true;
+}
+
+bool LuaEngine::saveSavedVariables(const std::string& path, const std::vector<std::string>& varNames) {
+    if (!L_ || varNames.empty()) return false;
+    std::string output;
+    for (const auto& name : varNames) {
+        lua_getglobal(L_, name.c_str());
+        if (!lua_isnil(L_, -1)) {
+            output += name + " = ";
+            serializeLuaValue(L_, lua_gettop(L_), output, 0);
+            output += "\n";
+        }
+        lua_pop(L_, 1);
+    }
+    if (output.empty()) return true;
+
+    // Ensure directory exists
+    size_t lastSlash = path.find_last_of("/\\");
+    if (lastSlash != std::string::npos) {
+        std::error_code ec;
+        std::filesystem::create_directories(path.substr(0, lastSlash), ec);
+    }
+
+    std::ofstream f(path);
+    if (!f.is_open()) {
+        LOG_WARNING("LuaEngine: cannot write saved variables to '", path, "'");
+        return false;
+    }
+    f << output;
+    LOG_INFO("LuaEngine: saved variables to '", path, "' (", output.size(), " bytes)");
+    return true;
 }
 
 bool LuaEngine::executeFile(const std::string& path) {

@@ -17,6 +17,7 @@ struct TocFile {
     std::string getTitle() const;
     std::string getInterface() const;
     bool isLoadOnDemand() const;
+    std::vector<std::string> getSavedVariables() const;
 };
 
 std::optional<TocFile> parseTocFile(const std::string& tocPath);
