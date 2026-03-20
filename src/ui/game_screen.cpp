@@ -8643,6 +8643,12 @@ VkDescriptorSet GameScreen::getSpellIcon(uint32_t spellId, pipeline::AssetManage
 }
 
 uint32_t GameScreen::resolveMacroPrimarySpellId(uint32_t macroId, game::GameHandler& gameHandler) {
+    // Invalidate cache when spell list changes (learning/unlearning spells)
+    size_t curSpellCount = gameHandler.getKnownSpells().size();
+    if (curSpellCount != macroCacheSpellCount_) {
+        macroPrimarySpellCache_.clear();
+        macroCacheSpellCount_ = curSpellCount;
+    }
     auto cacheIt = macroPrimarySpellCache_.find(macroId);
     if (cacheIt != macroPrimarySpellCache_.end()) return cacheIt->second;
 

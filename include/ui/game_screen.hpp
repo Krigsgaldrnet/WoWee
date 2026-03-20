@@ -437,6 +437,7 @@ private:
 
     // Macro cooldown cache: maps macro ID → resolved primary spell ID (0 = no spell found)
     std::unordered_map<uint32_t, uint32_t> macroPrimarySpellCache_;
+    size_t macroCacheSpellCount_ = 0;  // invalidates cache when spell list changes
     uint32_t resolveMacroPrimarySpellId(uint32_t macroId, game::GameHandler& gameHandler);
 
     // Death Knight rune bar: client-predicted fill (0.0=depleted, 1.0=ready) for smooth animation
