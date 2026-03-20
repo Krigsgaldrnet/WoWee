@@ -9106,13 +9106,29 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
                 ImGui::EndTooltip();
             } else if (slot.type == game::ActionBarSlot::MACRO) {
                 ImGui::BeginTooltip();
-                ImGui::Text("Macro #%u", slot.id);
-                const std::string& macroText = gameHandler.getMacroText(slot.id);
-                if (!macroText.empty()) {
-                    ImGui::Separator();
-                    ImGui::TextUnformatted(macroText.c_str());
-                } else {
-                    ImGui::TextDisabled("(no text — right-click to Edit)");
+                // Show the primary spell's rich tooltip (like WoW does for macro buttons)
+                uint32_t macroSpellId = resolveMacroPrimarySpellId(slot.id, gameHandler);
+                bool showedRich = false;
+                if (macroSpellId != 0) {
+                    showedRich = spellbookScreen.renderSpellInfoTooltip(macroSpellId, gameHandler, assetMgr);
+                    if (onCooldown && macroCooldownRemaining > 0.0f) {
+                        float cd = macroCooldownRemaining;
+                        if (cd >= 60.0f)
+                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                "Cooldown: %d min %d sec", (int)cd/60, (int)cd%60);
+                        else
+                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cooldown: %.1f sec", cd);
+                    }
+                }
+                if (!showedRich) {
+                    ImGui::Text("Macro #%u", slot.id);
+                    const std::string& macroText = gameHandler.getMacroText(slot.id);
+                    if (!macroText.empty()) {
+                        ImGui::Separator();
+                        ImGui::TextUnformatted(macroText.c_str());
+                    } else {
+                        ImGui::TextDisabled("(no text — right-click to Edit)");
+                    }
                 }
                 ImGui::EndTooltip();
             } else if (slot.type == game::ActionBarSlot::ITEM) {
