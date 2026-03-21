@@ -2787,6 +2787,18 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 gameHandler.closeBank();
             } else if (gameHandler.isTrainerWindowOpen()) {
                 gameHandler.closeTrainer();
+            } else if (gameHandler.isMailboxOpen()) {
+                gameHandler.closeMailbox();
+            } else if (gameHandler.isAuctionHouseOpen()) {
+                gameHandler.closeAuctionHouse();
+            } else if (gameHandler.isQuestDetailsOpen()) {
+                gameHandler.declineQuest();
+            } else if (gameHandler.isQuestOfferRewardOpen()) {
+                gameHandler.closeQuestOfferReward();
+            } else if (gameHandler.isQuestRequestItemsOpen()) {
+                gameHandler.closeQuestRequestItems();
+            } else if (gameHandler.isTradeOpen()) {
+                gameHandler.cancelTrade();
             } else if (showWhoWindow_) {
                 showWhoWindow_ = false;
             } else if (showCombatLog_) {
