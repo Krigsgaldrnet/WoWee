@@ -379,7 +379,17 @@ static int lua_UnitAura(lua_State* L, bool wantBuff) {
             if (!iconPath.empty()) lua_pushstring(L, iconPath.c_str());
             else lua_pushnil(L);             // icon texture path
             lua_pushnumber(L, aura.charges); // count
-            lua_pushnil(L);                  // debuffType
+            // debuffType: resolve from Spell.dbc dispel type
+            {
+                uint8_t dt = gh->getSpellDispelType(aura.spellId);
+                switch (dt) {
+                    case 1:  lua_pushstring(L, "Magic");  break;
+                    case 2:  lua_pushstring(L, "Curse");  break;
+                    case 3:  lua_pushstring(L, "Disease"); break;
+                    case 4:  lua_pushstring(L, "Poison"); break;
+                    default: lua_pushnil(L);              break;
+                }
+            }
             lua_pushnumber(L, aura.maxDurationMs > 0 ? aura.maxDurationMs / 1000.0 : 0); // duration
             lua_pushnumber(L, 0);            // expirationTime (would need absolute time)
             lua_pushnil(L);                  // caster
