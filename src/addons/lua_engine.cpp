@@ -1342,6 +1342,87 @@ static int lua_GetFriendInfo(lua_State* L) {
     return 1;
 }
 
+// --- Guild API ---
+
+// IsInGuild() → boolean
+static int lua_IsInGuild(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_pushboolean(L, gh && gh->isInGuild());
+    return 1;
+}
+
+// GetGuildInfo("player") → guildName, guildRankName, guildRankIndex
+static int lua_GetGuildInfoFunc(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh || !gh->isInGuild()) { lua_pushnil(L); return 1; }
+    lua_pushstring(L, gh->getGuildName().c_str());
+    // Get rank name for the player
+    const auto& roster = gh->getGuildRoster();
+    std::string rankName;
+    uint32_t rankIndex = 0;
+    for (const auto& m : roster.members) {
+        if (m.guid == gh->getPlayerGuid()) {
+            rankIndex = m.rankIndex;
+            const auto& rankNames = gh->getGuildRankNames();
+            if (rankIndex < rankNames.size()) rankName = rankNames[rankIndex];
+            break;
+        }
+    }
+    lua_pushstring(L, rankName.c_str());
+    lua_pushnumber(L, rankIndex);
+    return 3;
+}
+
+// GetNumGuildMembers() → totalMembers, onlineMembers
+static int lua_GetNumGuildMembers(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
+    const auto& roster = gh->getGuildRoster();
+    int online = 0;
+    for (const auto& m : roster.members)
+        if (m.online) online++;
+    lua_pushnumber(L, roster.members.size());
+    lua_pushnumber(L, online);
+    return 2;
+}
+
+// GetGuildRosterInfo(index) → name, rank, rankIndex, level, class, zone, note, officerNote, online, status, classId
+static int lua_GetGuildRosterInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) { lua_pushnil(L); return 1; }
+    const auto& roster = gh->getGuildRoster();
+    if (index > static_cast<int>(roster.members.size())) { lua_pushnil(L); return 1; }
+    const auto& m = roster.members[index - 1];
+
+    lua_pushstring(L, m.name.c_str());                      // 1: name
+    const auto& rankNames = gh->getGuildRankNames();
+    lua_pushstring(L, m.rankIndex < rankNames.size()
+        ? rankNames[m.rankIndex].c_str() : "");              // 2: rank name
+    lua_pushnumber(L, m.rankIndex);                          // 3: rankIndex
+    lua_pushnumber(L, m.level);                              // 4: level
+    static const char* kCls[] = {"","Warrior","Paladin","Hunter","Rogue","Priest",
+        "Death Knight","Shaman","Mage","Warlock","","Druid"};
+    lua_pushstring(L, m.classId < 12 ? kCls[m.classId] : "Unknown"); // 5: class
+    std::string zone;
+    if (m.zoneId != 0 && m.online) zone = gh->getWhoAreaName(m.zoneId);
+    lua_pushstring(L, zone.c_str());                         // 6: zone
+    lua_pushstring(L, m.publicNote.c_str());                 // 7: note
+    lua_pushstring(L, m.officerNote.c_str());                // 8: officerNote
+    lua_pushboolean(L, m.online);                            // 9: online
+    lua_pushnumber(L, 0);                                    // 10: status (0=online, 1=AFK, 2=DND)
+    lua_pushnumber(L, m.classId);                            // 11: classId (numeric)
+    return 11;
+}
+
+// GetGuildRosterMOTD() → motd
+static int lua_GetGuildRosterMOTD(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushstring(L, ""); return 1; }
+    lua_pushstring(L, gh->getGuildRoster().motd.c_str());
+    return 1;
+}
+
 // GetNumIgnores() → count
 static int lua_GetNumIgnores(lua_State* L) {
     auto* gh = getGameHandler(L);
@@ -2752,6 +2833,12 @@ void LuaEngine::registerCoreAPI() {
         {"GetTalentInfo",           lua_GetTalentInfo},
         {"GetActiveTalentGroup",    lua_GetActiveTalentGroup},
         // Friends/ignore API
+        // Guild API
+        {"IsInGuild",               lua_IsInGuild},
+        {"GetGuildInfo",            lua_GetGuildInfoFunc},
+        {"GetNumGuildMembers",      lua_GetNumGuildMembers},
+        {"GetGuildRosterInfo",      lua_GetGuildRosterInfo},
+        {"GetGuildRosterMOTD",      lua_GetGuildRosterMOTD},
         {"GetNumFriends",           lua_GetNumFriends},
         {"GetFriendInfo",           lua_GetFriendInfo},
         {"GetNumIgnores",           lua_GetNumIgnores},
