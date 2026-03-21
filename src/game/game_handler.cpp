@@ -18936,6 +18936,7 @@ void GameHandler::handlePetSpells(network::Packet& packet) {
         petAutocastSpells_.clear();
         memset(petActionSlots_, 0, sizeof(petActionSlots_));
         LOG_INFO("SMSG_PET_SPELLS: pet cleared");
+        if (addonEventCallback_) addonEventCallback_("UNIT_PET", {"player"});
         return;
     }
 
@@ -18945,6 +18946,7 @@ void GameHandler::handlePetSpells(network::Packet& packet) {
         petAutocastSpells_.clear();
         memset(petActionSlots_, 0, sizeof(petActionSlots_));
         LOG_INFO("SMSG_PET_SPELLS: pet cleared (guid=0)");
+        if (addonEventCallback_) addonEventCallback_("UNIT_PET", {"player"});
         return;
     }
 
@@ -18986,6 +18988,7 @@ done:
     LOG_INFO("SMSG_PET_SPELLS: petGuid=0x", std::hex, petGuid_, std::dec,
              " react=", (int)petReact_, " command=", (int)petCommand_,
              " spells=", petSpellList_.size());
+    if (addonEventCallback_) addonEventCallback_("UNIT_PET", {"player"});
 }
 
 void GameHandler::sendPetAction(uint32_t action, uint64_t targetGuid) {
