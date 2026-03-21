@@ -20545,6 +20545,7 @@ void GameHandler::handleGuildRoster(network::Packet& packet) {
     guildRoster_ = std::move(data);
     hasGuildRoster_ = true;
     LOG_INFO("Guild roster received: ", guildRoster_.members.size(), " members");
+    if (addonEventCallback_) addonEventCallback_("GUILD_ROSTER_UPDATE", {});
 }
 
 void GameHandler::handleGuildQueryResponse(network::Packet& packet) {
@@ -20641,6 +20642,28 @@ void GameHandler::handleGuildEvent(network::Packet& packet) {
         chatMsg.language = ChatLanguage::UNIVERSAL;
         chatMsg.message = msg;
         addLocalChatMessage(chatMsg);
+    }
+
+    // Fire addon events for guild state changes
+    if (addonEventCallback_) {
+        switch (data.eventType) {
+            case GuildEvent::MOTD:
+                addonEventCallback_("GUILD_MOTD", {data.numStrings >= 1 ? data.strings[0] : ""});
+                break;
+            case GuildEvent::SIGNED_ON:
+            case GuildEvent::SIGNED_OFF:
+            case GuildEvent::PROMOTION:
+            case GuildEvent::DEMOTION:
+            case GuildEvent::JOINED:
+            case GuildEvent::LEFT:
+            case GuildEvent::REMOVED:
+            case GuildEvent::LEADER_CHANGED:
+            case GuildEvent::DISBANDED:
+                addonEventCallback_("GUILD_ROSTER_UPDATE", {});
+                break;
+            default:
+                break;
+        }
     }
 
     // Auto-refresh roster after membership/rank changes
