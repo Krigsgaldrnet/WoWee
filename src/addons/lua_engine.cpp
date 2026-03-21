@@ -3663,6 +3663,21 @@ void LuaEngine::registerCoreAPI() {
         "function GetShapeshiftFormInfo(index) return nil, nil, nil, nil end\n"
         // Pet action bar
         "NUM_PET_ACTION_SLOTS = 10\n"
+        // Common WoW constants used by many addons
+        "MAX_TALENT_TABS = 3\n"
+        "MAX_NUM_TALENTS = 100\n"
+        "BOOKTYPE_SPELL = 0\n"
+        "BOOKTYPE_PET = 1\n"
+        "MAX_PARTY_MEMBERS = 4\n"
+        "MAX_RAID_MEMBERS = 40\n"
+        "MAX_ARENA_TEAMS = 3\n"
+        "INVSLOT_FIRST_EQUIPPED = 1\n"
+        "INVSLOT_LAST_EQUIPPED = 19\n"
+        "NUM_BAG_SLOTS = 4\n"
+        "NUM_BANKBAGSLOTS = 7\n"
+        "CONTAINER_BAG_OFFSET = 0\n"
+        "MAX_SKILLLINE_TABS = 8\n"
+        "TRADE_ENCHANT_SLOT = 7\n"
         "function GetPetActionInfo(slot) return nil end\n"
         "function GetPetActionsUsable() return false end\n"
     );
