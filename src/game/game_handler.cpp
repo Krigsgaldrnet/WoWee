@@ -4784,6 +4784,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         recentLootMoneyAnnounceCooldowns_[notifyGuid] = 1.5f;
                     }
                 }
+                if (addonEventCallback_) addonEventCallback_("PLAYER_MONEY", {});
             }
             break;
         }
