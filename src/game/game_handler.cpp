@@ -2780,6 +2780,25 @@ void GameHandler::handlePacket(network::Packet& packet) {
             barberShopOpen_ = true;
             if (addonEventCallback_) addonEventCallback_("BARBER_SHOP_OPEN", {});
             break;
+        case Opcode::MSG_CORPSE_QUERY: {
+            // Server response: uint8 found + (if found) uint32 mapId + float x + float y + float z + uint32 corpseMapId
+            if (packet.getSize() - packet.getReadPos() < 1) break;
+            uint8_t found = packet.readUInt8();
+            if (found && packet.getSize() - packet.getReadPos() >= 20) {
+                /*uint32_t mapId =*/ packet.readUInt32();
+                float cx = packet.readFloat();
+                float cy = packet.readFloat();
+                float cz = packet.readFloat();
+                uint32_t corpseMapId = packet.readUInt32();
+                // Server coords: x=west, y=north (opposite of canonical)
+                corpseX_ = cx;
+                corpseY_ = cy;
+                corpseZ_ = cz;
+                corpseMapId_ = corpseMapId;
+                LOG_INFO("MSG_CORPSE_QUERY: corpse at (", cx, ",", cy, ",", cz, ") map=", corpseMapId);
+            }
+            break;
+        }
         case Opcode::SMSG_FEIGN_DEATH_RESISTED:
             addUIError("Your Feign Death was resisted.");
             addSystemChatMessage("Your Feign Death attempt was resisted.");
@@ -14728,6 +14747,9 @@ void GameHandler::releaseSpirit() {
         repopPending_ = true;
         lastRepopRequestMs_ = static_cast<uint64_t>(now);
         LOG_INFO("Sent CMSG_REPOP_REQUEST (Release Spirit)");
+        // Query server for authoritative corpse position (response updates corpseX_/Y_/Z_)
+        network::Packet cq(wireOpcode(Opcode::MSG_CORPSE_QUERY));
+        socket->send(cq);
     }
 }
 
