@@ -2165,6 +2165,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (guid == playerGuid) unitId = "player";
                 else if (guid == targetGuid) unitId = "target";
                 else if (guid == focusGuid) unitId = "focus";
+                else if (guid == petGuid_) unitId = "pet";
                 if (!unitId.empty())
                     addonEventCallback_("UNIT_HEALTH", {unitId});
             }
@@ -2190,6 +2191,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (guid == playerGuid) unitId = "player";
                 else if (guid == targetGuid) unitId = "target";
                 else if (guid == focusGuid) unitId = "focus";
+                else if (guid == petGuid_) unitId = "pet";
                 if (!unitId.empty())
                     addonEventCallback_("UNIT_POWER", {unitId});
             }
