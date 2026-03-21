@@ -24442,7 +24442,19 @@ void GameHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields)
         }
     }
 
+    bool skillsChanged = (newSkills.size() != playerSkills_.size());
+    if (!skillsChanged) {
+        for (const auto& [id, sk] : newSkills) {
+            auto it = playerSkills_.find(id);
+            if (it == playerSkills_.end() || it->second.value != sk.value) {
+                skillsChanged = true;
+                break;
+            }
+        }
+    }
     playerSkills_ = std::move(newSkills);
+    if (skillsChanged && addonEventCallback_)
+        addonEventCallback_("SKILL_LINES_CHANGED", {});
 }
 
 void GameHandler::extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields) {
