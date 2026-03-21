@@ -25253,6 +25253,7 @@ void GameHandler::handleMailListResult(network::Packet& packet) {
         selectedMailIndex_ = -1;
         showMailCompose_ = false;
     }
+    if (addonEventCallback_) addonEventCallback_("MAIL_INBOX_UPDATE", {});
 }
 
 void GameHandler::handleSendMailResult(network::Packet& packet) {
@@ -25327,6 +25328,7 @@ void GameHandler::handleReceivedMail(network::Packet& packet) {
     LOG_INFO("SMSG_RECEIVED_MAIL: New mail arrived!");
     hasNewMail_ = true;
     addSystemChatMessage("New mail has arrived.");
+    if (addonEventCallback_) addonEventCallback_("UPDATE_PENDING_MAIL", {});
     // If mailbox is open, refresh
     if (mailboxOpen_) {
         refreshMailList();
