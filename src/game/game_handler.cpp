@@ -2078,6 +2078,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     // XP is updated via PLAYER_XP update fields from the server.
                     if (areaDiscoveryCallback_)
                         areaDiscoveryCallback_(areaName, xpGained);
+                    if (addonEventCallback_)
+                        addonEventCallback_("CHAT_MSG_COMBAT_XP_GAIN", {msg, std::to_string(xpGained)});
                 }
             }
             break;
