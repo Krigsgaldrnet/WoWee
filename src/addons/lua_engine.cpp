@@ -540,6 +540,29 @@ static int lua_UnitDetailedThreatSituation(lua_State* L) {
     return 5;
 }
 
+// UnitGroupRolesAssigned(unit) → "TANK", "HEALER", "DAMAGER", or "NONE"
+static int lua_UnitGroupRolesAssigned(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushstring(L, "NONE"); return 1; }
+    const char* uid = luaL_optstring(L, 1, "player");
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    uint64_t guid = resolveUnitGuid(gh, uidStr);
+    if (guid == 0) { lua_pushstring(L, "NONE"); return 1; }
+    const auto& pd = gh->getPartyData();
+    for (const auto& m : pd.members) {
+        if (m.guid == guid) {
+            // WotLK roles bitmask: 0x02=Tank, 0x04=Healer, 0x08=DPS
+            if (m.roles & 0x02) { lua_pushstring(L, "TANK"); return 1; }
+            if (m.roles & 0x04) { lua_pushstring(L, "HEALER"); return 1; }
+            if (m.roles & 0x08) { lua_pushstring(L, "DAMAGER"); return 1; }
+            break;
+        }
+    }
+    lua_pushstring(L, "NONE");
+    return 1;
+}
+
 // UnitCanAttack(unit, otherUnit) → boolean
 static int lua_UnitCanAttack(lua_State* L) {
     auto* gh = getGameHandler(L);
@@ -3318,6 +3341,7 @@ void LuaEngine::registerCoreAPI() {
         {"UnitIsTapped",        lua_UnitIsTapped},
         {"UnitIsTappedByPlayer", lua_UnitIsTappedByPlayer},
         {"UnitIsTappedByAllThreatList", lua_UnitIsTappedByAllThreatList},
+        {"UnitGroupRolesAssigned", lua_UnitGroupRolesAssigned},
         {"UnitCanAttack",       lua_UnitCanAttack},
         {"UnitCanCooperate",    lua_UnitCanCooperate},
         {"UnitCreatureFamily",  lua_UnitCreatureFamily},
