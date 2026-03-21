@@ -2,6 +2,7 @@
 #include "addons/toc_parser.hpp"
 #include "game/game_handler.hpp"
 #include "game/entity.hpp"
+#include "game/update_field_table.hpp"
 #include "core/logger.hpp"
 #include <cstring>
 #include <fstream>
@@ -60,12 +61,34 @@ static int lua_wow_message(lua_State* L) {
 }
 
 // Helper: resolve WoW unit IDs to GUID
+// Read UNIT_FIELD_TARGET_LO/HI from an entity's update fields to get what it's targeting
+static uint64_t getEntityTargetGuid(game::GameHandler* gh, uint64_t guid) {
+    if (guid == 0) return 0;
+    // If asking for the player's target, use direct accessor
+    if (guid == gh->getPlayerGuid()) return gh->getTargetGuid();
+    auto entity = gh->getEntityManager().getEntity(guid);
+    if (!entity) return 0;
+    const auto& fields = entity->getFields();
+    auto loIt = fields.find(game::fieldIndex(game::UF::UNIT_FIELD_TARGET_LO));
+    if (loIt == fields.end()) return 0;
+    uint64_t targetGuid = loIt->second;
+    auto hiIt = fields.find(game::fieldIndex(game::UF::UNIT_FIELD_TARGET_HI));
+    if (hiIt != fields.end())
+        targetGuid |= (static_cast<uint64_t>(hiIt->second) << 32);
+    return targetGuid;
+}
+
 static uint64_t resolveUnitGuid(game::GameHandler* gh, const std::string& uid) {
     if (uid == "player")      return gh->getPlayerGuid();
     if (uid == "target")      return gh->getTargetGuid();
     if (uid == "focus")       return gh->getFocusGuid();
     if (uid == "mouseover")   return gh->getMouseoverGuid();
     if (uid == "pet")         return gh->getPetGuid();
+    // Compound unit IDs: targettarget, focustarget, pettarget, mouseovertarget
+    if (uid == "targettarget")    return getEntityTargetGuid(gh, gh->getTargetGuid());
+    if (uid == "focustarget")     return getEntityTargetGuid(gh, gh->getFocusGuid());
+    if (uid == "pettarget")       return getEntityTargetGuid(gh, gh->getPetGuid());
+    if (uid == "mouseovertarget") return getEntityTargetGuid(gh, gh->getMouseoverGuid());
     // party1-party4, raid1-raid40
     if (uid.rfind("party", 0) == 0 && uid.size() > 5) {
         int idx = 0;
@@ -92,7 +115,7 @@ static uint64_t resolveUnitGuid(game::GameHandler* gh, const std::string& uid) {
     return 0;
 }
 
-// Helper: resolve "player", "target", "focus", "mouseover", "pet", "partyN", "raidN" unit IDs to entity
+// Helper: resolve unit IDs (player, target, focus, mouseover, pet, targettarget, focustarget, etc.) to entity
 static game::Unit* resolveUnit(lua_State* L, const char* unitId) {
     auto* gh = getGameHandler(L);
     if (!gh || !unitId) return nullptr;
