@@ -540,6 +540,26 @@ static int lua_UnitDetailedThreatSituation(lua_State* L) {
     return 5;
 }
 
+// UnitDistanceSquared(unit) → distSq, canCalculate
+static int lua_UnitDistanceSquared(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); lua_pushboolean(L, 0); return 2; }
+    const char* uid = luaL_checkstring(L, 1);
+    std::string uidStr(uid);
+    for (char& c : uidStr) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    uint64_t guid = resolveUnitGuid(gh, uidStr);
+    if (guid == 0 || guid == gh->getPlayerGuid()) { lua_pushnumber(L, 0); lua_pushboolean(L, 0); return 2; }
+    auto targetEnt = gh->getEntityManager().getEntity(guid);
+    auto playerEnt = gh->getEntityManager().getEntity(gh->getPlayerGuid());
+    if (!targetEnt || !playerEnt) { lua_pushnumber(L, 0); lua_pushboolean(L, 0); return 2; }
+    float dx = playerEnt->getX() - targetEnt->getX();
+    float dy = playerEnt->getY() - targetEnt->getY();
+    float dz = playerEnt->getZ() - targetEnt->getZ();
+    lua_pushnumber(L, dx*dx + dy*dy + dz*dz);
+    lua_pushboolean(L, 1);
+    return 2;
+}
+
 // CheckInteractDistance(unit, distIndex) → boolean
 // distIndex: 1=inspect(28yd), 2=trade(11yd), 3=duel(10yd), 4=follow(28yd)
 static int lua_CheckInteractDistance(lua_State* L) {
@@ -3444,6 +3464,7 @@ void LuaEngine::registerCoreAPI() {
         {"GetSpellCooldown",  lua_GetSpellCooldown},
         {"GetSpellPowerCost", lua_GetSpellPowerCost},
         {"IsSpellInRange",    lua_IsSpellInRange},
+        {"UnitDistanceSquared", lua_UnitDistanceSquared},
         {"CheckInteractDistance", lua_CheckInteractDistance},
         {"HasTarget",         lua_HasTarget},
         {"TargetUnit",        lua_TargetUnit},
