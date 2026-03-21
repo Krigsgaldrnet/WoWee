@@ -784,7 +784,22 @@ void GameHandler::disconnect() {
     wardenLoadedModule_.reset();
     pendingIncomingPackets_.clear();
     pendingUpdateObjectWork_.clear();
-    // Clear entity state so reconnect sees fresh CREATE_OBJECT for all visible objects.
+    // Fire despawn callbacks so the renderer releases M2/character model resources.
+    for (const auto& [guid, entity] : entityManager.getEntities()) {
+        if (guid == playerGuid) continue;
+        if (entity->getType() == ObjectType::UNIT && creatureDespawnCallback_)
+            creatureDespawnCallback_(guid);
+        else if (entity->getType() == ObjectType::PLAYER && playerDespawnCallback_)
+            playerDespawnCallback_(guid);
+        else if (entity->getType() == ObjectType::GAMEOBJECT && gameObjectDespawnCallback_)
+            gameObjectDespawnCallback_(guid);
+    }
+    otherPlayerVisibleItemEntries_.clear();
+    otherPlayerVisibleDirty_.clear();
+    otherPlayerMoveTimeMs_.clear();
+    unitCastStates_.clear();
+    unitAurasCache_.clear();
+    combatText.clear();
     entityManager.clear();
     setState(WorldState::DISCONNECTED);
     LOG_INFO("Disconnected from world server");
