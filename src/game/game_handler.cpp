@@ -2344,6 +2344,16 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 : UpdateObjectParser::readPackedGuid(packet);
             if (failOtherGuid != 0 && failOtherGuid != playerGuid) {
                 unitCastStates_.erase(failOtherGuid);
+                // Fire cast failure events so cast bar addons clear the bar
+                if (addonEventCallback_) {
+                    std::string unitId;
+                    if (failOtherGuid == targetGuid) unitId = "target";
+                    else if (failOtherGuid == focusGuid) unitId = "focus";
+                    if (!unitId.empty()) {
+                        addonEventCallback_("UNIT_SPELLCAST_FAILED", {unitId});
+                        addonEventCallback_("UNIT_SPELLCAST_STOP", {unitId});
+                    }
+                }
             }
             packet.setReadPos(packet.getSize());
             break;
