@@ -24645,6 +24645,7 @@ void GameHandler::handleLogoutResponse(network::Packet& packet) {
             logoutCountdown_ = 20.0f;
         }
         LOG_INFO("Logout response: success, instant=", (int)data.instant);
+        if (addonEventCallback_) addonEventCallback_("PLAYER_LOGOUT", {});
     } else {
         // Failure
         addSystemChatMessage("Cannot logout right now.");
