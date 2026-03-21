@@ -4993,8 +4993,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 uint64_t progress      = packet.readUInt64();
                 packet.readUInt32(); // elapsedTime
                 packet.readUInt32(); // creationTime
+                uint64_t oldProgress = 0;
+                auto cpit = criteriaProgress_.find(criteriaId);
+                if (cpit != criteriaProgress_.end()) oldProgress = cpit->second;
                 criteriaProgress_[criteriaId] = progress;
                 LOG_DEBUG("SMSG_CRITERIA_UPDATE: id=", criteriaId, " progress=", progress);
+                // Fire addon event for achievement tracking addons
+                if (addonEventCallback_ && progress != oldProgress)
+                    addonEventCallback_("CRITERIA_UPDATE", {std::to_string(criteriaId), std::to_string(progress)});
             }
             break;
         }
@@ -19780,6 +19786,7 @@ void GameHandler::handleGroupList(network::Packet& packet) {
     const bool hasRoles = isActiveExpansion("wotlk");
     // Snapshot state before reset so we can detect transitions.
     const uint32_t prevCount = partyData.memberCount;
+    const uint8_t prevLootMethod = partyData.lootMethod;
     const bool wasInGroup = !partyData.isEmpty();
     // Reset before parsing — SMSG_GROUP_LIST is a full replacement, not a delta.
     // Without this, repeated GROUP_LIST packets push duplicate members.
@@ -19795,6 +19802,14 @@ void GameHandler::handleGroupList(network::Packet& packet) {
         addSystemChatMessage("You are now in a group.");
     } else if (nowInGroup && partyData.memberCount != prevCount) {
         LOG_INFO("Group updated: ", partyData.memberCount, " members");
+    }
+    // Loot method change notification
+    if (wasInGroup && nowInGroup && partyData.lootMethod != prevLootMethod) {
+        static const char* kLootMethods[] = {
+            "Free for All", "Round Robin", "Master Looter", "Group Loot", "Need Before Greed"
+        };
+        const char* methodName = (partyData.lootMethod < 5) ? kLootMethods[partyData.lootMethod] : "Unknown";
+        addSystemChatMessage(std::string("Loot method changed to ") + methodName + ".");
     }
     // Fire GROUP_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED for Lua addons
     if (addonEventCallback_) {
