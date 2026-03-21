@@ -12050,6 +12050,11 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         playerDead_ = true;
                         LOG_INFO("Player logged in as ghost (PLAYER_FLAGS)");
                         if (ghostStateCallback_) ghostStateCallback_(true);
+                        // Query corpse position so minimap marker is accurate on reconnect
+                        if (socket) {
+                            network::Packet cq(wireOpcode(Opcode::MSG_CORPSE_QUERY));
+                            socket->send(cq);
+                        }
                     }
                 }
                 // Classic: rebuild playerAuras from UNIT_FIELD_AURAS on initial object create
