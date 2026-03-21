@@ -540,6 +540,40 @@ static int lua_UnitDetailedThreatSituation(lua_State* L) {
     return 5;
 }
 
+// UnitCanAttack(unit, otherUnit) → boolean
+static int lua_UnitCanAttack(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushboolean(L, 0); return 1; }
+    const char* uid1 = luaL_checkstring(L, 1);
+    const char* uid2 = luaL_checkstring(L, 2);
+    std::string u1(uid1), u2(uid2);
+    for (char& c : u1) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (char& c : u2) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    uint64_t g1 = resolveUnitGuid(gh, u1);
+    uint64_t g2 = resolveUnitGuid(gh, u2);
+    if (g1 == 0 || g2 == 0 || g1 == g2) { lua_pushboolean(L, 0); return 1; }
+    // Check if unit2 is hostile to unit1
+    auto* unit2 = resolveUnit(L, uid2);
+    if (unit2 && unit2->isHostile()) {
+        lua_pushboolean(L, 1);
+    } else {
+        lua_pushboolean(L, 0);
+    }
+    return 1;
+}
+
+// UnitCanCooperate(unit, otherUnit) → boolean
+static int lua_UnitCanCooperate(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushboolean(L, 0); return 1; }
+    (void)luaL_checkstring(L, 1); // unit1 (unused — cooperation is based on unit2's hostility)
+    const char* uid2 = luaL_checkstring(L, 2);
+    auto* unit2 = resolveUnit(L, uid2);
+    if (!unit2) { lua_pushboolean(L, 0); return 1; }
+    lua_pushboolean(L, !unit2->isHostile());
+    return 1;
+}
+
 // UnitCreatureFamily(unit) → familyName or nil
 static int lua_UnitCreatureFamily(lua_State* L) {
     auto* gh = getGameHandler(L);
@@ -3284,6 +3318,8 @@ void LuaEngine::registerCoreAPI() {
         {"UnitIsTapped",        lua_UnitIsTapped},
         {"UnitIsTappedByPlayer", lua_UnitIsTappedByPlayer},
         {"UnitIsTappedByAllThreatList", lua_UnitIsTappedByAllThreatList},
+        {"UnitCanAttack",       lua_UnitCanAttack},
+        {"UnitCanCooperate",    lua_UnitCanCooperate},
         {"UnitCreatureFamily",  lua_UnitCreatureFamily},
         {"UnitOnTaxi",          lua_UnitOnTaxi},
         {"UnitThreatSituation", lua_UnitThreatSituation},
