@@ -2160,6 +2160,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
                 unit->setHealth(hp);
             }
+            if (addonEventCallback_ && guid != 0) {
+                std::string unitId;
+                if (guid == playerGuid) unitId = "player";
+                else if (guid == targetGuid) unitId = "target";
+                else if (guid == focusGuid) unitId = "focus";
+                if (!unitId.empty())
+                    addonEventCallback_("UNIT_HEALTH", {unitId});
+            }
             break;
         }
         case Opcode::SMSG_POWER_UPDATE: {
@@ -2176,6 +2184,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
             auto entity = entityManager.getEntity(guid);
             if (auto* unit = dynamic_cast<Unit*>(entity.get())) {
                 unit->setPowerByType(powerType, value);
+            }
+            if (addonEventCallback_ && guid != 0) {
+                std::string unitId;
+                if (guid == playerGuid) unitId = "player";
+                else if (guid == targetGuid) unitId = "target";
+                else if (guid == focusGuid) unitId = "focus";
+                if (!unitId.empty())
+                    addonEventCallback_("UNIT_POWER", {unitId});
             }
             break;
         }
