@@ -2302,6 +2302,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             uint8_t  paused = packet.readUInt8();
             if (type < 3) {
                 mirrorTimers_[type].paused = (paused != 0);
+                if (addonEventCallback_)
+                    addonEventCallback_("MIRROR_TIMER_PAUSE", {paused ? "1" : "0"});
             }
             break;
         }
