@@ -1300,7 +1300,7 @@ public:
 
     // Barber shop
     bool isBarberShopOpen() const { return barberShopOpen_; }
-    void closeBarberShop() { barberShopOpen_ = false; }
+    void closeBarberShop() { barberShopOpen_ = false; if (addonEventCallback_) addonEventCallback_("BARBER_SHOP_CLOSE", {}); }
     void sendAlterAppearance(uint32_t hairStyle, uint32_t hairColor, uint32_t facialHair);
 
     // Instance difficulty (0=5N, 1=5H, 2=25N, 3=25H for WotLK)

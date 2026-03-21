@@ -2772,6 +2772,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
             // Sent by server when player sits in barber chair — triggers barber shop UI
             LOG_INFO("SMSG_ENABLE_BARBER_SHOP: barber shop available");
             barberShopOpen_ = true;
+            if (addonEventCallback_) addonEventCallback_("BARBER_SHOP_OPEN", {});
             break;
         case Opcode::SMSG_FEIGN_DEATH_RESISTED:
             addUIError("Your Feign Death was resisted.");
@@ -5125,6 +5126,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 if (result == 0) {
                     addSystemChatMessage("Hairstyle changed.");
                     barberShopOpen_ = false;
+                    if (addonEventCallback_) addonEventCallback_("BARBER_SHOP_CLOSE", {});
                 } else {
                     const char* msg = (result == 1) ? "Not enough money for new hairstyle."
                                     : (result == 2) ? "You are not at a barber shop."
