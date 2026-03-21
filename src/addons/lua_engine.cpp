@@ -540,6 +540,14 @@ static int lua_UnitDetailedThreatSituation(lua_State* L) {
     return 5;
 }
 
+// UnitIsVisible(unit) → boolean (entity exists in the client's entity manager)
+static int lua_UnitIsVisible(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "target");
+    auto* unit = resolveUnit(L, uid);
+    lua_pushboolean(L, unit != nullptr);
+    return 1;
+}
+
 // UnitGroupRolesAssigned(unit) → "TANK", "HEALER", "DAMAGER", or "NONE"
 static int lua_UnitGroupRolesAssigned(lua_State* L) {
     auto* gh = getGameHandler(L);
@@ -3341,6 +3349,7 @@ void LuaEngine::registerCoreAPI() {
         {"UnitIsTapped",        lua_UnitIsTapped},
         {"UnitIsTappedByPlayer", lua_UnitIsTappedByPlayer},
         {"UnitIsTappedByAllThreatList", lua_UnitIsTappedByAllThreatList},
+        {"UnitIsVisible",       lua_UnitIsVisible},
         {"UnitGroupRolesAssigned", lua_UnitGroupRolesAssigned},
         {"UnitCanAttack",       lua_UnitCanAttack},
         {"UnitCanCooperate",    lua_UnitCanCooperate},
