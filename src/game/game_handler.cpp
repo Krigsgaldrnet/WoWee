@@ -20028,6 +20028,8 @@ void GameHandler::handleGroupInvite(network::Packet& packet) {
         if (auto* sfx = renderer->getUiSoundManager())
             sfx->playTargetSelect();
     }
+    if (addonEventCallback_)
+        addonEventCallback_("PARTY_INVITE_REQUEST", {data.inviterName});
 }
 
 void GameHandler::handleGroupDecline(network::Packet& packet) {
