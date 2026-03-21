@@ -130,6 +130,12 @@ bool UiSoundManager::initialize(pipeline::AssetManager* assets) {
         }
     }
 
+    // Minimap ping sound
+    minimapPingSounds_.resize(1);
+    if (!loadSound("Sound\\Interface\\MapPing.wav", minimapPingSounds_[0], assets)) {
+        minimapPingSounds_ = selectTargetSounds_;  // fallback to target select sound
+    }
+
     LOG_INFO("UISoundManager: Window sounds - Bag: ", (bagOpenLoaded && bagCloseLoaded) ? "YES" : "NO",
              ", QuestLog: ", (questLogOpenLoaded && questLogCloseLoaded) ? "YES" : "NO",
              ", CharSheet: ", (charSheetOpenLoaded && charSheetCloseLoaded) ? "YES" : "NO");
@@ -235,6 +241,9 @@ void UiSoundManager::playTargetDeselect() { playSound(deselectTargetSounds_); }
 
 // Chat notifications
 void UiSoundManager::playWhisperReceived() { playSound(whisperSounds_); }
+
+// Minimap ping
+void UiSoundManager::playMinimapPing() { playSound(minimapPingSounds_); }
 
 } // namespace audio
 } // namespace wowee

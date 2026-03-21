@@ -78,6 +78,9 @@ public:
     // Chat notifications
     void playWhisperReceived();
 
+    // Minimap ping
+    void playMinimapPing();
+
 private:
     struct UISample {
         std::string path;
@@ -126,6 +129,7 @@ private:
     std::vector<UISample> selectTargetSounds_;
     std::vector<UISample> deselectTargetSounds_;
     std::vector<UISample> whisperSounds_;
+    std::vector<UISample> minimapPingSounds_;
 
     // State tracking
     float volumeScale_ = 1.0f;

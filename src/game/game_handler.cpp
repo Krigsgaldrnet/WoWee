@@ -3544,6 +3544,13 @@ void GameHandler::handlePacket(network::Packet& packet) {
             ping.wowY       = pingX;  // canonical WoW Y = west  = server's posX
             ping.age        = 0.0f;
             minimapPings_.push_back(ping);
+            // Play ping sound for other players' pings (not our own)
+            if (senderGuid != playerGuid) {
+                if (auto* renderer = core::Application::getInstance().getRenderer()) {
+                    if (auto* sfx = renderer->getUiSoundManager())
+                        sfx->playMinimapPing();
+                }
+            }
             break;
         }
         case Opcode::SMSG_ZONE_UNDER_ATTACK: {
