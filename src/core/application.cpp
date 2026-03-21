@@ -3933,7 +3933,7 @@ void Application::spawnPlayerCharacter() {
 	        // Facial hair geoset: group 2 = 200 + variation + 1
 	        activeGeosets.insert(static_cast<uint16_t>(200 + facialId + 1));
 	        activeGeosets.insert(401);   // Bare forearms (no gloves) — group 4
-	        activeGeosets.insert(502);   // Bare shins (no boots) — group 5
+	        activeGeosets.insert(503);   // Bare shins (no boots) — group 5
 	        activeGeosets.insert(702);   // Ears: default
 	        activeGeosets.insert(801);   // Bare wrists (no chest armor sleeves) — group 8
 	        activeGeosets.insert(902);   // Kneepads: default — group 9
@@ -6464,7 +6464,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
             };
 
             uint16_t geosetGloves = pickGeoset(401, 4);   // Bare gloves/forearms (group 4)
-            uint16_t geosetBoots = pickGeoset(502, 5);    // Bare boots/shins (group 5)
+            uint16_t geosetBoots = pickGeoset(503, 5);    // Bare boots/shins (group 5)
             uint16_t geosetSleeves = pickGeoset(801, 8);  // Bare wrists (group 8, controlled by chest)
             uint16_t geosetPants = pickGeoset(1301, 13);  // Bare legs (group 13)
             uint16_t geosetCape = 0;       // Group 15 disabled unless cape is equipped
@@ -7276,7 +7276,7 @@ void Application::spawnOnlinePlayer(uint64_t guid,
     activeGeosets.insert(static_cast<uint16_t>(100 + hairStyleId + 1));
     activeGeosets.insert(static_cast<uint16_t>(200 + facialFeatures + 1));
     activeGeosets.insert(401);   // Bare forearms (no gloves) — group 4
-    activeGeosets.insert(502);   // Bare shins (no boots) — group 5
+    activeGeosets.insert(503);   // Bare shins (no boots) — group 5
     activeGeosets.insert(702);   // Ears
     activeGeosets.insert(801);   // Bare wrists (no sleeves) — group 8
     activeGeosets.insert(902);   // Kneepads — group 9
@@ -7385,7 +7385,7 @@ void Application::setOnlinePlayerEquipment(uint64_t guid,
 
     // Per-group defaults — overridden below when equipment provides a geoset value.
     uint16_t geosetGloves  = 401;   // Bare forearms (group 4, no gloves)
-    uint16_t geosetBoots   = 502;   // Bare shins   (group 5, no boots)
+    uint16_t geosetBoots   = 503;   // Bare shins   (group 5, no boots)
     uint16_t geosetSleeves = 801;   // Bare wrists  (group 8, no chest/sleeves)
     uint16_t geosetPants   = 1301;  // Bare legs    (group 13, no leggings)
 
