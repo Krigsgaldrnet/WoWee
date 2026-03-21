@@ -14148,6 +14148,7 @@ void GameHandler::followTarget() {
 
     addSystemChatMessage("Now following " + targetName + ".");
     LOG_INFO("Following target: ", targetName, " (GUID: 0x", std::hex, targetGuid, std::dec, ")");
+    if (addonEventCallback_) addonEventCallback_("AUTOFOLLOW_BEGIN", {});
 }
 
 void GameHandler::cancelFollow() {
@@ -14157,6 +14158,7 @@ void GameHandler::cancelFollow() {
     }
     followTargetGuid_ = 0;
     addSystemChatMessage("You stop following.");
+    if (addonEventCallback_) addonEventCallback_("AUTOFOLLOW_END", {});
 }
 
 void GameHandler::assistTarget() {
