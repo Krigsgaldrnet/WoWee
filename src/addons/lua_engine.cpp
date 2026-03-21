@@ -4,6 +4,8 @@
 #include "game/entity.hpp"
 #include "game/update_field_table.hpp"
 #include "core/logger.hpp"
+#include "core/application.hpp"
+#include <imgui.h>
 #include <cstring>
 #include <fstream>
 #include <filesystem>
@@ -1828,6 +1830,127 @@ static int lua_Frame_IsShown(lua_State* L) {
     return 1;
 }
 
+// GetCursorPosition() → x, y (screen coordinates, origin top-left)
+static int lua_GetCursorPosition(lua_State* L) {
+    const auto& io = ImGui::GetIO();
+    lua_pushnumber(L, io.MousePos.x);
+    lua_pushnumber(L, io.MousePos.y);
+    return 2;
+}
+
+// GetScreenWidth() → width
+static int lua_GetScreenWidth(lua_State* L) {
+    auto* window = core::Application::getInstance().getWindow();
+    lua_pushnumber(L, window ? window->getWidth() : 1920);
+    return 1;
+}
+
+// GetScreenHeight() → height
+static int lua_GetScreenHeight(lua_State* L) {
+    auto* window = core::Application::getInstance().getWindow();
+    lua_pushnumber(L, window ? window->getHeight() : 1080);
+    return 1;
+}
+
+// Frame methods: SetPoint, SetSize, SetWidth, SetHeight, GetWidth, GetHeight, GetCenter, SetAlpha, GetAlpha
+static int lua_Frame_SetPoint(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    const char* point = luaL_optstring(L, 2, "CENTER");
+    // Store point info in frame table
+    lua_pushstring(L, point);
+    lua_setfield(L, 1, "__point");
+    // Optional x/y offsets (args 4,5 if relativeTo is given, or 3,4 if not)
+    double xOfs = 0, yOfs = 0;
+    if (lua_isnumber(L, 4)) { xOfs = lua_tonumber(L, 4); yOfs = lua_tonumber(L, 5); }
+    else if (lua_isnumber(L, 3)) { xOfs = lua_tonumber(L, 3); yOfs = lua_tonumber(L, 4); }
+    lua_pushnumber(L, xOfs);
+    lua_setfield(L, 1, "__xOfs");
+    lua_pushnumber(L, yOfs);
+    lua_setfield(L, 1, "__yOfs");
+    return 0;
+}
+
+static int lua_Frame_SetSize(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    double w = luaL_optnumber(L, 2, 0);
+    double h = luaL_optnumber(L, 3, 0);
+    lua_pushnumber(L, w);
+    lua_setfield(L, 1, "__width");
+    lua_pushnumber(L, h);
+    lua_setfield(L, 1, "__height");
+    return 0;
+}
+
+static int lua_Frame_SetWidth(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_pushnumber(L, luaL_checknumber(L, 2));
+    lua_setfield(L, 1, "__width");
+    return 0;
+}
+
+static int lua_Frame_SetHeight(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_pushnumber(L, luaL_checknumber(L, 2));
+    lua_setfield(L, 1, "__height");
+    return 0;
+}
+
+static int lua_Frame_GetWidth(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_getfield(L, 1, "__width");
+    if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_pushnumber(L, 0); }
+    return 1;
+}
+
+static int lua_Frame_GetHeight(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_getfield(L, 1, "__height");
+    if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_pushnumber(L, 0); }
+    return 1;
+}
+
+static int lua_Frame_GetCenter(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_getfield(L, 1, "__xOfs");
+    double x = lua_isnumber(L, -1) ? lua_tonumber(L, -1) : 0;
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "__yOfs");
+    double y = lua_isnumber(L, -1) ? lua_tonumber(L, -1) : 0;
+    lua_pop(L, 1);
+    lua_pushnumber(L, x);
+    lua_pushnumber(L, y);
+    return 2;
+}
+
+static int lua_Frame_SetAlpha(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_pushnumber(L, luaL_checknumber(L, 2));
+    lua_setfield(L, 1, "__alpha");
+    return 0;
+}
+
+static int lua_Frame_GetAlpha(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_getfield(L, 1, "__alpha");
+    if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_pushnumber(L, 1.0); }
+    return 1;
+}
+
+static int lua_Frame_SetParent(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    if (lua_istable(L, 2) || lua_isnil(L, 2)) {
+        lua_pushvalue(L, 2);
+        lua_setfield(L, 1, "__parent");
+    }
+    return 0;
+}
+
+static int lua_Frame_GetParent(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_getfield(L, 1, "__parent");
+    return 1;
+}
+
 // CreateFrame(frameType, name, parent, template)
 static int lua_CreateFrame(lua_State* L) {
     const char* frameType = luaL_optstring(L, 1, "Frame");
@@ -2155,6 +2278,17 @@ void LuaEngine::registerCoreAPI() {
         {"Hide",            lua_Frame_Hide},
         {"IsShown",         lua_Frame_IsShown},
         {"IsVisible",       lua_Frame_IsShown}, // alias
+        {"SetPoint",        lua_Frame_SetPoint},
+        {"SetSize",         lua_Frame_SetSize},
+        {"SetWidth",        lua_Frame_SetWidth},
+        {"SetHeight",       lua_Frame_SetHeight},
+        {"GetWidth",        lua_Frame_GetWidth},
+        {"GetHeight",       lua_Frame_GetHeight},
+        {"GetCenter",       lua_Frame_GetCenter},
+        {"SetAlpha",        lua_Frame_SetAlpha},
+        {"GetAlpha",        lua_Frame_GetAlpha},
+        {"SetParent",       lua_Frame_SetParent},
+        {"GetParent",       lua_Frame_GetParent},
         {nullptr, nullptr}
     };
     for (const luaL_Reg* r = frameMethods; r->name; r++) {
@@ -2166,6 +2300,14 @@ void LuaEngine::registerCoreAPI() {
     // CreateFrame function
     lua_pushcfunction(L_, lua_CreateFrame);
     lua_setglobal(L_, "CreateFrame");
+
+    // Cursor/screen functions
+    lua_pushcfunction(L_, lua_GetCursorPosition);
+    lua_setglobal(L_, "GetCursorPosition");
+    lua_pushcfunction(L_, lua_GetScreenWidth);
+    lua_setglobal(L_, "GetScreenWidth");
+    lua_pushcfunction(L_, lua_GetScreenHeight);
+    lua_setglobal(L_, "GetScreenHeight");
 
     // Frame event dispatch table
     lua_newtable(L_);
