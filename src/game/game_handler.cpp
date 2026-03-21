@@ -2275,6 +2275,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 mirrorTimers_[type].scale    = scale;
                 mirrorTimers_[type].paused   = (paused != 0);
                 mirrorTimers_[type].active   = true;
+                if (addonEventCallback_)
+                    addonEventCallback_("MIRROR_TIMER_START", {
+                        std::to_string(type), std::to_string(value),
+                        std::to_string(maxV), std::to_string(scale),
+                        paused ? "1" : "0"});
             }
             break;
         }
@@ -2285,6 +2290,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (type < 3) {
                 mirrorTimers_[type].active = false;
                 mirrorTimers_[type].value  = 0;
+                if (addonEventCallback_)
+                    addonEventCallback_("MIRROR_TIMER_STOP", {std::to_string(type)});
             }
             break;
         }
