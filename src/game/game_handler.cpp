@@ -4592,6 +4592,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 }
             }
             LOG_INFO("SMSG_ACTION_BUTTONS: populated action bar from server");
+            if (addonEventCallback_) addonEventCallback_("ACTIONBAR_SLOT_CHANGED", {});
             packet.setReadPos(packet.getSize());
             break;
         }
@@ -19575,7 +19576,10 @@ void GameHandler::handleSupercededSpell(network::Packet& packet) {
             LOG_DEBUG("Action bar slot upgraded: spell ", oldSpellId, " -> ", newSpellId);
         }
     }
-    if (barChanged) saveCharacterConfig();
+    if (barChanged) {
+        saveCharacterConfig();
+        if (addonEventCallback_) addonEventCallback_("ACTIONBAR_SLOT_CHANGED", {});
+    }
 
     // Show "Upgraded to X" only when the new spell wasn't already announced by the
     // trainer-buy handler.  For non-trainer supersedes (e.g. quest rewards), the new
