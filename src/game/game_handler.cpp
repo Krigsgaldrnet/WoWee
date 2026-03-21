@@ -2010,6 +2010,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                         pendingItemPushNotifs_.push_back({itemId, count});
                     }
                 }
+                // Fire bag/inventory events for all item receipts (not just chat-visible ones)
+                if (addonEventCallback_) {
+                    addonEventCallback_("BAG_UPDATE", {});
+                    addonEventCallback_("UNIT_INVENTORY_CHANGED", {"player"});
+                }
                 LOG_INFO("Item push: itemId=", itemId, " count=", count,
                          " showInChat=", static_cast<int>(showInChat));
             }
