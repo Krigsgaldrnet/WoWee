@@ -6228,14 +6228,21 @@ void GameHandler::handlePacket(network::Packet& packet) {
             break;
         }
         case Opcode::SMSG_AUCTION_BIDDER_NOTIFICATION: {
-            // auctionId(u32) + itemEntry(u32) + ...
+            // auctionHouseId(u32) + auctionId(u32) + bidderGuid(u64) + bidAmount(u32) + outbidAmount(u32) + itemEntry(u32) + randomPropertyId(u32)
             if (packet.getSize() - packet.getReadPos() >= 8) {
-                uint32_t auctionId = packet.readUInt32();
+                /*uint32_t auctionId =*/ packet.readUInt32();
                 uint32_t itemEntry = packet.readUInt32();
-                (void)auctionId;
+                int32_t bidRandProp = 0;
+                // Try to read randomPropertyId if enough data remains
+                if (packet.getSize() - packet.getReadPos() >= 4)
+                    bidRandProp = static_cast<int32_t>(packet.readUInt32());
                 ensureItemInfo(itemEntry);
                 auto* info = getItemInfo(itemEntry);
                 std::string rawName2 = info && !info->name.empty() ? info->name : ("Item #" + std::to_string(itemEntry));
+                if (bidRandProp != 0) {
+                    std::string suffix = getRandomPropertyName(bidRandProp);
+                    if (!suffix.empty()) rawName2 += " " + suffix;
+                }
                 uint32_t bidQuality = info ? info->quality : 1u;
                 std::string bidLink = buildItemLink(itemEntry, bidQuality, rawName2);
                 addSystemChatMessage("You have been outbid on " + bidLink + ".");
@@ -6248,10 +6255,14 @@ void GameHandler::handlePacket(network::Packet& packet) {
             if (packet.getSize() - packet.getReadPos() >= 12) {
                 /*uint32_t auctionId =*/ packet.readUInt32();
                 uint32_t itemEntry = packet.readUInt32();
-                /*uint32_t itemRandom =*/ packet.readUInt32();
+                int32_t itemRandom = static_cast<int32_t>(packet.readUInt32());
                 ensureItemInfo(itemEntry);
                 auto* info = getItemInfo(itemEntry);
                 std::string rawName3 = info && !info->name.empty() ? info->name : ("Item #" + std::to_string(itemEntry));
+                if (itemRandom != 0) {
+                    std::string suffix = getRandomPropertyName(itemRandom);
+                    if (!suffix.empty()) rawName3 += " " + suffix;
+                }
                 uint32_t remQuality = info ? info->quality : 1u;
                 std::string remLink = buildItemLink(itemEntry, remQuality, rawName3);
                 addSystemChatMessage("Your auction of " + remLink + " has expired.");
