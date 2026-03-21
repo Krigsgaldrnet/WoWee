@@ -2991,6 +2991,55 @@ void LuaEngine::registerCoreAPI() {
         "GREEN_FONT_COLOR = {r=0.1,g=1.0,b=0.1}\n"
         "RED_FONT_COLOR = {r=1.0,g=0.1,b=0.1}\n"
     );
+
+    // WoW table/string utility functions used by many addons
+    luaL_dostring(L_,
+        // Table utilities
+        "function tContains(tbl, item)\n"
+        "    for _, v in pairs(tbl) do if v == item then return true end end\n"
+        "    return false\n"
+        "end\n"
+        "function tInvert(tbl)\n"
+        "    local inv = {}\n"
+        "    for k, v in pairs(tbl) do inv[v] = k end\n"
+        "    return inv\n"
+        "end\n"
+        "function CopyTable(src)\n"
+        "    if type(src) ~= 'table' then return src end\n"
+        "    local copy = {}\n"
+        "    for k, v in pairs(src) do copy[k] = CopyTable(v) end\n"
+        "    return setmetatable(copy, getmetatable(src))\n"
+        "end\n"
+        "function tDeleteItem(tbl, item)\n"
+        "    for i = #tbl, 1, -1 do if tbl[i] == item then table.remove(tbl, i) end end\n"
+        "end\n"
+        // String utilities (WoW globals that alias Lua string functions)
+        "strupper = string.upper\n"
+        "strlower = string.lower\n"
+        "strfind = string.find\n"
+        "strsub = string.sub\n"
+        "strlen = string.len\n"
+        "strrep = string.rep\n"
+        "strbyte = string.byte\n"
+        "strchar = string.char\n"
+        "strrev = string.reverse\n"
+        "gsub = string.gsub\n"
+        "gmatch = string.gmatch\n"
+        "strjoin = function(delim, ...)\n"
+        "    return table.concat({...}, delim)\n"
+        "end\n"
+        // Math utilities
+        "function Clamp(val, lo, hi) return math.min(math.max(val, lo), hi) end\n"
+        "function Round(val) return math.floor(val + 0.5) end\n"
+        // Bit operations (WoW provides these; Lua 5.1 doesn't have native bit ops)
+        "bit = bit or {}\n"
+        "bit.band = bit.band or function(a, b) local r,m=0,1 for i=0,31 do if a%2==1 and b%2==1 then r=r+m end a=math.floor(a/2) b=math.floor(b/2) m=m*2 end return r end\n"
+        "bit.bor = bit.bor or function(a, b) local r,m=0,1 for i=0,31 do if a%2==1 or b%2==1 then r=r+m end a=math.floor(a/2) b=math.floor(b/2) m=m*2 end return r end\n"
+        "bit.bxor = bit.bxor or function(a, b) local r,m=0,1 for i=0,31 do if (a%2==1)~=(b%2==1) then r=r+m end a=math.floor(a/2) b=math.floor(b/2) m=m*2 end return r end\n"
+        "bit.bnot = bit.bnot or function(a) return 4294967295 - a end\n"
+        "bit.lshift = bit.lshift or function(a, n) return a * (2^n) end\n"
+        "bit.rshift = bit.rshift or function(a, n) return math.floor(a / (2^n)) end\n"
+    );
 }
 
 // ---- Event System ----
