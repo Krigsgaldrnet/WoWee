@@ -68,6 +68,11 @@ std::string AddonManager::getSavedVariablesPath(const TocFile& addon) const {
     return addon.basePath + "/" + addon.addonName + ".lua.saved";
 }
 
+std::string AddonManager::getSavedVariablesPerCharacterPath(const TocFile& addon) const {
+    if (characterName_.empty()) return "";
+    return addon.basePath + "/" + addon.addonName + "." + characterName_ + ".lua.saved";
+}
+
 bool AddonManager::loadAddon(const TocFile& addon) {
     // Load SavedVariables before addon code (so globals are available at load time)
     auto savedVars = addon.getSavedVariables();
@@ -75,6 +80,15 @@ bool AddonManager::loadAddon(const TocFile& addon) {
         std::string svPath = getSavedVariablesPath(addon);
         luaEngine_.loadSavedVariables(svPath);
         LOG_DEBUG("AddonManager: loaded saved variables for '", addon.addonName, "'");
+    }
+    // Load per-character SavedVariables
+    auto savedVarsPC = addon.getSavedVariablesPerCharacter();
+    if (!savedVarsPC.empty()) {
+        std::string svpcPath = getSavedVariablesPerCharacterPath(addon);
+        if (!svpcPath.empty()) {
+            luaEngine_.loadSavedVariables(svpcPath);
+            LOG_DEBUG("AddonManager: loaded per-character saved variables for '", addon.addonName, "'");
+        }
     }
 
     bool success = true;
@@ -119,6 +133,13 @@ void AddonManager::saveAllSavedVariables() {
         if (!savedVars.empty()) {
             std::string svPath = getSavedVariablesPath(addon);
             luaEngine_.saveSavedVariables(svPath, savedVars);
+        }
+        auto savedVarsPC = addon.getSavedVariablesPerCharacter();
+        if (!savedVarsPC.empty()) {
+            std::string svpcPath = getSavedVariablesPerCharacterPath(addon);
+            if (!svpcPath.empty()) {
+                luaEngine_.saveSavedVariables(svpcPath, savedVarsPC);
+            }
         }
     }
 }

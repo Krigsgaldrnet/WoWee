@@ -19,17 +19,12 @@ bool TocFile::isLoadOnDemand() const {
     return (it != directives.end()) && it->second == "1";
 }
 
-std::vector<std::string> TocFile::getSavedVariables() const {
+static std::vector<std::string> parseVarList(const std::string& val) {
     std::vector<std::string> result;
-    auto it = directives.find("SavedVariables");
-    if (it == directives.end()) return result;
-    // Parse comma-separated variable names
-    std::string val = it->second;
     size_t pos = 0;
     while (pos <= val.size()) {
         size_t comma = val.find(',', pos);
         std::string name = (comma != std::string::npos) ? val.substr(pos, comma - pos) : val.substr(pos);
-        // Trim whitespace
         size_t start = name.find_first_not_of(" \t");
         size_t end = name.find_last_not_of(" \t");
         if (start != std::string::npos)
@@ -38,6 +33,16 @@ std::vector<std::string> TocFile::getSavedVariables() const {
         pos = comma + 1;
     }
     return result;
+}
+
+std::vector<std::string> TocFile::getSavedVariables() const {
+    auto it = directives.find("SavedVariables");
+    return (it != directives.end()) ? parseVarList(it->second) : std::vector<std::string>{};
+}
+
+std::vector<std::string> TocFile::getSavedVariablesPerCharacter() const {
+    auto it = directives.find("SavedVariablesPerCharacter");
+    return (it != directives.end()) ? parseVarList(it->second) : std::vector<std::string>{};
 }
 
 std::optional<TocFile> parseTocFile(const std::string& tocPath) {

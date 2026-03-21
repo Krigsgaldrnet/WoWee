@@ -26,6 +26,7 @@ public:
     bool isInitialized() const { return luaEngine_.isInitialized(); }
 
     void saveAllSavedVariables();
+    void setCharacterName(const std::string& name) { characterName_ = name; }
 
     /// Re-initialize the Lua VM and reload all addons (used by /reload).
     bool reload();
@@ -38,6 +39,8 @@ private:
 
     bool loadAddon(const TocFile& addon);
     std::string getSavedVariablesPath(const TocFile& addon) const;
+    std::string getSavedVariablesPerCharacterPath(const TocFile& addon) const;
+    std::string characterName_;
 };
 
 } // namespace wowee::addons

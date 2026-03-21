@@ -5182,6 +5182,21 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
     // Load addons once per session on first world entry
     if (addonManager_ && !addonsLoaded_) {
+        // Set character name for per-character SavedVariables
+        if (gameHandler) {
+            const std::string& charName = gameHandler->lookupName(gameHandler->getPlayerGuid());
+            if (!charName.empty()) {
+                addonManager_->setCharacterName(charName);
+            } else {
+                // Fallback: find name from character list
+                for (const auto& c : gameHandler->getCharacters()) {
+                    if (c.guid == gameHandler->getPlayerGuid()) {
+                        addonManager_->setCharacterName(c.name);
+                        break;
+                    }
+                }
+            }
+        }
         addonManager_->loadAllAddons();
         addonsLoaded_ = true;
         addonManager_->fireEvent("VARIABLES_LOADED");
