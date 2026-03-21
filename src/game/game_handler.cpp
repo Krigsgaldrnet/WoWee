@@ -5564,6 +5564,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     isResting_ = nowResting;
                     addSystemChatMessage(isResting_ ? "You are now resting."
                                                     : "You are no longer resting.");
+                    if (addonEventCallback_)
+                        addonEventCallback_("PLAYER_UPDATE_RESTING", {});
                 }
                 break;
             }
@@ -6433,6 +6435,8 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 isResting_ = (restTrigger > 0);
                 addSystemChatMessage(isResting_ ? "You are now resting."
                                                 : "You are no longer resting.");
+                if (addonEventCallback_)
+                    addonEventCallback_("PLAYER_UPDATE_RESTING", {});
             }
             break;
         }
