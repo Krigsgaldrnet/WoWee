@@ -1194,6 +1194,41 @@ static int lua_UnitCreatureType(lua_State* L) {
     return 1;
 }
 
+// IsUsableSpell(spellIdOrName) → usable, noMana
+static int lua_IsUsableSpell(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushboolean(L, 0); lua_pushboolean(L, 0); return 2; }
+
+    uint32_t spellId = 0;
+    if (lua_isnumber(L, 1)) {
+        spellId = static_cast<uint32_t>(lua_tonumber(L, 1));
+    } else if (lua_isstring(L, 1)) {
+        const char* name = lua_tostring(L, 1);
+        if (!name || !*name) { lua_pushboolean(L, 0); lua_pushboolean(L, 0); return 2; }
+        std::string nameLow(name);
+        for (char& c : nameLow) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (uint32_t sid : gh->getKnownSpells()) {
+            std::string sn = gh->getSpellName(sid);
+            for (char& c : sn) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (sn == nameLow) { spellId = sid; break; }
+        }
+    }
+
+    if (spellId == 0 || !gh->getKnownSpells().count(spellId)) {
+        lua_pushboolean(L, 0);
+        lua_pushboolean(L, 0);
+        return 2;
+    }
+
+    // Check if on cooldown
+    float cd = gh->getSpellCooldown(spellId);
+    bool onCooldown = (cd > 0.1f);
+
+    lua_pushboolean(L, onCooldown ? 0 : 1);  // usable (not on cooldown)
+    lua_pushboolean(L, 0);  // noMana (can't determine without spell cost data)
+    return 2;
+}
+
 // IsInInstance() → isInstance, instanceType
 static int lua_IsInInstance(lua_State* L) {
     auto* gh = getGameHandler(L);
@@ -1622,6 +1657,7 @@ void LuaEngine::registerCoreAPI() {
         {"UnitIsEnemy",         lua_UnitIsEnemy},
         {"UnitCreatureType",    lua_UnitCreatureType},
         {"UnitClassification",  lua_UnitClassification},
+        {"IsUsableSpell",        lua_IsUsableSpell},
         {"IsInInstance",         lua_IsInInstance},
         {"GetInstanceInfo",      lua_GetInstanceInfo},
         {"GetInstanceDifficulty", lua_GetInstanceDifficulty},
