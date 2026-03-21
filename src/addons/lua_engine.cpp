@@ -1241,6 +1241,76 @@ static int lua_GetSkillLineInfo(lua_State* L) {
     return 12;
 }
 
+// --- Friends/Ignore API ---
+
+// GetNumFriends() → count
+static int lua_GetNumFriends(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); return 1; }
+    int count = 0;
+    for (const auto& c : gh->getContacts())
+        if (c.isFriend()) count++;
+    lua_pushnumber(L, count);
+    return 1;
+}
+
+// GetFriendInfo(index) → name, level, class, area, connected, status, note
+static int lua_GetFriendInfo(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) {
+        lua_pushnil(L); return 1;
+    }
+    int found = 0;
+    for (const auto& c : gh->getContacts()) {
+        if (!c.isFriend()) continue;
+        if (++found == index) {
+            lua_pushstring(L, c.name.c_str());      // 1: name
+            lua_pushnumber(L, c.level);              // 2: level
+            static const char* kClasses[] = {"","Warrior","Paladin","Hunter","Rogue","Priest",
+                "Death Knight","Shaman","Mage","Warlock","","Druid"};
+            lua_pushstring(L, c.classId < 12 ? kClasses[c.classId] : "Unknown"); // 3: class
+            std::string area;
+            if (c.areaId != 0) area = gh->getWhoAreaName(c.areaId);
+            lua_pushstring(L, area.c_str());         // 4: area
+            lua_pushboolean(L, c.isOnline());        // 5: connected
+            lua_pushstring(L, c.status == 2 ? "<AFK>" : (c.status == 3 ? "<DND>" : "")); // 6: status
+            lua_pushstring(L, c.note.c_str());       // 7: note
+            return 7;
+        }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+// GetNumIgnores() → count
+static int lua_GetNumIgnores(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); return 1; }
+    int count = 0;
+    for (const auto& c : gh->getContacts())
+        if (c.isIgnored()) count++;
+    lua_pushnumber(L, count);
+    return 1;
+}
+
+// GetIgnoreName(index) → name
+static int lua_GetIgnoreName(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) { lua_pushnil(L); return 1; }
+    int found = 0;
+    for (const auto& c : gh->getContacts()) {
+        if (!c.isIgnored()) continue;
+        if (++found == index) {
+            lua_pushstring(L, c.name.c_str());
+            return 1;
+        }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
 // --- Talent API ---
 
 // GetNumTalentTabs() → count (usually 3)
@@ -2619,6 +2689,11 @@ void LuaEngine::registerCoreAPI() {
         {"GetNumTalents",           lua_GetNumTalents},
         {"GetTalentInfo",           lua_GetTalentInfo},
         {"GetActiveTalentGroup",    lua_GetActiveTalentGroup},
+        // Friends/ignore API
+        {"GetNumFriends",           lua_GetNumFriends},
+        {"GetFriendInfo",           lua_GetFriendInfo},
+        {"GetNumIgnores",           lua_GetNumIgnores},
+        {"GetIgnoreName",           lua_GetIgnoreName},
         // Reaction/connection queries
         {"UnitReaction",        lua_UnitReaction},
         {"UnitIsConnected",     lua_UnitIsConnected},
