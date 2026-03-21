@@ -1165,6 +1165,27 @@ static int lua_SetRaidTarget(lua_State* L) {
     return 0;
 }
 
+// GetSpellPowerCost(spellId) → {{ type=powerType, cost=manaCost, name=powerName }}
+static int lua_GetSpellPowerCost(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_newtable(L); return 1; }
+    uint32_t spellId = static_cast<uint32_t>(luaL_checknumber(L, 1));
+    auto data = gh->getSpellData(spellId);
+    lua_newtable(L); // outer table (array of cost entries)
+    if (data.manaCost > 0) {
+        lua_newtable(L); // cost entry
+        lua_pushnumber(L, data.powerType);
+        lua_setfield(L, -2, "type");
+        lua_pushnumber(L, data.manaCost);
+        lua_setfield(L, -2, "cost");
+        static const char* kPowerNames[] = {"MANA","RAGE","FOCUS","ENERGY","HAPPINESS","","RUNIC_POWER"};
+        lua_pushstring(L, data.powerType < 7 ? kPowerNames[data.powerType] : "MANA");
+        lua_setfield(L, -2, "name");
+        lua_rawseti(L, -2, 1); // outer[1] = entry
+    }
+    return 1;
+}
+
 // --- GetSpellInfo / GetSpellTexture ---
 // GetSpellInfo(spellIdOrName) -> name, rank, icon, castTime, minRange, maxRange, spellId
 static int lua_GetSpellInfo(lua_State* L) {
@@ -3250,6 +3271,7 @@ void LuaEngine::registerCoreAPI() {
         {"CastSpellByName",   lua_CastSpellByName},
         {"IsSpellKnown",      lua_IsSpellKnown},
         {"GetSpellCooldown",  lua_GetSpellCooldown},
+        {"GetSpellPowerCost", lua_GetSpellPowerCost},
         {"HasTarget",         lua_HasTarget},
         {"TargetUnit",        lua_TargetUnit},
         {"ClearTarget",       lua_ClearTarget},
