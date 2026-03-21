@@ -5188,6 +5188,12 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
         if (u->getHealth() == 0 && u->getMaxHealth() > 0) {
             focusColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
         } else if (u->isHostile()) {
+            // Tapped-by-other: grey focus frame name
+            uint32_t focDynFlags = u->getDynamicFlags();
+            bool focTapped = (focDynFlags & 0x0004) != 0 && (focDynFlags & 0x0008) == 0;
+            if (focTapped) {
+                focusColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+            } else {
             uint32_t playerLv = gameHandler.getPlayerLevel();
             uint32_t mobLv = u->getLevel();
             if (mobLv == 0) {
@@ -5205,6 +5211,7 @@ void GameScreen::renderFocusFrame(game::GameHandler& gameHandler) {
                 else
                     focusColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
             }
+            } // end tapped else
         } else {
             focusColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
         }
