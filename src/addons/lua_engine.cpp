@@ -413,6 +413,38 @@ static int lua_UnitPlayerControlled(lua_State* L) {
     return 1;
 }
 
+// UnitIsTapped(unit) — true if mob is tapped (tagged by any player)
+static int lua_UnitIsTapped(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "target");
+    auto* unit = resolveUnit(L, uid);
+    if (!unit) { lua_pushboolean(L, 0); return 1; }
+    lua_pushboolean(L, (unit->getDynamicFlags() & 0x0004) != 0); // UNIT_DYNFLAG_TAPPED_BY_PLAYER
+    return 1;
+}
+
+// UnitIsTappedByPlayer(unit) — true if tapped by the local player (can loot)
+static int lua_UnitIsTappedByPlayer(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "target");
+    auto* unit = resolveUnit(L, uid);
+    if (!unit) { lua_pushboolean(L, 0); return 1; }
+    uint32_t df = unit->getDynamicFlags();
+    // Tapped by player: has TAPPED flag but also LOOTABLE or TAPPED_BY_ALL
+    bool tapped = (df & 0x0004) != 0;
+    bool lootable = (df & 0x0001) != 0;
+    bool sharedTag = (df & 0x0008) != 0;
+    lua_pushboolean(L, tapped && (lootable || sharedTag));
+    return 1;
+}
+
+// UnitIsTappedByAllThreatList(unit) — true if shared-tag mob
+static int lua_UnitIsTappedByAllThreatList(lua_State* L) {
+    const char* uid = luaL_optstring(L, 1, "target");
+    auto* unit = resolveUnit(L, uid);
+    if (!unit) { lua_pushboolean(L, 0); return 1; }
+    lua_pushboolean(L, (unit->getDynamicFlags() & 0x0008) != 0);
+    return 1;
+}
+
 // UnitSex(unit) → 1=unknown, 2=male, 3=female
 static int lua_UnitSex(lua_State* L) {
     const char* uid = luaL_optstring(L, 1, "player");
@@ -3077,6 +3109,9 @@ void LuaEngine::registerCoreAPI() {
         {"UnitIsAFK",     lua_UnitIsAFK},
         {"UnitIsDND",     lua_UnitIsDND},
         {"UnitPlayerControlled", lua_UnitPlayerControlled},
+        {"UnitIsTapped",        lua_UnitIsTapped},
+        {"UnitIsTappedByPlayer", lua_UnitIsTappedByPlayer},
+        {"UnitIsTappedByAllThreatList", lua_UnitIsTappedByAllThreatList},
         {"UnitSex",       lua_UnitSex},
         {"UnitClass",     lua_UnitClass},
         {"GetMoney",      lua_GetMoney},
