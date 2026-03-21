@@ -3601,6 +3601,40 @@ void LuaEngine::registerCoreAPI() {
         "C_ChatInfo.SendAddonMessage = SendAddonMessage\n"
     );
 
+    // Action bar constants and functions used by action bar addons
+    luaL_dostring(L_,
+        "NUM_ACTIONBAR_BUTTONS = 12\n"
+        "NUM_ACTIONBAR_PAGES = 6\n"
+        "ACTION_BUTTON_SHOW_GRID_REASON_CVAR = 1\n"
+        "ACTION_BUTTON_SHOW_GRID_REASON_EVENT = 2\n"
+        // Action bar page tracking
+        "local _actionBarPage = 1\n"
+        "function GetActionBarPage() return _actionBarPage end\n"
+        "function ChangeActionBarPage(page) _actionBarPage = page end\n"
+        "function GetBonusBarOffset() return 0 end\n"
+        // Action type query
+        "function GetActionText(slot) return nil end\n"
+        "function GetActionCount(slot) return 0 end\n"
+        // Binding functions
+        "function GetBindingKey(action) return nil end\n"
+        "function GetBindingAction(key) return nil end\n"
+        "function SetBinding(key, action) end\n"
+        "function SaveBindings(which) end\n"
+        "function GetCurrentBindingSet() return 1 end\n"
+        // Macro functions
+        "function GetNumMacros() return 0, 0 end\n"
+        "function GetMacroInfo(id) return nil end\n"
+        "function GetMacroBody(id) return nil end\n"
+        "function GetMacroIndexByName(name) return 0 end\n"
+        // Stance bar
+        "function GetNumShapeshiftForms() return 0 end\n"
+        "function GetShapeshiftFormInfo(index) return nil, nil, nil, nil end\n"
+        // Pet action bar
+        "NUM_PET_ACTION_SLOTS = 10\n"
+        "function GetPetActionInfo(slot) return nil end\n"
+        "function GetPetActionsUsable() return false end\n"
+    );
+
     // WoW table/string utility functions used by many addons
     luaL_dostring(L_,
         // Table utilities
