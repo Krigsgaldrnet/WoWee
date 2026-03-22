@@ -3674,6 +3674,181 @@ static int lua_CastSpellByID(lua_State* L) {
     return 0;
 }
 
+// --- Cursor / Drag-Drop System ---
+// Tracks what the player is "holding" on the cursor (spell, item, action).
+
+enum class CursorType { NONE, SPELL, ITEM, ACTION };
+static CursorType s_cursorType = CursorType::NONE;
+static uint32_t   s_cursorId   = 0;    // spellId, itemId, or action slot
+static int        s_cursorSlot = 0;    // source slot for placement
+static int        s_cursorBag  = -1;   // source bag for container items
+
+static int lua_ClearCursor(lua_State* L) {
+    (void)L;
+    s_cursorType = CursorType::NONE;
+    s_cursorId = 0;
+    s_cursorSlot = 0;
+    s_cursorBag = -1;
+    return 0;
+}
+
+static int lua_GetCursorInfo(lua_State* L) {
+    switch (s_cursorType) {
+        case CursorType::SPELL:
+            lua_pushstring(L, "spell");
+            lua_pushnumber(L, 0);          // bookSlotIndex
+            lua_pushstring(L, "spell");    // bookType
+            lua_pushnumber(L, s_cursorId); // spellId
+            return 4;
+        case CursorType::ITEM:
+            lua_pushstring(L, "item");
+            lua_pushnumber(L, s_cursorId);
+            return 2;
+        case CursorType::ACTION:
+            lua_pushstring(L, "action");
+            lua_pushnumber(L, s_cursorSlot);
+            return 2;
+        default:
+            return 0;
+    }
+}
+
+static int lua_CursorHasItem(lua_State* L) {
+    lua_pushboolean(L, s_cursorType == CursorType::ITEM ? 1 : 0);
+    return 1;
+}
+
+static int lua_CursorHasSpell(lua_State* L) {
+    lua_pushboolean(L, s_cursorType == CursorType::SPELL ? 1 : 0);
+    return 1;
+}
+
+// PickupAction(slot) — picks up an action from the action bar
+static int lua_PickupAction(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return 0;
+    int slot = static_cast<int>(luaL_checknumber(L, 1));
+    const auto& bar = gh->getActionBar();
+    if (slot < 1 || slot > static_cast<int>(bar.size())) return 0;
+    const auto& action = bar[slot - 1];
+    if (action.isEmpty()) {
+        // Empty slot — if cursor has something, place it
+        if (s_cursorType == CursorType::SPELL && s_cursorId != 0) {
+            gh->setActionBarSlot(slot - 1, game::ActionBarSlot::SPELL, s_cursorId);
+            s_cursorType = CursorType::NONE;
+            s_cursorId = 0;
+        }
+    } else {
+        // Pick up existing action
+        s_cursorType = (action.type == game::ActionBarSlot::SPELL) ? CursorType::SPELL :
+                       (action.type == game::ActionBarSlot::ITEM)  ? CursorType::ITEM :
+                       CursorType::ACTION;
+        s_cursorId = action.id;
+        s_cursorSlot = slot;
+    }
+    return 0;
+}
+
+// PlaceAction(slot) — places cursor content into an action bar slot
+static int lua_PlaceAction(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return 0;
+    int slot = static_cast<int>(luaL_checknumber(L, 1));
+    if (slot < 1 || slot > static_cast<int>(gh->getActionBar().size())) return 0;
+    if (s_cursorType == CursorType::SPELL && s_cursorId != 0) {
+        gh->setActionBarSlot(slot - 1, game::ActionBarSlot::SPELL, s_cursorId);
+    } else if (s_cursorType == CursorType::ITEM && s_cursorId != 0) {
+        gh->setActionBarSlot(slot - 1, game::ActionBarSlot::ITEM, s_cursorId);
+    }
+    s_cursorType = CursorType::NONE;
+    s_cursorId = 0;
+    return 0;
+}
+
+// PickupSpell(bookSlot, bookType) — picks up a spell from the spellbook
+static int lua_PickupSpell(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return 0;
+    int slot = static_cast<int>(luaL_checknumber(L, 1));
+    const auto& tabs = gh->getSpellBookTabs();
+    int idx = slot;
+    for (const auto& tab : tabs) {
+        if (idx <= static_cast<int>(tab.spellIds.size())) {
+            s_cursorType = CursorType::SPELL;
+            s_cursorId = tab.spellIds[idx - 1];
+            return 0;
+        }
+        idx -= static_cast<int>(tab.spellIds.size());
+    }
+    return 0;
+}
+
+// PickupSpellBookItem(bookSlot, bookType) — alias for PickupSpell
+static int lua_PickupSpellBookItem(lua_State* L) {
+    return lua_PickupSpell(L);
+}
+
+// PickupContainerItem(bag, slot) — picks up an item from a bag
+static int lua_PickupContainerItem(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return 0;
+    int bag = static_cast<int>(luaL_checknumber(L, 1));
+    int slot = static_cast<int>(luaL_checknumber(L, 2));
+    const auto& inv = gh->getInventory();
+    const game::ItemSlot* itemSlot = nullptr;
+    if (bag == 0 && slot >= 1 && slot <= inv.getBackpackSize()) {
+        itemSlot = &inv.getBackpackSlot(slot - 1);
+    } else if (bag >= 1 && bag <= 4) {
+        int bagSize = inv.getBagSize(bag - 1);
+        if (slot >= 1 && slot <= bagSize) {
+            itemSlot = &inv.getBagSlot(bag - 1, slot - 1);
+        }
+    }
+    if (itemSlot && !itemSlot->empty()) {
+        s_cursorType = CursorType::ITEM;
+        s_cursorId = itemSlot->item.itemId;
+        s_cursorBag = bag;
+        s_cursorSlot = slot;
+    }
+    return 0;
+}
+
+// PickupInventoryItem(slot) — picks up an equipped item
+static int lua_PickupInventoryItem(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) return 0;
+    int slot = static_cast<int>(luaL_checknumber(L, 1));
+    if (slot < 1 || slot > 19) return 0;
+    const auto& inv = gh->getInventory();
+    const auto& eq = inv.getEquipSlot(static_cast<game::EquipSlot>(slot - 1));
+    if (!eq.empty()) {
+        s_cursorType = CursorType::ITEM;
+        s_cursorId = eq.item.itemId;
+        s_cursorSlot = slot;
+        s_cursorBag = -1;
+    }
+    return 0;
+}
+
+// DeleteCursorItem() — destroys the item on cursor
+static int lua_DeleteCursorItem(lua_State* L) {
+    (void)L;
+    s_cursorType = CursorType::NONE;
+    s_cursorId = 0;
+    return 0;
+}
+
+// AutoEquipCursorItem() — equip item from cursor
+static int lua_AutoEquipCursorItem(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (gh && s_cursorType == CursorType::ITEM && s_cursorId != 0) {
+        gh->useItemById(s_cursorId);
+    }
+    s_cursorType = CursorType::NONE;
+    s_cursorId = 0;
+    return 0;
+}
+
 // --- Frame System ---
 // Minimal WoW-compatible frame objects with RegisterEvent/SetScript/GetScript.
 // Frames are Lua tables with a metatable that provides methods.
@@ -4367,6 +4542,18 @@ void LuaEngine::registerCoreAPI() {
         {"GetActionCount",      lua_GetActionCount},
         {"GetActionCooldown",   lua_GetActionCooldown},
         {"UseAction",           lua_UseAction},
+        {"PickupAction",        lua_PickupAction},
+        {"PlaceAction",         lua_PlaceAction},
+        {"PickupSpell",         lua_PickupSpell},
+        {"PickupSpellBookItem", lua_PickupSpellBookItem},
+        {"PickupContainerItem", lua_PickupContainerItem},
+        {"PickupInventoryItem", lua_PickupInventoryItem},
+        {"ClearCursor",         lua_ClearCursor},
+        {"GetCursorInfo",       lua_GetCursorInfo},
+        {"CursorHasItem",       lua_CursorHasItem},
+        {"CursorHasSpell",      lua_CursorHasSpell},
+        {"DeleteCursorItem",    lua_DeleteCursorItem},
+        {"AutoEquipCursorItem", lua_AutoEquipCursorItem},
         {"CancelUnitBuff",      lua_CancelUnitBuff},
         {"CastSpellByID",       lua_CastSpellByID},
         // Loot API
