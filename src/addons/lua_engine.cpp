@@ -1923,6 +1923,51 @@ static int lua_GetContainerNumFreeSlots(lua_State* L) {
 // 6=Waist,7=Legs,8=Feet,9=Wrists,10=Hands,11=Ring1,12=Ring2,
 // 13=Trinket1,14=Trinket2,15=Back,16=MainHand,17=OffHand,18=Ranged,19=Tabard
 
+// GetInventorySlotInfo("slotName") → slotId, textureName, checkRelic
+// Maps WoW slot names (e.g. "HeadSlot", "HEADSLOT") to inventory slot IDs
+static int lua_GetInventorySlotInfo(lua_State* L) {
+    const char* name = luaL_checkstring(L, 1);
+    std::string slot(name);
+    // Normalize: uppercase, strip trailing "SLOT" if present
+    for (char& c : slot) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (slot.size() > 4 && slot.substr(slot.size() - 4) == "SLOT")
+        slot = slot.substr(0, slot.size() - 4);
+
+    // WoW inventory slots are 1-indexed
+    struct SlotMap { const char* name; int id; const char* texture; };
+    static const SlotMap mapping[] = {
+        {"HEAD",          1,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Head"},
+        {"NECK",          2,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Neck"},
+        {"SHOULDER",      3,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Shoulder"},
+        {"SHIRT",         4,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Shirt"},
+        {"CHEST",         5,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest"},
+        {"WAIST",         6,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Waist"},
+        {"LEGS",          7,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Legs"},
+        {"FEET",          8,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Feet"},
+        {"WRIST",         9,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Wrists"},
+        {"HANDS",        10,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Hands"},
+        {"FINGER0",      11,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Finger"},
+        {"FINGER1",      12,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Finger"},
+        {"TRINKET0",     13,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Trinket"},
+        {"TRINKET1",     14,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Trinket"},
+        {"BACK",         15,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest"},
+        {"MAINHAND",     16,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-MainHand"},
+        {"SECONDARYHAND",17,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-SecondaryHand"},
+        {"RANGED",       18,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ranged"},
+        {"TABARD",       19,  "Interface\\PaperDoll\\UI-PaperDoll-Slot-Tabard"},
+    };
+    for (const auto& m : mapping) {
+        if (slot == m.name) {
+            lua_pushnumber(L, m.id);
+            lua_pushstring(L, m.texture);
+            lua_pushboolean(L, m.id == 18 ? 1 : 0); // checkRelic: only ranged slot
+            return 3;
+        }
+    }
+    luaL_error(L, "Unknown inventory slot: %s", name);
+    return 0;
+}
+
 static int lua_GetInventoryItemLink(lua_State* L) {
     auto* gh = getGameHandler(L);
     const char* uid = luaL_optstring(L, 1, "player");
@@ -3845,6 +3890,7 @@ void LuaEngine::registerCoreAPI() {
         {"GetContainerItemLink",    lua_GetContainerItemLink},
         {"GetContainerNumFreeSlots", lua_GetContainerNumFreeSlots},
         // Equipment slot API
+        {"GetInventorySlotInfo",    lua_GetInventorySlotInfo},
         {"GetInventoryItemLink",    lua_GetInventoryItemLink},
         {"GetInventoryItemID",      lua_GetInventoryItemID},
         {"GetInventoryItemTexture", lua_GetInventoryItemTexture},
