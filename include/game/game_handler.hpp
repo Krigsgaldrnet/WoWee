@@ -882,6 +882,7 @@ public:
     uint32_t getCurrentCastSpellId() const { return currentCastSpellId; }
     float getCastProgress() const { return castTimeTotal > 0 ? (castTimeTotal - castTimeRemaining) / castTimeTotal : 0.0f; }
     float getCastTimeRemaining() const { return castTimeRemaining; }
+    float getCastTimeTotal() const { return castTimeTotal; }
 
     // Repeat-craft queue
     void startCraftQueue(uint32_t spellId, int count);
@@ -896,6 +897,7 @@ public:
     // Unit cast state (tracked per GUID for target frame + boss frames)
     struct UnitCastState {
         bool     casting         = false;
+        bool     isChannel       = false; ///< true for channels (MSG_CHANNEL_START), false for casts (SMSG_SPELL_START)
         uint32_t spellId         = 0;
         float    timeRemaining   = 0.0f;
         float    timeTotal       = 0.0f;

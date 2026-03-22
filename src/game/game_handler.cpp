@@ -7519,6 +7519,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 } else {
                     auto& s = unitCastStates_[chanCaster];
                     s.casting        = true;
+                    s.isChannel      = true;
                     s.spellId        = chanSpellId;
                     s.timeTotal      = chanTotalMs / 1000.0f;
                     s.timeRemaining  = s.timeTotal;
@@ -19363,6 +19364,13 @@ void GameHandler::handleCastFailed(network::Packet& packet) {
         if (auto* sfx = renderer->getUiSoundManager())
             sfx->playError();
     }
+
+    // Fire UNIT_SPELLCAST_FAILED + UNIT_SPELLCAST_STOP so Lua addons can react
+    if (addonEventCallback_) {
+        addonEventCallback_("UNIT_SPELLCAST_FAILED", {"player", std::to_string(data.spellId)});
+        addonEventCallback_("UNIT_SPELLCAST_STOP", {"player", std::to_string(data.spellId)});
+    }
+    if (spellCastFailedCallback_) spellCastFailedCallback_(data.spellId);
 }
 
 static audio::SpellSoundManager::MagicSchool schoolMaskToMagicSchool(uint32_t mask) {
@@ -19383,6 +19391,7 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
     if (data.casterUnit != playerGuid && data.castTime > 0) {
         auto& s = unitCastStates_[data.casterUnit];
         s.casting        = true;
+        s.isChannel      = false;
         s.spellId        = data.spellId;
         s.timeTotal      = data.castTime / 1000.0f;
         s.timeRemaining  = s.timeTotal;

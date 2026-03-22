@@ -1077,6 +1077,84 @@ static int lua_UnitAuraGeneric(lua_State* L) {
     return lua_UnitAura(L, wantBuff);
 }
 
+// ---------- UnitCastingInfo / UnitChannelInfo ----------
+// Internal helper: pushes cast/channel info for a unit.
+// Returns number of Lua return values (0 if not casting/channeling the requested type).
+static int lua_UnitCastInfo(lua_State* L, bool wantChannel) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnil(L); return 1; }
+
+    const char* uid = luaL_optstring(L, 1, "player");
+    std::string uidStr(uid ? uid : "player");
+
+    // GetTime epoch for consistent time values
+    static auto sStart = std::chrono::steady_clock::now();
+    double nowSec = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - sStart).count();
+
+    // Resolve cast state for the unit
+    bool isCasting = false;
+    bool isChannel = false;
+    uint32_t spellId = 0;
+    float timeTotal = 0.0f;
+    float timeRemaining = 0.0f;
+    bool interruptible = true;
+
+    if (uidStr == "player") {
+        isCasting = gh->isCasting();
+        isChannel = gh->isChanneling();
+        spellId = gh->getCurrentCastSpellId();
+        timeTotal = gh->getCastTimeTotal();
+        timeRemaining = gh->getCastTimeRemaining();
+        // Player interruptibility: always true for own casts (server controls actual interrupt)
+        interruptible = true;
+    } else {
+        uint64_t guid = resolveUnitGuid(gh, uidStr);
+        if (guid == 0) { lua_pushnil(L); return 1; }
+        const auto* state = gh->getUnitCastState(guid);
+        if (!state) { lua_pushnil(L); return 1; }
+        isCasting = state->casting;
+        isChannel = state->isChannel;
+        spellId = state->spellId;
+        timeTotal = state->timeTotal;
+        timeRemaining = state->timeRemaining;
+        interruptible = state->interruptible;
+    }
+
+    if (!isCasting) { lua_pushnil(L); return 1; }
+
+    // UnitCastingInfo: only returns for non-channel casts
+    // UnitChannelInfo: only returns for channels
+    if (wantChannel != isChannel) { lua_pushnil(L); return 1; }
+
+    // Spell name + icon
+    const std::string& name = gh->getSpellName(spellId);
+    std::string iconPath = gh->getSpellIconPath(spellId);
+
+    // Time values in milliseconds (WoW API convention)
+    double startTimeMs = (nowSec - (timeTotal - timeRemaining)) * 1000.0;
+    double endTimeMs   = (nowSec + timeRemaining) * 1000.0;
+
+    // Return values match WoW API:
+    // UnitCastingInfo: name, text, texture, startTime, endTime, isTradeSkill, castID, notInterruptible
+    // UnitChannelInfo: name, text, texture, startTime, endTime, isTradeSkill, notInterruptible
+    lua_pushstring(L, name.empty() ? "Unknown" : name.c_str()); // name
+    lua_pushstring(L, "");                                       // text (sub-text, usually empty)
+    if (!iconPath.empty()) lua_pushstring(L, iconPath.c_str());
+    else lua_pushstring(L, "Interface\\Icons\\INV_Misc_QuestionMark");  // texture
+    lua_pushnumber(L, startTimeMs);                              // startTime (ms)
+    lua_pushnumber(L, endTimeMs);                                // endTime (ms)
+    lua_pushboolean(L, gh->isProfessionSpell(spellId) ? 1 : 0); // isTradeSkill
+    if (!wantChannel) {
+        lua_pushnumber(L, spellId);                              // castID (UnitCastingInfo only)
+    }
+    lua_pushboolean(L, interruptible ? 0 : 1);                  // notInterruptible
+    return wantChannel ? 7 : 8;
+}
+
+static int lua_UnitCastingInfo(lua_State* L) { return lua_UnitCastInfo(L, false); }
+static int lua_UnitChannelInfo(lua_State* L) { return lua_UnitCastInfo(L, true); }
+
 // --- Action API ---
 
 static int lua_SendChatMessage(lua_State* L) {
@@ -3486,6 +3564,8 @@ void LuaEngine::registerCoreAPI() {
         {"UnitBuff",          lua_UnitBuff},
         {"UnitDebuff",        lua_UnitDebuff},
         {"UnitAura",          lua_UnitAuraGeneric},
+        {"UnitCastingInfo",   lua_UnitCastingInfo},
+        {"UnitChannelInfo",   lua_UnitChannelInfo},
         {"GetNumAddOns",      lua_GetNumAddOns},
         {"GetAddOnInfo",      lua_GetAddOnInfo},
         {"GetAddOnMetadata",  lua_GetAddOnMetadata},
