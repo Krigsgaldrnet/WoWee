@@ -3671,13 +3671,13 @@ void Application::spawnPlayerCharacter() {
                             uint32_t raceId = charSectionsDbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
                             uint32_t sexId = charSectionsDbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
                             uint32_t baseSection = charSectionsDbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
-                            uint32_t variationIndex = charSectionsDbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 8);
-                            uint32_t colorIndex = charSectionsDbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 9);
+                            uint32_t variationIndex = charSectionsDbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 4);
+                            uint32_t colorIndex = charSectionsDbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 5);
 
                             if (raceId != targetRaceId || sexId != targetSexId) continue;
 
                             // Section 0 = skin: match by colorIndex = skin byte
-                            const uint32_t csTex1 = csL ? (*csL)["Texture1"] : 4;
+                            const uint32_t csTex1 = csL ? (*csL)["Texture1"] : 6;
                             if (baseSection == 0 && !foundSkin && colorIndex == charSkinId) {
                                 std::string tex1 = charSectionsDbc->getString(r, csTex1);
                                 if (!tex1.empty()) {
