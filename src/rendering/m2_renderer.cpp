@@ -30,6 +30,9 @@ namespace rendering {
 
 namespace {
 
+// Shared lava UV scroll timer — ensures consistent animation across all render passes
+const auto kLavaAnimStart = std::chrono::steady_clock::now();
+
 bool envFlagEnabled(const char* key, bool defaultValue) {
     const char* raw = std::getenv(key);
     if (!raw || !*raw) return defaultValue;
@@ -2765,10 +2768,10 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     }
                 }
             }
-            // Lava M2 models: fallback UV scroll if no texture animation
+            // Lava M2 models: fallback UV scroll if no texture animation.
+            // Uses kLavaAnimStart (file-scope) for consistent timing across passes.
             if (model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
-                static auto startTime = std::chrono::steady_clock::now();
-                float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime).count();
+                float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - kLavaAnimStart).count();
                 uvOffset = glm::vec2(t * 0.03f, -t * 0.08f);
             }
 
@@ -2981,8 +2984,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 }
             }
             if (model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
-                static auto startTime2 = std::chrono::steady_clock::now();
-                float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime2).count();
+                float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - kLavaAnimStart).count();
                 uvOffset = glm::vec2(t * 0.03f, -t * 0.08f);
             }
 
