@@ -771,6 +771,119 @@ static int lua_GetMoney(lua_State* L) {
     return 1;
 }
 
+// UnitStat(unit, statIndex) → base, effective, posBuff, negBuff
+// statIndex: 1=STR, 2=AGI, 3=STA, 4=INT, 5=SPI (1-indexed per WoW API)
+static int lua_UnitStat(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 4; }
+    int statIdx = static_cast<int>(luaL_checknumber(L, 2)) - 1; // WoW API is 1-indexed
+    int32_t val = gh->getPlayerStat(statIdx);
+    if (val < 0) val = 0;
+    // We only have the effective value from the server; report base=effective, no buffs
+    lua_pushnumber(L, val); // base (approximate — server only sends effective)
+    lua_pushnumber(L, val); // effective
+    lua_pushnumber(L, 0);   // positive buff
+    lua_pushnumber(L, 0);   // negative buff
+    return 4;
+}
+
+// GetDodgeChance() → percent
+static int lua_GetDodgeChance(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    float v = gh ? gh->getDodgePct() : 0.0f;
+    lua_pushnumber(L, v >= 0 ? v : 0.0);
+    return 1;
+}
+
+// GetParryChance() → percent
+static int lua_GetParryChance(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    float v = gh ? gh->getParryPct() : 0.0f;
+    lua_pushnumber(L, v >= 0 ? v : 0.0);
+    return 1;
+}
+
+// GetBlockChance() → percent
+static int lua_GetBlockChance(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    float v = gh ? gh->getBlockPct() : 0.0f;
+    lua_pushnumber(L, v >= 0 ? v : 0.0);
+    return 1;
+}
+
+// GetCritChance() → percent (melee crit)
+static int lua_GetCritChance(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    float v = gh ? gh->getCritPct() : 0.0f;
+    lua_pushnumber(L, v >= 0 ? v : 0.0);
+    return 1;
+}
+
+// GetRangedCritChance() → percent
+static int lua_GetRangedCritChance(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    float v = gh ? gh->getRangedCritPct() : 0.0f;
+    lua_pushnumber(L, v >= 0 ? v : 0.0);
+    return 1;
+}
+
+// GetSpellCritChance(school) → percent  (1=Holy,2=Fire,3=Nature,4=Frost,5=Shadow,6=Arcane)
+static int lua_GetSpellCritChance(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int school = static_cast<int>(luaL_checknumber(L, 1));
+    float v = gh ? gh->getSpellCritPct(school) : 0.0f;
+    lua_pushnumber(L, v >= 0 ? v : 0.0);
+    return 1;
+}
+
+// GetCombatRating(ratingIndex) → value
+static int lua_GetCombatRating(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int cr = static_cast<int>(luaL_checknumber(L, 1));
+    int32_t v = gh ? gh->getCombatRating(cr) : 0;
+    lua_pushnumber(L, v >= 0 ? v : 0);
+    return 1;
+}
+
+// GetSpellBonusDamage(school) → value  (1-6 magic schools)
+static int lua_GetSpellBonusDamage(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); return 1; }
+    int32_t sp = gh->getSpellPower();
+    lua_pushnumber(L, sp >= 0 ? sp : 0);
+    return 1;
+}
+
+// GetSpellBonusHealing() → value
+static int lua_GetSpellBonusHealing(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    if (!gh) { lua_pushnumber(L, 0); return 1; }
+    int32_t v = gh->getHealingPower();
+    lua_pushnumber(L, v >= 0 ? v : 0);
+    return 1;
+}
+
+// GetMeleeHaste / GetAttackPowerForStat stubs for addon compat
+static int lua_GetAttackPower(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int32_t ap = gh ? gh->getMeleeAttackPower() : 0;
+    if (ap < 0) ap = 0;
+    lua_pushnumber(L, ap);  // base
+    lua_pushnumber(L, 0);   // posBuff
+    lua_pushnumber(L, 0);   // negBuff
+    return 3;
+}
+
+static int lua_GetRangedAttackPower(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int32_t ap = gh ? gh->getRangedAttackPower() : 0;
+    if (ap < 0) ap = 0;
+    lua_pushnumber(L, ap);
+    lua_pushnumber(L, 0);
+    lua_pushnumber(L, 0);
+    return 3;
+}
+
 static int lua_IsInGroup(lua_State* L) {
     auto* gh = getGameHandler(L);
     lua_pushboolean(L, gh && gh->isInGroup());
@@ -3639,6 +3752,18 @@ void LuaEngine::registerCoreAPI() {
         {"UnitSex",       lua_UnitSex},
         {"UnitClass",     lua_UnitClass},
         {"GetMoney",      lua_GetMoney},
+        {"UnitStat",      lua_UnitStat},
+        {"GetDodgeChance",    lua_GetDodgeChance},
+        {"GetParryChance",    lua_GetParryChance},
+        {"GetBlockChance",    lua_GetBlockChance},
+        {"GetCritChance",     lua_GetCritChance},
+        {"GetRangedCritChance", lua_GetRangedCritChance},
+        {"GetSpellCritChance",  lua_GetSpellCritChance},
+        {"GetCombatRating",     lua_GetCombatRating},
+        {"GetSpellBonusDamage", lua_GetSpellBonusDamage},
+        {"GetSpellBonusHealing", lua_GetSpellBonusHealing},
+        {"GetAttackPowerForStat", lua_GetAttackPower},
+        {"GetRangedAttackPower",  lua_GetRangedAttackPower},
         {"IsInGroup",     lua_IsInGroup},
         {"IsInRaid",      lua_IsInRaid},
         {"GetPlayerMapPosition", lua_GetPlayerMapPosition},
