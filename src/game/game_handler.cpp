@@ -14972,6 +14972,24 @@ void GameHandler::addLocalChatMessage(const MessageChatData& msg) {
         chatHistory.pop_front();
     }
     if (addonChatCallback_) addonChatCallback_(msg);
+
+    // Fire CHAT_MSG_* for local echoes (player's own messages, system messages)
+    // so Lua chat frame addons display them.
+    if (addonEventCallback_) {
+        std::string eventName = "CHAT_MSG_";
+        eventName += getChatTypeString(msg.type);
+        const Character* ac = getActiveCharacter();
+        std::string senderName = msg.senderName.empty()
+            ? (ac ? ac->name : std::string{}) : msg.senderName;
+        char guidBuf[32];
+        snprintf(guidBuf, sizeof(guidBuf), "0x%016llX",
+                 (unsigned long long)(msg.senderGuid != 0 ? msg.senderGuid : playerGuid));
+        addonEventCallback_(eventName, {
+            msg.message, senderName,
+            std::to_string(static_cast<int>(msg.language)),
+            msg.channelName, senderName, "", "0", "0", "", "0", "0", guidBuf
+        });
+    }
 }
 
 // ============================================================
