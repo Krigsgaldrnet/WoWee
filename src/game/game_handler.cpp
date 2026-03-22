@@ -12110,6 +12110,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                 }
                             }
                             LOG_DEBUG("[Classic] Rebuilt playerAuras from UNIT_FIELD_AURAS (CREATE_OBJECT)");
+                            if (addonEventCallback_)
+                                addonEventCallback_("UNIT_AURA", {"player"});
                         }
                     }
                 }
@@ -12677,6 +12679,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                     }
                                 }
                                 LOG_DEBUG("[Classic] Rebuilt playerAuras from UNIT_FIELD_AURAS (VALUES)");
+                                if (addonEventCallback_)
+                                    addonEventCallback_("UNIT_AURA", {"player"});
                             }
                         }
                     }
