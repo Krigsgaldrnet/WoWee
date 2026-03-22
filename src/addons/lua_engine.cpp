@@ -2371,6 +2371,91 @@ static int lua_GetQuestLink(lua_State* L) {
     return 1;
 }
 
+// GetNumQuestLeaderBoards(questLogIndex) → count of objectives
+static int lua_GetNumQuestLeaderBoards(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int index = static_cast<int>(luaL_checknumber(L, 1));
+    if (!gh || index < 1) { lua_pushnumber(L, 0); return 1; }
+    const auto& ql = gh->getQuestLog();
+    if (index > static_cast<int>(ql.size())) { lua_pushnumber(L, 0); return 1; }
+    const auto& q = ql[index - 1];
+    int count = 0;
+    for (const auto& ko : q.killObjectives) {
+        if (ko.npcOrGoId != 0 || ko.required > 0) ++count;
+    }
+    for (const auto& io : q.itemObjectives) {
+        if (io.itemId != 0 || io.required > 0) ++count;
+    }
+    lua_pushnumber(L, count);
+    return 1;
+}
+
+// GetQuestLogLeaderBoard(objIndex, questLogIndex) → text, type, finished
+// objIndex is 1-based within the quest's objectives
+static int lua_GetQuestLogLeaderBoard(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    int objIdx = static_cast<int>(luaL_checknumber(L, 1));
+    int questIdx = static_cast<int>(luaL_optnumber(L, 2,
+        gh ? gh->getSelectedQuestLogIndex() : 0));
+    if (!gh || questIdx < 1 || objIdx < 1) { lua_pushnil(L); return 1; }
+    const auto& ql = gh->getQuestLog();
+    if (questIdx > static_cast<int>(ql.size())) { lua_pushnil(L); return 1; }
+    const auto& q = ql[questIdx - 1];
+
+    // Build ordered list: kill objectives first, then item objectives
+    int cur = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (q.killObjectives[i].npcOrGoId == 0 && q.killObjectives[i].required == 0) continue;
+        ++cur;
+        if (cur == objIdx) {
+            // Get current count from killCounts map (keyed by abs(npcOrGoId))
+            uint32_t key = static_cast<uint32_t>(std::abs(q.killObjectives[i].npcOrGoId));
+            uint32_t current = 0;
+            auto it = q.killCounts.find(key);
+            if (it != q.killCounts.end()) current = it->second.first;
+            uint32_t required = q.killObjectives[i].required;
+            bool finished = (current >= required);
+            // Build display text like "Kobold Vermin slain: 3/8"
+            std::string text = (q.killObjectives[i].npcOrGoId < 0 ? "Object" : "Creature")
+                + std::string(" slain: ") + std::to_string(current) + "/" + std::to_string(required);
+            lua_pushstring(L, text.c_str());
+            lua_pushstring(L, q.killObjectives[i].npcOrGoId < 0 ? "object" : "monster");
+            lua_pushboolean(L, finished ? 1 : 0);
+            return 3;
+        }
+    }
+    for (int i = 0; i < 6; ++i) {
+        if (q.itemObjectives[i].itemId == 0 && q.itemObjectives[i].required == 0) continue;
+        ++cur;
+        if (cur == objIdx) {
+            uint32_t current = 0;
+            auto it = q.itemCounts.find(q.itemObjectives[i].itemId);
+            if (it != q.itemCounts.end()) current = it->second;
+            uint32_t required = q.itemObjectives[i].required;
+            bool finished = (current >= required);
+            // Get item name if available
+            std::string itemName;
+            const auto* info = gh->getItemInfo(q.itemObjectives[i].itemId);
+            if (info && !info->name.empty()) itemName = info->name;
+            else itemName = "Item #" + std::to_string(q.itemObjectives[i].itemId);
+            std::string text = itemName + ": " + std::to_string(current) + "/" + std::to_string(required);
+            lua_pushstring(L, text.c_str());
+            lua_pushstring(L, "item");
+            lua_pushboolean(L, finished ? 1 : 0);
+            return 3;
+        }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+// ExpandQuestHeader / CollapseQuestHeader — no-ops (flat quest list, no headers)
+static int lua_ExpandQuestHeader(lua_State* L) { (void)L; return 0; }
+static int lua_CollapseQuestHeader(lua_State* L) { (void)L; return 0; }
+
+// GetQuestLogSpecialItemInfo(questLogIndex) — returns nil (no special items)
+static int lua_GetQuestLogSpecialItemInfo(lua_State* L) { (void)L; lua_pushnil(L); return 1; }
+
 // --- Skill Line API ---
 
 // GetNumSkillLines() → count
@@ -4142,6 +4227,11 @@ void LuaEngine::registerCoreAPI() {
         {"RemoveQuestWatch",        lua_RemoveQuestWatch},
         {"IsQuestWatched",          lua_IsQuestWatched},
         {"GetQuestLink",            lua_GetQuestLink},
+        {"GetNumQuestLeaderBoards", lua_GetNumQuestLeaderBoards},
+        {"GetQuestLogLeaderBoard",  lua_GetQuestLogLeaderBoard},
+        {"ExpandQuestHeader",       lua_ExpandQuestHeader},
+        {"CollapseQuestHeader",     lua_CollapseQuestHeader},
+        {"GetQuestLogSpecialItemInfo", lua_GetQuestLogSpecialItemInfo},
         // Skill line API
         {"GetNumSkillLines",        lua_GetNumSkillLines},
         {"GetSkillLineInfo",        lua_GetSkillLineInfo},
