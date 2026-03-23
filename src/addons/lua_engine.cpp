@@ -4284,6 +4284,59 @@ static int lua_GetModifiedClick(lua_State* L) {
 }
 static int lua_SetModifiedClick(lua_State* L) { (void)L; return 0; }
 
+// --- Keybinding API ---
+// Maps WoW binding names like "ACTIONBUTTON1" to key display strings like "1"
+
+// GetBindingKey(command) → key1, key2 (or nil)
+static int lua_GetBindingKey(lua_State* L) {
+    const char* cmd = luaL_checkstring(L, 1);
+    std::string command(cmd);
+    // Return intuitive default bindings for action buttons
+    if (command.find("ACTIONBUTTON") == 0) {
+        std::string num = command.substr(12);
+        int n = 0;
+        try { n = std::stoi(num); } catch(...) {}
+        if (n >= 1 && n <= 9) {
+            lua_pushstring(L, num.c_str());
+            return 1;
+        } else if (n == 10) {
+            lua_pushstring(L, "0");
+            return 1;
+        } else if (n == 11) {
+            lua_pushstring(L, "-");
+            return 1;
+        } else if (n == 12) {
+            lua_pushstring(L, "=");
+            return 1;
+        }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+// GetBindingAction(key) → command (or nil)
+static int lua_GetBindingAction(lua_State* L) {
+    const char* key = luaL_checkstring(L, 1);
+    std::string k(key);
+    // Simple reverse mapping for number keys
+    if (k.size() == 1 && k[0] >= '1' && k[0] <= '9') {
+        lua_pushstring(L, ("ACTIONBUTTON" + k).c_str());
+        return 1;
+    } else if (k == "0") {
+        lua_pushstring(L, "ACTIONBUTTON10");
+        return 1;
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+static int lua_GetNumBindings(lua_State* L) { lua_pushnumber(L, 0); return 1; }
+static int lua_GetBinding(lua_State* L) { (void)L; lua_pushnil(L); return 1; }
+static int lua_SetBinding(lua_State* L) { (void)L; return 0; }
+static int lua_SaveBindings(lua_State* L) { (void)L; return 0; }
+static int lua_SetOverrideBindingClick(lua_State* L) { (void)L; return 0; }
+static int lua_ClearOverrideBindings(lua_State* L) { (void)L; return 0; }
+
 // Frame methods: SetPoint, SetSize, SetWidth, SetHeight, GetWidth, GetHeight, GetCenter, SetAlpha, GetAlpha
 static int lua_Frame_SetPoint(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
@@ -4613,6 +4666,14 @@ void LuaEngine::registerCoreAPI() {
         {"IsModifiedClick",     lua_IsModifiedClick},
         {"GetModifiedClick",    lua_GetModifiedClick},
         {"SetModifiedClick",    lua_SetModifiedClick},
+        {"GetBindingKey",       lua_GetBindingKey},
+        {"GetBindingAction",    lua_GetBindingAction},
+        {"GetNumBindings",      lua_GetNumBindings},
+        {"GetBinding",          lua_GetBinding},
+        {"SetBinding",          lua_SetBinding},
+        {"SaveBindings",        lua_SaveBindings},
+        {"SetOverrideBindingClick", lua_SetOverrideBindingClick},
+        {"ClearOverrideBindings", lua_ClearOverrideBindings},
         {"SendChatMessage",   lua_SendChatMessage},
         {"SendAddonMessage",  lua_SendAddonMessage},
         {"RegisterAddonMessagePrefix", lua_RegisterAddonMessagePrefix},
