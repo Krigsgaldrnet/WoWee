@@ -2090,6 +2090,28 @@ static int lua_GetItemTooltipData(lua_State* L) {
     if (info->frostRes != 0) { lua_pushnumber(L, info->frostRes); lua_setfield(L, -2, "frostRes"); }
     if (info->shadowRes != 0) { lua_pushnumber(L, info->shadowRes); lua_setfield(L, -2, "shadowRes"); }
     if (info->arcaneRes != 0) { lua_pushnumber(L, info->arcaneRes); lua_setfield(L, -2, "arcaneRes"); }
+    // Gem sockets (WotLK/TBC)
+    int numSockets = 0;
+    for (int i = 0; i < 3; ++i) {
+        if (info->socketColor[i] != 0) ++numSockets;
+    }
+    if (numSockets > 0) {
+        lua_newtable(L);
+        for (int i = 0; i < 3; ++i) {
+            if (info->socketColor[i] != 0) {
+                lua_newtable(L);
+                lua_pushnumber(L, info->socketColor[i]);
+                lua_setfield(L, -2, "color");
+                lua_rawseti(L, -2, i + 1);
+            }
+        }
+        lua_setfield(L, -2, "sockets");
+    }
+    // Item set
+    if (info->itemSetId != 0) {
+        lua_pushnumber(L, info->itemSetId);
+        lua_setfield(L, -2, "itemSetId");
+    }
     return 1;
 }
 
@@ -5500,6 +5522,14 @@ void LuaEngine::registerCoreAPI() {
         "        if data.frostRes and data.frostRes ~= 0 then self:AddLine('+'..data.frostRes..' Frost Resistance', 0, 1, 0) end\n"
         "        if data.shadowRes and data.shadowRes ~= 0 then self:AddLine('+'..data.shadowRes..' Shadow Resistance', 0, 1, 0) end\n"
         "        if data.arcaneRes and data.arcaneRes ~= 0 then self:AddLine('+'..data.arcaneRes..' Arcane Resistance', 0, 1, 0) end\n"
+        "        -- Gem sockets\n"
+        "        if data.sockets then\n"
+        "            local socketNames = {[1]='Meta',[2]='Red',[4]='Yellow',[8]='Blue'}\n"
+        "            for _, sock in ipairs(data.sockets) do\n"
+        "                local colorName = socketNames[sock.color] or 'Prismatic'\n"
+        "                self:AddLine('[' .. colorName .. ' Socket]', 0.5, 0.5, 0.5)\n"
+        "            end\n"
+        "        end\n"
         "        -- Required level\n"
         "        if data.requiredLevel and data.requiredLevel > 1 then\n"
         "            self:AddLine('Requires Level '..data.requiredLevel, 1, 1, 1)\n"
