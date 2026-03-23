@@ -19574,6 +19574,7 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
         currentCastSpellId = data.spellId;
         castTimeTotal = data.castTime / 1000.0f;
         castTimeRemaining = castTimeTotal;
+        if (addonEventCallback_) addonEventCallback_("CURRENT_SPELL_CAST_CHANGED", {});
 
         // Play precast (channeling) sound with correct magic school
         // Skip sound for profession/tradeskill spells (crafting should be silent)
