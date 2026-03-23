@@ -178,6 +178,30 @@ void NpcVoiceManager::loadVoiceSounds() {
     loadCategory(vendorLibrary_, VoiceType::UNDEAD_FEMALE, "UndeadFemaleStandardNPC", "Vendor", 2);
     loadCategory(pissedLibrary_, VoiceType::UNDEAD_FEMALE, "UndeadFemaleStandardNPC", "Pissed", 6);
 
+    // Blood Elf Male (TBC+ NPCBloodElfMaleStandard, sparse numbering up to 12)
+    loadCategory(greetingLibrary_, VoiceType::BLOODELF_MALE, "NPCBloodElfMaleStandard", "Greeting", 12);
+    loadCategory(farewellLibrary_, VoiceType::BLOODELF_MALE, "NPCBloodElfMaleStandard", "Farewell", 12);
+    loadCategory(vendorLibrary_, VoiceType::BLOODELF_MALE, "NPCBloodElfMaleStandard", "Vendor", 6);
+    loadCategory(pissedLibrary_, VoiceType::BLOODELF_MALE, "NPCBloodElfMaleStandard", "Pissed", 10);
+
+    // Blood Elf Female
+    loadCategory(greetingLibrary_, VoiceType::BLOODELF_FEMALE, "NPCBloodElfFemaleStandard", "Greeting", 12);
+    loadCategory(farewellLibrary_, VoiceType::BLOODELF_FEMALE, "NPCBloodElfFemaleStandard", "Farewell", 12);
+    loadCategory(vendorLibrary_, VoiceType::BLOODELF_FEMALE, "NPCBloodElfFemaleStandard", "Vendor", 6);
+    loadCategory(pissedLibrary_, VoiceType::BLOODELF_FEMALE, "NPCBloodElfFemaleStandard", "Pissed", 10);
+
+    // Draenei Male
+    loadCategory(greetingLibrary_, VoiceType::DRAENEI_MALE, "NPCDraeneiMaleStandard", "Greeting", 12);
+    loadCategory(farewellLibrary_, VoiceType::DRAENEI_MALE, "NPCDraeneiMaleStandard", "Farewell", 12);
+    loadCategory(vendorLibrary_, VoiceType::DRAENEI_MALE, "NPCDraeneiMaleStandard", "Vendor", 6);
+    loadCategory(pissedLibrary_, VoiceType::DRAENEI_MALE, "NPCDraeneiMaleStandard", "Pissed", 10);
+
+    // Draenei Female
+    loadCategory(greetingLibrary_, VoiceType::DRAENEI_FEMALE, "NPCDraeneiFemaleStandard", "Greeting", 12);
+    loadCategory(farewellLibrary_, VoiceType::DRAENEI_FEMALE, "NPCDraeneiFemaleStandard", "Farewell", 12);
+    loadCategory(vendorLibrary_, VoiceType::DRAENEI_FEMALE, "NPCDraeneiFemaleStandard", "Vendor", 6);
+    loadCategory(pissedLibrary_, VoiceType::DRAENEI_FEMALE, "NPCDraeneiFemaleStandard", "Pissed", 10);
+
     // Load combat sounds from Character vocal files
     // These use a different path structure: Sound\Character\{Race}\{Race}Vocal{Gender}\{Race}{Gender}{Sound}.wav
     auto loadCombatCategory = [this](
@@ -251,6 +275,38 @@ void NpcVoiceManager::loadVoiceSounds() {
 
     loadCombatCategory(aggroLibrary_, VoiceType::TROLL_FEMALE, "Troll", "TrollFemale", "AttackMyTarget", 3);
     loadCombatCategory(fleeLibrary_, VoiceType::TROLL_FEMALE, "Troll", "TrollFemale", "Flee", 2);
+
+    // Blood Elf and Draenei combat sounds (flat folder structure, no VocalMale/Female subfolder)
+    auto loadCombatFlat = [this](
+        std::unordered_map<VoiceType, std::vector<VoiceSample>>& library,
+        VoiceType type,
+        const std::string& raceFolder,
+        const std::string& raceGender,
+        const std::string& soundType,
+        int count) {
+
+        auto& samples = library[type];
+        for (int i = 1; i <= count; ++i) {
+            std::string num = (i < 10) ? ("0" + std::to_string(i)) : std::to_string(i);
+            std::string path = "Sound\\Character\\" + raceFolder + "\\" + raceGender + soundType + num + ".wav";
+            VoiceSample sample;
+            if (loadSound(path, sample)) samples.push_back(std::move(sample));
+        }
+    };
+
+    // Blood Elf combat sounds
+    loadCombatFlat(aggroLibrary_, VoiceType::BLOODELF_MALE, "BloodElf", "BloodElfMale", "AttackMyTarget", 3);
+    loadCombatFlat(fleeLibrary_, VoiceType::BLOODELF_MALE, "BloodElf", "BloodElfMale", "Flee", 3);
+
+    loadCombatFlat(aggroLibrary_, VoiceType::BLOODELF_FEMALE, "BloodElf", "BloodElfFemale", "AttackMyTarget", 3);
+    loadCombatFlat(fleeLibrary_, VoiceType::BLOODELF_FEMALE, "BloodElf", "BloodElfFemale", "Flee", 3);
+
+    // Draenei combat sounds
+    loadCombatFlat(aggroLibrary_, VoiceType::DRAENEI_MALE, "Draenei", "DraeneiMale", "AttackMyTarget", 3);
+    loadCombatFlat(fleeLibrary_, VoiceType::DRAENEI_MALE, "Draenei", "DraeneiMale", "Flee", 3);
+
+    loadCombatFlat(aggroLibrary_, VoiceType::DRAENEI_FEMALE, "Draenei", "DraeneiFemale", "AttackMyTarget", 3);
+    loadCombatFlat(fleeLibrary_, VoiceType::DRAENEI_FEMALE, "Draenei", "DraeneiFemale", "Flee", 3);
 }
 
 bool NpcVoiceManager::loadSound(const std::string& path, VoiceSample& sample) {

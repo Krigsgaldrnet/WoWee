@@ -57,5 +57,40 @@ inline uint32_t dbcField(const std::string& dbcName, const std::string& fieldNam
     return fm ? fm->field(fieldName) : 0xFFFFFFFF;
 }
 
+// Forward declaration
+class DBCFile;
+
+/**
+ * Resolved CharSections.dbc field indices.
+ *
+ * Stock WotLK 3.3.5a uses: Texture1=4, Texture2=5, Texture3=6, Flags=7,
+ *   VariationIndex=8, ColorIndex=9  (textures first).
+ * Classic/TBC/Turtle and HD-texture WotLK use: VariationIndex=4, ColorIndex=5,
+ *   Texture1=6, Texture2=7, Texture3=8, Flags=9  (variation first).
+ *
+ * detectCharSectionsFields() auto-detects which layout the actual DBC uses
+ * by sampling field-4 values: small integers (0-15) => variation-first,
+ * large values (string offsets) => texture-first.
+ */
+struct CharSectionsFields {
+    uint32_t raceId         = 1;
+    uint32_t sexId          = 2;
+    uint32_t baseSection    = 3;
+    uint32_t variationIndex = 4;
+    uint32_t colorIndex     = 5;
+    uint32_t texture1       = 6;
+    uint32_t texture2       = 7;
+    uint32_t texture3       = 8;
+    uint32_t flags          = 9;
+};
+
+/**
+ * Detect the actual CharSections.dbc field layout by probing record data.
+ * @param dbc  Loaded CharSections.dbc file (must not be null).
+ * @param csL  JSON-derived field map (may be null — defaults used).
+ * @return Resolved field indices for this particular DBC binary.
+ */
+CharSectionsFields detectCharSectionsFields(const DBCFile* dbc, const DBCFieldMap* csL);
+
 } // namespace pipeline
 } // namespace wowee

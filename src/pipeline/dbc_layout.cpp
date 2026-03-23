@@ -1,7 +1,9 @@
 #include "pipeline/dbc_layout.hpp"
+#include "pipeline/dbc_loader.hpp"
 #include "core/logger.hpp"
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 
 namespace wowee {
 namespace pipeline {
@@ -92,6 +94,70 @@ bool DBCLayout::loadFromJson(const std::string& path) {
 const DBCFieldMap* DBCLayout::getLayout(const std::string& dbcName) const {
     auto it = layouts_.find(dbcName);
     return (it != layouts_.end()) ? &it->second : nullptr;
+}
+
+CharSectionsFields detectCharSectionsFields(const DBCFile* dbc, const DBCFieldMap* csL) {
+    // Cache: avoid re-probing the same DBC on every call.
+    static const DBCFile* s_cachedDbc = nullptr;
+    static CharSectionsFields s_cachedResult;
+    if (dbc && dbc == s_cachedDbc) return s_cachedResult;
+
+    CharSectionsFields f;
+    if (!dbc || dbc->getRecordCount() == 0) return f;
+
+    // Start from the JSON layout (or defaults matching Classic-style: variation-first)
+    f.raceId         = csL ? (*csL)["RaceID"]         : 1;
+    f.sexId          = csL ? (*csL)["SexID"]           : 2;
+    f.baseSection    = csL ? (*csL)["BaseSection"]     : 3;
+    f.variationIndex = csL ? (*csL)["VariationIndex"]  : 4;
+    f.colorIndex     = csL ? (*csL)["ColorIndex"]      : 5;
+    f.texture1       = csL ? (*csL)["Texture1"]        : 6;
+    f.texture2       = csL ? (*csL)["Texture2"]        : 7;
+    f.texture3       = csL ? (*csL)["Texture3"]        : 8;
+    f.flags          = csL ? (*csL)["Flags"]           : 9;
+
+    // Auto-detect: probe the field that the JSON layout says is VariationIndex.
+    // In Classic-style layout, VariationIndex (field 4) holds small integers 0-15.
+    // In stock WotLK layout, field 4 is actually Texture1 (a string block offset, typically > 100).
+    // Sample up to 20 records and check if all field-4 values are small integers.
+    uint32_t probeField = f.variationIndex;
+    if (probeField >= dbc->getFieldCount()) {
+        s_cachedDbc = dbc;
+        s_cachedResult = f;
+        return f;  // safety
+    }
+
+    uint32_t sampleCount = std::min(dbc->getRecordCount(), 20u);
+    uint32_t largeCount = 0;
+    uint32_t smallCount = 0;
+    for (uint32_t r = 0; r < sampleCount; r++) {
+        uint32_t val = dbc->getUInt32(r, probeField);
+        if (val > 50) {
+            ++largeCount;
+        } else {
+            ++smallCount;
+        }
+    }
+
+    // If most sampled values are large, the JSON layout's VariationIndex field
+    // actually contains string offsets => this is stock WotLK (texture-first).
+    // Swap to texture-first layout: Tex1=4, Tex2=5, Tex3=6, Flags=7, Var=8, Color=9.
+    if (largeCount > smallCount) {
+        uint32_t base = probeField;  // the field index the JSON calls VariationIndex (typically 4)
+        f.texture1       = base;
+        f.texture2       = base + 1;
+        f.texture3       = base + 2;
+        f.flags          = base + 3;
+        f.variationIndex = base + 4;
+        f.colorIndex     = base + 5;
+        LOG_INFO("CharSections.dbc: detected stock WotLK layout (textures-first at field ", base, ")");
+    } else {
+        LOG_INFO("CharSections.dbc: detected Classic-style layout (variation-first at field ", probeField, ")");
+    }
+
+    s_cachedDbc = dbc;
+    s_cachedResult = f;
+    return f;
 }
 
 } // namespace pipeline

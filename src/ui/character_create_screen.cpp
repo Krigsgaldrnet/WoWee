@@ -249,16 +249,17 @@ void CharacterCreateScreen::updateAppearanceRanges() {
     uint32_t targetSexId = (genderIndex == 1) ? 1u : 0u;
 
     const auto* csL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
+    auto csF = pipeline::detectCharSectionsFields(dbc.get(), csL);
     int skinMax = -1;
     int hairStyleMax = -1;
     for (uint32_t r = 0; r < dbc->getRecordCount(); r++) {
-        uint32_t raceId = dbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
-        uint32_t sexId = dbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
+        uint32_t raceId = dbc->getUInt32(r, csF.raceId);
+        uint32_t sexId = dbc->getUInt32(r, csF.sexId);
         if (raceId != targetRaceId || sexId != targetSexId) continue;
 
-        uint32_t baseSection = dbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
-        uint32_t variationIndex = dbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 4);
-        uint32_t colorIndex = dbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 5);
+        uint32_t baseSection = dbc->getUInt32(r, csF.baseSection);
+        uint32_t variationIndex = dbc->getUInt32(r, csF.variationIndex);
+        uint32_t colorIndex = dbc->getUInt32(r, csF.colorIndex);
 
         if (baseSection == 0 && variationIndex == 0) {
             skinMax = std::max(skinMax, static_cast<int>(colorIndex));
@@ -279,13 +280,13 @@ void CharacterCreateScreen::updateAppearanceRanges() {
     int faceMax = -1;
     std::vector<uint8_t> hairColorIds;
     for (uint32_t r = 0; r < dbc->getRecordCount(); r++) {
-        uint32_t raceId = dbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
-        uint32_t sexId = dbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
+        uint32_t raceId = dbc->getUInt32(r, csF.raceId);
+        uint32_t sexId = dbc->getUInt32(r, csF.sexId);
         if (raceId != targetRaceId || sexId != targetSexId) continue;
 
-        uint32_t baseSection = dbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
-        uint32_t variationIndex = dbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 4);
-        uint32_t colorIndex = dbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 5);
+        uint32_t baseSection = dbc->getUInt32(r, csF.baseSection);
+        uint32_t variationIndex = dbc->getUInt32(r, csF.variationIndex);
+        uint32_t colorIndex = dbc->getUInt32(r, csF.colorIndex);
 
         if (baseSection == 1 && colorIndex == static_cast<uint32_t>(skin)) {
             faceMax = std::max(faceMax, static_cast<int>(variationIndex));

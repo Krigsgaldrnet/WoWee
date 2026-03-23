@@ -3666,23 +3666,23 @@ void Application::spawnPlayerCharacter() {
                     if (charSectionsDbc) {
                         LOG_INFO("CharSections.dbc loaded: ", charSectionsDbc->getRecordCount(), " records");
                         const auto* csL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
+                        auto csF = pipeline::detectCharSectionsFields(charSectionsDbc.get(), csL);
                         bool foundSkin = false;
                         bool foundUnderwear = false;
                         bool foundFaceLower = false;
                         bool foundHair = false;
                         for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
-                            uint32_t raceId = charSectionsDbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
-                            uint32_t sexId = charSectionsDbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
-                            uint32_t baseSection = charSectionsDbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
-                            uint32_t variationIndex = charSectionsDbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 4);
-                            uint32_t colorIndex = charSectionsDbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 5);
+                            uint32_t raceId = charSectionsDbc->getUInt32(r, csF.raceId);
+                            uint32_t sexId = charSectionsDbc->getUInt32(r, csF.sexId);
+                            uint32_t baseSection = charSectionsDbc->getUInt32(r, csF.baseSection);
+                            uint32_t variationIndex = charSectionsDbc->getUInt32(r, csF.variationIndex);
+                            uint32_t colorIndex = charSectionsDbc->getUInt32(r, csF.colorIndex);
 
                             if (raceId != targetRaceId || sexId != targetSexId) continue;
 
                             // Section 0 = skin: match by colorIndex = skin byte
-                            const uint32_t csTex1 = csL ? (*csL)["Texture1"] : 6;
                             if (baseSection == 0 && !foundSkin && colorIndex == charSkinId) {
-                                std::string tex1 = charSectionsDbc->getString(r, csTex1);
+                                std::string tex1 = charSectionsDbc->getString(r, csF.texture1);
                                 if (!tex1.empty()) {
                                     bodySkinPath = tex1;
                                     foundSkin = true;
@@ -3692,7 +3692,7 @@ void Application::spawnPlayerCharacter() {
                             // Section 3 = hair: match variation=hairStyle, color=hairColor
                             else if (baseSection == 3 && !foundHair &&
                                      variationIndex == charHairStyleId && colorIndex == charHairColorId) {
-                                hairTexturePath = charSectionsDbc->getString(r, csTex1);
+                                hairTexturePath = charSectionsDbc->getString(r, csF.texture1);
                                 if (!hairTexturePath.empty()) {
                                     foundHair = true;
                                     LOG_INFO("  DBC hair texture: ", hairTexturePath,
@@ -3703,8 +3703,8 @@ void Application::spawnPlayerCharacter() {
                             // Texture1 = face lower, Texture2 = face upper
                             else if (baseSection == 1 && !foundFaceLower &&
                                      variationIndex == charFaceId && colorIndex == charSkinId) {
-                                std::string tex1 = charSectionsDbc->getString(r, csTex1);
-                                std::string tex2 = charSectionsDbc->getString(r, csTex1 + 1);
+                                std::string tex1 = charSectionsDbc->getString(r, csF.texture1);
+                                std::string tex2 = charSectionsDbc->getString(r, csF.texture2);
                                 if (!tex1.empty()) {
                                     faceLowerTexturePath = tex1;
                                     LOG_INFO("  DBC face lower: ", faceLowerTexturePath);
@@ -3717,7 +3717,7 @@ void Application::spawnPlayerCharacter() {
                             }
                             // Section 4 = underwear
                             else if (baseSection == 4 && !foundUnderwear && colorIndex == charSkinId) {
-                                for (uint32_t f = csTex1; f <= csTex1 + 2; f++) {
+                                for (uint32_t f = csF.texture1; f <= csF.texture1 + 2; f++) {
                                     std::string tex = charSectionsDbc->getString(r, f);
                                     if (!tex.empty()) {
                                         underwearPaths.push_back(tex);
@@ -5353,22 +5353,17 @@ void Application::buildCharSectionsCache() {
     if (!dbc) return;
     const auto* csL = pipeline::getActiveDBCLayout()
         ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
-    uint32_t raceF = csL ? (*csL)["RaceID"] : 1;
-    uint32_t sexF = csL ? (*csL)["SexID"] : 2;
-    uint32_t secF = csL ? (*csL)["BaseSection"] : 3;
-    uint32_t varF = csL ? (*csL)["VariationIndex"] : 8;
-    uint32_t colF = csL ? (*csL)["ColorIndex"] : 9;
-    uint32_t tex1F = csL ? (*csL)["Texture1"] : 4;
+    auto csF = pipeline::detectCharSectionsFields(dbc.get(), csL);
     for (uint32_t r = 0; r < dbc->getRecordCount(); r++) {
-        uint32_t race = dbc->getUInt32(r, raceF);
-        uint32_t sex = dbc->getUInt32(r, sexF);
-        uint32_t section = dbc->getUInt32(r, secF);
-        uint32_t variation = dbc->getUInt32(r, varF);
-        uint32_t color = dbc->getUInt32(r, colF);
+        uint32_t race = dbc->getUInt32(r, csF.raceId);
+        uint32_t sex = dbc->getUInt32(r, csF.sexId);
+        uint32_t section = dbc->getUInt32(r, csF.baseSection);
+        uint32_t variation = dbc->getUInt32(r, csF.variationIndex);
+        uint32_t color = dbc->getUInt32(r, csF.colorIndex);
         // We only cache sections 0 (skin), 1 (face), 3 (hair), 4 (underwear)
         if (section != 0 && section != 1 && section != 3 && section != 4) continue;
         for (int ti = 0; ti < 3; ti++) {
-            std::string tex = dbc->getString(r, tex1F + ti);
+            std::string tex = dbc->getString(r, csF.texture1 + ti);
             if (tex.empty()) continue;
             // Key: race(8)|sex(4)|section(4)|variation(8)|color(8)|texIndex(2) packed into 64 bits
             uint64_t key = (static_cast<uint64_t>(race) << 26) |
@@ -5653,6 +5648,8 @@ audio::VoiceType Application::detectVoiceTypeFromDisplayId(uint32_t displayId) c
         case 6: raceName = "Tauren"; result = (sexId == 0) ? audio::VoiceType::TAUREN_MALE : audio::VoiceType::TAUREN_FEMALE; break;
         case 7: raceName = "Gnome"; result = (sexId == 0) ? audio::VoiceType::GNOME_MALE : audio::VoiceType::GNOME_FEMALE; break;
         case 8: raceName = "Troll"; result = (sexId == 0) ? audio::VoiceType::TROLL_MALE : audio::VoiceType::TROLL_FEMALE; break;
+        case 10: raceName = "BloodElf"; result = (sexId == 0) ? audio::VoiceType::BLOODELF_MALE : audio::VoiceType::BLOODELF_FEMALE; break;
+        case 11: raceName = "Draenei"; result = (sexId == 0) ? audio::VoiceType::DRAENEI_MALE : audio::VoiceType::DRAENEI_FEMALE; break;
         default: result = audio::VoiceType::GENERIC; break;
     }
 
@@ -5952,6 +5949,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                             if (csDbc) {
                                 const auto* csL = pipeline::getActiveDBCLayout()
                                     ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
+                                auto csF = pipeline::detectCharSectionsFields(csDbc.get(), csL);
                                 uint32_t npcRace = static_cast<uint32_t>(extraCopy.raceId);
                                 uint32_t npcSex = static_cast<uint32_t>(extraCopy.sexId);
                                 uint32_t npcSkin = static_cast<uint32_t>(extraCopy.skinId);
@@ -5960,23 +5958,22 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                                 std::vector<std::string> npcUnderwear;
 
                                 for (uint32_t r = 0; r < csDbc->getRecordCount(); r++) {
-                                    uint32_t rId = csDbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
-                                    uint32_t sId = csDbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
+                                    uint32_t rId = csDbc->getUInt32(r, csF.raceId);
+                                    uint32_t sId = csDbc->getUInt32(r, csF.sexId);
                                     if (rId != npcRace || sId != npcSex) continue;
 
-                                    uint32_t section = csDbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
-                                    uint32_t variation = csDbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 8);
-                                    uint32_t color = csDbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 9);
-                                    uint32_t tex1F = csL ? (*csL)["Texture1"] : 4;
+                                    uint32_t section = csDbc->getUInt32(r, csF.baseSection);
+                                    uint32_t variation = csDbc->getUInt32(r, csF.variationIndex);
+                                    uint32_t color = csDbc->getUInt32(r, csF.colorIndex);
 
                                     if (section == 0 && def.basePath.empty() && color == npcSkin) {
-                                        def.basePath = csDbc->getString(r, tex1F);
+                                        def.basePath = csDbc->getString(r, csF.texture1);
                                     } else if (section == 1 && npcFaceLower.empty() &&
                                                variation == npcFace && color == npcSkin) {
-                                        npcFaceLower = csDbc->getString(r, tex1F);
-                                        npcFaceUpper = csDbc->getString(r, tex1F + 1);
+                                        npcFaceLower = csDbc->getString(r, csF.texture1);
+                                        npcFaceUpper = csDbc->getString(r, csF.texture2);
                                     } else if (section == 4 && npcUnderwear.empty() && color == npcSkin) {
-                                        for (uint32_t f = tex1F; f <= tex1F + 2; f++) {
+                                        for (uint32_t f = csF.texture1; f <= csF.texture1 + 2; f++) {
                                             std::string tex = csDbc->getString(r, f);
                                             if (!tex.empty()) npcUnderwear.push_back(tex);
                                         }
@@ -6074,20 +6071,21 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                             if (csDbc) {
                                 const auto* csL = pipeline::getActiveDBCLayout()
                                     ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
+                                auto csF = pipeline::detectCharSectionsFields(csDbc.get(), csL);
                                 uint32_t targetRace = static_cast<uint32_t>(extraCopy.raceId);
                                 uint32_t targetSex = static_cast<uint32_t>(extraCopy.sexId);
 
                                 for (uint32_t r = 0; r < csDbc->getRecordCount(); r++) {
-                                    uint32_t raceId = csDbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
-                                    uint32_t sexId = csDbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
+                                    uint32_t raceId = csDbc->getUInt32(r, csF.raceId);
+                                    uint32_t sexId = csDbc->getUInt32(r, csF.sexId);
                                     if (raceId != targetRace || sexId != targetSex) continue;
-                                    uint32_t section = csDbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
+                                    uint32_t section = csDbc->getUInt32(r, csF.baseSection);
                                     if (section != 3) continue;
-                                    uint32_t variation = csDbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 8);
-                                    uint32_t colorIdx = csDbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 9);
+                                    uint32_t variation = csDbc->getUInt32(r, csF.variationIndex);
+                                    uint32_t colorIdx = csDbc->getUInt32(r, csF.colorIndex);
                                     if (variation != static_cast<uint32_t>(extraCopy.hairStyleId)) continue;
                                     if (colorIdx != static_cast<uint32_t>(extraCopy.hairColorId)) continue;
-                                    def.hairTexturePath = csDbc->getString(r, csL ? (*csL)["Texture1"] : 4);
+                                    def.hairTexturePath = csDbc->getString(r, csF.texture1);
                                     break;
                                 }
 
@@ -7194,9 +7192,9 @@ void Application::spawnOnlinePlayer(uint64_t guid,
 
     if (auto charSectionsDbc = assetManager->loadDBC("CharSections.dbc"); charSectionsDbc && charSectionsDbc->isLoaded()) {
         const auto* csL = pipeline::getActiveDBCLayout() ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
+        auto csF = pipeline::detectCharSectionsFields(charSectionsDbc.get(), csL);
         uint32_t targetRaceId = raceId;
         uint32_t targetSexId = genderId;
-        const uint32_t csTex1 = csL ? (*csL)["Texture1"] : 4;
 
         bool foundSkin = false;
         bool foundUnderwear = false;
@@ -7204,31 +7202,31 @@ void Application::spawnOnlinePlayer(uint64_t guid,
         bool foundFaceLower = false;
 
         for (uint32_t r = 0; r < charSectionsDbc->getRecordCount(); r++) {
-            uint32_t rRace = charSectionsDbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
-            uint32_t rSex = charSectionsDbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
-            uint32_t baseSection = charSectionsDbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
-            uint32_t variationIndex = charSectionsDbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 8);
-            uint32_t colorIndex = charSectionsDbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 9);
+            uint32_t rRace = charSectionsDbc->getUInt32(r, csF.raceId);
+            uint32_t rSex = charSectionsDbc->getUInt32(r, csF.sexId);
+            uint32_t baseSection = charSectionsDbc->getUInt32(r, csF.baseSection);
+            uint32_t variationIndex = charSectionsDbc->getUInt32(r, csF.variationIndex);
+            uint32_t colorIndex = charSectionsDbc->getUInt32(r, csF.colorIndex);
 
             if (rRace != targetRaceId || rSex != targetSexId) continue;
 
             if (baseSection == 0 && !foundSkin && colorIndex == skinId) {
-                std::string tex1 = charSectionsDbc->getString(r, csTex1);
+                std::string tex1 = charSectionsDbc->getString(r, csF.texture1);
                 if (!tex1.empty()) { bodySkinPath = tex1; foundSkin = true; }
             } else if (baseSection == 3 && !foundHair &&
                        variationIndex == hairStyleId && colorIndex == hairColorId) {
-                hairTexturePath = charSectionsDbc->getString(r, csTex1);
+                hairTexturePath = charSectionsDbc->getString(r, csF.texture1);
                 if (!hairTexturePath.empty()) foundHair = true;
             } else if (baseSection == 4 && !foundUnderwear && colorIndex == skinId) {
-                for (uint32_t f = csTex1; f <= csTex1 + 2; f++) {
+                for (uint32_t f = csF.texture1; f <= csF.texture1 + 2; f++) {
                     std::string tex = charSectionsDbc->getString(r, f);
                     if (!tex.empty()) underwearPaths.push_back(tex);
                 }
                 foundUnderwear = true;
             } else if (baseSection == 1 && !foundFaceLower &&
                        variationIndex == faceId && colorIndex == skinId) {
-                std::string tex1 = charSectionsDbc->getString(r, csTex1);
-                std::string tex2 = charSectionsDbc->getString(r, csTex1 + 1);
+                std::string tex1 = charSectionsDbc->getString(r, csF.texture1);
+                std::string tex2 = charSectionsDbc->getString(r, csF.texture2);
                 if (!tex1.empty()) faceLowerPath = tex1;
                 if (!tex2.empty()) faceUpperPath = tex2;
                 foundFaceLower = true;
@@ -8183,32 +8181,32 @@ void Application::processCreatureSpawnQueue(bool unlimited) {
                             if (csDbc) {
                                 const auto* csL = pipeline::getActiveDBCLayout()
                                     ? pipeline::getActiveDBCLayout()->getLayout("CharSections") : nullptr;
+                                auto csF = pipeline::detectCharSectionsFields(csDbc.get(), csL);
                                 uint32_t nRace = static_cast<uint32_t>(he.raceId);
                                 uint32_t nSex = static_cast<uint32_t>(he.sexId);
                                 uint32_t nSkin = static_cast<uint32_t>(he.skinId);
                                 uint32_t nFace = static_cast<uint32_t>(he.faceId);
                                 for (uint32_t r = 0; r < csDbc->getRecordCount(); r++) {
-                                    uint32_t rId = csDbc->getUInt32(r, csL ? (*csL)["RaceID"] : 1);
-                                    uint32_t sId = csDbc->getUInt32(r, csL ? (*csL)["SexID"] : 2);
+                                    uint32_t rId = csDbc->getUInt32(r, csF.raceId);
+                                    uint32_t sId = csDbc->getUInt32(r, csF.sexId);
                                     if (rId != nRace || sId != nSex) continue;
-                                    uint32_t section = csDbc->getUInt32(r, csL ? (*csL)["BaseSection"] : 3);
-                                    uint32_t variation = csDbc->getUInt32(r, csL ? (*csL)["VariationIndex"] : 8);
-                                    uint32_t color = csDbc->getUInt32(r, csL ? (*csL)["ColorIndex"] : 9);
-                                    uint32_t tex1F = csL ? (*csL)["Texture1"] : 4;
+                                    uint32_t section = csDbc->getUInt32(r, csF.baseSection);
+                                    uint32_t variation = csDbc->getUInt32(r, csF.variationIndex);
+                                    uint32_t color = csDbc->getUInt32(r, csF.colorIndex);
                                     if (section == 0 && color == nSkin) {
-                                        std::string t = csDbc->getString(r, tex1F);
+                                        std::string t = csDbc->getString(r, csF.texture1);
                                         if (!t.empty()) displaySkinPaths.push_back(t);
                                     } else if (section == 1 && variation == nFace && color == nSkin) {
-                                        std::string t1 = csDbc->getString(r, tex1F);
-                                        std::string t2 = csDbc->getString(r, tex1F + 1);
+                                        std::string t1 = csDbc->getString(r, csF.texture1);
+                                        std::string t2 = csDbc->getString(r, csF.texture2);
                                         if (!t1.empty()) displaySkinPaths.push_back(t1);
                                         if (!t2.empty()) displaySkinPaths.push_back(t2);
                                     } else if (section == 3 && variation == static_cast<uint32_t>(he.hairStyleId)
                                                && color == static_cast<uint32_t>(he.hairColorId)) {
-                                        std::string t = csDbc->getString(r, tex1F);
+                                        std::string t = csDbc->getString(r, csF.texture1);
                                         if (!t.empty()) displaySkinPaths.push_back(t);
                                     } else if (section == 4 && color == nSkin) {
-                                        for (uint32_t f = tex1F; f <= tex1F + 2; f++) {
+                                        for (uint32_t f = csF.texture1; f <= csF.texture1 + 2; f++) {
                                             std::string t = csDbc->getString(r, f);
                                             if (!t.empty()) displaySkinPaths.push_back(t);
                                         }
