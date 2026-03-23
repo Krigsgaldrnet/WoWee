@@ -2199,8 +2199,11 @@ void GameHandler::handlePacket(network::Packet& packet) {
                 else if (guid == targetGuid) unitId = "target";
                 else if (guid == focusGuid) unitId = "focus";
                 else if (guid == petGuid_) unitId = "pet";
-                if (!unitId.empty())
+                if (!unitId.empty()) {
                     addonEventCallback_("UNIT_POWER", {unitId});
+                    if (guid == playerGuid)
+                        addonEventCallback_("ACTIONBAR_UPDATE_USABLE", {});
+                }
             }
             break;
         }
@@ -12675,7 +12678,12 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         else if (block.guid == petGuid_) unitId = "pet";
                         if (!unitId.empty()) {
                             if (healthChanged) addonEventCallback_("UNIT_HEALTH", {unitId});
-                            if (powerChanged)  addonEventCallback_("UNIT_POWER", {unitId});
+                            if (powerChanged) {
+                                addonEventCallback_("UNIT_POWER", {unitId});
+                                // When player power changes, action bar usability may change
+                                if (block.guid == playerGuid)
+                                    addonEventCallback_("ACTIONBAR_UPDATE_USABLE", {});
+                            }
                         }
                     }
 
