@@ -5062,6 +5062,26 @@ void LuaEngine::registerCoreAPI() {
             lua_pushboolean(L, 1);                               // isCastable
             return 4;
         }},
+        // --- Trade API ---
+        {"AcceptTrade", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->acceptTrade();
+            return 0;
+        }},
+        {"CancelTrade", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh && gh->isTradeOpen()) gh->cancelTrade();
+            return 0;
+        }},
+        {"InitiateTrade", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const char* uid = luaL_checkstring(L, 1);
+            if (gh) {
+                uint64_t guid = resolveUnitGuid(gh, std::string(uid));
+                if (guid != 0) gh->initiateTrade(guid);
+            }
+            return 0;
+        }},
         // --- Auction House API ---
         {"GetNumAuctionItems", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);
