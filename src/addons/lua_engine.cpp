@@ -5182,6 +5182,36 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Social (Friend/Ignore) ---
+        {"AddFriend", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const char* name = luaL_checkstring(L, 1);
+            const char* note = luaL_optstring(L, 2, "");
+            if (gh) gh->addFriend(name, note);
+            return 0;
+        }},
+        {"RemoveFriend", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const char* name = luaL_checkstring(L, 1);
+            if (gh) gh->removeFriend(name);
+            return 0;
+        }},
+        {"AddIgnore", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const char* name = luaL_checkstring(L, 1);
+            if (gh) gh->addIgnore(name);
+            return 0;
+        }},
+        {"DelIgnore", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const char* name = luaL_checkstring(L, 1);
+            if (gh) gh->removeIgnore(name);
+            return 0;
+        }},
+        {"ShowFriends", [](lua_State* L) -> int {
+            (void)L; // Friends panel is shown via ImGui, not Lua
+            return 0;
+        }},
         // --- Who ---
         {"GetNumWhoResults", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);
