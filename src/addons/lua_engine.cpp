@@ -5062,6 +5062,23 @@ void LuaEngine::registerCoreAPI() {
             lua_pushboolean(L, 1);                               // isCastable
             return 4;
         }},
+        // --- Calendar ---
+        {"CalendarGetDate", [](lua_State* L) -> int {
+            // CalendarGetDate() → weekday, month, day, year
+            time_t now = time(nullptr);
+            struct tm* t = localtime(&now);
+            lua_pushnumber(L, t->tm_wday + 1); // weekday (1=Sun)
+            lua_pushnumber(L, t->tm_mon + 1);  // month (1-12)
+            lua_pushnumber(L, t->tm_mday);     // day
+            lua_pushnumber(L, t->tm_year + 1900); // year
+            return 4;
+        }},
+        {"CalendarGetNumPendingInvites", [](lua_State* L) -> int {
+            lua_pushnumber(L, 0); return 1;
+        }},
+        {"CalendarGetNumDayEvents", [](lua_State* L) -> int {
+            lua_pushnumber(L, 0); return 1;
+        }},
         // --- Instance ---
         {"GetDifficultyInfo", [](lua_State* L) -> int {
             // GetDifficultyInfo(id) → name, groupType, isHeroic, maxPlayers
