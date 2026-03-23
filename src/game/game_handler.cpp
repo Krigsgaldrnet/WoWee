@@ -12380,7 +12380,12 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         // Byte 3 (bits 24-31): REST_STATE
                         // 0 = not resting, 1 = REST_TYPE_IN_TAVERN, 2 = REST_TYPE_IN_CITY
                         uint8_t restStateByte = static_cast<uint8_t>((val >> 24) & 0xFF);
+                        bool wasResting = isResting_;
                         isResting_ = (restStateByte != 0);
+                        if (isResting_ != wasResting && addonEventCallback_) {
+                            addonEventCallback_("UPDATE_EXHAUSTION", {});
+                            addonEventCallback_("PLAYER_UPDATE_RESTING", {});
+                        }
                     }
                     else if (ufChosenTitle != 0xFFFF && key == ufChosenTitle) {
                         chosenTitleBit_ = static_cast<int32_t>(val);
@@ -12825,6 +12830,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         }
                         else if (ufPlayerRestedXpV != 0xFFFF && key == ufPlayerRestedXpV) {
                             playerRestedXp_ = val;
+                            if (addonEventCallback_)
+                                addonEventCallback_("UPDATE_EXHAUSTION", {});
                         }
                         else if (key == ufPlayerLevel) {
                             serverPlayerLevel_ = val;
