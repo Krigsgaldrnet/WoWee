@@ -734,6 +734,9 @@ void Application::run() {
                         if (renderer && renderer->getCamera()) {
                             renderer->getCamera()->setAspectRatio(static_cast<float>(newWidth) / newHeight);
                         }
+                        // Notify addons so UI layouts can adapt to the new size
+                        if (addonManager_)
+                            addonManager_->fireEvent("DISPLAY_SIZE_CHANGED");
                     }
                 }
                 // Debug controls
