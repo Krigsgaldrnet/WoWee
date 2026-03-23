@@ -5182,6 +5182,54 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Quest Interaction ---
+        {"AcceptQuest", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->acceptQuest();
+            return 0;
+        }},
+        {"DeclineQuest", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->declineQuest();
+            return 0;
+        }},
+        {"CompleteQuest", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->completeQuest();
+            return 0;
+        }},
+        {"AbandonQuest", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            uint32_t questId = static_cast<uint32_t>(luaL_checknumber(L, 1));
+            if (gh) gh->abandonQuest(questId);
+            return 0;
+        }},
+        {"GetNumQuestRewards", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (!gh) { lua_pushnumber(L, 0); return 1; }
+            int idx = gh->getSelectedQuestLogIndex();
+            if (idx < 1) { lua_pushnumber(L, 0); return 1; }
+            const auto& ql = gh->getQuestLog();
+            if (idx > static_cast<int>(ql.size())) { lua_pushnumber(L, 0); return 1; }
+            int count = 0;
+            for (const auto& r : ql[idx-1].rewardItems)
+                if (r.itemId != 0) ++count;
+            lua_pushnumber(L, count);
+            return 1;
+        }},
+        {"GetNumQuestChoices", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (!gh) { lua_pushnumber(L, 0); return 1; }
+            int idx = gh->getSelectedQuestLogIndex();
+            if (idx < 1) { lua_pushnumber(L, 0); return 1; }
+            const auto& ql = gh->getQuestLog();
+            if (idx > static_cast<int>(ql.size())) { lua_pushnumber(L, 0); return 1; }
+            int count = 0;
+            for (const auto& r : ql[idx-1].rewardChoiceItems)
+                if (r.itemId != 0) ++count;
+            lua_pushnumber(L, count);
+            return 1;
+        }},
         // --- Gossip ---
         {"GetNumGossipOptions", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);
