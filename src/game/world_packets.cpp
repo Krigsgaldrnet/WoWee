@@ -1088,6 +1088,7 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
             // Helper: try to parse uncompressed spline points from current read position.
             auto tryParseUncompressedSpline = [&](const char* tag) -> bool {
                 if (!bytesAvailable(4)) return false;
+                size_t prePointCount = packet.getReadPos();
                 uint32_t pc = packet.readUInt32();
                 if (pc > 256) return false;
                 size_t needed = static_cast<size_t>(pc) * 12ull + 13ull;
@@ -1095,7 +1096,14 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
                 for (uint32_t i = 0; i < pc; i++) {
                     packet.readFloat(); packet.readFloat(); packet.readFloat();
                 }
-                packet.readUInt8(); // splineMode
+                uint8_t splineMode = packet.readUInt8();
+                // Validate splineMode (0=Linear, 1=CatmullRom, 2=BezierSpline, 3=unused)
+                // Values > 3 indicate we misidentified the format (e.g. WotLK durationMod=0.0
+                // was read as pointCount=0, causing garbage to be read as splineMode).
+                if (splineMode > 3) {
+                    packet.setReadPos(prePointCount);
+                    return false;
+                }
                 packet.readFloat(); packet.readFloat(); packet.readFloat(); // endPoint
                 LOG_DEBUG("  Spline pointCount=", pc, " (", tag, ")");
                 return true;
