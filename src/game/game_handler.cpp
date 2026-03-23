@@ -13565,10 +13565,7 @@ void GameHandler::handleTextEmote(network::Packet& packet) {
     chatMsg.senderName = senderName;
     chatMsg.message = emoteText;
 
-    chatHistory.push_back(chatMsg);
-    if (chatHistory.size() > maxChatHistory) {
-        chatHistory.erase(chatHistory.begin());
-    }
+    addLocalChatMessage(chatMsg);
 
     // Trigger emote animation on sender's entity via callback
     uint32_t animId = rendering::Renderer::getEmoteAnimByDbcId(data.textEmoteId);
