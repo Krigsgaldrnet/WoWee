@@ -5062,6 +5062,32 @@ void LuaEngine::registerCoreAPI() {
             lua_pushboolean(L, 1);                               // isCastable
             return 4;
         }},
+        // --- Instance ---
+        {"GetDifficultyInfo", [](lua_State* L) -> int {
+            // GetDifficultyInfo(id) → name, groupType, isHeroic, maxPlayers
+            int diff = static_cast<int>(luaL_checknumber(L, 1));
+            struct DiffInfo { const char* name; const char* group; int heroic; int maxPlayers; };
+            static const DiffInfo infos[] = {
+                {"5 Player", "party", 0, 5},          // 0: Normal 5-man
+                {"5 Player (Heroic)", "party", 1, 5},  // 1: Heroic 5-man
+                {"10 Player", "raid", 0, 10},          // 2: 10-man Normal
+                {"25 Player", "raid", 0, 25},          // 3: 25-man Normal
+                {"10 Player (Heroic)", "raid", 1, 10}, // 4: 10-man Heroic
+                {"25 Player (Heroic)", "raid", 1, 25}, // 5: 25-man Heroic
+            };
+            if (diff >= 0 && diff < 6) {
+                lua_pushstring(L, infos[diff].name);
+                lua_pushstring(L, infos[diff].group);
+                lua_pushboolean(L, infos[diff].heroic);
+                lua_pushnumber(L, infos[diff].maxPlayers);
+            } else {
+                lua_pushstring(L, "Unknown");
+                lua_pushstring(L, "party");
+                lua_pushboolean(L, 0);
+                lua_pushnumber(L, 5);
+            }
+            return 4;
+        }},
         // --- Weather ---
         {"GetWeatherInfo", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);
