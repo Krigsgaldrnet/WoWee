@@ -5182,6 +5182,58 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Gossip ---
+        {"GetNumGossipOptions", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            lua_pushnumber(L, gh ? gh->getCurrentGossip().options.size() : 0);
+            return 1;
+        }},
+        {"GetGossipOptions", [](lua_State* L) -> int {
+            // Returns pairs of (text, type) for each option
+            auto* gh = getGameHandler(L);
+            if (!gh) return 0;
+            const auto& opts = gh->getCurrentGossip().options;
+            int n = 0;
+            static const char* kIcons[] = {"gossip","vendor","taxi","trainer","spiritguide","innkeeper","banker","petition","tabard","battlemaster","auctioneer"};
+            for (const auto& o : opts) {
+                lua_pushstring(L, o.text.c_str());
+                lua_pushstring(L, o.icon < 11 ? kIcons[o.icon] : "gossip");
+                n += 2;
+            }
+            return n;
+        }},
+        {"SelectGossipOption", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            if (!gh || index < 1) return 0;
+            const auto& opts = gh->getCurrentGossip().options;
+            if (index <= static_cast<int>(opts.size()))
+                gh->selectGossipOption(opts[index - 1].id);
+            return 0;
+        }},
+        {"GetNumGossipAvailableQuests", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (!gh) { lua_pushnumber(L, 0); return 1; }
+            int count = 0;
+            for (const auto& q : gh->getCurrentGossip().quests)
+                if (q.questIcon != 4) ++count; // 4 = active/in-progress
+            lua_pushnumber(L, count);
+            return 1;
+        }},
+        {"GetNumGossipActiveQuests", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (!gh) { lua_pushnumber(L, 0); return 1; }
+            int count = 0;
+            for (const auto& q : gh->getCurrentGossip().quests)
+                if (q.questIcon == 4) ++count;
+            lua_pushnumber(L, count);
+            return 1;
+        }},
+        {"CloseGossip", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (gh) gh->closeGossip();
+            return 0;
+        }},
         // --- Connection & Equipment ---
         {"IsConnectedToServer", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);
