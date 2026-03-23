@@ -5129,6 +5129,27 @@ void LuaEngine::registerCoreAPI() {
             lua_pushnumber(L, cat);
             return 1;
         }},
+        {"GetAuctionItemLink", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            const char* listType = luaL_checkstring(L, 1);
+            int index = static_cast<int>(luaL_checknumber(L, 2));
+            if (!gh || index < 1) { lua_pushnil(L); return 1; }
+            std::string t(listType);
+            const game::AuctionListResult* r = nullptr;
+            if (t == "list") r = &gh->getAuctionBrowseResults();
+            else if (t == "owner") r = &gh->getAuctionOwnerResults();
+            else if (t == "bidder") r = &gh->getAuctionBidderResults();
+            if (!r || index > static_cast<int>(r->auctions.size())) { lua_pushnil(L); return 1; }
+            uint32_t itemId = r->auctions[index - 1].itemEntry;
+            const auto* info = gh->getItemInfo(itemId);
+            if (!info) { lua_pushnil(L); return 1; }
+            static const char* kQH[] = {"ff9d9d9d","ffffffff","ff1eff00","ff0070dd","ffa335ee","ffff8000","ffe6cc80","ff00ccff"};
+            const char* ch = (info->quality < 8) ? kQH[info->quality] : "ffffffff";
+            char link[256];
+            snprintf(link, sizeof(link), "|c%s|Hitem:%u:0:0:0:0:0:0:0|h[%s]|h|r", ch, itemId, info->name.c_str());
+            lua_pushstring(L, link);
+            return 1;
+        }},
         // --- Mail API ---
         {"GetInboxNumItems", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);
