@@ -5772,6 +5772,21 @@ void LuaEngine::registerCoreAPI() {
         "    WARLOCK=cc(0.58,0.51,0.79), DRUID=cc(1.0,0.49,0.04),\n"
         "  }\n"
         "end\n"
+        // GetClassColor(className) — returns r, g, b, colorString
+        "function GetClassColor(className)\n"
+        "    local c = RAID_CLASS_COLORS[className]\n"
+        "    if c then return c.r, c.g, c.b, c.colorStr end\n"
+        "    return 1, 1, 1, 'ffffffff'\n"
+        "end\n"
+        // QuestDifficultyColors table for quest level coloring
+        "QuestDifficultyColors = {\n"
+        "    impossible = {r=1.0,g=0.1,b=0.1,font='QuestDifficulty_Impossible'},\n"
+        "    verydifficult = {r=1.0,g=0.5,b=0.25,font='QuestDifficulty_VeryDifficult'},\n"
+        "    difficult = {r=1.0,g=1.0,b=0.0,font='QuestDifficulty_Difficult'},\n"
+        "    standard = {r=0.25,g=0.75,b=0.25,font='QuestDifficulty_Standard'},\n"
+        "    trivial = {r=0.5,g=0.5,b=0.5,font='QuestDifficulty_Trivial'},\n"
+        "    header = {r=1.0,g=0.82,b=0.0,font='QuestDifficulty_Header'},\n"
+        "}\n"
         // Money formatting utility
         "function GetCoinTextureString(copper)\n"
         "    if not copper or copper == 0 then return '0c' end\n"
