@@ -5182,6 +5182,54 @@ void LuaEngine::registerCoreAPI() {
             if (gh) gh->requestPvpLog();
             return 0;
         }},
+        // --- Taxi/Flight Paths ---
+        {"NumTaxiNodes", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            lua_pushnumber(L, gh ? gh->getTaxiNodes().size() : 0);
+            return 1;
+        }},
+        {"TaxiNodeName", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            if (!gh) { lua_pushstring(L, ""); return 1; }
+            int i = 0;
+            for (const auto& [id, node] : gh->getTaxiNodes()) {
+                if (++i == index) {
+                    lua_pushstring(L, node.name.c_str());
+                    return 1;
+                }
+            }
+            lua_pushstring(L, "");
+            return 1;
+        }},
+        {"TaxiNodeGetType", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            if (!gh) { lua_pushnumber(L, 0); return 1; }
+            int i = 0;
+            for (const auto& [id, node] : gh->getTaxiNodes()) {
+                if (++i == index) {
+                    bool known = gh->isKnownTaxiNode(id);
+                    lua_pushnumber(L, known ? 1 : 0); // 0=none, 1=reachable, 2=current
+                    return 1;
+                }
+            }
+            lua_pushnumber(L, 0);
+            return 1;
+        }},
+        {"TakeTaxiNode", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            int index = static_cast<int>(luaL_checknumber(L, 1));
+            if (!gh) return 0;
+            int i = 0;
+            for (const auto& [id, node] : gh->getTaxiNodes()) {
+                if (++i == index) {
+                    gh->activateTaxi(id);
+                    break;
+                }
+            }
+            return 0;
+        }},
         // --- Quest Interaction ---
         {"AcceptQuest", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);
