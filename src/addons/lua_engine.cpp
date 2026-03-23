@@ -5062,6 +5062,14 @@ void LuaEngine::registerCoreAPI() {
             lua_pushboolean(L, 1);                               // isCastable
             return 4;
         }},
+        // --- Weather ---
+        {"GetWeatherInfo", [](lua_State* L) -> int {
+            auto* gh = getGameHandler(L);
+            if (!gh) { lua_pushnumber(L, 0); lua_pushnumber(L, 0); return 2; }
+            lua_pushnumber(L, gh->getWeatherType());
+            lua_pushnumber(L, gh->getWeatherIntensity());
+            return 2;
+        }},
         // --- Vendor Buy/Sell ---
         {"BuyMerchantItem", [](lua_State* L) -> int {
             auto* gh = getGameHandler(L);

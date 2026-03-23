@@ -5221,6 +5221,9 @@ void GameHandler::handlePacket(network::Packet& packet) {
                     }
                     if (weatherMsg) addSystemChatMessage(weatherMsg);
                 }
+                // Notify addons of weather change
+                if (addonEventCallback_)
+                    addonEventCallback_("WEATHER_CHANGED", {std::to_string(wType), std::to_string(wIntensity)});
                 // Storm transition: trigger a low-frequency thunder rumble shake
                 if (wType == 3 && wIntensity > 0.3f && cameraShakeCallback_) {
                     float mag = 0.03f + wIntensity * 0.04f; // 0.03–0.07 units
