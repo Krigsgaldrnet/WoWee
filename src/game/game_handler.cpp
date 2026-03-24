@@ -1550,6 +1550,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
     }
 
     uint16_t opcode = packet.getOpcode();
+
     try {
 
     const bool allowVanillaAliases = isClassicLikeExpansion() || isActiveExpansion("tbc");
@@ -21305,13 +21306,15 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
     }
 
+    auto packet = GameObjectUsePacket::build(guid);
     LOG_INFO("GO interaction: guid=0x", std::hex, guid, std::dec,
              " entry=", goEntry, " type=", goType,
-             " name='", goName, "' dist=", entity ? std::sqrt(
+             " name='", goName, "' wireOp=0x", std::hex, packet.getOpcode(), std::dec,
+             " pktSize=", packet.getSize(),
+             " dist=", entity ? std::sqrt(
                  (entity->getX() - movementInfo.x) * (entity->getX() - movementInfo.x) +
                  (entity->getY() - movementInfo.y) * (entity->getY() - movementInfo.y) +
                  (entity->getZ() - movementInfo.z) * (entity->getZ() - movementInfo.z)) : -1.0f);
-    auto packet = GameObjectUsePacket::build(guid);
     socket->send(packet);
     lastInteractedGoGuid_ = guid;
 
@@ -21320,12 +21323,11 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
     // animation/sound and expects the client to request the mail list.
     bool isMailbox = false;
     bool chestLike = false;
-    // Always send CMSG_LOOT after CMSG_GAMEOBJ_USE for any gameobject that could be
-    // lootable.  The server silently ignores CMSG_LOOT for non-lootable objects
-    // (doors, buttons, etc.), so this is safe.  Not sending it is the main reason
-    // chests fail to open when their GO type is not yet cached or their name doesn't
-    // contain the word "chest" (e.g. lockboxes, coffers, strongboxes, caches).
-    bool shouldSendLoot = true;
+    // Do NOT send CMSG_LOOT after CMSG_GAMEOBJ_USE — the server handles loot
+    // automatically as part of the USE handler.  Sending a redundant CMSG_LOOT
+    // triggers DoLootRelease() on the server, which closes the loot the server
+    // just opened before the client ever sees SMSG_LOOT_RESPONSE.
+    bool shouldSendLoot = false;
     if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
         auto go = std::static_pointer_cast<GameObject>(entity);
         auto* info = getCachedGameObjectInfo(go->getEntry());
