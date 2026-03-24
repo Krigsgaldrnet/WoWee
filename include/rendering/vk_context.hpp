@@ -78,6 +78,7 @@ public:
     bool isNvidiaGpu() const { return gpuVendorId_ == 0x10DE; }
     VkQueue getGraphicsQueue() const { return graphicsQueue; }
     uint32_t getGraphicsQueueFamily() const { return graphicsQueueFamily; }
+    bool hasDedicatedTransferQueue() const { return hasDedicatedTransfer_; }
     VmaAllocator getAllocator() const { return allocator; }
     VkSurfaceKHR getSurface() const { return surface; }
     VkPipelineCache getPipelineCache() const { return pipelineCache_; }
@@ -174,6 +175,12 @@ private:
     VkQueue presentQueue = VK_NULL_HANDLE;
     uint32_t graphicsQueueFamily = 0;
     uint32_t presentQueueFamily = 0;
+
+    // Dedicated transfer queue (second queue from same graphics family)
+    VkQueue transferQueue_ = VK_NULL_HANDLE;
+    VkCommandPool transferCommandPool_ = VK_NULL_HANDLE;
+    bool hasDedicatedTransfer_ = false;
+    uint32_t graphicsQueueFamilyQueueCount_ = 1; // queried in selectPhysicalDevice
 
     // Swapchain
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
