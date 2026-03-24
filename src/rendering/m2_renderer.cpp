@@ -1,4 +1,5 @@
 #include "rendering/m2_renderer.hpp"
+#include "rendering/m2_model_classifier.hpp"
 #include "rendering/vk_context.hpp"
 #include "rendering/vk_buffer.hpp"
 #include "rendering/vk_texture.hpp"
@@ -1004,15 +1005,6 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     M2ModelGPU gpuModel;
     gpuModel.name = model.name;
 
-    // Detect invisible trap models (event objects that should not render or collide)
-    std::string lowerName = model.name;
-    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    bool isInvisibleTrap = (lowerName.find("invisibletrap") != std::string::npos);
-    gpuModel.isInvisibleTrap = isInvisibleTrap;
-    if (isInvisibleTrap) {
-        LOG_INFO("Loading InvisibleTrap model: ", model.name, " (will be invisible, no collision)");
-    }
     // Use tight bounds from actual vertices for collision/camera occlusion.
     // Header bounds in some M2s are overly conservative.
     glm::vec3 tightMin(0.0f);
@@ -1025,165 +1017,40 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             tightMax = glm::max(tightMax, v.position);
         }
     }
-    bool foliageOrTreeLike = false;
-    bool chestName = false;
-    bool groundDetailModel = false;
-    {
-        std::string lowerName = model.name;
-        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        gpuModel.collisionSteppedFountain = (lowerName.find("fountain") != std::string::npos);
 
-        glm::vec3 dims = tightMax - tightMin;
-        float horiz = std::max(dims.x, dims.y);
-        float vert = std::max(0.0f, dims.z);
-        bool lowWideShape = (horiz > 1.4f && vert > 0.2f && vert < horiz * 0.70f);
-        bool likelyCurbName =
-            (lowerName.find("planter") != std::string::npos) ||
-            (lowerName.find("curb") != std::string::npos) ||
-            (lowerName.find("base") != std::string::npos) ||
-            (lowerName.find("ring") != std::string::npos) ||
-            (lowerName.find("well") != std::string::npos);
-        bool knownStormwindPlanter =
-            (lowerName.find("stormwindplanter") != std::string::npos) ||
-            (lowerName.find("stormwindwindowplanter") != std::string::npos);
-        bool lowPlatformShape = (horiz > 1.8f && vert > 0.2f && vert < 1.8f);
-        bool bridgeName =
-            (lowerName.find("bridge") != std::string::npos) ||
-            (lowerName.find("plank") != std::string::npos) ||
-            (lowerName.find("walkway") != std::string::npos);
-        gpuModel.collisionSteppedLowPlatform = (!gpuModel.collisionSteppedFountain) &&
-                                               (knownStormwindPlanter ||
-                                                bridgeName ||
-                                                (likelyCurbName && (lowPlatformShape || lowWideShape)));
-        gpuModel.collisionBridge = bridgeName;
-
-        bool isPlanter = (lowerName.find("planter") != std::string::npos);
-        gpuModel.collisionPlanter = isPlanter;
-        bool statueName =
-            (lowerName.find("statue") != std::string::npos) ||
-            (lowerName.find("monument") != std::string::npos) ||
-            (lowerName.find("sculpture") != std::string::npos);
-        gpuModel.collisionStatue = statueName;
-        // Sittable furniture: chairs/benches/stools cause players to get stuck against
-        // invisible bounding boxes; WMOs already handle room collision.
-        bool sittableFurnitureName =
-            (lowerName.find("chair") != std::string::npos) ||
-            (lowerName.find("bench") != std::string::npos) ||
-            (lowerName.find("stool") != std::string::npos) ||
-            (lowerName.find("seat") != std::string::npos) ||
-            (lowerName.find("throne") != std::string::npos);
-        bool smallSolidPropName =
-            (statueName && !sittableFurnitureName) ||
-            (lowerName.find("crate") != std::string::npos) ||
-            (lowerName.find("box") != std::string::npos) ||
-            (lowerName.find("chest") != std::string::npos) ||
-            (lowerName.find("barrel") != std::string::npos);
-        chestName = (lowerName.find("chest") != std::string::npos);
-        bool foliageName =
-            (lowerName.find("bush") != std::string::npos) ||
-            (lowerName.find("grass") != std::string::npos) ||
-            (lowerName.find("drygrass") != std::string::npos) ||
-            (lowerName.find("dry_grass") != std::string::npos) ||
-            (lowerName.find("dry-grass") != std::string::npos) ||
-            (lowerName.find("deadgrass") != std::string::npos) ||
-            (lowerName.find("dead_grass") != std::string::npos) ||
-            (lowerName.find("dead-grass") != std::string::npos) ||
-            ((lowerName.find("plant") != std::string::npos) && !isPlanter) ||
-            (lowerName.find("flower") != std::string::npos) ||
-            (lowerName.find("shrub") != std::string::npos) ||
-            (lowerName.find("fern") != std::string::npos) ||
-            (lowerName.find("vine") != std::string::npos) ||
-            (lowerName.find("lily") != std::string::npos) ||
-            (lowerName.find("weed") != std::string::npos) ||
-            (lowerName.find("wheat") != std::string::npos) ||
-            (lowerName.find("pumpkin") != std::string::npos) ||
-            (lowerName.find("firefly") != std::string::npos) ||
-            (lowerName.find("fireflies") != std::string::npos) ||
-            (lowerName.find("fireflys") != std::string::npos) ||
-            (lowerName.find("mushroom") != std::string::npos) ||
-            (lowerName.find("fungus") != std::string::npos) ||
-            (lowerName.find("toadstool") != std::string::npos) ||
-            (lowerName.find("root") != std::string::npos) ||
-            (lowerName.find("branch") != std::string::npos) ||
-            (lowerName.find("thorn") != std::string::npos) ||
-            (lowerName.find("moss") != std::string::npos) ||
-            (lowerName.find("ivy") != std::string::npos) ||
-            (lowerName.find("seaweed") != std::string::npos) ||
-            (lowerName.find("kelp") != std::string::npos) ||
-            (lowerName.find("cattail") != std::string::npos) ||
-            (lowerName.find("reed") != std::string::npos) ||
-            (lowerName.find("palm") != std::string::npos) ||
-            (lowerName.find("bamboo") != std::string::npos) ||
-            (lowerName.find("banana") != std::string::npos) ||
-            (lowerName.find("coconut") != std::string::npos) ||
-            (lowerName.find("watermelon") != std::string::npos) ||
-            (lowerName.find("melon") != std::string::npos) ||
-            (lowerName.find("squash") != std::string::npos) ||
-            (lowerName.find("gourd") != std::string::npos) ||
-            (lowerName.find("canopy") != std::string::npos) ||
-            (lowerName.find("hedge") != std::string::npos) ||
-            (lowerName.find("cactus") != std::string::npos) ||
-            (lowerName.find("leaf") != std::string::npos) ||
-            (lowerName.find("leaves") != std::string::npos) ||
-            (lowerName.find("stalk") != std::string::npos) ||
-            (lowerName.find("corn") != std::string::npos) ||
-            (lowerName.find("crop") != std::string::npos) ||
-            (lowerName.find("hay") != std::string::npos) ||
-            (lowerName.find("frond") != std::string::npos) ||
-            (lowerName.find("algae") != std::string::npos) ||
-            (lowerName.find("coral") != std::string::npos);
-        bool treeLike = (lowerName.find("tree") != std::string::npos);
-        foliageOrTreeLike = (foliageName || treeLike);
-        groundDetailModel =
-            (lowerName.find("\\nodxt\\detail\\") != std::string::npos) ||
-            (lowerName.find("\\detail\\") != std::string::npos);
-        bool hardTreePart =
-            (lowerName.find("trunk") != std::string::npos) ||
-            (lowerName.find("stump") != std::string::npos) ||
-            (lowerName.find("log") != std::string::npos);
-        // Trees with visible trunks get collision. Threshold: canopy wider than 6
-        // model units AND taller than 4 units (filters out small bushes/saplings).
-        bool treeWithTrunk = treeLike && !hardTreePart && !foliageName && horiz > 6.0f && vert > 4.0f;
-        bool softTree = treeLike && !hardTreePart && !treeWithTrunk;
-        bool forceSolidCurb = gpuModel.collisionSteppedLowPlatform || knownStormwindPlanter || likelyCurbName || gpuModel.collisionPlanter;
-        bool narrowVerticalName =
-            (lowerName.find("lamp") != std::string::npos) ||
-            (lowerName.find("lantern") != std::string::npos) ||
-            (lowerName.find("post") != std::string::npos) ||
-            (lowerName.find("pole") != std::string::npos);
-        bool narrowVerticalShape =
-            (horiz > 0.12f && horiz < 2.0f && vert > 2.2f && vert > horiz * 1.8f);
-        gpuModel.collisionTreeTrunk = treeWithTrunk;
-        gpuModel.collisionNarrowVerticalProp =
-            !gpuModel.collisionSteppedFountain &&
-            !gpuModel.collisionSteppedLowPlatform &&
-            (narrowVerticalName || narrowVerticalShape);
-        bool genericSolidPropShape =
-            (horiz > 0.6f && horiz < 6.0f && vert > 0.30f && vert < 4.0f && vert > horiz * 0.16f) ||
-            statueName;
-        bool curbLikeName =
-            (lowerName.find("curb") != std::string::npos) ||
-            (lowerName.find("planter") != std::string::npos) ||
-            (lowerName.find("ring") != std::string::npos) ||
-            (lowerName.find("well") != std::string::npos) ||
-            (lowerName.find("base") != std::string::npos);
-        bool lowPlatformLikeShape = lowWideShape || lowPlatformShape;
-        bool carpetOrRug =
-            (lowerName.find("carpet") != std::string::npos) ||
-            (lowerName.find("rug") != std::string::npos);
-        gpuModel.collisionSmallSolidProp =
-            !gpuModel.collisionSteppedFountain &&
-            !gpuModel.collisionSteppedLowPlatform &&
-            !gpuModel.collisionNarrowVerticalProp &&
-            !gpuModel.collisionTreeTrunk &&
-            !curbLikeName &&
-            !lowPlatformLikeShape &&
-            (smallSolidPropName || (genericSolidPropShape && !foliageName && !softTree));
-        // Disable collision for foliage, soft trees, and decorative carpets/rugs
-        gpuModel.collisionNoBlock = ((foliageName || softTree || carpetOrRug) &&
-                                     !forceSolidCurb);
+    // Classify model from name and geometry — pure function, no GPU dependencies.
+    auto cls = classifyM2Model(model.name, tightMin, tightMax,
+                                model.vertices.size(),
+                                model.particleEmitters.size());
+    const bool isInvisibleTrap   = cls.isInvisibleTrap;
+    const bool groundDetailModel = cls.isGroundDetail;
+    if (isInvisibleTrap) {
+        LOG_INFO("Loading InvisibleTrap model: ", model.name, " (will be invisible, no collision)");
     }
+
+    gpuModel.isInvisibleTrap             = cls.isInvisibleTrap;
+    gpuModel.collisionSteppedFountain    = cls.collisionSteppedFountain;
+    gpuModel.collisionSteppedLowPlatform = cls.collisionSteppedLowPlatform;
+    gpuModel.collisionBridge             = cls.collisionBridge;
+    gpuModel.collisionPlanter            = cls.collisionPlanter;
+    gpuModel.collisionStatue             = cls.collisionStatue;
+    gpuModel.collisionTreeTrunk          = cls.collisionTreeTrunk;
+    gpuModel.collisionNarrowVerticalProp = cls.collisionNarrowVerticalProp;
+    gpuModel.collisionSmallSolidProp     = cls.collisionSmallSolidProp;
+    gpuModel.collisionNoBlock            = cls.collisionNoBlock;
+    gpuModel.isGroundDetail              = cls.isGroundDetail;
+    gpuModel.isFoliageLike               = cls.isFoliageLike;
+    gpuModel.disableAnimation            = cls.disableAnimation;
+    gpuModel.shadowWindFoliage           = cls.shadowWindFoliage;
+    gpuModel.isFireflyEffect             = cls.isFireflyEffect;
+    gpuModel.isSmoke                     = cls.isSmoke;
+    gpuModel.isSpellEffect               = cls.isSpellEffect;
+    gpuModel.isLavaModel                 = cls.isLavaModel;
+    gpuModel.isInstancePortal            = cls.isInstancePortal;
+    gpuModel.isWaterVegetation           = cls.isWaterVegetation;
+    gpuModel.isElvenLike                 = cls.isElvenLike;
+    gpuModel.isLanternLike               = cls.isLanternLike;
+    gpuModel.isKoboldFlame               = cls.isKoboldFlame;
     gpuModel.boundMin = tightMin;
     gpuModel.boundMax = tightMax;
     gpuModel.boundRadius = model.boundRadius;
@@ -1201,79 +1068,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             break;
         }
     }
-    bool ambientCreature =
-        (lowerName.find("firefly") != std::string::npos) ||
-        (lowerName.find("fireflies") != std::string::npos) ||
-        (lowerName.find("fireflys") != std::string::npos) ||
-        (lowerName.find("dragonfly") != std::string::npos) ||
-        (lowerName.find("dragonflies") != std::string::npos) ||
-        (lowerName.find("butterfly") != std::string::npos) ||
-        (lowerName.find("moth") != std::string::npos);
-    gpuModel.disableAnimation = (foliageOrTreeLike && !ambientCreature) || chestName;
-    gpuModel.shadowWindFoliage = foliageOrTreeLike && !ambientCreature;
-    gpuModel.isFoliageLike = foliageOrTreeLike && !ambientCreature;
-    gpuModel.isElvenLike =
-        (lowerName.find("elf") != std::string::npos) ||
-        (lowerName.find("elven") != std::string::npos) ||
-        (lowerName.find("quel") != std::string::npos);
-    gpuModel.isLanternLike =
-        (lowerName.find("lantern") != std::string::npos) ||
-        (lowerName.find("lamp") != std::string::npos) ||
-        (lowerName.find("light") != std::string::npos);
-    gpuModel.isKoboldFlame =
-        (lowerName.find("kobold") != std::string::npos) &&
-        ((lowerName.find("candle") != std::string::npos) ||
-         (lowerName.find("torch") != std::string::npos) ||
-         (lowerName.find("mine") != std::string::npos));
-    gpuModel.isGroundDetail = groundDetailModel;
-    if (groundDetailModel) {
-        // Ground clutter (grass/pebbles/detail cards) should never block camera/movement.
-        gpuModel.collisionNoBlock = true;
-    }
-    // Spell effect / pure-visual models: particle-dominated with minimal geometry,
-    // or named effect models (light shafts, portals, emitters, spotlights)
-    bool effectByName =
-        (lowerName.find("lightshaft") != std::string::npos) ||
-        (lowerName.find("volumetriclight") != std::string::npos) ||
-        (lowerName.find("instanceportal") != std::string::npos) ||
-        (lowerName.find("instancenewportal") != std::string::npos) ||
-        (lowerName.find("mageportal") != std::string::npos) ||
-        (lowerName.find("worldtreeportal") != std::string::npos) ||
-        (lowerName.find("particleemitter") != std::string::npos) ||
-        (lowerName.find("bubbles") != std::string::npos) ||
-        (lowerName.find("spotlight") != std::string::npos) ||
-        (lowerName.find("hazardlight") != std::string::npos) ||
-        (lowerName.find("lavasplash") != std::string::npos) ||
-        (lowerName.find("lavabubble") != std::string::npos) ||
-        (lowerName.find("lavasteam") != std::string::npos) ||
-        (lowerName.find("wisps") != std::string::npos) ||
-        (lowerName.find("levelup") != std::string::npos);
-    gpuModel.isSpellEffect = effectByName ||
-                              (hasParticles && model.vertices.size() <= 200 &&
-                               model.particleEmitters.size() >= 3);
-    gpuModel.isLavaModel =
-        (lowerName.find("forgelava") != std::string::npos) ||
-        (lowerName.find("lavapot") != std::string::npos) ||
-        (lowerName.find("lavaflow") != std::string::npos);
-    gpuModel.isInstancePortal =
-        (lowerName.find("instanceportal") != std::string::npos) ||
-        (lowerName.find("instancenewportal") != std::string::npos) ||
-        (lowerName.find("portalfx") != std::string::npos) ||
-        (lowerName.find("spellportal") != std::string::npos);
-    // Instance portals are spell effects too (additive blend, no collision)
-    if (gpuModel.isInstancePortal) {
-        gpuModel.isSpellEffect = true;
-    }
-    // Water vegetation: cattails, reeds, bulrushes, kelp, seaweed, lilypad near water
-    gpuModel.isWaterVegetation =
-        (lowerName.find("cattail") != std::string::npos) ||
-        (lowerName.find("reed") != std::string::npos) ||
-        (lowerName.find("bulrush") != std::string::npos) ||
-        (lowerName.find("seaweed") != std::string::npos) ||
-        (lowerName.find("kelp") != std::string::npos) ||
-        (lowerName.find("lilypad") != std::string::npos);
-    // Ambient creature effects: particle-based glow (exempt from particle dampeners)
-    gpuModel.isFireflyEffect = ambientCreature;
+
 
     // Build collision mesh + spatial grid from M2 bounding geometry
     gpuModel.collision.vertices = model.collisionVertices;
@@ -1282,14 +1077,6 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     if (gpuModel.collision.valid()) {
         core::Logger::getInstance().debug("  M2 collision mesh: ", gpuModel.collision.triCount,
             " tris, grid ", gpuModel.collision.gridCellsX, "x", gpuModel.collision.gridCellsY);
-    }
-
-    // Flag smoke models for UV scroll animation (in addition to particle emitters)
-    {
-        std::string smokeName = model.name;
-        std::transform(smokeName.begin(), smokeName.end(), smokeName.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        gpuModel.isSmoke = (smokeName.find("smoke") != std::string::npos);
     }
 
     // Identify idle variation sequences (animation ID 0 = Stand)
@@ -1412,14 +1199,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
 
     static const bool kGlowDiag = envFlagEnabled("WOWEE_M2_GLOW_DIAG", false);
     if (kGlowDiag) {
-        std::string lowerName = model.name;
-        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        const bool lanternLike =
-            (lowerName.find("lantern") != std::string::npos) ||
-            (lowerName.find("lamp") != std::string::npos) ||
-            (lowerName.find("light") != std::string::npos);
-        if (lanternLike) {
+        if (gpuModel.isLanternLike) {
             for (size_t ti = 0; ti < model.textures.size(); ++ti) {
                 const std::string key = (ti < textureKeysLower.size()) ? textureKeysLower[ti] : std::string();
                 LOG_DEBUG("M2 GLOW TEX '", model.name, "' tex[", ti, "]='", key, "' flags=0x",
@@ -1561,60 +1341,15 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
                 }
             }
             bgpu.texture = tex;
-            const bool exactLanternGlowTexture =
-                (batchTexKeyLower == "world\\expansion06\\doodads\\nightelf\\7ne_druid_streetlamp01_light.blp") ||
-                (batchTexKeyLower == "world\\generic\\nightelf\\passive doodads\\lamps\\glowblue32.blp") ||
-                (batchTexKeyLower == "world\\generic\\human\\passive doodads\\stormwind\\t_vfx_glow01_64.blp") ||
-                (batchTexKeyLower == "world\\azeroth\\karazahn\\passivedoodads\\bonfire\\flamelicksmallblue.blp") ||
-                (batchTexKeyLower == "world\\generic\\nightelf\\passive doodads\\magicalimplements\\glow.blp");
-            const bool texHasGlowToken =
-                (batchTexKeyLower.find("glow") != std::string::npos) ||
-                (batchTexKeyLower.find("flare") != std::string::npos) ||
-                (batchTexKeyLower.find("halo") != std::string::npos) ||
-                (batchTexKeyLower.find("light") != std::string::npos);
-            const bool texHasFlameToken =
-                (batchTexKeyLower.find("flame") != std::string::npos) ||
-                (batchTexKeyLower.find("fire") != std::string::npos) ||
-                (batchTexKeyLower.find("flamelick") != std::string::npos) ||
-                (batchTexKeyLower.find("ember") != std::string::npos);
-            const bool texGlowCardToken =
-                (batchTexKeyLower.find("glow") != std::string::npos) ||
-                (batchTexKeyLower.find("flamelick") != std::string::npos) ||
-                (batchTexKeyLower.find("lensflare") != std::string::npos) ||
-                (batchTexKeyLower.find("t_vfx") != std::string::npos) ||
-                (batchTexKeyLower.find("lightbeam") != std::string::npos) ||
-                (batchTexKeyLower.find("glowball") != std::string::npos) ||
-                (batchTexKeyLower.find("genericglow") != std::string::npos);
-            const bool texLikelyFlame =
-                (batchTexKeyLower.find("fire") != std::string::npos) ||
-                (batchTexKeyLower.find("flame") != std::string::npos) ||
-                (batchTexKeyLower.find("torch") != std::string::npos);
-            const bool texLanternFamily =
-                (batchTexKeyLower.find("lantern") != std::string::npos) ||
-                (batchTexKeyLower.find("lamp") != std::string::npos) ||
-                (batchTexKeyLower.find("elf") != std::string::npos) ||
-                (batchTexKeyLower.find("silvermoon") != std::string::npos) ||
-                (batchTexKeyLower.find("quel") != std::string::npos) ||
-                (batchTexKeyLower.find("thalas") != std::string::npos);
-            const bool modelLanternFamily =
-                (lowerName.find("lantern") != std::string::npos) ||
-                (lowerName.find("lamp") != std::string::npos) ||
-                (lowerName.find("light") != std::string::npos);
+            const auto tcls = classifyBatchTexture(batchTexKeyLower);
+            const bool modelLanternFamily = gpuModel.isLanternLike;
             bgpu.lanternGlowHint =
-                exactLanternGlowTexture ||
-                ((texHasGlowToken || (modelLanternFamily && texHasFlameToken)) &&
-                 (texLanternFamily || modelLanternFamily) &&
-                 (!texLikelyFlame || modelLanternFamily));
-            bgpu.glowCardLike = bgpu.lanternGlowHint && texGlowCardToken;
-            const bool texCoolTint =
-                (batchTexKeyLower.find("blue") != std::string::npos) ||
-                (batchTexKeyLower.find("nightelf") != std::string::npos) ||
-                (batchTexKeyLower.find("arcane") != std::string::npos);
-            const bool texRedTint =
-                (batchTexKeyLower.find("red") != std::string::npos) ||
-                (batchTexKeyLower.find("scarlet") != std::string::npos) ||
-                (batchTexKeyLower.find("ruby") != std::string::npos);
-            bgpu.glowTint = texCoolTint ? 1 : (texRedTint ? 2 : 0);
+                tcls.exactLanternGlowTex ||
+                ((tcls.hasGlowToken || (modelLanternFamily && tcls.hasFlameToken)) &&
+                 (tcls.lanternFamily || modelLanternFamily) &&
+                 (!tcls.likelyFlame || modelLanternFamily));
+            bgpu.glowCardLike = bgpu.lanternGlowHint && tcls.hasGlowCardToken;
+            bgpu.glowTint = tcls.glowTint;
             bool texHasAlpha = false;
             if (tex != nullptr && tex != whiteTexture_.get()) {
                 auto ait = textureHasAlphaByPtr_.find(tex);
@@ -1682,10 +1417,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             }
 
             // Optional diagnostics for glow/light batches (disabled by default).
-            if (kGlowDiag &&
-                (lowerName.find("light") != std::string::npos ||
-                 lowerName.find("lamp") != std::string::npos ||
-                 lowerName.find("lantern") != std::string::npos)) {
+            if (kGlowDiag && gpuModel.isLanternLike) {
                 LOG_DEBUG("M2 GLOW DIAG '", model.name, "' batch ", gpuModel.batches.size(),
                           ": blend=", bgpu.blendMode, " matFlags=0x",
                           std::hex, bgpu.materialFlags, std::dec,

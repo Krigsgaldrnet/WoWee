@@ -529,6 +529,7 @@ set(WOWEE_SOURCES
     src/rendering/character_preview.cpp
     src/rendering/wmo_renderer.cpp
     src/rendering/m2_renderer.cpp
+    src/rendering/m2_model_classifier.cpp
     src/rendering/quest_marker_renderer.cpp
     src/rendering/minimap.cpp
     src/rendering/world_map.cpp
