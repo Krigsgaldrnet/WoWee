@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 #include <imgui.h>
 #include <array>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -194,6 +195,9 @@ private:
     int splitMax_ = 1;
     int splitCount_ = 1;
     std::string splitItemName_;
+
+    // Server-side bag sort swap queue (one swap per frame)
+    std::deque<game::Inventory::SwapOp> sortSwapQueue_;
 
     // Pending chat item link from shift-click
     std::string pendingChatItemLink_;

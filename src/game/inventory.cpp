@@ -224,6 +224,92 @@ void Inventory::sortBags() {
     }
 }
 
+std::vector<Inventory::SwapOp> Inventory::computeSortSwaps() const {
+    // Build a flat list of (bag, slot, item) entries matching the same traversal
+    // order as sortBags(): backpack first, then equip bags in order.
+    struct Entry {
+        uint8_t bag;   // WoW bag address: 0xFF=backpack, 19+i=equip bag i
+        uint8_t slot;  // WoW slot address: 23+i for backpack, slotIndex for bags
+        uint32_t itemId;
+        ItemQuality quality;
+        uint32_t stackCount;
+    };
+
+    std::vector<Entry> entries;
+    entries.reserve(BACKPACK_SLOTS + NUM_BAG_SLOTS * MAX_BAG_SIZE);
+
+    for (int i = 0; i < BACKPACK_SLOTS; ++i) {
+        entries.push_back({0xFF, static_cast<uint8_t>(23 + i),
+                           backpack[i].item.itemId, backpack[i].item.quality,
+                           backpack[i].item.stackCount});
+    }
+    for (int b = 0; b < NUM_BAG_SLOTS; ++b) {
+        for (int s = 0; s < bags[b].size; ++s) {
+            entries.push_back({static_cast<uint8_t>(19 + b), static_cast<uint8_t>(s),
+                               bags[b].slots[s].item.itemId, bags[b].slots[s].item.quality,
+                               bags[b].slots[s].item.stackCount});
+        }
+    }
+
+    // Build a sorted index array using the same comparator as sortBags().
+    int n = static_cast<int>(entries.size());
+    std::vector<int> sortedIdx(n);
+    for (int i = 0; i < n; ++i) sortedIdx[i] = i;
+
+    // Separate non-empty items and empty slots, then sort the non-empty items.
+    // Items are sorted by quality desc -> itemId asc -> stackCount desc.
+    // Empty slots go to the end.
+    std::stable_sort(sortedIdx.begin(), sortedIdx.end(), [&](int a, int b) {
+        bool aEmpty = (entries[a].itemId == 0);
+        bool bEmpty = (entries[b].itemId == 0);
+        if (aEmpty != bEmpty) return bEmpty; // non-empty before empty
+        if (aEmpty) return false; // both empty: preserve order
+        // Both non-empty: same comparator as sortBags()
+        if (entries[a].quality != entries[b].quality)
+            return static_cast<int>(entries[a].quality) > static_cast<int>(entries[b].quality);
+        if (entries[a].itemId != entries[b].itemId)
+            return entries[a].itemId < entries[b].itemId;
+        return entries[a].stackCount > entries[b].stackCount;
+    });
+
+    // sortedIdx[targetPos] = sourcePos means the item currently at sourcePos
+    // needs to end up at targetPos.  We use selection-sort-style swaps to
+    // permute current positions into sorted order, tracking where items move.
+
+    // posOf[i] = current position of the item that was originally at index i
+    std::vector<int> posOf(n);
+    for (int i = 0; i < n; ++i) posOf[i] = i;
+
+    // invPos[p] = which original item index is currently sitting at position p
+    std::vector<int> invPos(n);
+    for (int i = 0; i < n; ++i) invPos[i] = i;
+
+    std::vector<SwapOp> swaps;
+
+    for (int target = 0; target < n; ++target) {
+        int need = sortedIdx[target]; // original index that should be at 'target'
+        int cur = invPos[target];     // original index currently at 'target'
+        if (cur == need) continue;    // already in place
+
+        // Skip swaps between two empty slots
+        if (entries[cur].itemId == 0 && entries[need].itemId == 0) continue;
+
+        int srcPos = posOf[need]; // current position of the item we need
+
+        // Emit a swap between position srcPos and position target
+        swaps.push_back({entries[srcPos].bag, entries[srcPos].slot,
+                         entries[target].bag, entries[target].slot});
+
+        // Update tracking arrays
+        posOf[cur] = srcPos;
+        posOf[need] = target;
+        invPos[srcPos] = cur;
+        invPos[target] = need;
+    }
+
+    return swaps;
+}
+
 void Inventory::populateTestItems() {
     // Equipment
     {

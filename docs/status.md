@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated**: 2026-03-18
+**Last updated**: 2026-03-24
 
 ## What This Repo Is
 
@@ -30,16 +30,17 @@ Implemented (working in normal use):
 - Target/focus frames: guild name, creature type, rank badges, combo points, cast bars
 - Map exploration: subzone-level fog-of-war reveal
 - Warden anti-cheat: full module execution via Unicorn Engine x86 emulation; module caching
-- Audio: ambient, movement, combat, spell, and UI sound systems
-- Bag UI: separate bag windows, open-bag indicator on bag bar, optional collapse-empty mode in aggregate bag view
+- Audio: ambient, movement, combat, spell, and UI sound systems; NPC voice lines for all playable races (greeting/farewell/vendor/pissed/aggro/flee)
+- Bag UI: independent bag windows (any bag closable independently), open-bag indicator on bag bar, server-synced bag sort, off-screen position reset, optional collapse-empty mode in aggregate view
+- DBC auto-detection: CharSections.dbc field layout auto-detected at runtime (handles stock WotLK vs HD-textured clients)
 - Multi-expansion: Classic/Vanilla, TBC, WotLK, and Turtle WoW (1.17) protocol and asset variants
-- CI: GitHub Actions for Linux (x86-64, ARM64), Windows (MSYS2), macOS (ARM64); container builds via Podman
+- CI: GitHub Actions for Linux (x86-64, ARM64), Windows (MSYS2 x86-64 + ARM64), macOS (ARM64); container builds via Podman
 
 In progress / known gaps:
 
 - Transports: M2 transports (trams) working with position-delta riding; WMO transports (ships, zeppelins) working with path following; some edge cases remain
+- Quest GO interaction: CMSG_GAMEOBJ_USE + CMSG_LOOT sent correctly, but some AzerothCore/ChromieCraft servers don't grant quest credit for chest-type GOs (server-side limitation)
 - Visual edge cases: some M2/WMO rendering gaps (some particle effects)
-- Lava steam particles: sparse in some areas (tuning opportunity)
 - Water refraction: enabled by default; srcAccessMask barrier fix (2026-03-18) resolved prior VK_ERROR_DEVICE_LOST on AMD/Mali GPUs
 
 ## Where To Look

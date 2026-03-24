@@ -19,13 +19,14 @@ Protocol Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**.
 
 > **Legal Disclaimer**: This is an educational/research project. It does not include any Blizzard Entertainment assets, data files, or proprietary code. World of Warcraft and all related assets are the property of Blizzard Entertainment, Inc. This project is not affiliated with or endorsed by Blizzard Entertainment. Users are responsible for supplying their own legally obtained game data files and for ensuring compliance with all applicable laws in their jurisdiction.
 
-## Status & Direction (2026-03-07)
+## Status & Direction (2026-03-24)
 
-- **Compatibility**: **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a** are all supported via expansion profiles and per-expansion packet parsers (`src/game/packet_parsers_classic.cpp`, `src/game/packet_parsers_tbc.cpp`). All three expansions are roughly on par — no single one is significantly more complete than the others.
-- **Tested against**: AzerothCore, TrinityCore, Mangos, and Turtle WoW (1.17).
-- **Current focus**: instance dungeons, visual accuracy (lava/water, shadow mapping, WMO interiors), and multi-expansion coverage.
+- **Compatibility**: **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a** are all supported via expansion profiles and per-expansion packet parsers. All three expansions are roughly on par.
+- **Tested against**: AzerothCore/ChromieCraft, TrinityCore, Mangos, and Turtle WoW (1.17).
+- **Current focus**: gameplay correctness (quest/GO interaction, NPC visibility), rendering stability, and multi-expansion coverage.
 - **Warden**: Full module execution via Unicorn Engine CPU emulation. Decrypts (RC4→RSA→zlib), parses and relocates the PE module, executes via x86 emulation with Windows API interception. Module cache at `~/.local/share/wowee/warden_cache/`.
-- **CI**: GitHub Actions builds for Linux (x86-64, ARM64), Windows (MSYS2), and macOS (ARM64). Security scans via CodeQL, Semgrep, and sanitizers.
+- **CI**: GitHub Actions builds for Linux (x86-64, ARM64), Windows (MSYS2 x86-64 + ARM64), and macOS (ARM64). Security scans via CodeQL, Semgrep, and sanitizers.
+- **Release**: v1.8.2-preview — 530+ WoW API functions, 140+ events, 664 opcode handlers.
 
 ## Features
 
@@ -52,7 +53,7 @@ Protocol Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**.
 - **Movement** -- WASD movement, camera orbit, spline path following, transport riding (trams, ships, zeppelins), movement ACK responses
 - **Combat** -- Auto-attack, spell casting with cooldowns, damage calculation, death handling, spirit healer resurrection
 - **Targeting** -- Tab-cycling with hostility filtering, click-to-target, faction-based hostility (using Faction.dbc)
-- **Inventory** -- 23 equipment slots, 16 backpack slots, drag-drop, auto-equip, item tooltips with weapon damage/speed
+- **Inventory** -- 23 equipment slots, 16 backpack slots, drag-drop, auto-equip, item tooltips with weapon damage/speed, server-synced bag sort (quality/type/stack), independent bag windows
 - **Bank** -- Full bank support for all expansions, bag slots, drag-drop, right-click deposit (non-equippable items)
 - **Spells** -- Spellbook with specialty, general, profession, mount, and companion tabs; drag-drop to action bar; item use support
 - **Talents** -- Talent tree UI with proper visuals and functionality
@@ -67,7 +68,8 @@ Protocol Compatible with **Vanilla (Classic) 1.12 + TBC 2.4.3 + WotLK 3.3.5a**.
 - **Chat** -- Tabs/channels, emotes, chat bubbles, clickable URLs, clickable item links with tooltips
 - **Party** -- Group invites, party list, out-of-range member health via SMSG_PARTY_MEMBER_STATS
 - **Pets** -- Pet tracking via SMSG_PET_SPELLS, action bar (10 slots with icon/autocast tinting/tooltips), dismiss button
-- **Map Exploration** -- Subzone-level fog-of-war reveal matching retail behavior
+- **Map Exploration** -- Subzone-level fog-of-war reveal, world map with continent/zone views, quest POI markers, taxi node markers, party member dots
+- **NPC Voices** -- Race/gender-specific NPC greeting, farewell, vendor, pissed, aggro, and flee sounds for all playable races including Blood Elf and Draenei
 - **Warden** -- Warden anti-cheat module execution via Unicorn Engine x86 emulation (cross-platform, no Wine)
 - **UI** -- Loading screens with progress bar, settings window with graphics quality presets (LOW/MEDIUM/HIGH/ULTRA), shadow distance slider, minimap with zoom/rotation/square mode, top-right minimap mute speaker, separate bag windows with compact-empty mode (aggregate view)
 

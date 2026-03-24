@@ -129,6 +129,18 @@ public:
     // Purely client-side: reorders the local inventory struct without server interaction.
     void sortBags();
 
+    // A single swap operation using WoW bag/slot addressing (for CMSG_SWAP_ITEM).
+    struct SwapOp {
+        uint8_t srcBag;
+        uint8_t srcSlot;
+        uint8_t dstBag;
+        uint8_t dstSlot;
+    };
+
+    // Compute the CMSG_SWAP_ITEM operations needed to reach sorted order.
+    // Does NOT modify the inventory — caller is responsible for sending packets.
+    std::vector<SwapOp> computeSortSwaps() const;
+
     // Test data
     void populateTestItems();
 

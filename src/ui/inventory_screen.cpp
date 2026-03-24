@@ -1138,12 +1138,30 @@ void InventoryScreen::renderBagWindow(const char* title, bool& isOpen,
         ImGui::Spacing();
         ImGui::Separator();
 
-        // Sort Bags button — client-side reorder by quality/type
-        if (ImGui::SmallButton("Sort Bags")) {
-            inventory.sortBags();
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Sort all bag slots by quality (highest first),\nthen by item ID, then by stack size.");
+        // Sort Bags button — compute swaps, apply client-side preview, queue server packets
+        {
+            bool sorting = !sortSwapQueue_.empty();
+            if (sorting) ImGui::BeginDisabled();
+            if (ImGui::SmallButton(sorting ? "Sorting..." : "Sort Bags")) {
+                // Compute the swap operations before modifying local state
+                auto swaps = inventory.computeSortSwaps();
+                // Apply local preview immediately
+                inventory.sortBags();
+                // Queue server-side swaps (one per frame)
+                for (auto& s : swaps)
+                    sortSwapQueue_.push_back(s);
+            }
+            if (sorting) ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Sort all bag slots by quality (highest first),\nthen by item ID, then by stack size.");
+            }
+
+            // Process one queued swap per frame
+            if (!sortSwapQueue_.empty() && gameHandler_) {
+                auto op = sortSwapQueue_.front();
+                sortSwapQueue_.pop_front();
+                gameHandler_->swapContainerItems(op.srcBag, op.srcSlot, op.dstBag, op.dstSlot);
+            }
         }
 
         if (moneyCopper > 0) {

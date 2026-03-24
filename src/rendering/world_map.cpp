@@ -363,10 +363,10 @@ void WorldMap::loadZonesFromDBC() {
                 cont.locTop = z.locTop; cont.locBottom = z.locBottom;
                 first = false;
             } else {
-                cont.locLeft = std::max(cont.locLeft, z.locLeft);
-                cont.locRight = std::min(cont.locRight, z.locRight);
-                cont.locTop = std::max(cont.locTop, z.locTop);
-                cont.locBottom = std::min(cont.locBottom, z.locBottom);
+                cont.locLeft = std::min(cont.locLeft, z.locLeft);
+                cont.locRight = std::max(cont.locRight, z.locRight);
+                cont.locTop = std::min(cont.locTop, z.locTop);
+                cont.locBottom = std::max(cont.locBottom, z.locBottom);
             }
         }
     }
