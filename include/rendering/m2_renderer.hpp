@@ -413,8 +413,8 @@ private:
     // Descriptor pools
     VkDescriptorPool materialDescPool_ = VK_NULL_HANDLE;
     VkDescriptorPool boneDescPool_ = VK_NULL_HANDLE;
-    static constexpr uint32_t MAX_MATERIAL_SETS = 8192;
-    static constexpr uint32_t MAX_BONE_SETS = 8192;
+    static constexpr uint32_t MAX_MATERIAL_SETS = 16384;
+    static constexpr uint32_t MAX_BONE_SETS = 16384;
 
     // Dummy identity bone buffer + descriptor set for non-animated models.
     // The pipeline layout declares set 2 (bones) and some drivers (Intel ANV)

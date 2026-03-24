@@ -21306,41 +21306,14 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
     }
 
-    auto packet = GameObjectUsePacket::build(guid);
-    LOG_INFO("GO interaction: guid=0x", std::hex, guid, std::dec,
-             " entry=", goEntry, " type=", goType,
-             " name='", goName, "' wireOp=0x", std::hex, packet.getOpcode(), std::dec,
-             " pktSize=", packet.getSize(),
-             " dist=", entity ? std::sqrt(
-                 (entity->getX() - movementInfo.x) * (entity->getX() - movementInfo.x) +
-                 (entity->getY() - movementInfo.y) * (entity->getY() - movementInfo.y) +
-                 (entity->getZ() - movementInfo.z) * (entity->getZ() - movementInfo.z)) : -1.0f);
-    socket->send(packet);
-    lastInteractedGoGuid_ = guid;
-
-    // For mailbox GameObjects (type 19), open mail UI and request mail list.
-    // In Vanilla/Classic there is no SMSG_SHOW_MAILBOX — the server just sends
-    // animation/sound and expects the client to request the mail list.
+    // Determine GO type for interaction strategy
     bool isMailbox = false;
     bool chestLike = false;
-    // Do NOT send CMSG_LOOT after CMSG_GAMEOBJ_USE — the server handles loot
-    // automatically as part of the USE handler.  Sending a redundant CMSG_LOOT
-    // triggers DoLootRelease() on the server, which closes the loot the server
-    // just opened before the client ever sees SMSG_LOOT_RESPONSE.
-    bool shouldSendLoot = false;
     if (entity && entity->getType() == ObjectType::GAMEOBJECT) {
         auto go = std::static_pointer_cast<GameObject>(entity);
         auto* info = getCachedGameObjectInfo(go->getEntry());
         if (info && info->type == 19) {
             isMailbox = true;
-            shouldSendLoot = false;
-            LOG_INFO("Mailbox interaction: opening mail UI and requesting mail list");
-            mailboxGuid_ = guid;
-            mailboxOpen_ = true;
-            hasNewMail_ = false;
-            selectedMailIndex_ = -1;
-            showMailCompose_ = false;
-            refreshMailList();
         } else if (info && info->type == 3) {
             chestLike = true;
         }
@@ -21353,40 +21326,49 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
                      lower.find("lockbox") != std::string::npos ||
                      lower.find("strongbox") != std::string::npos ||
                      lower.find("coffer") != std::string::npos ||
-                     lower.find("cache") != std::string::npos);
+                     lower.find("cache") != std::string::npos ||
+                     lower.find("bundle") != std::string::npos);
     }
-    // Some servers require CMSG_GAMEOBJ_REPORT_USE for lootable gameobjects.
-    // Only send it when the active opcode table actually supports it.
-    if (!isMailbox) {
-        const auto* table = getActiveOpcodeTable();
-        if (table && table->hasOpcode(Opcode::CMSG_GAMEOBJ_REPORT_USE)) {
-            network::Packet reportUse(wireOpcode(Opcode::CMSG_GAMEOBJ_REPORT_USE));
-            reportUse.writeUInt64(guid);
-            socket->send(reportUse);
+
+    LOG_INFO("GO interaction: guid=0x", std::hex, guid, std::dec,
+             " entry=", goEntry, " type=", goType,
+             " name='", goName, "' chestLike=", chestLike, " isMailbox=", isMailbox);
+
+    if (chestLike) {
+        // For chest-like GOs (quest objects, treasure chests, etc.), send CMSG_LOOT
+        // directly with the GO GUID — same as creature corpse looting. The server's
+        // LOOT handler activates the GO, generates loot, and sends SMSG_LOOT_RESPONSE
+        // in a single step. Sending CMSG_GAMEOBJ_USE + delayed CMSG_LOOT doesn't work
+        // because the USE handler opens+despawns the GO before CMSG_LOOT arrives, and
+        // CMSG_LOOT's DoLootRelease() closes any loot the USE handler already opened.
+        lootTarget(guid);
+        lastInteractedGoGuid_ = guid;
+    } else {
+        // Non-chest GOs (doors, buttons, quest givers, etc.): use CMSG_GAMEOBJ_USE
+        auto packet = GameObjectUsePacket::build(guid);
+        socket->send(packet);
+        lastInteractedGoGuid_ = guid;
+
+        if (isMailbox) {
+            LOG_INFO("Mailbox interaction: opening mail UI and requesting mail list");
+            mailboxGuid_ = guid;
+            mailboxOpen_ = true;
+            hasNewMail_ = false;
+            selectedMailIndex_ = -1;
+            showMailCompose_ = false;
+            refreshMailList();
+        }
+
+        // CMSG_GAMEOBJ_REPORT_USE for GO AI scripts (quest givers, etc.)
+        if (!isMailbox) {
+            const auto* table = getActiveOpcodeTable();
+            if (table && table->hasOpcode(Opcode::CMSG_GAMEOBJ_REPORT_USE)) {
+                network::Packet reportUse(wireOpcode(Opcode::CMSG_GAMEOBJ_REPORT_USE));
+                reportUse.writeUInt64(guid);
+                socket->send(reportUse);
+            }
         }
     }
-    if (shouldSendLoot) {
-        // Don't send CMSG_LOOT immediately — give the server time to process
-        // CMSG_GAMEOBJ_USE first (chests need to transition to lootable state,
-        // gathering nodes start a spell cast).  A premature CMSG_LOOT can cause
-        // an empty SMSG_LOOT_RESPONSE that clears our gather-cast loot state.
-        pendingGameObjectLootOpens_.erase(
-            std::remove_if(pendingGameObjectLootOpens_.begin(), pendingGameObjectLootOpens_.end(),
-                           [&](const PendingLootOpen& p) { return p.guid == guid; }),
-            pendingGameObjectLootOpens_.end());
-        // Short delay for chests (server makes them lootable quickly after USE),
-        // plus a longer retry to catch slow state transitions.
-        pendingGameObjectLootOpens_.push_back(PendingLootOpen{guid, 0.20f});
-        pendingGameObjectLootOpens_.push_back(PendingLootOpen{guid, 0.75f});
-    } else {
-        // Non-lootable interaction (mailbox, door, button, etc.) — no CMSG_LOOT will be
-        // sent, and no SMSG_LOOT_RESPONSE will arrive to clear it.  Clear the gather-loot
-        // guid now so a subsequent timed cast completion can't fire a spurious CMSG_LOOT.
-        lastInteractedGoGuid_ = 0;
-    }
-    // Don't retry CMSG_GAMEOBJ_USE — resending can toggle chest state on some
-    // servers (opening→closing the chest).  The delayed CMSG_LOOT retries above
-    // handle the case where the first loot attempt arrives too early.
 }
 
 void GameHandler::selectGossipOption(uint32_t optionId) {
