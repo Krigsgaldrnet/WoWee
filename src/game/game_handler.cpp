@@ -169,22 +169,6 @@ float slowUpdateObjectBlockLogThresholdMs() {
 
 constexpr size_t kMaxQueuedInboundPackets = 4096;
 
-bool hasFullPackedGuid(const network::Packet& packet) {
-    if (packet.getReadPos() >= packet.getSize()) {
-        return false;
-    }
-
-    const auto& rawData = packet.getData();
-    const uint8_t mask = rawData[packet.getReadPos()];
-    size_t guidBytes = 1;
-    for (int bit = 0; bit < 8; ++bit) {
-        if ((mask & (1u << bit)) != 0) {
-            ++guidBytes;
-        }
-    }
-    return packet.getRemainingSize() >= guidBytes;
-}
-
 bool packetHasRemaining(const network::Packet& packet, size_t need) {
     const size_t size = packet.getSize();
     const size_t pos = packet.getReadPos();
@@ -1982,10 +1966,10 @@ void GameHandler::registerOpcodeHandlers() {
             return UpdateObjectParser::readPackedGuid(packet);
         };
         if (packet.getRemainingSize() < (prUsesFullGuid ? 8u : 1u)
-            || (!prUsesFullGuid && !hasFullPackedGuid(packet))) { packet.setReadPos(packet.getSize()); return; }
+            || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.setReadPos(packet.getSize()); return; }
         uint64_t caster = readPrGuid();
         if (packet.getRemainingSize() < (prUsesFullGuid ? 8u : 1u)
-            || (!prUsesFullGuid && !hasFullPackedGuid(packet))) { packet.setReadPos(packet.getSize()); return; }
+            || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.setReadPos(packet.getSize()); return; }
         uint64_t victim = readPrGuid();
         if (packet.getRemainingSize() < 4) return;
         uint32_t spellId = packet.readUInt32();
@@ -3638,7 +3622,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < 4) return;
         uint32_t spellId = packet.readUInt32();
         if (packet.getRemainingSize() < (spellMissUsesFullGuid ? 8u : 1u)
-            || (!spellMissUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!spellMissUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t casterGuid = readSpellMissGuid();
@@ -3661,7 +3645,7 @@ void GameHandler::registerOpcodeHandlers() {
         bool truncated = false;
         for (uint32_t i = 0; i < rawCount; ++i) {
             if (packet.getRemainingSize() < (spellMissUsesFullGuid ? 9u : 2u)
-                || (!spellMissUsesFullGuid && !hasFullPackedGuid(packet))) {
+                || (!spellMissUsesFullGuid && !packet.hasFullPackedGuid())) {
                 truncated = true;
                 return;
             }
@@ -3935,11 +3919,11 @@ void GameHandler::registerOpcodeHandlers() {
         } else {
             if (packet.getRemainingSize() < 4) return;
             dispelSpellId = packet.readUInt32();
-            if (!hasFullPackedGuid(packet)) {
+            if (!packet.hasFullPackedGuid()) {
                 packet.setReadPos(packet.getSize()); return;
             }
             dispelCasterGuid = UpdateObjectParser::readPackedGuid(packet);
-            if (!hasFullPackedGuid(packet)) {
+            if (!packet.hasFullPackedGuid()) {
                 packet.setReadPos(packet.getSize()); return;
             }
             /*uint64_t victim =*/ UpdateObjectParser::readPackedGuid(packet);
@@ -4863,12 +4847,12 @@ void GameHandler::registerOpcodeHandlers() {
             return UpdateObjectParser::readPackedGuid(packet);
         };
         if (packet.getRemainingSize() < (energizeTbc ? 8u : 1u)
-            || (!energizeTbc && !hasFullPackedGuid(packet))) {
+            || (!energizeTbc && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t victimGuid = readEnergizeGuid();
         if (packet.getRemainingSize() < (energizeTbc ? 8u : 1u)
-            || (!energizeTbc && !hasFullPackedGuid(packet))) {
+            || (!energizeTbc && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t casterGuid = readEnergizeGuid();
@@ -5994,13 +5978,13 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < shieldMinSz) {
             packet.setReadPos(packet.getSize()); return;
         }
-        if (!shieldTbc && (!hasFullPackedGuid(packet))) {
+        if (!shieldTbc && (!packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t victimGuid = shieldTbc
             ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
         if (packet.getRemainingSize() < (shieldTbc ? 8u : 1u)
-            || (!shieldTbc && !hasFullPackedGuid(packet))) {
+            || (!shieldTbc && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t casterGuid = shieldTbc
@@ -6033,13 +6017,13 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < minSz) {
             packet.setReadPos(packet.getSize()); return;
         }
-        if (!immuneUsesFullGuid && !hasFullPackedGuid(packet)) {
+        if (!immuneUsesFullGuid && !packet.hasFullPackedGuid()) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t casterGuid = immuneUsesFullGuid
             ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
         if (packet.getRemainingSize() < (immuneUsesFullGuid ? 8u : 2u)
-            || (!immuneUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!immuneUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t victimGuid = immuneUsesFullGuid
@@ -6063,13 +6047,13 @@ void GameHandler::registerOpcodeHandlers() {
         // + uint32 count + count × (uint32 dispelled_spellId + uint32 unk)
         const bool dispelUsesFullGuid = isActiveExpansion("tbc");
         if (packet.getRemainingSize() < (dispelUsesFullGuid ? 8u : 1u)
-            || (!dispelUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!dispelUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t casterGuid = dispelUsesFullGuid
             ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
         if (packet.getRemainingSize() < (dispelUsesFullGuid ? 8u : 1u)
-            || (!dispelUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!dispelUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t victimGuid = dispelUsesFullGuid
@@ -6157,13 +6141,13 @@ void GameHandler::registerOpcodeHandlers() {
         // TBC:                   full uint64 victim + full uint64 caster + same tail
         const bool stealUsesFullGuid = isActiveExpansion("tbc");
         if (packet.getRemainingSize() < (stealUsesFullGuid ? 8u : 1u)
-            || (!stealUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!stealUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t stealVictim = stealUsesFullGuid
             ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
         if (packet.getRemainingSize() < (stealUsesFullGuid ? 8u : 1u)
-            || (!stealUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!stealUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t stealCaster = stealUsesFullGuid
@@ -6231,12 +6215,12 @@ void GameHandler::registerOpcodeHandlers() {
             return UpdateObjectParser::readPackedGuid(packet);
         };
         if (packet.getRemainingSize() < (procChanceUsesFullGuid ? 8u : 1u)
-            || (!procChanceUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!procChanceUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t procTargetGuid = readProcChanceGuid();
         if (packet.getRemainingSize() < (procChanceUsesFullGuid ? 8u : 1u)
-            || (!procChanceUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!procChanceUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t procCasterGuid = readProcChanceGuid();
@@ -6260,13 +6244,13 @@ void GameHandler::registerOpcodeHandlers() {
         const bool ikUsesFullGuid = isActiveExpansion("tbc");
         auto ik_rem = [&]() { return packet.getRemainingSize(); };
         if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)
-            || (!ikUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!ikUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t ikCaster = ikUsesFullGuid
             ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
         if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)
-            || (!ikUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!ikUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t ikVictim = ikUsesFullGuid
@@ -6310,7 +6294,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)) {
             packet.setReadPos(packet.getSize()); return;
         }
-        if (!exeUsesFullGuid && !hasFullPackedGuid(packet)) {
+        if (!exeUsesFullGuid && !packet.hasFullPackedGuid()) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t exeCaster = exeUsesFullGuid
@@ -6332,7 +6316,7 @@ void GameHandler::registerOpcodeHandlers() {
                 // SPELL_EFFECT_POWER_DRAIN: packed_guid target + uint32 amount + uint32 powerType + float multiplier
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
                     if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)
-                        || (!exeUsesFullGuid && !hasFullPackedGuid(packet))) {
+                        || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
                         packet.setReadPos(packet.getSize()); break;
                     }
                     uint64_t drainTarget = exeUsesFullGuid
@@ -6370,7 +6354,7 @@ void GameHandler::registerOpcodeHandlers() {
                 // SPELL_EFFECT_HEALTH_LEECH: packed_guid target + uint32 amount + float multiplier
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
                     if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)
-                        || (!exeUsesFullGuid && !hasFullPackedGuid(packet))) {
+                        || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
                         packet.setReadPos(packet.getSize()); break;
                     }
                     uint64_t leechTarget = exeUsesFullGuid
@@ -6435,7 +6419,7 @@ void GameHandler::registerOpcodeHandlers() {
                 // SPELL_EFFECT_INTERRUPT_CAST: packed_guid target + uint32 interrupted_spell_id
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
                     if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)
-                        || (!exeUsesFullGuid && !hasFullPackedGuid(packet))) {
+                        || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
                         packet.setReadPos(packet.getSize()); break;
                     }
                     uint64_t icTarget = exeUsesFullGuid
@@ -6849,13 +6833,13 @@ void GameHandler::registerOpcodeHandlers() {
         if (rl_rem() < 4) { packet.setReadPos(packet.getSize()); return; }
         /*uint32_t hitInfo =*/ packet.readUInt32();
         if (rl_rem() < (rlUsesFullGuid ? 8u : 1u)
-            || (!rlUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!rlUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t attackerGuid = rlUsesFullGuid
             ? packet.readUInt64() : UpdateObjectParser::readPackedGuid(packet);
         if (rl_rem() < (rlUsesFullGuid ? 8u : 1u)
-            || (!rlUsesFullGuid && !hasFullPackedGuid(packet))) {
+            || (!rlUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.setReadPos(packet.getSize()); return;
         }
         uint64_t victimGuid = rlUsesFullGuid

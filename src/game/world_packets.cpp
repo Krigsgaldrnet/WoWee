@@ -3391,12 +3391,12 @@ bool AttackerStateUpdateParser::parse(network::Packet& packet, AttackerStateUpda
 
     size_t startPos = packet.getReadPos();
     data.hitInfo = packet.readUInt32();
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
     data.attackerGuid = UpdateObjectParser::readPackedGuid(packet);
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -3478,12 +3478,12 @@ bool SpellDamageLogParser::parse(network::Packet& packet, SpellDamageLogData& da
     if (packet.getRemainingSize() < 33) return false;
 
     size_t startPos = packet.getReadPos();
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
     data.targetGuid = UpdateObjectParser::readPackedGuid(packet);
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -3528,12 +3528,12 @@ bool SpellHealLogParser::parse(network::Packet& packet, SpellHealLogData& data) 
     if (packet.getRemainingSize() < 21) return false;
 
     size_t startPos = packet.getReadPos();
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
     data.targetGuid = UpdateObjectParser::readPackedGuid(packet);
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -3765,11 +3765,11 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
     if (packet.getRemainingSize() < 15) return false;
 
     size_t startPos = packet.getReadPos();
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         return false;
     }
     data.casterGuid = UpdateObjectParser::readPackedGuid(packet);
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -3799,13 +3799,13 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
     uint32_t targetFlags = packet.readUInt32();
 
     auto readPackedTarget = [&](uint64_t* out) -> bool {
-        if (!hasFullPackedGuid(packet)) return false;
+        if (!packet.hasFullPackedGuid()) return false;
         uint64_t g = UpdateObjectParser::readPackedGuid(packet);
         if (out) *out = g;
         return true;
     };
     auto skipPackedAndFloats3 = [&]() -> bool {
-        if (!hasFullPackedGuid(packet)) return false;
+        if (!packet.hasFullPackedGuid()) return false;
         UpdateObjectParser::readPackedGuid(packet); // transport GUID (may be zero)
         if (packet.getRemainingSize() < 12) return false;
         packet.readFloat(); packet.readFloat(); packet.readFloat();
@@ -3846,11 +3846,11 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     if (packet.getRemainingSize() < 16) return false;
 
     size_t startPos = packet.getReadPos();
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         return false;
     }
     data.casterGuid = UpdateObjectParser::readPackedGuid(packet);
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -3974,13 +3974,13 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
             uint32_t targetFlags = packet.readUInt32();
 
             auto readPackedTarget = [&](uint64_t* out) -> bool {
-                if (!hasFullPackedGuid(packet)) return false;
+                if (!packet.hasFullPackedGuid()) return false;
                 uint64_t g = UpdateObjectParser::readPackedGuid(packet);
                 if (out) *out = g;
                 return true;
             };
             auto skipPackedAndFloats3 = [&]() -> bool {
-                if (!hasFullPackedGuid(packet)) return false;
+                if (!packet.hasFullPackedGuid()) return false;
                 UpdateObjectParser::readPackedGuid(packet); // transport GUID
                 if (packet.getRemainingSize() < 12) return false;
                 packet.readFloat(); packet.readFloat(); packet.readFloat();

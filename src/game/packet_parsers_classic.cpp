@@ -9,22 +9,6 @@ namespace game {
 
 namespace {
 
-bool hasFullPackedGuid(const network::Packet& packet) {
-    if (packet.getReadPos() >= packet.getSize()) {
-        return false;
-    }
-
-    const auto& rawData = packet.getData();
-    const uint8_t mask = rawData[packet.getReadPos()];
-    size_t guidBytes = 1;
-    for (int bit = 0; bit < 8; ++bit) {
-        if ((mask & (1u << bit)) != 0) {
-            ++guidBytes;
-        }
-    }
-    return packet.getRemainingSize() >= guidBytes;
-}
-
 std::string formatPacketBytes(const network::Packet& packet, size_t startPos) {
     const auto& rawData = packet.getData();
     if (startPos >= rawData.size()) {
@@ -52,7 +36,7 @@ bool skipClassicSpellCastTargets(network::Packet& packet, uint64_t* primaryTarge
     const uint16_t targetFlags = packet.readUInt16();
 
     const auto readPackedTargetGuid = [&](bool capture) -> bool {
-        if (!hasFullPackedGuid(packet)) {
+        if (!packet.hasFullPackedGuid()) {
             return false;
         }
         const uint64_t guid = UpdateObjectParser::readPackedGuid(packet);
@@ -509,12 +493,12 @@ bool ClassicPacketParsers::parseSpellStart(network::Packet& packet, SpellStartDa
     const size_t startPos = packet.getReadPos();
     if (rem() < 2) return false;
 
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
     data.casterGuid = UpdateObjectParser::readPackedGuid(packet);
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -584,9 +568,9 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
     };
     if (rem() < 2) return false;
 
-    if (!hasFullPackedGuid(packet)) return false;
+    if (!packet.hasFullPackedGuid()) return false;
     data.casterGuid = UpdateObjectParser::readPackedGuid(packet);
-    if (!hasFullPackedGuid(packet)) return false;
+    if (!packet.hasFullPackedGuid()) return false;
     data.casterUnit = UpdateObjectParser::readPackedGuid(packet);
 
     // Vanilla/Turtle SMSG_SPELL_GO does not include castCount here.
@@ -635,7 +619,7 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
             for (uint16_t i = 0; i < rawHitCount; ++i) {
                 uint64_t targetGuid = 0;
                 if (usePackedGuids) {
-                    if (!hasFullPackedGuid(packet)) {
+                    if (!packet.hasFullPackedGuid()) {
                         return false;
                     }
                     targetGuid = UpdateObjectParser::readPackedGuid(packet);
@@ -708,7 +692,7 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
             bool truncatedMissTargets = false;
             const auto parseMissEntry = [&](SpellGoMissEntry& m, bool usePackedGuid) -> bool {
                 if (usePackedGuid) {
-                    if (!hasFullPackedGuid(packet)) {
+                    if (!packet.hasFullPackedGuid()) {
                         return false;
                     }
                     m.targetGuid = UpdateObjectParser::readPackedGuid(packet);
@@ -797,12 +781,12 @@ bool ClassicPacketParsers::parseAttackerStateUpdate(network::Packet& packet, Att
 
     const size_t startPos = packet.getReadPos();
     data.hitInfo      = packet.readUInt32();
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
     data.attackerGuid = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
-    if (!hasFullPackedGuid(packet)) {
+    if (!packet.hasFullPackedGuid()) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -863,10 +847,10 @@ bool ClassicPacketParsers::parseAttackerStateUpdate(network::Packet& packet, Att
 // ============================================================================
 bool ClassicPacketParsers::parseSpellDamageLog(network::Packet& packet, SpellDamageLogData& data) {
     auto rem = [&]() { return packet.getRemainingSize(); };
-    if (rem() < 2 || !hasFullPackedGuid(packet)) return false;
+    if (rem() < 2 || !packet.hasFullPackedGuid()) return false;
 
     data.targetGuid   = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
-    if (rem() < 1 || !hasFullPackedGuid(packet)) return false;
+    if (rem() < 1 || !packet.hasFullPackedGuid()) return false;
     data.attackerGuid = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
 
     // uint32(spellId) + uint32(damage) + uint8(schoolMask) + uint32(absorbed)
@@ -898,10 +882,10 @@ bool ClassicPacketParsers::parseSpellDamageLog(network::Packet& packet, SpellDam
 // ============================================================================
 bool ClassicPacketParsers::parseSpellHealLog(network::Packet& packet, SpellHealLogData& data) {
     auto rem = [&]() { return packet.getRemainingSize(); };
-    if (rem() < 2 || !hasFullPackedGuid(packet)) return false;
+    if (rem() < 2 || !packet.hasFullPackedGuid()) return false;
 
     data.targetGuid = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
-    if (rem() < 1 || !hasFullPackedGuid(packet)) return false;
+    if (rem() < 1 || !packet.hasFullPackedGuid()) return false;
     data.casterGuid = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
 
     if (rem() < 13) return false;  // uint32 + uint32 + uint32 + uint8 = 13 bytes

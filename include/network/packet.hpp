@@ -34,6 +34,14 @@ public:
     size_t getReadPos() const { return readPos; }
     size_t getSize() const { return data.size(); }
     size_t getRemainingSize() const { return data.size() - readPos; }
+    bool hasFullPackedGuid() const {
+        if (readPos >= data.size()) return false;
+        uint8_t mask = data[readPos];
+        size_t guidBytes = 1;
+        for (int bit = 0; bit < 8; ++bit)
+            if (mask & (1u << bit)) ++guidBytes;
+        return getRemainingSize() >= guidBytes;
+    }
     void setReadPos(size_t pos) { readPos = pos; }
 
 private:
