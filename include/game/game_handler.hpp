@@ -2314,6 +2314,7 @@ public:
      * @param deltaTime Time since last update in seconds
      */
     void update(float deltaTime);
+    void updateNetworking(float deltaTime);
 
     /**
      * Reset DBC-backed caches so they reload from new expansion data.

@@ -844,19 +844,7 @@ bool GameHandler::isConnected() const {
     return socket && socket->isConnected();
 }
 
-void GameHandler::update(float deltaTime) {
-    // Fire deferred char-create callback (outside ImGui render)
-    if (pendingCharCreateResult_) {
-        pendingCharCreateResult_ = false;
-        if (charCreateCallback_) {
-            charCreateCallback_(pendingCharCreateSuccess_, pendingCharCreateMsg_);
-        }
-    }
-
-    if (!socket) {
-        return;
-    }
-
+void GameHandler::updateNetworking(float deltaTime) {
     // Reset per-tick monster-move budget tracking (Classic/Turtle flood protection).
     monsterMovePacketsThisTick_ = 0;
     monsterMovePacketsDroppedThisTick_ = 0;
@@ -938,6 +926,23 @@ void GameHandler::update(float deltaTime) {
             wardenGateNextStatusLog_ += 30.0f;
         }
     }
+}
+
+void GameHandler::update(float deltaTime) {
+    // Fire deferred char-create callback (outside ImGui render)
+    if (pendingCharCreateResult_) {
+        pendingCharCreateResult_ = false;
+        if (charCreateCallback_) {
+            charCreateCallback_(pendingCharCreateSuccess_, pendingCharCreateMsg_);
+        }
+    }
+
+    if (!socket) {
+        return;
+    }
+
+    updateNetworking(deltaTime);
+    if (!socket) return;  // disconnect() may have been called
 
     // Validate target still exists
     if (targetGuid != 0 && !entityManager.hasEntity(targetGuid)) {
