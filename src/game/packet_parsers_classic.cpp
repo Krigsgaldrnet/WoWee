@@ -1068,7 +1068,7 @@ bool ClassicPacketParsers::parseCharEnum(network::Packet& packet, CharEnumRespon
         //          + facialFeatures(1) + level(1) + zone(4) + map(4) + pos(12) + guild(4)
         //          + flags(4) + firstLogin(1) + pet(12) + equipment(20*5)
         constexpr size_t kMinCharacterSize = 8 + 1 + 1 + 1 + 1 + 4 + 1 + 1 + 4 + 4 + 12 + 4 + 4 + 1 + 12 + 100;
-        if (packet.getReadPos() + kMinCharacterSize > packet.getSize()) {
+        if (!packet.hasRemaining(kMinCharacterSize)) {
             LOG_WARNING("[Classic] Character enum packet truncated at character ", static_cast<int>(i + 1),
                         ", pos=", packet.getReadPos(), " needed=", kMinCharacterSize,
                         " size=", packet.getSize());
@@ -1841,7 +1841,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     // 2 item spells in Vanilla (3 fields each: SpellId, Trigger, Charges)
     // Actually vanilla has 5 spells: SpellId, Trigger, Charges, Cooldown, Category, CatCooldown = 24 bytes each
     for (int i = 0; i < 5; i++) {
-        if (packet.getReadPos() + 24 > packet.getSize()) break;
+        if (!packet.hasRemaining(24)) break;
         data.spells[i].spellId = packet.readUInt32();
         data.spells[i].spellTrigger = packet.readUInt32();
         packet.readUInt32(); // SpellCharges
@@ -1851,7 +1851,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     }
 
     // Bonding type
-    if (packet.getReadPos() + 4 <= packet.getSize())
+    if (packet.hasRemaining(4))
         data.bindType = packet.readUInt32();
 
     // Description (flavor/lore text)
@@ -1859,7 +1859,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
         data.description = packet.readString();
 
     // Post-description: PageText, LanguageID, PageMaterial, StartQuest
-    if (packet.getReadPos() + 16 <= packet.getSize()) {
+    if (packet.hasRemaining(16)) {
         packet.readUInt32(); // PageText
         packet.readUInt32(); // LanguageID
         packet.readUInt32(); // PageMaterial
@@ -2104,7 +2104,7 @@ bool TurtlePacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjec
 
         uint32_t remainingBlockCount = out.blockCount;
 
-        if (packet.getReadPos() + 1 <= packet.getSize()) {
+        if (packet.hasRemaining(1)) {
             uint8_t firstByte = packet.readUInt8();
             if (firstByte == static_cast<uint8_t>(UpdateType::OUT_OF_RANGE_OBJECTS)) {
                 if (remainingBlockCount == 0) {
@@ -2112,7 +2112,7 @@ bool TurtlePacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjec
                     return false;
                 }
                 --remainingBlockCount;
-                if (packet.getReadPos() + 4 > packet.getSize()) {
+                if (!packet.hasRemaining(4)) {
                     packet.setReadPos(start);
                     return false;
                 }
@@ -2398,7 +2398,7 @@ bool ClassicPacketParsers::parseCreatureQueryResponse(network::Packet& packet,
     packet.readString(); // name4
     data.subName = packet.readString();
     // NOTE: NO iconName field in Classic 1.12 — goes straight to typeFlags
-    if (packet.getReadPos() + 16 > packet.getSize()) {
+    if (!packet.hasRemaining(16)) {
         LOG_WARNING("Classic SMSG_CREATURE_QUERY_RESPONSE: truncated at typeFlags (entry=", data.entry, ")");
         data.typeFlags = 0;
         data.creatureType = 0;

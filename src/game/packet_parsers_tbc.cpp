@@ -333,7 +333,7 @@ bool TbcPacketParsers::parseCharEnum(network::Packet& packet, CharEnumResponse& 
         //          + facialFeatures(1) + level(1) + zone(4) + map(4) + pos(12) + guild(4)
         //          + flags(4) + firstLogin(1) + pet(12) + equipment(20*9)
         constexpr size_t kMinCharacterSize = 8 + 1 + 1 + 1 + 1 + 4 + 1 + 1 + 4 + 4 + 12 + 4 + 4 + 1 + 12 + 180;
-        if (packet.getReadPos() + kMinCharacterSize > packet.getSize()) {
+        if (!packet.hasRemaining(kMinCharacterSize)) {
             LOG_WARNING("[TBC] Character enum packet truncated at character ", static_cast<int>(i + 1),
                         ", pos=", packet.getReadPos(), " needed=", kMinCharacterSize,
                         " size=", packet.getSize());
@@ -430,7 +430,7 @@ bool TbcPacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjectDa
 
         uint32_t remainingBlockCount = out.blockCount;
 
-        if (packet.getReadPos() + 1 <= packet.getSize()) {
+        if (packet.hasRemaining(1)) {
             uint8_t firstByte = packet.readUInt8();
             if (firstByte == static_cast<uint8_t>(UpdateType::OUT_OF_RANGE_OBJECTS)) {
                 if (remainingBlockCount == 0) {
@@ -438,7 +438,7 @@ bool TbcPacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjectDa
                     return false;
                 }
                 --remainingBlockCount;
-                if (packet.getReadPos() + 4 > packet.getSize()) {
+                if (!packet.hasRemaining(4)) {
                     packet.setReadPos(start);
                     return false;
                 }
@@ -636,12 +636,12 @@ bool TbcPacketParsers::parseMonsterMove(network::Packet& packet, MonsterMoveData
     if (data.guid == 0) return false;
     // No unk byte here in TBC 2.4.3
 
-    if (packet.getReadPos() + 12 > packet.getSize()) return false;
+    if (!packet.hasRemaining(12)) return false;
     data.x = packet.readFloat();
     data.y = packet.readFloat();
     data.z = packet.readFloat();
 
-    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    if (!packet.hasRemaining(4)) return false;
     packet.readUInt32(); // splineId
 
     if (packet.getReadPos() >= packet.getSize()) return false;
@@ -656,36 +656,36 @@ bool TbcPacketParsers::parseMonsterMove(network::Packet& packet, MonsterMoveData
     }
 
     if (data.moveType == 2) {
-        if (packet.getReadPos() + 12 > packet.getSize()) return false;
+        if (!packet.hasRemaining(12)) return false;
         packet.readFloat(); packet.readFloat(); packet.readFloat();
     } else if (data.moveType == 3) {
-        if (packet.getReadPos() + 8 > packet.getSize()) return false;
+        if (!packet.hasRemaining(8)) return false;
         data.facingTarget = packet.readUInt64();
     } else if (data.moveType == 4) {
-        if (packet.getReadPos() + 4 > packet.getSize()) return false;
+        if (!packet.hasRemaining(4)) return false;
         data.facingAngle = packet.readFloat();
     }
 
-    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    if (!packet.hasRemaining(4)) return false;
     data.splineFlags = packet.readUInt32();
 
     // TBC 2.4.3 SplineFlags animation bit is same as WotLK: 0x00400000
     if (data.splineFlags & 0x00400000) {
-        if (packet.getReadPos() + 5 > packet.getSize()) return false;
+        if (!packet.hasRemaining(5)) return false;
         packet.readUInt8();  // animationType
         packet.readUInt32(); // effectStartTime
     }
 
-    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    if (!packet.hasRemaining(4)) return false;
     data.duration = packet.readUInt32();
 
     if (data.splineFlags & 0x00000800) {
-        if (packet.getReadPos() + 8 > packet.getSize()) return false;
+        if (!packet.hasRemaining(8)) return false;
         packet.readFloat();  // verticalAcceleration
         packet.readUInt32(); // effectStartTime
     }
 
-    if (packet.getReadPos() + 4 > packet.getSize()) return false;
+    if (!packet.hasRemaining(4)) return false;
     uint32_t pointCount = packet.readUInt32();
     if (pointCount == 0) return true;
     if (pointCount > 16384) return false;
@@ -693,16 +693,16 @@ bool TbcPacketParsers::parseMonsterMove(network::Packet& packet, MonsterMoveData
     bool uncompressed = (data.splineFlags & (0x00080000 | 0x00002000)) != 0;
     if (uncompressed) {
         for (uint32_t i = 0; i < pointCount - 1; i++) {
-            if (packet.getReadPos() + 12 > packet.getSize()) return true;
+            if (!packet.hasRemaining(12)) return true;
             packet.readFloat(); packet.readFloat(); packet.readFloat();
         }
-        if (packet.getReadPos() + 12 > packet.getSize()) return true;
+        if (!packet.hasRemaining(12)) return true;
         data.destX = packet.readFloat();
         data.destY = packet.readFloat();
         data.destZ = packet.readFloat();
         data.hasDest = true;
     } else {
-        if (packet.getReadPos() + 12 > packet.getSize()) return true;
+        if (!packet.hasRemaining(12)) return true;
         data.destX = packet.readFloat();
         data.destY = packet.readFloat();
         data.destZ = packet.readFloat();
@@ -801,7 +801,7 @@ bool TbcPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsDa
     data.details    = normalizeWowTextTokens(packet.readString());
     data.objectives = normalizeWowTextTokens(packet.readString());
 
-    if (packet.getReadPos() + 5 > packet.getSize()) {
+    if (!packet.hasRemaining(5)) {
         LOG_DEBUG("Quest details tbc/classic (short): id=", data.questId, " title='", data.title, "'");
         return !data.title.empty() || data.questId != 0;
     }
@@ -810,18 +810,18 @@ bool TbcPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsDa
     data.suggestedPlayers = packet.readUInt32();
 
     // TBC/Classic: emote section before reward items
-    if (packet.getReadPos() + 4 <= packet.getSize()) {
+    if (packet.hasRemaining(4)) {
         uint32_t emoteCount = packet.readUInt32();
-        for (uint32_t i = 0; i < emoteCount && packet.getReadPos() + 8 <= packet.getSize(); ++i) {
+        for (uint32_t i = 0; i < emoteCount && packet.hasRemaining(8); ++i) {
             packet.readUInt32(); // delay
             packet.readUInt32(); // type
         }
     }
 
     // Choice reward items (variable count, up to QUEST_REWARD_CHOICES_COUNT)
-    if (packet.getReadPos() + 4 <= packet.getSize()) {
+    if (packet.hasRemaining(4)) {
         uint32_t choiceCount = packet.readUInt32();
-        for (uint32_t i = 0; i < choiceCount && packet.getReadPos() + 12 <= packet.getSize(); ++i) {
+        for (uint32_t i = 0; i < choiceCount && packet.hasRemaining(12); ++i) {
             uint32_t itemId = packet.readUInt32();
             uint32_t count  = packet.readUInt32();
             uint32_t dispId = packet.readUInt32();
@@ -835,9 +835,9 @@ bool TbcPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsDa
     }
 
     // Fixed reward items (variable count, up to QUEST_REWARDS_COUNT)
-    if (packet.getReadPos() + 4 <= packet.getSize()) {
+    if (packet.hasRemaining(4)) {
         uint32_t rewardCount = packet.readUInt32();
-        for (uint32_t i = 0; i < rewardCount && packet.getReadPos() + 12 <= packet.getSize(); ++i) {
+        for (uint32_t i = 0; i < rewardCount && packet.hasRemaining(12); ++i) {
             uint32_t itemId = packet.readUInt32();
             uint32_t count  = packet.readUInt32();
             uint32_t dispId = packet.readUInt32();
@@ -849,9 +849,9 @@ bool TbcPacketParsers::parseQuestDetails(network::Packet& packet, QuestDetailsDa
         }
     }
 
-    if (packet.getReadPos() + 4 <= packet.getSize())
+    if (packet.hasRemaining(4))
         data.rewardMoney = packet.readUInt32();
-    if (packet.getReadPos() + 4 <= packet.getSize())
+    if (packet.hasRemaining(4))
         data.rewardXp = packet.readUInt32();
 
     LOG_DEBUG("Quest details tbc/classic: id=", data.questId, " title='", data.title, "'");
@@ -1115,7 +1115,7 @@ bool TbcPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQuery
 
     // 5 item spells
     for (int i = 0; i < 5; i++) {
-        if (packet.getReadPos() + 24 > packet.getSize()) break;
+        if (!packet.hasRemaining(24)) break;
         data.spells[i].spellId = packet.readUInt32();
         data.spells[i].spellTrigger = packet.readUInt32();
         packet.readUInt32(); // SpellCharges
@@ -1125,7 +1125,7 @@ bool TbcPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQuery
     }
 
     // Bonding type
-    if (packet.getReadPos() + 4 <= packet.getSize())
+    if (packet.hasRemaining(4))
         data.bindType = packet.readUInt32();
 
     // Flavor/lore text
@@ -1133,7 +1133,7 @@ bool TbcPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQuery
         data.description = packet.readString();
 
     // Post-description: PageText, LanguageID, PageMaterial, StartQuest
-    if (packet.getReadPos() + 16 <= packet.getSize()) {
+    if (packet.hasRemaining(16)) {
         packet.readUInt32(); // PageText
         packet.readUInt32(); // LanguageID
         packet.readUInt32(); // PageMaterial
@@ -1367,7 +1367,7 @@ bool TbcPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) 
     data.hitTargets.reserve(storedHitLimit);
     bool truncatedTargets = false;
     for (uint16_t i = 0; i < rawHitCount; ++i) {
-        if (packet.getReadPos() + 8 > packet.getSize()) {
+        if (!packet.hasRemaining(8)) {
             LOG_WARNING("[TBC] Spell go: truncated hit targets at index ", i,
                         "/", static_cast<int>(rawHitCount));
             truncatedTargets = true;
@@ -1397,7 +1397,7 @@ bool TbcPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) 
     const uint8_t storedMissLimit = std::min<uint8_t>(rawMissCount, 128);
     data.missTargets.reserve(storedMissLimit);
     for (uint16_t i = 0; i < rawMissCount; ++i) {
-        if (packet.getReadPos() + 9 > packet.getSize()) {
+        if (!packet.hasRemaining(9)) {
             LOG_WARNING("[TBC] Spell go: truncated miss targets at index ", i,
                         "/", static_cast<int>(rawMissCount));
             truncatedTargets = true;
@@ -1407,7 +1407,7 @@ bool TbcPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& data) 
         m.targetGuid = packet.readUInt64();  // full GUID in TBC
         m.missType   = packet.readUInt8();
         if (m.missType == 11) { // SPELL_MISS_REFLECT
-            if (packet.getReadPos() + 1 > packet.getSize()) {
+            if (!packet.hasRemaining(1)) {
                 LOG_WARNING("[TBC] Spell go: truncated reflect payload at miss index ", i,
                             "/", static_cast<int>(rawMissCount));
                 truncatedTargets = true;
@@ -1828,7 +1828,7 @@ bool TbcPacketParsers::parseGuildRoster(network::Packet& packet, GuildRosterData
     data.motd = packet.readString();
     data.guildInfo = packet.readString();
 
-    if (packet.getReadPos() + 4 > packet.getSize()) {
+    if (!packet.hasRemaining(4)) {
         LOG_WARNING("TBC GuildRoster: truncated before rankCount");
         data.ranks.clear();
         data.members.clear();
@@ -1844,19 +1844,19 @@ bool TbcPacketParsers::parseGuildRoster(network::Packet& packet, GuildRosterData
 
     data.ranks.resize(rankCount);
     for (uint32_t i = 0; i < rankCount; ++i) {
-        if (packet.getReadPos() + 4 > packet.getSize()) {
+        if (!packet.hasRemaining(4)) {
             LOG_WARNING("TBC GuildRoster: truncated rank at index ", i);
             break;
         }
         data.ranks[i].rights = packet.readUInt32();
-        if (packet.getReadPos() + 4 > packet.getSize()) {
+        if (!packet.hasRemaining(4)) {
             data.ranks[i].goldLimit = 0;
         } else {
             data.ranks[i].goldLimit = packet.readUInt32();
         }
         // 6 bank tab flags + 6 bank tab items per day (guild banks added in TBC 2.3)
         for (int t = 0; t < 6; ++t) {
-            if (packet.getReadPos() + 8 > packet.getSize()) break;
+            if (!packet.hasRemaining(8)) break;
             packet.readUInt32(); // tabFlags
             packet.readUInt32(); // tabItemsPerDay
         }
@@ -1864,7 +1864,7 @@ bool TbcPacketParsers::parseGuildRoster(network::Packet& packet, GuildRosterData
 
     data.members.resize(numMembers);
     for (uint32_t i = 0; i < numMembers; ++i) {
-        if (packet.getReadPos() + 9 > packet.getSize()) {
+        if (!packet.hasRemaining(9)) {
             LOG_WARNING("TBC GuildRoster: truncated member at index ", i);
             break;
         }
@@ -1878,7 +1878,7 @@ bool TbcPacketParsers::parseGuildRoster(network::Packet& packet, GuildRosterData
             m.name = packet.readString();
         }
 
-        if (packet.getReadPos() + 1 > packet.getSize()) {
+        if (!packet.hasRemaining(1)) {
             m.rankIndex = 0;
             m.level = 1;
             m.classId = 0;
@@ -1886,7 +1886,7 @@ bool TbcPacketParsers::parseGuildRoster(network::Packet& packet, GuildRosterData
             m.zoneId = 0;
         } else {
             m.rankIndex = packet.readUInt32();
-            if (packet.getReadPos() + 2 > packet.getSize()) {
+            if (!packet.hasRemaining(2)) {
                 m.level = 1;
                 m.classId = 0;
             } else {
@@ -1895,7 +1895,7 @@ bool TbcPacketParsers::parseGuildRoster(network::Packet& packet, GuildRosterData
             }
             // TBC: NO gender byte (WotLK added it)
             m.gender = 0;
-            if (packet.getReadPos() + 4 > packet.getSize()) {
+            if (!packet.hasRemaining(4)) {
                 m.zoneId = 0;
             } else {
                 m.zoneId = packet.readUInt32();
@@ -1903,7 +1903,7 @@ bool TbcPacketParsers::parseGuildRoster(network::Packet& packet, GuildRosterData
         }
 
         if (!m.online) {
-            if (packet.getReadPos() + 4 > packet.getSize()) {
+            if (!packet.hasRemaining(4)) {
                 m.lastOnline = 0.0f;
             } else {
                 m.lastOnline = packet.readFloat();
