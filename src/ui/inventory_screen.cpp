@@ -3074,11 +3074,8 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
     }
 
     if (item.sellPrice > 0) {
-        uint32_t g = item.sellPrice / 10000;
-        uint32_t s = (item.sellPrice / 100) % 100;
-        uint32_t c = item.sellPrice % 100;
         ImGui::TextDisabled("Sell:"); ImGui::SameLine(0, 4);
-        renderCoinsText(g, s, c);
+        renderCoinsFromCopper(item.sellPrice);
     }
 
     // Shift-hover comparison with currently equipped equivalent.
@@ -3734,11 +3731,8 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
     }
 
     if (info.sellPrice > 0) {
-        uint32_t g = info.sellPrice / 10000;
-        uint32_t s = (info.sellPrice / 100) % 100;
-        uint32_t c = info.sellPrice % 100;
         ImGui::TextDisabled("Sell:"); ImGui::SameLine(0, 4);
-        renderCoinsText(g, s, c);
+        renderCoinsFromCopper(info.sellPrice);
     }
 
     // Shift-hover: compare with currently equipped item

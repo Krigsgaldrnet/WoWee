@@ -53,4 +53,11 @@ inline void renderCoinsText(uint32_t g, uint32_t s, uint32_t c) {
     ImGui::TextColored(colors::kCopper, "%uc", c);
 }
 
+// Convenience overload: decompose copper amount and render as gold/silver/copper
+inline void renderCoinsFromCopper(uint64_t copper) {
+    renderCoinsText(static_cast<uint32_t>(copper / 10000),
+                    static_cast<uint32_t>((copper / 100) % 100),
+                    static_cast<uint32_t>(copper % 100));
+}
+
 } // namespace wowee::ui

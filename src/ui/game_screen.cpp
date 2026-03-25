@@ -1812,11 +1812,8 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
             ImGui::PopTextWrapPos();
         }
         if (info->sellPrice > 0) {
-            uint32_t g = info->sellPrice / 10000;
-            uint32_t s = (info->sellPrice / 100) % 100;
-            uint32_t c = info->sellPrice % 100;
             ImGui::TextDisabled("Sell:"); ImGui::SameLine(0, 4);
-            renderCoinsText(g, s, c);
+            renderCoinsFromCopper(info->sellPrice);
         }
 
         if (ImGui::GetIO().KeyShift && info->inventoryType > 0) {
@@ -14447,11 +14444,8 @@ void GameScreen::renderGuildRoster(game::GameHandler& gameHandler) {
         ImGui::Text("Create Guild Charter");
         ImGui::Separator();
         uint32_t cost = gameHandler.getPetitionCost();
-        uint32_t gold = cost / 10000;
-        uint32_t silver = (cost % 10000) / 100;
-        uint32_t copper = cost % 100;
         ImGui::TextDisabled("Cost:"); ImGui::SameLine(0, 4);
-        renderCoinsText(gold, silver, copper);
+        renderCoinsFromCopper(cost);
         ImGui::Spacing();
         ImGui::Text("Guild Name:");
         ImGui::InputText("##petitionname", petitionNameBuffer_, sizeof(petitionNameBuffer_));
@@ -16213,11 +16207,8 @@ void GameScreen::renderQuestDetailsWindow(game::GameHandler& gameHandler) {
                 ImGui::Text("  %u experience", quest.rewardXp);
             }
             if (quest.rewardMoney > 0) {
-                uint32_t gold = quest.rewardMoney / 10000;
-                uint32_t silver = (quest.rewardMoney % 10000) / 100;
-                uint32_t copper = quest.rewardMoney % 100;
                 ImGui::TextDisabled("  Money:"); ImGui::SameLine(0, 4);
-                renderCoinsText(gold, silver, copper);
+                renderCoinsFromCopper(quest.rewardMoney);
             }
         }
 
@@ -16328,11 +16319,8 @@ void GameScreen::renderQuestRequestItemsWindow(game::GameHandler& gameHandler) {
 
         if (quest.requiredMoney > 0) {
             ImGui::Spacing();
-            uint32_t g = quest.requiredMoney / 10000;
-            uint32_t s = (quest.requiredMoney % 10000) / 100;
-            uint32_t c = quest.requiredMoney % 100;
             ImGui::TextDisabled("Required money:"); ImGui::SameLine(0, 4);
-            renderCoinsText(g, s, c);
+            renderCoinsFromCopper(quest.requiredMoney);
         }
 
         // Complete / Cancel buttons
@@ -16507,11 +16495,8 @@ void GameScreen::renderQuestOfferRewardWindow(game::GameHandler& gameHandler) {
             if (quest.rewardXp > 0)
                 ImGui::Text("  %u experience", quest.rewardXp);
             if (quest.rewardMoney > 0) {
-                uint32_t g = quest.rewardMoney / 10000;
-                uint32_t s = (quest.rewardMoney % 10000) / 100;
-                uint32_t c = quest.rewardMoney % 100;
                 ImGui::TextDisabled("  Money:"); ImGui::SameLine(0, 4);
-                renderCoinsText(g, s, c);
+                renderCoinsFromCopper(quest.rewardMoney);
             }
         }
 
@@ -16623,11 +16608,8 @@ void GameScreen::renderVendorWindow(game::GameHandler& gameHandler) {
 
         // Show player money
         uint64_t money = gameHandler.getMoneyCopper();
-        uint32_t mg = static_cast<uint32_t>(money / 10000);
-        uint32_t ms = static_cast<uint32_t>((money / 100) % 100);
-        uint32_t mc = static_cast<uint32_t>(money % 100);
         ImGui::TextDisabled("Your money:"); ImGui::SameLine(0, 4);
-        renderCoinsText(mg, ms, mc);
+        renderCoinsFromCopper(money);
 
         if (vendor.canRepair) {
             ImGui::SameLine();
@@ -16996,11 +16978,8 @@ void GameScreen::renderTrainerWindow(game::GameHandler& gameHandler) {
 
         // Player money
         uint64_t money = gameHandler.getMoneyCopper();
-        uint32_t mg = static_cast<uint32_t>(money / 10000);
-        uint32_t ms = static_cast<uint32_t>((money / 100) % 100);
-        uint32_t mc = static_cast<uint32_t>(money % 100);
         ImGui::TextDisabled("Your money:"); ImGui::SameLine(0, 4);
-        renderCoinsText(mg, ms, mc);
+        renderCoinsFromCopper(money);
 
         // Filter controls
         static bool showUnavailable = false;
@@ -21411,12 +21390,8 @@ void GameScreen::renderMailWindow(game::GameHandler& gameHandler) {
         const auto& inbox = gameHandler.getMailInbox();
 
         // Top bar: money + compose button
-        uint64_t money = gameHandler.getMoneyCopper();
-        uint32_t mg = static_cast<uint32_t>(money / 10000);
-        uint32_t ms = static_cast<uint32_t>((money / 100) % 100);
-        uint32_t mc = static_cast<uint32_t>(money % 100);
         ImGui::TextDisabled("Your money:"); ImGui::SameLine(0, 4);
-        renderCoinsText(mg, ms, mc);
+        renderCoinsFromCopper(gameHandler.getMoneyCopper());
         ImGui::SameLine(ImGui::GetWindowWidth() - 100);
         if (ImGui::Button("Compose")) {
             mailRecipientBuffer_[0] = '\0';
@@ -21545,11 +21520,8 @@ void GameScreen::renderMailWindow(game::GameHandler& gameHandler) {
 
                 // Money
                 if (mail.money > 0) {
-                    uint32_t g = mail.money / 10000;
-                    uint32_t s = (mail.money / 100) % 100;
-                    uint32_t c = mail.money % 100;
                     ImGui::TextDisabled("Money:"); ImGui::SameLine(0, 4);
-                    renderCoinsText(g, s, c);
+                    renderCoinsFromCopper(mail.money);
                     ImGui::SameLine();
                     if (ImGui::SmallButton("Take Money")) {
                         gameHandler.mailTakeMoney(mail.messageId);
@@ -22438,13 +22410,12 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
                     ImGui::TableSetColumnIndex(3);
                     {
                         uint32_t bid = auction.currentBid > 0 ? auction.currentBid : auction.startBid;
-                        renderCoinsText(bid / 10000, (bid / 100) % 100, bid % 100);
+                        renderCoinsFromCopper(bid);
                     }
 
                     ImGui::TableSetColumnIndex(4);
                     if (auction.buyoutPrice > 0) {
-                        renderCoinsText(auction.buyoutPrice / 10000,
-                                        (auction.buyoutPrice / 100) % 100, auction.buyoutPrice % 100);
+                        renderCoinsFromCopper(auction.buyoutPrice);
                     } else {
                         ImGui::TextDisabled("--");
                     }
@@ -22632,10 +22603,10 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%u", a.stackCount);
                 ImGui::TableSetColumnIndex(2);
-                renderCoinsText(a.currentBid / 10000, (a.currentBid / 100) % 100, a.currentBid % 100);
+                renderCoinsFromCopper(a.currentBid);
                 ImGui::TableSetColumnIndex(3);
                 if (a.buyoutPrice > 0)
-                    renderCoinsText(a.buyoutPrice / 10000, (a.buyoutPrice / 100) % 100, a.buyoutPrice % 100);
+                    renderCoinsFromCopper(a.buyoutPrice);
                 else
                     ImGui::TextDisabled("--");
                 ImGui::TableSetColumnIndex(4);
@@ -22718,11 +22689,11 @@ void GameScreen::renderAuctionHouseWindow(game::GameHandler& gameHandler) {
                 ImGui::TableSetColumnIndex(2);
                 {
                     uint32_t bid = a.currentBid > 0 ? a.currentBid : a.startBid;
-                    renderCoinsText(bid / 10000, (bid / 100) % 100, bid % 100);
+                    renderCoinsFromCopper(bid);
                 }
                 ImGui::TableSetColumnIndex(3);
                 if (a.buyoutPrice > 0)
-                    renderCoinsText(a.buyoutPrice / 10000, (a.buyoutPrice / 100) % 100, a.buyoutPrice % 100);
+                    renderCoinsFromCopper(a.buyoutPrice);
                 else
                     ImGui::TextDisabled("--");
                 ImGui::TableSetColumnIndex(4);
