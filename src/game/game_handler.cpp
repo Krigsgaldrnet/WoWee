@@ -1715,8 +1715,8 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_CREATURE_QUERY_RESPONSE]    = [this](network::Packet& packet) { handleCreatureQueryResponse(packet); };
     dispatchTable_[Opcode::SMSG_ITEM_QUERY_SINGLE_RESPONSE] = [this](network::Packet& packet) { handleItemQueryResponse(packet); };
     dispatchTable_[Opcode::SMSG_INSPECT_TALENT]             = [this](network::Packet& packet) { handleInspectResults(packet); };
-    dispatchTable_[Opcode::SMSG_ADDON_INFO]                 = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
-    dispatchTable_[Opcode::SMSG_EXPECTED_SPAM_RECORDS]      = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_ADDON_INFO]                 = [this](network::Packet& packet) { packet.skipAll(); };
+    dispatchTable_[Opcode::SMSG_EXPECTED_SPAM_RECORDS]      = [this](network::Packet& packet) { packet.skipAll(); };
 
     // -----------------------------------------------------------------------
     // XP / exploration
@@ -1772,9 +1772,9 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < 1) return;
         uint8_t msg = packet.readUInt8();
         if (msg > 0 && msg < 7 && kPetFeedback[msg]) addSystemChatMessage(kPetFeedback[msg]);
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
-    dispatchTable_[Opcode::SMSG_PET_NAME_QUERY_RESPONSE] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_PET_NAME_QUERY_RESPONSE] = [this](network::Packet& packet) { packet.skipAll(); };
 
     // -----------------------------------------------------------------------
     // Quest failures
@@ -1956,7 +1956,7 @@ void GameHandler::registerOpcodeHandlers() {
                 }
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_PROCRESIST] = [this](network::Packet& packet) {
         const bool prUsesFullGuid = isActiveExpansion("tbc");
@@ -1966,16 +1966,16 @@ void GameHandler::registerOpcodeHandlers() {
             return packet.readPackedGuid();
         };
         if (packet.getRemainingSize() < (prUsesFullGuid ? 8u : 1u)
-            || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.setReadPos(packet.getSize()); return; }
+            || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.skipAll(); return; }
         uint64_t caster = readPrGuid();
         if (packet.getRemainingSize() < (prUsesFullGuid ? 8u : 1u)
-            || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.setReadPos(packet.getSize()); return; }
+            || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.skipAll(); return; }
         uint64_t victim = readPrGuid();
         if (packet.getRemainingSize() < 4) return;
         uint32_t spellId = packet.readUInt32();
         if (victim == playerGuid)       addCombatText(CombatTextEntry::RESIST, 0, spellId, false, 0, caster, victim);
         else if (caster == playerGuid)  addCombatText(CombatTextEntry::RESIST, 0, spellId, true,  0, caster, victim);
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
 
     // -----------------------------------------------------------------------
@@ -2116,8 +2116,8 @@ void GameHandler::registerOpcodeHandlers() {
         pbMsg += '.';
         addSystemChatMessage(pbMsg);
     };
-    dispatchTable_[Opcode::SMSG_BINDER_CONFIRM] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
-    dispatchTable_[Opcode::SMSG_SET_PHASE_SHIFT] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_BINDER_CONFIRM] = [this](network::Packet& packet) { packet.skipAll(); };
+    dispatchTable_[Opcode::SMSG_SET_PHASE_SHIFT] = [this](network::Packet& packet) { packet.skipAll(); };
     dispatchTable_[Opcode::SMSG_TOGGLE_XP_GAIN] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() < 1) return;
         uint8_t enabled = packet.readUInt8();
@@ -2175,7 +2175,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_CLEAR_FAR_SIGHT_IMMEDIATE] = [this](network::Packet& /*packet*/) {
         LOG_DEBUG("SMSG_CLEAR_FAR_SIGHT_IMMEDIATE");
     };
-    dispatchTable_[Opcode::SMSG_COMBAT_EVENT_FAILED] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_COMBAT_EVENT_FAILED] = [this](network::Packet& packet) { packet.skipAll(); };
     dispatchTable_[Opcode::SMSG_FORCE_ANIM] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 1) {
             uint64_t animGuid = packet.readPackedGuid();
@@ -2192,14 +2192,14 @@ void GameHandler::registerOpcodeHandlers() {
         Opcode::SMSG_FORCE_SEND_QUEUED_PACKETS, Opcode::SMSG_FORCE_SET_VEHICLE_REC_ID,
         Opcode::SMSG_CORPSE_MAP_POSITION_QUERY_RESPONSE, Opcode::SMSG_DAMAGE_CALC_LOG,
         Opcode::SMSG_DYNAMIC_DROP_ROLL_RESULT, Opcode::SMSG_DESTRUCTIBLE_BUILDING_DAMAGE,
-    }) { dispatchTable_[op] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); }; }
+    }) { dispatchTable_[op] = [this](network::Packet& packet) { packet.skipAll(); }; }
     dispatchTable_[Opcode::SMSG_FORCED_DEATH_UPDATE] = [this](network::Packet& packet) {
         playerDead_ = true;
         if (ghostStateCallback_) ghostStateCallback_(false);
         fireAddonEvent("PLAYER_DEAD", {});
         addSystemChatMessage("You have been killed.");
         LOG_INFO("SMSG_FORCED_DEATH_UPDATE: player force-killed");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_DEFENSE_MESSAGE] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 5) {
@@ -2268,7 +2268,7 @@ void GameHandler::registerOpcodeHandlers() {
                 uint32_t gameTimePacked = packet.readUInt32();
                 gameTime_ = static_cast<float>(gameTimePacked);
             }
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
         };
     }
     dispatchTable_[Opcode::SMSG_GAMESPEED_SET] = [this](network::Packet& packet) {
@@ -2278,10 +2278,10 @@ void GameHandler::registerOpcodeHandlers() {
             gameTime_ = static_cast<float>(gameTimePacked);
             timeSpeed_ = timeSpeed;
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_GAMETIMEBIAS_SET] = [this](network::Packet& packet) {
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_ACHIEVEMENT_DELETED] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 4) {
@@ -2289,14 +2289,14 @@ void GameHandler::registerOpcodeHandlers() {
             earnedAchievements_.erase(achId);
             achievementDates_.erase(achId);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_CRITERIA_DELETED] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 4) {
             uint32_t critId = packet.readUInt32();
             criteriaProgress_.erase(critId);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
 
     // Combat clearing
@@ -2385,7 +2385,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     dispatchTable_[Opcode::SMSG_LOOT_ITEM_NOTIFY] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() < 24) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t looterGuid = packet.readUInt64();
         /*uint64_t lootGuid =*/ packet.readUInt64();
@@ -2705,7 +2705,7 @@ void GameHandler::registerOpcodeHandlers() {
                     fireAddonEvent("READY_CHECK", {readyCheckInitiator_});
     };
     dispatchTable_[Opcode::MSG_RAID_READY_CHECK_CONFIRM] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 9) { packet.setReadPos(packet.getSize()); return; }
+        if (packet.getRemainingSize() < 9) { packet.skipAll(); return; }
         uint64_t respGuid = packet.readUInt64();
         uint8_t  isReady  = packet.readUInt8();
         if (isReady) ++readyCheckReadyCount_; else ++readyCheckNotReadyCount_;
@@ -2968,7 +2968,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < 4) return;
         uint32_t count = packet.readUInt32();
         size_t needed = static_cast<size_t>(count) * 5;
-        if (packet.getRemainingSize() < needed) { packet.setReadPos(packet.getSize()); return; }
+        if (packet.getRemainingSize() < needed) { packet.skipAll(); return; }
         initialFactions_.clear();
         initialFactions_.reserve(count);
         for (uint32_t i = 0; i < count; ++i) {
@@ -3006,7 +3006,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_SET_FACTION_ATWAR] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) { packet.setReadPos(packet.getSize()); return; }
+        if (packet.getRemainingSize() < 5) { packet.skipAll(); return; }
         uint32_t repListId = packet.readUInt32();
         uint8_t  setAtWar  = packet.readUInt8();
         if (repListId < initialFactions_.size()) {
@@ -3017,7 +3017,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_SET_FACTION_VISIBLE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) { packet.setReadPos(packet.getSize()); return; }
+        if (packet.getRemainingSize() < 5) { packet.skipAll(); return; }
         uint32_t repListId = packet.readUInt32();
         uint8_t  visible   = packet.readUInt8();
         if (repListId < initialFactions_.size()) {
@@ -3028,7 +3028,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_FEATURE_SYSTEM_STATUS] = [this](network::Packet& packet) {
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
 
     // Spell modifiers (separate lambdas: *logicalOp was used to determine isFlat)
@@ -3044,7 +3044,7 @@ void GameHandler::registerOpcodeHandlers() {
                     SpellModKey key{ static_cast<SpellModOp>(modOpRaw), groupIndex };
                     modMap[key] = value;
                 }
-                packet.setReadPos(packet.getSize());
+                packet.skipAll();
             };
         };
         dispatchTable_[Opcode::SMSG_SET_FLAT_SPELL_MODIFIER] = makeSpellModHandler(true);
@@ -3166,7 +3166,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_TRIGGER_CINEMATIC] = [this](network::Packet& packet) {
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         network::Packet ack(wireOpcode(Opcode::CMSG_NEXT_CINEMATIC_CAMERA));
         socket->send(ack);
     };
@@ -3354,7 +3354,7 @@ void GameHandler::registerOpcodeHandlers() {
         addSystemChatMessage("Dungeon Finder: You may continue your dungeon.");
     };
     dispatchTable_[Opcode::SMSG_LFG_ROLE_CHOSEN] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 13) { packet.setReadPos(packet.getSize()); return; }
+        if (packet.getRemainingSize() < 13) { packet.skipAll(); return; }
         uint64_t roleGuid = packet.readUInt64();
         uint8_t  ready    = packet.readUInt8();
         uint32_t roles    = packet.readUInt32();
@@ -3368,14 +3368,14 @@ void GameHandler::registerOpcodeHandlers() {
             if (auto u = std::dynamic_pointer_cast<Unit>(e))
                 pName = u->getName();
         if (ready) addSystemChatMessage(pName + " has chosen: " + roleName);
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     for (auto op : { Opcode::SMSG_LFG_UPDATE_SEARCH, Opcode::SMSG_UPDATE_LFG_LIST,
                      Opcode::SMSG_LFG_PLAYER_INFO, Opcode::SMSG_LFG_PARTY_INFO }) {
-        dispatchTable_[op] = [](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+        dispatchTable_[op] = [](network::Packet& packet) { packet.skipAll(); };
     }
     dispatchTable_[Opcode::SMSG_OPEN_LFG_DUNGEON_FINDER] = [this](network::Packet& packet) {
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         if (openLfgCallback_) openLfgCallback_();
     };
 
@@ -3389,7 +3389,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_ARENA_ERROR] = [this](network::Packet& packet) { handleArenaError(packet); };
     dispatchTable_[Opcode::MSG_PVP_LOG_DATA] = [this](network::Packet& packet) { handlePvpLogData(packet); };
     dispatchTable_[Opcode::MSG_TALENT_WIPE_CONFIRM] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 12) { packet.setReadPos(packet.getSize()); return; }
+        if (packet.getRemainingSize() < 12) { packet.skipAll(); return; }
         talentWipeNpcGuid_ = packet.readUInt64();
         talentWipeCost_    = packet.readUInt32();
         talentWipePending_ = true;
@@ -3594,7 +3594,7 @@ void GameHandler::registerOpcodeHandlers() {
         uint32_t spellId = packet.readUInt32();
         if (packet.getRemainingSize() < (spellMissUsesFullGuid ? 8u : 1u)
             || (!spellMissUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t casterGuid = readSpellMissGuid();
         if (packet.getRemainingSize() < 5) return;
@@ -3643,7 +3643,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
 
         if (truncated) {
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
 
@@ -3699,7 +3699,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         if (packet.getRemainingSize() < guidBytes + 1) {
             LOG_WARNING("SMSG_CLIENT_CONTROL_UPDATE malformed (truncated packed guid)");
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
         for (int i = 0; i < 8; ++i) {
@@ -3887,11 +3887,11 @@ void GameHandler::registerOpcodeHandlers() {
             if (packet.getRemainingSize() < 4) return;
             dispelSpellId = packet.readUInt32();
             if (!packet.hasFullPackedGuid()) {
-                packet.setReadPos(packet.getSize()); return;
+                packet.skipAll(); return;
             }
             dispelCasterGuid = packet.readPackedGuid();
             if (!packet.hasFullPackedGuid()) {
-                packet.setReadPos(packet.getSize()); return;
+                packet.skipAll(); return;
             }
             /*uint64_t victim =*/ packet.readPackedGuid();
         }
@@ -3932,7 +3932,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_ENVIRONMENTAL_DAMAGE_LOG] = [this](network::Packet& packet) {
         // uint64 victimGuid + uint8 envDmgType + uint32 damage + uint32 absorbed + uint32 resisted
         // envDmgType: 0=Exhausted(fatigue), 1=Drowning, 2=Fall, 3=Lava, 4=Slime, 5=Fire
-        if (packet.getRemainingSize() < 21) { packet.setReadPos(packet.getSize()); return; }
+        if (packet.getRemainingSize() < 21) { packet.skipAll(); return; }
         uint64_t victimGuid  = packet.readUInt64();
         uint8_t envType      = packet.readUInt8();
         uint32_t dmg         = packet.readUInt32();
@@ -3947,7 +3947,7 @@ void GameHandler::registerOpcodeHandlers() {
             if (envRes > 0)
                 addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(envRes), 0, false, 0, 0, victimGuid);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
 
     // ---- Spline move flag changes for other units (unroot/unset_hover/water_walk) ----
@@ -4039,7 +4039,7 @@ void GameHandler::registerOpcodeHandlers() {
             (void)packet.readPackedGuid(); // highest-threat / current target
             if (packet.getRemainingSize() < 4) return;
             uint32_t cnt = packet.readUInt32();
-            if (cnt > 100) { packet.setReadPos(packet.getSize()); return; } // sanity
+            if (cnt > 100) { packet.skipAll(); return; } // sanity
             std::vector<ThreatEntry> list;
             list.reserve(cnt);
             for (uint32_t i = 0; i < cnt; ++i) {
@@ -4137,7 +4137,7 @@ void GameHandler::registerOpcodeHandlers() {
             } else {
                 LOG_WARNING("SMSG_INIT_WORLD_STATES truncated: expected ", needed,
                             " bytes of state pairs, got ", available);
-                packet.setReadPos(packet.getSize());
+                packet.skipAll();
                 return;
             }
         }
@@ -4235,7 +4235,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         LOG_INFO("SMSG_ACTION_BUTTONS: populated action bar from server");
         fireAddonEvent("ACTIONBAR_SLOT_CHANGED", {});
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
 
     // ---- SMSG_LEVELUP_INFO / SMSG_LEVELUP_INFO_ALT (shared body) ----
@@ -4273,7 +4273,7 @@ void GameHandler::registerOpcodeHandlers() {
                     }
                 }
             }
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
         };
     }
 
@@ -4698,7 +4698,7 @@ void GameHandler::registerOpcodeHandlers() {
         bool isPlayerVictim = (victimGuid == playerGuid);
         bool isPlayerCaster = (casterGuid == playerGuid);
         if (!isPlayerVictim && !isPlayerCaster) {
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
         for (uint32_t i = 0; i < count && packet.getRemainingSize() >= 1; ++i) {
@@ -4775,11 +4775,11 @@ void GameHandler::registerOpcodeHandlers() {
                 }
             } else {
                 // Unknown/untracked aura type — stop parsing this event safely
-                packet.setReadPos(packet.getSize());
+                packet.skipAll();
                 break;
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // WotLK: packed_guid victim + packed_guid caster + uint32 spellId + uint8 powerType + int32 amount
     // TBC: full uint64 victim + uint64 caster + uint32 spellId + uint8 powerType + int32 amount
@@ -4796,16 +4796,16 @@ void GameHandler::registerOpcodeHandlers() {
         };
         if (packet.getRemainingSize() < (energizeTbc ? 8u : 1u)
             || (!energizeTbc && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t victimGuid = readEnergizeGuid();
         if (packet.getRemainingSize() < (energizeTbc ? 8u : 1u)
             || (!energizeTbc && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t casterGuid = readEnergizeGuid();
         if (packet.getRemainingSize() < 9) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint32_t spellId       = packet.readUInt32();
         uint8_t  energizePowerType = packet.readUInt8();
@@ -4814,7 +4814,7 @@ void GameHandler::registerOpcodeHandlers() {
         bool isPlayerCaster = (casterGuid == playerGuid);
         if ((isPlayerVictim || isPlayerCaster) && amount > 0)
             addCombatText(CombatTextEntry::ENERGIZE, amount, spellId, isPlayerCaster, energizePowerType, casterGuid, victimGuid);
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint32 currentZoneLightId + uint32 overrideLightId + uint32 transitionMs
     dispatchTable_[Opcode::SMSG_OVERRIDE_LIGHT] = [this](network::Packet& packet) {
@@ -5345,7 +5345,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::MSG_INSPECT_ARENA_TEAMS] = [this](network::Packet& packet) {
         // WotLK: uint64 playerGuid + uint8 teamCount + per-team fields
         if (packet.getRemainingSize() < 9) {
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
         uint64_t inspGuid  = packet.readUInt64();
@@ -5401,7 +5401,7 @@ void GameHandler::registerOpcodeHandlers() {
             else
                 addSystemChatMessage("Your auction of " + itemLink + " has sold!");
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // auctionHouseId(u32) + auctionId(u32) + bidderGuid(u64) + bidAmount(u32) + outbidAmount(u32) + itemEntry(u32) + randomPropertyId(u32)
     dispatchTable_[Opcode::SMSG_AUCTION_BIDDER_NOTIFICATION] = [this](network::Packet& packet) {
@@ -5424,7 +5424,7 @@ void GameHandler::registerOpcodeHandlers() {
             std::string bidLink = buildItemLink(itemEntry, bidQuality, rawName2);
             addSystemChatMessage("You have been outbid on " + bidLink + ".");
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint32 auctionId + uint32 itemEntry + uint32 itemRandom — auction expired/cancelled
     dispatchTable_[Opcode::SMSG_AUCTION_REMOVED_NOTIFICATION] = [this](network::Packet& packet) {
@@ -5444,7 +5444,7 @@ void GameHandler::registerOpcodeHandlers() {
             std::string remLink = buildItemLink(itemEntry, remQuality, rawName3);
             addSystemChatMessage("Your auction of " + remLink + " has expired.");
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint64 containerGuid — tells client to open this container
     // The actual items come via update packets; we just log this.
@@ -5488,7 +5488,7 @@ void GameHandler::registerOpcodeHandlers() {
         //         uint8 effectIndex, uint8 flags, uint32 durationMs, uint32 maxDurationMs}
         const bool isInit = true;
         auto remaining = [&]() { return packet.getRemainingSize(); };
-        if (remaining() < 9) { packet.setReadPos(packet.getSize()); return; }
+        if (remaining() < 9) { packet.skipAll(); return; }
         uint64_t auraTargetGuid = packet.readUInt64();
         uint8_t count = packet.readUInt8();
 
@@ -5523,7 +5523,7 @@ void GameHandler::registerOpcodeHandlers() {
                 a.receivedAtMs = nowMs;
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // TBC 2.4.3 aura tracking: replaces SMSG_AURA_UPDATE which doesn't exist in TBC.
     // Format: uint64 targetGuid + uint8 count + N×{uint8 slot, uint32 spellId,
@@ -5534,7 +5534,7 @@ void GameHandler::registerOpcodeHandlers() {
         //         uint8 effectIndex, uint8 flags, uint32 durationMs, uint32 maxDurationMs}
         const bool isInit = false;
         auto remaining = [&]() { return packet.getRemainingSize(); };
-        if (remaining() < 9) { packet.setReadPos(packet.getSize()); return; }
+        if (remaining() < 9) { packet.skipAll(); return; }
         uint64_t auraTargetGuid = packet.readUInt64();
         uint8_t count = packet.readUInt8();
 
@@ -5569,7 +5569,7 @@ void GameHandler::registerOpcodeHandlers() {
                 a.receivedAtMs = nowMs;
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_GUILD_DECLINE] = [this](network::Packet& packet) {
         if (packet.getReadPos() < packet.getSize()) {
@@ -5584,7 +5584,7 @@ void GameHandler::registerOpcodeHandlers() {
         learnedTalents_[1].clear();
         addUIError("Your talents have been reset by the server.");
         addSystemChatMessage("Your talents have been reset by the server.");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_SET_REST_START] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 4) {
@@ -5614,7 +5614,7 @@ void GameHandler::registerOpcodeHandlers() {
                 itemInfoCache_[itemId] = std::move(stub);
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_MOUNTSPECIAL_ANIM] = [this](network::Packet& packet) { (void)packet.readPackedGuid(); };
     dispatchTable_[Opcode::SMSG_CHAR_CUSTOMIZE] = [this](network::Packet& packet) {
@@ -5623,7 +5623,7 @@ void GameHandler::registerOpcodeHandlers() {
             addSystemChatMessage(result == 0 ? "Character customization complete."
                                              : "Character customization failed.");
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_CHAR_FACTION_CHANGE] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 1) {
@@ -5631,7 +5631,7 @@ void GameHandler::registerOpcodeHandlers() {
             addSystemChatMessage(result == 0 ? "Faction change complete."
                                              : "Faction change failed.");
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_INVALIDATE_PLAYER] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 8) {
@@ -5642,7 +5642,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 movieId — we don't play movies; acknowledge immediately.
     dispatchTable_[Opcode::SMSG_TRIGGER_MOVIE] = [this](network::Packet& packet) {
         // uint32 movieId — we don't play movies; acknowledge immediately.
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         // WotLK servers expect CMSG_COMPLETE_MOVIE after the movie finishes;
         // without it, the server may hang or disconnect the client.
         uint16_t wire = wireOpcode(Opcode::CMSG_COMPLETE_MOVIE);
@@ -5664,14 +5664,14 @@ void GameHandler::registerOpcodeHandlers() {
         // Server-side LFG invite timed out (no response within time limit)
         addSystemChatMessage("Dungeon Finder: Invite timed out.");
         if (openLfgCallback_) openLfgCallback_();
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Another party member failed to respond to a LFG role-check in time
     dispatchTable_[Opcode::SMSG_LFG_OTHER_TIMEDOUT] = [this](network::Packet& packet) {
         // Another party member failed to respond to a LFG role-check in time
         addSystemChatMessage("Dungeon Finder: Another player's invite timed out.");
         if (openLfgCallback_) openLfgCallback_();
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint32 result — LFG auto-join attempt failed (player selected auto-join at queue time)
     dispatchTable_[Opcode::SMSG_LFG_AUTOJOIN_FAILED] = [this](network::Packet& packet) {
@@ -5682,20 +5682,20 @@ void GameHandler::registerOpcodeHandlers() {
         }
         addUIError("Dungeon Finder: Auto-join failed.");
         addSystemChatMessage("Dungeon Finder: Auto-join failed.");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // No eligible players found for auto-join
     dispatchTable_[Opcode::SMSG_LFG_AUTOJOIN_FAILED_NO_PLAYER] = [this](network::Packet& packet) {
         // No eligible players found for auto-join
         addUIError("Dungeon Finder: No players available for auto-join.");
         addSystemChatMessage("Dungeon Finder: No players available for auto-join.");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Party leader is currently set to Looking for More (LFM) mode
     dispatchTable_[Opcode::SMSG_LFG_LEADER_IS_LFM] = [this](network::Packet& packet) {
         // Party leader is currently set to Looking for More (LFM) mode
         addSystemChatMessage("Your party leader is currently Looking for More.");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint32 zoneId + uint8 level_min + uint8 level_max — player queued for meeting stone
     dispatchTable_[Opcode::SMSG_MEETINGSTONE_SETQUEUE] = [this](network::Packet& packet) {
@@ -5718,21 +5718,21 @@ void GameHandler::registerOpcodeHandlers() {
             LOG_INFO("SMSG_MEETINGSTONE_SETQUEUE: zone=", zoneId,
                      " levels=", static_cast<int>(levelMin), "-", static_cast<int>(levelMax));
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Server confirms group found and teleport summon is ready
     dispatchTable_[Opcode::SMSG_MEETINGSTONE_COMPLETE] = [this](network::Packet& packet) {
         // Server confirms group found and teleport summon is ready
         addSystemChatMessage("Meeting Stone: Your group is ready! Use the Meeting Stone to summon.");
         LOG_INFO("SMSG_MEETINGSTONE_COMPLETE");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Meeting stone search is still ongoing
     dispatchTable_[Opcode::SMSG_MEETINGSTONE_IN_PROGRESS] = [this](network::Packet& packet) {
         // Meeting stone search is still ongoing
         addSystemChatMessage("Meeting Stone: Searching for group members...");
         LOG_DEBUG("SMSG_MEETINGSTONE_IN_PROGRESS");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint64 memberGuid — a player was added to your group via meeting stone
     dispatchTable_[Opcode::SMSG_MEETINGSTONE_MEMBER_ADDED] = [this](network::Packet& packet) {
@@ -5773,7 +5773,7 @@ void GameHandler::registerOpcodeHandlers() {
         // Player was removed from the meeting stone queue (left, or group disbanded)
         addSystemChatMessage("You have left the Meeting Stone queue.");
         LOG_DEBUG("SMSG_MEETINGSTONE_LEAVE");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_GMTICKET_CREATE] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 1) {
@@ -5811,7 +5811,7 @@ void GameHandler::registerOpcodeHandlers() {
         //   uint32  ticketAge       (seconds old)
         //   uint32  daysUntilOld    (days remaining before escalation)
         //   float   waitTimeHours   (estimated GM wait time)
-        if (packet.getRemainingSize() < 1) { packet.setReadPos(packet.getSize()); return; }
+        if (packet.getRemainingSize() < 1) { packet.skipAll(); return; }
         uint8_t gmStatus = packet.readUInt8();
         // Status 6 = GMTICKET_STATUS_HASTEXT — open ticket with text
         if (gmStatus == 6 && packet.getRemainingSize() >= 1) {
@@ -5851,7 +5851,7 @@ void GameHandler::registerOpcodeHandlers() {
             gmTicketText_.clear();
             LOG_DEBUG("SMSG_GMTICKET_GETTICKET: no open ticket (status=", static_cast<int>(gmStatus), ")");
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint32 status: 1 = GM support available, 0 = offline/unavailable
     dispatchTable_[Opcode::SMSG_GMTICKET_SYSTEMSTATUS] = [this](network::Packet& packet) {
@@ -5864,13 +5864,13 @@ void GameHandler::registerOpcodeHandlers() {
                 : "GM support is currently unavailable.");
             LOG_INFO("SMSG_GMTICKET_SYSTEMSTATUS: available=", gmSupportAvailable_);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint8 runeIndex + uint8 newRuneType (0=Blood,1=Unholy,2=Frost,3=Death)
     dispatchTable_[Opcode::SMSG_CONVERT_RUNE] = [this](network::Packet& packet) {
         // uint8 runeIndex + uint8 newRuneType (0=Blood,1=Unholy,2=Frost,3=Death)
         if (packet.getRemainingSize() < 2) {
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
         uint8_t idx  = packet.readUInt8();
@@ -5883,7 +5883,7 @@ void GameHandler::registerOpcodeHandlers() {
         // uint8 runeReadyMask (bit i=1 → rune i is ready)
         // uint8[6] cooldowns (0=ready, 255=just used → readyFraction = 1 - val/255)
         if (packet.getRemainingSize() < 7) {
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
         uint8_t readyMask = packet.readUInt8();
@@ -5898,7 +5898,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_ADD_RUNE_POWER] = [this](network::Packet& packet) {
         // uint32 runeMask (bit i=1 → rune i just became ready)
         if (packet.getRemainingSize() < 4) {
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
         uint32_t runeMask = packet.readUInt32();
@@ -5921,22 +5921,22 @@ void GameHandler::registerOpcodeHandlers() {
         const auto shieldRem = [&]() { return packet.getRemainingSize(); };
         const size_t shieldMinSz = shieldTbc ? 24u : 2u;
         if (packet.getRemainingSize() < shieldMinSz) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         if (!shieldTbc && (!packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t victimGuid = shieldTbc
             ? packet.readUInt64() : packet.readPackedGuid();
         if (packet.getRemainingSize() < (shieldTbc ? 8u : 1u)
             || (!shieldTbc && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t casterGuid = shieldTbc
             ? packet.readUInt64() : packet.readPackedGuid();
         const size_t shieldTailSize = shieldWotlkLike ? 16u : 12u;
         if (shieldRem() < shieldTailSize) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint32_t shieldSpellId = packet.readUInt32();
         uint32_t damage        = packet.readUInt32();
@@ -5960,16 +5960,16 @@ void GameHandler::registerOpcodeHandlers() {
         const bool immuneUsesFullGuid = isActiveExpansion("tbc");
         const size_t minSz = immuneUsesFullGuid ? 21u : 2u;
         if (packet.getRemainingSize() < minSz) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         if (!immuneUsesFullGuid && !packet.hasFullPackedGuid()) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t casterGuid = immuneUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
         if (packet.getRemainingSize() < (immuneUsesFullGuid ? 8u : 2u)
             || (!immuneUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t victimGuid = immuneUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
@@ -5993,13 +5993,13 @@ void GameHandler::registerOpcodeHandlers() {
         const bool dispelUsesFullGuid = isActiveExpansion("tbc");
         if (packet.getRemainingSize() < (dispelUsesFullGuid ? 8u : 1u)
             || (!dispelUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t casterGuid = dispelUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
         if (packet.getRemainingSize() < (dispelUsesFullGuid ? 8u : 1u)
             || (!dispelUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t victimGuid = dispelUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
@@ -6071,7 +6071,7 @@ void GameHandler::registerOpcodeHandlers() {
                 }
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Sent to the CASTER (Mage) when Spellsteal succeeds.
     // Wire format mirrors SPELLDISPELLOG:
@@ -6087,18 +6087,18 @@ void GameHandler::registerOpcodeHandlers() {
         const bool stealUsesFullGuid = isActiveExpansion("tbc");
         if (packet.getRemainingSize() < (stealUsesFullGuid ? 8u : 1u)
             || (!stealUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t stealVictim = stealUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
         if (packet.getRemainingSize() < (stealUsesFullGuid ? 8u : 1u)
             || (!stealUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t stealCaster = stealUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
         if (packet.getRemainingSize() < 9) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         /*uint32_t stealSpellId =*/ packet.readUInt32();
         /*uint8_t  isStolen    =*/ packet.readUInt8();
@@ -6146,7 +6146,7 @@ void GameHandler::registerOpcodeHandlers() {
                 }
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // WotLK/Classic/Turtle: packed_guid target + packed_guid caster + uint32 spellId + ...
     // TBC:                  uint64 target + uint64 caster + uint32 spellId + ...
@@ -6161,23 +6161,23 @@ void GameHandler::registerOpcodeHandlers() {
         };
         if (packet.getRemainingSize() < (procChanceUsesFullGuid ? 8u : 1u)
             || (!procChanceUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t procTargetGuid = readProcChanceGuid();
         if (packet.getRemainingSize() < (procChanceUsesFullGuid ? 8u : 1u)
             || (!procChanceUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t procCasterGuid = readProcChanceGuid();
         if (packet.getRemainingSize() < 4) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint32_t procSpellId = packet.readUInt32();
         // Show a "PROC!" floating text when the player triggers the proc
         if (procCasterGuid == playerGuid && procSpellId > 0)
             addCombatText(CombatTextEntry::PROC_TRIGGER, 0, procSpellId, true, 0,
                           procCasterGuid, procTargetGuid);
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Sent when a unit is killed by a spell with SPELL_ATTR_EX2_INSTAKILL (e.g. Execute, Obliterate, etc.)
     // WotLK/Classic/Turtle: packed_guid caster + packed_guid victim + uint32 spellId
@@ -6190,18 +6190,18 @@ void GameHandler::registerOpcodeHandlers() {
         auto ik_rem = [&]() { return packet.getRemainingSize(); };
         if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)
             || (!ikUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t ikCaster = ikUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
         if (ik_rem() < (ikUsesFullGuid ? 8u : 1u)
             || (!ikUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t ikVictim = ikUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
         if (ik_rem() < 4) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint32_t ikSpell = packet.readUInt32();
         // Show kill/death feedback for the local player
@@ -6214,7 +6214,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         LOG_DEBUG("SMSG_SPELLINSTAKILLLOG: caster=0x", std::hex, ikCaster,
                   " victim=0x", ikVictim, std::dec, " spell=", ikSpell);
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // WotLK/Classic/Turtle: packed_guid caster + uint32 spellId + uint32 effectCount
     // TBC:                  uint64 caster + uint32 spellId + uint32 effectCount
@@ -6237,15 +6237,15 @@ void GameHandler::registerOpcodeHandlers() {
         // Effect 114= CREATE_ITEM2:  uint32 itemEntry (same layout as CREATE_ITEM)
         const bool exeUsesFullGuid = isActiveExpansion("tbc");
         if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         if (!exeUsesFullGuid && !packet.hasFullPackedGuid()) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t exeCaster = exeUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
         if (packet.getRemainingSize() < 8) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint32_t exeSpellId = packet.readUInt32();
         uint32_t exeEffectCount = packet.readUInt32();
@@ -6262,12 +6262,12 @@ void GameHandler::registerOpcodeHandlers() {
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
                     if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)
                         || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
-                        packet.setReadPos(packet.getSize()); break;
+                        packet.skipAll(); break;
                     }
                     uint64_t drainTarget = exeUsesFullGuid
                         ? packet.readUInt64()
                         : packet.readPackedGuid();
-                    if (packet.getRemainingSize() < 12) { packet.setReadPos(packet.getSize()); break; }
+                    if (packet.getRemainingSize() < 12) { packet.skipAll(); break; }
                     uint32_t drainAmount = packet.readUInt32();
                     uint32_t drainPower  = packet.readUInt32(); // 0=mana,1=rage,3=energy,6=runic
                     float drainMult = packet.readFloat();
@@ -6300,12 +6300,12 @@ void GameHandler::registerOpcodeHandlers() {
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
                     if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)
                         || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
-                        packet.setReadPos(packet.getSize()); break;
+                        packet.skipAll(); break;
                     }
                     uint64_t leechTarget = exeUsesFullGuid
                         ? packet.readUInt64()
                         : packet.readPackedGuid();
-                    if (packet.getRemainingSize() < 8) { packet.setReadPos(packet.getSize()); break; }
+                    if (packet.getRemainingSize() < 8) { packet.skipAll(); break; }
                     uint32_t leechAmount = packet.readUInt32();
                     float leechMult = packet.readFloat();
                     if (leechAmount > 0) {
@@ -6362,12 +6362,12 @@ void GameHandler::registerOpcodeHandlers() {
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
                     if (packet.getRemainingSize() < (exeUsesFullGuid ? 8u : 1u)
                         || (!exeUsesFullGuid && !packet.hasFullPackedGuid())) {
-                        packet.setReadPos(packet.getSize()); break;
+                        packet.skipAll(); break;
                     }
                     uint64_t icTarget = exeUsesFullGuid
                         ? packet.readUInt64()
                         : packet.readPackedGuid();
-                    if (packet.getRemainingSize() < 4) { packet.setReadPos(packet.getSize()); break; }
+                    if (packet.getRemainingSize() < 4) { packet.skipAll(); break; }
                     uint32_t icSpellId = packet.readUInt32();
                     // Clear the interrupted unit's cast bar immediately
                     unitCastStates_.erase(icTarget);
@@ -6395,11 +6395,11 @@ void GameHandler::registerOpcodeHandlers() {
                 }
             } else {
                 // Unknown effect type — stop parsing to avoid misalignment
-                packet.setReadPos(packet.getSize());
+                packet.skipAll();
                 break;
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // TBC 2.4.3: clear a single aura slot for a unit
     // Format: uint64 targetGuid + uint8 slot
@@ -6416,7 +6416,7 @@ void GameHandler::registerOpcodeHandlers() {
                 (*auraList)[slot] = AuraSlot{};
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Format: uint64 itemGuid + uint32 slot + uint32 durationSec + uint64 playerGuid
     // slot: 0=main-hand, 1=off-hand, 2=ranged
@@ -6424,7 +6424,7 @@ void GameHandler::registerOpcodeHandlers() {
         // Format: uint64 itemGuid + uint32 slot + uint32 durationSec + uint64 playerGuid
         // slot: 0=main-hand, 1=off-hand, 2=ranged
         if (packet.getRemainingSize() < 24) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         /*uint64_t itemGuid =*/ packet.readUInt64();
         uint32_t enchSlot    = packet.readUInt32();
@@ -6477,7 +6477,7 @@ void GameHandler::registerOpcodeHandlers() {
             else if (result == 2)
                 addUIError("Report a Player is currently disabled.");
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // WotLK: packed_guid caster + packed_guid target + uint32 spellId + uint32 remainingMs + uint32 totalMs + uint8 schoolMask
     // TBC/Classic: uint64 caster + uint64 target + ...
@@ -6586,7 +6586,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_UPDATE_INSTANCE_ENCOUNTER_UNIT] = [this](network::Packet& packet) {
         // uint32 slot + packed_guid unit (0 packed = clear slot)
         if (packet.getRemainingSize() < 5) {
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
         uint32_t slot = packet.readUInt32();
@@ -6620,7 +6620,7 @@ void GameHandler::registerOpcodeHandlers() {
                 addSystemChatMessage(buf);
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_SET_FORCED_REACTIONS] = [this](network::Packet& packet) { handleSetForcedReactions(packet); };
     dispatchTable_[Opcode::SMSG_SUSPEND_COMMS] = [this](network::Packet& packet) {
@@ -6662,7 +6662,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_RAID_GROUP_ONLY] = [this](network::Packet& packet) {
         addUIError("You must be in a raid group to enter this instance.");
         addSystemChatMessage("You must be in a raid group to enter this instance.");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_RAID_READY_CHECK_ERROR] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 1) {
@@ -6675,7 +6675,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_RESET_FAILED_NOTIFY] = [this](network::Packet& packet) {
         addUIError("Cannot reset instance: another player is still inside.");
         addSystemChatMessage("Cannot reset instance: another player is still inside.");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint32 splitType + uint32 deferTime + string realmName
     // Client must respond with CMSG_REALM_SPLIT to avoid session timeout on some servers.
@@ -6685,7 +6685,7 @@ void GameHandler::registerOpcodeHandlers() {
         uint32_t splitType = 0;
         if (packet.getRemainingSize() >= 4)
             splitType = packet.readUInt32();
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         if (socket) {
             network::Packet resp(wireOpcode(Opcode::CMSG_REALM_SPLIT));
             resp.writeUInt32(splitType);
@@ -6743,7 +6743,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_PLAY_SPELL_IMPACT] = [this](network::Packet& packet) {
         // uint64 targetGuid + uint32 visualId (same structure as SMSG_PLAY_SPELL_VISUAL)
         if (packet.getRemainingSize() < 12) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t impTargetGuid = packet.readUInt64();
         uint32_t impVisualId   = packet.readUInt32();
@@ -6772,27 +6772,27 @@ void GameHandler::registerOpcodeHandlers() {
         // Show RESIST combat text when player resists an incoming spell.
         const bool rlUsesFullGuid = isActiveExpansion("tbc");
         auto rl_rem = [&]() { return packet.getRemainingSize(); };
-        if (rl_rem() < 4) { packet.setReadPos(packet.getSize()); return; }
+        if (rl_rem() < 4) { packet.skipAll(); return; }
         /*uint32_t hitInfo =*/ packet.readUInt32();
         if (rl_rem() < (rlUsesFullGuid ? 8u : 1u)
             || (!rlUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t attackerGuid = rlUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
         if (rl_rem() < (rlUsesFullGuid ? 8u : 1u)
             || (!rlUsesFullGuid && !packet.hasFullPackedGuid())) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t victimGuid = rlUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (rl_rem() < 4) { packet.setReadPos(packet.getSize()); return; }
+        if (rl_rem() < 4) { packet.skipAll(); return; }
         uint32_t spellId = packet.readUInt32();
         // Resist payload includes:
         // float resistFactor + uint32 targetResistance + uint32 resistedValue.
         // Require the full payload so truncated packets cannot synthesize
         // zero-value resist events.
-        if (rl_rem() < 12) { packet.setReadPos(packet.getSize()); return; }
+        if (rl_rem() < 12) { packet.skipAll(); return; }
         /*float resistFactor =*/ packet.readFloat();
         /*uint32_t targetRes =*/ packet.readUInt32();
         int32_t resistedAmount = static_cast<int32_t>(packet.readUInt32());
@@ -6802,16 +6802,16 @@ void GameHandler::registerOpcodeHandlers() {
         } else if (resistedAmount > 0 && attackerGuid == playerGuid) {
             addCombatText(CombatTextEntry::RESIST, resistedAmount, spellId, true, 0, attackerGuid, victimGuid);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_READ_ITEM_OK] = [this](network::Packet& packet) {
         bookPages_.clear();  // fresh book for this item read
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_READ_ITEM_FAILED] = [this](network::Packet& packet) {
         addUIError("You cannot read this item.");
         addSystemChatMessage("You cannot read this item.");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_QUERY_QUESTS_COMPLETED_RESPONSE] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 4) {
@@ -6825,7 +6825,7 @@ void GameHandler::registerOpcodeHandlers() {
                 LOG_DEBUG("SMSG_QUERY_QUESTS_COMPLETED_RESPONSE: ", count, " completed quests");
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // WotLK 3.3.5a format: uint64 guid + uint32 questId + uint32 count + uint32 reqCount
     // Classic format:       uint64 guid + uint32 questId + uint32 count  (no reqCount)
@@ -6873,7 +6873,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_NPC_WONT_TALK] = [this](network::Packet& packet) {
         addUIError("That creature can't talk to you right now.");
         addSystemChatMessage("That creature can't talk to you right now.");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_OFFER_PETITION_ERROR] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 4) {
@@ -6901,7 +6901,7 @@ void GameHandler::registerOpcodeHandlers() {
                           " react=", static_cast<int>(petReact_));
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Pet bond broken (died or forcibly dismissed) — clear pet state
     dispatchTable_[Opcode::SMSG_PET_BROKEN] = [this](network::Packet& packet) {
@@ -6912,7 +6912,7 @@ void GameHandler::registerOpcodeHandlers() {
         memset(petActionSlots_, 0, sizeof(petActionSlots_));
         addSystemChatMessage("Your pet has died.");
         LOG_INFO("SMSG_PET_BROKEN: pet bond broken");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_PET_LEARNED_SPELL] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 4) {
@@ -6923,7 +6923,7 @@ void GameHandler::registerOpcodeHandlers() {
             LOG_DEBUG("SMSG_PET_LEARNED_SPELL: spellId=", spellId);
             fireAddonEvent("PET_BAR_UPDATE", {});
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_PET_UNLEARNED_SPELL] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 4) {
@@ -6934,7 +6934,7 @@ void GameHandler::registerOpcodeHandlers() {
             petAutocastSpells_.erase(spellId);
             LOG_DEBUG("SMSG_PET_UNLEARNED_SPELL: spellId=", spellId);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // WotLK: castCount(1) + spellId(4) + reason(1)
     // Classic/TBC: spellId(4) + reason(1) (no castCount)
@@ -6961,7 +6961,7 @@ void GameHandler::registerOpcodeHandlers() {
                 addSystemChatMessage(errMsg);
             }
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint64 petGuid + uint32 cost (copper)
     for (auto op : { Opcode::SMSG_PET_GUIDS, Opcode::SMSG_PET_DISMISS_SOUND, Opcode::SMSG_PET_ACTION_SOUND, Opcode::SMSG_PET_UNLEARN_CONFIRM }) {
@@ -6972,19 +6972,19 @@ void GameHandler::registerOpcodeHandlers() {
                 petUnlearnCost_ = packet.readUInt32();
                 petUnlearnPending_ = true;
             }
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
         };
     }
     // Server signals that the pet can now be named (first tame)
     dispatchTable_[Opcode::SMSG_PET_RENAMEABLE] = [this](network::Packet& packet) {
         // Server signals that the pet can now be named (first tame)
         petRenameablePending_ = true;
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_PET_NAME_INVALID] = [this](network::Packet& packet) {
         addUIError("That pet name is invalid. Please choose a different name.");
         addSystemChatMessage("That pet name is invalid. Please choose a different name.");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Classic 1.12: PackedGUID + 19×uint32 itemEntries (EQUIPMENT_SLOT_END=19)
     // This opcode is only reachable on Classic servers; TBC/WotLK wire 0x115 maps to
@@ -6994,15 +6994,15 @@ void GameHandler::registerOpcodeHandlers() {
         // This opcode is only reachable on Classic servers; TBC/WotLK wire 0x115 maps to
         // SMSG_INSPECT_RESULTS_UPDATE which is handled separately.
         if (packet.getRemainingSize() < 2) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t guid = packet.readPackedGuid();
-        if (guid == 0) { packet.setReadPos(packet.getSize()); return; }
+        if (guid == 0) { packet.skipAll(); return; }
 
         constexpr int kGearSlots = 19;
         size_t needed = kGearSlots * sizeof(uint32_t);
         if (packet.getRemainingSize() < needed) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
 
         std::array<uint32_t, 19> items{};
@@ -7085,7 +7085,7 @@ void GameHandler::registerOpcodeHandlers() {
         for (auto it = subPackets.rbegin(); it != subPackets.rend(); ++it) {
             enqueueIncomingPacketFront(std::move(*it));
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Recruit-A-Friend: a mentor is offering to grant you a level
     dispatchTable_[Opcode::SMSG_PROPOSE_LEVEL_GRANT] = [this](network::Packet& packet) {
@@ -7100,11 +7100,11 @@ void GameHandler::registerOpcodeHandlers() {
                 ? "A player is offering to grant you a level."
                 : (mentorName + " is offering to grant you a level."));
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_REFER_A_FRIEND_EXPIRED] = [this](network::Packet& packet) {
         addSystemChatMessage("Your Recruit-A-Friend link has expired.");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_REFER_A_FRIEND_FAILURE] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 4) {
@@ -7123,7 +7123,7 @@ void GameHandler::registerOpcodeHandlers() {
                                            : "Recruit-A-Friend failed.";
             addSystemChatMessage(std::string("Recruit-A-Friend: ") + msg);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_REPORT_PVP_AFK_RESULT] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 1) {
@@ -7133,13 +7133,13 @@ void GameHandler::registerOpcodeHandlers() {
             else
                 addSystemChatMessage("Cannot report that player as AFK right now.");
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_RESPOND_INSPECT_ACHIEVEMENTS] = [this](network::Packet& packet) { handleRespondInspectAchievements(packet); };
     dispatchTable_[Opcode::SMSG_QUEST_POI_QUERY_RESPONSE] = [this](network::Packet& packet) { handleQuestPoiQueryResponse(packet); };
     dispatchTable_[Opcode::SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA] = [this](network::Packet& packet) {
         vehicleId_ = 0;  // Vehicle ride cancelled; clear UI
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint32 type (0=normal, 1=heavy, 2=tired/restricted) + uint32 minutes played
     dispatchTable_[Opcode::SMSG_PLAY_TIME_WARNING] = [this](network::Packet& packet) {
@@ -7205,13 +7205,13 @@ void GameHandler::registerOpcodeHandlers() {
         }
         LOG_DEBUG("SMSG_MIRRORIMAGE_DATA: mirrorGuid=0x", std::hex, mirrorGuid,
                   " displayId=", std::dec, displayId);
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint64 battlefieldGuid + uint32 zoneId + uint64 expireUnixTime (seconds)
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_MGR_ENTRY_INVITE] = [this](network::Packet& packet) {
         // uint64 battlefieldGuid + uint32 zoneId + uint64 expireUnixTime (seconds)
         if (packet.getRemainingSize() < 20) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t bfGuid    = packet.readUInt64();
         uint32_t bfZoneId  = packet.readUInt32();
@@ -7248,13 +7248,13 @@ void GameHandler::registerOpcodeHandlers() {
             if (onQueue) addSystemChatMessage("You are in the battlefield queue.");
             LOG_INFO("SMSG_BATTLEFIELD_MGR_ENTERED: isSafe=", static_cast<int>(isSafe), " onQueue=", static_cast<int>(onQueue));
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint64 battlefieldGuid + uint32 battlefieldId + uint64 expireTime
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_MGR_QUEUE_INVITE] = [this](network::Packet& packet) {
         // uint64 battlefieldGuid + uint32 battlefieldId + uint64 expireTime
         if (packet.getRemainingSize() < 20) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint64_t bfGuid3   = packet.readUInt64();
         uint32_t bfId      = packet.readUInt32();
@@ -7276,7 +7276,7 @@ void GameHandler::registerOpcodeHandlers() {
         // result: 0=queued, 1=not_in_group, 2=too_high_level, 3=too_low_level,
         //         4=in_cooldown, 5=queued_other_bf, 6=bf_full
         if (packet.getRemainingSize() < 11) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         uint32_t bfId2    = packet.readUInt32();
         /*uint32_t teamId =*/ packet.readUInt32();
@@ -7298,7 +7298,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         LOG_INFO("SMSG_BATTLEFIELD_MGR_QUEUE_REQUEST_RESPONSE: accepted=", static_cast<int>(accepted),
                  " result=", static_cast<int>(result));
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint64 battlefieldGuid + uint8 remove
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_MGR_EJECT_PENDING] = [this](network::Packet& packet) {
@@ -7312,7 +7312,7 @@ void GameHandler::registerOpcodeHandlers() {
             }
             LOG_INFO("SMSG_BATTLEFIELD_MGR_EJECT_PENDING: remove=", static_cast<int>(remove));
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint64 battlefieldGuid + uint32 reason + uint32 battleStatus + uint8 relocated
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_MGR_EJECTED] = [this](network::Packet& packet) {
@@ -7335,7 +7335,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         bfMgrActive_        = false;
         bfMgrInvitePending_ = false;
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint32 oldState + uint32 newState
     // States: 0=Waiting, 1=Starting, 2=InProgress, 3=Ending, 4=Cooldown
@@ -7354,7 +7354,7 @@ void GameHandler::registerOpcodeHandlers() {
             addSystemChatMessage(buf);
             LOG_INFO("SMSG_BATTLEFIELD_MGR_STATE_CHANGE: newState=", newState);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint32 numPending — number of unacknowledged calendar invites
     dispatchTable_[Opcode::SMSG_CALENDAR_SEND_NUM_PENDING] = [this](network::Packet& packet) {
@@ -7382,7 +7382,7 @@ void GameHandler::registerOpcodeHandlers() {
         // command values: 0=add,1=get,2=guild_filter,3=arena_team,4=update,5=remove,
         //                 6=copy,7=invite,8=rsvp,9=remove_invite,10=status,11=moderator_status
         if (packet.getRemainingSize() < 5) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         /*uint32_t command =*/ packet.readUInt32();
         uint8_t result    = packet.readUInt8();
@@ -7412,7 +7412,7 @@ void GameHandler::registerOpcodeHandlers() {
             if (errMsg && errMsg[0] != '\0') addSystemChatMessage(errMsg);
             else if (!info.empty()) addSystemChatMessage("Calendar: " + info);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // Rich notification: eventId(8) + title(cstring) + eventTime(8) + flags(4) +
     //                   eventType(1) + dungeonId(4) + inviteId(8) + status(1) + rank(1) +
@@ -7422,11 +7422,11 @@ void GameHandler::registerOpcodeHandlers() {
         //                   eventType(1) + dungeonId(4) + inviteId(8) + status(1) + rank(1) +
         //                   isGuildEvent(1) + inviterGuid(8)
         if (packet.getRemainingSize() < 9) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         /*uint64_t eventId =*/ packet.readUInt64();
         std::string title = (packet.getReadPos() < packet.getSize()) ? packet.readString() : "";
-        packet.setReadPos(packet.getSize()); // consume remaining fields
+        packet.skipAll(); // consume remaining fields
         if (!title.empty()) {
             addSystemChatMessage("Calendar invite: " + title);
         } else {
@@ -7443,7 +7443,7 @@ void GameHandler::registerOpcodeHandlers() {
         // Format: inviteId(8) + eventId(8) + eventType(1) + flags(4) +
         //         inviteTime(8) + status(1) + rank(1) + isGuildEvent(1) + title(cstring)
         if (packet.getRemainingSize() < 31) {
-            packet.setReadPos(packet.getSize()); return;
+            packet.skipAll(); return;
         }
         /*uint64_t inviteId =*/ packet.readUInt64();
         /*uint64_t eventId  =*/ packet.readUInt64();
@@ -7466,7 +7466,7 @@ void GameHandler::registerOpcodeHandlers() {
                           evTitle.c_str(), statusStr);
             addSystemChatMessage(buf);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint64 inviteId + uint64 eventId + uint32 mapId + uint32 difficulty + uint64 resetTime
     dispatchTable_[Opcode::SMSG_CALENDAR_RAID_LOCKOUT_ADDED] = [this](network::Packet& packet) {
@@ -7487,7 +7487,7 @@ void GameHandler::registerOpcodeHandlers() {
             addSystemChatMessage(msg);
             LOG_DEBUG("SMSG_CALENDAR_RAID_LOCKOUT_ADDED: mapId=", mapId, " difficulty=", difficulty);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint64 inviteId + uint64 eventId + uint32 mapId + uint32 difficulty
     dispatchTable_[Opcode::SMSG_CALENDAR_RAID_LOCKOUT_REMOVED] = [this](network::Packet& packet) {
@@ -7508,7 +7508,7 @@ void GameHandler::registerOpcodeHandlers() {
             LOG_DEBUG("SMSG_CALENDAR_RAID_LOCKOUT_REMOVED: mapId=", mapId,
                       " difficulty=", difficulty);
         }
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     // uint32 unixTime — server's current unix timestamp; use to sync gameTime_
     dispatchTable_[Opcode::SMSG_SERVERTIME] = [this](network::Packet& packet) {
@@ -7527,7 +7527,7 @@ void GameHandler::registerOpcodeHandlers() {
         // uint64 kickerGuid + uint32 kickReasonType + null-terminated reason string
         // kickReasonType: 0=other, 1=afk, 2=vote kick
         if (!packet.hasRemaining(12)) {
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
         uint64_t kickerGuid   = packet.readUInt64();
@@ -7572,7 +7572,7 @@ void GameHandler::registerOpcodeHandlers() {
         // WotLK 3.3.5a: uint32 ticketId + string subject + string body + uint32 count
         //   per count: string responseText
         if (!packet.hasRemaining(4)) {
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
         uint32_t ticketId = packet.readUInt32();
@@ -7624,25 +7624,25 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     // GM ticket status (new/updated); no ticket UI yet
-    dispatchTable_[Opcode::SMSG_GM_TICKET_STATUS_UPDATE] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_GM_TICKET_STATUS_UPDATE] = [this](network::Packet& packet) { packet.skipAll(); };
     // Client uses this outbound; treat inbound variant as no-op for robustness.
-    dispatchTable_[Opcode::MSG_MOVE_WORLDPORT_ACK] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::MSG_MOVE_WORLDPORT_ACK] = [this](network::Packet& packet) { packet.skipAll(); };
     // Observed custom server packet (8 bytes). Safe-consume for now.
-    dispatchTable_[Opcode::MSG_MOVE_TIME_SKIPPED] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::MSG_MOVE_TIME_SKIPPED] = [this](network::Packet& packet) { packet.skipAll(); };
     // loggingOut_ already cleared by cancelLogout(); this is server's confirmation
-    dispatchTable_[Opcode::SMSG_LOGOUT_CANCEL_ACK] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_LOGOUT_CANCEL_ACK] = [this](network::Packet& packet) { packet.skipAll(); };
     // These packets are not damage-shield events. Consume them without
     // synthesizing reflected damage entries or misattributing GUIDs.
-    dispatchTable_[Opcode::SMSG_AURACASTLOG] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_AURACASTLOG] = [this](network::Packet& packet) { packet.skipAll(); };
     // These packets are not damage-shield events. Consume them without
     // synthesizing reflected damage entries or misattributing GUIDs.
-    dispatchTable_[Opcode::SMSG_SPELLBREAKLOG] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_SPELLBREAKLOG] = [this](network::Packet& packet) { packet.skipAll(); };
     // Consume silently — informational, no UI action needed
-    dispatchTable_[Opcode::SMSG_ITEM_REFUND_INFO_RESPONSE] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_ITEM_REFUND_INFO_RESPONSE] = [this](network::Packet& packet) { packet.skipAll(); };
     // Consume silently — informational, no UI action needed
-    dispatchTable_[Opcode::SMSG_LOOT_LIST] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_LOOT_LIST] = [this](network::Packet& packet) { packet.skipAll(); };
     // Same format as LOCKOUT_ADDED; consume
-    dispatchTable_[Opcode::SMSG_CALENDAR_RAID_LOCKOUT_UPDATED] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+    dispatchTable_[Opcode::SMSG_CALENDAR_RAID_LOCKOUT_UPDATED] = [this](network::Packet& packet) { packet.skipAll(); };
     // Consume — remaining server notifications not yet parsed
     for (auto op : {
         Opcode::SMSG_AFK_MONITOR_INFO_RESPONSE,
@@ -7726,7 +7726,7 @@ void GameHandler::registerOpcodeHandlers() {
         Opcode::SMSG_VOICE_SESSION_LEAVE,
         Opcode::SMSG_VOICE_SESSION_ROSTER_UPDATE,
         Opcode::SMSG_VOICE_SET_TALKER_MUTED
-    }) { dispatchTable_[op] = [this](network::Packet& packet) { packet.setReadPos(packet.getSize()); }; }
+    }) { dispatchTable_[op] = [this](network::Packet& packet) { packet.skipAll(); }; }
 }
 
 void GameHandler::handlePacket(network::Packet& packet) {
@@ -13478,7 +13478,7 @@ void GameHandler::forfeitDuel() {
 
 void GameHandler::handleDuelRequested(network::Packet& packet) {
     if (packet.getRemainingSize() < 16) {
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         return;
     }
     duelChallengerGuid_ = packet.readUInt64();
@@ -17000,7 +17000,7 @@ void GameHandler::handlePvpLogData(network::Packet& packet) {
         //   two team blocks × (uint32 ratingChange + uint32 newRating + uint32 unk1 + uint32 unk2 + uint32 unk3 + CString teamName)
         // After both team blocks: same player list and winner fields as battleground.
         for (int t = 0; t < 2; ++t) {
-            if (remaining() < 20) { packet.setReadPos(packet.getSize()); return; }
+            if (remaining() < 20) { packet.skipAll(); return; }
             bgScoreboard_.arenaTeams[t].ratingChange = packet.readUInt32();
             bgScoreboard_.arenaTeams[t].newRating    = packet.readUInt32();
             packet.readUInt32(); // unk1
@@ -19292,7 +19292,7 @@ void GameHandler::handlePartyMemberStats(network::Packet& packet, bool isFull) {
         }
     }
     if (!member) {
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         return;
     }
 
@@ -19671,7 +19671,7 @@ void GameHandler::handlePetitionQueryResponse(network::Packet& packet) {
     }
 
     LOG_INFO("SMSG_PETITION_QUERY_RESPONSE: guid=", petGuid, " name=", guildName);
-    packet.setReadPos(packet.getSize()); // skip remaining fields
+    packet.skipAll(); // skip remaining fields
 }
 
 void GameHandler::handlePetitionShowSignatures(network::Packet& packet) {
@@ -23611,7 +23611,7 @@ void GameHandler::handleContactList(network::Packet& packet) {
     // Short/keepalive variant (1-7 bytes): consume silently.
     auto rem = [&]() { return packet.getRemainingSize(); };
     if (rem() < 8) {
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         return;
     }
     lastContactListMask_  = packet.readUInt32();
@@ -25281,7 +25281,7 @@ void GameHandler::handleTradeStatusExtended(network::Packet& packet) {
         if (packet.getRemainingSize() >= SLOT_TRAIL) {
             packet.setReadPos(packet.getReadPos() + SLOT_TRAIL);
         } else {
-            packet.setReadPos(packet.getSize());
+            packet.skipAll();
             return;
         }
         (void)isWrapped;
@@ -25673,7 +25673,7 @@ void GameHandler::handleRespondInspectAchievements(network::Packet& packet) {
     if (packet.getRemainingSize() < 1) return;
     uint64_t inspectedGuid = packet.readPackedGuid();
     if (inspectedGuid == 0) {
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         return;
     }
 
@@ -25933,7 +25933,7 @@ void GameHandler::handleEquipmentSetList(network::Packet& packet) {
     uint32_t count = packet.readUInt32();
     if (count > 10) {
         LOG_WARNING("SMSG_EQUIPMENT_SET_LIST: unexpected count ", count, ", ignoring");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         return;
     }
     equipmentSets_.clear();
@@ -25975,7 +25975,7 @@ void GameHandler::handleSetForcedReactions(network::Packet& packet) {
     uint32_t count = packet.readUInt32();
     if (count > 64) {
         LOG_WARNING("SMSG_SET_FORCED_REACTIONS: suspicious count ", count, ", ignoring");
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         return;
     }
     forcedReactions_.clear();

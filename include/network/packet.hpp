@@ -46,6 +46,7 @@ public:
         return getRemainingSize() >= guidBytes;
     }
     void setReadPos(size_t pos) { readPos = pos; }
+    void skipAll() { readPos = data.size(); }
 
 private:
     uint16_t opcode = 0;

@@ -651,7 +651,7 @@ bool AccountDataTimesParser::parse(network::Packet& packet, AccountDataTimesData
     }
     if (packet.getReadPos() != packet.getSize()) {
         LOG_DEBUG("  AccountDataTimes trailing bytes: ", packet.getRemainingSize());
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     }
 
     return true;
@@ -3912,7 +3912,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     // we just need the hit list for UI feedback (combat text, health bars).
     if (truncatedTargets) {
         LOG_DEBUG("Spell go: salvaging ", static_cast<int>(data.hitCount), " hits despite miss truncation");
-        packet.setReadPos(packet.getSize()); // consume remaining bytes
+        packet.skipAll(); // consume remaining bytes
         return true;
     }
 
