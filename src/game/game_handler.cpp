@@ -636,6 +636,9 @@ void GameHandler::registerErrorHandler(LogicalOpcode op, const char* msg) {
         addSystemChatMessage(msg);
     };
 }
+void GameHandler::registerHandler(LogicalOpcode op, void (GameHandler::*handler)(network::Packet&)) {
+    dispatchTable_[op] = [this, handler](network::Packet& packet) { (this->*handler)(packet); };
+}
 
 GameHandler::GameHandler() {
     LOG_DEBUG("GameHandler created");
@@ -1540,21 +1543,21 @@ void GameHandler::registerOpcodeHandlers() {
         else
             LOG_WARNING("Unexpected SMSG_CHAR_ENUM in state: ", worldStateName(state));
     };
-    dispatchTable_[Opcode::SMSG_CHARACTER_LOGIN_FAILED] = [this](network::Packet& packet) { handleCharLoginFailed(packet); };
+    registerHandler(Opcode::SMSG_CHARACTER_LOGIN_FAILED, &GameHandler::handleCharLoginFailed);
     dispatchTable_[Opcode::SMSG_LOGIN_VERIFY_WORLD] = [this](network::Packet& packet) {
         if (state == WorldState::ENTERING_WORLD || state == WorldState::IN_WORLD)
             handleLoginVerifyWorld(packet);
         else
             LOG_WARNING("Unexpected SMSG_LOGIN_VERIFY_WORLD in state: ", worldStateName(state));
     };
-    dispatchTable_[Opcode::SMSG_LOGIN_SETTIMESPEED]  = [this](network::Packet& packet) { handleLoginSetTimeSpeed(packet); };
-    dispatchTable_[Opcode::SMSG_CLIENTCACHE_VERSION] = [this](network::Packet& packet) { handleClientCacheVersion(packet); };
-    dispatchTable_[Opcode::SMSG_TUTORIAL_FLAGS]      = [this](network::Packet& packet) { handleTutorialFlags(packet); };
-    dispatchTable_[Opcode::SMSG_WARDEN_DATA]         = [this](network::Packet& packet) { handleWardenData(packet); };
-    dispatchTable_[Opcode::SMSG_ACCOUNT_DATA_TIMES]  = [this](network::Packet& packet) { handleAccountDataTimes(packet); };
-    dispatchTable_[Opcode::SMSG_MOTD]                = [this](network::Packet& packet) { handleMotd(packet); };
-    dispatchTable_[Opcode::SMSG_NOTIFICATION]        = [this](network::Packet& packet) { handleNotification(packet); };
-    dispatchTable_[Opcode::SMSG_PONG]                = [this](network::Packet& packet) { handlePong(packet); };
+    registerHandler(Opcode::SMSG_LOGIN_SETTIMESPEED, &GameHandler::handleLoginSetTimeSpeed);
+    registerHandler(Opcode::SMSG_CLIENTCACHE_VERSION, &GameHandler::handleClientCacheVersion);
+    registerHandler(Opcode::SMSG_TUTORIAL_FLAGS, &GameHandler::handleTutorialFlags);
+    registerHandler(Opcode::SMSG_WARDEN_DATA, &GameHandler::handleWardenData);
+    registerHandler(Opcode::SMSG_ACCOUNT_DATA_TIMES, &GameHandler::handleAccountDataTimes);
+    registerHandler(Opcode::SMSG_MOTD, &GameHandler::handleMotd);
+    registerHandler(Opcode::SMSG_NOTIFICATION, &GameHandler::handleNotification);
+    registerHandler(Opcode::SMSG_PONG, &GameHandler::handlePong);
 
     // -----------------------------------------------------------------------
     // World object updates
@@ -1621,8 +1624,8 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_FRIEND_STATUS] = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handleFriendStatus(packet); };
-    dispatchTable_[Opcode::SMSG_CONTACT_LIST]  = [this](network::Packet& packet) { handleContactList(packet); };
-    dispatchTable_[Opcode::SMSG_FRIEND_LIST]   = [this](network::Packet& packet) { handleFriendList(packet); };
+    registerHandler(Opcode::SMSG_CONTACT_LIST, &GameHandler::handleContactList);
+    registerHandler(Opcode::SMSG_FRIEND_LIST, &GameHandler::handleFriendList);
     dispatchTable_[Opcode::SMSG_IGNORE_LIST] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() < 1) return;
         uint8_t ignCount = packet.readUInt8();
@@ -1678,19 +1681,19 @@ void GameHandler::registerOpcodeHandlers() {
             LOG_INFO("Item push: itemId=", itemId, " count=", count, " showInChat=", static_cast<int>(showInChat));
         }
     };
-    dispatchTable_[Opcode::SMSG_LOGOUT_RESPONSE]   = [this](network::Packet& packet) { handleLogoutResponse(packet); };
-    dispatchTable_[Opcode::SMSG_LOGOUT_COMPLETE]   = [this](network::Packet& packet) { handleLogoutComplete(packet); };
-    dispatchTable_[Opcode::SMSG_NAME_QUERY_RESPONSE]        = [this](network::Packet& packet) { handleNameQueryResponse(packet); };
-    dispatchTable_[Opcode::SMSG_CREATURE_QUERY_RESPONSE]    = [this](network::Packet& packet) { handleCreatureQueryResponse(packet); };
-    dispatchTable_[Opcode::SMSG_ITEM_QUERY_SINGLE_RESPONSE] = [this](network::Packet& packet) { handleItemQueryResponse(packet); };
-    dispatchTable_[Opcode::SMSG_INSPECT_TALENT]             = [this](network::Packet& packet) { handleInspectResults(packet); };
+    registerHandler(Opcode::SMSG_LOGOUT_RESPONSE, &GameHandler::handleLogoutResponse);
+    registerHandler(Opcode::SMSG_LOGOUT_COMPLETE, &GameHandler::handleLogoutComplete);
+    registerHandler(Opcode::SMSG_NAME_QUERY_RESPONSE, &GameHandler::handleNameQueryResponse);
+    registerHandler(Opcode::SMSG_CREATURE_QUERY_RESPONSE, &GameHandler::handleCreatureQueryResponse);
+    registerHandler(Opcode::SMSG_ITEM_QUERY_SINGLE_RESPONSE, &GameHandler::handleItemQueryResponse);
+    registerHandler(Opcode::SMSG_INSPECT_TALENT, &GameHandler::handleInspectResults);
     registerSkipHandler(Opcode::SMSG_ADDON_INFO);
     registerSkipHandler(Opcode::SMSG_EXPECTED_SPAM_RECORDS);
 
     // -----------------------------------------------------------------------
     // XP / exploration
     // -----------------------------------------------------------------------
-    dispatchTable_[Opcode::SMSG_LOG_XPGAIN] = [this](network::Packet& packet) { handleXpGain(packet); };
+    registerHandler(Opcode::SMSG_LOG_XPGAIN, &GameHandler::handleXpGain);
     dispatchTable_[Opcode::SMSG_EXPLORATION_EXPERIENCE] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 8) {
             uint32_t areaId   = packet.readUInt32();
@@ -2391,9 +2394,9 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Creature movement
-    dispatchTable_[Opcode::SMSG_MONSTER_MOVE] = [this](network::Packet& packet) { handleMonsterMove(packet); };
-    dispatchTable_[Opcode::SMSG_COMPRESSED_MOVES] = [this](network::Packet& packet) { handleCompressedMoves(packet); };
-    dispatchTable_[Opcode::SMSG_MONSTER_MOVE_TRANSPORT] = [this](network::Packet& packet) { handleMonsterMoveTransport(packet); };
+    registerHandler(Opcode::SMSG_MONSTER_MOVE, &GameHandler::handleMonsterMove);
+    registerHandler(Opcode::SMSG_COMPRESSED_MOVES, &GameHandler::handleCompressedMoves);
+    registerHandler(Opcode::SMSG_MONSTER_MOVE_TRANSPORT, &GameHandler::handleMonsterMoveTransport);
 
     // Spline move: consume-only (no state change)
     for (auto op : { Opcode::SMSG_SPLINE_MOVE_FEATHER_FALL,
@@ -2453,7 +2456,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Force speed changes
-    dispatchTable_[Opcode::SMSG_FORCE_RUN_SPEED_CHANGE] = [this](network::Packet& packet) { handleForceRunSpeedChange(packet); };
+    registerHandler(Opcode::SMSG_FORCE_RUN_SPEED_CHANGE, &GameHandler::handleForceRunSpeedChange);
     dispatchTable_[Opcode::SMSG_FORCE_MOVE_ROOT] = [this](network::Packet& packet) { handleForceMoveRootState(packet, true); };
     dispatchTable_[Opcode::SMSG_FORCE_MOVE_UNROOT] = [this](network::Packet& packet) { handleForceMoveRootState(packet, false); };
     dispatchTable_[Opcode::SMSG_FORCE_WALK_SPEED_CHANGE] = [this](network::Packet& packet) {
@@ -2506,7 +2509,7 @@ void GameHandler::registerOpcodeHandlers() {
         handleForceMoveFlagChange(packet, "UNSET_HOVER", Opcode::CMSG_MOVE_HOVER_ACK,
             static_cast<uint32_t>(MovementFlags::HOVER), false);
     };
-    dispatchTable_[Opcode::SMSG_MOVE_KNOCK_BACK] = [this](network::Packet& packet) { handleMoveKnockBack(packet); };
+    registerHandler(Opcode::SMSG_MOVE_KNOCK_BACK, &GameHandler::handleMoveKnockBack);
 
     // Camera shake
     dispatchTable_[Opcode::SMSG_CAMERA_SHAKE] = [this](network::Packet& packet) {
@@ -2521,8 +2524,8 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Attack/combat delegates
-    dispatchTable_[Opcode::SMSG_ATTACKSTART] = [this](network::Packet& packet) { handleAttackStart(packet); };
-    dispatchTable_[Opcode::SMSG_ATTACKSTOP] = [this](network::Packet& packet) { handleAttackStop(packet); };
+    registerHandler(Opcode::SMSG_ATTACKSTART, &GameHandler::handleAttackStart);
+    registerHandler(Opcode::SMSG_ATTACKSTOP, &GameHandler::handleAttackStop);
     dispatchTable_[Opcode::SMSG_ATTACKSWING_NOTINRANGE] = [this](network::Packet& /*packet*/) {
         autoAttackOutOfRange_ = true;
         if (autoAttackRangeWarnCooldown_ <= 0.0f) {
@@ -2558,7 +2561,7 @@ void GameHandler::registerOpcodeHandlers() {
             autoAttackRangeWarnCooldown_ = 1.25f;
         }
     };
-    dispatchTable_[Opcode::SMSG_ATTACKERSTATEUPDATE] = [this](network::Packet& packet) { handleAttackerStateUpdate(packet); };
+    registerHandler(Opcode::SMSG_ATTACKERSTATEUPDATE, &GameHandler::handleAttackerStateUpdate);
     dispatchTable_[Opcode::SMSG_AI_REACTION] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() < 12) return;
         uint64_t guid = packet.readUInt64();
@@ -2569,7 +2572,7 @@ void GameHandler::registerOpcodeHandlers() {
                 npcAggroCallback_(guid, glm::vec3(entity->getX(), entity->getY(), entity->getZ()));
         }
     };
-    dispatchTable_[Opcode::SMSG_SPELLNONMELEEDAMAGELOG] = [this](network::Packet& packet) { handleSpellDamageLog(packet); };
+    registerHandler(Opcode::SMSG_SPELLNONMELEEDAMAGELOG, &GameHandler::handleSpellDamageLog);
     dispatchTable_[Opcode::SMSG_PLAY_SPELL_VISUAL] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() < 12) return;
         uint64_t casterGuid = packet.readUInt64();
@@ -2588,15 +2591,15 @@ void GameHandler::registerOpcodeHandlers() {
         }
         renderer->playSpellVisual(visualId, spawnPos);
     };
-    dispatchTable_[Opcode::SMSG_SPELLHEALLOG] = [this](network::Packet& packet) { handleSpellHealLog(packet); };
+    registerHandler(Opcode::SMSG_SPELLHEALLOG, &GameHandler::handleSpellHealLog);
 
     // Spell delegates
-    dispatchTable_[Opcode::SMSG_INITIAL_SPELLS] = [this](network::Packet& packet) { handleInitialSpells(packet); };
-    dispatchTable_[Opcode::SMSG_CAST_FAILED] = [this](network::Packet& packet) { handleCastFailed(packet); };
-    dispatchTable_[Opcode::SMSG_SPELL_START] = [this](network::Packet& packet) { handleSpellStart(packet); };
-    dispatchTable_[Opcode::SMSG_SPELL_GO] = [this](network::Packet& packet) { handleSpellGo(packet); };
-    dispatchTable_[Opcode::SMSG_SPELL_COOLDOWN] = [this](network::Packet& packet) { handleSpellCooldown(packet); };
-    dispatchTable_[Opcode::SMSG_COOLDOWN_EVENT] = [this](network::Packet& packet) { handleCooldownEvent(packet); };
+    registerHandler(Opcode::SMSG_INITIAL_SPELLS, &GameHandler::handleInitialSpells);
+    registerHandler(Opcode::SMSG_CAST_FAILED, &GameHandler::handleCastFailed);
+    registerHandler(Opcode::SMSG_SPELL_START, &GameHandler::handleSpellStart);
+    registerHandler(Opcode::SMSG_SPELL_GO, &GameHandler::handleSpellGo);
+    registerHandler(Opcode::SMSG_SPELL_COOLDOWN, &GameHandler::handleSpellCooldown);
+    registerHandler(Opcode::SMSG_COOLDOWN_EVENT, &GameHandler::handleCooldownEvent);
     dispatchTable_[Opcode::SMSG_CLEAR_COOLDOWN] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 4) {
             uint32_t spellId = packet.readUInt32();
@@ -2622,16 +2625,16 @@ void GameHandler::registerOpcodeHandlers() {
             }
         }
     };
-    dispatchTable_[Opcode::SMSG_LEARNED_SPELL] = [this](network::Packet& packet) { handleLearnedSpell(packet); };
-    dispatchTable_[Opcode::SMSG_SUPERCEDED_SPELL] = [this](network::Packet& packet) { handleSupercededSpell(packet); };
-    dispatchTable_[Opcode::SMSG_REMOVED_SPELL] = [this](network::Packet& packet) { handleRemovedSpell(packet); };
-    dispatchTable_[Opcode::SMSG_SEND_UNLEARN_SPELLS] = [this](network::Packet& packet) { handleUnlearnSpells(packet); };
-    dispatchTable_[Opcode::SMSG_TALENTS_INFO] = [this](network::Packet& packet) { handleTalentsInfo(packet); };
+    registerHandler(Opcode::SMSG_LEARNED_SPELL, &GameHandler::handleLearnedSpell);
+    registerHandler(Opcode::SMSG_SUPERCEDED_SPELL, &GameHandler::handleSupercededSpell);
+    registerHandler(Opcode::SMSG_REMOVED_SPELL, &GameHandler::handleRemovedSpell);
+    registerHandler(Opcode::SMSG_SEND_UNLEARN_SPELLS, &GameHandler::handleUnlearnSpells);
+    registerHandler(Opcode::SMSG_TALENTS_INFO, &GameHandler::handleTalentsInfo);
 
     // Group
-    dispatchTable_[Opcode::SMSG_GROUP_INVITE] = [this](network::Packet& packet) { handleGroupInvite(packet); };
-    dispatchTable_[Opcode::SMSG_GROUP_DECLINE] = [this](network::Packet& packet) { handleGroupDecline(packet); };
-    dispatchTable_[Opcode::SMSG_GROUP_LIST] = [this](network::Packet& packet) { handleGroupList(packet); };
+    registerHandler(Opcode::SMSG_GROUP_INVITE, &GameHandler::handleGroupInvite);
+    registerHandler(Opcode::SMSG_GROUP_DECLINE, &GameHandler::handleGroupDecline);
+    registerHandler(Opcode::SMSG_GROUP_LIST, &GameHandler::handleGroupList);
     dispatchTable_[Opcode::SMSG_GROUP_DESTROYED] = [this](network::Packet& /*packet*/) {
         partyData.members.clear();
         partyData.memberCount = 0;
@@ -2644,8 +2647,8 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_GROUP_CANCEL] = [this](network::Packet& /*packet*/) {
         addSystemChatMessage("Group invite cancelled.");
     };
-    dispatchTable_[Opcode::SMSG_GROUP_UNINVITE] = [this](network::Packet& packet) { handleGroupUninvite(packet); };
-    dispatchTable_[Opcode::SMSG_PARTY_COMMAND_RESULT] = [this](network::Packet& packet) { handlePartyCommandResult(packet); };
+    registerHandler(Opcode::SMSG_GROUP_UNINVITE, &GameHandler::handleGroupUninvite);
+    registerHandler(Opcode::SMSG_PARTY_COMMAND_RESULT, &GameHandler::handlePartyCommandResult);
     dispatchTable_[Opcode::SMSG_PARTY_MEMBER_STATS] = [this](network::Packet& packet) { handlePartyMemberStats(packet, false); };
     dispatchTable_[Opcode::SMSG_PARTY_MEMBER_STATS_FULL] = [this](network::Packet& packet) { handlePartyMemberStats(packet, true); };
 
@@ -2706,12 +2709,12 @@ void GameHandler::registerOpcodeHandlers() {
         readyCheckResults_.clear();
         fireAddonEvent("READY_CHECK_FINISHED", {});
     };
-    dispatchTable_[Opcode::SMSG_RAID_INSTANCE_INFO] = [this](network::Packet& packet) { handleRaidInstanceInfo(packet); };
+    registerHandler(Opcode::SMSG_RAID_INSTANCE_INFO, &GameHandler::handleRaidInstanceInfo);
 
     // Duels
-    dispatchTable_[Opcode::SMSG_DUEL_REQUESTED] = [this](network::Packet& packet) { handleDuelRequested(packet); };
-    dispatchTable_[Opcode::SMSG_DUEL_COMPLETE] = [this](network::Packet& packet) { handleDuelComplete(packet); };
-    dispatchTable_[Opcode::SMSG_DUEL_WINNER] = [this](network::Packet& packet) { handleDuelWinner(packet); };
+    registerHandler(Opcode::SMSG_DUEL_REQUESTED, &GameHandler::handleDuelRequested);
+    registerHandler(Opcode::SMSG_DUEL_COMPLETE, &GameHandler::handleDuelComplete);
+    registerHandler(Opcode::SMSG_DUEL_WINNER, &GameHandler::handleDuelWinner);
     dispatchTable_[Opcode::SMSG_DUEL_OUTOFBOUNDS] = [this](network::Packet& /*packet*/) {
         addUIError("You are out of the duel area!");
         addSystemChatMessage("You are out of the duel area!");
@@ -2738,31 +2741,31 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Guild
-    dispatchTable_[Opcode::SMSG_GUILD_INFO] = [this](network::Packet& packet) { handleGuildInfo(packet); };
-    dispatchTable_[Opcode::SMSG_GUILD_ROSTER] = [this](network::Packet& packet) { handleGuildRoster(packet); };
-    dispatchTable_[Opcode::SMSG_GUILD_QUERY_RESPONSE] = [this](network::Packet& packet) { handleGuildQueryResponse(packet); };
-    dispatchTable_[Opcode::SMSG_GUILD_EVENT] = [this](network::Packet& packet) { handleGuildEvent(packet); };
-    dispatchTable_[Opcode::SMSG_GUILD_INVITE] = [this](network::Packet& packet) { handleGuildInvite(packet); };
-    dispatchTable_[Opcode::SMSG_GUILD_COMMAND_RESULT] = [this](network::Packet& packet) { handleGuildCommandResult(packet); };
-    dispatchTable_[Opcode::SMSG_PET_SPELLS] = [this](network::Packet& packet) { handlePetSpells(packet); };
-    dispatchTable_[Opcode::SMSG_PETITION_SHOWLIST] = [this](network::Packet& packet) { handlePetitionShowlist(packet); };
-    dispatchTable_[Opcode::SMSG_TURN_IN_PETITION_RESULTS] = [this](network::Packet& packet) { handleTurnInPetitionResults(packet); };
+    registerHandler(Opcode::SMSG_GUILD_INFO, &GameHandler::handleGuildInfo);
+    registerHandler(Opcode::SMSG_GUILD_ROSTER, &GameHandler::handleGuildRoster);
+    registerHandler(Opcode::SMSG_GUILD_QUERY_RESPONSE, &GameHandler::handleGuildQueryResponse);
+    registerHandler(Opcode::SMSG_GUILD_EVENT, &GameHandler::handleGuildEvent);
+    registerHandler(Opcode::SMSG_GUILD_INVITE, &GameHandler::handleGuildInvite);
+    registerHandler(Opcode::SMSG_GUILD_COMMAND_RESULT, &GameHandler::handleGuildCommandResult);
+    registerHandler(Opcode::SMSG_PET_SPELLS, &GameHandler::handlePetSpells);
+    registerHandler(Opcode::SMSG_PETITION_SHOWLIST, &GameHandler::handlePetitionShowlist);
+    registerHandler(Opcode::SMSG_TURN_IN_PETITION_RESULTS, &GameHandler::handleTurnInPetitionResults);
 
     // Loot/gossip/vendor delegates
-    dispatchTable_[Opcode::SMSG_LOOT_RESPONSE] = [this](network::Packet& packet) { handleLootResponse(packet); };
-    dispatchTable_[Opcode::SMSG_LOOT_RELEASE_RESPONSE] = [this](network::Packet& packet) { handleLootReleaseResponse(packet); };
-    dispatchTable_[Opcode::SMSG_LOOT_REMOVED] = [this](network::Packet& packet) { handleLootRemoved(packet); };
-    dispatchTable_[Opcode::SMSG_QUEST_CONFIRM_ACCEPT] = [this](network::Packet& packet) { handleQuestConfirmAccept(packet); };
-    dispatchTable_[Opcode::SMSG_ITEM_TEXT_QUERY_RESPONSE] = [this](network::Packet& packet) { handleItemTextQueryResponse(packet); };
-    dispatchTable_[Opcode::SMSG_SUMMON_REQUEST] = [this](network::Packet& packet) { handleSummonRequest(packet); };
+    registerHandler(Opcode::SMSG_LOOT_RESPONSE, &GameHandler::handleLootResponse);
+    registerHandler(Opcode::SMSG_LOOT_RELEASE_RESPONSE, &GameHandler::handleLootReleaseResponse);
+    registerHandler(Opcode::SMSG_LOOT_REMOVED, &GameHandler::handleLootRemoved);
+    registerHandler(Opcode::SMSG_QUEST_CONFIRM_ACCEPT, &GameHandler::handleQuestConfirmAccept);
+    registerHandler(Opcode::SMSG_ITEM_TEXT_QUERY_RESPONSE, &GameHandler::handleItemTextQueryResponse);
+    registerHandler(Opcode::SMSG_SUMMON_REQUEST, &GameHandler::handleSummonRequest);
     dispatchTable_[Opcode::SMSG_SUMMON_CANCEL] = [this](network::Packet& /*packet*/) {
         pendingSummonRequest_ = false;
         addSystemChatMessage("Summon cancelled.");
     };
-    dispatchTable_[Opcode::SMSG_TRADE_STATUS] = [this](network::Packet& packet) { handleTradeStatus(packet); };
-    dispatchTable_[Opcode::SMSG_TRADE_STATUS_EXTENDED] = [this](network::Packet& packet) { handleTradeStatusExtended(packet); };
-    dispatchTable_[Opcode::SMSG_LOOT_ROLL] = [this](network::Packet& packet) { handleLootRoll(packet); };
-    dispatchTable_[Opcode::SMSG_LOOT_ROLL_WON] = [this](network::Packet& packet) { handleLootRollWon(packet); };
+    registerHandler(Opcode::SMSG_TRADE_STATUS, &GameHandler::handleTradeStatus);
+    registerHandler(Opcode::SMSG_TRADE_STATUS_EXTENDED, &GameHandler::handleTradeStatusExtended);
+    registerHandler(Opcode::SMSG_LOOT_ROLL, &GameHandler::handleLootRoll);
+    registerHandler(Opcode::SMSG_LOOT_ROLL_WON, &GameHandler::handleLootRollWon);
     dispatchTable_[Opcode::SMSG_LOOT_MASTER_LIST] = [this](network::Packet& packet) {
         masterLootCandidates_.clear();
         if (packet.getRemainingSize() < 1) return;
@@ -2773,9 +2776,9 @@ void GameHandler::registerOpcodeHandlers() {
             masterLootCandidates_.push_back(packet.readUInt64());
         }
     };
-    dispatchTable_[Opcode::SMSG_GOSSIP_MESSAGE] = [this](network::Packet& packet) { handleGossipMessage(packet); };
-    dispatchTable_[Opcode::SMSG_QUESTGIVER_QUEST_LIST] = [this](network::Packet& packet) { handleQuestgiverQuestList(packet); };
-    dispatchTable_[Opcode::SMSG_GOSSIP_COMPLETE] = [this](network::Packet& packet) { handleGossipComplete(packet); };
+    registerHandler(Opcode::SMSG_GOSSIP_MESSAGE, &GameHandler::handleGossipMessage);
+    registerHandler(Opcode::SMSG_QUESTGIVER_QUEST_LIST, &GameHandler::handleQuestgiverQuestList);
+    registerHandler(Opcode::SMSG_GOSSIP_COMPLETE, &GameHandler::handleGossipComplete);
 
     // Bind point
     dispatchTable_[Opcode::SMSG_BINDPOINTUPDATE] = [this](network::Packet& packet) {
@@ -2843,8 +2846,8 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Vendor/trainer
-    dispatchTable_[Opcode::SMSG_LIST_INVENTORY] = [this](network::Packet& packet) { handleListInventory(packet); };
-    dispatchTable_[Opcode::SMSG_TRAINER_LIST] = [this](network::Packet& packet) { handleTrainerList(packet); };
+    registerHandler(Opcode::SMSG_LIST_INVENTORY, &GameHandler::handleListInventory);
+    registerHandler(Opcode::SMSG_TRAINER_LIST, &GameHandler::handleTrainerList);
     dispatchTable_[Opcode::SMSG_TRAINER_BUY_SUCCEEDED] = [this](network::Packet& packet) {
         /*uint64_t guid =*/ packet.readUInt64();
         uint32_t spellId = packet.readUInt32();
@@ -3154,7 +3157,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         (void)pendingMapId;
     };
-    dispatchTable_[Opcode::SMSG_NEW_WORLD] = [this](network::Packet& packet) { handleNewWorld(packet); };
+    registerHandler(Opcode::SMSG_NEW_WORLD, &GameHandler::handleNewWorld);
     dispatchTable_[Opcode::SMSG_TRANSFER_ABORTED] = [this](network::Packet& packet) {
         uint32_t mapId = packet.readUInt32();
         uint8_t reason = (packet.hasData()) ? packet.readUInt8() : 0;
@@ -3176,8 +3179,8 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Taxi
-    dispatchTable_[Opcode::SMSG_SHOWTAXINODES] = [this](network::Packet& packet) { handleShowTaxiNodes(packet); };
-    dispatchTable_[Opcode::SMSG_ACTIVATETAXIREPLY] = [this](network::Packet& packet) { handleActivateTaxiReply(packet); };
+    registerHandler(Opcode::SMSG_SHOWTAXINODES, &GameHandler::handleShowTaxiNodes);
+    registerHandler(Opcode::SMSG_ACTIVATETAXIREPLY, &GameHandler::handleActivateTaxiReply);
     dispatchTable_[Opcode::SMSG_STANDSTATE_UPDATE] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 1) {
             standState_ = packet.readUInt8();
@@ -3189,8 +3192,8 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Battlefield / BG
-    dispatchTable_[Opcode::SMSG_BATTLEFIELD_STATUS] = [this](network::Packet& packet) { handleBattlefieldStatus(packet); };
-    dispatchTable_[Opcode::SMSG_BATTLEFIELD_LIST] = [this](network::Packet& packet) { handleBattlefieldList(packet); };
+    registerHandler(Opcode::SMSG_BATTLEFIELD_STATUS, &GameHandler::handleBattlefieldStatus);
+    registerHandler(Opcode::SMSG_BATTLEFIELD_LIST, &GameHandler::handleBattlefieldList);
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_PORT_DENIED] = [this](network::Packet& /*packet*/) {
         addUIError("Battlefield port denied.");
         addSystemChatMessage("Battlefield port denied.");
@@ -3306,16 +3309,16 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // LFG
-    dispatchTable_[Opcode::SMSG_LFG_JOIN_RESULT] = [this](network::Packet& packet) { handleLfgJoinResult(packet); };
-    dispatchTable_[Opcode::SMSG_LFG_QUEUE_STATUS] = [this](network::Packet& packet) { handleLfgQueueStatus(packet); };
-    dispatchTable_[Opcode::SMSG_LFG_PROPOSAL_UPDATE] = [this](network::Packet& packet) { handleLfgProposalUpdate(packet); };
-    dispatchTable_[Opcode::SMSG_LFG_ROLE_CHECK_UPDATE] = [this](network::Packet& packet) { handleLfgRoleCheckUpdate(packet); };
+    registerHandler(Opcode::SMSG_LFG_JOIN_RESULT, &GameHandler::handleLfgJoinResult);
+    registerHandler(Opcode::SMSG_LFG_QUEUE_STATUS, &GameHandler::handleLfgQueueStatus);
+    registerHandler(Opcode::SMSG_LFG_PROPOSAL_UPDATE, &GameHandler::handleLfgProposalUpdate);
+    registerHandler(Opcode::SMSG_LFG_ROLE_CHECK_UPDATE, &GameHandler::handleLfgRoleCheckUpdate);
     for (auto op : { Opcode::SMSG_LFG_UPDATE_PLAYER, Opcode::SMSG_LFG_UPDATE_PARTY }) {
         dispatchTable_[op] = [this](network::Packet& packet) { handleLfgUpdatePlayer(packet); };
     }
-    dispatchTable_[Opcode::SMSG_LFG_PLAYER_REWARD] = [this](network::Packet& packet) { handleLfgPlayerReward(packet); };
-    dispatchTable_[Opcode::SMSG_LFG_BOOT_PROPOSAL_UPDATE] = [this](network::Packet& packet) { handleLfgBootProposalUpdate(packet); };
-    dispatchTable_[Opcode::SMSG_LFG_TELEPORT_DENIED] = [this](network::Packet& packet) { handleLfgTeleportDenied(packet); };
+    registerHandler(Opcode::SMSG_LFG_PLAYER_REWARD, &GameHandler::handleLfgPlayerReward);
+    registerHandler(Opcode::SMSG_LFG_BOOT_PROPOSAL_UPDATE, &GameHandler::handleLfgBootProposalUpdate);
+    registerHandler(Opcode::SMSG_LFG_TELEPORT_DENIED, &GameHandler::handleLfgTeleportDenied);
     dispatchTable_[Opcode::SMSG_LFG_DISABLED] = [this](network::Packet& /*packet*/) {
         addSystemChatMessage("The Dungeon Finder is currently disabled.");
     };
@@ -3348,14 +3351,14 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Arena
-    dispatchTable_[Opcode::SMSG_ARENA_TEAM_COMMAND_RESULT] = [this](network::Packet& packet) { handleArenaTeamCommandResult(packet); };
-    dispatchTable_[Opcode::SMSG_ARENA_TEAM_QUERY_RESPONSE] = [this](network::Packet& packet) { handleArenaTeamQueryResponse(packet); };
-    dispatchTable_[Opcode::SMSG_ARENA_TEAM_ROSTER] = [this](network::Packet& packet) { handleArenaTeamRoster(packet); };
-    dispatchTable_[Opcode::SMSG_ARENA_TEAM_INVITE] = [this](network::Packet& packet) { handleArenaTeamInvite(packet); };
-    dispatchTable_[Opcode::SMSG_ARENA_TEAM_EVENT] = [this](network::Packet& packet) { handleArenaTeamEvent(packet); };
-    dispatchTable_[Opcode::SMSG_ARENA_TEAM_STATS] = [this](network::Packet& packet) { handleArenaTeamStats(packet); };
-    dispatchTable_[Opcode::SMSG_ARENA_ERROR] = [this](network::Packet& packet) { handleArenaError(packet); };
-    dispatchTable_[Opcode::MSG_PVP_LOG_DATA] = [this](network::Packet& packet) { handlePvpLogData(packet); };
+    registerHandler(Opcode::SMSG_ARENA_TEAM_COMMAND_RESULT, &GameHandler::handleArenaTeamCommandResult);
+    registerHandler(Opcode::SMSG_ARENA_TEAM_QUERY_RESPONSE, &GameHandler::handleArenaTeamQueryResponse);
+    registerHandler(Opcode::SMSG_ARENA_TEAM_ROSTER, &GameHandler::handleArenaTeamRoster);
+    registerHandler(Opcode::SMSG_ARENA_TEAM_INVITE, &GameHandler::handleArenaTeamInvite);
+    registerHandler(Opcode::SMSG_ARENA_TEAM_EVENT, &GameHandler::handleArenaTeamEvent);
+    registerHandler(Opcode::SMSG_ARENA_TEAM_STATS, &GameHandler::handleArenaTeamStats);
+    registerHandler(Opcode::SMSG_ARENA_ERROR, &GameHandler::handleArenaError);
+    registerHandler(Opcode::MSG_PVP_LOG_DATA, &GameHandler::handlePvpLogData);
     dispatchTable_[Opcode::MSG_TALENT_WIPE_CONFIRM] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() < 12) { packet.skipAll(); return; }
         talentWipeNpcGuid_ = packet.readUInt64();
@@ -3396,14 +3399,14 @@ void GameHandler::registerOpcodeHandlers() {
     }
 
     // Mail
-    dispatchTable_[Opcode::SMSG_SHOW_MAILBOX] = [this](network::Packet& packet) { handleShowMailbox(packet); };
-    dispatchTable_[Opcode::SMSG_MAIL_LIST_RESULT] = [this](network::Packet& packet) { handleMailListResult(packet); };
-    dispatchTable_[Opcode::SMSG_SEND_MAIL_RESULT] = [this](network::Packet& packet) { handleSendMailResult(packet); };
-    dispatchTable_[Opcode::SMSG_RECEIVED_MAIL] = [this](network::Packet& packet) { handleReceivedMail(packet); };
-    dispatchTable_[Opcode::MSG_QUERY_NEXT_MAIL_TIME] = [this](network::Packet& packet) { handleQueryNextMailTime(packet); };
+    registerHandler(Opcode::SMSG_SHOW_MAILBOX, &GameHandler::handleShowMailbox);
+    registerHandler(Opcode::SMSG_MAIL_LIST_RESULT, &GameHandler::handleMailListResult);
+    registerHandler(Opcode::SMSG_SEND_MAIL_RESULT, &GameHandler::handleSendMailResult);
+    registerHandler(Opcode::SMSG_RECEIVED_MAIL, &GameHandler::handleReceivedMail);
+    registerHandler(Opcode::MSG_QUERY_NEXT_MAIL_TIME, &GameHandler::handleQueryNextMailTime);
 
     // Inspect / channel list
-    dispatchTable_[Opcode::SMSG_INSPECT_RESULTS_UPDATE] = [this](network::Packet& packet) { handleInspectResults(packet); };
+    registerHandler(Opcode::SMSG_INSPECT_RESULTS_UPDATE, &GameHandler::handleInspectResults);
     dispatchTable_[Opcode::SMSG_CHANNEL_LIST] = [this](network::Packet& packet) {
         std::string chanName = packet.readString();
         if (packet.getRemainingSize() < 5) return;
@@ -3431,18 +3434,18 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Bank
-    dispatchTable_[Opcode::SMSG_SHOW_BANK] = [this](network::Packet& packet) { handleShowBank(packet); };
-    dispatchTable_[Opcode::SMSG_BUY_BANK_SLOT_RESULT] = [this](network::Packet& packet) { handleBuyBankSlotResult(packet); };
+    registerHandler(Opcode::SMSG_SHOW_BANK, &GameHandler::handleShowBank);
+    registerHandler(Opcode::SMSG_BUY_BANK_SLOT_RESULT, &GameHandler::handleBuyBankSlotResult);
 
     // Guild bank
-    dispatchTable_[Opcode::SMSG_GUILD_BANK_LIST] = [this](network::Packet& packet) { handleGuildBankList(packet); };
+    registerHandler(Opcode::SMSG_GUILD_BANK_LIST, &GameHandler::handleGuildBankList);
 
     // Auction house
-    dispatchTable_[Opcode::MSG_AUCTION_HELLO] = [this](network::Packet& packet) { handleAuctionHello(packet); };
-    dispatchTable_[Opcode::SMSG_AUCTION_LIST_RESULT] = [this](network::Packet& packet) { handleAuctionListResult(packet); };
-    dispatchTable_[Opcode::SMSG_AUCTION_OWNER_LIST_RESULT] = [this](network::Packet& packet) { handleAuctionOwnerListResult(packet); };
-    dispatchTable_[Opcode::SMSG_AUCTION_BIDDER_LIST_RESULT] = [this](network::Packet& packet) { handleAuctionBidderListResult(packet); };
-    dispatchTable_[Opcode::SMSG_AUCTION_COMMAND_RESULT] = [this](network::Packet& packet) { handleAuctionCommandResult(packet); };
+    registerHandler(Opcode::MSG_AUCTION_HELLO, &GameHandler::handleAuctionHello);
+    registerHandler(Opcode::SMSG_AUCTION_LIST_RESULT, &GameHandler::handleAuctionListResult);
+    registerHandler(Opcode::SMSG_AUCTION_OWNER_LIST_RESULT, &GameHandler::handleAuctionOwnerListResult);
+    registerHandler(Opcode::SMSG_AUCTION_BIDDER_LIST_RESULT, &GameHandler::handleAuctionBidderListResult);
+    registerHandler(Opcode::SMSG_AUCTION_COMMAND_RESULT, &GameHandler::handleAuctionCommandResult);
 
     // Questgiver status
     dispatchTable_[Opcode::SMSG_QUESTGIVER_STATUS] = [this](network::Packet& packet) {
@@ -3462,13 +3465,13 @@ void GameHandler::registerOpcodeHandlers() {
             npcQuestStatus_[npcGuid] = static_cast<QuestGiverStatus>(status);
         }
     };
-    dispatchTable_[Opcode::SMSG_QUESTGIVER_QUEST_DETAILS] = [this](network::Packet& packet) { handleQuestDetails(packet); };
+    registerHandler(Opcode::SMSG_QUESTGIVER_QUEST_DETAILS, &GameHandler::handleQuestDetails);
     dispatchTable_[Opcode::SMSG_QUESTLOG_FULL] = [this](network::Packet& /*packet*/) {
         addUIError("Your quest log is full.");
         addSystemChatMessage("Your quest log is full.");
     };
-    dispatchTable_[Opcode::SMSG_QUESTGIVER_REQUEST_ITEMS] = [this](network::Packet& packet) { handleQuestRequestItems(packet); };
-    dispatchTable_[Opcode::SMSG_QUESTGIVER_OFFER_REWARD] = [this](network::Packet& packet) { handleQuestOfferReward(packet); };
+    registerHandler(Opcode::SMSG_QUESTGIVER_REQUEST_ITEMS, &GameHandler::handleQuestRequestItems);
+    registerHandler(Opcode::SMSG_QUESTGIVER_OFFER_REWARD, &GameHandler::handleQuestOfferReward);
 
     // Group set leader
     dispatchTable_[Opcode::SMSG_GROUP_SET_LEADER] = [this](network::Packet& packet) {
@@ -3484,9 +3487,9 @@ void GameHandler::registerOpcodeHandlers() {
     };
 
     // Gameobject / page text
-    dispatchTable_[Opcode::SMSG_GAMEOBJECT_QUERY_RESPONSE] = [this](network::Packet& packet) { handleGameObjectQueryResponse(packet); };
-    dispatchTable_[Opcode::SMSG_GAMEOBJECT_PAGETEXT] = [this](network::Packet& packet) { handleGameObjectPageText(packet); };
-    dispatchTable_[Opcode::SMSG_PAGE_TEXT_QUERY_RESPONSE] = [this](network::Packet& packet) { handlePageTextQueryResponse(packet); };
+    registerHandler(Opcode::SMSG_GAMEOBJECT_QUERY_RESPONSE, &GameHandler::handleGameObjectQueryResponse);
+    registerHandler(Opcode::SMSG_GAMEOBJECT_PAGETEXT, &GameHandler::handleGameObjectPageText);
+    registerHandler(Opcode::SMSG_PAGE_TEXT_QUERY_RESPONSE, &GameHandler::handlePageTextQueryResponse);
     dispatchTable_[Opcode::SMSG_GAMEOBJECT_CUSTOM_ANIM] = [this](network::Packet& packet) {
         if (packet.getSize() < 12) return;
         uint64_t guid = packet.readUInt64();
@@ -5620,7 +5623,7 @@ void GameHandler::registerOpcodeHandlers() {
             LOG_DEBUG("SMSG_TRIGGER_MOVIE: skipped, sent CMSG_COMPLETE_MOVIE");
         }
     };
-    dispatchTable_[Opcode::SMSG_EQUIPMENT_SET_LIST] = [this](network::Packet& packet) { handleEquipmentSetList(packet); };
+    registerHandler(Opcode::SMSG_EQUIPMENT_SET_LIST, &GameHandler::handleEquipmentSetList);
     dispatchTable_[Opcode::SMSG_EQUIPMENT_SET_USE_RESULT] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 1) {
             uint8_t result = packet.readUInt8();
@@ -6590,7 +6593,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         packet.skipAll();
     };
-    dispatchTable_[Opcode::SMSG_SET_FORCED_REACTIONS] = [this](network::Packet& packet) { handleSetForcedReactions(packet); };
+    registerHandler(Opcode::SMSG_SET_FORCED_REACTIONS, &GameHandler::handleSetForcedReactions);
     dispatchTable_[Opcode::SMSG_SUSPEND_COMMS] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 4) {
             uint32_t seqIdx = packet.readUInt32();
@@ -6851,9 +6854,9 @@ void GameHandler::registerOpcodeHandlers() {
             else addSystemChatMessage("Cannot offer petition to that player.");
         }
     };
-    dispatchTable_[Opcode::SMSG_PETITION_QUERY_RESPONSE] = [this](network::Packet& packet) { handlePetitionQueryResponse(packet); };
-    dispatchTable_[Opcode::SMSG_PETITION_SHOW_SIGNATURES] = [this](network::Packet& packet) { handlePetitionShowSignatures(packet); };
-    dispatchTable_[Opcode::SMSG_PETITION_SIGN_RESULTS] = [this](network::Packet& packet) { handlePetitionSignResults(packet); };
+    registerHandler(Opcode::SMSG_PETITION_QUERY_RESPONSE, &GameHandler::handlePetitionQueryResponse);
+    registerHandler(Opcode::SMSG_PETITION_SHOW_SIGNATURES, &GameHandler::handlePetitionShowSignatures);
+    registerHandler(Opcode::SMSG_PETITION_SIGN_RESULTS, &GameHandler::handlePetitionSignResults);
     // uint64 petGuid, uint32 mode
     // mode bits: low byte = command state, next byte = react state
     dispatchTable_[Opcode::SMSG_PET_MODE] = [this](network::Packet& packet) {
@@ -7103,8 +7106,8 @@ void GameHandler::registerOpcodeHandlers() {
         }
         packet.skipAll();
     };
-    dispatchTable_[Opcode::SMSG_RESPOND_INSPECT_ACHIEVEMENTS] = [this](network::Packet& packet) { handleRespondInspectAchievements(packet); };
-    dispatchTable_[Opcode::SMSG_QUEST_POI_QUERY_RESPONSE] = [this](network::Packet& packet) { handleQuestPoiQueryResponse(packet); };
+    registerHandler(Opcode::SMSG_RESPOND_INSPECT_ACHIEVEMENTS, &GameHandler::handleRespondInspectAchievements);
+    registerHandler(Opcode::SMSG_QUEST_POI_QUERY_RESPONSE, &GameHandler::handleQuestPoiQueryResponse);
     dispatchTable_[Opcode::SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA] = [this](network::Packet& packet) {
         vehicleId_ = 0;  // Vehicle ride cancelled; clear UI
         packet.skipAll();
@@ -7132,7 +7135,7 @@ void GameHandler::registerOpcodeHandlers() {
             addUIError(buf);
         }
     };
-    dispatchTable_[Opcode::SMSG_ITEM_QUERY_MULTIPLE_RESPONSE] = [this](network::Packet& packet) { handleItemQueryResponse(packet); };
+    registerHandler(Opcode::SMSG_ITEM_QUERY_MULTIPLE_RESPONSE, &GameHandler::handleItemQueryResponse);
     // WotLK 3.3.5a format:
     //   uint64 mirrorGuid — GUID of the mirror image unit
     //   uint32 displayId  — display ID to render the image with

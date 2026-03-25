@@ -2331,6 +2331,7 @@ private:
     void registerOpcodeHandlers();
     void registerSkipHandler(LogicalOpcode op);
     void registerErrorHandler(LogicalOpcode op, const char* msg);
+    void registerHandler(LogicalOpcode op, void (GameHandler::*handler)(network::Packet&));
     void enqueueIncomingPacket(const network::Packet& packet);
     void enqueueIncomingPacketFront(network::Packet&& packet);
     void processQueuedIncomingPackets();
