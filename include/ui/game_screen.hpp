@@ -385,6 +385,7 @@ private:
     void renderSettingsAudioTab();
     void renderSettingsChatTab();
     void renderSettingsAboutTab();
+    void renderSettingsInterfaceTab();
     void renderSettingsGameplayTab();
     void renderSettingsControlsTab();
     void applyGraphicsPreset(GraphicsPreset preset);

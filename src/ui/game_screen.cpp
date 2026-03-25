@@ -18203,6 +18203,117 @@ void GameScreen::renderPetUnlearnConfirmDialog(game::GameHandler& gameHandler) {
 // Settings Window
 // ============================================================
 
+void GameScreen::renderSettingsInterfaceTab() {
+ImGui::Spacing();
+ImGui::BeginChild("InterfaceSettings", ImVec2(0, 360), true);
+
+ImGui::SeparatorText("Action Bars");
+ImGui::Spacing();
+ImGui::SetNextItemWidth(200.0f);
+if (ImGui::SliderFloat("Action Bar Scale", &pendingActionBarScale, 0.5f, 1.5f, "%.2fx")) {
+    saveSettings();
+}
+ImGui::Spacing();
+
+if (ImGui::Checkbox("Show Second Action Bar", &pendingShowActionBar2)) {
+    saveSettings();
+}
+ImGui::SameLine();
+ImGui::TextDisabled("(Shift+1 through Shift+=)");
+
+if (pendingShowActionBar2) {
+    ImGui::Spacing();
+    ImGui::TextUnformatted("Second Bar Position Offset");
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::SliderFloat("Horizontal##bar2x", &pendingActionBar2OffsetX, -600.0f, 600.0f, "%.0f px")) {
+        saveSettings();
+    }
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::SliderFloat("Vertical##bar2y", &pendingActionBar2OffsetY, -400.0f, 400.0f, "%.0f px")) {
+        saveSettings();
+    }
+    if (ImGui::Button("Reset Position##bar2")) {
+        pendingActionBar2OffsetX = 0.0f;
+        pendingActionBar2OffsetY = 0.0f;
+        saveSettings();
+    }
+}
+
+ImGui::Spacing();
+if (ImGui::Checkbox("Show Right Side Bar", &pendingShowRightBar)) {
+    saveSettings();
+}
+ImGui::SameLine();
+ImGui::TextDisabled("(Slots 25-36)");
+if (pendingShowRightBar) {
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::SliderFloat("Vertical Offset##rbar", &pendingRightBarOffsetY, -400.0f, 400.0f, "%.0f px")) {
+        saveSettings();
+    }
+}
+
+ImGui::Spacing();
+if (ImGui::Checkbox("Show Left Side Bar", &pendingShowLeftBar)) {
+    saveSettings();
+}
+ImGui::SameLine();
+ImGui::TextDisabled("(Slots 37-48)");
+if (pendingShowLeftBar) {
+    ImGui::SetNextItemWidth(160.0f);
+    if (ImGui::SliderFloat("Vertical Offset##lbar", &pendingLeftBarOffsetY, -400.0f, 400.0f, "%.0f px")) {
+        saveSettings();
+    }
+}
+
+ImGui::Spacing();
+ImGui::SeparatorText("Nameplates");
+ImGui::Spacing();
+ImGui::SetNextItemWidth(200.0f);
+if (ImGui::SliderFloat("Nameplate Scale", &nameplateScale_, 0.5f, 2.0f, "%.2fx")) {
+    saveSettings();
+}
+
+ImGui::Spacing();
+ImGui::SeparatorText("Network");
+ImGui::Spacing();
+if (ImGui::Checkbox("Show Latency Meter", &pendingShowLatencyMeter)) {
+    showLatencyMeter_ = pendingShowLatencyMeter;
+    saveSettings();
+}
+ImGui::SameLine();
+ImGui::TextDisabled("(ms indicator near minimap)");
+
+if (ImGui::Checkbox("Show DPS/HPS Meter", &showDPSMeter_)) {
+    saveSettings();
+}
+ImGui::SameLine();
+ImGui::TextDisabled("(damage/healing per second above action bar)");
+
+if (ImGui::Checkbox("Show Cooldown Tracker", &showCooldownTracker_)) {
+    saveSettings();
+}
+ImGui::SameLine();
+ImGui::TextDisabled("(active spell cooldowns near action bar)");
+
+ImGui::Spacing();
+ImGui::SeparatorText("Screen Effects");
+ImGui::Spacing();
+if (ImGui::Checkbox("Damage Flash", &damageFlashEnabled_)) {
+    if (!damageFlashEnabled_) damageFlashAlpha_ = 0.0f;
+    saveSettings();
+}
+ImGui::SameLine();
+ImGui::TextDisabled("(red vignette on taking damage)");
+
+if (ImGui::Checkbox("Low Health Vignette", &lowHealthVignetteEnabled_)) {
+    saveSettings();
+}
+ImGui::SameLine();
+ImGui::TextDisabled("(pulsing red edges below 20%% HP)");
+
+ImGui::EndChild();
+}
+
 void GameScreen::renderSettingsGameplayTab() {
     auto* renderer = core::Application::getInstance().getRenderer();
 ImGui::Spacing();
@@ -19074,114 +19185,7 @@ void GameScreen::renderSettingsWindow() {
             // INTERFACE TAB
             // ============================================================
             if (ImGui::BeginTabItem("Interface")) {
-                ImGui::Spacing();
-                ImGui::BeginChild("InterfaceSettings", ImVec2(0, 360), true);
-
-                ImGui::SeparatorText("Action Bars");
-                ImGui::Spacing();
-                ImGui::SetNextItemWidth(200.0f);
-                if (ImGui::SliderFloat("Action Bar Scale", &pendingActionBarScale, 0.5f, 1.5f, "%.2fx")) {
-                    saveSettings();
-                }
-                ImGui::Spacing();
-
-                if (ImGui::Checkbox("Show Second Action Bar", &pendingShowActionBar2)) {
-                    saveSettings();
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("(Shift+1 through Shift+=)");
-
-                if (pendingShowActionBar2) {
-                    ImGui::Spacing();
-                    ImGui::TextUnformatted("Second Bar Position Offset");
-                    ImGui::SetNextItemWidth(160.0f);
-                    if (ImGui::SliderFloat("Horizontal##bar2x", &pendingActionBar2OffsetX, -600.0f, 600.0f, "%.0f px")) {
-                        saveSettings();
-                    }
-                    ImGui::SetNextItemWidth(160.0f);
-                    if (ImGui::SliderFloat("Vertical##bar2y", &pendingActionBar2OffsetY, -400.0f, 400.0f, "%.0f px")) {
-                        saveSettings();
-                    }
-                    if (ImGui::Button("Reset Position##bar2")) {
-                        pendingActionBar2OffsetX = 0.0f;
-                        pendingActionBar2OffsetY = 0.0f;
-                        saveSettings();
-                    }
-                }
-
-                ImGui::Spacing();
-                if (ImGui::Checkbox("Show Right Side Bar", &pendingShowRightBar)) {
-                    saveSettings();
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("(Slots 25-36)");
-                if (pendingShowRightBar) {
-                    ImGui::SetNextItemWidth(160.0f);
-                    if (ImGui::SliderFloat("Vertical Offset##rbar", &pendingRightBarOffsetY, -400.0f, 400.0f, "%.0f px")) {
-                        saveSettings();
-                    }
-                }
-
-                ImGui::Spacing();
-                if (ImGui::Checkbox("Show Left Side Bar", &pendingShowLeftBar)) {
-                    saveSettings();
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("(Slots 37-48)");
-                if (pendingShowLeftBar) {
-                    ImGui::SetNextItemWidth(160.0f);
-                    if (ImGui::SliderFloat("Vertical Offset##lbar", &pendingLeftBarOffsetY, -400.0f, 400.0f, "%.0f px")) {
-                        saveSettings();
-                    }
-                }
-
-                ImGui::Spacing();
-                ImGui::SeparatorText("Nameplates");
-                ImGui::Spacing();
-                ImGui::SetNextItemWidth(200.0f);
-                if (ImGui::SliderFloat("Nameplate Scale", &nameplateScale_, 0.5f, 2.0f, "%.2fx")) {
-                    saveSettings();
-                }
-
-                ImGui::Spacing();
-                ImGui::SeparatorText("Network");
-                ImGui::Spacing();
-                if (ImGui::Checkbox("Show Latency Meter", &pendingShowLatencyMeter)) {
-                    showLatencyMeter_ = pendingShowLatencyMeter;
-                    saveSettings();
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("(ms indicator near minimap)");
-
-                if (ImGui::Checkbox("Show DPS/HPS Meter", &showDPSMeter_)) {
-                    saveSettings();
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("(damage/healing per second above action bar)");
-
-                if (ImGui::Checkbox("Show Cooldown Tracker", &showCooldownTracker_)) {
-                    saveSettings();
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("(active spell cooldowns near action bar)");
-
-                ImGui::Spacing();
-                ImGui::SeparatorText("Screen Effects");
-                ImGui::Spacing();
-                if (ImGui::Checkbox("Damage Flash", &damageFlashEnabled_)) {
-                    if (!damageFlashEnabled_) damageFlashAlpha_ = 0.0f;
-                    saveSettings();
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("(red vignette on taking damage)");
-
-                if (ImGui::Checkbox("Low Health Vignette", &lowHealthVignetteEnabled_)) {
-                    saveSettings();
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("(pulsing red edges below 20%% HP)");
-
-                ImGui::EndChild();
+                renderSettingsInterfaceTab();
                 ImGui::EndTabItem();
             }
 
