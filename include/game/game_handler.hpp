@@ -1310,7 +1310,7 @@ public:
 
     // Barber shop
     bool isBarberShopOpen() const { return barberShopOpen_; }
-    void closeBarberShop() { barberShopOpen_ = false; if (addonEventCallback_) addonEventCallback_("BARBER_SHOP_CLOSE", {}); }
+    void closeBarberShop() { barberShopOpen_ = false; fireAddonEvent("BARBER_SHOP_CLOSE", {}); }
     void sendAlterAppearance(uint32_t hairStyle, uint32_t hairColor, uint32_t facialHair);
 
     // Instance difficulty (0=5N, 1=5H, 2=25N, 3=25H for WotLK)
@@ -1992,10 +1992,13 @@ public:
     void setUIErrorCallback(UIErrorCallback cb) { uiErrorCallback_ = std::move(cb); }
     void addUIError(const std::string& msg) {
         if (uiErrorCallback_) uiErrorCallback_(msg);
-        if (addonEventCallback_) addonEventCallback_("UI_ERROR_MESSAGE", {msg});
+        fireAddonEvent("UI_ERROR_MESSAGE", {msg});
     }
     void addUIInfoMessage(const std::string& msg) {
-        if (addonEventCallback_) addonEventCallback_("UI_INFO_MESSAGE", {msg});
+        fireAddonEvent("UI_INFO_MESSAGE", {msg});
+    }
+    void fireAddonEvent(const std::string& event, const std::vector<std::string>& args = {}) {
+        if (addonEventCallback_) addonEventCallback_(event, args);
     }
 
     // Reputation change toast: factionName, delta, new standing

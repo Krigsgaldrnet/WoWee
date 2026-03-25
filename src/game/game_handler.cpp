@@ -946,7 +946,7 @@ void GameHandler::update(float deltaTime) {
         if (combatNow != wasCombat_) {
             wasCombat_ = combatNow;
             if (addonEventCallback_) {
-                addonEventCallback_(combatNow ? "PLAYER_REGEN_DISABLED" : "PLAYER_REGEN_ENABLED", {});
+                fireAddonEvent(combatNow ? "PLAYER_REGEN_DISABLED" : "PLAYER_REGEN_ENABLED", {});
             }
         }
     }
@@ -1718,15 +1718,14 @@ void GameHandler::registerOpcodeHandlers() {
                         if (auto* sfx = renderer->getUiSoundManager()) sfx->playLootItem();
                     }
                     if (itemLootCallback_) itemLootCallback_(itemId, count, quality, itemName);
-                    if (addonEventCallback_)
-                        addonEventCallback_("CHAT_MSG_LOOT", {msg, "", std::to_string(itemId), std::to_string(count)});
+                                            fireAddonEvent("CHAT_MSG_LOOT", {msg, "", std::to_string(itemId), std::to_string(count)});
                 } else {
                     pendingItemPushNotifs_.push_back({itemId, count});
                 }
             }
             if (addonEventCallback_) {
-                addonEventCallback_("BAG_UPDATE", {});
-                addonEventCallback_("UNIT_INVENTORY_CHANGED", {"player"});
+                fireAddonEvent("BAG_UPDATE", {});
+                fireAddonEvent("UNIT_INVENTORY_CHANGED", {"player"});
             }
             LOG_INFO("Item push: itemId=", itemId, " count=", count, " showInChat=", static_cast<int>(showInChat));
         }
@@ -1761,8 +1760,7 @@ void GameHandler::registerOpcodeHandlers() {
                 addSystemChatMessage(msg);
                 addCombatText(CombatTextEntry::XP_GAIN, static_cast<int32_t>(xpGained), 0, true);
                 if (areaDiscoveryCallback_) areaDiscoveryCallback_(areaName, xpGained);
-                if (addonEventCallback_)
-                    addonEventCallback_("CHAT_MSG_COMBAT_XP_GAIN", {msg, std::to_string(xpGained)});
+                                    fireAddonEvent("CHAT_MSG_COMBAT_XP_GAIN", {msg, std::to_string(xpGained)});
             }
         }
     };
@@ -1830,9 +1828,9 @@ void GameHandler::registerOpcodeHandlers() {
         uint32_t hp = packet.readUInt32();
         auto entity = entityManager.getEntity(guid);
         if (auto* unit = dynamic_cast<Unit*>(entity.get())) unit->setHealth(hp);
-        if (addonEventCallback_ && guid != 0) {
+        if (guid != 0) {
             auto unitId = guidToUnitId(guid);
-            if (!unitId.empty()) addonEventCallback_("UNIT_HEALTH", {unitId});
+            if (!unitId.empty()) fireAddonEvent("UNIT_HEALTH", {unitId});
         }
     };
     dispatchTable_[Opcode::SMSG_POWER_UPDATE] = [this](network::Packet& packet) {
@@ -1844,13 +1842,13 @@ void GameHandler::registerOpcodeHandlers() {
         uint32_t value     = packet.readUInt32();
         auto entity = entityManager.getEntity(guid);
         if (auto* unit = dynamic_cast<Unit*>(entity.get())) unit->setPowerByType(powerType, value);
-        if (addonEventCallback_ && guid != 0) {
+        if (guid != 0) {
             auto unitId = guidToUnitId(guid);
             if (!unitId.empty()) {
-                addonEventCallback_("UNIT_POWER", {unitId});
+                fireAddonEvent("UNIT_POWER", {unitId});
                 if (guid == playerGuid) {
-                    addonEventCallback_("ACTIONBAR_UPDATE_USABLE", {});
-                    addonEventCallback_("SPELL_UPDATE_USABLE", {});
+                    fireAddonEvent("ACTIONBAR_UPDATE_USABLE", {});
+                    fireAddonEvent("SPELL_UPDATE_USABLE", {});
                 }
             }
         }
@@ -1861,7 +1859,7 @@ void GameHandler::registerOpcodeHandlers() {
         uint32_t value = packet.readUInt32();
         worldStates_[field] = value;
         LOG_DEBUG("SMSG_UPDATE_WORLD_STATE: field=", field, " value=", value);
-        if (addonEventCallback_) addonEventCallback_("UPDATE_WORLD_STATES", {});
+        fireAddonEvent("UPDATE_WORLD_STATES", {});
     };
     dispatchTable_[Opcode::SMSG_WORLD_STATE_UI_TIMER_UPDATE] = [this](network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() >= 4) {
@@ -1879,7 +1877,7 @@ void GameHandler::registerOpcodeHandlers() {
             addSystemChatMessage(msg);
             if (honor > 0) addCombatText(CombatTextEntry::HONOR_GAIN, static_cast<int32_t>(honor), 0, true);
             if (pvpHonorCallback_) pvpHonorCallback_(honor, victimGuid, rank);
-            if (addonEventCallback_) addonEventCallback_("CHAT_MSG_COMBAT_HONOR_GAIN", {msg});
+            fireAddonEvent("CHAT_MSG_COMBAT_HONOR_GAIN", {msg});
         }
     };
     dispatchTable_[Opcode::SMSG_UPDATE_COMBO_POINTS] = [this](network::Packet& packet) {
@@ -1891,7 +1889,7 @@ void GameHandler::registerOpcodeHandlers() {
         comboTarget_ = target;
         LOG_DEBUG("SMSG_UPDATE_COMBO_POINTS: target=0x", std::hex, target,
                   std::dec, " points=", static_cast<int>(comboPoints_));
-        if (addonEventCallback_) addonEventCallback_("PLAYER_COMBO_POINTS", {});
+        fireAddonEvent("PLAYER_COMBO_POINTS", {});
     };
     dispatchTable_[Opcode::SMSG_START_MIRROR_TIMER] = [this](network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() < 21) return;
@@ -1907,8 +1905,7 @@ void GameHandler::registerOpcodeHandlers() {
             mirrorTimers_[type].scale    = scale;
             mirrorTimers_[type].paused   = (paused != 0);
             mirrorTimers_[type].active   = true;
-            if (addonEventCallback_)
-                addonEventCallback_("MIRROR_TIMER_START", {
+                            fireAddonEvent("MIRROR_TIMER_START", {
                     std::to_string(type), std::to_string(value),
                     std::to_string(maxV), std::to_string(scale),
                     paused ? "1" : "0"});
@@ -1920,7 +1917,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (type < 3) {
             mirrorTimers_[type].active = false;
             mirrorTimers_[type].value  = 0;
-            if (addonEventCallback_) addonEventCallback_("MIRROR_TIMER_STOP", {std::to_string(type)});
+            fireAddonEvent("MIRROR_TIMER_STOP", {std::to_string(type)});
         }
     };
     dispatchTable_[Opcode::SMSG_PAUSE_MIRROR_TIMER] = [this](network::Packet& packet) {
@@ -1929,7 +1926,7 @@ void GameHandler::registerOpcodeHandlers() {
         uint8_t  paused = packet.readUInt8();
         if (type < 3) {
             mirrorTimers_[type].paused = (paused != 0);
-            if (addonEventCallback_) addonEventCallback_("MIRROR_TIMER_PAUSE", {paused ? "1" : "0"});
+            fireAddonEvent("MIRROR_TIMER_PAUSE", {paused ? "1" : "0"});
         }
     };
 
@@ -1956,8 +1953,8 @@ void GameHandler::registerOpcodeHandlers() {
                 addUIError(errMsg);
                 if (spellCastFailedCallback_) spellCastFailedCallback_(castResultSpellId);
                 if (addonEventCallback_) {
-                    addonEventCallback_("UNIT_SPELLCAST_FAILED", {"player", std::to_string(castResultSpellId)});
-                    addonEventCallback_("UNIT_SPELLCAST_STOP",   {"player", std::to_string(castResultSpellId)});
+                    fireAddonEvent("UNIT_SPELLCAST_FAILED", {"player", std::to_string(castResultSpellId)});
+                    fireAddonEvent("UNIT_SPELLCAST_STOP",   {"player", std::to_string(castResultSpellId)});
                 }
                 MessageChatData msg;
                 msg.type     = ChatType::SYSTEM;
@@ -1979,8 +1976,8 @@ void GameHandler::registerOpcodeHandlers() {
                 if (failOtherGuid == targetGuid)     unitId = "target";
                 else if (failOtherGuid == focusGuid) unitId = "focus";
                 if (!unitId.empty()) {
-                    addonEventCallback_("UNIT_SPELLCAST_FAILED", {unitId});
-                    addonEventCallback_("UNIT_SPELLCAST_STOP",   {unitId});
+                    fireAddonEvent("UNIT_SPELLCAST_FAILED", {unitId});
+                    fireAddonEvent("UNIT_SPELLCAST_STOP",   {unitId});
                 }
             }
         }
@@ -2042,8 +2039,7 @@ void GameHandler::registerOpcodeHandlers() {
         pendingLootRoll_.rollStartedAt   = std::chrono::steady_clock::now();
         LOG_INFO("SMSG_LOOT_START_ROLL: item=", itemId, " (", pendingLootRoll_.itemName,
                  ") slot=", slot, " voteMask=0x", std::hex, (int)voteMask, std::dec);
-        if (addonEventCallback_)
-            addonEventCallback_("START_LOOT_ROLL", {std::to_string(slot), std::to_string(countdown)});
+                    fireAddonEvent("START_LOOT_ROLL", {std::to_string(slot), std::to_string(countdown)});
     };
 
     // -----------------------------------------------------------------------
@@ -2225,7 +2221,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_FORCED_DEATH_UPDATE] = [this](network::Packet& packet) {
         playerDead_ = true;
         if (ghostStateCallback_) ghostStateCallback_(false);
-        if (addonEventCallback_) addonEventCallback_("PLAYER_DEAD", {});
+        fireAddonEvent("PLAYER_DEAD", {});
         addSystemChatMessage("You have been killed.");
         LOG_INFO("SMSG_FORCED_DEATH_UPDATE: player force-killed");
         packet.setReadPos(packet.getSize());
@@ -2257,7 +2253,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_ENABLE_BARBER_SHOP] = [this](network::Packet& /*packet*/) {
         LOG_INFO("SMSG_ENABLE_BARBER_SHOP: barber shop available");
         barberShopOpen_ = true;
-        if (addonEventCallback_) addonEventCallback_("BARBER_SHOP_OPEN", {});
+        fireAddonEvent("BARBER_SHOP_OPEN", {});
     };
 
     // ---- Batch 3: Corpse/gametime, combat clearing, mount, loot notify,
@@ -2335,7 +2331,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     dispatchTable_[Opcode::SMSG_THREAT_CLEAR] = [this](network::Packet& /*packet*/) {
         threatLists_.clear();
-        if (addonEventCallback_) addonEventCallback_("UNIT_THREAT_LIST_UPDATE", {});
+        fireAddonEvent("UNIT_THREAT_LIST_UPDATE", {});
     };
     dispatchTable_[Opcode::SMSG_THREAT_REMOVE] = [this](network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() < 1) return;
@@ -2700,8 +2696,8 @@ void GameHandler::registerOpcodeHandlers() {
         addUIError("Your party has been disbanded.");
         addSystemChatMessage("Your party has been disbanded.");
         if (addonEventCallback_) {
-            addonEventCallback_("GROUP_ROSTER_UPDATE", {});
-            addonEventCallback_("PARTY_MEMBERS_CHANGED", {});
+            fireAddonEvent("GROUP_ROSTER_UPDATE", {});
+            fireAddonEvent("PARTY_MEMBERS_CHANGED", {});
         }
     };
     dispatchTable_[Opcode::SMSG_GROUP_CANCEL] = [this](network::Packet& /*packet*/) {
@@ -2735,8 +2731,7 @@ void GameHandler::registerOpcodeHandlers() {
         addSystemChatMessage(readyCheckInitiator_.empty()
             ? "Ready check initiated!"
             : readyCheckInitiator_ + " initiated a ready check!");
-        if (addonEventCallback_)
-            addonEventCallback_("READY_CHECK", {readyCheckInitiator_});
+                    fireAddonEvent("READY_CHECK", {readyCheckInitiator_});
     };
     dispatchTable_[Opcode::MSG_RAID_READY_CHECK_CONFIRM] = [this](network::Packet& packet) {
         if (packet.getSize() - packet.getReadPos() < 9) { packet.setReadPos(packet.getSize()); return; }
@@ -2763,7 +2758,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (addonEventCallback_) {
             char guidBuf[32];
             snprintf(guidBuf, sizeof(guidBuf), "0x%016llX", (unsigned long long)respGuid);
-            addonEventCallback_("READY_CHECK_CONFIRM", {guidBuf, isReady ? "1" : "0"});
+            fireAddonEvent("READY_CHECK_CONFIRM", {guidBuf, isReady ? "1" : "0"});
         }
     };
     dispatchTable_[Opcode::MSG_RAID_READY_CHECK_FINISHED] = [this](network::Packet& /*packet*/) {
@@ -2775,7 +2770,7 @@ void GameHandler::registerOpcodeHandlers() {
         readyCheckReadyCount_ = 0;
         readyCheckNotReadyCount_ = 0;
         readyCheckResults_.clear();
-        if (addonEventCallback_) addonEventCallback_("READY_CHECK_FINISHED", {});
+        fireAddonEvent("READY_CHECK_FINISHED", {});
     };
     dispatchTable_[Opcode::SMSG_RAID_INSTANCE_INFO] = [this](network::Packet& packet) { handleRaidInstanceInfo(packet); };
 
@@ -2907,8 +2902,7 @@ void GameHandler::registerOpcodeHandlers() {
                 resurrectCasterName_ = (nit != playerNameCache.end()) ? nit->second : "";
             }
             resurrectRequestPending_ = true;
-            if (addonEventCallback_)
-                addonEventCallback_("RESURRECT_REQUEST", {resurrectCasterName_});
+                            fireAddonEvent("RESURRECT_REQUEST", {resurrectCasterName_});
         }
     };
 
@@ -2942,8 +2936,8 @@ void GameHandler::registerOpcodeHandlers() {
             if (auto* sfx = renderer->getUiSoundManager()) sfx->playQuestActivate();
         }
         if (addonEventCallback_) {
-            addonEventCallback_("TRAINER_UPDATE", {});
-            addonEventCallback_("SPELLS_CHANGED", {});
+            fireAddonEvent("TRAINER_UPDATE", {});
+            fireAddonEvent("SPELLS_CHANGED", {});
         }
     };
     dispatchTable_[Opcode::SMSG_TRAINER_BUY_FAILED] = [this](network::Packet& packet) {
@@ -3060,8 +3054,8 @@ void GameHandler::registerOpcodeHandlers() {
                 watchedFactionId_ = factionId;
                 if (repChangeCallback_) repChangeCallback_(name, delta, standing);
                 if (addonEventCallback_) {
-                    addonEventCallback_("UPDATE_FACTION", {});
-                    addonEventCallback_("CHAT_MSG_COMBAT_FACTION_CHANGE", {std::string(buf)});
+                    fireAddonEvent("UPDATE_FACTION", {});
+                    fireAddonEvent("CHAT_MSG_COMBAT_FACTION_CHANGE", {std::string(buf)});
                 }
             }
         }
@@ -3176,7 +3170,7 @@ void GameHandler::registerOpcodeHandlers() {
             if (notifyGuid != 0)
                 recentLootMoneyAnnounceCooldowns_[notifyGuid] = 1.5f;
         }
-        if (addonEventCallback_) addonEventCallback_("PLAYER_MONEY", {});
+        fireAddonEvent("PLAYER_MONEY", {});
     };
     for (auto op : { Opcode::SMSG_LOOT_CLEAR_MONEY, Opcode::SMSG_NPC_TEXT_UPDATE }) {
         dispatchTable_[op] = [](network::Packet& /*packet*/) {};
@@ -3454,8 +3448,7 @@ void GameHandler::registerOpcodeHandlers() {
         talentWipeNpcGuid_ = packet.readUInt64();
         talentWipeCost_    = packet.readUInt32();
         talentWipePending_ = true;
-        if (addonEventCallback_)
-            addonEventCallback_("CONFIRM_TALENT_WIPE", {std::to_string(talentWipeCost_)});
+                    fireAddonEvent("CONFIRM_TALENT_WIPE", {std::to_string(talentWipeCost_)});
     };
 
     // MSG_MOVE_* relay (26 opcodes → handleOtherPlayerMovement)
@@ -3577,8 +3570,8 @@ void GameHandler::registerOpcodeHandlers() {
         if (!leaderName.empty())
             addSystemChatMessage(leaderName + " is now the group leader.");
         if (addonEventCallback_) {
-            addonEventCallback_("PARTY_LEADER_CHANGED", {});
-            addonEventCallback_("GROUP_ROSTER_UPDATE", {});
+            fireAddonEvent("PARTY_LEADER_CHANGED", {});
+            fireAddonEvent("GROUP_ROSTER_UPDATE", {});
         }
     };
 
@@ -3794,10 +3787,10 @@ void GameHandler::registerOpcodeHandlers() {
                 sendMovement(Opcode::MSG_MOVE_STOP_TURN);
                 sendMovement(Opcode::MSG_MOVE_STOP_SWIM);
                 addSystemChatMessage("Movement disabled by server.");
-                if (addonEventCallback_) addonEventCallback_("PLAYER_CONTROL_LOST", {});
+                fireAddonEvent("PLAYER_CONTROL_LOST", {});
             } else if (changed && allowMovement) {
                 addSystemChatMessage("Movement re-enabled.");
-                if (addonEventCallback_) addonEventCallback_("PLAYER_CONTROL_GAINED", {});
+                fireAddonEvent("PLAYER_CONTROL_GAINED", {});
             }
         }
     };
@@ -3845,8 +3838,8 @@ void GameHandler::registerOpcodeHandlers() {
         if (addonEventCallback_) {
             auto unitId = (failGuid == 0) ? std::string("player") : guidToUnitId(failGuid);
             if (!unitId.empty()) {
-                addonEventCallback_("UNIT_SPELLCAST_INTERRUPTED", {unitId});
-                addonEventCallback_("UNIT_SPELLCAST_STOP", {unitId});
+                fireAddonEvent("UNIT_SPELLCAST_INTERRUPTED", {unitId});
+                fireAddonEvent("UNIT_SPELLCAST_STOP", {unitId});
             }
         }
         if (failGuid == playerGuid || failGuid == 0) {
@@ -4128,8 +4121,7 @@ void GameHandler::registerOpcodeHandlers() {
             std::sort(list.begin(), list.end(),
                 [](const ThreatEntry& a, const ThreatEntry& b){ return a.threat > b.threat; });
             threatLists_[unitGuid] = std::move(list);
-            if (addonEventCallback_)
-                addonEventCallback_("UNIT_THREAT_LIST_UPDATE", {});
+                            fireAddonEvent("UNIT_THREAT_LIST_UPDATE", {});
         };
     }
 
@@ -4186,8 +4178,8 @@ void GameHandler::registerOpcodeHandlers() {
             if (newZoneId != worldStateZoneId_ && newZoneId != 0) {
                 worldStateZoneId_ = newZoneId;
                 if (addonEventCallback_) {
-                    addonEventCallback_("ZONE_CHANGED_NEW_AREA", {});
-                    addonEventCallback_("ZONE_CHANGED", {});
+                    fireAddonEvent("ZONE_CHANGED_NEW_AREA", {});
+                    fireAddonEvent("ZONE_CHANGED", {});
                 }
             } else {
                 worldStateZoneId_ = newZoneId;
@@ -4311,7 +4303,7 @@ void GameHandler::registerOpcodeHandlers() {
             }
         }
         LOG_INFO("SMSG_ACTION_BUTTONS: populated action bar from server");
-        if (addonEventCallback_) addonEventCallback_("ACTIONBAR_SLOT_CHANGED", {});
+        fireAddonEvent("ACTIONBAR_SLOT_CHANGED", {});
         packet.setReadPos(packet.getSize());
     };
 
@@ -4349,7 +4341,7 @@ void GameHandler::registerOpcodeHandlers() {
                                 sfx->playLevelUp();
                         }
                         if (levelUpCallback_) levelUpCallback_(newLevel);
-                        if (addonEventCallback_) addonEventCallback_("PLAYER_LEVEL_UP", {std::to_string(newLevel)});
+                        fireAddonEvent("PLAYER_LEVEL_UP", {std::to_string(newLevel)});
                     }
                 }
             }
@@ -4374,8 +4366,8 @@ void GameHandler::registerOpcodeHandlers() {
                         sfx->playDropOnGround();
                 }
                 if (addonEventCallback_) {
-                    addonEventCallback_("BAG_UPDATE", {});
-                    addonEventCallback_("PLAYER_MONEY", {});
+                    fireAddonEvent("BAG_UPDATE", {});
+                    fireAddonEvent("PLAYER_MONEY", {});
                 }
             } else {
                 bool removedPending = false;
@@ -4617,8 +4609,8 @@ void GameHandler::registerOpcodeHandlers() {
             pendingBuyItemId_   = 0;
             pendingBuyItemSlot_ = 0;
             if (addonEventCallback_) {
-                addonEventCallback_("MERCHANT_UPDATE", {});
-                addonEventCallback_("BAG_UPDATE", {});
+                fireAddonEvent("MERCHANT_UPDATE", {});
+                fireAddonEvent("BAG_UPDATE", {});
             }
         }
     };
@@ -4649,8 +4641,7 @@ void GameHandler::registerOpcodeHandlers() {
             }
         }
         LOG_DEBUG("MSG_RAID_TARGET_UPDATE: type=", static_cast<int>(rtuType));
-        if (addonEventCallback_)
-            addonEventCallback_("RAID_TARGET_UPDATE", {});
+                    fireAddonEvent("RAID_TARGET_UPDATE", {});
     };
 
     // ---- SMSG_CRITERIA_UPDATE ----
@@ -4667,8 +4658,8 @@ void GameHandler::registerOpcodeHandlers() {
             criteriaProgress_[criteriaId] = progress;
             LOG_DEBUG("SMSG_CRITERIA_UPDATE: id=", criteriaId, " progress=", progress);
             // Fire addon event for achievement tracking addons
-            if (addonEventCallback_ && progress != oldProgress)
-                addonEventCallback_("CRITERIA_UPDATE", {std::to_string(criteriaId), std::to_string(progress)});
+            if (progress != oldProgress)
+                fireAddonEvent("CRITERIA_UPDATE", {std::to_string(criteriaId), std::to_string(progress)});
         }
     };
 
@@ -4680,7 +4671,7 @@ void GameHandler::registerOpcodeHandlers() {
             if (result == 0) {
                 addSystemChatMessage("Hairstyle changed.");
                 barberShopOpen_ = false;
-                if (addonEventCallback_) addonEventCallback_("BARBER_SHOP_CLOSE", {});
+                fireAddonEvent("BARBER_SHOP_CLOSE", {});
             } else {
                 const char* msg = (result == 1) ? "Not enough money for new hairstyle."
                                 : (result == 2) ? "You are not at a barber shop."
@@ -4960,8 +4951,7 @@ void GameHandler::registerOpcodeHandlers() {
                 if (weatherMsg) addSystemChatMessage(weatherMsg);
             }
             // Notify addons of weather change
-            if (addonEventCallback_)
-                addonEventCallback_("WEATHER_CHANGED", {std::to_string(wType), std::to_string(wIntensity)});
+                            fireAddonEvent("WEATHER_CHANGED", {std::to_string(wType), std::to_string(wIntensity)});
             // Storm transition: trigger a low-frequency thunder rumble shake
             if (wType == 3 && wIntensity > 0.3f && cameraShakeCallback_) {
                 float mag = 0.03f + wIntensity * 0.04f; // 0.03–0.07 units
@@ -5076,15 +5066,14 @@ void GameHandler::registerOpcodeHandlers() {
                     }
                     questLog_.erase(it);
                     LOG_INFO("  Removed quest ", questId, " from quest log");
-                    if (addonEventCallback_)
-                        addonEventCallback_("QUEST_TURNED_IN", {std::to_string(questId)});
+                                            fireAddonEvent("QUEST_TURNED_IN", {std::to_string(questId)});
                     break;
                 }
             }
         }
         if (addonEventCallback_) {
-            addonEventCallback_("QUEST_LOG_UPDATE", {});
-            addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+            fireAddonEvent("QUEST_LOG_UPDATE", {});
+            fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
         }
         // Re-query all nearby quest giver NPCs so markers refresh
         if (socket) {
@@ -5155,9 +5144,9 @@ void GameHandler::registerOpcodeHandlers() {
                         questProgressCallback_(quest.title, creatureName, count, reqCount);
                     }
                     if (addonEventCallback_) {
-                        addonEventCallback_("QUEST_WATCH_UPDATE", {std::to_string(questId)});
-                        addonEventCallback_("QUEST_LOG_UPDATE", {});
-                        addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+                        fireAddonEvent("QUEST_WATCH_UPDATE", {std::to_string(questId)});
+                        fireAddonEvent("QUEST_LOG_UPDATE", {});
+                        fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
                     }
 
                     LOG_INFO("Updated kill count for quest ", questId, ": ",
@@ -5236,10 +5225,10 @@ void GameHandler::registerOpcodeHandlers() {
                 }
             }
 
-            if (addonEventCallback_ && updatedAny) {
-                addonEventCallback_("QUEST_WATCH_UPDATE", {});
-                addonEventCallback_("QUEST_LOG_UPDATE", {});
-                addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+            if (updatedAny) {
+                fireAddonEvent("QUEST_WATCH_UPDATE", {});
+                fireAddonEvent("QUEST_LOG_UPDATE", {});
+                fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
             }
             LOG_INFO("Quest item update: itemId=", itemId, " count=", count,
                      " trackedQuestsUpdated=", updatedAny);
@@ -5308,8 +5297,7 @@ void GameHandler::registerOpcodeHandlers() {
                 isResting_ = nowResting;
                 addSystemChatMessage(isResting_ ? "You are now resting."
                                                 : "You are no longer resting.");
-                if (addonEventCallback_)
-                    addonEventCallback_("PLAYER_UPDATE_RESTING", {});
+                                    fireAddonEvent("PLAYER_UPDATE_RESTING", {});
             }
             return;
         }
@@ -5357,9 +5345,9 @@ void GameHandler::registerOpcodeHandlers() {
                 addSystemChatMessage("Quest removed (ID " + std::to_string(questId) + ").");
             }
             if (addonEventCallback_) {
-                addonEventCallback_("QUEST_LOG_UPDATE", {});
-                addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
-                addonEventCallback_("QUEST_REMOVED", {std::to_string(questId)});
+                fireAddonEvent("QUEST_LOG_UPDATE", {});
+                fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
+                fireAddonEvent("QUEST_REMOVED", {std::to_string(questId)});
             }
         }
     };
@@ -5704,8 +5692,7 @@ void GameHandler::registerOpcodeHandlers() {
             isResting_ = (restTrigger > 0);
             addSystemChatMessage(isResting_ ? "You are now resting."
                                             : "You are no longer resting.");
-            if (addonEventCallback_)
-                addonEventCallback_("PLAYER_UPDATE_RESTING", {});
+                            fireAddonEvent("PLAYER_UPDATE_RESTING", {});
         }
     };
     dispatchTable_[Opcode::SMSG_UPDATE_AURA_DURATION] = [this](network::Packet& packet) {
@@ -6662,7 +6649,7 @@ void GameHandler::registerOpcodeHandlers() {
             if (addonEventCallback_) {
                 auto unitId = guidToUnitId(chanCaster);
                 if (!unitId.empty())
-                    addonEventCallback_("UNIT_SPELLCAST_CHANNEL_START", {unitId, std::to_string(chanSpellId)});
+                    fireAddonEvent("UNIT_SPELLCAST_CHANNEL_START", {unitId, std::to_string(chanSpellId)});
             }
         }
     };
@@ -6692,10 +6679,10 @@ void GameHandler::registerOpcodeHandlers() {
         LOG_DEBUG("MSG_CHANNEL_UPDATE: caster=0x", std::hex, chanCaster2, std::dec,
                   " remaining=", chanRemainMs, "ms");
         // Fire UNIT_SPELLCAST_CHANNEL_STOP when channel ends
-        if (chanRemainMs == 0 && addonEventCallback_) {
+        if (chanRemainMs == 0) {
             auto unitId = guidToUnitId(chanCaster2);
             if (!unitId.empty())
-                addonEventCallback_("UNIT_SPELLCAST_CHANNEL_STOP", {unitId});
+                fireAddonEvent("UNIT_SPELLCAST_CHANNEL_STOP", {unitId});
         }
     };
     // uint32 slot + packed_guid unit (0 packed = clear slot)
@@ -6834,8 +6821,8 @@ void GameHandler::registerOpcodeHandlers() {
                   " memberFlags=0x", std::hex, newMemberFlags, std::dec,
                   " leaderGuid=", newLeaderGuid);
         if (addonEventCallback_) {
-            addonEventCallback_("PARTY_LEADER_CHANGED", {});
-            addonEventCallback_("GROUP_ROSTER_UPDATE", {});
+            fireAddonEvent("PARTY_LEADER_CHANGED", {});
+            fireAddonEvent("GROUP_ROSTER_UPDATE", {});
         }
     };
     dispatchTable_[Opcode::SMSG_PLAY_MUSIC] = [this](network::Packet& packet) {
@@ -7039,7 +7026,7 @@ void GameHandler::registerOpcodeHandlers() {
             const std::string& sname = getSpellName(spellId);
             addSystemChatMessage("Your pet has learned " + (sname.empty() ? "a new ability." : sname + "."));
             LOG_DEBUG("SMSG_PET_LEARNED_SPELL: spellId=", spellId);
-            if (addonEventCallback_) addonEventCallback_("PET_BAR_UPDATE", {});
+            fireAddonEvent("PET_BAR_UPDATE", {});
         }
         packet.setReadPos(packet.getSize());
     };
@@ -7159,7 +7146,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (addonEventCallback_) {
             char guidBuf[32];
             snprintf(guidBuf, sizeof(guidBuf), "0x%016llX", (unsigned long long)guid);
-            addonEventCallback_("INSPECT_READY", {guidBuf});
+            fireAddonEvent("INSPECT_READY", {guidBuf});
         }
     };
     // Same wire format as SMSG_COMPRESSED_MOVES: uint8 size + uint16 opcode + payload[]
@@ -8881,13 +8868,13 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
     // Fire PLAYER_ENTERING_WORLD — THE most important event for addon initialization.
     // Fires on initial login, teleports, instance transitions, and zone changes.
     if (addonEventCallback_) {
-        addonEventCallback_("PLAYER_ENTERING_WORLD", {initialWorldEntry ? "1" : "0"});
+        fireAddonEvent("PLAYER_ENTERING_WORLD", {initialWorldEntry ? "1" : "0"});
         // Also fire ZONE_CHANGED_NEW_AREA and UPDATE_WORLD_STATES so map/BG addons refresh
-        addonEventCallback_("ZONE_CHANGED_NEW_AREA", {});
-        addonEventCallback_("UPDATE_WORLD_STATES", {});
+        fireAddonEvent("ZONE_CHANGED_NEW_AREA", {});
+        fireAddonEvent("UPDATE_WORLD_STATES", {});
         // PLAYER_LOGIN fires only on initial login (not teleports)
         if (initialWorldEntry) {
-            addonEventCallback_("PLAYER_LOGIN", {});
+            fireAddonEvent("PLAYER_LOGIN", {});
         }
     }
 }
@@ -10498,10 +10485,10 @@ void GameHandler::sendMovement(Opcode opcode) {
     // Fire PLAYER_STARTED/STOPPED_MOVING on movement state transitions
     {
         const bool isMoving = (movementInfo.flags & kMoveMask) != 0;
-        if (isMoving && !wasMoving && addonEventCallback_)
-            addonEventCallback_("PLAYER_STARTED_MOVING", {});
-        else if (!isMoving && wasMoving && addonEventCallback_)
-            addonEventCallback_("PLAYER_STOPPED_MOVING", {});
+        if (isMoving && !wasMoving)
+            fireAddonEvent("PLAYER_STARTED_MOVING", {});
+        else if (!isMoving && wasMoving)
+            fireAddonEvent("PLAYER_STOPPED_MOVING", {});
     }
 
     if (opcode == Opcode::MSG_MOVE_SET_FACING) {
@@ -11091,7 +11078,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         if (addonEventCallback_) {
                             auto uid = guidToUnitId(block.guid);
                             if (!uid.empty())
-                                addonEventCallback_("UNIT_FACTION", {uid});
+                                fireAddonEvent("UNIT_FACTION", {uid});
                         }
                     }
                     else if (key == ufFlags) {
@@ -11099,7 +11086,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         if (addonEventCallback_) {
                             auto uid = guidToUnitId(block.guid);
                             if (!uid.empty())
-                                addonEventCallback_("UNIT_FLAGS", {uid});
+                                fireAddonEvent("UNIT_FLAGS", {uid});
                         }
                     }
                     else if (key == ufBytes0) {
@@ -11109,7 +11096,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         if (addonEventCallback_) {
                             auto uid = guidToUnitId(block.guid);
                             if (!uid.empty())
-                                addonEventCallback_("UNIT_MODEL_CHANGED", {uid});
+                                fireAddonEvent("UNIT_MODEL_CHANGED", {uid});
                         }
                     }
                     else if (key == ufNpcFlags) { unit->setNpcFlags(val); }
@@ -11131,8 +11118,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             uint32_t old = currentMountDisplayId_;
                             currentMountDisplayId_ = val;
                             if (val != old && mountCallback_) mountCallback_(val);
-                            if (val != old && addonEventCallback_)
-                                addonEventCallback_("UNIT_MODEL_CHANGED", {"player"});
+                            if (val != old)
+                                fireAddonEvent("UNIT_MODEL_CHANGED", {"player"});
                             if (old == 0 && val != 0) {
                                 // Just mounted — find the mount aura (indefinite duration, self-cast)
                                 mountAuraSpellId_ = 0;
@@ -11233,8 +11220,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                 }
                             }
                             LOG_DEBUG("[Classic] Rebuilt playerAuras from UNIT_FIELD_AURAS (CREATE_OBJECT)");
-                            if (addonEventCallback_)
-                                addonEventCallback_("UNIT_AURA", {"player"});
+                                                            fireAddonEvent("UNIT_AURA", {"player"});
                         }
                     }
                 }
@@ -11473,8 +11459,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         uint64_t oldMoney = playerMoneyCopper_;
                         playerMoneyCopper_ = val;
                         LOG_DEBUG("Money set from update fields: ", val, " copper");
-                        if (val != oldMoney && addonEventCallback_)
-                            addonEventCallback_("PLAYER_MONEY", {});
+                        if (val != oldMoney)
+                            fireAddonEvent("PLAYER_MONEY", {});
                     }
                     else if (ufHonor != 0xFFFF && key == ufHonor) {
                         playerHonorPoints_ = val;
@@ -11501,9 +11487,9 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         uint8_t restStateByte = static_cast<uint8_t>((val >> 24) & 0xFF);
                         bool wasResting = isResting_;
                         isResting_ = (restStateByte != 0);
-                        if (isResting_ != wasResting && addonEventCallback_) {
-                            addonEventCallback_("UPDATE_EXHAUSTION", {});
-                            addonEventCallback_("PLAYER_UPDATE_RESTING", {});
+                        if (isResting_ != wasResting) {
+                            fireAddonEvent("UPDATE_EXHAUSTION", {});
+                            fireAddonEvent("PLAYER_UPDATE_RESTING", {});
                         }
                     }
                     else if (ufChosenTitle != 0xFFFF && key == ufChosenTitle) {
@@ -11635,8 +11621,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                     LOG_INFO("Player died! Corpse position cached at server=(",
                                              corpseX_, ",", corpseY_, ",", corpseZ_,
                                              ") map=", corpseMapId_);
-                                    if (addonEventCallback_)
-                                        addonEventCallback_("PLAYER_DEAD", {});
+                                                                            fireAddonEvent("PLAYER_DEAD", {});
                                 }
                                 if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && npcDeathCallback_) {
                                     npcDeathCallback_(block.guid);
@@ -11648,13 +11633,11 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                     playerDead_ = false;
                                     if (!wasGhost) {
                                         LOG_INFO("Player resurrected!");
-                                        if (addonEventCallback_)
-                                            addonEventCallback_("PLAYER_ALIVE", {});
+                                                                                    fireAddonEvent("PLAYER_ALIVE", {});
                                     } else {
                                         LOG_INFO("Player entered ghost form");
                                         releasedSpirit_ = false;
-                                        if (addonEventCallback_)
-                                            addonEventCallback_("PLAYER_UNGHOST", {});
+                                                                                    fireAddonEvent("PLAYER_UNGHOST", {});
                                     }
                                 }
                                 if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && npcRespawnCallback_) {
@@ -11668,10 +11651,10 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         else if (key == ufBytes0) {
                             uint8_t oldPT = unit->getPowerType();
                             unit->setPowerType(static_cast<uint8_t>((val >> 24) & 0xFF));
-                            if (unit->getPowerType() != oldPT && addonEventCallback_) {
+                            if (unit->getPowerType() != oldPT) {
                                 auto uid = guidToUnitId(block.guid);
                                 if (!uid.empty())
-                                    addonEventCallback_("UNIT_DISPLAYPOWER", {uid});
+                                    fireAddonEvent("UNIT_DISPLAYPOWER", {uid});
                             }
                         } else if (key == ufFlags) { unit->setUnitFlags(val); }
                         else if (ufBytes1 != 0xFFFF && key == ufBytes1 && block.guid == playerGuid) {
@@ -11680,8 +11663,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                 shapeshiftFormId_ = newForm;
                                 LOG_INFO("Shapeshift form changed: ", (int)newForm);
                                 if (addonEventCallback_) {
-                                    addonEventCallback_("UPDATE_SHAPESHIFT_FORM", {});
-                                    addonEventCallback_("UPDATE_SHAPESHIFT_FORMS", {});
+                                    fireAddonEvent("UPDATE_SHAPESHIFT_FORM", {});
+                                    fireAddonEvent("UPDATE_SHAPESHIFT_FORMS", {});
                                 }
                             }
                         }
@@ -11723,10 +11706,10 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         } else if (key == ufLevel) {
                             uint32_t oldLvl = unit->getLevel();
                             unit->setLevel(val);
-                            if (val != oldLvl && addonEventCallback_) {
+                            if (val != oldLvl) {
                                 auto uid = guidToUnitId(block.guid);
                                 if (!uid.empty())
-                                    addonEventCallback_("UNIT_LEVEL", {uid});
+                                    fireAddonEvent("UNIT_LEVEL", {uid});
                             }
                             if (block.guid != playerGuid &&
                                 entity->getType() == ObjectType::PLAYER &&
@@ -11748,8 +11731,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                 uint32_t old = currentMountDisplayId_;
                                 currentMountDisplayId_ = val;
                                 if (val != old && mountCallback_) mountCallback_(val);
-                                if (val != old && addonEventCallback_)
-                                    addonEventCallback_("UNIT_MODEL_CHANGED", {"player"});
+                                if (val != old)
+                                    fireAddonEvent("UNIT_MODEL_CHANGED", {"player"});
                                 if (old == 0 && val != 0) {
                                     mountAuraSpellId_ = 0;
                                     for (const auto& a : playerAuras) {
@@ -11790,16 +11773,16 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     }
 
                     // Fire UNIT_HEALTH / UNIT_POWER events for Lua addons
-                    if (addonEventCallback_ && (healthChanged || powerChanged)) {
+                    if ((healthChanged || powerChanged)) {
                         auto unitId = guidToUnitId(block.guid);
                         if (!unitId.empty()) {
-                            if (healthChanged) addonEventCallback_("UNIT_HEALTH", {unitId});
+                            if (healthChanged) fireAddonEvent("UNIT_HEALTH", {unitId});
                             if (powerChanged) {
-                                addonEventCallback_("UNIT_POWER", {unitId});
+                                fireAddonEvent("UNIT_POWER", {unitId});
                                 // When player power changes, action bar usability may change
                                 if (block.guid == playerGuid) {
-                                    addonEventCallback_("ACTIONBAR_UPDATE_USABLE", {});
-                                    addonEventCallback_("SPELL_UPDATE_USABLE", {});
+                                    fireAddonEvent("ACTIONBAR_UPDATE_USABLE", {});
+                                    fireAddonEvent("SPELL_UPDATE_USABLE", {});
                                 }
                             }
                         }
@@ -11841,8 +11824,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                     }
                                 }
                                 LOG_DEBUG("[Classic] Rebuilt playerAuras from UNIT_FIELD_AURAS (VALUES)");
-                                if (addonEventCallback_)
-                                    addonEventCallback_("UNIT_AURA", {"player"});
+                                                                    fireAddonEvent("UNIT_AURA", {"player"});
                             }
                         }
                     }
@@ -11907,7 +11889,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             else if (block.guid == focusGuid) uid = "focus";
                             else if (block.guid == petGuid_) uid = "pet";
                             if (!uid.empty())
-                                addonEventCallback_("UNIT_MODEL_CHANGED", {uid});
+                                fireAddonEvent("UNIT_MODEL_CHANGED", {uid});
                         }
                     }
                 }
@@ -11974,8 +11956,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         if (key == ufPlayerXp) {
                             playerXp_ = val;
                             LOG_DEBUG("XP updated: ", val);
-                            if (addonEventCallback_)
-                                addonEventCallback_("PLAYER_XP_UPDATE", {std::to_string(val)});
+                                                            fireAddonEvent("PLAYER_XP_UPDATE", {std::to_string(val)});
                         }
                         else if (key == ufPlayerNextXp) {
                             playerNextLevelXp_ = val;
@@ -11983,8 +11964,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                         }
                         else if (ufPlayerRestedXpV != 0xFFFF && key == ufPlayerRestedXpV) {
                             playerRestedXp_ = val;
-                            if (addonEventCallback_)
-                                addonEventCallback_("UPDATE_EXHAUSTION", {});
+                                                            fireAddonEvent("UPDATE_EXHAUSTION", {});
                         }
                         else if (key == ufPlayerLevel) {
                             serverPlayerLevel_ = val;
@@ -12000,8 +11980,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                             uint64_t oldM = playerMoneyCopper_;
                             playerMoneyCopper_ = val;
                             LOG_DEBUG("Money updated via VALUES: ", val, " copper");
-                            if (val != oldM && addonEventCallback_)
-                                addonEventCallback_("PLAYER_MONEY", {});
+                            if (val != oldM)
+                                fireAddonEvent("PLAYER_MONEY", {});
                         }
                         else if (ufHonorV != 0xFFFF && key == ufHonorV) {
                             playerHonorPoints_ = val;
@@ -12072,11 +12052,10 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                                 corpseGuid_ = 0;
                                 corpseReclaimAvailableMs_ = 0;
                                 LOG_INFO("Player resurrected (PLAYER_FLAGS ghost cleared)");
-                                if (addonEventCallback_) addonEventCallback_("PLAYER_ALIVE", {});
+                                fireAddonEvent("PLAYER_ALIVE", {});
                                 if (ghostStateCallback_) ghostStateCallback_(false);
                             }
-                            if (addonEventCallback_)
-                                addonEventCallback_("PLAYER_FLAGS_CHANGED", {});
+                                                            fireAddonEvent("PLAYER_FLAGS_CHANGED", {});
                         }
                         else if (ufMeleeAPV  != 0xFFFF && key == ufMeleeAPV)  { playerMeleeAP_  = static_cast<int32_t>(val); }
                         else if (ufRangedAPV != 0xFFFF && key == ufRangedAPV) { playerRangedAP_ = static_cast<int32_t>(val); }
@@ -12109,8 +12088,7 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     if (applyInventoryFields(block.fields)) slotsChanged = true;
                     if (slotsChanged) {
                         rebuildOnlineInventory();
-                        if (addonEventCallback_)
-                            addonEventCallback_("PLAYER_EQUIPMENT_CHANGED", {});
+                                                    fireAddonEvent("PLAYER_EQUIPMENT_CHANGED", {});
                     }
                     extractSkillFields(lastPlayerFields_);
                     extractExploredZoneFields(lastPlayerFields_);
@@ -12217,8 +12195,8 @@ void GameHandler::applyUpdateObjectBlock(const UpdateBlock& block, bool& newItem
                     if (inventoryChanged) {
                         rebuildOnlineInventory();
                         if (addonEventCallback_) {
-                            addonEventCallback_("BAG_UPDATE", {});
-                            addonEventCallback_("UNIT_INVENTORY_CHANGED", {"player"});
+                            fireAddonEvent("BAG_UPDATE", {});
+                            fireAddonEvent("UNIT_INVENTORY_CHANGED", {"player"});
                         }
                     }
                 }
@@ -12653,7 +12631,7 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
             if (prefix.find(' ') == std::string::npos) {
                 std::string body = data.message.substr(tabPos + 1);
                 std::string channel = getChatTypeString(data.type);
-                addonEventCallback_("CHAT_MSG_ADDON", {prefix, body, channel, data.senderName});
+                fireAddonEvent("CHAT_MSG_ADDON", {prefix, body, channel, data.senderName});
                 return;
             }
         }
@@ -12668,7 +12646,7 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
         // Format sender GUID as hex string for addons that need it
         char guidBuf[32];
         snprintf(guidBuf, sizeof(guidBuf), "0x%016llX", (unsigned long long)data.senderGuid);
-        addonEventCallback_(eventName, {
+        fireAddonEvent(eventName, {
             data.message,
             data.senderName,
             lang,
@@ -12951,13 +12929,13 @@ void GameHandler::setTarget(uint64_t guid) {
     if (guid != 0) {
         LOG_INFO("Target set: 0x", std::hex, guid, std::dec);
     }
-    if (addonEventCallback_) addonEventCallback_("PLAYER_TARGET_CHANGED", {});
+    fireAddonEvent("PLAYER_TARGET_CHANGED", {});
 }
 
 void GameHandler::clearTarget() {
     if (targetGuid != 0) {
         LOG_INFO("Target cleared");
-        if (addonEventCallback_) addonEventCallback_("PLAYER_TARGET_CHANGED", {});
+        fireAddonEvent("PLAYER_TARGET_CHANGED", {});
     }
     targetGuid = 0;
     tabCycleIndex = -1;
@@ -12971,7 +12949,7 @@ std::shared_ptr<Entity> GameHandler::getTarget() const {
 
 void GameHandler::setFocus(uint64_t guid) {
     focusGuid = guid;
-    if (addonEventCallback_) addonEventCallback_("PLAYER_FOCUS_CHANGED", {});
+    fireAddonEvent("PLAYER_FOCUS_CHANGED", {});
     if (guid != 0) {
         auto entity = entityManager.getEntity(guid);
         if (entity) {
@@ -12997,13 +12975,13 @@ void GameHandler::clearFocus() {
         LOG_INFO("Focus cleared");
     }
     focusGuid = 0;
-    if (addonEventCallback_) addonEventCallback_("PLAYER_FOCUS_CHANGED", {});
+    fireAddonEvent("PLAYER_FOCUS_CHANGED", {});
 }
 
 void GameHandler::setMouseoverGuid(uint64_t guid) {
     if (mouseoverGuid_ != guid) {
         mouseoverGuid_ = guid;
-        if (addonEventCallback_) addonEventCallback_("UPDATE_MOUSEOVER_UNIT", {});
+        fireAddonEvent("UPDATE_MOUSEOVER_UNIT", {});
     }
 }
 
@@ -13409,7 +13387,7 @@ void GameHandler::followTarget() {
 
     addSystemChatMessage("Now following " + targetName + ".");
     LOG_INFO("Following target: ", targetName, " (GUID: 0x", std::hex, targetGuid, std::dec, ")");
-    if (addonEventCallback_) addonEventCallback_("AUTOFOLLOW_BEGIN", {});
+    fireAddonEvent("AUTOFOLLOW_BEGIN", {});
 }
 
 void GameHandler::cancelFollow() {
@@ -13419,7 +13397,7 @@ void GameHandler::cancelFollow() {
     }
     followTargetGuid_ = 0;
     addSystemChatMessage("You stop following.");
-    if (addonEventCallback_) addonEventCallback_("AUTOFOLLOW_END", {});
+    fireAddonEvent("AUTOFOLLOW_END", {});
 }
 
 void GameHandler::assistTarget() {
@@ -13680,7 +13658,7 @@ void GameHandler::handleDuelRequested(network::Packet& packet) {
     }
     LOG_INFO("SMSG_DUEL_REQUESTED: challenger=0x", std::hex, duelChallengerGuid_,
              " flag=0x", duelFlagGuid_, std::dec, " name=", duelChallengerName_);
-    if (addonEventCallback_) addonEventCallback_("DUEL_REQUESTED", {duelChallengerName_});
+    fireAddonEvent("DUEL_REQUESTED", {duelChallengerName_});
 }
 
 void GameHandler::handleDuelComplete(network::Packet& packet) {
@@ -13693,7 +13671,7 @@ void GameHandler::handleDuelComplete(network::Packet& packet) {
         addSystemChatMessage("The duel was cancelled.");
     }
     LOG_INFO("SMSG_DUEL_COMPLETE: started=", static_cast<int>(started));
-    if (addonEventCallback_) addonEventCallback_("DUEL_FINISHED", {});
+    fireAddonEvent("DUEL_FINISHED", {});
 }
 
 void GameHandler::handleDuelWinner(network::Packet& packet) {
@@ -14171,7 +14149,7 @@ void GameHandler::addLocalChatMessage(const MessageChatData& msg) {
         char guidBuf[32];
         snprintf(guidBuf, sizeof(guidBuf), "0x%016llX",
                  (unsigned long long)(msg.senderGuid != 0 ? msg.senderGuid : playerGuid));
-        addonEventCallback_(eventName, {
+        fireAddonEvent(eventName, {
             msg.message, senderName,
             std::to_string(static_cast<int>(msg.language)),
             msg.channelName, senderName, "", "0", "0", "", "0", "0", guidBuf
@@ -14291,7 +14269,7 @@ void GameHandler::handleNameQueryResponse(network::Packet& packet) {
             else if (data.guid == focusGuid) unitId = "focus";
             else if (data.guid == playerGuid) unitId = "player";
             if (!unitId.empty())
-                addonEventCallback_("UNIT_NAME_UPDATE", {unitId});
+                fireAddonEvent("UNIT_NAME_UPDATE", {unitId});
         }
     }
 }
@@ -14671,7 +14649,7 @@ void GameHandler::handleInspectResults(network::Packet& packet) {
     if (addonEventCallback_) {
         char guidBuf[32];
         snprintf(guidBuf, sizeof(guidBuf), "0x%016llX", (unsigned long long)guid);
-        addonEventCallback_("INSPECT_READY", {guidBuf});
+        fireAddonEvent("INSPECT_READY", {guidBuf});
     }
 }
 
@@ -15504,8 +15482,7 @@ void GameHandler::stopAutoAttack() {
         socket->send(packet);
     }
     LOG_INFO("Stopping auto-attack");
-    if (addonEventCallback_)
-        addonEventCallback_("PLAYER_LEAVE_COMBAT", {});
+            fireAddonEvent("PLAYER_LEAVE_COMBAT", {});
 }
 
 void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint32_t spellId, bool isPlayerSource, uint8_t powerType,
@@ -15566,7 +15543,7 @@ void GameHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, uint
         snprintf(dstBuf, sizeof(dstBuf), "0x%016llX", (unsigned long long)effectiveDst);
         std::string spellName = (spellId != 0) ? getSpellName(spellId) : std::string{};
         std::string timestamp = std::to_string(static_cast<double>(std::time(nullptr)));
-        addonEventCallback_("COMBAT_LOG_EVENT_UNFILTERED", {
+        fireAddonEvent("COMBAT_LOG_EVENT_UNFILTERED", {
             timestamp, subevent,
             srcBuf, log.sourceName, "0",
             dstBuf, log.targetName, "0",
@@ -15627,8 +15604,7 @@ void GameHandler::handleAttackStart(network::Packet& packet) {
         autoAttacking = true;
         autoAttackRetryPending_ = false;
         autoAttackTarget = data.victimGuid;
-        if (addonEventCallback_)
-            addonEventCallback_("PLAYER_ENTER_COMBAT", {});
+                    fireAddonEvent("PLAYER_ENTER_COMBAT", {});
     } else if (data.victimGuid == playerGuid && data.attackerGuid != 0) {
         hostileAttackers_.insert(data.attackerGuid);
         autoTargetAttacker(data.attackerGuid);
@@ -16187,8 +16163,7 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
             LOG_INFO("Battlefield status: unknown (", statusId, ") for ", bgName);
             break;
     }
-    if (addonEventCallback_)
-        addonEventCallback_("UPDATE_BATTLEFIELD_STATUS", {std::to_string(statusId)});
+            fireAddonEvent("UPDATE_BATTLEFIELD_STATUS", {std::to_string(statusId)});
 }
 
 void GameHandler::handleBattlefieldList(network::Packet& packet) {
@@ -18240,7 +18215,7 @@ void GameHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     if (addonEventCallback_) {
         std::string targetName;
         if (target != 0) targetName = lookupName(target);
-        addonEventCallback_("UNIT_SPELLCAST_SENT", {"player", targetName, std::to_string(spellId)});
+        fireAddonEvent("UNIT_SPELLCAST_SENT", {"player", targetName, std::to_string(spellId)});
     }
 
     // Optimistically start GCD immediately on cast, but do not restart it while
@@ -18271,8 +18246,7 @@ void GameHandler::cancelCast() {
     craftQueueRemaining_ = 0;
     queuedSpellId_ = 0;
     queuedSpellTarget_ = 0;
-    if (addonEventCallback_)
-        addonEventCallback_("UNIT_SPELLCAST_STOP", {"player"});
+            fireAddonEvent("UNIT_SPELLCAST_STOP", {"player"});
 }
 
 void GameHandler::startCraftQueue(uint32_t spellId, int count) {
@@ -18315,7 +18289,7 @@ void GameHandler::handlePetSpells(network::Packet& packet) {
         petAutocastSpells_.clear();
         memset(petActionSlots_, 0, sizeof(petActionSlots_));
         LOG_INFO("SMSG_PET_SPELLS: pet cleared");
-        if (addonEventCallback_) addonEventCallback_("UNIT_PET", {"player"});
+        fireAddonEvent("UNIT_PET", {"player"});
         return;
     }
 
@@ -18325,7 +18299,7 @@ void GameHandler::handlePetSpells(network::Packet& packet) {
         petAutocastSpells_.clear();
         memset(petActionSlots_, 0, sizeof(petActionSlots_));
         LOG_INFO("SMSG_PET_SPELLS: pet cleared (guid=0)");
-        if (addonEventCallback_) addonEventCallback_("UNIT_PET", {"player"});
+        fireAddonEvent("UNIT_PET", {"player"});
         return;
     }
 
@@ -18368,8 +18342,8 @@ done:
              " react=", (int)petReact_, " command=", (int)petCommand_,
              " spells=", petSpellList_.size());
     if (addonEventCallback_) {
-        addonEventCallback_("UNIT_PET", {"player"});
-        addonEventCallback_("PET_BAR_UPDATE", {});
+        fireAddonEvent("UNIT_PET", {"player"});
+        fireAddonEvent("PET_BAR_UPDATE", {});
     }
 }
 
@@ -18496,8 +18470,8 @@ void GameHandler::setActionBarSlot(int slot, ActionBarSlot::Type type, uint32_t 
     saveCharacterConfig();
     // Notify Lua addons that the action bar changed
     if (addonEventCallback_) {
-        addonEventCallback_("ACTIONBAR_SLOT_CHANGED", {std::to_string(slot + 1)});
-        addonEventCallback_("ACTIONBAR_UPDATE_STATE", {});
+        fireAddonEvent("ACTIONBAR_SLOT_CHANGED", {std::to_string(slot + 1)});
+        fireAddonEvent("ACTIONBAR_UPDATE_STATE", {});
     }
     // Notify the server so the action bar persists across relogs.
     if (state == WorldState::IN_WORLD && socket) {
@@ -18580,8 +18554,8 @@ void GameHandler::handleInitialSpells(network::Packet& packet) {
 
     // Notify addons that the full spell list is now available
     if (addonEventCallback_) {
-        addonEventCallback_("SPELLS_CHANGED", {});
-        addonEventCallback_("LEARNED_SPELL_IN_TAB", {});
+        fireAddonEvent("SPELLS_CHANGED", {});
+        fireAddonEvent("LEARNED_SPELL_IN_TAB", {});
     }
 }
 
@@ -18632,8 +18606,8 @@ void GameHandler::handleCastFailed(network::Packet& packet) {
 
     // Fire UNIT_SPELLCAST_FAILED + UNIT_SPELLCAST_STOP so Lua addons can react
     if (addonEventCallback_) {
-        addonEventCallback_("UNIT_SPELLCAST_FAILED", {"player", std::to_string(data.spellId)});
-        addonEventCallback_("UNIT_SPELLCAST_STOP", {"player", std::to_string(data.spellId)});
+        fireAddonEvent("UNIT_SPELLCAST_FAILED", {"player", std::to_string(data.spellId)});
+        fireAddonEvent("UNIT_SPELLCAST_STOP", {"player", std::to_string(data.spellId)});
     }
     if (spellCastFailedCallback_) spellCastFailedCallback_(data.spellId);
 }
@@ -18682,7 +18656,7 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
         currentCastSpellId = data.spellId;
         castTimeTotal = data.castTime / 1000.0f;
         castTimeRemaining = castTimeTotal;
-        if (addonEventCallback_) addonEventCallback_("CURRENT_SPELL_CAST_CHANGED", {});
+        fireAddonEvent("CURRENT_SPELL_CAST_CHANGED", {});
 
         // Play precast sound — skip profession/tradeskill spells (they use crafting
         // animations/sounds, not magic spell audio).
@@ -18717,7 +18691,7 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
     if (addonEventCallback_) {
         auto unitId = guidToUnitId(data.casterUnit);
         if (!unitId.empty())
-            addonEventCallback_("UNIT_SPELLCAST_START", {unitId, std::to_string(data.spellId)});
+            fireAddonEvent("UNIT_SPELLCAST_START", {unitId, std::to_string(data.spellId)});
     }
 }
 
@@ -18796,8 +18770,7 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         }
 
         // Fire UNIT_SPELLCAST_STOP — cast bar should disappear
-        if (addonEventCallback_)
-            addonEventCallback_("UNIT_SPELLCAST_STOP", {"player", std::to_string(data.spellId)});
+                    fireAddonEvent("UNIT_SPELLCAST_STOP", {"player", std::to_string(data.spellId)});
 
         // Spell queue: fire the next queued spell now that casting has ended
         if (queuedSpellId_ != 0) {
@@ -18863,7 +18836,7 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
     if (addonEventCallback_) {
         auto unitId = guidToUnitId(data.casterUnit);
         if (!unitId.empty())
-            addonEventCallback_("UNIT_SPELLCAST_SUCCEEDED", {unitId, std::to_string(data.spellId)});
+            fireAddonEvent("UNIT_SPELLCAST_SUCCEEDED", {unitId, std::to_string(data.spellId)});
     }
 
     if (playerIsHit || playerHitEnemy) {
@@ -18933,8 +18906,8 @@ void GameHandler::handleSpellCooldown(network::Packet& packet) {
     LOG_DEBUG("handleSpellCooldown: parsed for ",
               isClassicFormat ? "Classic" : "TBC/WotLK", " format");
     if (addonEventCallback_) {
-        addonEventCallback_("SPELL_UPDATE_COOLDOWN", {});
-        addonEventCallback_("ACTIONBAR_UPDATE_COOLDOWN", {});
+        fireAddonEvent("SPELL_UPDATE_COOLDOWN", {});
+        fireAddonEvent("ACTIONBAR_UPDATE_COOLDOWN", {});
     }
 }
 
@@ -18952,8 +18925,8 @@ void GameHandler::handleCooldownEvent(network::Packet& packet) {
         }
     }
     if (addonEventCallback_) {
-        addonEventCallback_("SPELL_UPDATE_COOLDOWN", {});
-        addonEventCallback_("ACTIONBAR_UPDATE_COOLDOWN", {});
+        fireAddonEvent("SPELL_UPDATE_COOLDOWN", {});
+        fireAddonEvent("ACTIONBAR_UPDATE_COOLDOWN", {});
     }
 }
 
@@ -18996,7 +18969,7 @@ void GameHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
         if (addonEventCallback_) {
             auto unitId = guidToUnitId(data.guid);
             if (!unitId.empty())
-                addonEventCallback_("UNIT_AURA", {unitId});
+                fireAddonEvent("UNIT_AURA", {unitId});
         }
 
         // If player is mounted but we haven't identified the mount aura yet,
@@ -19039,8 +19012,8 @@ void GameHandler::handleLearnedSpell(network::Packet& packet) {
                          " (spell ", spellId, ") in spec ", (int)activeTalentSpec_);
                 isTalentSpell = true;
                 if (addonEventCallback_) {
-                    addonEventCallback_("CHARACTER_POINTS_CHANGED", {});
-                    addonEventCallback_("PLAYER_TALENT_UPDATE", {});
+                    fireAddonEvent("CHARACTER_POINTS_CHANGED", {});
+                    fireAddonEvent("PLAYER_TALENT_UPDATE", {});
                 }
                 break;
             }
@@ -19049,9 +19022,9 @@ void GameHandler::handleLearnedSpell(network::Packet& packet) {
     }
 
     // Fire LEARNED_SPELL_IN_TAB / SPELLS_CHANGED for Lua addons
-    if (!alreadyKnown && addonEventCallback_) {
-        addonEventCallback_("LEARNED_SPELL_IN_TAB", {std::to_string(spellId)});
-        addonEventCallback_("SPELLS_CHANGED", {});
+    if (!alreadyKnown) {
+        fireAddonEvent("LEARNED_SPELL_IN_TAB", {std::to_string(spellId)});
+        fireAddonEvent("SPELLS_CHANGED", {});
     }
 
     if (isTalentSpell) return; // talent spells don't show chat message
@@ -19076,7 +19049,7 @@ void GameHandler::handleRemovedSpell(network::Packet& packet) {
     uint32_t spellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
     knownSpells.erase(spellId);
     LOG_INFO("Removed spell: ", spellId);
-    if (addonEventCallback_) addonEventCallback_("SPELLS_CHANGED", {});
+    fireAddonEvent("SPELLS_CHANGED", {});
 
     const std::string& name = getSpellName(spellId);
     if (!name.empty())
@@ -19133,7 +19106,7 @@ void GameHandler::handleSupercededSpell(network::Packet& packet) {
     }
     if (barChanged) {
         saveCharacterConfig();
-        if (addonEventCallback_) addonEventCallback_("ACTIONBAR_SLOT_CHANGED", {});
+        fireAddonEvent("ACTIONBAR_SLOT_CHANGED", {});
     }
 
     // Show "Upgraded to X" only when the new spell wasn't already announced by the
@@ -19235,9 +19208,9 @@ void GameHandler::handleTalentsInfo(network::Packet& packet) {
 
     // Fire talent-related events for addons
     if (addonEventCallback_) {
-        addonEventCallback_("CHARACTER_POINTS_CHANGED", {});
-        addonEventCallback_("ACTIVE_TALENT_GROUP_CHANGED", {});
-        addonEventCallback_("PLAYER_TALENT_UPDATE", {});
+        fireAddonEvent("CHARACTER_POINTS_CHANGED", {});
+        fireAddonEvent("ACTIVE_TALENT_GROUP_CHANGED", {});
+        fireAddonEvent("PLAYER_TALENT_UPDATE", {});
     }
 
     if (!talentsInitialized_) {
@@ -19370,8 +19343,8 @@ void GameHandler::leaveGroup() {
     partyData = GroupListData{};
     LOG_INFO("Left group");
     if (addonEventCallback_) {
-        addonEventCallback_("GROUP_ROSTER_UPDATE", {});
-        addonEventCallback_("PARTY_MEMBERS_CHANGED", {});
+        fireAddonEvent("GROUP_ROSTER_UPDATE", {});
+        fireAddonEvent("PARTY_MEMBERS_CHANGED", {});
     }
 }
 
@@ -19389,8 +19362,7 @@ void GameHandler::handleGroupInvite(network::Packet& packet) {
         if (auto* sfx = renderer->getUiSoundManager())
             sfx->playTargetSelect();
     }
-    if (addonEventCallback_)
-        addonEventCallback_("PARTY_INVITE_REQUEST", {data.inviterName});
+            fireAddonEvent("PARTY_INVITE_REQUEST", {data.inviterName});
 }
 
 void GameHandler::handleGroupDecline(network::Packet& packet) {
@@ -19437,10 +19409,10 @@ void GameHandler::handleGroupList(network::Packet& packet) {
     }
     // Fire GROUP_ROSTER_UPDATE / PARTY_MEMBERS_CHANGED / RAID_ROSTER_UPDATE for Lua addons
     if (addonEventCallback_) {
-        addonEventCallback_("GROUP_ROSTER_UPDATE", {});
-        addonEventCallback_("PARTY_MEMBERS_CHANGED", {});
+        fireAddonEvent("GROUP_ROSTER_UPDATE", {});
+        fireAddonEvent("PARTY_MEMBERS_CHANGED", {});
         if (partyData.groupType == 1)
-            addonEventCallback_("RAID_ROSTER_UPDATE", {});
+            fireAddonEvent("RAID_ROSTER_UPDATE", {});
     }
 }
 
@@ -19450,9 +19422,9 @@ void GameHandler::handleGroupUninvite(network::Packet& packet) {
     LOG_INFO("Removed from group");
 
     if (addonEventCallback_) {
-        addonEventCallback_("GROUP_ROSTER_UPDATE", {});
-        addonEventCallback_("PARTY_MEMBERS_CHANGED", {});
-        addonEventCallback_("RAID_ROSTER_UPDATE", {});
+        fireAddonEvent("GROUP_ROSTER_UPDATE", {});
+        fireAddonEvent("PARTY_MEMBERS_CHANGED", {});
+        fireAddonEvent("RAID_ROSTER_UPDATE", {});
     }
 
     MessageChatData msg;
@@ -19715,11 +19687,11 @@ void GameHandler::handlePartyMemberStats(network::Packet& packet, bool isFull) {
         }
         if (!unitId.empty()) {
             if (updateFlags & (0x0002 | 0x0004)) // CUR_HP or MAX_HP
-                addonEventCallback_("UNIT_HEALTH", {unitId});
+                fireAddonEvent("UNIT_HEALTH", {unitId});
             if (updateFlags & (0x0010 | 0x0020)) // CUR_POWER or MAX_POWER
-                addonEventCallback_("UNIT_POWER", {unitId});
+                fireAddonEvent("UNIT_POWER", {unitId});
             if (updateFlags & 0x0200) // AURAS
-                addonEventCallback_("UNIT_AURA", {unitId});
+                fireAddonEvent("UNIT_AURA", {unitId});
         }
     }
 }
@@ -20036,7 +20008,7 @@ void GameHandler::handleGuildRoster(network::Packet& packet) {
     guildRoster_ = std::move(data);
     hasGuildRoster_ = true;
     LOG_INFO("Guild roster received: ", guildRoster_.members.size(), " members");
-    if (addonEventCallback_) addonEventCallback_("GUILD_ROSTER_UPDATE", {});
+    fireAddonEvent("GUILD_ROSTER_UPDATE", {});
 }
 
 void GameHandler::handleGuildQueryResponse(network::Packet& packet) {
@@ -20064,7 +20036,7 @@ void GameHandler::handleGuildQueryResponse(network::Packet& packet) {
         LOG_INFO("Guild name set to: ", guildName_);
         if (wasUnknown && !guildName_.empty()) {
             addSystemChatMessage("Guild: <" + guildName_ + ">");
-            if (addonEventCallback_) addonEventCallback_("PLAYER_GUILD_UPDATE", {});
+            fireAddonEvent("PLAYER_GUILD_UPDATE", {});
         }
     } else {
         LOG_INFO("Cached guild name: id=", data.guildId, " name=", data.guildName);
@@ -20115,7 +20087,7 @@ void GameHandler::handleGuildEvent(network::Packet& packet) {
             guildRankNames_.clear();
             guildRoster_ = GuildRosterData{};
             hasGuildRoster_ = false;
-            if (addonEventCallback_) addonEventCallback_("PLAYER_GUILD_UPDATE", {});
+            fireAddonEvent("PLAYER_GUILD_UPDATE", {});
             break;
         case GuildEvent::SIGNED_ON:
             if (data.numStrings >= 1)
@@ -20142,7 +20114,7 @@ void GameHandler::handleGuildEvent(network::Packet& packet) {
     if (addonEventCallback_) {
         switch (data.eventType) {
             case GuildEvent::MOTD:
-                addonEventCallback_("GUILD_MOTD", {data.numStrings >= 1 ? data.strings[0] : ""});
+                fireAddonEvent("GUILD_MOTD", {data.numStrings >= 1 ? data.strings[0] : ""});
                 break;
             case GuildEvent::SIGNED_ON:
             case GuildEvent::SIGNED_OFF:
@@ -20153,7 +20125,7 @@ void GameHandler::handleGuildEvent(network::Packet& packet) {
             case GuildEvent::REMOVED:
             case GuildEvent::LEADER_CHANGED:
             case GuildEvent::DISBANDED:
-                addonEventCallback_("GUILD_ROSTER_UPDATE", {});
+                fireAddonEvent("GUILD_ROSTER_UPDATE", {});
                 break;
             default:
                 break;
@@ -20184,8 +20156,7 @@ void GameHandler::handleGuildInvite(network::Packet& packet) {
     pendingGuildInviteGuildName_ = data.guildName;
     LOG_INFO("Guild invite from: ", data.inviterName, " to guild: ", data.guildName);
     addSystemChatMessage(data.inviterName + " has invited you to join " + data.guildName + ".");
-    if (addonEventCallback_)
-        addonEventCallback_("GUILD_INVITE_REQUEST", {data.inviterName, data.guildName});
+            fireAddonEvent("GUILD_INVITE_REQUEST", {data.inviterName, data.guildName});
 }
 
 void GameHandler::handleGuildCommandResult(network::Packet& packet) {
@@ -20280,7 +20251,7 @@ void GameHandler::lootItem(uint8_t slotIndex) {
 void GameHandler::closeLoot() {
     if (!lootWindowOpen) return;
     lootWindowOpen = false;
-    if (addonEventCallback_) addonEventCallback_("LOOT_CLOSED", {});
+    fireAddonEvent("LOOT_CLOSED", {});
     masterLootCandidates_.clear();
     if (currentLoot.lootGuid != 0 && targetGuid == currentLoot.lootGuid) {
         clearTarget();
@@ -20700,7 +20671,7 @@ void GameHandler::handleQuestDetails(network::Packet& packet) {
     // Delay opening the window slightly to allow item queries to complete
     questDetailsOpenTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
     gossipWindowOpen = false;
-    if (addonEventCallback_) addonEventCallback_("QUEST_DETAIL", {});
+    fireAddonEvent("QUEST_DETAIL", {});
 }
 
 bool GameHandler::hasQuestInLog(uint32_t questId) const {
@@ -20752,9 +20723,9 @@ void GameHandler::addQuestToLocalLogIfMissing(uint32_t questId, const std::strin
     entry.objectives = objectives;
     questLog_.push_back(std::move(entry));
     if (addonEventCallback_) {
-        addonEventCallback_("QUEST_ACCEPTED", {std::to_string(questId)});
-        addonEventCallback_("QUEST_LOG_UPDATE", {});
-        addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+        fireAddonEvent("QUEST_ACCEPTED", {std::to_string(questId)});
+        fireAddonEvent("QUEST_LOG_UPDATE", {});
+        fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
     }
 }
 
@@ -21054,9 +21025,9 @@ void GameHandler::abandonQuest(uint32_t questId) {
     if (localIndex >= 0) {
         questLog_.erase(questLog_.begin() + static_cast<ptrdiff_t>(localIndex));
         if (addonEventCallback_) {
-            addonEventCallback_("QUEST_LOG_UPDATE", {});
-            addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
-            addonEventCallback_("QUEST_REMOVED", {std::to_string(questId)});
+            fireAddonEvent("QUEST_LOG_UPDATE", {});
+            fireAddonEvent("UNIT_QUEST_LOG_CHANGED", {"player"});
+            fireAddonEvent("QUEST_REMOVED", {std::to_string(questId)});
         }
     }
 
@@ -21168,7 +21139,7 @@ void GameHandler::handleQuestOfferReward(network::Packet& packet) {
     gossipWindowOpen = false;
     questDetailsOpen = false;
     questDetailsOpenTime = std::chrono::steady_clock::time_point{};
-    if (addonEventCallback_) addonEventCallback_("QUEST_COMPLETE", {});
+    fireAddonEvent("QUEST_COMPLETE", {});
 
     // Query item names for reward items
     for (const auto& item : data.choiceRewards)
@@ -21227,7 +21198,7 @@ void GameHandler::closeQuestOfferReward() {
 
 void GameHandler::closeGossip() {
     gossipWindowOpen = false;
-    if (addonEventCallback_) addonEventCallback_("GOSSIP_CLOSED", {});
+    fireAddonEvent("GOSSIP_CLOSED", {});
     currentGossip = GossipMessageData{};
 }
 
@@ -21276,7 +21247,7 @@ void GameHandler::closeVendor() {
     pendingBuybackWireSlot_ = 0;
     pendingBuyItemId_ = 0;
     pendingBuyItemSlot_ = 0;
-    if (wasOpen && addonEventCallback_) addonEventCallback_("MERCHANT_CLOSED", {});
+    if (wasOpen) fireAddonEvent("MERCHANT_CLOSED", {});
 }
 
 void GameHandler::buyItem(uint64_t vendorGuid, uint32_t itemId, uint32_t slot, uint32_t count) {
@@ -21737,8 +21708,8 @@ void GameHandler::handleLootResponse(network::Packet& packet) {
     }
     lootWindowOpen = true;
     if (addonEventCallback_) {
-        addonEventCallback_("LOOT_OPENED", {});
-        addonEventCallback_("LOOT_READY", {});
+        fireAddonEvent("LOOT_OPENED", {});
+        fireAddonEvent("LOOT_READY", {});
     }
     lastInteractedGoGuid_ = 0; // loot opened — no need to re-send in handleSpellGo
     pendingGameObjectLootOpens_.erase(
@@ -21784,7 +21755,7 @@ void GameHandler::handleLootReleaseResponse(network::Packet& packet) {
     (void)packet;
     localLootState_.erase(currentLoot.lootGuid);
     lootWindowOpen = false;
-    if (addonEventCallback_) addonEventCallback_("LOOT_CLOSED", {});
+    fireAddonEvent("LOOT_CLOSED", {});
     currentLoot = LootResponseData{};
 }
 
@@ -21807,8 +21778,7 @@ void GameHandler::handleLootRemoved(network::Packet& packet) {
                     sfx->playLootItem();
             }
             currentLoot.items.erase(it);
-            if (addonEventCallback_)
-                addonEventCallback_("LOOT_SLOT_CLEARED", {std::to_string(slotIndex + 1)});
+                            fireAddonEvent("LOOT_SLOT_CLEARED", {std::to_string(slotIndex + 1)});
             break;
         }
     }
@@ -21820,7 +21790,7 @@ void GameHandler::handleGossipMessage(network::Packet& packet) {
     if (!ok) return;
     if (questDetailsOpen) return; // Don't reopen gossip while viewing quest
     gossipWindowOpen = true;
-    if (addonEventCallback_) addonEventCallback_("GOSSIP_SHOW", {});
+    fireAddonEvent("GOSSIP_SHOW", {});
     vendorWindowOpen = false; // Close vendor if gossip opens
 
     // Update known quest-log entries based on gossip quests.
@@ -21934,7 +21904,7 @@ void GameHandler::handleQuestgiverQuestList(network::Packet& packet) {
 
     currentGossip = std::move(data);
     gossipWindowOpen = true;
-    if (addonEventCallback_) addonEventCallback_("GOSSIP_SHOW", {});
+    fireAddonEvent("GOSSIP_SHOW", {});
     vendorWindowOpen = false;
 
     bool hasAvailableQuest = false;
@@ -21985,7 +21955,7 @@ void GameHandler::handleGossipComplete(network::Packet& packet) {
     }
 
     gossipWindowOpen = false;
-    if (addonEventCallback_) addonEventCallback_("GOSSIP_CLOSED", {});
+    fireAddonEvent("GOSSIP_CLOSED", {});
     currentGossip = GossipMessageData{};
 }
 
@@ -22008,7 +21978,7 @@ void GameHandler::handleListInventory(network::Packet& packet) {
     currentVendorItems.canRepair = savedCanRepair;
     vendorWindowOpen = true;
     gossipWindowOpen = false; // Close gossip if vendor opens
-    if (addonEventCallback_) addonEventCallback_("MERCHANT_SHOW", {});
+    fireAddonEvent("MERCHANT_SHOW", {});
 
     // Auto-sell grey items if enabled
     if (autoSellGrey_ && currentVendorItems.vendorGuid != 0) {
@@ -22114,7 +22084,7 @@ void GameHandler::handleTrainerList(network::Packet& packet) {
     if (!TrainerListParser::parse(packet, currentTrainerList_, isClassic)) return;
     trainerWindowOpen_ = true;
     gossipWindowOpen = false;
-    if (addonEventCallback_) addonEventCallback_("TRAINER_SHOW", {});
+    fireAddonEvent("TRAINER_SHOW", {});
 
     LOG_INFO("Trainer list: ", currentTrainerList_.spells.size(), " spells");
     LOG_DEBUG("Known spells count: ", knownSpells.size());
@@ -22172,7 +22142,7 @@ void GameHandler::trainSpell(uint32_t spellId) {
 
 void GameHandler::closeTrainer() {
     trainerWindowOpen_ = false;
-    if (addonEventCallback_) addonEventCallback_("TRAINER_CLOSED", {});
+    fireAddonEvent("TRAINER_CLOSED", {});
     currentTrainerList_ = TrainerListData{};
     trainerTabs_.clear();
 }
@@ -22685,8 +22655,7 @@ void GameHandler::handleXpGain(network::Packet& packet) {
         msg += " (+" + std::to_string(data.groupBonus) + " group bonus)";
     }
     addSystemChatMessage(msg);
-    if (addonEventCallback_)
-        addonEventCallback_("CHAT_MSG_COMBAT_XP_GAIN", {msg, std::to_string(data.totalXp)});
+            fireAddonEvent("CHAT_MSG_COMBAT_XP_GAIN", {msg, std::to_string(data.totalXp)});
 }
 
 
@@ -22701,8 +22670,7 @@ void GameHandler::addMoneyCopper(uint32_t amount) {
     msg += std::to_string(silver) + "s ";
     msg += std::to_string(copper) + "c.";
     addSystemChatMessage(msg);
-    if (addonEventCallback_)
-        addonEventCallback_("CHAT_MSG_MONEY", {msg});
+            fireAddonEvent("CHAT_MSG_MONEY", {msg});
 }
 
 void GameHandler::addSystemChatMessage(const std::string& message) {
@@ -22949,8 +22917,8 @@ void GameHandler::handleNewWorld(network::Packet& packet) {
 
     // Fire PLAYER_ENTERING_WORLD for teleports / zone transitions
     if (addonEventCallback_) {
-        addonEventCallback_("PLAYER_ENTERING_WORLD", {"0"});
-        addonEventCallback_("ZONE_CHANGED_NEW_AREA", {});
+        fireAddonEvent("PLAYER_ENTERING_WORLD", {"0"});
+        fireAddonEvent("ZONE_CHANGED_NEW_AREA", {});
     }
 }
 
@@ -23850,7 +23818,7 @@ void GameHandler::handleFriendList(network::Packet& packet) {
         entry.classId = classId;
         contacts_.push_back(std::move(entry));
     }
-    if (addonEventCallback_) addonEventCallback_("FRIENDLIST_UPDATE", {});
+    fireAddonEvent("FRIENDLIST_UPDATE", {});
 }
 
 void GameHandler::handleContactList(network::Packet& packet) {
@@ -23915,9 +23883,9 @@ void GameHandler::handleContactList(network::Packet& packet) {
     LOG_INFO("SMSG_CONTACT_LIST: mask=", lastContactListMask_,
              " count=", lastContactListCount_);
     if (addonEventCallback_) {
-        addonEventCallback_("FRIENDLIST_UPDATE", {});
+        fireAddonEvent("FRIENDLIST_UPDATE", {});
         if (lastContactListMask_ & 0x2) // ignore list
-            addonEventCallback_("IGNORELIST_UPDATE", {});
+            fireAddonEvent("IGNORELIST_UPDATE", {});
     }
 }
 
@@ -24002,7 +23970,7 @@ void GameHandler::handleFriendStatus(network::Packet& packet) {
     }
 
     LOG_INFO("Friend status update: ", playerName, " status=", (int)data.status);
-    if (addonEventCallback_) addonEventCallback_("FRIENDLIST_UPDATE", {});
+    fireAddonEvent("FRIENDLIST_UPDATE", {});
 }
 
 void GameHandler::handleRandomRoll(network::Packet& packet) {
@@ -24056,7 +24024,7 @@ void GameHandler::handleLogoutResponse(network::Packet& packet) {
             logoutCountdown_ = 20.0f;
         }
         LOG_INFO("Logout response: success, instant=", (int)data.instant);
-        if (addonEventCallback_) addonEventCallback_("PLAYER_LOGOUT", {});
+        fireAddonEvent("PLAYER_LOGOUT", {});
     } else {
         // Failure
         addSystemChatMessage("Cannot logout right now.");
@@ -24226,8 +24194,8 @@ void GameHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields)
         }
     }
     playerSkills_ = std::move(newSkills);
-    if (skillsChanged && addonEventCallback_)
-        addonEventCallback_("SKILL_LINES_CHANGED", {});
+    if (skillsChanged)
+        fireAddonEvent("SKILL_LINES_CHANGED", {});
 }
 
 void GameHandler::extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields) {
@@ -24565,7 +24533,7 @@ void GameHandler::closeMailbox() {
     mailInbox_.clear();
     selectedMailIndex_ = -1;
     showMailCompose_ = false;
-    if (wasOpen && addonEventCallback_) addonEventCallback_("MAIL_CLOSED", {});
+    if (wasOpen) fireAddonEvent("MAIL_CLOSED", {});
 }
 
 void GameHandler::refreshMailList() {
@@ -24742,7 +24710,7 @@ void GameHandler::handleShowMailbox(network::Packet& packet) {
     hasNewMail_ = false;
     selectedMailIndex_ = -1;
     showMailCompose_ = false;
-    if (addonEventCallback_) addonEventCallback_("MAIL_SHOW", {});
+    fireAddonEvent("MAIL_SHOW", {});
     // Request inbox contents
     refreshMailList();
 }
@@ -24783,7 +24751,7 @@ void GameHandler::handleMailListResult(network::Packet& packet) {
         selectedMailIndex_ = -1;
         showMailCompose_ = false;
     }
-    if (addonEventCallback_) addonEventCallback_("MAIL_INBOX_UPDATE", {});
+    fireAddonEvent("MAIL_INBOX_UPDATE", {});
 }
 
 void GameHandler::handleSendMailResult(network::Packet& packet) {
@@ -24858,7 +24826,7 @@ void GameHandler::handleReceivedMail(network::Packet& packet) {
     LOG_INFO("SMSG_RECEIVED_MAIL: New mail arrived!");
     hasNewMail_ = true;
     addSystemChatMessage("New mail has arrived.");
-    if (addonEventCallback_) addonEventCallback_("UPDATE_PENDING_MAIL", {});
+    fireAddonEvent("UPDATE_PENDING_MAIL", {});
     // If mailbox is open, refresh
     if (mailboxOpen_) {
         refreshMailList();
@@ -24906,7 +24874,7 @@ void GameHandler::closeBank() {
     bool wasOpen = bankOpen_;
     bankOpen_ = false;
     bankerGuid_ = 0;
-    if (wasOpen && addonEventCallback_) addonEventCallback_("BANKFRAME_CLOSED", {});
+    if (wasOpen) fireAddonEvent("BANKFRAME_CLOSED", {});
 }
 
 void GameHandler::buyBankSlot() {
@@ -24937,7 +24905,7 @@ void GameHandler::handleShowBank(network::Packet& packet) {
     bankerGuid_ = packet.readUInt64();
     bankOpen_ = true;
     gossipWindowOpen = false;  // Close gossip when bank opens
-    if (addonEventCallback_) addonEventCallback_("BANKFRAME_OPENED", {});
+    fireAddonEvent("BANKFRAME_OPENED", {});
     // Bank items are already tracked via update fields (bank slot GUIDs)
     // Trigger rebuild to populate bank slots in inventory
     rebuildOnlineInventory();
@@ -25059,7 +25027,7 @@ void GameHandler::closeAuctionHouse() {
     bool wasOpen = auctionOpen_;
     auctionOpen_ = false;
     auctioneerGuid_ = 0;
-    if (wasOpen && addonEventCallback_) addonEventCallback_("AUCTION_HOUSE_CLOSED", {});
+    if (wasOpen) fireAddonEvent("AUCTION_HOUSE_CLOSED", {});
 }
 
 void GameHandler::auctionSearch(const std::string& name, uint8_t levelMin, uint8_t levelMax,
@@ -25140,7 +25108,7 @@ void GameHandler::handleAuctionHello(network::Packet& packet) {
     auctionHouseId_ = data.auctionHouseId;
     auctionOpen_ = true;
     gossipWindowOpen = false;  // Close gossip when auction house opens
-    if (addonEventCallback_) addonEventCallback_("AUCTION_HOUSE_SHOW", {});
+    fireAddonEvent("AUCTION_HOUSE_SHOW", {});
     auctionActiveTab_ = 0;
     auctionBrowseResults_ = AuctionListResult{};
     auctionOwnerResults_ = AuctionListResult{};
@@ -25352,8 +25320,7 @@ void GameHandler::handleSummonRequest(network::Packet& packet) {
     addSystemChatMessage(msg);
     LOG_INFO("SMSG_SUMMON_REQUEST: summoner=", summonerName_,
              " zoneId=", zoneId, " timeout=", summonTimeoutSec_, "s");
-    if (addonEventCallback_)
-        addonEventCallback_("CONFIRM_SUMMON", {});
+            fireAddonEvent("CONFIRM_SUMMON", {});
 }
 
 void GameHandler::acceptSummon() {
@@ -25412,7 +25379,7 @@ void GameHandler::handleTradeStatus(network::Packet& packet) {
             }
             tradeStatus_ = TradeStatus::PendingIncoming;
             addSystemChatMessage(tradePeerName_ + " wants to trade with you.");
-            if (addonEventCallback_) addonEventCallback_("TRADE_REQUEST", {});
+            fireAddonEvent("TRADE_REQUEST", {});
             break;
         }
         case 2: // OPEN_WINDOW
@@ -25422,27 +25389,27 @@ void GameHandler::handleTradeStatus(network::Packet& packet) {
             peerTradeGold_ = 0;
             tradeStatus_ = TradeStatus::Open;
             addSystemChatMessage("Trade window opened.");
-            if (addonEventCallback_) addonEventCallback_("TRADE_SHOW", {});
+            fireAddonEvent("TRADE_SHOW", {});
             break;
         case 3:  // CANCELLED
         case 12: // CLOSE_WINDOW
             resetTradeState();
             addSystemChatMessage("Trade cancelled.");
-            if (addonEventCallback_) addonEventCallback_("TRADE_CLOSED", {});
+            fireAddonEvent("TRADE_CLOSED", {});
             break;
         case 9: // REJECTED — other player clicked Decline
             resetTradeState();
             addSystemChatMessage("Trade declined.");
-            if (addonEventCallback_) addonEventCallback_("TRADE_CLOSED", {});
+            fireAddonEvent("TRADE_CLOSED", {});
             break;
         case 4: // ACCEPTED (partner accepted)
             tradeStatus_ = TradeStatus::Accepted;
             addSystemChatMessage("Trade accepted. Awaiting other player...");
-            if (addonEventCallback_) addonEventCallback_("TRADE_ACCEPT_UPDATE", {});
+            fireAddonEvent("TRADE_ACCEPT_UPDATE", {});
             break;
         case 8: // COMPLETE
             addSystemChatMessage("Trade complete!");
-            if (addonEventCallback_) addonEventCallback_("TRADE_CLOSED", {});
+            fireAddonEvent("TRADE_CLOSED", {});
             resetTradeState();
             break;
         case 7: // BACK_TO_TRADE (unaccepted after a change)
@@ -25900,8 +25867,7 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
     LOG_INFO("SMSG_ACHIEVEMENT_EARNED: guid=0x", std::hex, guid, std::dec,
              " achievementId=", achievementId, " self=", isSelf,
              achName.empty() ? "" : " name=", achName);
-    if (addonEventCallback_)
-        addonEventCallback_("ACHIEVEMENT_EARNED", {std::to_string(achievementId)});
+            fireAddonEvent("ACHIEVEMENT_EARNED", {std::to_string(achievementId)});
 }
 
 // ---------------------------------------------------------------------------
