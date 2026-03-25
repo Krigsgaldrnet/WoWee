@@ -3529,9 +3529,7 @@ void GameHandler::registerOpcodeHandlers() {
                 if (info && info->type == 17) {
                     addUIError("A fish is on your line!");
                     addSystemChatMessage("A fish is on your line!");
-                    if (auto* renderer = core::Application::getInstance().getRenderer())
-                        if (auto* sfx = renderer->getUiSoundManager())
-                            sfx->playQuestUpdate();
+                    withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playQuestUpdate(); });
                 }
             }
         }
@@ -4265,10 +4263,7 @@ void GameHandler::registerOpcodeHandlers() {
                     }
                     if (newLevel > oldLevel) {
                         addSystemChatMessage("You have reached level " + std::to_string(newLevel) + "!");
-                        if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                            if (auto* sfx = renderer->getUiSoundManager())
-                                sfx->playLevelUp();
-                        }
+                        withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playLevelUp(); });
                         if (levelUpCallback_) levelUpCallback_(newLevel);
                         fireAddonEvent("PLAYER_LEVEL_UP", {std::to_string(newLevel)});
                     }
@@ -4290,10 +4285,7 @@ void GameHandler::registerOpcodeHandlers() {
                      " result=", static_cast<int>(result));
             if (result == 0) {
                 pendingSellToBuyback_.erase(itemGuid);
-                if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                    if (auto* sfx = renderer->getUiSoundManager())
-                        sfx->playDropOnGround();
-                }
+                withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playDropOnGround(); });
                     fireAddonEvent("BAG_UPDATE", {});
                     fireAddonEvent("PLAYER_MONEY", {});
             } else {
@@ -4333,10 +4325,7 @@ void GameHandler::registerOpcodeHandlers() {
                 const char* msg = (result < 7) ? sellErrors[result] : "Unknown sell error";
                 addUIError(std::string("Sell failed: ") + msg);
                 addSystemChatMessage(std::string("Sell failed: ") + msg);
-                if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                    if (auto* sfx = renderer->getUiSoundManager())
-                        sfx->playError();
-                }
+                withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playError(); });
                 LOG_WARNING("SMSG_SELL_ITEM error: ", static_cast<int>(result), " (", msg, ")");
             }
         }
@@ -4434,10 +4423,7 @@ void GameHandler::registerOpcodeHandlers() {
                 std::string msg = errMsg ? errMsg : "Inventory error (" + std::to_string(error) + ").";
                 addUIError(msg);
                 addSystemChatMessage(msg);
-                if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                    if (auto* sfx = renderer->getUiSoundManager())
-                        sfx->playError();
-                }
+                withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playError(); });
             }
         }
     };
@@ -4500,10 +4486,7 @@ void GameHandler::registerOpcodeHandlers() {
             }
             addUIError(msg);
             addSystemChatMessage(msg);
-            if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                if (auto* sfx = renderer->getUiSoundManager())
-                    sfx->playError();
-            }
+            withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playError(); });
         }
     };
 
@@ -4528,10 +4511,7 @@ void GameHandler::registerOpcodeHandlers() {
                 std::string msg = "Purchased: " + buildItemLink(pendingBuyItemId_, buyQuality, itemLabel);
                 if (itemCount > 1) msg += " x" + std::to_string(itemCount);
                 addSystemChatMessage(msg);
-                if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                    if (auto* sfx = renderer->getUiSoundManager())
-                        sfx->playPickupBag();
-                }
+                withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playPickupBag(); });
             }
             pendingBuyItemId_   = 0;
             pendingBuyItemSlot_ = 0;
@@ -4985,10 +4965,7 @@ void GameHandler::registerOpcodeHandlers() {
                         questCompleteCallback_(questId, it->title);
                     }
                     // Play quest-complete sound
-                    if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                        if (auto* sfx = renderer->getUiSoundManager())
-                            sfx->playQuestComplete();
-                    }
+                    withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playQuestComplete(); });
                     questLog_.erase(it);
                     LOG_INFO("  Removed quest ", questId, " from quest log");
                                             fireAddonEvent("QUEST_TURNED_IN", {std::to_string(questId)});
@@ -13520,10 +13497,7 @@ void GameHandler::handleDuelRequested(network::Packet& packet) {
     pendingDuelRequest_ = true;
 
     addSystemChatMessage(duelChallengerName_ + " challenges you to a duel!");
-    if (auto* renderer = core::Application::getInstance().getRenderer()) {
-        if (auto* sfx = renderer->getUiSoundManager())
-            sfx->playTargetSelect();
-    }
+    withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playTargetSelect(); });
     LOG_INFO("SMSG_DUEL_REQUESTED: challenger=0x", std::hex, duelChallengerGuid_,
              " flag=0x", duelFlagGuid_, std::dec, " name=", duelChallengerName_);
     fireAddonEvent("DUEL_REQUESTED", {duelChallengerName_});
@@ -14315,10 +14289,7 @@ void GameHandler::handleItemQueryResponse(network::Packet& packet) {
                 std::string msg = "Received: " + link;
                 if (it->count > 1) msg += " x" + std::to_string(it->count);
                 addSystemChatMessage(msg);
-                if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                    if (auto* sfx = renderer->getUiSoundManager())
-                        sfx->playLootItem();
-                }
+                withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playLootItem(); });
                 if (itemLootCallback_) itemLootCallback_(data.entry, it->count, data.quality, itemName);
                 it = pendingItemPushNotifs_.erase(it);
             } else {
@@ -18450,10 +18421,7 @@ void GameHandler::handleCastFailed(network::Packet& packet) {
     addLocalChatMessage(msg);
 
     // Play error sound for cast failure feedback
-    if (auto* renderer = core::Application::getInstance().getRenderer()) {
-        if (auto* sfx = renderer->getUiSoundManager())
-            sfx->playError();
-    }
+    withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playError(); });
 
     // Fire UNIT_SPELLCAST_FAILED + UNIT_SPELLCAST_STOP so Lua addons can react
         fireAddonEvent("UNIT_SPELLCAST_FAILED", {"player", std::to_string(data.spellId)});
@@ -19177,10 +19145,7 @@ void GameHandler::handleGroupInvite(network::Packet& packet) {
     if (!data.inviterName.empty()) {
         addSystemChatMessage(data.inviterName + " has invited you to a group.");
     }
-    if (auto* renderer = core::Application::getInstance().getRenderer()) {
-        if (auto* sfx = renderer->getUiSoundManager())
-            sfx->playTargetSelect();
-    }
+    withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playTargetSelect(); });
             fireAddonEvent("PARTY_INVITE_REQUEST", {data.inviterName});
 }
 
@@ -20792,10 +20757,7 @@ void GameHandler::acceptQuest() {
     pendingQuestAcceptNpcGuids_[questId] = npcGuid;
 
     // Play quest-accept sound
-    if (auto* renderer = core::Application::getInstance().getRenderer()) {
-        if (auto* sfx = renderer->getUiSoundManager())
-            sfx->playQuestActivate();
-    }
+    withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playQuestActivate(); });
 
     questDetailsOpen = false;
     questDetailsOpenTime = std::chrono::steady_clock::time_point{};
@@ -21589,10 +21551,7 @@ void GameHandler::handleLootRemoved(network::Packet& packet) {
             std::string msgStr = "Looted: " + link;
             if (it->count > 1) msgStr += " x" + std::to_string(it->count);
             addSystemChatMessage(msgStr);
-            if (auto* renderer = core::Application::getInstance().getRenderer()) {
-                if (auto* sfx = renderer->getUiSoundManager())
-                    sfx->playLootItem();
-            }
+            withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playLootItem(); });
             currentLoot.items.erase(it);
                             fireAddonEvent("LOOT_SLOT_CLEARED", {std::to_string(slotIndex + 1)});
             break;
@@ -25623,10 +25582,7 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
 
         earnedAchievements_.insert(achievementId);
         achievementDates_[achievementId] = earnDate;
-        if (auto* renderer = core::Application::getInstance().getRenderer()) {
-            if (auto* sfx = renderer->getUiSoundManager())
-                sfx->playAchievementAlert();
-        }
+        withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playAchievementAlert(); });
         if (achievementEarnedCallback_) {
             achievementEarnedCallback_(achievementId, achName);
         }
