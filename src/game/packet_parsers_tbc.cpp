@@ -912,7 +912,7 @@ bool TbcPacketParsers::parseNameQueryResponse(network::Packet& packet, NameQuery
         data.guid = packet.readUInt64();
         data.found = 0;
         data.name = packet.readString();
-        if (!data.name.empty() && (packet.getRemainingSize()) >= 12) {
+        if (!data.name.empty() && packet.hasRemaining(12)) {
             uint32_t race = packet.readUInt32();
             uint32_t gender = packet.readUInt32();
             uint32_t cls = packet.readUInt32();
@@ -938,7 +938,7 @@ bool TbcPacketParsers::parseNameQueryResponse(network::Packet& packet, NameQuery
             data.found = found;
             if (data.found != 0) return true;
             data.name = packet.readString();
-            if (!data.name.empty() && (packet.getRemainingSize()) >= 12) {
+            if (!data.name.empty() && packet.hasRemaining(12)) {
                 uint32_t race = packet.readUInt32();
                 uint32_t gender = packet.readUInt32();
                 uint32_t cls = packet.readUInt32();

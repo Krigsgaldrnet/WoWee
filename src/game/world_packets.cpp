@@ -1504,7 +1504,7 @@ bool MessageChatParser::parse(network::Packet& packet, MessageChatData& data) {
             packet.setReadPos(start);
             return false;
         }
-        if ((packet.getRemainingSize()) < (static_cast<size_t>(len) + minTrailingBytes)) {
+        if (!packet.hasRemaining(static_cast<size_t>(len) + minTrailingBytes)) {
             packet.setReadPos(start);
             return false;
         }
@@ -2209,7 +2209,7 @@ bool PetitionShowlistParser::parse(network::Packet& packet, PetitionShowlistData
         data.displayId = packet.readUInt32();
         data.cost = packet.readUInt32();
         // Skip unused fields if present
-        if ((packet.getRemainingSize()) >= 8) {
+        if (packet.hasRemaining(8)) {
             data.charterType = packet.readUInt32();
             data.requiredSigs = packet.readUInt32();
         }
@@ -2270,7 +2270,7 @@ bool GuildQueryResponseParser::parse(network::Packet& packet, GuildQueryResponse
     data.borderColor = packet.readUInt32();
     data.backgroundColor = packet.readUInt32();
 
-    if ((packet.getRemainingSize()) >= 4) {
+    if (packet.hasRemaining(4)) {
         data.rankCount = packet.readUInt32();
     }
     LOG_INFO("Parsed SMSG_GUILD_QUERY_RESPONSE: guild=", data.guildName, " id=", data.guildId);
@@ -2425,7 +2425,7 @@ bool GuildEventParser::parse(network::Packet& packet, GuildEventData& data) {
     for (uint8_t i = 0; i < data.numStrings && i < 3; ++i) {
         data.strings[i] = packet.readString();
     }
-    if ((packet.getRemainingSize()) >= 8) {
+    if (packet.hasRemaining(8)) {
         data.guid = packet.readUInt64();
     }
     LOG_INFO("Parsed SMSG_GUILD_EVENT: type=", static_cast<int>(data.eventType), " strings=", static_cast<int>(data.numStrings));
