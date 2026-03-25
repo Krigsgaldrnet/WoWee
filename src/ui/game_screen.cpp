@@ -18203,6 +18203,220 @@ void GameScreen::renderPetUnlearnConfirmDialog(game::GameHandler& gameHandler) {
 // Settings Window
 // ============================================================
 
+void GameScreen::renderSettingsAudioTab() {
+    auto* renderer = core::Application::getInstance().getRenderer();
+ImGui::Spacing();
+ImGui::BeginChild("AudioSettings", ImVec2(0, 360), true);
+
+// Helper lambda to apply audio settings
+auto applyAudioSettings = [&]() {
+    applyAudioVolumes(renderer);
+    saveSettings();
+};
+
+ImGui::Text("Master Volume");
+if (ImGui::SliderInt("##MasterVolume", &pendingMasterVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+ImGui::Separator();
+
+if (ImGui::Checkbox("Enable WoWee Music", &pendingUseOriginalSoundtrack)) {
+    if (renderer) {
+        if (auto* zm = renderer->getZoneManager()) {
+            zm->setUseOriginalSoundtrack(pendingUseOriginalSoundtrack);
+        }
+    }
+    saveSettings();
+}
+if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("Include WoWee music tracks in zone music rotation");
+ImGui::Separator();
+
+ImGui::Text("Music");
+if (ImGui::SliderInt("##MusicVolume", &pendingMusicVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+
+ImGui::Spacing();
+ImGui::Text("Ambient Sounds");
+if (ImGui::SliderInt("##AmbientVolume", &pendingAmbientVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+ImGui::TextWrapped("Weather, zones, cities, emitters");
+
+ImGui::Spacing();
+ImGui::Text("UI Sounds");
+if (ImGui::SliderInt("##UiVolume", &pendingUiVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+ImGui::TextWrapped("Buttons, loot, quest complete");
+
+ImGui::Spacing();
+ImGui::Text("Combat Sounds");
+if (ImGui::SliderInt("##CombatVolume", &pendingCombatVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+ImGui::TextWrapped("Weapon swings, impacts, grunts");
+
+ImGui::Spacing();
+ImGui::Text("Spell Sounds");
+if (ImGui::SliderInt("##SpellVolume", &pendingSpellVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+ImGui::TextWrapped("Magic casting and impacts");
+
+ImGui::Spacing();
+ImGui::Text("Movement Sounds");
+if (ImGui::SliderInt("##MovementVolume", &pendingMovementVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+ImGui::TextWrapped("Water splashes, jump/land");
+
+ImGui::Spacing();
+ImGui::Text("Footsteps");
+if (ImGui::SliderInt("##FootstepVolume", &pendingFootstepVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+
+ImGui::Spacing();
+ImGui::Text("NPC Voices");
+if (ImGui::SliderInt("##NpcVoiceVolume", &pendingNpcVoiceVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+
+ImGui::Spacing();
+ImGui::Text("Mount Sounds");
+if (ImGui::SliderInt("##MountVolume", &pendingMountVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+
+ImGui::Spacing();
+ImGui::Text("Activity Sounds");
+if (ImGui::SliderInt("##ActivityVolume", &pendingActivityVolume, 0, 100, "%d%%")) {
+    applyAudioSettings();
+}
+ImGui::TextWrapped("Swimming, eating, drinking");
+
+ImGui::EndChild();
+
+if (ImGui::Button("Restore Audio Defaults", ImVec2(-1, 0))) {
+    pendingMasterVolume = 100;
+    pendingMusicVolume = 30; // default music volume
+    pendingAmbientVolume = 100;
+    pendingUiVolume = 100;
+    pendingCombatVolume = 100;
+    pendingSpellVolume = 100;
+    pendingMovementVolume = 100;
+    pendingFootstepVolume = 100;
+    pendingNpcVoiceVolume = 100;
+    pendingMountVolume = 100;
+    pendingActivityVolume = 100;
+    applyAudioSettings();
+}
+
+}
+
+void GameScreen::renderSettingsChatTab() {
+ImGui::Spacing();
+
+ImGui::Text("Appearance");
+ImGui::Separator();
+
+if (ImGui::Checkbox("Show Timestamps", &chatShowTimestamps_)) {
+    saveSettings();
+}
+ImGui::SetItemTooltip("Show [HH:MM] before each chat message");
+
+const char* fontSizes[] = { "Small", "Medium", "Large" };
+if (ImGui::Combo("Chat Font Size", &chatFontSize_, fontSizes, 3)) {
+    saveSettings();
+}
+
+ImGui::Spacing();
+ImGui::Spacing();
+ImGui::Text("Auto-Join Channels");
+ImGui::Separator();
+
+if (ImGui::Checkbox("General", &chatAutoJoinGeneral_)) saveSettings();
+if (ImGui::Checkbox("Trade", &chatAutoJoinTrade_)) saveSettings();
+if (ImGui::Checkbox("LocalDefense", &chatAutoJoinLocalDefense_)) saveSettings();
+if (ImGui::Checkbox("LookingForGroup", &chatAutoJoinLFG_)) saveSettings();
+if (ImGui::Checkbox("Local", &chatAutoJoinLocal_)) saveSettings();
+
+ImGui::Spacing();
+ImGui::Spacing();
+ImGui::Text("Joined Channels");
+ImGui::Separator();
+
+ImGui::TextDisabled("Use /join and /leave commands in chat to manage channels.");
+
+ImGui::Spacing();
+ImGui::Separator();
+ImGui::Spacing();
+
+if (ImGui::Button("Restore Chat Defaults", ImVec2(-1, 0))) {
+    chatShowTimestamps_ = false;
+    chatFontSize_ = 1;
+    chatAutoJoinGeneral_ = true;
+    chatAutoJoinTrade_ = true;
+    chatAutoJoinLocalDefense_ = true;
+    chatAutoJoinLFG_ = true;
+    chatAutoJoinLocal_ = true;
+    saveSettings();
+}
+
+}
+
+void GameScreen::renderSettingsAboutTab() {
+ImGui::Spacing();
+ImGui::Spacing();
+
+ImGui::TextWrapped("WoWee - World of Warcraft Client Emulator");
+ImGui::Spacing();
+ImGui::Separator();
+ImGui::Spacing();
+
+ImGui::Text("Developer");
+ImGui::Indent();
+ImGui::Text("Kelsi Davis");
+ImGui::Unindent();
+ImGui::Spacing();
+
+ImGui::Text("GitHub");
+ImGui::Indent();
+ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "https://github.com/Kelsidavis/WoWee");
+if (ImGui::IsItemHovered()) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    ImGui::SetTooltip("Click to copy");
+}
+if (ImGui::IsItemClicked()) {
+    ImGui::SetClipboardText("https://github.com/Kelsidavis/WoWee");
+}
+ImGui::Unindent();
+ImGui::Spacing();
+
+ImGui::Text("Contact");
+ImGui::Indent();
+ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "github.com/Kelsidavis");
+if (ImGui::IsItemHovered()) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    ImGui::SetTooltip("Click to copy");
+}
+if (ImGui::IsItemClicked()) {
+    ImGui::SetClipboardText("https://github.com/Kelsidavis");
+}
+ImGui::Unindent();
+
+ImGui::Spacing();
+ImGui::Separator();
+ImGui::Spacing();
+
+ImGui::TextWrapped("A multi-expansion WoW client supporting Classic, TBC, and WotLK (3.3.5a).");
+ImGui::Spacing();
+ImGui::TextDisabled("Built with Vulkan, SDL2, and ImGui");
+
+}
+
 void GameScreen::renderSettingsWindow() {
     if (!showSettingsWindow) return;
 
@@ -18712,115 +18926,7 @@ void GameScreen::renderSettingsWindow() {
             // AUDIO TAB
             // ============================================================
             if (ImGui::BeginTabItem("Audio")) {
-                ImGui::Spacing();
-                ImGui::BeginChild("AudioSettings", ImVec2(0, 360), true);
-
-                // Helper lambda to apply audio settings
-                auto applyAudioSettings = [&]() {
-                    applyAudioVolumes(renderer);
-                    saveSettings();
-                };
-
-                ImGui::Text("Master Volume");
-                if (ImGui::SliderInt("##MasterVolume", &pendingMasterVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-                ImGui::Separator();
-
-                if (ImGui::Checkbox("Enable WoWee Music", &pendingUseOriginalSoundtrack)) {
-                    if (renderer) {
-                        if (auto* zm = renderer->getZoneManager()) {
-                            zm->setUseOriginalSoundtrack(pendingUseOriginalSoundtrack);
-                        }
-                    }
-                    saveSettings();
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Include WoWee music tracks in zone music rotation");
-                ImGui::Separator();
-
-                ImGui::Text("Music");
-                if (ImGui::SliderInt("##MusicVolume", &pendingMusicVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-
-                ImGui::Spacing();
-                ImGui::Text("Ambient Sounds");
-                if (ImGui::SliderInt("##AmbientVolume", &pendingAmbientVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-                ImGui::TextWrapped("Weather, zones, cities, emitters");
-
-                ImGui::Spacing();
-                ImGui::Text("UI Sounds");
-                if (ImGui::SliderInt("##UiVolume", &pendingUiVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-                ImGui::TextWrapped("Buttons, loot, quest complete");
-
-                ImGui::Spacing();
-                ImGui::Text("Combat Sounds");
-                if (ImGui::SliderInt("##CombatVolume", &pendingCombatVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-                ImGui::TextWrapped("Weapon swings, impacts, grunts");
-
-                ImGui::Spacing();
-                ImGui::Text("Spell Sounds");
-                if (ImGui::SliderInt("##SpellVolume", &pendingSpellVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-                ImGui::TextWrapped("Magic casting and impacts");
-
-                ImGui::Spacing();
-                ImGui::Text("Movement Sounds");
-                if (ImGui::SliderInt("##MovementVolume", &pendingMovementVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-                ImGui::TextWrapped("Water splashes, jump/land");
-
-                ImGui::Spacing();
-                ImGui::Text("Footsteps");
-                if (ImGui::SliderInt("##FootstepVolume", &pendingFootstepVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-
-                ImGui::Spacing();
-                ImGui::Text("NPC Voices");
-                if (ImGui::SliderInt("##NpcVoiceVolume", &pendingNpcVoiceVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-
-                ImGui::Spacing();
-                ImGui::Text("Mount Sounds");
-                if (ImGui::SliderInt("##MountVolume", &pendingMountVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-
-                ImGui::Spacing();
-                ImGui::Text("Activity Sounds");
-                if (ImGui::SliderInt("##ActivityVolume", &pendingActivityVolume, 0, 100, "%d%%")) {
-                    applyAudioSettings();
-                }
-                ImGui::TextWrapped("Swimming, eating, drinking");
-
-                ImGui::EndChild();
-
-                if (ImGui::Button("Restore Audio Defaults", ImVec2(-1, 0))) {
-                    pendingMasterVolume = 100;
-                    pendingMusicVolume = kDefaultMusicVolume;
-                    pendingAmbientVolume = 100;
-                    pendingUiVolume = 100;
-                    pendingCombatVolume = 100;
-                    pendingSpellVolume = 100;
-                    pendingMovementVolume = 100;
-                    pendingFootstepVolume = 100;
-                    pendingNpcVoiceVolume = 100;
-                    pendingMountVolume = 100;
-                    pendingActivityVolume = 100;
-                    applyAudioSettings();
-                }
-
+                renderSettingsAudioTab();
                 ImGui::EndTabItem();
             }
 
@@ -19098,54 +19204,7 @@ void GameScreen::renderSettingsWindow() {
             // CHAT TAB
             // ============================================================
             if (ImGui::BeginTabItem("Chat")) {
-                ImGui::Spacing();
-
-                ImGui::Text("Appearance");
-                ImGui::Separator();
-
-                if (ImGui::Checkbox("Show Timestamps", &chatShowTimestamps_)) {
-                    saveSettings();
-                }
-                ImGui::SetItemTooltip("Show [HH:MM] before each chat message");
-
-                const char* fontSizes[] = { "Small", "Medium", "Large" };
-                if (ImGui::Combo("Chat Font Size", &chatFontSize_, fontSizes, 3)) {
-                    saveSettings();
-                }
-
-                ImGui::Spacing();
-                ImGui::Spacing();
-                ImGui::Text("Auto-Join Channels");
-                ImGui::Separator();
-
-                if (ImGui::Checkbox("General", &chatAutoJoinGeneral_)) saveSettings();
-                if (ImGui::Checkbox("Trade", &chatAutoJoinTrade_)) saveSettings();
-                if (ImGui::Checkbox("LocalDefense", &chatAutoJoinLocalDefense_)) saveSettings();
-                if (ImGui::Checkbox("LookingForGroup", &chatAutoJoinLFG_)) saveSettings();
-                if (ImGui::Checkbox("Local", &chatAutoJoinLocal_)) saveSettings();
-
-                ImGui::Spacing();
-                ImGui::Spacing();
-                ImGui::Text("Joined Channels");
-                ImGui::Separator();
-
-                ImGui::TextDisabled("Use /join and /leave commands in chat to manage channels.");
-
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                if (ImGui::Button("Restore Chat Defaults", ImVec2(-1, 0))) {
-                    chatShowTimestamps_ = false;
-                    chatFontSize_ = 1;
-                    chatAutoJoinGeneral_ = true;
-                    chatAutoJoinTrade_ = true;
-                    chatAutoJoinLocalDefense_ = true;
-                    chatAutoJoinLFG_ = true;
-                    chatAutoJoinLocal_ = true;
-                    saveSettings();
-                }
-
+                renderSettingsChatTab();
                 ImGui::EndTabItem();
             }
 
@@ -19153,53 +19212,7 @@ void GameScreen::renderSettingsWindow() {
             // ABOUT TAB
             // ============================================================
             if (ImGui::BeginTabItem("About")) {
-                ImGui::Spacing();
-                ImGui::Spacing();
-
-                ImGui::TextWrapped("WoWee - World of Warcraft Client Emulator");
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                ImGui::Text("Developer");
-                ImGui::Indent();
-                ImGui::Text("Kelsi Davis");
-                ImGui::Unindent();
-                ImGui::Spacing();
-
-                ImGui::Text("GitHub");
-                ImGui::Indent();
-                ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "https://github.com/Kelsidavis/WoWee");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                    ImGui::SetTooltip("Click to copy");
-                }
-                if (ImGui::IsItemClicked()) {
-                    ImGui::SetClipboardText("https://github.com/Kelsidavis/WoWee");
-                }
-                ImGui::Unindent();
-                ImGui::Spacing();
-
-                ImGui::Text("Contact");
-                ImGui::Indent();
-                ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "github.com/Kelsidavis");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                    ImGui::SetTooltip("Click to copy");
-                }
-                if (ImGui::IsItemClicked()) {
-                    ImGui::SetClipboardText("https://github.com/Kelsidavis");
-                }
-                ImGui::Unindent();
-
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                ImGui::TextWrapped("A multi-expansion WoW client supporting Classic, TBC, and WotLK (3.3.5a).");
-                ImGui::Spacing();
-                ImGui::TextDisabled("Built with Vulkan, SDL2, and ImGui");
-
+                renderSettingsAboutTab();
                 ImGui::EndTabItem();
             }
 

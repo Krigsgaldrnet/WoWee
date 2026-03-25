@@ -382,6 +382,9 @@ private:
     void renderPetUnlearnConfirmDialog(game::GameHandler& gameHandler);
     void renderEscapeMenu();
     void renderSettingsWindow();
+    void renderSettingsAudioTab();
+    void renderSettingsChatTab();
+    void renderSettingsAboutTab();
     void applyGraphicsPreset(GraphicsPreset preset);
     void updateGraphicsPresetFromCurrentSettings();
     void renderQuestMarkers(game::GameHandler& gameHandler);
