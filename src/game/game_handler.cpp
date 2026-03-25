@@ -2046,8 +2046,8 @@ void GameHandler::registerOpcodeHandlers() {
         std::string titleStr;
         auto tit = titleNameCache_.find(titleBit);
         if (tit != titleNameCache_.end() && !tit->second.empty()) {
-            auto nameIt = playerNameCache.find(playerGuid);
-            const std::string& pName = (nameIt != playerNameCache.end()) ? nameIt->second : "you";
+            const auto& ln = lookupName(playerGuid);
+            const std::string& pName = ln.empty() ? std::string("you") : ln;
             const std::string& fmt = tit->second;
             size_t pos = fmt.find("%s");
             if (pos != std::string::npos)
@@ -2384,8 +2384,7 @@ void GameHandler::registerOpcodeHandlers() {
         uint32_t itemId  = packet.readUInt32();
         uint32_t count   = packet.readUInt32();
         if (isInGroup() && looterGuid != playerGuid) {
-            auto nit = playerNameCache.find(looterGuid);
-            std::string looterName = (nit != playerNameCache.end()) ? nit->second : "";
+            const auto& looterName = lookupName(looterGuid);
             if (!looterName.empty()) {
                 queryItemInfo(itemId, 0);
                 std::string itemName = "item #" + std::to_string(itemId);
@@ -2702,13 +2701,7 @@ void GameHandler::registerOpcodeHandlers() {
         uint64_t respGuid = packet.readUInt64();
         uint8_t  isReady  = packet.readUInt8();
         if (isReady) ++readyCheckReadyCount_; else ++readyCheckNotReadyCount_;
-        auto nit = playerNameCache.find(respGuid);
-        std::string rname;
-        if (nit != playerNameCache.end()) rname = nit->second;
-        else {
-            auto ent = entityManager.getEntity(respGuid);
-            if (ent) rname = std::static_pointer_cast<game::Unit>(ent)->getName();
-        }
+        const auto& rname = lookupName(respGuid);
         if (!rname.empty()) {
             bool found = false;
             for (auto& r : readyCheckResults_) {
@@ -2758,17 +2751,8 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < 16) return;
         uint64_t killerGuid = packet.readUInt64();
         uint64_t victimGuid = packet.readUInt64();
-        auto nameFor = [this](uint64_t g) -> std::string {
-            auto nit = playerNameCache.find(g);
-            if (nit != playerNameCache.end()) return nit->second;
-            auto ent = entityManager.getEntity(g);
-            if (ent && (ent->getType() == game::ObjectType::UNIT ||
-                        ent->getType() == game::ObjectType::PLAYER))
-                return std::static_pointer_cast<game::Unit>(ent)->getName();
-            return {};
-        };
-        std::string killerName = nameFor(killerGuid);
-        std::string victimName = nameFor(victimGuid);
+        const auto& killerName = lookupName(killerGuid);
+        const auto& victimName = lookupName(victimGuid);
         if (!killerName.empty() && !victimName.empty()) {
             char buf[256];
             std::snprintf(buf, sizeof(buf), "%s killed %s.", killerName.c_str(), victimName.c_str());
@@ -2862,8 +2846,7 @@ void GameHandler::registerOpcodeHandlers() {
             if (!casterName.empty()) {
                 resurrectCasterName_ = casterName;
             } else {
-                auto nit = playerNameCache.find(casterGuid);
-                resurrectCasterName_ = (nit != playerNameCache.end()) ? nit->second : "";
+                resurrectCasterName_ = lookupName(casterGuid);
             }
             resurrectRequestPending_ = true;
                             fireAddonEvent("RESURRECT_REQUEST", {resurrectCasterName_});
@@ -3268,17 +3251,17 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_BATTLEGROUND_PLAYER_JOINED] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 8) {
             uint64_t guid = packet.readUInt64();
-            auto it = playerNameCache.find(guid);
-            if (it != playerNameCache.end() && !it->second.empty())
-                addSystemChatMessage(it->second + " has entered the battleground.");
+            const auto& name = lookupName(guid);
+            if (!name.empty())
+                addSystemChatMessage(name + " has entered the battleground.");
         }
     };
     dispatchTable_[Opcode::SMSG_BATTLEGROUND_PLAYER_LEFT] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 8) {
             uint64_t guid = packet.readUInt64();
-            auto it = playerNameCache.find(guid);
-            if (it != playerNameCache.end() && !it->second.empty())
-                addSystemChatMessage(it->second + " has left the battleground.");
+            const auto& name = lookupName(guid);
+            if (!name.empty())
+                addSystemChatMessage(name + " has left the battleground.");
         }
     };
 
@@ -3468,10 +3451,7 @@ void GameHandler::registerOpcodeHandlers() {
                 auto player = std::dynamic_pointer_cast<Player>(entity);
                 if (player && !player->getName().empty()) name = player->getName();
             }
-            if (name.empty()) {
-                auto nit = playerNameCache.find(memberGuid);
-                if (nit != playerNameCache.end()) name = nit->second;
-            }
+            if (name.empty()) name = lookupName(memberGuid);
             if (name.empty()) name = "(unknown)";
             std::string entry = "  " + name;
             if (memberFlags & 0x01) entry += " [Moderator]";
@@ -5784,9 +5764,9 @@ void GameHandler::registerOpcodeHandlers() {
         // uint64 memberGuid — a player was added to your group via meeting stone
         if (packet.getRemainingSize() >= 8) {
             uint64_t memberGuid = packet.readUInt64();
-            auto nit = playerNameCache.find(memberGuid);
-            if (nit != playerNameCache.end() && !nit->second.empty()) {
-                addSystemChatMessage("Meeting Stone: " + nit->second +
+            const auto& memberName = lookupName(memberGuid);
+            if (!memberName.empty()) {
+                addSystemChatMessage("Meeting Stone: " + memberName +
                                      " has been added to your group.");
             } else {
                 addSystemChatMessage("Meeting Stone: A new player has been added to your group.");
@@ -7140,10 +7120,7 @@ void GameHandler::registerOpcodeHandlers() {
             std::string mentorName;
             auto ent = entityManager.getEntity(mentorGuid);
             if (auto* unit = dynamic_cast<Unit*>(ent.get())) mentorName = unit->getName();
-            if (mentorName.empty()) {
-                auto nit = playerNameCache.find(mentorGuid);
-                if (nit != playerNameCache.end()) mentorName = nit->second;
-            }
+            if (mentorName.empty()) mentorName = lookupName(mentorGuid);
             addSystemChatMessage(mentorName.empty()
                 ? "A player is offering to grant you a level."
                 : (mentorName + " is offering to grant you a level."));
@@ -12435,10 +12412,7 @@ void GameHandler::sendChatMessage(ChatType type, const std::string& message, con
     echo.message = message;
 
     // Look up player name
-    auto nameIt = playerNameCache.find(playerGuid);
-    if (nameIt != playerNameCache.end()) {
-        echo.senderName = nameIt->second;
-    }
+    echo.senderName = lookupName(playerGuid);
 
     if (type == ChatType::WHISPER) {
         echo.type = ChatType::WHISPER_INFORM;
@@ -12474,27 +12448,7 @@ void GameHandler::handleMessageChat(network::Packet& packet) {
 
     // Resolve sender name from entity/cache if not already set by parser
     if (data.senderName.empty() && data.senderGuid != 0) {
-        // Check player name cache first
-        auto nameIt = playerNameCache.find(data.senderGuid);
-        if (nameIt != playerNameCache.end()) {
-            data.senderName = nameIt->second;
-        } else {
-            // Try entity name
-            auto entity = entityManager.getEntity(data.senderGuid);
-            if (entity) {
-                if (entity->getType() == ObjectType::PLAYER) {
-                    auto player = std::dynamic_pointer_cast<Player>(entity);
-                    if (player && !player->getName().empty()) {
-                        data.senderName = player->getName();
-                    }
-                } else if (entity->getType() == ObjectType::UNIT) {
-                    auto unit = std::dynamic_pointer_cast<Unit>(entity);
-                    if (unit && !unit->getName().empty()) {
-                        data.senderName = unit->getName();
-                    }
-                }
-            }
-        }
+        data.senderName = lookupName(data.senderGuid);
 
         // If still unknown, proactively query the server so the UI can show names soon after.
         if (data.senderName.empty()) {
@@ -12621,17 +12575,7 @@ void GameHandler::handleTextEmote(network::Packet& packet) {
     }
 
     // Resolve sender name
-    std::string senderName;
-    auto nameIt = playerNameCache.find(data.senderGuid);
-    if (nameIt != playerNameCache.end()) {
-        senderName = nameIt->second;
-    } else {
-        auto entity = entityManager.getEntity(data.senderGuid);
-        if (entity) {
-            auto unit = std::dynamic_pointer_cast<Unit>(entity);
-            if (unit) senderName = unit->getName();
-        }
-    }
+    std::string senderName = lookupName(data.senderGuid);
     if (senderName.empty()) {
         senderName = "Unknown";
         queryPlayerName(data.senderGuid);
@@ -12894,10 +12838,7 @@ void GameHandler::setFocus(uint64_t guid) {
             if (unit && !unit->getName().empty()) {
                 name = unit->getName();
             }
-            if (name.empty()) {
-                auto nit = playerNameCache.find(guid);
-                if (nit != playerNameCache.end()) name = nit->second;
-            }
+            if (name.empty()) name = lookupName(guid);
             if (name.empty()) name = "Unknown";
             addSystemChatMessage("Focus set: " + name);
             LOG_INFO("Focus set: 0x", std::hex, guid, std::dec);
@@ -13574,9 +13515,7 @@ void GameHandler::handleDuelRequested(network::Packet& packet) {
         duelChallengerName_ = unit->getName();
     }
     if (duelChallengerName_.empty()) {
-        auto nit = playerNameCache.find(duelChallengerGuid_);
-        if (nit != playerNameCache.end())
-            duelChallengerName_ = nit->second;
+        duelChallengerName_ = lookupName(duelChallengerGuid_);
     }
     if (duelChallengerName_.empty()) {
         char tmp[32];
@@ -14142,8 +14081,7 @@ void GameHandler::queryGameObjectInfo(uint32_t entry, uint64_t guid) {
 }
 
 std::string GameHandler::getCachedPlayerName(uint64_t guid) const {
-    auto it = playerNameCache.find(guid);
-    return (it != playerNameCache.end()) ? it->second : "";
+    return std::string(lookupName(guid));
 }
 
 std::string GameHandler::getCachedCreatureName(uint32_t entry) const {
@@ -23683,10 +23621,8 @@ void GameHandler::handleFriendList(network::Packet& packet) {
         }
         // Track as a friend GUID; resolve name via name query
         friendGuids_.insert(guid);
-        auto nit = playerNameCache.find(guid);
-        std::string name;
-        if (nit != playerNameCache.end()) {
-            name = nit->second;
+        std::string name = lookupName(guid);
+        if (!name.empty()) {
             friendsCache[name] = guid;
             LOG_INFO("  Friend: ", name, " status=", static_cast<int>(status));
         } else {
@@ -23746,9 +23682,9 @@ void GameHandler::handleContactList(network::Packet& packet) {
                 classId = packet.readUInt32();
             }
             friendGuids_.insert(guid);
-            auto nit = playerNameCache.find(guid);
-            if (nit != playerNameCache.end()) {
-                friendsCache[nit->second] = guid;
+            const auto& fname = lookupName(guid);
+            if (!fname.empty()) {
+                friendsCache[fname] = guid;
             } else {
                 queryPlayerName(guid);
             }
@@ -23762,8 +23698,7 @@ void GameHandler::handleContactList(network::Packet& packet) {
         entry.areaId  = areaId;
         entry.level   = level;
         entry.classId = classId;
-        auto nit = playerNameCache.find(guid);
-        if (nit != playerNameCache.end()) entry.name = nit->second;
+        entry.name = lookupName(guid);
         contacts_.push_back(std::move(entry));
     }
     LOG_INFO("SMSG_CONTACT_LIST: mask=", lastContactListMask_,
@@ -23790,8 +23725,7 @@ void GameHandler::handleFriendStatus(network::Packet& packet) {
         if (cit2 != contacts_.end() && !cit2->name.empty()) {
             playerName = cit2->name;
         } else {
-            auto it = playerNameCache.find(data.guid);
-            if (it != playerNameCache.end()) playerName = it->second;
+            playerName = lookupName(data.guid);
         }
     }
 
@@ -23871,12 +23805,8 @@ void GameHandler::handleRandomRoll(network::Packet& packet) {
     if (data.rollerGuid == playerGuid) {
         rollerName = "You";
     } else {
-        auto it = playerNameCache.find(data.rollerGuid);
-        if (it != playerNameCache.end()) {
-            rollerName = it->second;
-        } else {
-            rollerName = "Someone";
-        }
+        rollerName = lookupName(data.rollerGuid);
+        if (rollerName.empty()) rollerName = "Someone";
     }
 
     // Build message
@@ -25134,9 +25064,7 @@ void GameHandler::handleQuestConfirmAccept(network::Packet& packet) {
         sharedQuestSharerName_ = unit->getName();
     }
     if (sharedQuestSharerName_.empty()) {
-        auto nit = playerNameCache.find(sharedQuestSharerGuid_);
-        if (nit != playerNameCache.end())
-            sharedQuestSharerName_ = nit->second;
+        sharedQuestSharerName_ = lookupName(sharedQuestSharerGuid_);
     }
     if (sharedQuestSharerName_.empty()) {
         char tmp[32];
@@ -25185,9 +25113,7 @@ void GameHandler::handleSummonRequest(network::Packet& packet) {
         summonerName_ = unit->getName();
     }
     if (summonerName_.empty()) {
-        auto nit = playerNameCache.find(summonerGuid_);
-        if (nit != playerNameCache.end())
-            summonerName_ = nit->second;
+        summonerName_ = lookupName(summonerGuid_);
     }
     if (summonerName_.empty()) {
         char tmp[32];
@@ -25250,9 +25176,7 @@ void GameHandler::handleTradeStatus(network::Packet& packet) {
                 tradePeerName_ = unit->getName();
             }
             if (tradePeerName_.empty()) {
-                auto nit = playerNameCache.find(tradePeerGuid_);
-                if (nit != playerNameCache.end())
-                    tradePeerName_ = nit->second;
+                tradePeerName_ = lookupName(tradePeerGuid_);
             }
             if (tradePeerName_.empty()) {
                 char tmp[32];
@@ -25628,9 +25552,9 @@ std::string GameHandler::getFormattedTitle(uint32_t bit) const {
     auto it = titleNameCache_.find(bit);
     if (it == titleNameCache_.end() || it->second.empty()) return {};
 
+    const auto& ln2 = lookupName(playerGuid);
     static const std::string kUnknown = "unknown";
-    auto nameIt = playerNameCache.find(playerGuid);
-    const std::string& pName = (nameIt != playerNameCache.end()) ? nameIt->second : kUnknown;
+    const std::string& pName = ln2.empty() ? kUnknown : ln2;
 
     const std::string& fmt = it->second;
     size_t pos = fmt.find("%s");
@@ -25722,11 +25646,7 @@ void GameHandler::handleAchievementEarned(network::Packet& packet) {
         if (auto* unit = getUnitByGuid(guid)) {
             senderName = unit->getName();
         }
-        if (senderName.empty()) {
-            auto nit = playerNameCache.find(guid);
-            if (nit != playerNameCache.end())
-                senderName = nit->second;
-        }
+        if (senderName.empty()) senderName = lookupName(guid);
         if (senderName.empty()) {
             char tmp[32];
             std::snprintf(tmp, sizeof(tmp), "0x%llX",
