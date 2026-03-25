@@ -449,7 +449,6 @@ struct MovementInfo {
  */
 class MovementPacket {
 public:
-    static void writePackedGuid(network::Packet& packet, uint64_t guid);
     static void writeMovementPayload(network::Packet& packet, const MovementInfo& info);
 
     /**
@@ -525,14 +524,6 @@ public:
      * @return true if successful
      */
     static bool parse(network::Packet& packet, UpdateObjectData& data);
-
-    /**
-     * Read packed GUID from packet
-     *
-     * @param packet Packet to read from
-     * @return GUID value
-     */
-    static uint64_t readPackedGuid(network::Packet& packet);
 
     /**
      * Parse a single update block

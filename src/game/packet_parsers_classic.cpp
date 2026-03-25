@@ -2282,7 +2282,7 @@ bool TurtlePacketParsers::parseMonsterMove(network::Packet& packet, MonsterMoveD
 
     auto looksLikeWotlkMonsterMove = [&](network::Packet& probe) -> bool {
         const size_t probeStart = probe.getReadPos();
-        uint64_t guid = UpdateObjectParser::readPackedGuid(probe);
+        uint64_t guid = probe.readPackedGuid();
         if (guid == 0) {
             probe.setReadPos(probeStart);
             return false;

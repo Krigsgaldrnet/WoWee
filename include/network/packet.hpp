@@ -28,6 +28,7 @@ public:
     uint64_t readUInt64();
     float readFloat();
     uint64_t readPackedGuid();
+    void writePackedGuid(uint64_t guid);
     std::string readString();
 
     uint16_t getOpcode() const { return opcode; }

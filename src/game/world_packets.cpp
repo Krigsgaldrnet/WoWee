@@ -728,23 +728,6 @@ bool PongParser::parse(network::Packet& packet, PongData& data) {
     return true;
 }
 
-void MovementPacket::writePackedGuid(network::Packet& packet, uint64_t guid) {
-    uint8_t mask = 0;
-    uint8_t guidBytes[8];
-    int guidByteCount = 0;
-    for (int i = 0; i < 8; i++) {
-        uint8_t byte = static_cast<uint8_t>((guid >> (i * 8)) & 0xFF);
-        if (byte != 0) {
-            mask |= (1 << i);
-            guidBytes[guidByteCount++] = byte;
-        }
-    }
-    packet.writeUInt8(mask);
-    for (int i = 0; i < guidByteCount; i++) {
-        packet.writeUInt8(guidBytes[i]);
-    }
-}
-
 void MovementPacket::writeMovementPayload(network::Packet& packet, const MovementInfo& info) {
     // Movement packet format (WoW 3.3.5a) payload:
     // uint32 flags
@@ -772,20 +755,7 @@ void MovementPacket::writeMovementPayload(network::Packet& packet, const Movemen
     // 3.3.5a ordering: transport block appears before pitch/fall/jump.
     if (info.hasFlag(MovementFlags::ONTRANSPORT)) {
         // Write packed transport GUID
-        uint8_t transMask = 0;
-        uint8_t transGuidBytes[8];
-        int transGuidByteCount = 0;
-        for (int i = 0; i < 8; i++) {
-            uint8_t byte = static_cast<uint8_t>((info.transportGuid >> (i * 8)) & 0xFF);
-            if (byte != 0) {
-                transMask |= (1 << i);
-                transGuidBytes[transGuidByteCount++] = byte;
-            }
-        }
-        packet.writeUInt8(transMask);
-        for (int i = 0; i < transGuidByteCount; i++) {
-            packet.writeUInt8(transGuidBytes[i]);
-        }
+        packet.writePackedGuid(info.transportGuid);
 
         // Write transport local position
         packet.writeFloat(info.transportX);
@@ -827,7 +797,7 @@ network::Packet MovementPacket::build(Opcode opcode, const MovementInfo& info, u
 
     // Movement packet format (WoW 3.3.5a):
     // packed GUID + movement payload
-    writePackedGuid(packet, playerGuid);
+    packet.writePackedGuid(playerGuid);
     writeMovementPayload(packet, info);
 
     // Detailed hex dump for debugging
@@ -854,26 +824,6 @@ network::Packet MovementPacket::build(Opcode opcode, const MovementInfo& info, u
     }
 
     return packet;
-}
-
-uint64_t UpdateObjectParser::readPackedGuid(network::Packet& packet) {
-    // Read packed GUID format:
-    // First byte is a mask indicating which bytes are present
-    uint8_t mask = packet.readUInt8();
-
-    if (mask == 0) {
-        return 0;
-    }
-
-    uint64_t guid = 0;
-    for (int i = 0; i < 8; ++i) {
-        if (mask & (1 << i)) {
-            uint8_t byte = packet.readUInt8();
-            guid |= (static_cast<uint64_t>(byte) << (i * 8));
-        }
-    }
-
-    return guid;
 }
 
 bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock& block) {
@@ -950,7 +900,7 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
         if (moveFlags & 0x00000200) { // MOVEMENTFLAG_ONTRANSPORT
             if (rem() < 1) return false;
             block.onTransport = true;
-            block.transportGuid = readPackedGuid(packet);
+            block.transportGuid = packet.readPackedGuid();
             if (rem() < 21) return false; // 4 floats + uint32 + uint8
             block.transportX = packet.readFloat();
             block.transportY = packet.readFloat();
@@ -1121,7 +1071,7 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
     else if (updateFlags & UPDATEFLAG_POSITION) {
         // Transport position update (UPDATEFLAG_POSITION = 0x0100)
         if (rem() < 1) return false;
-        uint64_t transportGuid = readPackedGuid(packet);
+        uint64_t transportGuid = packet.readPackedGuid();
         if (rem() < 32) return false; // 8 floats
         block.x = packet.readFloat();
         block.y = packet.readFloat();
@@ -1164,7 +1114,7 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
     // Target GUID (for units with target)
     if (updateFlags & UPDATEFLAG_HAS_TARGET) {
         if (rem() < 1) return false;
-        /*uint64_t targetGuid =*/ readPackedGuid(packet);
+        /*uint64_t targetGuid =*/ packet.readPackedGuid();
     }
 
     // Transport time
@@ -1323,7 +1273,7 @@ bool UpdateObjectParser::parseUpdateBlock(network::Packet& packet, UpdateBlock& 
         case UpdateType::VALUES: {
             // Partial update - changed fields only
             if (packet.getReadPos() >= packet.getSize()) return false;
-            block.guid = readPackedGuid(packet);
+            block.guid = packet.readPackedGuid();
             LOG_DEBUG("  VALUES update for GUID: 0x", std::hex, block.guid, std::dec);
 
             return parseUpdateFields(packet, block);
@@ -1342,7 +1292,7 @@ bool UpdateObjectParser::parseUpdateBlock(network::Packet& packet, UpdateBlock& 
         case UpdateType::CREATE_OBJECT2: {
             // Create new object with full data
             if (packet.getReadPos() >= packet.getSize()) return false;
-            block.guid = readPackedGuid(packet);
+            block.guid = packet.readPackedGuid();
             LOG_DEBUG("  CREATE_OBJECT for GUID: 0x", std::hex, block.guid, std::dec);
 
             // Read object type
@@ -1418,7 +1368,7 @@ bool UpdateObjectParser::parse(network::Packet& packet, UpdateObjectData& data) 
             }
 
             for (uint32_t i = 0; i < count; ++i) {
-                uint64_t guid = readPackedGuid(packet);
+                uint64_t guid = packet.readPackedGuid();
                 data.outOfRangeGuids.push_back(guid);
                 LOG_DEBUG("    Out of range: 0x", std::hex, guid, std::dec);
             }

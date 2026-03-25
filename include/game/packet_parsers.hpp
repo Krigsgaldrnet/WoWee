@@ -283,12 +283,12 @@ public:
 
     /** Read a packed GUID from the packet */
     virtual uint64_t readPackedGuid(network::Packet& packet) {
-        return UpdateObjectParser::readPackedGuid(packet);
+        return packet.readPackedGuid();
     }
 
     /** Write a packed GUID to the packet */
     virtual void writePackedGuid(network::Packet& packet, uint64_t guid) {
-        MovementPacket::writePackedGuid(packet, guid);
+        packet.writePackedGuid(guid);
     }
 };
 

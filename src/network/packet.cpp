@@ -97,6 +97,22 @@ uint64_t Packet::readPackedGuid() {
     return guid;
 }
 
+void Packet::writePackedGuid(uint64_t guid) {
+    uint8_t mask = 0;
+    uint8_t guidBytes[8];
+    int count = 0;
+    for (int i = 0; i < 8; ++i) {
+        uint8_t byte = static_cast<uint8_t>((guid >> (i * 8)) & 0xFF);
+        if (byte != 0) {
+            mask |= (1 << i);
+            guidBytes[count++] = byte;
+        }
+    }
+    writeUInt8(mask);
+    for (int i = 0; i < count; ++i)
+        writeUInt8(guidBytes[i]);
+}
+
 std::string Packet::readString() {
     std::string result;
     while (readPos < data.size()) {

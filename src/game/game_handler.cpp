@@ -10064,7 +10064,7 @@ void GameHandler::useEquipmentSet(uint32_t setId) {
     network::Packet pkt(wire);
     for (int slot = 0; slot < 19; ++slot) {
         uint64_t itemGuid = es->itemGuids[slot];
-        MovementPacket::writePackedGuid(pkt, itemGuid);
+        pkt.writePackedGuid(itemGuid);
         uint8_t srcBag = 0xFF;
         uint8_t srcSlot = 0;
         if (itemGuid != 0) {
@@ -10125,7 +10125,7 @@ void GameHandler::saveEquipmentSet(const std::string& name, const std::string& i
     pkt.writeString(iconName);
     for (int slot = 0; slot < 19; ++slot) {
         uint64_t guid = getEquipSlotGuid(slot);
-        MovementPacket::writePackedGuid(pkt, guid);
+        pkt.writePackedGuid(guid);
     }
     // Track pending save so SMSG_EQUIPMENT_SET_SAVED can add the new set locally
     pendingSaveSetName_ = name;
@@ -15562,7 +15562,7 @@ void GameHandler::handleForceSpeedChange(network::Packet& packet, const char* na
         if (legacyGuidAck) {
             ack.writeUInt64(playerGuid);
         } else {
-            MovementPacket::writePackedGuid(ack, playerGuid);
+            ack.writePackedGuid(playerGuid);
         }
         ack.writeUInt32(counter);
 
@@ -15652,7 +15652,7 @@ void GameHandler::handleForceMoveRootState(network::Packet& packet, bool rooted)
     if (legacyGuidAck) {
         ack.writeUInt64(playerGuid);  // CMaNGOS expects full GUID for root/unroot ACKs
     } else {
-        MovementPacket::writePackedGuid(ack, playerGuid);
+        ack.writePackedGuid(playerGuid);
     }
     ack.writeUInt32(counter);
 
@@ -15712,7 +15712,7 @@ void GameHandler::handleForceMoveFlagChange(network::Packet& packet, const char*
     if (legacyGuidAck) {
         ack.writeUInt64(playerGuid);
     } else {
-        MovementPacket::writePackedGuid(ack, playerGuid);
+        ack.writePackedGuid(playerGuid);
     }
     ack.writeUInt32(counter);
 
@@ -15763,7 +15763,7 @@ void GameHandler::handleMoveSetCollisionHeight(network::Packet& packet) {
     if (legacyGuidAck) {
         ack.writeUInt64(playerGuid);
     } else {
-        MovementPacket::writePackedGuid(ack, playerGuid);
+        ack.writePackedGuid(playerGuid);
     }
     ack.writeUInt32(counter);
 
@@ -15815,7 +15815,7 @@ void GameHandler::handleMoveKnockBack(network::Packet& packet) {
     if (legacyGuidAck) {
         ack.writeUInt64(playerGuid);
     } else {
-        MovementPacket::writePackedGuid(ack, playerGuid);
+        ack.writePackedGuid(playerGuid);
     }
     ack.writeUInt32(counter);
 
@@ -22518,7 +22518,7 @@ void GameHandler::handleTeleportAck(network::Packet& packet) {
         if (legacyGuidAck) {
             ack.writeUInt64(playerGuid);  // CMaNGOS/VMaNGOS expects full GUID for Classic/TBC
         } else {
-            MovementPacket::writePackedGuid(ack, playerGuid);
+            ack.writePackedGuid(playerGuid);
         }
         ack.writeUInt32(counter);
         ack.writeUInt32(moveTime);
