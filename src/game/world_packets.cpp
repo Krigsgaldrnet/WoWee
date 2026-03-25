@@ -21,7 +21,7 @@ namespace {
     }
 
     bool hasFullPackedGuid(const wowee::network::Packet& packet) {
-        if (packet.getReadPos() >= packet.getSize()) {
+        if (!packet.hasData()) {
             return false;
         }
 
@@ -451,7 +451,7 @@ bool CharEnumParser::parse(network::Packet& packet, CharEnumResponse& response) 
         character.guid = packet.readUInt64();
 
         // Read name (null-terminated string) - validate before reading
-        if (packet.getReadPos() >= packet.getSize()) {
+        if (!packet.hasData()) {
             LOG_WARNING("CharEnumParser: no bytes for name at index ", static_cast<int>(i));
             break;
         }
@@ -683,7 +683,7 @@ bool MotdParser::parse(network::Packet& packet, MotdData& data) {
 
     for (uint32_t i = 0; i < lineCount; ++i) {
         // Validate at least 1 byte available for the string
-        if (packet.getReadPos() >= packet.getSize()) {
+        if (!packet.hasData()) {
             LOG_WARNING("MotdParser: truncated at line ", i + 1);
             break;
         }
@@ -1154,7 +1154,7 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
 bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock& block) {
     size_t startPos = packet.getReadPos();
 
-    if (packet.getReadPos() >= packet.getSize()) return false;
+    if (!packet.hasData()) return false;
 
     // Read number of blocks (each block is 32 fields = 32 bits)
     uint8_t blockCount = packet.readUInt8();
@@ -1261,7 +1261,7 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
 }
 
 bool UpdateObjectParser::parseUpdateBlock(network::Packet& packet, UpdateBlock& block) {
-    if (packet.getReadPos() >= packet.getSize()) return false;
+    if (!packet.hasData()) return false;
 
     // Read update type
     uint8_t updateTypeVal = packet.readUInt8();
@@ -1272,7 +1272,7 @@ bool UpdateObjectParser::parseUpdateBlock(network::Packet& packet, UpdateBlock& 
     switch (block.updateType) {
         case UpdateType::VALUES: {
             // Partial update - changed fields only
-            if (packet.getReadPos() >= packet.getSize()) return false;
+            if (!packet.hasData()) return false;
             block.guid = packet.readPackedGuid();
             LOG_DEBUG("  VALUES update for GUID: 0x", std::hex, block.guid, std::dec);
 
@@ -1291,12 +1291,12 @@ bool UpdateObjectParser::parseUpdateBlock(network::Packet& packet, UpdateBlock& 
         case UpdateType::CREATE_OBJECT:
         case UpdateType::CREATE_OBJECT2: {
             // Create new object with full data
-            if (packet.getReadPos() >= packet.getSize()) return false;
+            if (!packet.hasData()) return false;
             block.guid = packet.readPackedGuid();
             LOG_DEBUG("  CREATE_OBJECT for GUID: 0x", std::hex, block.guid, std::dec);
 
             // Read object type
-            if (packet.getReadPos() >= packet.getSize()) return false;
+            if (!packet.hasData()) return false;
             uint8_t objectTypeVal = packet.readUInt8();
             block.objectType = static_cast<ObjectType>(objectTypeVal);
             LOG_DEBUG("  Object type: ", static_cast<int>(objectTypeVal));
@@ -1421,7 +1421,7 @@ bool DestroyObjectParser::parse(network::Packet& packet, DestroyObjectData& data
 
     data.guid = packet.readUInt64();
     // WotLK adds isDeath byte; vanilla/TBC packets are exactly 8 bytes
-    if (packet.getReadPos() < packet.getSize()) {
+    if (packet.hasData()) {
         data.isDeath = (packet.readUInt8() != 0);
     } else {
         data.isDeath = false;
@@ -1915,7 +1915,7 @@ bool FriendStatusParser::parse(network::Packet& packet, FriendStatusData& data) 
     data.guid = packet.readUInt64();
     if (data.status == 1) {  // Online
         // Conditional: note (string) + chatFlag (1)
-        if (packet.getReadPos() < packet.getSize()) {
+        if (packet.hasData()) {
             data.note = packet.readString();
             if (packet.getReadPos() + 1 <= packet.getSize()) {
                 data.chatFlag = packet.readUInt8();
@@ -2236,7 +2236,7 @@ bool GuildQueryResponseParser::parse(network::Packet& packet, GuildQueryResponse
     data.guildId = packet.readUInt32();
 
     // Validate before reading guild name
-    if (packet.getReadPos() >= packet.getSize()) {
+    if (!packet.hasData()) {
         LOG_WARNING("GuildQueryResponseParser: truncated before guild name");
         data.guildName.clear();
         return true;
@@ -2245,7 +2245,7 @@ bool GuildQueryResponseParser::parse(network::Packet& packet, GuildQueryResponse
 
     // Read 10 rank names with validation
     for (int i = 0; i < 10; ++i) {
-        if (packet.getReadPos() >= packet.getSize()) {
+        if (!packet.hasData()) {
             LOG_WARNING("GuildQueryResponseParser: truncated at rank name ", i);
             data.rankNames[i].clear();
         } else {
@@ -2358,7 +2358,7 @@ bool GuildRosterParser::parse(network::Packet& packet, GuildRosterData& data) {
         m.online = (packet.readUInt8() != 0);
 
         // Validate before reading name string
-        if (packet.getReadPos() >= packet.getSize()) {
+        if (!packet.hasData()) {
             m.name.clear();
         } else {
             m.name = packet.readString();
@@ -2399,12 +2399,12 @@ bool GuildRosterParser::parse(network::Packet& packet, GuildRosterData& data) {
         }
 
         // Read notes
-        if (packet.getReadPos() >= packet.getSize()) {
+        if (!packet.hasData()) {
             m.publicNote.clear();
             m.officerNote.clear();
         } else {
             m.publicNote = packet.readString();
-            if (packet.getReadPos() >= packet.getSize()) {
+            if (!packet.hasData()) {
                 m.officerNote.clear();
             } else {
                 m.officerNote = packet.readString();
@@ -3046,7 +3046,7 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
         data.bindType = packet.readUInt32();
 
     // Flavor/lore text (Description cstring)
-    if (packet.getReadPos() < packet.getSize())
+    if (packet.hasData())
         data.description = packet.readString();
 
     // Post-description fields: PageText, LanguageID, PageMaterial, StartQuest
@@ -3094,7 +3094,7 @@ bool MonsterMoveParser::parse(network::Packet& packet, MonsterMoveData& data) {
     if (data.guid == 0) return false;
 
     // uint8 unk (toggle for MOVEMENTFLAG2_UNK7)
-    if (packet.getReadPos() >= packet.getSize()) return false;
+    if (!packet.hasData()) return false;
     packet.readUInt8();
 
     // Current position (server coords: float x, y, z)
@@ -3108,7 +3108,7 @@ bool MonsterMoveParser::parse(network::Packet& packet, MonsterMoveData& data) {
     packet.readUInt32();
 
     // uint8 moveType
-    if (packet.getReadPos() >= packet.getSize()) return false;
+    if (!packet.hasData()) return false;
     data.moveType = packet.readUInt8();
 
     if (data.moveType == 1) {
@@ -3231,7 +3231,7 @@ bool MonsterMoveParser::parseVanilla(network::Packet& packet, MonsterMoveData& d
     if (packet.getReadPos() + 4 > packet.getSize()) return false;
     /*uint32_t splineIdOrTick =*/ packet.readUInt32();
 
-    if (packet.getReadPos() >= packet.getSize()) return false;
+    if (!packet.hasData()) return false;
     data.moveType = packet.readUInt8();
 
     if (data.moveType == 1) {
@@ -3328,7 +3328,7 @@ bool AttackStartParser::parse(network::Packet& packet, AttackStartData& data) {
 bool AttackStopParser::parse(network::Packet& packet, AttackStopData& data) {
     data.attackerGuid = packet.readPackedGuid();
     data.victimGuid = packet.readPackedGuid();
-    if (packet.getReadPos() < packet.getSize()) {
+    if (packet.hasData()) {
         data.unknown = packet.readUInt32();
     }
     LOG_DEBUG("Attack stopped: 0x", std::hex, data.attackerGuid, std::dec);
@@ -3780,7 +3780,7 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
     }
     // STRING: null-terminated
     if (targetFlags & 0x0200u) {
-        while (packet.getReadPos() < packet.getSize() && packet.readUInt8() != 0) {}
+        while (packet.hasData() && packet.readUInt8() != 0) {}
     }
 
     LOG_DEBUG("Spell start: spell=", data.spellId, " castTime=", data.castTime, "ms");
@@ -3919,7 +3919,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     // WotLK 3.3.5a SpellCastTargets — consume ALL target payload bytes so that
     // any trailing fields after the target section are not misaligned for
     // ground-targeted or AoE spells.  Same layout as SpellStartParser.
-    if (packet.getReadPos() < packet.getSize()) {
+    if (packet.hasData()) {
         if (packet.getRemainingSize() >= 4) {
             uint32_t targetFlags = packet.readUInt32();
 
@@ -3955,7 +3955,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
             }
             // STRING: null-terminated
             if (targetFlags & 0x0200u) {
-                while (packet.getReadPos() < packet.getSize() && packet.readUInt8() != 0) {}
+                while (packet.hasData() && packet.readUInt8() != 0) {}
             }
         }
     }
@@ -3975,7 +3975,7 @@ bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool
     uint32_t maxAuras = isAll ? 512 : 1;
     uint32_t auraCount = 0;
 
-    while (packet.getReadPos() < packet.getSize() && auraCount < maxAuras) {
+    while (packet.hasData() && auraCount < maxAuras) {
         // Validate we can read slot (1) + spellId (4) = 5 bytes minimum
         if (packet.getRemainingSize() < 5) {
             LOG_DEBUG("Aura update: truncated entry at position ", auraCount);
@@ -4043,7 +4043,7 @@ bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool
         if (!isAll) break;
     }
 
-    if (auraCount >= maxAuras && packet.getReadPos() < packet.getSize()) {
+    if (auraCount >= maxAuras && packet.hasData()) {
         LOG_WARNING("Aura update: capped at ", maxAuras, " entries, remaining data ignored");
     }
 
@@ -4995,7 +4995,7 @@ bool TrainerListParser::parse(network::Packet& packet, TrainerListData& data, bo
         data.spells.push_back(spell);
     }
 
-    if (packet.getReadPos() >= packet.getSize()) {
+    if (!packet.hasData()) {
         LOG_WARNING("TrainerListParser: truncated before greeting");
         data.greeting.clear();
     } else {
@@ -5378,7 +5378,7 @@ bool PacketParsers::parseMailList(network::Packet& packet, std::vector<MailMessa
         size_t consumed = packet.getReadPos() - startPos;
         if (consumed < msgSize) {
             size_t skip = msgSize - consumed;
-            for (size_t s = 0; s < skip && packet.getReadPos() < packet.getSize(); ++s)
+            for (size_t s = 0; s < skip && packet.hasData(); ++s)
                 packet.readUInt8();
         }
     }
@@ -5517,12 +5517,12 @@ bool GuildBankListParser::parse(network::Packet& packet, GuildBankData& data) {
             data.tabs.resize(tabCount);
             for (uint8_t i = 0; i < tabCount; ++i) {
                 // Validate before reading strings
-                if (packet.getReadPos() >= packet.getSize()) {
+                if (!packet.hasData()) {
                     LOG_WARNING("GuildBankListParser: truncated tab at index ", static_cast<int>(i));
                     break;
                 }
                 data.tabs[i].tabName = packet.readString();
-                if (packet.getReadPos() >= packet.getSize()) {
+                if (!packet.hasData()) {
                     data.tabs[i].tabIcon.clear();
                 } else {
                     data.tabs[i].tabIcon = packet.readString();
@@ -5606,7 +5606,7 @@ bool AuctionHelloParser::parse(network::Packet& packet, AuctionHelloData& data) 
     data.auctioneerGuid = packet.readUInt64();
     data.auctionHouseId = packet.readUInt32();
     // WotLK has an extra uint8 enabled field; Vanilla does not
-    if (packet.getReadPos() < packet.getSize()) {
+    if (packet.hasData()) {
         data.enabled = packet.readUInt8();
     } else {
         data.enabled = 1;

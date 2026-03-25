@@ -1246,7 +1246,7 @@ bool ClassicPacketParsers::parseMessageChat(network::Packet& packet, MessageChat
     }
 
     // Read chat tag
-    if (packet.getReadPos() < packet.getSize()) {
+    if (packet.hasData()) {
         data.chatTag = packet.readUInt8();
     }
 
@@ -1855,7 +1855,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
         data.bindType = packet.readUInt32();
 
     // Description (flavor/lore text)
-    if (packet.getReadPos() < packet.getSize())
+    if (packet.hasData())
         data.description = packet.readString();
 
     // Post-description: PageText, LanguageID, PageMaterial, StartQuest
@@ -2095,7 +2095,7 @@ bool TurtlePacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjec
         }
 
         if (withHasTransportByte) {
-            if (packet.getReadPos() >= packet.getSize()) {
+            if (!packet.hasData()) {
                 packet.setReadPos(start);
                 return false;
             }
@@ -2122,7 +2122,7 @@ bool TurtlePacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjec
                     return false;
                 }
                 for (uint32_t i = 0; i < count; ++i) {
-                    if (packet.getReadPos() >= packet.getSize()) {
+                    if (!packet.hasData()) {
                         packet.setReadPos(start);
                         return false;
                     }
@@ -2136,7 +2136,7 @@ bool TurtlePacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjec
         out.blockCount = remainingBlockCount;
         out.blocks.reserve(out.blockCount);
         for (uint32_t i = 0; i < out.blockCount; ++i) {
-            if (packet.getReadPos() >= packet.getSize()) {
+            if (!packet.hasData()) {
                 packet.setReadPos(start);
                 return false;
             }
@@ -2167,7 +2167,7 @@ bool TurtlePacketParsers::parseUpdateObject(network::Packet& packet, UpdateObjec
                     case UpdateType::CREATE_OBJECT:
                     case UpdateType::CREATE_OBJECT2:
                         block.guid = packet.readPackedGuid();
-                        if (packet.getReadPos() >= packet.getSize()) return false;
+                        if (!packet.hasData()) return false;
                         block.objectType = static_cast<ObjectType>(packet.readUInt8());
                         if (!movementParser(packet, block)) return false;
                         if (!UpdateObjectParser::parseUpdateFields(packet, block)) return false;

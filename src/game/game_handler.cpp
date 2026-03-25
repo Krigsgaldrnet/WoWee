@@ -1638,7 +1638,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_PLAYED_TIME]         = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handlePlayedTime(packet); };
     dispatchTable_[Opcode::SMSG_WHO]                 = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handleWho(packet); };
     dispatchTable_[Opcode::SMSG_WHOIS] = [this](network::Packet& packet) {
-        if (packet.getReadPos() < packet.getSize()) {
+        if (packet.hasData()) {
             std::string whoisText = packet.readString();
             if (!whoisText.empty()) {
                 std::string line;
@@ -2846,7 +2846,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < 8) return;
         uint64_t casterGuid = packet.readUInt64();
         std::string casterName;
-        if (packet.getReadPos() < packet.getSize())
+        if (packet.hasData())
             casterName = packet.readString();
         if (casterGuid) {
             resurrectCasterGuid_ = casterGuid;
@@ -3188,7 +3188,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_NEW_WORLD] = [this](network::Packet& packet) { handleNewWorld(packet); };
     dispatchTable_[Opcode::SMSG_TRANSFER_ABORTED] = [this](network::Packet& packet) {
         uint32_t mapId = packet.readUInt32();
-        uint8_t reason = (packet.getReadPos() < packet.getSize()) ? packet.readUInt8() : 0;
+        uint8_t reason = (packet.hasData()) ? packet.readUInt8() : 0;
         (void)mapId;
         const char* abortMsg = nullptr;
         switch (reason) {
@@ -3504,7 +3504,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Group set leader
     dispatchTable_[Opcode::SMSG_GROUP_SET_LEADER] = [this](network::Packet& packet) {
-        if (packet.getSize() <= packet.getReadPos()) return;
+        if (!packet.hasData()) return;
         std::string leaderName = packet.readString();
         for (const auto& m : partyData.members) {
             if (m.name == leaderName) { partyData.leaderGuid = m.guid; break; }
@@ -5572,7 +5572,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_GUILD_DECLINE] = [this](network::Packet& packet) {
-        if (packet.getReadPos() < packet.getSize()) {
+        if (packet.hasData()) {
             std::string name = packet.readString();
             addSystemChatMessage(name + " declined your guild invitation.");
         }
@@ -6600,7 +6600,7 @@ void GameHandler::registerOpcodeHandlers() {
     // charName (cstring) + guid (uint64) + achievementId (uint32) + ...
     dispatchTable_[Opcode::SMSG_SERVER_FIRST_ACHIEVEMENT] = [this](network::Packet& packet) {
         // charName (cstring) + guid (uint64) + achievementId (uint32) + ...
-        if (packet.getReadPos() < packet.getSize()) {
+        if (packet.hasData()) {
             std::string charName = packet.readString();
             if (packet.getRemainingSize() >= 12) {
                 /*uint64_t guid =*/ packet.readUInt64();
@@ -7386,7 +7386,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         /*uint32_t command =*/ packet.readUInt32();
         uint8_t result    = packet.readUInt8();
-        std::string info  = (packet.getReadPos() < packet.getSize()) ? packet.readString() : "";
+        std::string info  = (packet.hasData()) ? packet.readString() : "";
         if (result != 0) {
             // Map common calendar error codes to friendly strings
             static const char* kCalendarErrors[] = {
@@ -7425,7 +7425,7 @@ void GameHandler::registerOpcodeHandlers() {
             packet.skipAll(); return;
         }
         /*uint64_t eventId =*/ packet.readUInt64();
-        std::string title = (packet.getReadPos() < packet.getSize()) ? packet.readString() : "";
+        std::string title = (packet.hasData()) ? packet.readString() : "";
         packet.skipAll(); // consume remaining fields
         if (!title.empty()) {
             addSystemChatMessage("Calendar invite: " + title);
@@ -7453,7 +7453,7 @@ void GameHandler::registerOpcodeHandlers() {
         uint8_t status     = packet.readUInt8();
         /*uint8_t rank      =*/ packet.readUInt8();
         /*uint8_t isGuild   =*/ packet.readUInt8();
-        std::string evTitle = (packet.getReadPos() < packet.getSize()) ? packet.readString() : "";
+        std::string evTitle = (packet.hasData()) ? packet.readString() : "";
         // status: 0=Invited,1=Accepted,2=Declined,3=Confirmed,4=Out,5=Standby,6=SignedUp,7=Not Signed Up,8=Tentative
         static const char* kRsvpStatus[] = {
             "invited", "accepted", "declined", "confirmed",
@@ -7533,7 +7533,7 @@ void GameHandler::registerOpcodeHandlers() {
         uint64_t kickerGuid   = packet.readUInt64();
         uint32_t reasonType   = packet.readUInt32();
         std::string reason;
-        if (packet.getReadPos() < packet.getSize())
+        if (packet.hasData())
             reason = packet.readString();
         (void)kickerGuid;
         (void)reasonType;
@@ -7578,14 +7578,14 @@ void GameHandler::registerOpcodeHandlers() {
         uint32_t ticketId = packet.readUInt32();
         std::string subject;
         std::string body;
-        if (packet.getReadPos() < packet.getSize()) subject = packet.readString();
-        if (packet.getReadPos() < packet.getSize()) body    = packet.readString();
+        if (packet.hasData()) subject = packet.readString();
+        if (packet.hasData()) body    = packet.readString();
         uint32_t responseCount = 0;
         if (packet.hasRemaining(4))
             responseCount = packet.readUInt32();
         std::string responseText;
         for (uint32_t i = 0; i < responseCount && i < 10; ++i) {
-            if (packet.getReadPos() < packet.getSize()) {
+            if (packet.hasData()) {
                 std::string t = packet.readString();
                 if (i == 0) responseText = t;
             }
@@ -16519,9 +16519,9 @@ void GameHandler::handleLfgBootProposalUpdate(network::Packet& packet) {
     lfgBootNeeded_   = votesNeeded;
 
     // Optional: reason string and target name (null-terminated) follow the fixed fields
-    if (packet.getReadPos() < packet.getSize())
+    if (packet.hasData())
         lfgBootReason_ = packet.readString();
-    if (packet.getReadPos() < packet.getSize())
+    if (packet.hasData())
         lfgBootTargetName_ = packet.readString();
 
     if (inProgress) {
@@ -23516,7 +23516,7 @@ void GameHandler::handleWho(network::Packet& packet) {
     }
 
     for (uint32_t i = 0; i < displayCount; ++i) {
-        if (packet.getReadPos() >= packet.getSize()) break;
+        if (!packet.hasData()) break;
         std::string playerName = packet.readString();
         std::string guildName = packet.readString();
         if (packet.getRemainingSize() < 12) break;

@@ -1182,7 +1182,7 @@ static int lua_GetAddOnInfo(lua_State* L) {
     lua_getfield(L, LUA_REGISTRYINDEX, "wowee_addon_info");
     if (!lua_istable(L, -1)) {
         lua_pop(L, 1);
-        lua_pushnil(L); return 1;
+        return luaReturnNil(L);
     }
 
     int idx = 0;
@@ -1570,11 +1570,11 @@ static int lua_GetSpellTabInfo(lua_State* L) {
     auto* gh = getGameHandler(L);
     int tabIdx = static_cast<int>(luaL_checknumber(L, 1));
     if (!gh || tabIdx < 1) {
-        lua_pushnil(L); return 1;
+        return luaReturnNil(L);
     }
     const auto& tabs = gh->getSpellBookTabs();
     if (tabIdx > static_cast<int>(tabs.size())) {
-        lua_pushnil(L); return 1;
+        return luaReturnNil(L);
     }
     // Compute offset: sum of spells in all preceding tabs (1-based)
     int offset = 0;
@@ -3072,7 +3072,7 @@ static int lua_GetFriendInfo(lua_State* L) {
     auto* gh = getGameHandler(L);
     int index = static_cast<int>(luaL_checknumber(L, 1));
     if (!gh || index < 1) {
-        lua_pushnil(L); return 1;
+        return luaReturnNil(L);
     }
     int found = 0;
     for (const auto& c : gh->getContacts()) {
@@ -3227,7 +3227,7 @@ static int lua_GetTalentTabInfo(lua_State* L) {
     auto* gh = getGameHandler(L);
     int tabIndex = static_cast<int>(luaL_checknumber(L, 1)); // 1-indexed
     if (!gh || tabIndex < 1) {
-        lua_pushnil(L); return 1;
+        return luaReturnNil(L);
     }
     uint8_t classId = gh->getPlayerClass();
     uint32_t classMask = (classId > 0) ? (1u << (classId - 1)) : 0;
@@ -3239,7 +3239,7 @@ static int lua_GetTalentTabInfo(lua_State* L) {
     std::sort(classTabs.begin(), classTabs.end(),
         [](const auto* a, const auto* b) { return a->orderIndex < b->orderIndex; });
     if (tabIndex > static_cast<int>(classTabs.size())) {
-        lua_pushnil(L); return 1;
+        return luaReturnNil(L);
     }
     const auto* tab = classTabs[tabIndex - 1];
     // Count points spent in this tab
@@ -3270,7 +3270,7 @@ static int lua_GetNumTalents(lua_State* L) {
     std::sort(classTabs.begin(), classTabs.end(),
         [](const auto* a, const auto* b) { return a->orderIndex < b->orderIndex; });
     if (tabIndex > static_cast<int>(classTabs.size())) {
-        lua_pushnumber(L, 0); return 1;
+        return luaReturnZero(L);
     }
     uint32_t targetTabId = classTabs[tabIndex - 1]->tabId;
     int count = 0;
@@ -3355,11 +3355,11 @@ static int lua_GetLootSlotInfo(lua_State* L) {
     auto* gh = getGameHandler(L);
     int slot = static_cast<int>(luaL_checknumber(L, 1)); // 1-indexed
     if (!gh || !gh->isLootWindowOpen()) {
-        lua_pushnil(L); return 1;
+        return luaReturnNil(L);
     }
     const auto& loot = gh->getCurrentLoot();
     if (slot < 1 || slot > static_cast<int>(loot.items.size())) {
-        lua_pushnil(L); return 1;
+        return luaReturnNil(L);
     }
     const auto& item = loot.items[slot - 1];
     const auto* info = gh->getItemInfo(item.itemId);
@@ -3389,7 +3389,7 @@ static int lua_GetLootSlotLink(lua_State* L) {
     if (!gh || !gh->isLootWindowOpen()) { return luaReturnNil(L); }
     const auto& loot = gh->getCurrentLoot();
     if (slot < 1 || slot > static_cast<int>(loot.items.size())) {
-        lua_pushnil(L); return 1;
+        return luaReturnNil(L);
     }
     const auto& item = loot.items[slot - 1];
     const auto* info = gh->getItemInfo(item.itemId);
@@ -5162,7 +5162,7 @@ void LuaEngine::registerCoreAPI() {
             int index = static_cast<int>(luaL_checknumber(L, 1));
             const auto* sb = gh ? gh->getBgScoreboard() : nullptr;
             if (!sb || index < 1 || index > static_cast<int>(sb->players.size())) {
-                lua_pushnil(L); return 1;
+                return luaReturnNil(L);
             }
             const auto& p = sb->players[index - 1];
             lua_pushstring(L, p.name.c_str());     // name
@@ -5726,10 +5726,10 @@ void LuaEngine::registerCoreAPI() {
             return 4;
         }},
         {"CalendarGetNumPendingInvites", [](lua_State* L) -> int {
-            lua_pushnumber(L, 0); return 1;
+            return luaReturnZero(L);
         }},
         {"CalendarGetNumDayEvents", [](lua_State* L) -> int {
-            lua_pushnumber(L, 0); return 1;
+            return luaReturnZero(L);
         }},
         // --- Instance ---
         {"GetDifficultyInfo", [](lua_State* L) -> int {
@@ -6027,7 +6027,7 @@ void LuaEngine::registerCoreAPI() {
             auto* gh = getGameHandler(L);
             int index = static_cast<int>(luaL_checknumber(L, 1));
             if (!gh || index < 1 || index > game::GameHandler::PET_ACTION_BAR_SLOTS) {
-                lua_pushnil(L); return 1;
+                return luaReturnNil(L);
             }
             uint32_t packed = gh->getPetActionSlot(index - 1);
             uint32_t spellId = packed & 0x00FFFFFF;

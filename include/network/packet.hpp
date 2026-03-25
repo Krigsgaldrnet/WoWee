@@ -46,6 +46,7 @@ public:
         return getRemainingSize() >= guidBytes;
     }
     void setReadPos(size_t pos) { readPos = pos; }
+    bool hasData() const { return readPos < data.size(); }
     void skipAll() { readPos = data.size(); }
 
 private:
