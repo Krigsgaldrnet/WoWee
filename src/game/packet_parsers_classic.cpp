@@ -29,7 +29,7 @@ std::string formatPacketBytes(const network::Packet& packet, size_t startPos) {
 }
 
 bool skipClassicSpellCastTargets(network::Packet& packet, uint64_t* primaryTargetGuid = nullptr) {
-    if (packet.getRemainingSize() < 2) {
+    if (!packet.hasRemaining(2)) {
         return false;
     }
 
@@ -64,7 +64,7 @@ bool skipClassicSpellCastTargets(network::Packet& packet, uint64_t* primaryTarge
     }
 
     if ((targetFlags & 0x0020) != 0) {                                  // SOURCE_LOCATION
-        if (packet.getRemainingSize() < 12) {
+        if (!packet.hasRemaining(12)) {
             return false;
         }
         (void)packet.readFloat();
@@ -72,7 +72,7 @@ bool skipClassicSpellCastTargets(network::Packet& packet, uint64_t* primaryTarge
         (void)packet.readFloat();
     }
     if ((targetFlags & 0x0040) != 0) {                                  // DEST_LOCATION
-        if (packet.getRemainingSize() < 12) {
+        if (!packet.hasRemaining(12)) {
             return false;
         }
         (void)packet.readFloat();
@@ -81,7 +81,7 @@ bool skipClassicSpellCastTargets(network::Packet& packet, uint64_t* primaryTarge
     }
 
     if ((targetFlags & 0x1000) != 0) {                                  // TRADE_ITEM
-        if (packet.getRemainingSize() < 1) {
+        if (!packet.hasRemaining(1)) {
             return false;
         }
         (void)packet.readUInt8();
@@ -1023,7 +1023,7 @@ bool ClassicPacketParsers::parseCastFailed(network::Packet& packet, CastFailedDa
 // align with WotLK's getSpellCastResultString table.
 // ============================================================================
 bool ClassicPacketParsers::parseCastResult(network::Packet& packet, uint32_t& spellId, uint8_t& result) {
-    if (packet.getRemainingSize() < 5) return false;
+    if (!packet.hasRemaining(5)) return false;
     spellId = packet.readUInt32();
     uint8_t vanillaResult = packet.readUInt8();
     // Shift +1: Vanilla result 0=AFFECTING_COMBAT maps to WotLK result 1=AFFECTING_COMBAT
@@ -1372,7 +1372,7 @@ bool ClassicPacketParsers::parseGameObjectQueryResponse(network::Packet& packet,
     }
 
     // Validate minimum size for fixed fields: type(4) + displayId(4)
-    if (packet.getRemainingSize() < 8) {
+    if (!packet.hasRemaining(8)) {
         LOG_ERROR("Classic SMSG_GAMEOBJECT_QUERY_RESPONSE: truncated before names (entry=", data.entry, ")");
         return false;
     }
@@ -1677,7 +1677,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     }
 
     // Validate minimum size for fixed fields: itemClass(4) + subClass(4) + 4 name strings + displayInfoId(4) + quality(4)
-    if (packet.getRemainingSize() < 8) {
+    if (!packet.hasRemaining(8)) {
         LOG_ERROR("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before names (entry=", data.entry, ")");
         return false;
     }
@@ -1731,7 +1731,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     data.quality = packet.readUInt32();
 
     // Validate minimum size for fixed fields: Flags(4) + BuyPrice(4) + SellPrice(4) + inventoryType(4)
-    if (packet.getRemainingSize() < 16) {
+    if (!packet.hasRemaining(16)) {
         LOG_ERROR("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before inventoryType (entry=", data.entry, ")");
         return false;
     }
@@ -1744,7 +1744,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     data.inventoryType = packet.readUInt32();
 
     // Validate minimum size for remaining fixed fields: 13×4 = 52 bytes
-    if (packet.getRemainingSize() < 52) {
+    if (!packet.hasRemaining(52)) {
         LOG_ERROR("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before stats (entry=", data.entry, ")");
         return false;
     }
@@ -1765,12 +1765,12 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     data.containerSlots = packet.readUInt32();
 
     // Vanilla: 10 stat pairs, NO statsCount prefix (10×8 = 80 bytes)
-    if (packet.getRemainingSize() < 80) {
+    if (!packet.hasRemaining(80)) {
         LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated in stats section (entry=", data.entry, ")");
         // Read what we can
     }
     for (uint32_t i = 0; i < 10; i++) {
-        if (packet.getRemainingSize() < 8) {
+        if (!packet.hasRemaining(8)) {
             LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: stat ", i, " truncated (entry=", data.entry, ")");
             break;
         }
@@ -1797,7 +1797,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     bool haveWeaponDamage = false;
     for (int i = 0; i < 5; i++) {
         // Each damage entry is dmgMin(4) + dmgMax(4) + damageType(4) = 12 bytes
-        if (packet.getRemainingSize() < 12) {
+        if (!packet.hasRemaining(12)) {
             LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: damage ", i, " truncated (entry=", data.entry, ")");
             break;
         }
@@ -1815,14 +1815,14 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     }
 
     // Validate minimum size for armor field (4 bytes)
-    if (packet.getRemainingSize() < 4) {
+    if (!packet.hasRemaining(4)) {
         LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before armor (entry=", data.entry, ")");
         return true;  // Have core fields; armor is important but optional
     }
     data.armor = static_cast<int32_t>(packet.readUInt32());
 
     // Remaining tail can vary by core. Read resistances + delay when present.
-    if (packet.getRemainingSize() >= 28) {
+    if (packet.hasRemaining(28)) {
         data.holyRes   = static_cast<int32_t>(packet.readUInt32()); // HolyRes
         data.fireRes   = static_cast<int32_t>(packet.readUInt32()); // FireRes
         data.natureRes = static_cast<int32_t>(packet.readUInt32()); // NatureRes
@@ -1833,7 +1833,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     }
 
     // AmmoType + RangedModRange (2 fields, 8 bytes)
-    if (packet.getRemainingSize() >= 8) {
+    if (packet.hasRemaining(8)) {
         packet.readUInt32(); // AmmoType
         packet.readFloat();  // RangedModRange
     }

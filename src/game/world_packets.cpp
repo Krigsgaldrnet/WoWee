@@ -33,7 +33,7 @@ namespace {
                 ++guidBytes;
             }
         }
-        return packet.getRemainingSize() >= guidBytes;
+        return packet.hasRemaining(guidBytes);
     }
 
     const char* updateTypeName(wowee::game::UpdateType type) {
@@ -402,7 +402,7 @@ network::Packet CharCreatePacket::build(const CharCreateData& data) {
 
 bool CharCreateResponseParser::parse(network::Packet& packet, CharCreateResponseData& data) {
     // Validate minimum packet size: result(1)
-    if (packet.getRemainingSize() < 1) {
+    if (!packet.hasRemaining(1)) {
         LOG_WARNING("SMSG_CHAR_CREATE: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
@@ -423,7 +423,7 @@ network::Packet CharEnumPacket::build() {
 
 bool CharEnumParser::parse(network::Packet& packet, CharEnumResponse& response) {
     // Upfront validation: count(1) + at least minimal character data
-    if (packet.getRemainingSize() < 1) return false;
+    if (!packet.hasRemaining(1)) return false;
 
     // Read character count
     uint8_t count = packet.readUInt8();
@@ -1824,7 +1824,7 @@ network::Packet QueryTimePacket::build() {
 
 bool QueryTimeResponseParser::parse(network::Packet& packet, QueryTimeResponseData& data) {
     // Validate minimum packet size: serverTime(4) + timeOffset(4)
-    if (packet.getRemainingSize() < 8) {
+    if (!packet.hasRemaining(8)) {
         LOG_WARNING("SMSG_QUERY_TIME_RESPONSE: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
@@ -1845,14 +1845,14 @@ network::Packet RequestPlayedTimePacket::build(bool sendToChat) {
 bool PlayedTimeParser::parse(network::Packet& packet, PlayedTimeData& data) {
     // Classic/Turtle may omit the trailing trigger-message byte and send only
     // totalTime(4) + levelTime(4). Later expansions append triggerMsg(1).
-    if (packet.getRemainingSize() < 8) {
+    if (!packet.hasRemaining(8)) {
         LOG_WARNING("SMSG_PLAYED_TIME: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
 
     data.totalTimePlayed = packet.readUInt32();
     data.levelTimePlayed = packet.readUInt32();
-    data.triggerMessage = (packet.getRemainingSize() >= 1) && (packet.readUInt8() != 0);
+    data.triggerMessage = (packet.hasRemaining(1)) && (packet.readUInt8() != 0);
     LOG_DEBUG("Parsed SMSG_PLAYED_TIME: total=", data.totalTimePlayed, " level=", data.levelTimePlayed);
     return true;
 }
@@ -1906,7 +1906,7 @@ network::Packet SetContactNotesPacket::build(uint64_t friendGuid, const std::str
 
 bool FriendStatusParser::parse(network::Packet& packet, FriendStatusData& data) {
     // Validate minimum packet size: status(1) + guid(8)
-    if (packet.getRemainingSize() < 9) {
+    if (!packet.hasRemaining(9)) {
         LOG_WARNING("SMSG_FRIEND_STATUS: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
@@ -1958,7 +1958,7 @@ network::Packet LogoutCancelPacket::build() {
 
 bool LogoutResponseParser::parse(network::Packet& packet, LogoutResponseData& data) {
     // Validate minimum packet size: result(4) + instant(1)
-    if (packet.getRemainingSize() < 5) {
+    if (!packet.hasRemaining(5)) {
         LOG_WARNING("SMSG_LOGOUT_RESPONSE: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
@@ -2620,7 +2620,7 @@ network::Packet RandomRollPacket::build(uint32_t minRoll, uint32_t maxRoll) {
 
 bool RandomRollParser::parse(network::Packet& packet, RandomRollData& data) {
     // Validate minimum packet size: rollerGuid(8) + targetGuid(8) + minRoll(4) + maxRoll(4) + result(4)
-    if (packet.getRemainingSize() < 28) {
+    if (!packet.hasRemaining(28)) {
         LOG_WARNING("SMSG_RANDOM_ROLL: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
@@ -2646,13 +2646,13 @@ bool NameQueryResponseParser::parse(network::Packet& packet, NameQueryResponseDa
     // 3.3.5a: packedGuid, uint8 found
     // If found==0: CString name, CString realmName, uint8 race, uint8 gender, uint8 classId
     // Validation: packed GUID (1-8 bytes) + found flag (1 byte minimum)
-    if (packet.getRemainingSize() < 2) return false; // At least 1 for packed GUID + 1 for found
+    if (!packet.hasRemaining(2)) return false; // At least 1 for packed GUID + 1 for found
 
     size_t startPos = packet.getReadPos();
     data.guid = packet.readPackedGuid();
 
     // Validate found flag read
-    if (packet.getRemainingSize() < 1) {
+    if (!packet.hasRemaining(1)) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -2664,7 +2664,7 @@ bool NameQueryResponseParser::parse(network::Packet& packet, NameQueryResponseDa
     }
 
     // Validate strings: need at least 2 null terminators for empty strings
-    if (packet.getRemainingSize() < 2) {
+    if (!packet.hasRemaining(2)) {
         data.name.clear();
         data.realmName.clear();
         return !data.name.empty(); // Fail if name was required
@@ -2674,7 +2674,7 @@ bool NameQueryResponseParser::parse(network::Packet& packet, NameQueryResponseDa
     data.realmName = packet.readString();
 
     // Validate final 3 uint8 fields (race, gender, classId)
-    if (packet.getRemainingSize() < 3) {
+    if (!packet.hasRemaining(3)) {
         LOG_WARNING("Name query: truncated fields after realmName, expected 3 uint8s");
         data.race = 0;
         data.gender = 0;
@@ -2726,7 +2726,7 @@ bool CreatureQueryResponseParser::parse(network::Packet& packet, CreatureQueryRe
 
     // WotLK: 4 fixed fields after iconName (typeFlags, creatureType, family, rank)
     // Validate minimum size for these fields: 4×4 = 16 bytes
-    if (packet.getRemainingSize() < 16) {
+    if (!packet.hasRemaining(16)) {
         LOG_WARNING("SMSG_CREATURE_QUERY_RESPONSE: truncated before typeFlags (entry=", data.entry, ")");
         data.typeFlags = 0;
         data.creatureType = 0;
@@ -2776,7 +2776,7 @@ bool GameObjectQueryResponseParser::parse(network::Packet& packet, GameObjectQue
     }
 
     // Validate minimum size for fixed fields: type(4) + displayId(4)
-    if (packet.getRemainingSize() < 8) {
+    if (!packet.hasRemaining(8)) {
         LOG_ERROR("SMSG_GAMEOBJECT_QUERY_RESPONSE: truncated before names (entry=", data.entry, ")");
         return false;
     }
@@ -2826,10 +2826,10 @@ network::Packet PageTextQueryPacket::build(uint32_t pageId, uint64_t guid) {
 }
 
 bool PageTextQueryResponseParser::parse(network::Packet& packet, PageTextQueryResponseData& data) {
-    if (packet.getRemainingSize() < 4) return false;
+    if (!packet.hasRemaining(4)) return false;
     data.pageId = packet.readUInt32();
     data.text = normalizeWowTextTokens(packet.readString());
-    if (packet.getRemainingSize() >= 4) {
+    if (packet.hasRemaining(4)) {
         data.nextPageId = packet.readUInt32();
     } else {
         data.nextPageId = 0;
@@ -2891,7 +2891,7 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
 
     // Validate minimum size for fixed fields before reading: itemClass(4) + subClass(4) + soundOverride(4)
     // + 4 name strings + displayInfoId(4) + quality(4) = at least 24 bytes more
-    if (packet.getRemainingSize() < 24) {
+    if (!packet.hasRemaining(24)) {
         LOG_ERROR("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before displayInfoId (entry=", data.entry, ")");
         return false;
     }
@@ -2917,7 +2917,7 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     // Some server variants omit BuyCount (4 fields instead of 5).
     // Read 5 fields and validate InventoryType; if it looks implausible, rewind and try 4.
     const size_t postQualityPos = packet.getReadPos();
-    if (packet.getRemainingSize() < 24) {
+    if (!packet.hasRemaining(24)) {
         LOG_ERROR("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before flags (entry=", data.entry, ")");
         return false;
     }
@@ -2939,7 +2939,7 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     }
 
     // Validate minimum size for remaining fixed fields before inventoryType through containerSlots: 13×4 = 52 bytes
-    if (packet.getRemainingSize() < 52) {
+    if (!packet.hasRemaining(52)) {
         LOG_ERROR("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before statsCount (entry=", data.entry, ")");
         return false;
     }
@@ -2959,7 +2959,7 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     data.containerSlots = packet.readUInt32();
 
     // Read statsCount with bounds validation
-    if (packet.getRemainingSize() < 4) {
+    if (!packet.hasRemaining(4)) {
         LOG_WARNING("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated at statsCount (entry=", data.entry, ")");
         return true;  // Have enough for core fields; stats are optional
     }
@@ -2977,7 +2977,7 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     uint32_t statsToRead = std::min(statsCount, 10u);
     for (uint32_t i = 0; i < statsToRead; i++) {
         // Each stat is 2 uint32s (type + value) = 8 bytes
-        if (packet.getRemainingSize() < 8) {
+        if (!packet.hasRemaining(8)) {
             LOG_WARNING("SMSG_ITEM_QUERY_SINGLE_RESPONSE: stat ", i, " truncated (entry=", data.entry, ")");
             break;
         }
@@ -2997,7 +2997,7 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     }
 
     // ScalingStatDistribution and ScalingStatValue
-    if (packet.getRemainingSize() < 8) {
+    if (!packet.hasRemaining(8)) {
         LOG_WARNING("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before scaling stats (entry=", data.entry, ")");
         return true;  // Have core fields; scaling is optional
     }
@@ -3337,7 +3337,7 @@ bool AttackStopParser::parse(network::Packet& packet, AttackStopData& data) {
 
 bool AttackerStateUpdateParser::parse(network::Packet& packet, AttackerStateUpdateData& data) {
     // Upfront validation: hitInfo(4) + packed GUIDs(1-8 each) + totalDamage(4) + subDamageCount(1) = 13 bytes minimum
-    if (packet.getRemainingSize() < 13) return false;
+    if (!packet.hasRemaining(13)) return false;
 
     size_t startPos = packet.getReadPos();
     data.hitInfo = packet.readUInt32();
@@ -3353,7 +3353,7 @@ bool AttackerStateUpdateParser::parse(network::Packet& packet, AttackerStateUpda
     data.targetGuid = packet.readPackedGuid();
 
     // Validate totalDamage + subDamageCount can be read (5 bytes)
-    if (packet.getRemainingSize() < 5) {
+    if (!packet.hasRemaining(5)) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -3379,7 +3379,7 @@ bool AttackerStateUpdateParser::parse(network::Packet& packet, AttackerStateUpda
     data.subDamages.reserve(data.subDamageCount);
     for (uint8_t i = 0; i < data.subDamageCount; ++i) {
         // Each sub-damage entry needs 20 bytes: schoolMask(4) + damage(4) + intDamage(4) + absorbed(4) + resisted(4)
-        if (packet.getRemainingSize() < 20) {
+        if (!packet.hasRemaining(20)) {
             data.subDamageCount = i;
             break;
         }
@@ -3393,7 +3393,7 @@ bool AttackerStateUpdateParser::parse(network::Packet& packet, AttackerStateUpda
     }
 
     // Validate victimState + overkill fields (8 bytes)
-    if (packet.getRemainingSize() < 8) {
+    if (!packet.hasRemaining(8)) {
         data.victimState = 0;
         data.overkill = 0;
         return !data.subDamages.empty();
@@ -3425,7 +3425,7 @@ bool SpellDamageLogParser::parse(network::Packet& packet, SpellDamageLogData& da
     // packed GUIDs(1-8 each) + spellId(4) + damage(4) + overkill(4) + schoolMask(1)
     // + absorbed(4) + resisted(4) + periodicLog(1) + unused(1) + blocked(4) + flags(4)
     // = 33 bytes minimum.
-    if (packet.getRemainingSize() < 33) return false;
+    if (!packet.hasRemaining(33)) return false;
 
     size_t startPos = packet.getReadPos();
     if (!packet.hasFullPackedGuid()) {
@@ -3440,7 +3440,7 @@ bool SpellDamageLogParser::parse(network::Packet& packet, SpellDamageLogData& da
     data.attackerGuid = packet.readPackedGuid();
 
     // Validate core fields (spellId + damage + overkill + schoolMask + absorbed + resisted = 21 bytes)
-    if (packet.getRemainingSize() < 21) {
+    if (!packet.hasRemaining(21)) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -3454,7 +3454,7 @@ bool SpellDamageLogParser::parse(network::Packet& packet, SpellDamageLogData& da
 
     // Remaining fields are required for a complete event.
     // Reject truncated packets so we do not emit partial/incorrect combat entries.
-    if (packet.getRemainingSize() < 10) {
+    if (!packet.hasRemaining(10)) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -3475,7 +3475,7 @@ bool SpellDamageLogParser::parse(network::Packet& packet, SpellDamageLogData& da
 
 bool SpellHealLogParser::parse(network::Packet& packet, SpellHealLogData& data) {
     // Upfront validation: packed GUIDs(1-8 each) + spellId(4) + heal(4) + overheal(4) + absorbed(4) + critFlag(1) = 21 bytes minimum
-    if (packet.getRemainingSize() < 21) return false;
+    if (!packet.hasRemaining(21)) return false;
 
     size_t startPos = packet.getReadPos();
     if (!packet.hasFullPackedGuid()) {
@@ -3490,7 +3490,7 @@ bool SpellHealLogParser::parse(network::Packet& packet, SpellHealLogData& data) 
     data.casterGuid = packet.readPackedGuid();
 
     // Validate remaining fields (spellId + heal + overheal + absorbed + critFlag = 17 bytes)
-    if (packet.getRemainingSize() < 17) {
+    if (!packet.hasRemaining(17)) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -3513,7 +3513,7 @@ bool SpellHealLogParser::parse(network::Packet& packet, SpellHealLogData& data) 
 
 bool XpGainParser::parse(network::Packet& packet, XpGainData& data) {
     // Validate minimum packet size: victimGuid(8) + totalXp(4) + type(1)
-    if (packet.getRemainingSize() < 13) {
+    if (!packet.hasRemaining(13)) {
         LOG_WARNING("SMSG_LOG_XPGAIN: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
@@ -3544,7 +3544,7 @@ bool XpGainParser::parse(network::Packet& packet, XpGainData& data) {
 bool InitialSpellsParser::parse(network::Packet& packet, InitialSpellsData& data,
                                 bool vanillaFormat) {
     // Validate minimum packet size for header: talentSpec(1) + spellCount(2)
-    if (packet.getRemainingSize() < 3) {
+    if (!packet.hasRemaining(3)) {
         LOG_ERROR("SMSG_INITIAL_SPELLS: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
@@ -3570,7 +3570,7 @@ bool InitialSpellsParser::parse(network::Packet& packet, InitialSpellsData& data
         // Vanilla spell: spellId(2) + slot(2) = 4 bytes
         // TBC/WotLK spell: spellId(4) + unknown(2) = 6 bytes
         size_t spellEntrySize = vanillaFormat ? 4 : 6;
-        if (packet.getRemainingSize() < spellEntrySize) {
+        if (!packet.hasRemaining(spellEntrySize)) {
             LOG_WARNING("SMSG_INITIAL_SPELLS: spell ", i, " truncated (", spellCount, " expected)");
             break;
         }
@@ -3589,7 +3589,7 @@ bool InitialSpellsParser::parse(network::Packet& packet, InitialSpellsData& data
     }
 
     // Validate minimum packet size for cooldownCount (2 bytes)
-    if (packet.getRemainingSize() < 2) {
+    if (!packet.hasRemaining(2)) {
         LOG_WARNING("SMSG_INITIAL_SPELLS: truncated before cooldownCount (parsed ", data.spellIds.size(),
                     " spells)");
         return true;  // Have spells; cooldowns are optional
@@ -3612,7 +3612,7 @@ bool InitialSpellsParser::parse(network::Packet& packet, InitialSpellsData& data
         // Vanilla cooldown: spellId(2) + itemId(2) + categoryId(2) + cooldownMs(4) + categoryCooldownMs(4) = 14 bytes
         // TBC/WotLK cooldown: spellId(4) + itemId(2) + categoryId(2) + cooldownMs(4) + categoryCooldownMs(4) = 16 bytes
         size_t cooldownEntrySize = vanillaFormat ? 14 : 16;
-        if (packet.getRemainingSize() < cooldownEntrySize) {
+        if (!packet.hasRemaining(cooldownEntrySize)) {
             LOG_WARNING("SMSG_INITIAL_SPELLS: cooldown ", i, " truncated (", cooldownCount, " expected)");
             break;
         }
@@ -3698,7 +3698,7 @@ network::Packet PetActionPacket::build(uint64_t petGuid, uint32_t action, uint64
 
 bool CastFailedParser::parse(network::Packet& packet, CastFailedData& data) {
     // WotLK format: castCount(1) + spellId(4) + result(1) = 6 bytes minimum
-    if (packet.getRemainingSize() < 6) return false;
+    if (!packet.hasRemaining(6)) return false;
 
     data.castCount = packet.readUInt8();
     data.spellId = packet.readUInt32();
@@ -3712,7 +3712,7 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
 
     // Packed GUIDs are variable-length; only require minimal packet shape up front:
     // two GUID masks + castCount(1) + spellId(4) + castFlags(4) + castTime(4).
-    if (packet.getRemainingSize() < 15) return false;
+    if (!packet.hasRemaining(15)) return false;
 
     size_t startPos = packet.getReadPos();
     if (!packet.hasFullPackedGuid()) {
@@ -3726,7 +3726,7 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
     data.casterUnit = packet.readPackedGuid();
 
     // Validate remaining fixed fields (castCount + spellId + castFlags + castTime = 13 bytes)
-    if (packet.getRemainingSize() < 13) {
+    if (!packet.hasRemaining(13)) {
         packet.setReadPos(startPos);
         return false;
     }
@@ -3737,7 +3737,7 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
     data.castTime = packet.readUInt32();
 
     // SpellCastTargets starts with target flags and is mandatory.
-    if (packet.getRemainingSize() < 4) {
+    if (!packet.hasRemaining(4)) {
         LOG_WARNING("Spell start: missing targetFlags");
         packet.setReadPos(startPos);
         return false;
@@ -3757,7 +3757,7 @@ bool SpellStartParser::parse(network::Packet& packet, SpellStartData& data) {
     auto skipPackedAndFloats3 = [&]() -> bool {
         if (!packet.hasFullPackedGuid()) return false;
         packet.readPackedGuid(); // transport GUID (may be zero)
-        if (packet.getRemainingSize() < 12) return false;
+        if (!packet.hasRemaining(12)) return false;
         packet.readFloat(); packet.readFloat(); packet.readFloat();
         return true;
     };
@@ -3793,7 +3793,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
 
     // Packed GUIDs are variable-length, so only require the smallest possible
     // shape up front: 2 GUID masks + fixed fields through hitCount.
-    if (packet.getRemainingSize() < 16) return false;
+    if (!packet.hasRemaining(16)) return false;
 
     size_t startPos = packet.getReadPos();
     if (!packet.hasFullPackedGuid()) {
@@ -3807,7 +3807,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     data.casterUnit = packet.readPackedGuid();
 
     // Validate remaining fixed fields up to hitCount/missCount
-    if (packet.getRemainingSize() < 14) { // castCount(1) + spellId(4) + castFlags(4) + timestamp(4) + hitCount(1)
+    if (!packet.hasRemaining(14)) { // castCount(1) + spellId(4) + castFlags(4) + timestamp(4) + hitCount(1)
         packet.setReadPos(startPos);
         return false;
     }
@@ -3829,7 +3829,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     data.hitTargets.reserve(storedHitLimit);
     for (uint16_t i = 0; i < rawHitCount; ++i) {
         // WotLK 3.3.5a hit targets are full uint64 GUIDs (not PackedGuid).
-        if (packet.getRemainingSize() < 8) {
+        if (!packet.hasRemaining(8)) {
             LOG_WARNING("Spell go: truncated hit targets at index ", i, "/", static_cast<int>(rawHitCount));
             truncatedTargets = true;
             break;
@@ -3846,7 +3846,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     data.hitCount = static_cast<uint8_t>(data.hitTargets.size());
 
     // missCount is mandatory in SMSG_SPELL_GO. Missing byte means truncation.
-    if (packet.getRemainingSize() < 1) {
+    if (!packet.hasRemaining(1)) {
         LOG_WARNING("Spell go: missing missCount after hit target list");
         packet.setReadPos(startPos);
         return false;
@@ -3884,7 +3884,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     for (uint16_t i = 0; i < rawMissCount; ++i) {
         // WotLK 3.3.5a miss targets are full uint64 GUIDs + uint8 missType.
         // REFLECT additionally appends uint8 reflectResult.
-        if (packet.getRemainingSize() < 9) { // 8 GUID + 1 missType
+        if (!packet.hasRemaining(9)) { // 8 GUID + 1 missType
             LOG_WARNING("Spell go: truncated miss targets at index ", i, "/", static_cast<int>(rawMissCount),
                         " spell=", data.spellId, " hits=", static_cast<int>(data.hitCount));
             truncatedTargets = true;
@@ -3894,7 +3894,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
         m.targetGuid = packet.readUInt64();
         m.missType = packet.readUInt8();
         if (m.missType == 11) { // SPELL_MISS_REFLECT
-            if (packet.getRemainingSize() < 1) {
+            if (!packet.hasRemaining(1)) {
                 LOG_WARNING("Spell go: truncated reflect payload at miss index ", i, "/", static_cast<int>(rawMissCount));
                 truncatedTargets = true;
                 break;
@@ -3920,7 +3920,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
     // any trailing fields after the target section are not misaligned for
     // ground-targeted or AoE spells.  Same layout as SpellStartParser.
     if (packet.hasData()) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t targetFlags = packet.readUInt32();
 
             auto readPackedTarget = [&](uint64_t* out) -> bool {
@@ -3932,7 +3932,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
             auto skipPackedAndFloats3 = [&]() -> bool {
                 if (!packet.hasFullPackedGuid()) return false;
                 packet.readPackedGuid(); // transport GUID
-                if (packet.getRemainingSize() < 12) return false;
+                if (!packet.hasRemaining(12)) return false;
                 packet.readFloat(); packet.readFloat(); packet.readFloat();
                 return true;
             };
@@ -3967,7 +3967,7 @@ bool SpellGoParser::parse(network::Packet& packet, SpellGoData& data) {
 
 bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool isAll) {
     // Validation: packed GUID (1-8 bytes minimum for reading)
-    if (packet.getRemainingSize() < 1) return false;
+    if (!packet.hasRemaining(1)) return false;
 
     data.guid = packet.readPackedGuid();
 
@@ -3977,7 +3977,7 @@ bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool
 
     while (packet.hasData() && auraCount < maxAuras) {
         // Validate we can read slot (1) + spellId (4) = 5 bytes minimum
-        if (packet.getRemainingSize() < 5) {
+        if (!packet.hasRemaining(5)) {
             LOG_DEBUG("Aura update: truncated entry at position ", auraCount);
             break;
         }
@@ -3991,7 +3991,7 @@ bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool
             aura.spellId = spellId;
 
             // Validate flags + level + charges (3 bytes)
-            if (packet.getRemainingSize() < 3) {
+            if (!packet.hasRemaining(3)) {
                 LOG_WARNING("Aura update: truncated flags/level/charges at entry ", auraCount);
                 aura.flags = 0;
                 aura.level = 0;
@@ -4004,7 +4004,7 @@ bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool
 
             if (!(aura.flags & 0x08)) { // NOT_CASTER flag
                 // Validate space for packed GUID read (minimum 1 byte)
-                if (packet.getRemainingSize() < 1) {
+                if (!packet.hasRemaining(1)) {
                     aura.casterGuid = 0;
                 } else {
                     aura.casterGuid = packet.readPackedGuid();
@@ -4012,7 +4012,7 @@ bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool
             }
 
             if (aura.flags & 0x20) { // DURATION - need 8 bytes (two uint32s)
-                if (packet.getRemainingSize() < 8) {
+                if (!packet.hasRemaining(8)) {
                     LOG_WARNING("Aura update: truncated duration fields at entry ", auraCount);
                     aura.maxDurationMs = 0;
                     aura.durationMs = 0;
@@ -4026,7 +4026,7 @@ bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool
                 // Only read amounts for active effect indices (flags 0x01, 0x02, 0x04)
                 for (int i = 0; i < 3; ++i) {
                     if (aura.flags & (1 << i)) {
-                        if (packet.getRemainingSize() >= 4) {
+                        if (packet.hasRemaining(4)) {
                             packet.readUInt32();
                         } else {
                             LOG_WARNING("Aura update: truncated effect amount ", i, " at entry ", auraCount);
@@ -4054,7 +4054,7 @@ bool AuraUpdateParser::parse(network::Packet& packet, AuraUpdateData& data, bool
 
 bool SpellCooldownParser::parse(network::Packet& packet, SpellCooldownData& data) {
     // Upfront validation: guid(8) + flags(1) = 9 bytes minimum
-    if (packet.getRemainingSize() < 9) return false;
+    if (!packet.hasRemaining(9)) return false;
 
     data.guid = packet.readUInt64();
     data.flags = packet.readUInt8();
@@ -4092,7 +4092,7 @@ network::Packet GroupInvitePacket::build(const std::string& playerName) {
 
 bool GroupInviteResponseParser::parse(network::Packet& packet, GroupInviteResponseData& data) {
     // Validate minimum packet size: canAccept(1)
-    if (packet.getRemainingSize() < 1) {
+    if (!packet.hasRemaining(1)) {
         LOG_WARNING("SMSG_GROUP_INVITE: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
@@ -4200,13 +4200,13 @@ bool GroupListParser::parse(network::Packet& packet, GroupListData& data, bool h
 
 bool PartyCommandResultParser::parse(network::Packet& packet, PartyCommandResultData& data) {
     // Upfront validation: command(4) + name(var) + result(4) = 8 bytes minimum (plus name string)
-    if (packet.getRemainingSize() < 8) return false;
+    if (!packet.hasRemaining(8)) return false;
 
     data.command = static_cast<PartyCommand>(packet.readUInt32());
     data.name = packet.readString();
 
     // Validate result field exists (4 bytes)
-    if (packet.getRemainingSize() < 4) {
+    if (!packet.hasRemaining(4)) {
         data.result = static_cast<PartyResult>(0);
         return true; // Partial read is acceptable
     }
@@ -4218,7 +4218,7 @@ bool PartyCommandResultParser::parse(network::Packet& packet, PartyCommandResult
 
 bool GroupDeclineResponseParser::parse(network::Packet& packet, GroupDeclineData& data) {
     // Upfront validation: playerName is a CString (minimum 1 null terminator)
-    if (packet.getRemainingSize() < 1) return false;
+    if (!packet.hasRemaining(1)) return false;
 
     data.playerName = packet.readString();
     LOG_INFO("Group decline from: ", data.playerName);
@@ -4367,7 +4367,7 @@ bool LootResponseParser::parse(network::Packet& packet, LootResponseData& data, 
 
     // Quest item section only present in WotLK 3.3.5a
     uint8_t questItemCount = 0;
-    if (isWotlkFormat && packet.getRemainingSize() >= 1) {
+    if (isWotlkFormat && packet.hasRemaining(1)) {
         questItemCount = packet.readUInt8();
         data.items.reserve(data.items.size() + questItemCount);
         if (!parseLootItemList(questItemCount, true)) {
@@ -4499,7 +4499,7 @@ bool QuestDetailsParser::parse(network::Packet& packet, QuestDetailsData& data) 
 
 bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data) {
     // Upfront validation: npcGuid(8) + menuId(4) + titleTextId(4) + optionCount(4) = 20 bytes minimum
-    if (packet.getRemainingSize() < 20) return false;
+    if (!packet.hasRemaining(20)) return false;
 
     data.npcGuid = packet.readUInt64();
     data.menuId = packet.readUInt32();
@@ -4518,7 +4518,7 @@ bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data
     for (uint32_t i = 0; i < optionCount; ++i) {
         // Each option: id(4) + icon(1) + isCoded(1) + boxMoney(4) + text(var) + boxText(var)
         // Minimum: 10 bytes + 2 empty strings (2 null terminators) = 12 bytes
-        if (packet.getRemainingSize() < 12) {
+        if (!packet.hasRemaining(12)) {
             LOG_WARNING("GossipMessageParser: truncated options at index ", i, "/", optionCount);
             break;
         }
@@ -4533,7 +4533,7 @@ bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data
     }
 
     // Validate questCount field exists (4 bytes)
-    if (packet.getRemainingSize() < 4) {
+    if (!packet.hasRemaining(4)) {
         LOG_DEBUG("Gossip: ", data.options.size(), " options (no quest data)");
         return true;
     }
@@ -4551,7 +4551,7 @@ bool GossipMessageParser::parse(network::Packet& packet, GossipMessageData& data
     for (uint32_t i = 0; i < questCount; ++i) {
         // Each quest: questId(4) + questIcon(4) + questLevel(4) + questFlags(4) + isRepeatable(1) + title(var)
         // Minimum: 17 bytes + empty string (1 null terminator) = 18 bytes
-        if (packet.getRemainingSize() < 18) {
+        if (!packet.hasRemaining(18)) {
             LOG_WARNING("GossipMessageParser: truncated quests at index ", i, "/", questCount);
             break;
         }
@@ -4590,7 +4590,7 @@ bool BindPointUpdateParser::parse(network::Packet& packet, BindPointUpdateData& 
 }
 
 bool QuestRequestItemsParser::parse(network::Packet& packet, QuestRequestItemsData& data) {
-    if (packet.getRemainingSize() < 20) return false;
+    if (!packet.hasRemaining(20)) return false;
     data.npcGuid = packet.readUInt64();
     data.questId = packet.readUInt32();
     data.title = normalizeWowTextTokens(packet.readString());
@@ -4679,7 +4679,7 @@ bool QuestRequestItemsParser::parse(network::Packet& packet, QuestRequestItemsDa
 }
 
 bool QuestOfferRewardParser::parse(network::Packet& packet, QuestOfferRewardData& data) {
-    if (packet.getRemainingSize() < 20) return false;
+    if (!packet.hasRemaining(20)) return false;
     data.npcGuid = packet.readUInt64();
     data.questId = packet.readUInt32();
     data.title = normalizeWowTextTokens(packet.readString());
@@ -4887,7 +4887,7 @@ network::Packet BuybackItemPacket::build(uint64_t vendorGuid, uint32_t slot) {
 
 bool ListInventoryParser::parse(network::Packet& packet, ListInventoryData& data) {
     data = ListInventoryData{};
-    if (packet.getRemainingSize() < 9) {
+    if (!packet.hasRemaining(9)) {
         LOG_WARNING("ListInventoryParser: packet too short");
         return false;
     }
@@ -4919,7 +4919,7 @@ bool ListInventoryParser::parse(network::Packet& packet, ListInventoryData& data
     data.items.reserve(itemCount);
     for (uint8_t i = 0; i < itemCount; ++i) {
         const size_t perItemBytes = hasExtendedCost ? bytesPerItemWithExt : bytesPerItemNoExt;
-        if (packet.getRemainingSize() < perItemBytes) {
+        if (!packet.hasRemaining(perItemBytes)) {
             LOG_WARNING("ListInventoryParser: item ", static_cast<int>(i), " truncated");
             return false;
         }
@@ -4949,7 +4949,7 @@ bool TrainerListParser::parse(network::Packet& packet, TrainerListData& data, bo
     // Classic per-entry: spellId(4) + state(1) + cost(4) + reqLevel(1) +
     //                    reqSkill(4) + reqSkillValue(4) + chain×3(12) + unk(4) = 34 bytes
     data = TrainerListData{};
-    if (packet.getRemainingSize() < 16) return false; // guid(8) + type(4) + count(4)
+    if (!packet.hasRemaining(16)) return false; // guid(8) + type(4) + count(4)
 
     data.trainerGuid = packet.readUInt64();
     data.trainerType = packet.readUInt32();
@@ -5067,7 +5067,7 @@ bool TalentsInfoParser::parse(network::Packet& packet, TalentsInfoData& data) {
     data.talents.reserve(entryCount);
 
     for (uint16_t i = 0; i < entryCount; ++i) {
-        if (packet.getRemainingSize() < 5) {
+        if (!packet.hasRemaining(5)) {
             LOG_ERROR("SMSG_TALENTS_INFO: truncated entry list at i=", i);
             return false;
         }
@@ -5079,7 +5079,7 @@ bool TalentsInfoParser::parse(network::Packet& packet, TalentsInfoData& data) {
     }
 
     // Parse glyph tail: glyphSlots + glyphIds[]
-    if (packet.getRemainingSize() < 1) {
+    if (!packet.hasRemaining(1)) {
         LOG_WARNING("SMSG_TALENTS_INFO: no glyph tail data");
         return true;  // Not fatal, older formats may not have glyphs
     }
@@ -5098,7 +5098,7 @@ bool TalentsInfoParser::parse(network::Packet& packet, TalentsInfoData& data) {
     data.glyphs.reserve(glyphSlots);
 
     for (uint8_t i = 0; i < glyphSlots; ++i) {
-        if (packet.getRemainingSize() < 2) {
+        if (!packet.hasRemaining(2)) {
             LOG_ERROR("SMSG_TALENTS_INFO: truncated glyph list at i=", i);
             return false;
         }
@@ -5496,7 +5496,7 @@ network::Packet GuildBankSwapItemsPacket::buildInventoryToBank(
 }
 
 bool GuildBankListParser::parse(network::Packet& packet, GuildBankData& data) {
-    if (packet.getRemainingSize() < 14) return false;
+    if (!packet.hasRemaining(14)) return false;
 
     data.money = packet.readUInt64();
     data.tabId = packet.readUInt8();
@@ -5698,7 +5698,7 @@ bool AuctionListResultParser::parse(network::Packet& packet, AuctionListResult& 
     //   bidderGuid(8) + curBid(4)
     // Classic: numEnchantSlots=1 → 80 bytes/entry
     // TBC/WotLK: numEnchantSlots=3 → 104 bytes/entry
-    if (packet.getRemainingSize() < 4) return false;
+    if (!packet.hasRemaining(4)) return false;
 
     uint32_t count = packet.readUInt32();
     // Cap auction count to prevent unbounded memory allocation
@@ -5742,7 +5742,7 @@ bool AuctionListResultParser::parse(network::Packet& packet, AuctionListResult& 
         data.auctions.push_back(e);
     }
 
-    if (packet.getRemainingSize() >= 8) {
+    if (packet.hasRemaining(8)) {
         data.totalCount = packet.readUInt32();
         data.searchDelay = packet.readUInt32();
     }
@@ -5750,7 +5750,7 @@ bool AuctionListResultParser::parse(network::Packet& packet, AuctionListResult& 
 }
 
 bool AuctionCommandResultParser::parse(network::Packet& packet, AuctionCommandResult& data) {
-    if (packet.getRemainingSize() < 12) return false;
+    if (!packet.hasRemaining(12)) return false;
     data.auctionId = packet.readUInt32();
     data.action = packet.readUInt32();
     data.errorCode = packet.readUInt32();

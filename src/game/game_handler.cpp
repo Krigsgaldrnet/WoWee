@@ -1610,7 +1610,7 @@ void GameHandler::registerOpcodeHandlers() {
     registerWorldHandler(Opcode::SMSG_TEXT_EMOTE, &GameHandler::handleTextEmote);
     dispatchTable_[Opcode::SMSG_EMOTE] = [this](network::Packet& packet) {
         if (state != WorldState::IN_WORLD) return;
-        if (packet.getRemainingSize() < 12) return;
+        if (!packet.hasRemaining(12)) return;
         uint32_t emoteAnim  = packet.readUInt32();
         uint64_t sourceGuid = packet.readUInt64();
         if (emoteAnimCallback_ && sourceGuid != 0) emoteAnimCallback_(sourceGuid, emoteAnim);
@@ -1655,10 +1655,10 @@ void GameHandler::registerOpcodeHandlers() {
     registerHandler(Opcode::SMSG_CONTACT_LIST, &GameHandler::handleContactList);
     registerHandler(Opcode::SMSG_FRIEND_LIST, &GameHandler::handleFriendList);
     dispatchTable_[Opcode::SMSG_IGNORE_LIST] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         uint8_t ignCount = packet.readUInt8();
         for (uint8_t i = 0; i < ignCount; ++i) {
-            if (packet.getRemainingSize() < 8) break;
+            if (!packet.hasRemaining(8)) break;
             uint64_t ignGuid = packet.readUInt64();
             std::string ignName = packet.readString();
             if (!ignName.empty() && ignGuid != 0) ignoreCache[ignName] = ignGuid;
@@ -1672,7 +1672,7 @@ void GameHandler::registerOpcodeHandlers() {
     // -----------------------------------------------------------------------
     dispatchTable_[Opcode::SMSG_ITEM_PUSH_RESULT] = [this](network::Packet& packet) {
         constexpr size_t kMinSize = 8 + 1 + 1 + 1 + 1 + 4 + 4 + 4 + 4 + 4 + 4;
-        if (packet.getRemainingSize() >= kMinSize) {
+        if (packet.hasRemaining(kMinSize)) {
             /*uint64_t recipientGuid =*/ packet.readUInt64();
             /*uint8_t received =*/  packet.readUInt8();
             /*uint8_t created =*/   packet.readUInt8();
@@ -1723,7 +1723,7 @@ void GameHandler::registerOpcodeHandlers() {
     // -----------------------------------------------------------------------
     registerHandler(Opcode::SMSG_LOG_XPGAIN, &GameHandler::handleXpGain);
     dispatchTable_[Opcode::SMSG_EXPLORATION_EXPERIENCE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint32_t areaId   = packet.readUInt32();
             uint32_t xpGained = packet.readUInt32();
             if (xpGained > 0) {
@@ -1753,7 +1753,7 @@ void GameHandler::registerOpcodeHandlers() {
             "Wrong faction", "Level too low", "Creature not tameable",
             "Can't control", "Can't command"
         };
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t reason = packet.readUInt8();
             const char* msg = (reason < 8) ? reasons[reason] : "Unknown reason";
             std::string s = std::string("Failed to tame: ") + msg;
@@ -1769,7 +1769,7 @@ void GameHandler::registerOpcodeHandlers() {
             "Your pet cannot find a path to the target.",
             "Your pet cannot attack an immune target.",
         };
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         uint8_t msg = packet.readUInt8();
         if (msg > 0 && msg < 7 && kPetFeedback[msg]) addSystemChatMessage(kPetFeedback[msg]);
         packet.skipAll();
@@ -1780,7 +1780,7 @@ void GameHandler::registerOpcodeHandlers() {
     // Quest failures
     // -----------------------------------------------------------------------
     dispatchTable_[Opcode::SMSG_QUESTUPDATE_FAILED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t questId = packet.readUInt32();
             auto questTitle = getQuestTitle(questId);
             addSystemChatMessage(questTitle.empty() ? std::string("Quest failed!")
@@ -1788,7 +1788,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_QUESTUPDATE_FAILEDTIMER] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t questId = packet.readUInt32();
             auto questTitle = getQuestTitle(questId);
             addSystemChatMessage(questTitle.empty() ? std::string("Quest timed out!")
@@ -1803,7 +1803,7 @@ void GameHandler::registerOpcodeHandlers() {
         const bool huTbc = isActiveExpansion("tbc");
         if (packet.getRemainingSize() < (huTbc ? 8u : 2u)) return;
         uint64_t guid = huTbc ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t hp = packet.readUInt32();
         if (auto* unit = getUnitByGuid(guid)) unit->setHealth(hp);
         if (guid != 0) {
@@ -1815,7 +1815,7 @@ void GameHandler::registerOpcodeHandlers() {
         const bool puTbc = isActiveExpansion("tbc");
         if (packet.getRemainingSize() < (puTbc ? 8u : 2u)) return;
         uint64_t guid = puTbc ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint8_t  powerType = packet.readUInt8();
         uint32_t value     = packet.readUInt32();
         if (auto* unit = getUnitByGuid(guid)) unit->setPowerByType(powerType, value);
@@ -1831,7 +1831,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_UPDATE_WORLD_STATE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         uint32_t field = packet.readUInt32();
         uint32_t value = packet.readUInt32();
         worldStates_[field] = value;
@@ -1839,13 +1839,13 @@ void GameHandler::registerOpcodeHandlers() {
         fireAddonEvent("UPDATE_WORLD_STATES", {});
     };
     dispatchTable_[Opcode::SMSG_WORLD_STATE_UI_TIMER_UPDATE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t serverTime = packet.readUInt32();
             LOG_DEBUG("SMSG_WORLD_STATE_UI_TIMER_UPDATE: serverTime=", serverTime);
         }
     };
     dispatchTable_[Opcode::SMSG_PVP_CREDIT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 16) {
+        if (packet.hasRemaining(16)) {
             uint32_t honor      = packet.readUInt32();
             uint64_t victimGuid = packet.readUInt64();
             uint32_t rank       = packet.readUInt32();
@@ -1861,7 +1861,7 @@ void GameHandler::registerOpcodeHandlers() {
         const bool cpTbc = isActiveExpansion("tbc");
         if (packet.getRemainingSize() < (cpTbc ? 8u : 2u)) return;
         uint64_t target = cpTbc ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         comboPoints_ = packet.readUInt8();
         comboTarget_ = target;
         LOG_DEBUG("SMSG_UPDATE_COMBO_POINTS: target=0x", std::hex, target,
@@ -1869,7 +1869,7 @@ void GameHandler::registerOpcodeHandlers() {
         fireAddonEvent("PLAYER_COMBO_POINTS", {});
     };
     dispatchTable_[Opcode::SMSG_START_MIRROR_TIMER] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 21) return;
+        if (!packet.hasRemaining(21)) return;
         uint32_t type  = packet.readUInt32();
         int32_t  value = static_cast<int32_t>(packet.readUInt32());
         int32_t  maxV  = static_cast<int32_t>(packet.readUInt32());
@@ -1889,7 +1889,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_STOP_MIRROR_TIMER] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t type = packet.readUInt32();
         if (type < 3) {
             mirrorTimers_[type].active = false;
@@ -1898,7 +1898,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_PAUSE_MIRROR_TIMER] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint32_t type   = packet.readUInt32();
         uint8_t  paused = packet.readUInt8();
         if (type < 3) {
@@ -1942,7 +1942,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_SPELL_FAILED_OTHER] = [this](network::Packet& packet) {
         const bool tbcLike2 = isPreWotlk();
         uint64_t failOtherGuid = tbcLike2
-            ? (packet.getRemainingSize() >= 8 ? packet.readUInt64() : 0)
+            ? (packet.hasRemaining(8) ? packet.readUInt64() : 0)
             : packet.readPackedGuid();
         if (failOtherGuid != 0 && failOtherGuid != playerGuid) {
             unitCastStates_.erase(failOtherGuid);
@@ -1962,7 +1962,7 @@ void GameHandler::registerOpcodeHandlers() {
         const bool prUsesFullGuid = isActiveExpansion("tbc");
         auto readPrGuid = [&]() -> uint64_t {
             if (prUsesFullGuid)
-                return (packet.getRemainingSize() >= 8) ? packet.readUInt64() : 0;
+                return (packet.hasRemaining(8)) ? packet.readUInt64() : 0;
             return packet.readPackedGuid();
         };
         if (packet.getRemainingSize() < (prUsesFullGuid ? 8u : 1u)
@@ -1971,7 +1971,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < (prUsesFullGuid ? 8u : 1u)
             || (!prUsesFullGuid && !packet.hasFullPackedGuid())) { packet.skipAll(); return; }
         uint64_t victim = readPrGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t spellId = packet.readUInt32();
         if (victim == playerGuid)       addCombatText(CombatTextEntry::RESIST, 0, spellId, false, 0, caster, victim);
         else if (caster == playerGuid)  addCombatText(CombatTextEntry::RESIST, 0, spellId, true,  0, caster, victim);
@@ -1984,7 +1984,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_LOOT_START_ROLL] = [this](network::Packet& packet) {
         const bool isWotLK = isActiveExpansion("wotlk");
         const size_t minSize = isWotLK ? 33u : 25u;
-        if (packet.getRemainingSize() < minSize) return;
+        if (!packet.hasRemaining(minSize)) return;
         uint64_t objectGuid = packet.readUInt64();
         /*uint32_t mapId =*/ packet.readUInt32();
         uint32_t slot   = packet.readUInt32();
@@ -2024,7 +2024,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (state == WorldState::IN_WORLD) handleListStabledPets(packet);
     };
     dispatchTable_[Opcode::SMSG_STABLE_RESULT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         uint8_t result = packet.readUInt8();
         const char* msg = nullptr;
         switch (result) {
@@ -2047,7 +2047,7 @@ void GameHandler::registerOpcodeHandlers() {
     // Titles / achievements / character services
     // -----------------------------------------------------------------------
     dispatchTable_[Opcode::SMSG_TITLE_EARNED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         uint32_t titleBit = packet.readUInt32();
         uint32_t isLost   = packet.readUInt32();
         loadTitleNameCache();
@@ -2080,7 +2080,7 @@ void GameHandler::registerOpcodeHandlers() {
         LOG_DEBUG("SMSG_LEARNED_DANCE_MOVES: ignored (size=", packet.getSize(), ")");
     };
     dispatchTable_[Opcode::SMSG_CHAR_RENAME] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 13) {
+        if (packet.hasRemaining(13)) {
             uint32_t result = packet.readUInt32();
             /*uint64_t guid =*/ packet.readUInt64();
             std::string newName = packet.readString();
@@ -2104,7 +2104,7 @@ void GameHandler::registerOpcodeHandlers() {
     // Bind / heartstone / phase / barber / corpse
     // -----------------------------------------------------------------------
     dispatchTable_[Opcode::SMSG_PLAYERBOUND] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 16) return;
+        if (!packet.hasRemaining(16)) return;
         /*uint64_t binderGuid =*/ packet.readUInt64();
         uint32_t mapId  = packet.readUInt32();
         uint32_t zoneId = packet.readUInt32();
@@ -2119,12 +2119,12 @@ void GameHandler::registerOpcodeHandlers() {
     registerSkipHandler(Opcode::SMSG_BINDER_CONFIRM);
     registerSkipHandler(Opcode::SMSG_SET_PHASE_SHIFT);
     dispatchTable_[Opcode::SMSG_TOGGLE_XP_GAIN] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         uint8_t enabled = packet.readUInt8();
         addSystemChatMessage(enabled ? "XP gain enabled." : "XP gain disabled.");
     };
     dispatchTable_[Opcode::SMSG_GOSSIP_POI] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 20) return;
+        if (!packet.hasRemaining(20)) return;
         /*uint32_t flags =*/ packet.readUInt32();
         float poiX = packet.readFloat();
         float poiY = packet.readFloat();
@@ -2137,14 +2137,14 @@ void GameHandler::registerOpcodeHandlers() {
         LOG_DEBUG("SMSG_GOSSIP_POI: x=", poiX, " y=", poiY, " icon=", icon);
     };
     dispatchTable_[Opcode::SMSG_BINDZONEREPLY] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t result = packet.readUInt32();
             if (result == 0) addSystemChatMessage("Your home is now set to this location.");
             else { addUIError("You are too far from the innkeeper."); addSystemChatMessage("You are too far from the innkeeper."); }
         }
     };
     dispatchTable_[Opcode::SMSG_CHANGEPLAYER_DIFFICULTY_RESULT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t result = packet.readUInt32();
             if (result == 0) {
                 addSystemChatMessage("Difficulty changed.");
@@ -2165,7 +2165,7 @@ void GameHandler::registerOpcodeHandlers() {
         addSystemChatMessage("Your corpse is outside this instance. Release spirit to retrieve it.");
     };
     dispatchTable_[Opcode::SMSG_CROSSED_INEBRIATION_THRESHOLD] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 12) {
+        if (packet.hasRemaining(12)) {
             uint64_t guid      = packet.readUInt64();
             uint32_t threshold = packet.readUInt32();
             if (guid == playerGuid && threshold > 0) addSystemChatMessage("You feel rather drunk.");
@@ -2177,9 +2177,9 @@ void GameHandler::registerOpcodeHandlers() {
     };
     registerSkipHandler(Opcode::SMSG_COMBAT_EVENT_FAILED);
     dispatchTable_[Opcode::SMSG_FORCE_ANIM] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint64_t animGuid = packet.readPackedGuid();
-            if (packet.getRemainingSize() >= 4) {
+            if (packet.hasRemaining(4)) {
                 uint32_t animId = packet.readUInt32();
                 if (emoteAnimCallback_) emoteAnimCallback_(animGuid, animId);
             }
@@ -2202,14 +2202,14 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_DEFENSE_MESSAGE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 5) {
+        if (packet.hasRemaining(5)) {
             /*uint32_t zoneId =*/ packet.readUInt32();
             std::string defMsg = packet.readString();
             if (!defMsg.empty()) addSystemChatMessage("[Defense] " + defMsg);
         }
     };
     dispatchTable_[Opcode::SMSG_CORPSE_RECLAIM_DELAY] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t delayMs = packet.readUInt32();
             auto nowMs = static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -2219,7 +2219,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_DEATH_RELEASE_LOC] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 16) {
+        if (packet.hasRemaining(16)) {
             uint32_t relMapId = packet.readUInt32();
             float relX = packet.readFloat(), relY = packet.readFloat(), relZ = packet.readFloat();
             LOG_INFO("SMSG_DEATH_RELEASE_LOC (graveyard spawn): map=", relMapId, " x=", relX, " y=", relY, " z=", relZ);
@@ -2235,9 +2235,9 @@ void GameHandler::registerOpcodeHandlers() {
     //                movement/speed/flags, attack, spells, group ----
 
     dispatchTable_[Opcode::MSG_CORPSE_QUERY] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         uint8_t found = packet.readUInt8();
-        if (found && packet.getRemainingSize() >= 20) {
+        if (found && packet.hasRemaining(20)) {
             /*uint32_t mapId =*/ packet.readUInt32();
             float cx = packet.readFloat();
             float cy = packet.readFloat();
@@ -2256,7 +2256,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     dispatchTable_[Opcode::SMSG_CHANNEL_MEMBER_COUNT] = [this](network::Packet& packet) {
         std::string chanName = packet.readString();
-        if (packet.getRemainingSize() >= 5) {
+        if (packet.hasRemaining(5)) {
             /*uint8_t flags =*/ packet.readUInt8();
             uint32_t count = packet.readUInt32();
             LOG_DEBUG("SMSG_CHANNEL_MEMBER_COUNT: channel=", chanName, " members=", count);
@@ -2264,7 +2264,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     for (auto op : { Opcode::SMSG_GAMETIME_SET, Opcode::SMSG_GAMETIME_UPDATE }) {
         dispatchTable_[op] = [this](network::Packet& packet) {
-            if (packet.getRemainingSize() >= 4) {
+            if (packet.hasRemaining(4)) {
                 uint32_t gameTimePacked = packet.readUInt32();
                 gameTime_ = static_cast<float>(gameTimePacked);
             }
@@ -2272,7 +2272,7 @@ void GameHandler::registerOpcodeHandlers() {
         };
     }
     dispatchTable_[Opcode::SMSG_GAMESPEED_SET] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint32_t gameTimePacked = packet.readUInt32();
             float timeSpeed = packet.readFloat();
             gameTime_ = static_cast<float>(gameTimePacked);
@@ -2284,7 +2284,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_ACHIEVEMENT_DELETED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t achId = packet.readUInt32();
             earnedAchievements_.erase(achId);
             achievementDates_.erase(achId);
@@ -2292,7 +2292,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_CRITERIA_DELETED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t critId = packet.readUInt32();
             criteriaProgress_.erase(critId);
         }
@@ -2309,9 +2309,9 @@ void GameHandler::registerOpcodeHandlers() {
         fireAddonEvent("UNIT_THREAT_LIST_UPDATE", {});
     };
     dispatchTable_[Opcode::SMSG_THREAT_REMOVE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         uint64_t unitGuid   = packet.readPackedGuid();
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         uint64_t victimGuid = packet.readPackedGuid();
         auto it = threatLists_.find(unitGuid);
         if (it != threatLists_.end()) {
@@ -2328,13 +2328,13 @@ void GameHandler::registerOpcodeHandlers() {
         autoAttackRequested_ = false;
     };
     dispatchTable_[Opcode::SMSG_BREAK_TARGET] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint64_t bGuid = packet.readUInt64();
             if (bGuid == targetGuid) targetGuid = 0;
         }
     };
     dispatchTable_[Opcode::SMSG_CLEAR_TARGET] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint64_t cGuid = packet.readUInt64();
             if (cGuid == 0 || cGuid == targetGuid) targetGuid = 0;
         }
@@ -2346,7 +2346,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (mountCallback_) mountCallback_(0);
     };
     dispatchTable_[Opcode::SMSG_MOUNTRESULT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t result = packet.readUInt32();
         if (result != 4) {
             const char* msgs[] = { "Cannot mount here.", "Invalid mount spell.",
@@ -2357,7 +2357,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_DISMOUNTRESULT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t result = packet.readUInt32();
         if (result != 0) {
             addUIError("Cannot dismount here.");
@@ -2369,7 +2369,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_LOOT_ALL_PASSED] = [this](network::Packet& packet) {
         const bool isWotLK = isActiveExpansion("wotlk");
         const size_t minSize = isWotLK ? 24u : 16u;
-        if (packet.getRemainingSize() < minSize) return;
+        if (!packet.hasRemaining(minSize)) return;
         /*uint64_t objGuid =*/ packet.readUInt64();
         /*uint32_t slot    =*/ packet.readUInt32();
         uint32_t itemId  = packet.readUInt32();
@@ -2384,7 +2384,7 @@ void GameHandler::registerOpcodeHandlers() {
         pendingLootRollActive_ = false;
     };
     dispatchTable_[Opcode::SMSG_LOOT_ITEM_NOTIFY] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 24) {
+        if (!packet.hasRemaining(24)) {
             packet.skipAll(); return;
         }
         uint64_t looterGuid = packet.readUInt64();
@@ -2410,7 +2410,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_LOOT_SLOT_CHANGED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t slotIndex = packet.readUInt8();
             for (auto it = currentLoot.items.begin(); it != currentLoot.items.end(); ++it) {
                 if (it->slotIndex == slotIndex) {
@@ -2435,7 +2435,7 @@ void GameHandler::registerOpcodeHandlers() {
                      Opcode::SMSG_SPLINE_MOVE_ROOT,
                      Opcode::SMSG_SPLINE_MOVE_SET_HOVER }) {
         dispatchTable_[op] = [this](network::Packet& packet) {
-            if (packet.getRemainingSize() >= 1)
+            if (packet.hasRemaining(1))
                 (void)packet.readPackedGuid();
         };
     }
@@ -2444,7 +2444,7 @@ void GameHandler::registerOpcodeHandlers() {
     {
         auto makeSynthHandler = [this](uint32_t synthFlags) {
             return [this, synthFlags](network::Packet& packet) {
-                if (packet.getRemainingSize() < 1) return;
+                if (!packet.hasRemaining(1)) return;
                 uint64_t guid = packet.readPackedGuid();
                 if (guid == 0 || guid == playerGuid || !unitMoveFlagsCallback_) return;
                 unitMoveFlagsCallback_(guid, synthFlags);
@@ -2459,25 +2459,25 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Spline speed: each opcode updates a different speed member
     dispatchTable_[Opcode::SMSG_SPLINE_SET_RUN_SPEED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint64_t guid = packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         float speed = packet.readFloat();
         if (guid == playerGuid && std::isfinite(speed) && speed > 0.01f && speed < 200.0f)
             serverRunSpeed_ = speed;
     };
     dispatchTable_[Opcode::SMSG_SPLINE_SET_RUN_BACK_SPEED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint64_t guid = packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         float speed = packet.readFloat();
         if (guid == playerGuid && std::isfinite(speed) && speed > 0.01f && speed < 200.0f)
             serverRunBackSpeed_ = speed;
     };
     dispatchTable_[Opcode::SMSG_SPLINE_SET_SWIM_SPEED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint64_t guid = packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         float speed = packet.readFloat();
         if (guid == playerGuid && std::isfinite(speed) && speed > 0.01f && speed < 200.0f)
             serverSwimSpeed_ = speed;
@@ -2541,7 +2541,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Camera shake
     dispatchTable_[Opcode::SMSG_CAMERA_SHAKE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint32_t shakeId   = packet.readUInt32();
             uint32_t shakeType = packet.readUInt32();
             (void)shakeType;
@@ -2591,7 +2591,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     registerHandler(Opcode::SMSG_ATTACKERSTATEUPDATE, &GameHandler::handleAttackerStateUpdate);
     dispatchTable_[Opcode::SMSG_AI_REACTION] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 12) return;
+        if (!packet.hasRemaining(12)) return;
         uint64_t guid = packet.readUInt64();
         uint32_t reaction = packet.readUInt32();
         if (reaction == 2 && npcAggroCallback_) {
@@ -2602,7 +2602,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     registerHandler(Opcode::SMSG_SPELLNONMELEEDAMAGELOG, &GameHandler::handleSpellDamageLog);
     dispatchTable_[Opcode::SMSG_PLAY_SPELL_VISUAL] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 12) return;
+        if (!packet.hasRemaining(12)) return;
         uint64_t casterGuid = packet.readUInt64();
         uint32_t visualId   = packet.readUInt32();
         if (visualId == 0) return;
@@ -2629,7 +2629,7 @@ void GameHandler::registerOpcodeHandlers() {
     registerHandler(Opcode::SMSG_SPELL_COOLDOWN, &GameHandler::handleSpellCooldown);
     registerHandler(Opcode::SMSG_COOLDOWN_EVENT, &GameHandler::handleCooldownEvent);
     dispatchTable_[Opcode::SMSG_CLEAR_COOLDOWN] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t spellId = packet.readUInt32();
             spellCooldowns.erase(spellId);
             for (auto& slot : actionBar) {
@@ -2639,7 +2639,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_MODIFY_COOLDOWN] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint32_t spellId = packet.readUInt32();
             int32_t  diffMs  = static_cast<int32_t>(packet.readUInt32());
             float diffSec = diffMs / 1000.0f;
@@ -2689,7 +2689,7 @@ void GameHandler::registerOpcodeHandlers() {
         readyCheckNotReadyCount_ = 0;
         readyCheckInitiator_.clear();
         readyCheckResults_.clear();
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint64_t initiatorGuid = packet.readUInt64();
             if (auto* unit = getUnitByGuid(initiatorGuid))
                 readyCheckInitiator_ = unit->getName();
@@ -2705,7 +2705,7 @@ void GameHandler::registerOpcodeHandlers() {
                     fireAddonEvent("READY_CHECK", {readyCheckInitiator_});
     };
     dispatchTable_[Opcode::MSG_RAID_READY_CHECK_CONFIRM] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 9) { packet.skipAll(); return; }
+        if (!packet.hasRemaining(9)) { packet.skipAll(); return; }
         uint64_t respGuid = packet.readUInt64();
         uint8_t  isReady  = packet.readUInt8();
         if (isReady) ++readyCheckReadyCount_; else ++readyCheckNotReadyCount_;
@@ -2749,14 +2749,14 @@ void GameHandler::registerOpcodeHandlers() {
     };
     dispatchTable_[Opcode::SMSG_DUEL_INBOUNDS] = [this](network::Packet& /*packet*/) {};
     dispatchTable_[Opcode::SMSG_DUEL_COUNTDOWN] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t ms = packet.readUInt32();
             duelCountdownMs_ = (ms > 0 && ms <= 30000) ? ms : 3000;
             duelCountdownStartedAt_ = std::chrono::steady_clock::now();
         }
     };
     dispatchTable_[Opcode::SMSG_PARTYKILLLOG] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 16) return;
+        if (!packet.hasRemaining(16)) return;
         uint64_t killerGuid = packet.readUInt64();
         uint64_t victimGuid = packet.readUInt64();
         const auto& killerName = lookupName(killerGuid);
@@ -2796,11 +2796,11 @@ void GameHandler::registerOpcodeHandlers() {
     registerHandler(Opcode::SMSG_LOOT_ROLL_WON, &GameHandler::handleLootRollWon);
     dispatchTable_[Opcode::SMSG_LOOT_MASTER_LIST] = [this](network::Packet& packet) {
         masterLootCandidates_.clear();
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         uint8_t mlCount = packet.readUInt8();
         masterLootCandidates_.reserve(mlCount);
         for (uint8_t i = 0; i < mlCount; ++i) {
-            if (packet.getRemainingSize() < 8) break;
+            if (!packet.hasRemaining(8)) break;
             masterLootCandidates_.push_back(packet.readUInt64());
         }
     };
@@ -2833,7 +2833,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Spirit healer / resurrect
     dispatchTable_[Opcode::SMSG_SPIRIT_HEALER_CONFIRM] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         uint64_t npcGuid = packet.readUInt64();
         if (npcGuid) {
             resurrectCasterGuid_ = npcGuid;
@@ -2843,7 +2843,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_RESURRECT_REQUEST] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         uint64_t casterGuid = packet.readUInt64();
         std::string casterName;
         if (packet.hasData())
@@ -2863,7 +2863,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Time sync
     dispatchTable_[Opcode::SMSG_TIME_SYNC_REQ] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t counter = packet.readUInt32();
         if (socket) {
             network::Packet resp(wireOpcode(Opcode::CMSG_TIME_SYNC_RESP));
@@ -2895,7 +2895,7 @@ void GameHandler::registerOpcodeHandlers() {
         /*uint64_t trainerGuid =*/ packet.readUInt64();
         uint32_t spellId = packet.readUInt32();
         uint32_t errorCode = 0;
-        if (packet.getRemainingSize() >= 4)
+        if (packet.hasRemaining(4))
             errorCode = packet.readUInt32();
         const std::string& spellName = getSpellName(spellId);
         std::string msg = "Cannot learn ";
@@ -2916,7 +2916,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < (mmTbcLike ? 8u : 1u)) return;
         uint64_t senderGuid = mmTbcLike
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         float pingX = packet.readFloat();
         float pingY = packet.readFloat();
         MinimapPing ping;
@@ -2930,7 +2930,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_ZONE_UNDER_ATTACK] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t areaId = packet.readUInt32();
             std::string areaName = getAreaName(areaId);
             std::string msg = areaName.empty()
@@ -2943,7 +2943,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Spirit healer time / durability
     dispatchTable_[Opcode::SMSG_AREA_SPIRIT_HEALER_TIME] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 12) {
+        if (packet.hasRemaining(12)) {
             /*uint64_t guid =*/ packet.readUInt64();
             uint32_t timeMs = packet.readUInt32();
             uint32_t secs = timeMs / 1000;
@@ -2953,7 +2953,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_DURABILITY_DAMAGE_DEATH] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t pct = packet.readUInt32();
             char buf[80];
             std::snprintf(buf, sizeof(buf),
@@ -2965,10 +2965,10 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Factions
     dispatchTable_[Opcode::SMSG_INITIALIZE_FACTIONS] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t count = packet.readUInt32();
         size_t needed = static_cast<size_t>(count) * 5;
-        if (packet.getRemainingSize() < needed) { packet.skipAll(); return; }
+        if (!packet.hasRemaining(needed)) { packet.skipAll(); return; }
         initialFactions_.clear();
         initialFactions_.reserve(count);
         for (uint32_t i = 0; i < count; ++i) {
@@ -2979,12 +2979,12 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_SET_FACTION_STANDING] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         /*uint8_t showVisual =*/ packet.readUInt8();
         uint32_t count = packet.readUInt32();
         count = std::min(count, 128u);
         loadFactionNameCache();
-        for (uint32_t i = 0; i < count && packet.getRemainingSize() >= 8; ++i) {
+        for (uint32_t i = 0; i < count && packet.hasRemaining(8); ++i) {
             uint32_t factionId = packet.readUInt32();
             int32_t  standing  = static_cast<int32_t>(packet.readUInt32());
             int32_t  oldStanding = 0;
@@ -3006,7 +3006,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_SET_FACTION_ATWAR] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) { packet.skipAll(); return; }
+        if (!packet.hasRemaining(5)) { packet.skipAll(); return; }
         uint32_t repListId = packet.readUInt32();
         uint8_t  setAtWar  = packet.readUInt8();
         if (repListId < initialFactions_.size()) {
@@ -3017,7 +3017,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_SET_FACTION_VISIBLE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) { packet.skipAll(); return; }
+        if (!packet.hasRemaining(5)) { packet.skipAll(); return; }
         uint32_t repListId = packet.readUInt32();
         uint8_t  visible   = packet.readUInt8();
         if (repListId < initialFactions_.size()) {
@@ -3036,7 +3036,7 @@ void GameHandler::registerOpcodeHandlers() {
         auto makeSpellModHandler = [this](bool isFlat) {
             return [this, isFlat](network::Packet& packet) {
                 auto& modMap = isFlat ? spellFlatMods_ : spellPctMods_;
-                while (packet.getRemainingSize() >= 6) {
+                while (packet.hasRemaining(6)) {
                     uint8_t groupIndex = packet.readUInt8();
                     uint8_t modOpRaw   = packet.readUInt8();
                     int32_t value      = static_cast<int32_t>(packet.readUInt32());
@@ -3057,7 +3057,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.getRemainingSize() < (spellDelayTbcLike ? 8u : 1u)) return;
         uint64_t caster = spellDelayTbcLike
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t delayMs = packet.readUInt32();
         if (delayMs == 0) return;
         float delaySec = delayMs / 1000.0f;
@@ -3077,7 +3077,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Proficiency
     dispatchTable_[Opcode::SMSG_SET_PROFICIENCY] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint8_t  itemClass = packet.readUInt8();
         uint32_t mask      = packet.readUInt32();
         if (itemClass == 2) weaponProficiency_ = mask;
@@ -3086,9 +3086,9 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Loot money / misc consume
     dispatchTable_[Opcode::SMSG_LOOT_MONEY_NOTIFY] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t amount = packet.readUInt32();
-        if (packet.getRemainingSize() >= 1)
+        if (packet.hasRemaining(1))
             /*uint8_t soleLooter =*/ packet.readUInt8();
         playerMoneyCopper_ += amount;
         pendingMoneyDelta_ = amount;
@@ -3123,7 +3123,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Play sound
     dispatchTable_[Opcode::SMSG_PLAY_SOUND] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t soundId = packet.readUInt32();
             if (playSoundCallback_) playSoundCallback_(soundId);
         }
@@ -3131,7 +3131,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Server messages
     dispatchTable_[Opcode::SMSG_SERVER_MESSAGE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t msgType = packet.readUInt32();
             std::string msg = packet.readString();
             if (!msg.empty()) {
@@ -3148,14 +3148,14 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_CHAT_SERVER_MESSAGE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             /*uint32_t msgType =*/ packet.readUInt32();
             std::string msg = packet.readString();
             if (!msg.empty()) addSystemChatMessage("[Announcement] " + msg);
         }
     };
     dispatchTable_[Opcode::SMSG_AREA_TRIGGER_MESSAGE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             /*uint32_t len =*/ packet.readUInt32();
             std::string msg = packet.readString();
             if (!msg.empty()) {
@@ -3210,7 +3210,7 @@ void GameHandler::registerOpcodeHandlers() {
     registerHandler(Opcode::SMSG_SHOWTAXINODES, &GameHandler::handleShowTaxiNodes);
     registerHandler(Opcode::SMSG_ACTIVATETAXIREPLY, &GameHandler::handleActivateTaxiReply);
     dispatchTable_[Opcode::SMSG_STANDSTATE_UPDATE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             standState_ = packet.readUInt8();
             if (standStateCallback_) standStateCallback_(standState_);
         }
@@ -3229,9 +3229,9 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::MSG_BATTLEGROUND_PLAYER_POSITIONS] = [this](network::Packet& packet) {
         bgPlayerPositions_.clear();
         for (int grp = 0; grp < 2; ++grp) {
-            if (packet.getRemainingSize() < 4) break;
+            if (!packet.hasRemaining(4)) break;
             uint32_t count = packet.readUInt32();
-            for (uint32_t i = 0; i < count && packet.getRemainingSize() >= 16; ++i) {
+            for (uint32_t i = 0; i < count && packet.hasRemaining(16); ++i) {
                 BgPlayerPosition pos;
                 pos.guid = packet.readUInt64();
                 pos.wowX = packet.readFloat();
@@ -3251,7 +3251,7 @@ void GameHandler::registerOpcodeHandlers() {
         addSystemChatMessage("You have joined the battleground queue.");
     };
     dispatchTable_[Opcode::SMSG_BATTLEGROUND_PLAYER_JOINED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint64_t guid = packet.readUInt64();
             const auto& name = lookupName(guid);
             if (!name.empty())
@@ -3259,7 +3259,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_BATTLEGROUND_PLAYER_LEFT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint64_t guid = packet.readUInt64();
             const auto& name = lookupName(guid);
             if (!name.empty())
@@ -3275,13 +3275,13 @@ void GameHandler::registerOpcodeHandlers() {
         addSystemChatMessage("You are now saved to this instance.");
     };
     dispatchTable_[Opcode::SMSG_RAID_INSTANCE_MESSAGE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 12) return;
+        if (!packet.hasRemaining(12)) return;
         uint32_t msgType = packet.readUInt32();
         uint32_t mapId   = packet.readUInt32();
         packet.readUInt32(); // diff
         std::string mapLabel = getMapName(mapId);
         if (mapLabel.empty()) mapLabel = "instance #" + std::to_string(mapId);
-        if (msgType == 1 && packet.getRemainingSize() >= 4) {
+        if (msgType == 1 && packet.hasRemaining(4)) {
             uint32_t timeLeft = packet.readUInt32();
             addSystemChatMessage(mapLabel + " will reset in " + std::to_string(timeLeft / 60) + " minute(s).");
         } else if (msgType == 2) {
@@ -3291,7 +3291,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_INSTANCE_RESET] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t mapId = packet.readUInt32();
         auto it = std::remove_if(instanceLockouts_.begin(), instanceLockouts_.end(),
             [mapId](const InstanceLockout& lo){ return lo.mapId == mapId; });
@@ -3301,7 +3301,7 @@ void GameHandler::registerOpcodeHandlers() {
         addSystemChatMessage(mapLabel + " has been reset.");
     };
     dispatchTable_[Opcode::SMSG_INSTANCE_RESET_FAILED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         uint32_t mapId  = packet.readUInt32();
         uint32_t reason = packet.readUInt32();
         static const char* resetFailReasons[] = {
@@ -3315,7 +3315,7 @@ void GameHandler::registerOpcodeHandlers() {
         addSystemChatMessage("Cannot reset " + mapLabel + ": " + reasonMsg);
     };
     dispatchTable_[Opcode::SMSG_INSTANCE_LOCK_WARNING_QUERY] = [this](network::Packet& packet) {
-        if (!socket || packet.getRemainingSize() < 17) return;
+        if (!socket || !packet.hasRemaining(17)) return;
         uint32_t ilMapId    = packet.readUInt32();
         uint32_t ilDiff     = packet.readUInt32();
         uint32_t ilTimeLeft = packet.readUInt32();
@@ -3354,7 +3354,7 @@ void GameHandler::registerOpcodeHandlers() {
         addSystemChatMessage("Dungeon Finder: You may continue your dungeon.");
     };
     dispatchTable_[Opcode::SMSG_LFG_ROLE_CHOSEN] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 13) { packet.skipAll(); return; }
+        if (!packet.hasRemaining(13)) { packet.skipAll(); return; }
         uint64_t roleGuid = packet.readUInt64();
         uint8_t  ready    = packet.readUInt8();
         uint32_t roles    = packet.readUInt32();
@@ -3388,7 +3388,7 @@ void GameHandler::registerOpcodeHandlers() {
     registerHandler(Opcode::SMSG_ARENA_ERROR, &GameHandler::handleArenaError);
     registerHandler(Opcode::MSG_PVP_LOG_DATA, &GameHandler::handlePvpLogData);
     dispatchTable_[Opcode::MSG_TALENT_WIPE_CONFIRM] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 12) { packet.skipAll(); return; }
+        if (!packet.hasRemaining(12)) { packet.skipAll(); return; }
         talentWipeNpcGuid_ = packet.readUInt64();
         talentWipeCost_    = packet.readUInt32();
         talentWipePending_ = true;
@@ -3437,13 +3437,13 @@ void GameHandler::registerOpcodeHandlers() {
     registerHandler(Opcode::SMSG_INSPECT_RESULTS_UPDATE, &GameHandler::handleInspectResults);
     dispatchTable_[Opcode::SMSG_CHANNEL_LIST] = [this](network::Packet& packet) {
         std::string chanName = packet.readString();
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         /*uint8_t chanFlags =*/ packet.readUInt8();
         uint32_t memberCount = packet.readUInt32();
         memberCount = std::min(memberCount, 200u);
         addSystemChatMessage(chanName + " has " + std::to_string(memberCount) + " member(s):");
         for (uint32_t i = 0; i < memberCount; ++i) {
-            if (packet.getRemainingSize() < 9) break;
+            if (!packet.hasRemaining(9)) break;
             uint64_t memberGuid = packet.readUInt64();
             uint8_t memberFlags = packet.readUInt8();
             std::string name;
@@ -3477,17 +3477,17 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Questgiver status
     dispatchTable_[Opcode::SMSG_QUESTGIVER_STATUS] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 9) {
+        if (packet.hasRemaining(9)) {
             uint64_t npcGuid = packet.readUInt64();
             uint8_t status = packetParsers_->readQuestGiverStatus(packet);
             npcQuestStatus_[npcGuid] = static_cast<QuestGiverStatus>(status);
         }
     };
     dispatchTable_[Opcode::SMSG_QUESTGIVER_STATUS_MULTIPLE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t count = packet.readUInt32();
         for (uint32_t i = 0; i < count; ++i) {
-            if (packet.getRemainingSize() < 9) break;
+            if (!packet.hasRemaining(9)) break;
             uint64_t npcGuid = packet.readUInt64();
             uint8_t status = packetParsers_->readQuestGiverStatus(packet);
             npcQuestStatus_[npcGuid] = static_cast<QuestGiverStatus>(status);
@@ -3540,7 +3540,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     // Resurrect failed / item refund / socket gems / item time
     dispatchTable_[Opcode::SMSG_RESURRECT_FAILED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t reason = packet.readUInt32();
             const char* msg = (reason == 1) ? "The target cannot be resurrected right now."
                             : (reason == 2) ? "Cannot resurrect in this area."
@@ -3550,7 +3550,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_ITEM_REFUND_RESULT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 12) {
+        if (packet.hasRemaining(12)) {
             packet.readUInt64(); // itemGuid
             uint32_t result = packet.readUInt32();
             addSystemChatMessage(result == 0 ? "Item returned. Refund processed."
@@ -3558,14 +3558,14 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_SOCKET_GEMS_RESULT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t result = packet.readUInt32();
             if (result == 0) addSystemChatMessage("Gems socketed successfully.");
             else addSystemChatMessage("Failed to socket gems.");
         }
     };
     dispatchTable_[Opcode::SMSG_ITEM_TIME_UPDATE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 12) {
+        if (packet.hasRemaining(12)) {
             packet.readUInt64(); // itemGuid
             packet.readUInt32(); // durationMs
         }
@@ -3585,18 +3585,18 @@ void GameHandler::registerOpcodeHandlers() {
         const bool spellMissUsesFullGuid = isActiveExpansion("tbc");
         auto readSpellMissGuid = [&]() -> uint64_t {
             if (spellMissUsesFullGuid)
-                return (packet.getRemainingSize() >= 8) ? packet.readUInt64() : 0;
+                return (packet.hasRemaining(8)) ? packet.readUInt64() : 0;
             return packet.readPackedGuid();
         };
         // spellId prefix present in all expansions
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t spellId = packet.readUInt32();
         if (packet.getRemainingSize() < (spellMissUsesFullGuid ? 8u : 1u)
             || (!spellMissUsesFullGuid && !packet.hasFullPackedGuid())) {
             packet.skipAll(); return;
         }
         uint64_t casterGuid = readSpellMissGuid();
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         /*uint8_t unk =*/ packet.readUInt8();
         const uint32_t rawCount = packet.readUInt32();
         if (rawCount > 128) {
@@ -3620,7 +3620,7 @@ void GameHandler::registerOpcodeHandlers() {
                 return;
             }
             const uint64_t victimGuid = readSpellMissGuid();
-            if (packet.getRemainingSize() < 1) {
+            if (!packet.hasRemaining(1)) {
                 truncated = true;
                 return;
             }
@@ -3628,7 +3628,7 @@ void GameHandler::registerOpcodeHandlers() {
             // REFLECT (11): extra uint32 reflectSpellId + uint8 reflectResult
             uint32_t reflectSpellId = 0;
             if (missInfo == 11) {
-                if (packet.getRemainingSize() >= 5) {
+                if (packet.hasRemaining(5)) {
                     reflectSpellId = packet.readUInt32();
                     /*uint8_t reflectResult =*/ packet.readUInt8();
                 } else {
@@ -3666,7 +3666,7 @@ void GameHandler::registerOpcodeHandlers() {
     // ---- Environmental damage log ----
     dispatchTable_[Opcode::SMSG_ENVIRONMENTALDAMAGELOG] = [this](network::Packet& packet) {
         // uint64 victimGuid + uint8 envDamageType + uint32 damage + uint32 absorb + uint32 resist
-        if (packet.getRemainingSize() < 21) return;
+        if (!packet.hasRemaining(21)) return;
         uint64_t victimGuid = packet.readUInt64();
         /*uint8_t  envType =*/ packet.readUInt8();
         uint32_t damage   = packet.readUInt32();
@@ -3686,7 +3686,7 @@ void GameHandler::registerOpcodeHandlers() {
     // ---- Client control update ----
     dispatchTable_[Opcode::SMSG_CLIENT_CONTROL_UPDATE] = [this](network::Packet& packet) {
         // Minimal parse: PackedGuid + uint8 allowMovement.
-        if (packet.getRemainingSize() < 2) {
+        if (!packet.hasRemaining(2)) {
             LOG_WARNING("SMSG_CLIENT_CONTROL_UPDATE too short: ", packet.getSize(), " bytes");
             return;
         }
@@ -3696,7 +3696,7 @@ void GameHandler::registerOpcodeHandlers() {
         for (int i = 0; i < 8; ++i) {
             if (guidMask & (1u << i)) ++guidBytes;
         }
-        if (packet.getRemainingSize() < guidBytes + 1) {
+        if (!packet.hasRemaining(guidBytes) + 1) {
             LOG_WARNING("SMSG_CLIENT_CONTROL_UPDATE malformed (truncated packed guid)");
             packet.skipAll();
             return;
@@ -3740,11 +3740,11 @@ void GameHandler::registerOpcodeHandlers() {
         const bool isClassic = isClassicLikeExpansion();
         const bool isTbc     = isActiveExpansion("tbc");
         uint64_t failGuid = (isClassic || isTbc)
-            ? (packet.getRemainingSize() >= 8 ? packet.readUInt64() : 0)
+            ? (packet.hasRemaining(8) ? packet.readUInt64() : 0)
             : packet.readPackedGuid();
         // Classic omits the castCount byte; TBC and WotLK include it
         const size_t remainingFields = isClassic ? 5u : 6u;  // spellId(4)+reason(1) [+castCount(1)]
-        if (packet.getRemainingSize() >= remainingFields) {
+        if (packet.hasRemaining(remainingFields)) {
             if (!isClassic) /*uint8_t castCount =*/ packet.readUInt8();
             uint32_t failSpellId = packet.readUInt32();
             uint8_t rawFailReason = packet.readUInt8();
@@ -3878,12 +3878,12 @@ void GameHandler::registerOpcodeHandlers() {
         uint32_t dispelSpellId = 0;
         uint64_t dispelCasterGuid = 0;
         if (dispelUsesFullGuid) {
-            if (packet.getRemainingSize() < 20) return;
+            if (!packet.hasRemaining(20)) return;
             dispelCasterGuid = packet.readUInt64();
             /*uint64_t victim =*/ packet.readUInt64();
             dispelSpellId = packet.readUInt32();
         } else {
-            if (packet.getRemainingSize() < 4) return;
+            if (!packet.hasRemaining(4)) return;
             dispelSpellId = packet.readUInt32();
             if (!packet.hasFullPackedGuid()) {
                 packet.skipAll(); return;
@@ -3915,7 +3915,7 @@ void GameHandler::registerOpcodeHandlers() {
             /*uint64_t guid =*/ packet.readUInt64();
         else
             /*uint64_t guid =*/ packet.readPackedGuid();
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         uint32_t duration = packet.readUInt32();
         uint32_t spellId  = packet.readUInt32();
         LOG_DEBUG("SMSG_TOTEM_CREATED: slot=", static_cast<int>(slot),
@@ -3931,7 +3931,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_ENVIRONMENTAL_DAMAGE_LOG] = [this](network::Packet& packet) {
         // uint64 victimGuid + uint8 envDmgType + uint32 damage + uint32 absorbed + uint32 resisted
         // envDmgType: 0=Exhausted(fatigue), 1=Drowning, 2=Fall, 3=Lava, 4=Slime, 5=Fire
-        if (packet.getRemainingSize() < 21) { packet.skipAll(); return; }
+        if (!packet.hasRemaining(21)) { packet.skipAll(); return; }
         uint64_t victimGuid  = packet.readUInt64();
         uint8_t envType      = packet.readUInt8();
         uint32_t dmg         = packet.readUInt32();
@@ -3955,7 +3955,7 @@ void GameHandler::registerOpcodeHandlers() {
                     Opcode::SMSG_SPLINE_MOVE_WATER_WALK}) {
         dispatchTable_[op] = [this](network::Packet& packet) {
             // Minimal parse: PackedGuid only — no animation-relevant state change.
-            if (packet.getRemainingSize() >= 1) {
+            if (packet.hasRemaining(1)) {
                 (void)packet.readPackedGuid();
             }
         };
@@ -3963,7 +3963,7 @@ void GameHandler::registerOpcodeHandlers() {
 
     dispatchTable_[Opcode::SMSG_SPLINE_MOVE_UNSET_FLYING] = [this](network::Packet& packet) {
         // PackedGuid + synthesised move-flags=0 → clears flying animation.
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         uint64_t guid = packet.readPackedGuid();
         if (guid == 0 || guid == playerGuid || !unitMoveFlagsCallback_) return;
         unitMoveFlagsCallback_(guid, 0u); // clear flying/CAN_FLY
@@ -3973,45 +3973,45 @@ void GameHandler::registerOpcodeHandlers() {
     // These use *logicalOp to distinguish which speed to set, so each gets a separate lambda.
     dispatchTable_[Opcode::SMSG_SPLINE_SET_FLIGHT_SPEED] = [this](network::Packet& packet) {
         // Minimal parse: PackedGuid + float speed
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint64_t sGuid = packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         float sSpeed = packet.readFloat();
         if (sGuid == playerGuid && std::isfinite(sSpeed) && sSpeed > 0.01f && sSpeed < 200.0f) {
             serverFlightSpeed_ = sSpeed;
         }
     };
     dispatchTable_[Opcode::SMSG_SPLINE_SET_FLIGHT_BACK_SPEED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint64_t sGuid = packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         float sSpeed = packet.readFloat();
         if (sGuid == playerGuid && std::isfinite(sSpeed) && sSpeed > 0.01f && sSpeed < 200.0f) {
             serverFlightBackSpeed_ = sSpeed;
         }
     };
     dispatchTable_[Opcode::SMSG_SPLINE_SET_SWIM_BACK_SPEED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint64_t sGuid = packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         float sSpeed = packet.readFloat();
         if (sGuid == playerGuid && std::isfinite(sSpeed) && sSpeed > 0.01f && sSpeed < 200.0f) {
             serverSwimBackSpeed_ = sSpeed;
         }
     };
     dispatchTable_[Opcode::SMSG_SPLINE_SET_WALK_SPEED] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint64_t sGuid = packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         float sSpeed = packet.readFloat();
         if (sGuid == playerGuid && std::isfinite(sSpeed) && sSpeed > 0.01f && sSpeed < 200.0f) {
             serverWalkSpeed_ = sSpeed;
         }
     };
     dispatchTable_[Opcode::SMSG_SPLINE_SET_TURN_RATE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint64_t sGuid = packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         float sSpeed = packet.readFloat();
         if (sGuid == playerGuid && std::isfinite(sSpeed) && sSpeed > 0.01f && sSpeed < 200.0f) {
             serverTurnRate_ = sSpeed;  // rad/s
@@ -4019,9 +4019,9 @@ void GameHandler::registerOpcodeHandlers() {
     };
     dispatchTable_[Opcode::SMSG_SPLINE_SET_PITCH_RATE] = [this](network::Packet& packet) {
         // Minimal parse: PackedGuid + float speed — pitch rate not stored locally
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         (void)packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         (void)packet.readFloat();
     };
 
@@ -4032,20 +4032,20 @@ void GameHandler::registerOpcodeHandlers() {
             // Both packets share the same format:
             // packed_guid (unit) + packed_guid (highest-threat target or target, unused here)
             // + uint32 count + count × (packed_guid victim + uint32 threat)
-            if (packet.getRemainingSize() < 1) return;
+            if (!packet.hasRemaining(1)) return;
             uint64_t unitGuid = packet.readPackedGuid();
-            if (packet.getRemainingSize() < 1) return;
+            if (!packet.hasRemaining(1)) return;
             (void)packet.readPackedGuid(); // highest-threat / current target
-            if (packet.getRemainingSize() < 4) return;
+            if (!packet.hasRemaining(4)) return;
             uint32_t cnt = packet.readUInt32();
             if (cnt > 100) { packet.skipAll(); return; } // sanity
             std::vector<ThreatEntry> list;
             list.reserve(cnt);
             for (uint32_t i = 0; i < cnt; ++i) {
-                if (packet.getRemainingSize() < 1) return;
+                if (!packet.hasRemaining(1)) return;
                 ThreatEntry entry;
                 entry.victimGuid = packet.readPackedGuid();
-                if (packet.getRemainingSize() < 4) return;
+                if (!packet.hasRemaining(4)) return;
                 entry.threat = packet.readUInt32();
                 list.push_back(entry);
             }
@@ -4100,7 +4100,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_INIT_WORLD_STATES] = [this](network::Packet& packet) {
         // WotLK format: uint32 mapId, uint32 zoneId, uint32 areaId, uint16 count, N*(uint32 key, uint32 val)
         // Classic/TBC format: uint32 mapId, uint32 zoneId, uint16 count, N*(uint32 key, uint32 val)
-        if (packet.getRemainingSize() < 10) {
+        if (!packet.hasRemaining(10)) {
             LOG_WARNING("SMSG_INIT_WORLD_STATES too short: ", packet.getSize(), " bytes");
             return;
         }
@@ -4242,12 +4242,12 @@ void GameHandler::registerOpcodeHandlers() {
         dispatchTable_[op] = [this](network::Packet& packet) {
             // Server-authoritative level-up event.
             // WotLK layout: uint32 newLevel + uint32 hpDelta + uint32 manaDelta + 5x uint32 statDeltas
-            if (packet.getRemainingSize() >= 4) {
+            if (packet.hasRemaining(4)) {
                 uint32_t newLevel = packet.readUInt32();
                 if (newLevel > 0) {
                     // Parse stat deltas (WotLK layout has 7 more uint32s)
                     lastLevelUpDeltas_ = {};
-                    if (packet.getRemainingSize() >= 28) {
+                    if (packet.hasRemaining(28)) {
                         lastLevelUpDeltas_.hp    = packet.readUInt32();
                         lastLevelUpDeltas_.mana  = packet.readUInt32();
                         lastLevelUpDeltas_.str   = packet.readUInt32();
@@ -4342,12 +4342,12 @@ void GameHandler::registerOpcodeHandlers() {
                 LOG_WARNING("SMSG_INVENTORY_CHANGE_FAILURE: error=", static_cast<int>(error));
                 // After error byte: item_guid1(8) + item_guid2(8) + bag_slot(1) = 17 bytes
                 uint32_t requiredLevel = 0;
-                if (packet.getRemainingSize() >= 17) {
+                if (packet.hasRemaining(17)) {
                     packet.readUInt64(); // item_guid1
                     packet.readUInt64(); // item_guid2
                     packet.readUInt8();  // bag_slot
                     // Error 1 = EQUIP_ERR_LEVEL_REQ: server appends required level as uint32
-                    if (error == 1 && packet.getRemainingSize() >= 4)
+                    if (error == 1 && packet.hasRemaining(4))
                         requiredLevel = packet.readUInt32();
                 }
                 // InventoryResult enum (AzerothCore 3.3.5a)
@@ -4434,7 +4434,7 @@ void GameHandler::registerOpcodeHandlers() {
     // ---- SMSG_BUY_FAILED ----
     dispatchTable_[Opcode::SMSG_BUY_FAILED] = [this](network::Packet& packet) {
         // vendorGuid(8) + itemId(4) + errorCode(1)
-        if (packet.getRemainingSize() >= 13) {
+        if (packet.hasRemaining(13)) {
             uint64_t vendorGuid = packet.readUInt64();
             uint32_t itemIdOrSlot = packet.readUInt32();
             uint8_t errCode = packet.readUInt8();
@@ -4497,7 +4497,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_BUY_ITEM] = [this](network::Packet& packet) {
         // uint64 vendorGuid + uint32 vendorSlot + int32 newCount + uint32 itemCount
         // Confirms a successful CMSG_BUY_ITEM. The inventory update arrives via SMSG_UPDATE_OBJECT.
-        if (packet.getRemainingSize() >= 20) {
+        if (packet.hasRemaining(20)) {
             /*uint64_t vendorGuid =*/ packet.readUInt64();
             /*uint32_t vendorSlot =*/ packet.readUInt32();
             /*int32_t  newCount   =*/ static_cast<int32_t>(packet.readUInt32());
@@ -4533,7 +4533,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (rtuType == 0) {
             // Full update: always 8 entries
             for (uint32_t i = 0; i < kRaidMarkCount; ++i) {
-                if (packet.getRemainingSize() < 9) return;
+                if (!packet.hasRemaining(9)) return;
                 uint8_t  icon = packet.readUInt8();
                 uint64_t guid = packet.readUInt64();
                 if (icon < kRaidMarkCount)
@@ -4541,7 +4541,7 @@ void GameHandler::registerOpcodeHandlers() {
             }
         } else {
             // Single update
-            if (packet.getRemainingSize() >= 9) {
+            if (packet.hasRemaining(9)) {
                 uint8_t  icon = packet.readUInt8();
                 uint64_t guid = packet.readUInt64();
                 if (icon < kRaidMarkCount)
@@ -4555,7 +4555,7 @@ void GameHandler::registerOpcodeHandlers() {
     // ---- SMSG_CRITERIA_UPDATE ----
     dispatchTable_[Opcode::SMSG_CRITERIA_UPDATE] = [this](network::Packet& packet) {
         // uint32 criteriaId + uint64 progress + uint32 elapsedTime + uint32 creationTime
-        if (packet.getRemainingSize() >= 20) {
+        if (packet.hasRemaining(20)) {
             uint32_t criteriaId    = packet.readUInt32();
             uint64_t progress      = packet.readUInt64();
             packet.readUInt32(); // elapsedTime
@@ -4574,7 +4574,7 @@ void GameHandler::registerOpcodeHandlers() {
     // ---- SMSG_BARBER_SHOP_RESULT ----
     dispatchTable_[Opcode::SMSG_BARBER_SHOP_RESULT] = [this](network::Packet& packet) {
         // uint32 result (0 = success, 1 = no money, 2 = not barber, 3 = sitting)
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t result = packet.readUInt32();
             if (result == 0) {
                 addSystemChatMessage("Hairstyle changed.");
@@ -4595,7 +4595,7 @@ void GameHandler::registerOpcodeHandlers() {
     // ---- SMSG_QUESTGIVER_QUEST_FAILED ----
     dispatchTable_[Opcode::SMSG_QUESTGIVER_QUEST_FAILED] = [this](network::Packet& packet) {
         // uint32 questId + uint32 reason
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint32_t questId = packet.readUInt32();
             uint32_t reason = packet.readUInt32();
             auto questTitle = getQuestTitle(questId);
@@ -4626,7 +4626,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_EQUIPMENT_SET_SAVED] = [this](network::Packet& packet) {
         // uint32 setIndex + uint64 guid — equipment set was successfully saved
         std::string setName;
-        if (packet.getRemainingSize() >= 12) {
+        if (packet.hasRemaining(12)) {
             uint32_t setIndex = packet.readUInt32();
             uint64_t setGuid  = packet.readUInt64();
             // Update the local set's GUID so subsequent "Update" calls
@@ -4685,13 +4685,13 @@ void GameHandler::registerOpcodeHandlers() {
         // Classic/Vanilla: packed_guid (same as WotLK)
         const bool periodicTbc = isActiveExpansion("tbc");
         const size_t guidMinSz = periodicTbc ? 8u : 2u;
-        if (packet.getRemainingSize() < guidMinSz) return;
+        if (!packet.hasRemaining(guidMinSz)) return;
         uint64_t victimGuid = periodicTbc
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < guidMinSz) return;
+        if (!packet.hasRemaining(guidMinSz)) return;
         uint64_t casterGuid = periodicTbc
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         uint32_t spellId = packet.readUInt32();
         uint32_t count   = packet.readUInt32();
         bool isPlayerVictim = (victimGuid == playerGuid);
@@ -4700,14 +4700,14 @@ void GameHandler::registerOpcodeHandlers() {
             packet.skipAll();
             return;
         }
-        for (uint32_t i = 0; i < count && packet.getRemainingSize() >= 1; ++i) {
+        for (uint32_t i = 0; i < count && packet.hasRemaining(1); ++i) {
             uint8_t auraType = packet.readUInt8();
             if (auraType == 3 || auraType == 89) {
                 // Classic/TBC: damage(4)+school(4)+absorbed(4)+resisted(4)  = 16 bytes
                 // WotLK 3.3.5a: damage(4)+overkill(4)+school(4)+absorbed(4)+resisted(4)+isCrit(1) = 21 bytes
                 const bool periodicWotlk = isActiveExpansion("wotlk");
                 const size_t dotSz = periodicWotlk ? 21u : 16u;
-                if (packet.getRemainingSize() < dotSz) break;
+                if (!packet.hasRemaining(dotSz)) break;
                 uint32_t dmg      = packet.readUInt32();
                 if (periodicWotlk) /*uint32_t overkill=*/ packet.readUInt32();
                 /*uint32_t school=*/ packet.readUInt32();
@@ -4730,7 +4730,7 @@ void GameHandler::registerOpcodeHandlers() {
                 // WotLK 3.3.5a: heal(4)+maxHeal(4)+overHeal(4)+absorbed(4)+isCrit(1) = 17 bytes
                 const bool healWotlk = isActiveExpansion("wotlk");
                 const size_t hotSz = healWotlk ? 17u : 12u;
-                if (packet.getRemainingSize() < hotSz) break;
+                if (!packet.hasRemaining(hotSz)) break;
                 uint32_t heal    = packet.readUInt32();
                 /*uint32_t max=*/  packet.readUInt32();
                 /*uint32_t over=*/ packet.readUInt32();
@@ -4749,7 +4749,7 @@ void GameHandler::registerOpcodeHandlers() {
             } else if (auraType == 46 || auraType == 91) {
                 // OBS_MOD_POWER / PERIODIC_ENERGIZE: miscValue(powerType) + amount
                 // Common in WotLK: Replenishment, Mana Spring Totem, Divine Plea, etc.
-                if (packet.getRemainingSize() < 8) break;
+                if (!packet.hasRemaining(8)) break;
                 uint8_t periodicPowerType = static_cast<uint8_t>(packet.readUInt32());
                 uint32_t amount = packet.readUInt32();
                 if ((isPlayerVictim || isPlayerCaster) && amount > 0)
@@ -4757,7 +4757,7 @@ void GameHandler::registerOpcodeHandlers() {
                                   spellId, isPlayerCaster, periodicPowerType, casterGuid, victimGuid);
             } else if (auraType == 98) {
                 // PERIODIC_MANA_LEECH: miscValue(powerType) + amount + float multiplier
-                if (packet.getRemainingSize() < 12) break;
+                if (!packet.hasRemaining(12)) break;
                 uint8_t powerType = static_cast<uint8_t>(packet.readUInt32());
                 uint32_t amount = packet.readUInt32();
                 float multiplier = packet.readFloat();
@@ -4790,7 +4790,7 @@ void GameHandler::registerOpcodeHandlers() {
         const bool energizeTbc = isActiveExpansion("tbc");
         auto readEnergizeGuid = [&]() -> uint64_t {
             if (energizeTbc)
-                return (packet.getRemainingSize() >= 8) ? packet.readUInt64() : 0;
+                return (packet.hasRemaining(8)) ? packet.readUInt64() : 0;
             return packet.readPackedGuid();
         };
         if (packet.getRemainingSize() < (energizeTbc ? 8u : 1u)
@@ -4803,7 +4803,7 @@ void GameHandler::registerOpcodeHandlers() {
             packet.skipAll(); return;
         }
         uint64_t casterGuid = readEnergizeGuid();
-        if (packet.getRemainingSize() < 9) {
+        if (!packet.hasRemaining(9)) {
             packet.skipAll(); return;
         }
         uint32_t spellId       = packet.readUInt32();
@@ -4818,7 +4818,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 currentZoneLightId + uint32 overrideLightId + uint32 transitionMs
     dispatchTable_[Opcode::SMSG_OVERRIDE_LIGHT] = [this](network::Packet& packet) {
         // uint32 currentZoneLightId + uint32 overrideLightId + uint32 transitionMs
-        if (packet.getRemainingSize() >= 12) {
+        if (packet.hasRemaining(12)) {
             uint32_t zoneLightId     = packet.readUInt32();
             uint32_t overrideLightId = packet.readUInt32();
             uint32_t transitionMs    = packet.readUInt32();
@@ -4833,10 +4833,10 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_WEATHER] = [this](network::Packet& packet) {
         // Classic 1.12: uint32 weatherType + float intensity (8 bytes, no isAbrupt)
         // TBC 2.4.3 / WotLK 3.3.5a: uint32 weatherType + float intensity + uint8 isAbrupt (9 bytes)
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint32_t wType = packet.readUInt32();
             float wIntensity = packet.readFloat();
-            if (packet.getRemainingSize() >= 1)
+            if (packet.hasRemaining(1))
                 /*uint8_t isAbrupt =*/ packet.readUInt8();
             uint32_t prevWeatherType = weatherType_;
             weatherType_ = wType;
@@ -4879,7 +4879,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint64 targetGuid + uint64 casterGuid + uint32 spellId + uint32 displayId + uint32 animType
     dispatchTable_[Opcode::SMSG_ENCHANTMENTLOG] = [this](network::Packet& packet) {
         // uint64 targetGuid + uint64 casterGuid + uint32 spellId + uint32 displayId + uint32 animType
-        if (packet.getRemainingSize() >= 28) {
+        if (packet.hasRemaining(28)) {
             uint64_t enchTargetGuid = packet.readUInt64();
             uint64_t enchCasterGuid = packet.readUInt64();
             uint32_t enchSpellId = packet.readUInt32();
@@ -4906,7 +4906,7 @@ void GameHandler::registerOpcodeHandlers() {
     // Quest query failed - parse failure reason
     dispatchTable_[Opcode::SMSG_QUESTGIVER_QUEST_INVALID] = [this](network::Packet& packet) {
         // Quest query failed - parse failure reason
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t failReason = packet.readUInt32();
             pendingTurnInRewardRequest_ = false;
             const char* reasonStr = "Unknown";
@@ -4953,7 +4953,7 @@ void GameHandler::registerOpcodeHandlers() {
     // Mark quest as complete in local log
     dispatchTable_[Opcode::SMSG_QUESTGIVER_QUEST_COMPLETE] = [this](network::Packet& packet) {
         // Mark quest as complete in local log
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t questId = packet.readUInt32();
             LOG_INFO("Quest completed: questId=", questId);
             if (pendingTurnInQuestId_ == questId) {
@@ -5003,7 +5003,7 @@ void GameHandler::registerOpcodeHandlers() {
             uint32_t entry = packet.readUInt32();   // Creature entry
             uint32_t count = packet.readUInt32();   // Current kills
             uint32_t reqCount = 0;
-            if (packet.getRemainingSize() >= 4) {
+            if (packet.hasRemaining(4)) {
                 reqCount = packet.readUInt32();     // Required kills (if present)
             }
 
@@ -5072,7 +5072,7 @@ void GameHandler::registerOpcodeHandlers() {
     // Quest item count update: itemId + count
     dispatchTable_[Opcode::SMSG_QUESTUPDATE_ADD_ITEM] = [this](network::Packet& packet) {
         // Quest item count update: itemId + count
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint32_t itemId = packet.readUInt32();
             uint32_t count = packet.readUInt32();
             queryItemInfo(itemId, 0);
@@ -5147,7 +5147,7 @@ void GameHandler::registerOpcodeHandlers() {
             uint32_t entry = packet.readUInt32();
             uint32_t count = packet.readUInt32();
             uint32_t reqCount = 0;
-            if (packet.getRemainingSize() >= 4) reqCount = packet.readUInt32();
+            if (packet.hasRemaining(4)) reqCount = packet.readUInt32();
             if (reqCount == 0) reqCount = count;
             LOG_INFO("Quest kill update (compat via COMPLETE): questId=", questId,
                      " entry=", entry, " count=", count, "/", reqCount);
@@ -5183,7 +5183,7 @@ void GameHandler::registerOpcodeHandlers() {
         // because both share opcode 0x21E in WotLK 3.3.5a.
         // In WotLK: payload = uint32 areaId (entering rest) or 0 (leaving rest).
         // In Classic/TBC: payload = uint32 questId (force-remove a quest).
-        if (packet.getRemainingSize() < 4) {
+        if (!packet.hasRemaining(4)) {
             LOG_WARNING("SMSG_QUEST_FORCE_REMOVE/SET_REST_START too short");
             return;
         }
@@ -5343,7 +5343,7 @@ void GameHandler::registerOpcodeHandlers() {
     // WotLK: uint64 playerGuid + uint8 teamCount + per-team fields
     dispatchTable_[Opcode::MSG_INSPECT_ARENA_TEAMS] = [this](network::Packet& packet) {
         // WotLK: uint64 playerGuid + uint8 teamCount + per-team fields
-        if (packet.getRemainingSize() < 9) {
+        if (!packet.hasRemaining(9)) {
             packet.skipAll();
             return;
         }
@@ -5354,7 +5354,7 @@ void GameHandler::registerOpcodeHandlers() {
             inspectResult_.guid = inspGuid;
             inspectResult_.arenaTeams.clear();
             for (uint8_t t = 0; t < teamCount; ++t) {
-                if (packet.getRemainingSize() < 21) break;
+                if (!packet.hasRemaining(21)) break;
                 InspectArenaTeam team;
                 team.teamId         = packet.readUInt32();
                 team.type           = packet.readUInt8();
@@ -5363,7 +5363,7 @@ void GameHandler::registerOpcodeHandlers() {
                 team.seasonGames    = packet.readUInt32();
                 team.seasonWins     = packet.readUInt32();
                 team.name           = packet.readString();
-                if (packet.getRemainingSize() < 4) break;
+                if (!packet.hasRemaining(4)) break;
                 team.personalRating = packet.readUInt32();
                 inspectResult_.arenaTeams.push_back(std::move(team));
             }
@@ -5376,13 +5376,13 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_AUCTION_OWNER_NOTIFICATION] = [this](network::Packet& packet) {
         // auctionId(u32) + action(u32) + error(u32) + itemEntry(u32) + randomPropertyId(u32) + ...
         // action: 0=sold/won, 1=expired, 2=bid placed on your auction
-        if (packet.getRemainingSize() >= 16) {
+        if (packet.hasRemaining(16)) {
             /*uint32_t auctionId =*/ packet.readUInt32();
             uint32_t action    = packet.readUInt32();
             /*uint32_t error   =*/ packet.readUInt32();
             uint32_t itemEntry = packet.readUInt32();
             int32_t ownerRandProp = 0;
-            if (packet.getRemainingSize() >= 4)
+            if (packet.hasRemaining(4))
                 ownerRandProp = static_cast<int32_t>(packet.readUInt32());
             ensureItemInfo(itemEntry);
             auto* info = getItemInfo(itemEntry);
@@ -5405,12 +5405,12 @@ void GameHandler::registerOpcodeHandlers() {
     // auctionHouseId(u32) + auctionId(u32) + bidderGuid(u64) + bidAmount(u32) + outbidAmount(u32) + itemEntry(u32) + randomPropertyId(u32)
     dispatchTable_[Opcode::SMSG_AUCTION_BIDDER_NOTIFICATION] = [this](network::Packet& packet) {
         // auctionHouseId(u32) + auctionId(u32) + bidderGuid(u64) + bidAmount(u32) + outbidAmount(u32) + itemEntry(u32) + randomPropertyId(u32)
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             /*uint32_t auctionId =*/ packet.readUInt32();
             uint32_t itemEntry = packet.readUInt32();
             int32_t bidRandProp = 0;
             // Try to read randomPropertyId if enough data remains
-            if (packet.getRemainingSize() >= 4)
+            if (packet.hasRemaining(4))
                 bidRandProp = static_cast<int32_t>(packet.readUInt32());
             ensureItemInfo(itemEntry);
             auto* info = getItemInfo(itemEntry);
@@ -5428,7 +5428,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 auctionId + uint32 itemEntry + uint32 itemRandom — auction expired/cancelled
     dispatchTable_[Opcode::SMSG_AUCTION_REMOVED_NOTIFICATION] = [this](network::Packet& packet) {
         // uint32 auctionId + uint32 itemEntry + uint32 itemRandom — auction expired/cancelled
-        if (packet.getRemainingSize() >= 12) {
+        if (packet.hasRemaining(12)) {
             /*uint32_t auctionId =*/ packet.readUInt32();
             uint32_t itemEntry = packet.readUInt32();
             int32_t itemRandom = static_cast<int32_t>(packet.readUInt32());
@@ -5450,7 +5450,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_OPEN_CONTAINER] = [this](network::Packet& packet) {
         // uint64 containerGuid — tells client to open this container
         // The actual items come via update packets; we just log this.
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint64_t containerGuid = packet.readUInt64();
             LOG_DEBUG("SMSG_OPEN_CONTAINER: guid=0x", std::hex, containerGuid, std::dec);
         }
@@ -5460,10 +5460,10 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_PLAYER_VEHICLE_DATA] = [this](network::Packet& packet) {
         // PackedGuid (player guid) + uint32 vehicleId
         // vehicleId == 0 means the player left the vehicle
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             (void)packet.readPackedGuid(); // player guid (unused)
         }
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             vehicleId_ = packet.readUInt32();
         } else {
             vehicleId_ = 0;
@@ -5472,7 +5472,7 @@ void GameHandler::registerOpcodeHandlers() {
     // guid(8) + status(1): status 1 = NPC has available/new routes for this player
     dispatchTable_[Opcode::SMSG_TAXINODE_STATUS] = [this](network::Packet& packet) {
         // guid(8) + status(1): status 1 = NPC has available/new routes for this player
-        if (packet.getRemainingSize() >= 9) {
+        if (packet.hasRemaining(9)) {
             uint64_t npcGuid = packet.readUInt64();
             uint8_t  status  = packet.readUInt8();
             taxiNpcHasRoutes_[npcGuid] = (status != 0);
@@ -5586,7 +5586,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_SET_REST_START] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t restTrigger = packet.readUInt32();
             isResting_ = (restTrigger > 0);
             addSystemChatMessage(isResting_ ? "You are now resting."
@@ -5595,14 +5595,14 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_UPDATE_AURA_DURATION] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 5) {
+        if (packet.hasRemaining(5)) {
             uint8_t slot       = packet.readUInt8();
             uint32_t durationMs = packet.readUInt32();
             handleUpdateAuraDuration(slot, durationMs);
         }
     };
     dispatchTable_[Opcode::SMSG_ITEM_NAME_QUERY_RESPONSE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t itemId = packet.readUInt32();
             std::string name = packet.readString();
             if (!itemInfoCache_.count(itemId) && !name.empty()) {
@@ -5617,7 +5617,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     dispatchTable_[Opcode::SMSG_MOUNTSPECIAL_ANIM] = [this](network::Packet& packet) { (void)packet.readPackedGuid(); };
     dispatchTable_[Opcode::SMSG_CHAR_CUSTOMIZE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t result = packet.readUInt8();
             addSystemChatMessage(result == 0 ? "Character customization complete."
                                              : "Character customization failed.");
@@ -5625,7 +5625,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_CHAR_FACTION_CHANGE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t result = packet.readUInt8();
             addSystemChatMessage(result == 0 ? "Faction change complete."
                                              : "Faction change failed.");
@@ -5633,7 +5633,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_INVALIDATE_PLAYER] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint64_t guid = packet.readUInt64();
             playerNameCache.erase(guid);
         }
@@ -5653,7 +5653,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     registerHandler(Opcode::SMSG_EQUIPMENT_SET_LIST, &GameHandler::handleEquipmentSetList);
     dispatchTable_[Opcode::SMSG_EQUIPMENT_SET_USE_RESULT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t result = packet.readUInt8();
             if (result != 0) { addUIError("Failed to equip item set."); addSystemChatMessage("Failed to equip item set."); }
         }
@@ -5675,7 +5675,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 result — LFG auto-join attempt failed (player selected auto-join at queue time)
     dispatchTable_[Opcode::SMSG_LFG_AUTOJOIN_FAILED] = [this](network::Packet& packet) {
         // uint32 result — LFG auto-join attempt failed (player selected auto-join at queue time)
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t result = packet.readUInt32();
             (void)result;
         }
@@ -5699,7 +5699,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 zoneId + uint8 level_min + uint8 level_max — player queued for meeting stone
     dispatchTable_[Opcode::SMSG_MEETINGSTONE_SETQUEUE] = [this](network::Packet& packet) {
         // uint32 zoneId + uint8 level_min + uint8 level_max — player queued for meeting stone
-        if (packet.getRemainingSize() >= 6) {
+        if (packet.hasRemaining(6)) {
             uint32_t zoneId   = packet.readUInt32();
             uint8_t  levelMin = packet.readUInt8();
             uint8_t  levelMax = packet.readUInt8();
@@ -5736,7 +5736,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint64 memberGuid — a player was added to your group via meeting stone
     dispatchTable_[Opcode::SMSG_MEETINGSTONE_MEMBER_ADDED] = [this](network::Packet& packet) {
         // uint64 memberGuid — a player was added to your group via meeting stone
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint64_t memberGuid = packet.readUInt64();
             const auto& memberName = lookupName(memberGuid);
             if (!memberName.empty()) {
@@ -5759,7 +5759,7 @@ void GameHandler::registerOpcodeHandlers() {
             "You are not in a valid zone for that Meeting Stone.",
             "Target player is not available.",
         };
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t reason = packet.readUInt8();
             const char* msg = (reason < 4) ? kMeetingstoneErrors[reason]
                                            : "Meeting Stone: Could not join group.";
@@ -5775,21 +5775,21 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_GMTICKET_CREATE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t res = packet.readUInt8();
             addSystemChatMessage(res == 1 ? "GM ticket submitted."
                                           : "Failed to submit GM ticket.");
         }
     };
     dispatchTable_[Opcode::SMSG_GMTICKET_UPDATETEXT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t res = packet.readUInt8();
             addSystemChatMessage(res == 1 ? "GM ticket updated."
                                           : "Failed to update GM ticket.");
         }
     };
     dispatchTable_[Opcode::SMSG_GMTICKET_DELETETICKET] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t res = packet.readUInt8();
             addSystemChatMessage(res == 9 ? "GM ticket deleted."
                                           : "No ticket to delete.");
@@ -5810,14 +5810,14 @@ void GameHandler::registerOpcodeHandlers() {
         //   uint32  ticketAge       (seconds old)
         //   uint32  daysUntilOld    (days remaining before escalation)
         //   float   waitTimeHours   (estimated GM wait time)
-        if (packet.getRemainingSize() < 1) { packet.skipAll(); return; }
+        if (!packet.hasRemaining(1)) { packet.skipAll(); return; }
         uint8_t gmStatus = packet.readUInt8();
         // Status 6 = GMTICKET_STATUS_HASTEXT — open ticket with text
-        if (gmStatus == 6 && packet.getRemainingSize() >= 1) {
+        if (gmStatus == 6 && packet.hasRemaining(1)) {
             gmTicketText_    = packet.readString();
-            uint32_t ageSec  = (packet.getRemainingSize() >= 4) ? packet.readUInt32() : 0;
-            /*uint32_t daysLeft =*/ (packet.getRemainingSize() >= 4) ? packet.readUInt32() : 0;
-            gmTicketWaitHours_ = (packet.getRemainingSize() >= 4)
+            uint32_t ageSec  = (packet.hasRemaining(4)) ? packet.readUInt32() : 0;
+            /*uint32_t daysLeft =*/ (packet.hasRemaining(4)) ? packet.readUInt32() : 0;
+            gmTicketWaitHours_ = (packet.hasRemaining(4))
                 ? packet.readFloat() : 0.0f;
             gmTicketActive_ = true;
             char buf[256];
@@ -5855,7 +5855,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 status: 1 = GM support available, 0 = offline/unavailable
     dispatchTable_[Opcode::SMSG_GMTICKET_SYSTEMSTATUS] = [this](network::Packet& packet) {
         // uint32 status: 1 = GM support available, 0 = offline/unavailable
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t sysStatus = packet.readUInt32();
             gmSupportAvailable_ = (sysStatus != 0);
             addSystemChatMessage(gmSupportAvailable_
@@ -5868,7 +5868,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint8 runeIndex + uint8 newRuneType (0=Blood,1=Unholy,2=Frost,3=Death)
     dispatchTable_[Opcode::SMSG_CONVERT_RUNE] = [this](network::Packet& packet) {
         // uint8 runeIndex + uint8 newRuneType (0=Blood,1=Unholy,2=Frost,3=Death)
-        if (packet.getRemainingSize() < 2) {
+        if (!packet.hasRemaining(2)) {
             packet.skipAll();
             return;
         }
@@ -5881,7 +5881,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_RESYNC_RUNES] = [this](network::Packet& packet) {
         // uint8 runeReadyMask (bit i=1 → rune i is ready)
         // uint8[6] cooldowns (0=ready, 255=just used → readyFraction = 1 - val/255)
-        if (packet.getRemainingSize() < 7) {
+        if (!packet.hasRemaining(7)) {
             packet.skipAll();
             return;
         }
@@ -5896,7 +5896,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 runeMask (bit i=1 → rune i just became ready)
     dispatchTable_[Opcode::SMSG_ADD_RUNE_POWER] = [this](network::Packet& packet) {
         // uint32 runeMask (bit i=1 → rune i just became ready)
-        if (packet.getRemainingSize() < 4) {
+        if (!packet.hasRemaining(4)) {
             packet.skipAll();
             return;
         }
@@ -5919,7 +5919,7 @@ void GameHandler::registerOpcodeHandlers() {
         const bool shieldWotlkLike = !isClassicLikeExpansion() && !shieldTbc;
         const auto shieldRem = [&]() { return packet.getRemainingSize(); };
         const size_t shieldMinSz = shieldTbc ? 24u : 2u;
-        if (packet.getRemainingSize() < shieldMinSz) {
+        if (!packet.hasRemaining(shieldMinSz)) {
             packet.skipAll(); return;
         }
         if (!shieldTbc && (!packet.hasFullPackedGuid())) {
@@ -5958,7 +5958,7 @@ void GameHandler::registerOpcodeHandlers() {
         // TBC:                  full uint64 casterGuid + full uint64 victimGuid + uint32 + uint8
         const bool immuneUsesFullGuid = isActiveExpansion("tbc");
         const size_t minSz = immuneUsesFullGuid ? 21u : 2u;
-        if (packet.getRemainingSize() < minSz) {
+        if (!packet.hasRemaining(minSz)) {
             packet.skipAll(); return;
         }
         if (!immuneUsesFullGuid && !packet.hasFullPackedGuid()) {
@@ -5972,7 +5972,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         uint64_t victimGuid = immuneUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 5) return;
+        if (!packet.hasRemaining(5)) return;
         uint32_t immuneSpellId = packet.readUInt32();
         /*uint8_t saveType =*/ packet.readUInt8();
         // Show IMMUNE text when the player is the caster (we hit an immune target)
@@ -6002,7 +6002,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         uint64_t victimGuid = dispelUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 9) return;
+        if (!packet.hasRemaining(9)) return;
         /*uint32_t dispelSpell =*/ packet.readUInt32();
         uint8_t isStolen = packet.readUInt8();
         uint32_t count   = packet.readUInt32();
@@ -6011,7 +6011,7 @@ void GameHandler::registerOpcodeHandlers() {
         const size_t dispelEntrySize = dispelUsesFullGuid ? 8u : 5u;
         std::vector<uint32_t> dispelledIds;
         dispelledIds.reserve(count);
-        for (uint32_t i = 0; i < count && packet.getRemainingSize() >= dispelEntrySize; ++i) {
+        for (uint32_t i = 0; i < count && packet.hasRemaining(dispelEntrySize); ++i) {
             uint32_t dispelledId = packet.readUInt32();
             if (dispelUsesFullGuid) {
                 /*uint32_t unk =*/ packet.readUInt32();
@@ -6096,7 +6096,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         uint64_t stealCaster = stealUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 9) {
+        if (!packet.hasRemaining(9)) {
             packet.skipAll(); return;
         }
         /*uint32_t stealSpellId =*/ packet.readUInt32();
@@ -6106,7 +6106,7 @@ void GameHandler::registerOpcodeHandlers() {
         const size_t stealEntrySize = stealUsesFullGuid ? 8u : 5u;
         std::vector<uint32_t> stolenIds;
         stolenIds.reserve(stealCount);
-        for (uint32_t i = 0; i < stealCount && packet.getRemainingSize() >= stealEntrySize; ++i) {
+        for (uint32_t i = 0; i < stealCount && packet.hasRemaining(stealEntrySize); ++i) {
             uint32_t stolenId = packet.readUInt32();
             if (stealUsesFullGuid) {
                 /*uint32_t unk =*/ packet.readUInt32();
@@ -6155,7 +6155,7 @@ void GameHandler::registerOpcodeHandlers() {
         const bool procChanceUsesFullGuid = isActiveExpansion("tbc");
         auto readProcChanceGuid = [&]() -> uint64_t {
             if (procChanceUsesFullGuid)
-                return (packet.getRemainingSize() >= 8) ? packet.readUInt64() : 0;
+                return (packet.hasRemaining(8)) ? packet.readUInt64() : 0;
             return packet.readPackedGuid();
         };
         if (packet.getRemainingSize() < (procChanceUsesFullGuid ? 8u : 1u)
@@ -6168,7 +6168,7 @@ void GameHandler::registerOpcodeHandlers() {
             packet.skipAll(); return;
         }
         uint64_t procCasterGuid = readProcChanceGuid();
-        if (packet.getRemainingSize() < 4) {
+        if (!packet.hasRemaining(4)) {
             packet.skipAll(); return;
         }
         uint32_t procSpellId = packet.readUInt32();
@@ -6243,7 +6243,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         uint64_t exeCaster = exeUsesFullGuid
             ? packet.readUInt64() : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 8) {
+        if (!packet.hasRemaining(8)) {
             packet.skipAll(); return;
         }
         uint32_t exeSpellId = packet.readUInt32();
@@ -6252,7 +6252,7 @@ void GameHandler::registerOpcodeHandlers() {
 
         const bool isPlayerCaster = (exeCaster == playerGuid);
         for (uint32_t ei = 0; ei < exeEffectCount; ++ei) {
-            if (packet.getRemainingSize() < 5) break;
+            if (!packet.hasRemaining(5)) break;
             uint8_t  effectType     = packet.readUInt8();
             uint32_t effectLogCount = packet.readUInt32();
             effectLogCount = std::min(effectLogCount, 64u); // sanity
@@ -6266,7 +6266,7 @@ void GameHandler::registerOpcodeHandlers() {
                     uint64_t drainTarget = exeUsesFullGuid
                         ? packet.readUInt64()
                         : packet.readPackedGuid();
-                    if (packet.getRemainingSize() < 12) { packet.skipAll(); break; }
+                    if (!packet.hasRemaining(12)) { packet.skipAll(); break; }
                     uint32_t drainAmount = packet.readUInt32();
                     uint32_t drainPower  = packet.readUInt32(); // 0=mana,1=rage,3=energy,6=runic
                     float drainMult = packet.readFloat();
@@ -6304,7 +6304,7 @@ void GameHandler::registerOpcodeHandlers() {
                     uint64_t leechTarget = exeUsesFullGuid
                         ? packet.readUInt64()
                         : packet.readPackedGuid();
-                    if (packet.getRemainingSize() < 8) { packet.skipAll(); break; }
+                    if (!packet.hasRemaining(8)) { packet.skipAll(); break; }
                     uint32_t leechAmount = packet.readUInt32();
                     float leechMult = packet.readFloat();
                     if (leechAmount > 0) {
@@ -6330,7 +6330,7 @@ void GameHandler::registerOpcodeHandlers() {
             } else if (effectType == 24 || effectType == 114) {
                 // SPELL_EFFECT_CREATE_ITEM / CREATE_ITEM2: uint32 itemEntry per log entry
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
-                    if (packet.getRemainingSize() < 4) break;
+                    if (!packet.hasRemaining(4)) break;
                     uint32_t itemEntry = packet.readUInt32();
                     if (isPlayerCaster && itemEntry != 0) {
                         ensureItemInfo(itemEntry);
@@ -6366,7 +6366,7 @@ void GameHandler::registerOpcodeHandlers() {
                     uint64_t icTarget = exeUsesFullGuid
                         ? packet.readUInt64()
                         : packet.readPackedGuid();
-                    if (packet.getRemainingSize() < 4) { packet.skipAll(); break; }
+                    if (!packet.hasRemaining(4)) { packet.skipAll(); break; }
                     uint32_t icSpellId = packet.readUInt32();
                     // Clear the interrupted unit's cast bar immediately
                     unitCastStates_.erase(icTarget);
@@ -6380,7 +6380,7 @@ void GameHandler::registerOpcodeHandlers() {
             } else if (effectType == 49) {
                 // SPELL_EFFECT_FEED_PET: uint32 itemEntry per log entry
                 for (uint32_t li = 0; li < effectLogCount; ++li) {
-                    if (packet.getRemainingSize() < 4) break;
+                    if (!packet.hasRemaining(4)) break;
                     uint32_t feedItem = packet.readUInt32();
                     if (isPlayerCaster && feedItem != 0) {
                         ensureItemInfo(feedItem);
@@ -6405,7 +6405,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_CLEAR_EXTRA_AURA_INFO] = [this](network::Packet& packet) {
         // TBC 2.4.3: clear a single aura slot for a unit
         // Format: uint64 targetGuid + uint8 slot
-        if (packet.getRemainingSize() >= 9) {
+        if (packet.hasRemaining(9)) {
             uint64_t clearGuid  = packet.readUInt64();
             uint8_t  slot       = packet.readUInt8();
             std::vector<AuraSlot>* auraList = nullptr;
@@ -6422,7 +6422,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_ITEM_ENCHANT_TIME_UPDATE] = [this](network::Packet& packet) {
         // Format: uint64 itemGuid + uint32 slot + uint32 durationSec + uint64 playerGuid
         // slot: 0=main-hand, 1=off-hand, 2=ranged
-        if (packet.getRemainingSize() < 24) {
+        if (!packet.hasRemaining(24)) {
             packet.skipAll(); return;
         }
         /*uint64_t itemGuid =*/ packet.readUInt64();
@@ -6469,7 +6469,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint8 result: 0=success, 1=failed, 2=disabled
     dispatchTable_[Opcode::SMSG_COMPLAIN_RESULT] = [this](network::Packet& packet) {
         // uint8 result: 0=success, 1=failed, 2=disabled
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t result = packet.readUInt8();
             if (result == 0)
                 addSystemChatMessage("Your complaint has been submitted.");
@@ -6518,9 +6518,9 @@ void GameHandler::registerOpcodeHandlers() {
         // casterGuid + uint32 spellId + uint32 totalDurationMs
         const bool tbcOrClassic = isPreWotlk();
         uint64_t chanCaster = tbcOrClassic
-            ? (packet.getRemainingSize() >= 8 ? packet.readUInt64() : 0)
+            ? (packet.hasRemaining(8) ? packet.readUInt64() : 0)
             : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         uint32_t chanSpellId = packet.readUInt32();
         uint32_t chanTotalMs = packet.readUInt32();
         if (chanTotalMs > 0 && chanCaster != 0) {
@@ -6554,9 +6554,9 @@ void GameHandler::registerOpcodeHandlers() {
         // casterGuid + uint32 remainingMs
         const bool tbcOrClassic2 = isPreWotlk();
         uint64_t chanCaster2 = tbcOrClassic2
-            ? (packet.getRemainingSize() >= 8 ? packet.readUInt64() : 0)
+            ? (packet.hasRemaining(8) ? packet.readUInt64() : 0)
             : packet.readPackedGuid();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t chanRemainMs = packet.readUInt32();
         if (chanCaster2 == playerGuid) {
             castTimeRemaining = chanRemainMs / 1000.0f;
@@ -6584,7 +6584,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 slot + packed_guid unit (0 packed = clear slot)
     dispatchTable_[Opcode::SMSG_UPDATE_INSTANCE_ENCOUNTER_UNIT] = [this](network::Packet& packet) {
         // uint32 slot + packed_guid unit (0 packed = clear slot)
-        if (packet.getRemainingSize() < 5) {
+        if (!packet.hasRemaining(5)) {
             packet.skipAll();
             return;
         }
@@ -6601,7 +6601,7 @@ void GameHandler::registerOpcodeHandlers() {
         // charName (cstring) + guid (uint64) + achievementId (uint32) + ...
         if (packet.hasData()) {
             std::string charName = packet.readString();
-            if (packet.getRemainingSize() >= 12) {
+            if (packet.hasRemaining(12)) {
                 /*uint64_t guid =*/ packet.readUInt64();
                 uint32_t achievementId = packet.readUInt32();
                 loadAchievementNameCache();
@@ -6623,7 +6623,7 @@ void GameHandler::registerOpcodeHandlers() {
     };
     registerHandler(Opcode::SMSG_SET_FORCED_REACTIONS, &GameHandler::handleSetForcedReactions);
     dispatchTable_[Opcode::SMSG_SUSPEND_COMMS] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t seqIdx = packet.readUInt32();
             if (socket) {
                 network::Packet ack(wireOpcode(Opcode::CMSG_SUSPEND_COMMS_ACK));
@@ -6647,7 +6647,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     dispatchTable_[Opcode::SMSG_PLAYERBINDERROR] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t error = packet.readUInt32();
             if (error == 0) {
                 addUIError("Your hearthstone is not bound.");
@@ -6664,7 +6664,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_RAID_READY_CHECK_ERROR] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t err = packet.readUInt8();
             if (err == 0) { addUIError("Ready check failed: not in a group."); addSystemChatMessage("Ready check failed: not in a group."); }
             else if (err == 1) { addUIError("Ready check failed: in instance."); addSystemChatMessage("Ready check failed: in instance."); }
@@ -6682,7 +6682,7 @@ void GameHandler::registerOpcodeHandlers() {
         // uint32 splitType + uint32 deferTime + string realmName
         // Client must respond with CMSG_REALM_SPLIT to avoid session timeout on some servers.
         uint32_t splitType = 0;
-        if (packet.getRemainingSize() >= 4)
+        if (packet.hasRemaining(4))
             splitType = packet.readUInt32();
         packet.skipAll();
         if (socket) {
@@ -6720,20 +6720,20 @@ void GameHandler::registerOpcodeHandlers() {
             fireAddonEvent("GROUP_ROSTER_UPDATE", {});
     };
     dispatchTable_[Opcode::SMSG_PLAY_MUSIC] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t soundId = packet.readUInt32();
             if (playMusicCallback_) playMusicCallback_(soundId);
         }
     };
     dispatchTable_[Opcode::SMSG_PLAY_OBJECT_SOUND] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 12) {
+        if (packet.hasRemaining(12)) {
             // uint32 soundId + uint64 sourceGuid
             uint32_t soundId = packet.readUInt32();
             uint64_t srcGuid = packet.readUInt64();
             LOG_DEBUG("SMSG_PLAY_OBJECT_SOUND: id=", soundId, " src=0x", std::hex, srcGuid, std::dec);
             if (playPositionalSoundCallback_) playPositionalSoundCallback_(soundId, srcGuid);
             else if (playSoundCallback_) playSoundCallback_(soundId);
-        } else if (packet.getRemainingSize() >= 4) {
+        } else if (packet.hasRemaining(4)) {
             uint32_t soundId = packet.readUInt32();
             if (playSoundCallback_) playSoundCallback_(soundId);
         }
@@ -6741,7 +6741,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint64 targetGuid + uint32 visualId (same structure as SMSG_PLAY_SPELL_VISUAL)
     dispatchTable_[Opcode::SMSG_PLAY_SPELL_IMPACT] = [this](network::Packet& packet) {
         // uint64 targetGuid + uint32 visualId (same structure as SMSG_PLAY_SPELL_VISUAL)
-        if (packet.getRemainingSize() < 12) {
+        if (!packet.hasRemaining(12)) {
             packet.skipAll(); return;
         }
         uint64_t impTargetGuid = packet.readUInt64();
@@ -6813,11 +6813,11 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_QUERY_QUESTS_COMPLETED_RESPONSE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t count = packet.readUInt32();
             if (count <= 4096) {
                 for (uint32_t i = 0; i < count; ++i) {
-                    if (packet.getRemainingSize() < 4) break;
+                    if (!packet.hasRemaining(4)) break;
                     uint32_t questId = packet.readUInt32();
                     completedQuests_.insert(questId);
                 }
@@ -6831,12 +6831,12 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_QUESTUPDATE_ADD_PVP_KILL] = [this](network::Packet& packet) {
         // WotLK 3.3.5a format: uint64 guid + uint32 questId + uint32 count + uint32 reqCount
         // Classic format:       uint64 guid + uint32 questId + uint32 count  (no reqCount)
-        if (packet.getRemainingSize() >= 16) {
+        if (packet.hasRemaining(16)) {
             /*uint64_t guid =*/ packet.readUInt64();
             uint32_t questId = packet.readUInt32();
             uint32_t count   = packet.readUInt32();
             uint32_t reqCount = 0;
-            if (packet.getRemainingSize() >= 4) {
+            if (packet.hasRemaining(4)) {
                 reqCount = packet.readUInt32();
             }
 
@@ -6875,7 +6875,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_OFFER_PETITION_ERROR] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t err = packet.readUInt32();
             if (err == 1) addSystemChatMessage("Player is already in a guild.");
             else if (err == 2) addSystemChatMessage("Player already has a petition.");
@@ -6890,7 +6890,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_PET_MODE] = [this](network::Packet& packet) {
         // uint64 petGuid, uint32 mode
         // mode bits: low byte = command state, next byte = react state
-        if (packet.getRemainingSize() >= 12) {
+        if (packet.hasRemaining(12)) {
             uint64_t modeGuid = packet.readUInt64();
             uint32_t mode     = packet.readUInt32();
             if (modeGuid == petGuid_) {
@@ -6914,7 +6914,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_PET_LEARNED_SPELL] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t spellId = packet.readUInt32();
             petSpellList_.push_back(spellId);
             const std::string& sname = getSpellName(spellId);
@@ -6925,7 +6925,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_PET_UNLEARNED_SPELL] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t spellId = packet.readUInt32();
             petSpellList_.erase(
                 std::remove(petSpellList_.begin(), petSpellList_.end(), spellId),
@@ -6942,10 +6942,10 @@ void GameHandler::registerOpcodeHandlers() {
         // Classic/TBC: spellId(4) + reason(1) (no castCount)
         const bool hasCount = isActiveExpansion("wotlk");
         const size_t minSize = hasCount ? 6u : 5u;
-        if (packet.getRemainingSize() >= minSize) {
+        if (packet.hasRemaining(minSize)) {
             if (hasCount) /*uint8_t castCount =*/ packet.readUInt8();
             uint32_t spellId   = packet.readUInt32();
-            uint8_t  reason    = (packet.getRemainingSize() >= 1)
+            uint8_t  reason    = (packet.hasRemaining(1))
                                      ? packet.readUInt8() : 0;
             LOG_DEBUG("SMSG_PET_CAST_FAILED: spell=", spellId,
                       " reason=", static_cast<int>(reason));
@@ -6966,7 +6966,7 @@ void GameHandler::registerOpcodeHandlers() {
     for (auto op : { Opcode::SMSG_PET_GUIDS, Opcode::SMSG_PET_DISMISS_SOUND, Opcode::SMSG_PET_ACTION_SOUND, Opcode::SMSG_PET_UNLEARN_CONFIRM }) {
         dispatchTable_[op] = [this](network::Packet& packet) {
             // uint64 petGuid + uint32 cost (copper)
-            if (packet.getRemainingSize() >= 12) {
+            if (packet.hasRemaining(12)) {
                 petUnlearnGuid_ = packet.readUInt64();
                 petUnlearnCost_ = packet.readUInt32();
                 petUnlearnPending_ = true;
@@ -6992,7 +6992,7 @@ void GameHandler::registerOpcodeHandlers() {
         // Classic 1.12: PackedGUID + 19×uint32 itemEntries (EQUIPMENT_SLOT_END=19)
         // This opcode is only reachable on Classic servers; TBC/WotLK wire 0x115 maps to
         // SMSG_INSPECT_RESULTS_UPDATE which is handled separately.
-        if (packet.getRemainingSize() < 2) {
+        if (!packet.hasRemaining(2)) {
             packet.skipAll(); return;
         }
         uint64_t guid = packet.readPackedGuid();
@@ -7000,7 +7000,7 @@ void GameHandler::registerOpcodeHandlers() {
 
         constexpr int kGearSlots = 19;
         size_t needed = kGearSlots * sizeof(uint32_t);
-        if (packet.getRemainingSize() < needed) {
+        if (!packet.hasRemaining(needed)) {
             packet.skipAll(); return;
         }
 
@@ -7089,7 +7089,7 @@ void GameHandler::registerOpcodeHandlers() {
     // Recruit-A-Friend: a mentor is offering to grant you a level
     dispatchTable_[Opcode::SMSG_PROPOSE_LEVEL_GRANT] = [this](network::Packet& packet) {
         // Recruit-A-Friend: a mentor is offering to grant you a level
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint64_t mentorGuid = packet.readUInt64();
             std::string mentorName;
             auto ent = entityManager.getEntity(mentorGuid);
@@ -7106,7 +7106,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_REFER_A_FRIEND_FAILURE] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t reason = packet.readUInt32();
             static const char* kRafErrors[] = {
                 "Not eligible",            // 0
@@ -7125,7 +7125,7 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
     dispatchTable_[Opcode::SMSG_REPORT_PVP_AFK_RESULT] = [this](network::Packet& packet) {
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             uint8_t result = packet.readUInt8();
             if (result == 0)
                 addSystemChatMessage("AFK report submitted.");
@@ -7143,9 +7143,9 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 type (0=normal, 1=heavy, 2=tired/restricted) + uint32 minutes played
     dispatchTable_[Opcode::SMSG_PLAY_TIME_WARNING] = [this](network::Packet& packet) {
         // uint32 type (0=normal, 1=heavy, 2=tired/restricted) + uint32 minutes played
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t warnType = packet.readUInt32();
-            uint32_t minutesPlayed = (packet.getRemainingSize() >= 4)
+            uint32_t minutesPlayed = (packet.hasRemaining(4))
                 ? packet.readUInt32() : 0;
             const char* severity = (warnType >= 2) ? "[Tired] " : "[Play Time] ";
             char buf[128];
@@ -7185,11 +7185,11 @@ void GameHandler::registerOpcodeHandlers() {
         //   Followed by equipped item display IDs (11 × uint32) if casterGuid != 0
         // Purpose: tells client how to render the image (same appearance as caster).
         // We parse the GUIDs so units render correctly via their existing display IDs.
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         uint64_t mirrorGuid = packet.readUInt64();
-        if (packet.getRemainingSize() < 4) return;
+        if (!packet.hasRemaining(4)) return;
         uint32_t displayId  = packet.readUInt32();
-        if (packet.getRemainingSize() < 3) return;
+        if (!packet.hasRemaining(3)) return;
         /*uint8_t raceId   =*/ packet.readUInt8();
         /*uint8_t gender   =*/ packet.readUInt8();
         /*uint8_t classId  =*/ packet.readUInt8();
@@ -7209,7 +7209,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint64 battlefieldGuid + uint32 zoneId + uint64 expireUnixTime (seconds)
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_MGR_ENTRY_INVITE] = [this](network::Packet& packet) {
         // uint64 battlefieldGuid + uint32 zoneId + uint64 expireUnixTime (seconds)
-        if (packet.getRemainingSize() < 20) {
+        if (!packet.hasRemaining(20)) {
             packet.skipAll(); return;
         }
         uint64_t bfGuid    = packet.readUInt64();
@@ -7235,11 +7235,11 @@ void GameHandler::registerOpcodeHandlers() {
     // uint64 battlefieldGuid + uint8 isSafe (1=pvp zones enabled) + uint8 onQueue
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_MGR_ENTERED] = [this](network::Packet& packet) {
         // uint64 battlefieldGuid + uint8 isSafe (1=pvp zones enabled) + uint8 onQueue
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             uint64_t bfGuid2 = packet.readUInt64();
             (void)bfGuid2;
-            uint8_t isSafe  = (packet.getRemainingSize() >= 1) ? packet.readUInt8() : 0;
-            uint8_t onQueue = (packet.getRemainingSize() >= 1) ? packet.readUInt8() : 0;
+            uint8_t isSafe  = (packet.hasRemaining(1)) ? packet.readUInt8() : 0;
+            uint8_t onQueue = (packet.hasRemaining(1)) ? packet.readUInt8() : 0;
             bfMgrInvitePending_ = false;
             bfMgrActive_        = true;
             addSystemChatMessage(isSafe ? "You are in the battlefield zone (safe area)."
@@ -7252,7 +7252,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint64 battlefieldGuid + uint32 battlefieldId + uint64 expireTime
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_MGR_QUEUE_INVITE] = [this](network::Packet& packet) {
         // uint64 battlefieldGuid + uint32 battlefieldId + uint64 expireTime
-        if (packet.getRemainingSize() < 20) {
+        if (!packet.hasRemaining(20)) {
             packet.skipAll(); return;
         }
         uint64_t bfGuid3   = packet.readUInt64();
@@ -7274,7 +7274,7 @@ void GameHandler::registerOpcodeHandlers() {
         // uint32 battlefieldId + uint32 teamId + uint8 accepted + uint8 loggingEnabled + uint8 result
         // result: 0=queued, 1=not_in_group, 2=too_high_level, 3=too_low_level,
         //         4=in_cooldown, 5=queued_other_bf, 6=bf_full
-        if (packet.getRemainingSize() < 11) {
+        if (!packet.hasRemaining(11)) {
             packet.skipAll(); return;
         }
         uint32_t bfId2    = packet.readUInt32();
@@ -7302,7 +7302,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint64 battlefieldGuid + uint8 remove
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_MGR_EJECT_PENDING] = [this](network::Packet& packet) {
         // uint64 battlefieldGuid + uint8 remove
-        if (packet.getRemainingSize() >= 9) {
+        if (packet.hasRemaining(9)) {
             uint64_t bfGuid4 = packet.readUInt64();
             uint8_t  remove  = packet.readUInt8();
             (void)bfGuid4;
@@ -7316,7 +7316,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint64 battlefieldGuid + uint32 reason + uint32 battleStatus + uint8 relocated
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_MGR_EJECTED] = [this](network::Packet& packet) {
         // uint64 battlefieldGuid + uint32 reason + uint32 battleStatus + uint8 relocated
-        if (packet.getRemainingSize() >= 17) {
+        if (packet.hasRemaining(17)) {
             uint64_t bfGuid5    = packet.readUInt64();
             uint32_t reason     = packet.readUInt32();
             /*uint32_t status  =*/ packet.readUInt32();
@@ -7341,7 +7341,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_BATTLEFIELD_MGR_STATE_CHANGE] = [this](network::Packet& packet) {
         // uint32 oldState + uint32 newState
         // States: 0=Waiting, 1=Starting, 2=InProgress, 3=Ending, 4=Cooldown
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             /*uint32_t oldState =*/ packet.readUInt32();
             uint32_t newState   = packet.readUInt32();
             static const char* kBfStates[] = {
@@ -7358,7 +7358,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 numPending — number of unacknowledged calendar invites
     dispatchTable_[Opcode::SMSG_CALENDAR_SEND_NUM_PENDING] = [this](network::Packet& packet) {
         // uint32 numPending — number of unacknowledged calendar invites
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t numPending = packet.readUInt32();
             calendarPendingInvites_ = numPending;
             if (numPending > 0) {
@@ -7380,7 +7380,7 @@ void GameHandler::registerOpcodeHandlers() {
         // result 0 = success; non-zero = error code
         // command values: 0=add,1=get,2=guild_filter,3=arena_team,4=update,5=remove,
         //                 6=copy,7=invite,8=rsvp,9=remove_invite,10=status,11=moderator_status
-        if (packet.getRemainingSize() < 5) {
+        if (!packet.hasRemaining(5)) {
             packet.skipAll(); return;
         }
         /*uint32_t command =*/ packet.readUInt32();
@@ -7420,7 +7420,7 @@ void GameHandler::registerOpcodeHandlers() {
         // Rich notification: eventId(8) + title(cstring) + eventTime(8) + flags(4) +
         //                   eventType(1) + dungeonId(4) + inviteId(8) + status(1) + rank(1) +
         //                   isGuildEvent(1) + inviterGuid(8)
-        if (packet.getRemainingSize() < 9) {
+        if (!packet.hasRemaining(9)) {
             packet.skipAll(); return;
         }
         /*uint64_t eventId =*/ packet.readUInt64();
@@ -7441,7 +7441,7 @@ void GameHandler::registerOpcodeHandlers() {
         // Sent when an event invite's RSVP status changes for the local player
         // Format: inviteId(8) + eventId(8) + eventType(1) + flags(4) +
         //         inviteTime(8) + status(1) + rank(1) + isGuildEvent(1) + title(cstring)
-        if (packet.getRemainingSize() < 31) {
+        if (!packet.hasRemaining(31)) {
             packet.skipAll(); return;
         }
         /*uint64_t inviteId =*/ packet.readUInt64();
@@ -7470,7 +7470,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint64 inviteId + uint64 eventId + uint32 mapId + uint32 difficulty + uint64 resetTime
     dispatchTable_[Opcode::SMSG_CALENDAR_RAID_LOCKOUT_ADDED] = [this](network::Packet& packet) {
         // uint64 inviteId + uint64 eventId + uint32 mapId + uint32 difficulty + uint64 resetTime
-        if (packet.getRemainingSize() >= 28) {
+        if (packet.hasRemaining(28)) {
             /*uint64_t inviteId =*/ packet.readUInt64();
             /*uint64_t eventId  =*/ packet.readUInt64();
             uint32_t mapId     = packet.readUInt32();
@@ -7491,7 +7491,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint64 inviteId + uint64 eventId + uint32 mapId + uint32 difficulty
     dispatchTable_[Opcode::SMSG_CALENDAR_RAID_LOCKOUT_REMOVED] = [this](network::Packet& packet) {
         // uint64 inviteId + uint64 eventId + uint32 mapId + uint32 difficulty
-        if (packet.getRemainingSize() >= 20) {
+        if (packet.hasRemaining(20)) {
             /*uint64_t inviteId =*/ packet.readUInt64();
             /*uint64_t eventId  =*/ packet.readUInt64();
             uint32_t mapId     = packet.readUInt32();
@@ -7512,7 +7512,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 unixTime — server's current unix timestamp; use to sync gameTime_
     dispatchTable_[Opcode::SMSG_SERVERTIME] = [this](network::Packet& packet) {
         // uint32 unixTime — server's current unix timestamp; use to sync gameTime_
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             uint32_t srvTime = packet.readUInt32();
             if (srvTime > 0) {
                 gameTime_ = static_cast<float>(srvTime);
@@ -7607,7 +7607,7 @@ void GameHandler::registerOpcodeHandlers() {
     // uint32 ticketId + uint8 status (1=open, 2=surveyed, 3=need_more_help)
     dispatchTable_[Opcode::SMSG_GMRESPONSE_STATUS_UPDATE] = [this](network::Packet& packet) {
         // uint32 ticketId + uint8 status (1=open, 2=surveyed, 3=need_more_help)
-        if (packet.getRemainingSize() >= 5) {
+        if (packet.hasRemaining(5)) {
             uint32_t ticketId = packet.readUInt32();
             uint8_t  status   = packet.readUInt8();
             const char* statusStr = (status == 1) ? "open"
@@ -7770,7 +7770,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
         }
 
         // Expected weather payload: uint32 weatherType, float intensity, uint8 abrupt
-        if (packet.getRemainingSize() >= 9) {
+        if (packet.hasRemaining(9)) {
             uint32_t wType = packet.readUInt32();
             float wIntensity = packet.readFloat();
             uint8_t abrupt = packet.readUInt8();
@@ -7805,7 +7805,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
     } else if (opcode == 0x0480) {
         // Observed on this WotLK profile immediately after CMSG_BUYBACK_ITEM.
         // Treat as vendor/buyback transaction result (7-byte payload on this core).
-        if (packet.getRemainingSize() >= 7) {
+        if (packet.hasRemaining(7)) {
             uint8_t opType = packet.readUInt8();
             uint8_t resultCode = packet.readUInt8();
             uint8_t slotOrCount = packet.readUInt8();
@@ -7866,7 +7866,7 @@ void GameHandler::handlePacket(network::Packet& packet) {
     } else if (opcode == 0x046A) {
         // Server-specific vendor/buyback state packet (observed 25-byte records).
         // Consume to keep stream aligned; currently not used for gameplay logic.
-        if (packet.getRemainingSize() >= 25) {
+        if (packet.hasRemaining(25)) {
             packet.setReadPos(packet.getReadPos() + 25);
             return;
         }
@@ -13476,7 +13476,7 @@ void GameHandler::forfeitDuel() {
 }
 
 void GameHandler::handleDuelRequested(network::Packet& packet) {
-    if (packet.getRemainingSize() < 16) {
+    if (!packet.hasRemaining(16)) {
         packet.skipAll();
         return;
     }
@@ -13507,7 +13507,7 @@ void GameHandler::handleDuelRequested(network::Packet& packet) {
 }
 
 void GameHandler::handleDuelComplete(network::Packet& packet) {
-    if (packet.getRemainingSize() < 1) return;
+    if (!packet.hasRemaining(1)) return;
     uint8_t started = packet.readUInt8();
     // started=1: duel began, started=0: duel was cancelled before starting
     pendingDuelRequest_ = false;
@@ -13520,7 +13520,7 @@ void GameHandler::handleDuelComplete(network::Packet& packet) {
 }
 
 void GameHandler::handleDuelWinner(network::Packet& packet) {
-    if (packet.getRemainingSize() < 3) return;
+    if (!packet.hasRemaining(3)) return;
     uint8_t duelType = packet.readUInt8();  // 0=normal win, 1=opponent fled duel area
     std::string winner = packet.readString();
     std::string loser  = packet.readString();
@@ -14178,7 +14178,7 @@ void GameHandler::handleGameObjectQueryResponse(network::Packet& packet) {
 }
 
 void GameHandler::handleGameObjectPageText(network::Packet& packet) {
-    if (packet.getRemainingSize() < 8) return;
+    if (!packet.hasRemaining(8)) return;
     uint64_t guid = packet.readUInt64();
     auto entity = entityManager.getEntity(guid);
     if (!entity || entity->getType() != ObjectType::GAMEOBJECT) return;
@@ -14340,14 +14340,14 @@ void GameHandler::handleInspectResults(network::Packet& packet) {
     // If type==1: PackedGUID of inspected player
     // Then: uint32 unspentTalents, uint8 talentGroupCount, uint8 activeTalentGroup
     // Per talent group: uint8 talentCount, [talentId(u32) + rank(u8)]..., uint8 glyphCount, [glyphId(u16)]...
-    if (packet.getRemainingSize() < 1) return;
+    if (!packet.hasRemaining(1)) return;
 
     uint8_t talentType = packet.readUInt8();
 
     if (talentType == 0) {
         // Own talent info (type 0): uint32 unspentTalents, uint8 groupCount, uint8 activeGroup
         // Per group: uint8 talentCount, [talentId(4)+rank(1)]..., uint8 glyphCount, [glyphId(2)]...
-        if (packet.getRemainingSize() < 6) {
+        if (!packet.hasRemaining(6)) {
             LOG_DEBUG("SMSG_TALENTS_INFO type=0: too short");
             return;
         }
@@ -14359,20 +14359,20 @@ void GameHandler::handleInspectResults(network::Packet& packet) {
         activeTalentSpec_ = activeTalentGroup;
 
         for (uint8_t g = 0; g < talentGroupCount && g < 2; ++g) {
-            if (packet.getRemainingSize() < 1) break;
+            if (!packet.hasRemaining(1)) break;
             uint8_t talentCount = packet.readUInt8();
             learnedTalents_[g].clear();
             for (uint8_t t = 0; t < talentCount; ++t) {
-                if (packet.getRemainingSize() < 5) break;
+                if (!packet.hasRemaining(5)) break;
                 uint32_t talentId = packet.readUInt32();
                 uint8_t  rank     = packet.readUInt8();
                 learnedTalents_[g][talentId] = rank + 1u; // wire sends 0-indexed; store 1-indexed
             }
-            if (packet.getRemainingSize() < 1) break;
+            if (!packet.hasRemaining(1)) break;
             learnedGlyphs_[g].fill(0);
             uint8_t glyphCount = packet.readUInt8();
             for (uint8_t gl = 0; gl < glyphCount; ++gl) {
-                if (packet.getRemainingSize() < 2) break;
+                if (!packet.hasRemaining(2)) break;
                 uint16_t glyphId = packet.readUInt16();
                 if (gl < MAX_GLYPH_SLOTS) learnedGlyphs_[g][gl] = glyphId;
             }
@@ -15629,7 +15629,7 @@ void GameHandler::handleForceMoveRootState(network::Packet& packet, bool rooted)
     if (packet.getRemainingSize() < (rootTbc ? 8u : 2u)) return;
     uint64_t guid = rootTbc
         ? packet.readUInt64() : packet.readPackedGuid();
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t counter = packet.readUInt32();
 
     LOG_INFO(rooted ? "SMSG_FORCE_MOVE_ROOT" : "SMSG_FORCE_MOVE_UNROOT",
@@ -15689,7 +15689,7 @@ void GameHandler::handleForceMoveFlagChange(network::Packet& packet, const char*
     if (packet.getRemainingSize() < (fmfTbcLike ? 8u : 2u)) return;
     uint64_t guid = fmfTbcLike
         ? packet.readUInt64() : packet.readPackedGuid();
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t counter = packet.readUInt32();
 
     LOG_INFO("SMSG_FORCE_", name, ": guid=0x", std::hex, guid, std::dec, " counter=", counter);
@@ -15748,7 +15748,7 @@ void GameHandler::handleMoveSetCollisionHeight(network::Packet& packet) {
     const bool legacyGuid = isPreWotlk();
     if (packet.getRemainingSize() < (legacyGuid ? 8u : 2u)) return;
     uint64_t guid = legacyGuid ? packet.readUInt64() : packet.readPackedGuid();
-    if (packet.getRemainingSize() < 8) return;  // counter(4) + height(4)
+    if (!packet.hasRemaining(8)) return;  // counter(4) + height(4)
     uint32_t counter = packet.readUInt32();
     float height = packet.readFloat();
 
@@ -15789,7 +15789,7 @@ void GameHandler::handleMoveKnockBack(network::Packet& packet) {
     if (packet.getRemainingSize() < (mkbTbc ? 8u : 2u)) return;
     uint64_t guid = mkbTbc
         ? packet.readUInt64() : packet.readPackedGuid();
-    if (packet.getRemainingSize() < 20) return;  // counter(4) + vcos(4) + vsin(4) + hspeed(4) + vspeed(4)
+    if (!packet.hasRemaining(20)) return;  // counter(4) + vcos(4) + vsin(4) + hspeed(4) + vspeed(4)
     uint32_t counter = packet.readUInt32();
     float vcos    = packet.readFloat();
     float vsin    = packet.readFloat();
@@ -15860,7 +15860,7 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
     //   queueSlot(4) arenaType(1) unk(1) bgTypeId(4) unk2(2) instanceId(4) isRated(1) statusId(4) [status fields...]
     //   STATUS_NONE sends only: queueSlot(4) arenaType(1)
 
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t queueSlot = packet.readUInt32();
 
     const bool classicFormat = isClassicLikeExpansion();
@@ -15869,37 +15869,37 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
     if (!classicFormat) {
         // TBC/WotLK: arenaType(1) + unk(1) before bgTypeId
         // STATUS_NONE sends only queueSlot + arenaType
-        if (packet.getRemainingSize() < 1) {
+        if (!packet.hasRemaining(1)) {
             LOG_INFO("Battlefield status: queue slot ", queueSlot, " cleared");
             return;
         }
         arenaType = packet.readUInt8();
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         packet.readUInt8();  // unk
     } else {
         // Classic STATUS_NONE sends only queueSlot + bgTypeId (4 bytes)
-        if (packet.getRemainingSize() < 4) {
+        if (!packet.hasRemaining(4)) {
             LOG_INFO("Battlefield status: queue slot ", queueSlot, " cleared");
             return;
         }
     }
 
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t bgTypeId = packet.readUInt32();
 
-    if (packet.getRemainingSize() < 2) return;
+    if (!packet.hasRemaining(2)) return;
     uint16_t unk2 = packet.readUInt16();
     (void)unk2;
 
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t clientInstanceId = packet.readUInt32();
     (void)clientInstanceId;
 
-    if (packet.getRemainingSize() < 1) return;
+    if (!packet.hasRemaining(1)) return;
     uint8_t isRatedArena = packet.readUInt8();
     (void)isRatedArena;
 
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t statusId = packet.readUInt32();
 
     // Map BG type IDs to their names (stable across all three expansions)
@@ -15941,21 +15941,21 @@ void GameHandler::handleBattlefieldStatus(network::Packet& packet) {
     uint32_t avgWaitSec = 0, timeInQueueSec = 0;
     if (statusId == 1) {
         // STATUS_WAIT_QUEUE: avgWaitTime(4) + timeInQueue(4)
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             avgWaitSec    = packet.readUInt32() / 1000;  // ms → seconds
             timeInQueueSec = packet.readUInt32() / 1000;
         }
     } else if (statusId == 2) {
         // STATUS_WAIT_JOIN: timeout(4) + mapId(4)
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             inviteTimeout = packet.readUInt32();
         }
-        if (packet.getRemainingSize() >= 4) {
+        if (packet.hasRemaining(4)) {
             /*uint32_t mapId =*/ packet.readUInt32();
         }
     } else if (statusId == 3) {
         // STATUS_IN_PROGRESS: mapId(4) + timeSinceStart(4)
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             /*uint32_t mapId =*/ packet.readUInt32();
             /*uint32_t elapsed =*/ packet.readUInt32();
         }
@@ -16019,7 +16019,7 @@ void GameHandler::handleBattlefieldList(network::Packet& packet) {
     // WotLK 3.3.5a:
     //   bgTypeId(4) isRegistered(1) isHoliday(1) minLevel(4) maxLevel(4) count(4) [instanceId(4)...]
 
-    if (packet.getRemainingSize() < 5) return;
+    if (!packet.hasRemaining(5)) return;
 
     AvailableBgInfo info;
     info.bgTypeId     = packet.readUInt32();
@@ -16029,17 +16029,17 @@ void GameHandler::handleBattlefieldList(network::Packet& packet) {
     const bool isTbc   = isActiveExpansion("tbc");
 
     if (isTbc || isWotlk) {
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         info.isHoliday = packet.readUInt8() != 0;
     }
 
     if (isWotlk) {
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         info.minLevel = packet.readUInt32();
         info.maxLevel = packet.readUInt32();
     }
 
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t count = packet.readUInt32();
 
     // Sanity cap to avoid OOM from malformed packets
@@ -16048,7 +16048,7 @@ void GameHandler::handleBattlefieldList(network::Packet& packet) {
     info.instanceIds.reserve(count);
 
     for (uint32_t i = 0; i < count; ++i) {
-        if (packet.getRemainingSize() < 4) break;
+        if (!packet.hasRemaining(4)) break;
         info.instanceIds.push_back(packet.readUInt32());
     }
 
@@ -16172,7 +16172,7 @@ void GameHandler::handleRaidInstanceInfo(network::Packet& packet) {
     const bool isClassic = isClassicLikeExpansion();
     const bool useTbcFormat = isTbc || isClassic;
 
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t count = packet.readUInt32();
 
     instanceLockouts_.clear();
@@ -16180,7 +16180,7 @@ void GameHandler::handleRaidInstanceInfo(network::Packet& packet) {
 
     const size_t kEntrySize = useTbcFormat ? (4 + 4 + 4 + 1) : (4 + 4 + 8 + 1 + 1);
     for (uint32_t i = 0; i < count; ++i) {
-        if (packet.getRemainingSize() < kEntrySize) break;
+        if (!packet.hasRemaining(kEntrySize)) break;
         InstanceLockout lo;
         lo.mapId      = packet.readUInt32();
         lo.difficulty = packet.readUInt32();
@@ -16407,7 +16407,7 @@ void GameHandler::handleLfgUpdatePlayer(network::Packet& packet) {
     // 9=proposal_failed, 10=proposal_declined, 15=leave_queue, 17=member_offline, 18=group_disband
     bool hasExtra = (updateType != 0 && updateType != 1 && updateType != 15 &&
                      updateType != 17 && updateType != 18);
-    if (!hasExtra || packet.getRemainingSize() < 3) {
+    if (!hasExtra || !packet.hasRemaining(3)) {
         switch (updateType) {
             case 8:  lfgState_ = LfgState::None;
                      addSystemChatMessage("Dungeon Finder: Removed from queue."); break;
@@ -16429,9 +16429,9 @@ void GameHandler::handleLfgUpdatePlayer(network::Packet& packet) {
     packet.readUInt8(); // unk1
     packet.readUInt8(); // unk2
 
-    if (packet.getRemainingSize() >= 1) {
+    if (packet.hasRemaining(1)) {
         uint8_t count = packet.readUInt8();
-        for (uint8_t i = 0; i < count && packet.getRemainingSize() >= 4; ++i) {
+        for (uint8_t i = 0; i < count && packet.hasRemaining(4); ++i) {
             uint32_t dungeonEntry = packet.readUInt32();
             if (i == 0) lfgDungeonId_ = dungeonEntry;
         }
@@ -16546,7 +16546,7 @@ void GameHandler::handleLfgBootProposalUpdate(network::Packet& packet) {
 }
 
 void GameHandler::handleLfgTeleportDenied(network::Packet& packet) {
-    if (packet.getRemainingSize() < 1) return;
+    if (!packet.hasRemaining(1)) return;
     uint8_t reason = packet.readUInt8();
     const char* msg = lfgTeleportDeniedString(reason);
     addSystemChatMessage(std::string("Dungeon Finder: ") + msg);
@@ -16754,7 +16754,7 @@ void GameHandler::checkAreaTriggers() {
 }
 
 void GameHandler::handleArenaTeamCommandResult(network::Packet& packet) {
-    if (packet.getRemainingSize() < 8) return;
+    if (!packet.hasRemaining(8)) return;
     uint32_t command = packet.readUInt32();
     std::string name = packet.readString();
     uint32_t error = packet.readUInt32();
@@ -16773,11 +16773,11 @@ void GameHandler::handleArenaTeamCommandResult(network::Packet& packet) {
 }
 
 void GameHandler::handleArenaTeamQueryResponse(network::Packet& packet) {
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t teamId = packet.readUInt32();
     std::string teamName = packet.readString();
     uint32_t teamType = 0;
-    if (packet.getRemainingSize() >= 4)
+    if (packet.hasRemaining(4))
         teamType = packet.readUInt32();
     LOG_INFO("Arena team query response: id=", teamId, " name=", teamName, " type=", teamType);
 
@@ -16813,7 +16813,7 @@ void GameHandler::handleArenaTeamRoster(network::Packet& packet) {
     //     uint32 personalRating
     //     float  modDay   (unused here)
     //     float  modWeek  (unused here)
-    if (packet.getRemainingSize() < 9) return;
+    if (!packet.hasRemaining(9)) return;
 
     uint32_t teamId     = packet.readUInt32();
     /*uint8_t unk =*/    packet.readUInt8();
@@ -16827,20 +16827,20 @@ void GameHandler::handleArenaTeamRoster(network::Packet& packet) {
     roster.members.reserve(memberCount);
 
     for (uint32_t i = 0; i < memberCount; ++i) {
-        if (packet.getRemainingSize() < 12) break;
+        if (!packet.hasRemaining(12)) break;
 
         ArenaTeamMember m;
         m.guid           = packet.readUInt64();
         m.online         = (packet.readUInt8() != 0);
         m.name           = packet.readString();
-        if (packet.getRemainingSize() < 20) break;
+        if (!packet.hasRemaining(20)) break;
         m.weekGames      = packet.readUInt32();
         m.weekWins       = packet.readUInt32();
         m.seasonGames    = packet.readUInt32();
         m.seasonWins     = packet.readUInt32();
         m.personalRating = packet.readUInt32();
         // skip 2 floats (modDay, modWeek)
-        if (packet.getRemainingSize() >= 8) {
+        if (packet.hasRemaining(8)) {
             packet.readFloat();
             packet.readFloat();
         }
@@ -16869,12 +16869,12 @@ void GameHandler::handleArenaTeamInvite(network::Packet& packet) {
 }
 
 void GameHandler::handleArenaTeamEvent(network::Packet& packet) {
-    if (packet.getRemainingSize() < 1) return;
+    if (!packet.hasRemaining(1)) return;
     uint8_t event = packet.readUInt8();
 
     // Read string params (up to 3)
     uint8_t strCount = 0;
-    if (packet.getRemainingSize() >= 1) {
+    if (packet.hasRemaining(1)) {
         strCount = packet.readUInt8();
     }
 
@@ -16927,7 +16927,7 @@ void GameHandler::handleArenaTeamStats(network::Packet& packet) {
     // SMSG_ARENA_TEAM_STATS (WotLK 3.3.5a):
     //   uint32 teamId, uint32 rating, uint32 weekGames, uint32 weekWins,
     //   uint32 seasonGames, uint32 seasonWins, uint32 rank
-    if (packet.getRemainingSize() < 28) return;
+    if (!packet.hasRemaining(28)) return;
 
     ArenaTeamStats stats;
     stats.teamId      = packet.readUInt32();
@@ -16964,7 +16964,7 @@ void GameHandler::requestArenaTeamRoster(uint32_t teamId) {
 }
 
 void GameHandler::handleArenaError(network::Packet& packet) {
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t error = packet.readUInt32();
 
     std::string msg;
@@ -17653,7 +17653,7 @@ void GameHandler::handleMonsterMoveTransport(network::Packet& packet) {
     // Parse transport-relative creature movement (NPCs on boats/zeppelins)
     // Packet: moverGuid(8) + unk(1) + transportGuid(8) + localX/Y/Z(12) + spline data
 
-    if (packet.getRemainingSize() < 8 + 1 + 8 + 12) return;
+    if (!packet.hasRemaining(8) + 1 + 8 + 12) return;
     uint64_t moverGuid = packet.readUInt64();
     /*uint8_t unk =*/ packet.readUInt8();
     uint64_t transportGuid = packet.readUInt64();
@@ -18139,29 +18139,29 @@ void GameHandler::handlePetSpells(network::Packet& packet) {
     }
 
     // uint16 duration (ms, 0 = permanent), uint16 timer (ms)
-    if (packet.getRemainingSize() < 4) goto done;
+    if (!packet.hasRemaining(4)) goto done;
     /*uint16_t dur =*/ packet.readUInt16();
     /*uint16_t timer =*/ packet.readUInt16();
 
     // uint8 reactState, uint8 commandState (packed order varies; WotLK: react first)
-    if (packet.getRemainingSize() < 2) goto done;
+    if (!packet.hasRemaining(2)) goto done;
     petReact_   = packet.readUInt8();  // 0=passive, 1=defensive, 2=aggressive
     petCommand_ = packet.readUInt8();  // 0=stay, 1=follow, 2=attack, 3=dismiss
 
     // 10 × uint32 action bar slots
-    if (packet.getRemainingSize() < PET_ACTION_BAR_SLOTS * 4u) goto done;
+    if (!packet.hasRemaining(PET_ACTION_BAR_SLOTS) * 4u) goto done;
     for (int i = 0; i < PET_ACTION_BAR_SLOTS; ++i) {
         petActionSlots_[i] = packet.readUInt32();
     }
 
     // uint8 spell count, then per-spell: uint32 spellId, uint16 active flags
-    if (packet.getRemainingSize() < 1) goto done;
+    if (!packet.hasRemaining(1)) goto done;
     {
         uint8_t spellCount = packet.readUInt8();
         petSpellList_.clear();
         petAutocastSpells_.clear();
         for (uint8_t i = 0; i < spellCount; ++i) {
-            if (packet.getRemainingSize() < 6) break;
+            if (!packet.hasRemaining(6)) break;
             uint32_t spellId = packet.readUInt32();
             uint16_t activeFlags = packet.readUInt16();
             petSpellList_.push_back(spellId);
@@ -18258,7 +18258,7 @@ void GameHandler::handleListStabledPets(network::Packet& packet) {
     //     uint32 displayId
     //     uint8  isActive  (1 = active/summoned, 0 = stabled)
     constexpr size_t kMinHeader = 8 + 1 + 1;
-    if (packet.getRemainingSize() < kMinHeader) {
+    if (!packet.hasRemaining(kMinHeader)) {
         LOG_WARNING("MSG_LIST_STABLED_PETS: packet too short (", packet.getSize(), ")");
         return;
     }
@@ -18270,13 +18270,13 @@ void GameHandler::handleListStabledPets(network::Packet& packet) {
     stabledPets_.reserve(petCount);
 
     for (uint8_t i = 0; i < petCount; ++i) {
-        if (packet.getRemainingSize() < 4 + 4 + 4) break;
+        if (!packet.hasRemaining(4) + 4 + 4) break;
         StabledPet pet;
         pet.petNumber = packet.readUInt32();
         pet.entry     = packet.readUInt32();
         pet.level     = packet.readUInt32();
         pet.name      = packet.readString();
-        if (packet.getRemainingSize() < 4 + 1) break;
+        if (!packet.hasRemaining(4) + 1) break;
         pet.displayId = packet.readUInt32();
         pet.isActive  = (packet.readUInt8() != 0);
         stabledPets_.push_back(std::move(pet));
@@ -18658,16 +18658,16 @@ void GameHandler::handleSpellCooldown(network::Packet& packet) {
     // TBC 2.4.3 / WotLK 3.3.5a: guid(8) + flags(1) + N×[spellId(4) + cooldown(4)]  — 8 bytes/entry
     const bool isClassicFormat = isClassicLikeExpansion();
 
-    if (packet.getRemainingSize() < 8) return;
+    if (!packet.hasRemaining(8)) return;
     /*data.guid =*/ packet.readUInt64();  // guid (not used further)
 
     if (!isClassicFormat) {
-        if (packet.getRemainingSize() < 1) return;
+        if (!packet.hasRemaining(1)) return;
         /*data.flags =*/ packet.readUInt8();  // flags (consumed but not stored)
     }
 
     const size_t entrySize = isClassicFormat ? 12u : 8u;
-    while (packet.getRemainingSize() >= entrySize) {
+    while (packet.hasRemaining(entrySize)) {
         uint32_t spellId    = packet.readUInt32();
         uint32_t cdItemId   = 0;
         if (isClassicFormat) cdItemId = packet.readUInt32();  // itemId in Classic format
@@ -18710,10 +18710,10 @@ void GameHandler::handleSpellCooldown(network::Packet& packet) {
 }
 
 void GameHandler::handleCooldownEvent(network::Packet& packet) {
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t spellId = packet.readUInt32();
     // WotLK appends the target unit guid (8 bytes) — skip it
-    if (packet.getRemainingSize() >= 8)
+    if (packet.hasRemaining(8))
         packet.readUInt64();
     // Cooldown finished
     spellCooldowns.erase(spellId);
@@ -18785,7 +18785,7 @@ void GameHandler::handleLearnedSpell(network::Packet& packet) {
     // Classic 1.12: uint16 spellId; TBC 2.4.3 / WotLK 3.3.5a: uint32 spellId
     const bool classicSpellId = isClassicLikeExpansion();
     const size_t minSz = classicSpellId ? 2u : 4u;
-    if (packet.getRemainingSize() < minSz) return;
+    if (!packet.hasRemaining(minSz)) return;
     uint32_t spellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
 
     // Track whether we already knew this spell before inserting.
@@ -18839,7 +18839,7 @@ void GameHandler::handleRemovedSpell(network::Packet& packet) {
     // Classic 1.12: uint16 spellId; TBC 2.4.3 / WotLK 3.3.5a: uint32 spellId
     const bool classicSpellId = isClassicLikeExpansion();
     const size_t minSz = classicSpellId ? 2u : 4u;
-    if (packet.getRemainingSize() < minSz) return;
+    if (!packet.hasRemaining(minSz)) return;
     uint32_t spellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
     knownSpells.erase(spellId);
     LOG_INFO("Removed spell: ", spellId);
@@ -18868,7 +18868,7 @@ void GameHandler::handleSupercededSpell(network::Packet& packet) {
     // TBC 2.4.3 / WotLK 3.3.5a: uint32 oldSpellId + uint32 newSpellId (8 bytes total)
     const bool classicSpellId = isClassicLikeExpansion();
     const size_t minSz = classicSpellId ? 4u : 8u;
-    if (packet.getRemainingSize() < minSz) return;
+    if (!packet.hasRemaining(minSz)) return;
     uint32_t oldSpellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
     uint32_t newSpellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
 
@@ -18916,12 +18916,12 @@ void GameHandler::handleSupercededSpell(network::Packet& packet) {
 
 void GameHandler::handleUnlearnSpells(network::Packet& packet) {
     // Sent when unlearning multiple spells (e.g., spec change, respec)
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t spellCount = packet.readUInt32();
     LOG_INFO("Unlearning ", spellCount, " spells");
 
     bool barChanged = false;
-    for (uint32_t i = 0; i < spellCount && packet.getRemainingSize() >= 4; ++i) {
+    for (uint32_t i = 0; i < spellCount && packet.hasRemaining(4); ++i) {
         uint32_t spellId = packet.readUInt32();
         knownSpells.erase(spellId);
         LOG_INFO("  Unlearned spell: ", spellId);
@@ -18952,13 +18952,13 @@ void GameHandler::handleTalentsInfo(network::Packet& packet) {
     // Per group: uint8 talentCount, [uint32 talentId + uint8 rank] × count,
     //            uint8 glyphCount, [uint16 glyphId] × count
 
-    if (packet.getRemainingSize() < 1) return;
+    if (!packet.hasRemaining(1)) return;
     uint8_t talentType = packet.readUInt8();
     if (talentType != 0) {
         // type 1 = inspect result; handled by handleInspectResults — ignore here
         return;
     }
-    if (packet.getRemainingSize() < 6) {
+    if (!packet.hasRemaining(6)) {
         LOG_WARNING("handleTalentsInfo: packet too short for header");
         return;
     }
@@ -18974,20 +18974,20 @@ void GameHandler::handleTalentsInfo(network::Packet& packet) {
     activeTalentSpec_ = activeTalentGroup;
 
     for (uint8_t g = 0; g < talentGroupCount && g < 2; ++g) {
-        if (packet.getRemainingSize() < 1) break;
+        if (!packet.hasRemaining(1)) break;
         uint8_t talentCount = packet.readUInt8();
         learnedTalents_[g].clear();
         for (uint8_t t = 0; t < talentCount; ++t) {
-            if (packet.getRemainingSize() < 5) break;
+            if (!packet.hasRemaining(5)) break;
             uint32_t talentId = packet.readUInt32();
             uint8_t  rank     = packet.readUInt8();
             learnedTalents_[g][talentId] = rank + 1u; // wire sends 0-indexed; store 1-indexed
         }
         learnedGlyphs_[g].fill(0);
-        if (packet.getRemainingSize() < 1) break;
+        if (!packet.hasRemaining(1)) break;
         uint8_t glyphCount = packet.readUInt8();
         for (uint8_t gl = 0; gl < glyphCount; ++gl) {
-            if (packet.getRemainingSize() < 2) break;
+            if (!packet.hasRemaining(2)) break;
             uint16_t glyphId = packet.readUInt16();
             if (gl < MAX_GLYPH_SLOTS) learnedGlyphs_[g][gl] = glyphId;
         }
@@ -20373,10 +20373,10 @@ void GameHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
     //       uint32 unk2
     //       uint32 pointCount
     //       per point: int32 x, int32 y
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     const uint32_t questCount = packet.readUInt32();
     for (uint32_t qi = 0; qi < questCount; ++qi) {
-        if (packet.getRemainingSize() < 8) return;
+        if (!packet.hasRemaining(8)) return;
         const uint32_t questId  = packet.readUInt32();
         const uint32_t poiCount = packet.readUInt32();
 
@@ -20394,7 +20394,7 @@ void GameHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
         auto questTitle = getQuestTitle(questId);
 
         for (uint32_t pi = 0; pi < poiCount; ++pi) {
-            if (packet.getRemainingSize() < 28) return;
+            if (!packet.hasRemaining(28)) return;
             packet.readUInt32();  // poiId
             packet.readUInt32();  // objIndex (int32)
             const uint32_t mapId    = packet.readUInt32();
@@ -20404,7 +20404,7 @@ void GameHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
             packet.readUInt32();  // unk2
             const uint32_t pointCount = packet.readUInt32();
             if (pointCount == 0) continue;
-            if (packet.getRemainingSize() < pointCount * 8) return;
+            if (!packet.hasRemaining(pointCount) * 8) return;
             // Compute centroid of the poi region to place a minimap marker.
             float sumX = 0.0f, sumY = 0.0f;
             for (uint32_t pt = 0; pt < pointCount; ++pt) {
@@ -21634,7 +21634,7 @@ void GameHandler::handleGossipMessage(network::Packet& packet) {
 }
 
 void GameHandler::handleQuestgiverQuestList(network::Packet& packet) {
-    if (packet.getRemainingSize() < 8) return;
+    if (!packet.hasRemaining(8)) return;
 
     GossipMessageData data;
     data.npcGuid = packet.readUInt64();
@@ -21643,7 +21643,7 @@ void GameHandler::handleQuestgiverQuestList(network::Packet& packet) {
 
     // Server text (header/greeting) and optional emote fields.
     std::string header = packet.readString();
-    if (packet.getRemainingSize() >= 8) {
+    if (packet.hasRemaining(8)) {
         (void)packet.readUInt32(); // emoteDelay / unk
         (void)packet.readUInt32(); // emote / unk
     }
@@ -21651,7 +21651,7 @@ void GameHandler::handleQuestgiverQuestList(network::Packet& packet) {
 
     // questCount is uint8 in all WoW versions for SMSG_QUESTGIVER_QUEST_LIST.
     uint32_t questCount = 0;
-    if (packet.getRemainingSize() >= 1) {
+    if (packet.hasRemaining(1)) {
         questCount = packet.readUInt8();
     }
 
@@ -21661,13 +21661,13 @@ void GameHandler::handleQuestgiverQuestList(network::Packet& packet) {
 
     data.quests.reserve(questCount);
     for (uint32_t i = 0; i < questCount; ++i) {
-        if (packet.getRemainingSize() < 12) break;
+        if (!packet.hasRemaining(12)) break;
         GossipQuestItem q;
         q.questId = packet.readUInt32();
         q.questIcon = packet.readUInt32();
         q.questLevel = static_cast<int32_t>(packet.readUInt32());
 
-        if (hasQuestFlagsField && packet.getRemainingSize() >= 5) {
+        if (hasQuestFlagsField && packet.hasRemaining(5)) {
             q.questFlags = packet.readUInt32();
             q.isRepeatable = packet.readUInt8();
         } else {
@@ -22476,7 +22476,7 @@ void GameHandler::handleTeleportAck(network::Packet& packet) {
 
     uint64_t guid = taTbc
         ? packet.readUInt64() : packet.readPackedGuid();
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t counter = packet.readUInt32();
 
     // Read the movement info embedded in the teleport.
@@ -22485,7 +22485,7 @@ void GameHandler::handleTeleportAck(network::Packet& packet) {
     // (Classic and TBC have no moveFlags2 field in movement packets)
     const bool taNoFlags2 = isPreWotlk();
     const size_t minMoveSz = taNoFlags2 ? (4 + 4 + 4 * 4) : (4 + 2 + 4 + 4 * 4);
-    if (packet.getRemainingSize() < minMoveSz) {
+    if (!packet.hasRemaining(minMoveSz)) {
         LOG_WARNING("MSG_MOVE_TELEPORT_ACK: not enough data for movement info");
         return;
     }
@@ -22538,7 +22538,7 @@ void GameHandler::handleTeleportAck(network::Packet& packet) {
 
 void GameHandler::handleNewWorld(network::Packet& packet) {
     // SMSG_NEW_WORLD: uint32 mapId, float x, y, z, orientation
-    if (packet.getRemainingSize() < 20) {
+    if (!packet.hasRemaining(20)) {
         LOG_WARNING("SMSG_NEW_WORLD too short");
         return;
     }
@@ -23518,14 +23518,14 @@ void GameHandler::handleWho(network::Packet& packet) {
         if (!packet.hasData()) break;
         std::string playerName = packet.readString();
         std::string guildName = packet.readString();
-        if (packet.getRemainingSize() < 12) break;
+        if (!packet.hasRemaining(12)) break;
         uint32_t level   = packet.readUInt32();
         uint32_t classId = packet.readUInt32();
         uint32_t raceId  = packet.readUInt32();
-        if (hasGender && packet.getRemainingSize() >= 1)
+        if (hasGender && packet.hasRemaining(1))
             packet.readUInt8();  // gender (WotLK only, unused)
         uint32_t zoneId = 0;
-        if (packet.getRemainingSize() >= 4)
+        if (packet.hasRemaining(4))
             zoneId = packet.readUInt32();
 
         // Store structured entry
@@ -24467,7 +24467,7 @@ void GameHandler::mailMarkAsRead(uint32_t mailId) {
 }
 
 void GameHandler::handleShowMailbox(network::Packet& packet) {
-    if (packet.getRemainingSize() < 8) {
+    if (!packet.hasRemaining(8)) {
         LOG_WARNING("SMSG_SHOW_MAILBOX too short");
         return;
     }
@@ -24523,7 +24523,7 @@ void GameHandler::handleMailListResult(network::Packet& packet) {
 }
 
 void GameHandler::handleSendMailResult(network::Packet& packet) {
-    if (packet.getRemainingSize() < 12) {
+    if (!packet.hasRemaining(12)) {
         LOG_WARNING("SMSG_SEND_MAIL_RESULT too short");
         return;
     }
@@ -24587,7 +24587,7 @@ void GameHandler::handleSendMailResult(network::Packet& packet) {
 
 void GameHandler::handleReceivedMail(network::Packet& packet) {
     // Server notifies us that new mail arrived
-    if (packet.getRemainingSize() >= 4) {
+    if (packet.hasRemaining(4)) {
         float nextMailTime = packet.readFloat();
         (void)nextMailTime;
     }
@@ -24669,7 +24669,7 @@ void GameHandler::withdrawItem(uint8_t srcBag, uint8_t srcSlot) {
 }
 
 void GameHandler::handleShowBank(network::Packet& packet) {
-    if (packet.getRemainingSize() < 8) return;
+    if (!packet.hasRemaining(8)) return;
     bankerGuid_ = packet.readUInt64();
     bankOpen_ = true;
     gossipWindowOpen = false;  // Close gossip when bank opens
@@ -24689,7 +24689,7 @@ void GameHandler::handleShowBank(network::Packet& packet) {
 }
 
 void GameHandler::handleBuyBankSlotResult(network::Packet& packet) {
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t result = packet.readUInt32();
     LOG_INFO("SMSG_BUY_BANK_SLOT_RESULT: result=", result);
     // AzerothCore/TrinityCore: 0=TOO_MANY, 1=INSUFFICIENT_FUNDS, 2=NOT_BANKER, 3=OK
@@ -25007,7 +25007,7 @@ void GameHandler::handleQuestConfirmAccept(network::Packet& packet) {
 
     sharedQuestId_    = packet.readUInt32();
     sharedQuestTitle_ = packet.readString();
-    if (packet.getRemainingSize() >= 8) {
+    if (packet.hasRemaining(8)) {
         sharedQuestSharerGuid_ = packet.readUInt64();
     }
 
@@ -25052,7 +25052,7 @@ void GameHandler::declineSharedQuest() {
 // ---------------------------------------------------------------------------
 
 void GameHandler::handleSummonRequest(network::Packet& packet) {
-    if (packet.getRemainingSize() < 16) return;
+    if (!packet.hasRemaining(16)) return;
 
     summonerGuid_        = packet.readUInt64();
     uint32_t zoneId      = packet.readUInt32();
@@ -25114,12 +25114,12 @@ void GameHandler::declineSummon() {
 // ---------------------------------------------------------------------------
 
 void GameHandler::handleTradeStatus(network::Packet& packet) {
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t status = packet.readUInt32();
 
     switch (status) {
         case 1: { // BEGIN_TRADE — incoming request; read initiator GUID
-            if (packet.getRemainingSize() >= 8) {
+            if (packet.hasRemaining(8)) {
                 tradePeerGuid_ = packet.readUInt64();
             }
             // Resolve name from entity list
@@ -25252,7 +25252,7 @@ void GameHandler::handleTradeStatusExtended(network::Packet& packet) {
     // Minimum: isSelf(1) + [tradeId(4)] + slotCount(4) = 5 or 9 bytes
     const bool isWotLK = isActiveExpansion("wotlk");
     size_t minHdr = isWotLK ? 9u : 5u;
-    if (packet.getRemainingSize() < minHdr) return;
+    if (!packet.hasRemaining(minHdr)) return;
 
     uint8_t isSelf = packet.readUInt8();
     if (isWotLK) {
@@ -25274,10 +25274,10 @@ void GameHandler::handleTradeStatusExtended(network::Packet& packet) {
         uint32_t stackCount = packet.readUInt32();
 
         bool isWrapped = false;
-        if (packet.getRemainingSize() >= 1) {
+        if (packet.hasRemaining(1)) {
             isWrapped = (packet.readUInt8() != 0);
         }
-        if (packet.getRemainingSize() >= SLOT_TRAIL) {
+        if (packet.hasRemaining(SLOT_TRAIL)) {
             packet.setReadPos(packet.getReadPos() + SLOT_TRAIL);
         } else {
             packet.skipAll();
@@ -25295,7 +25295,7 @@ void GameHandler::handleTradeStatusExtended(network::Packet& packet) {
     }
 
     // Gold offered (uint64 copper)
-    if (packet.getRemainingSize() >= 8) {
+    if (packet.hasRemaining(8)) {
         uint64_t coins = packet.readUInt64();
         if (isSelf) myTradeGold_   = coins;
         else        peerTradeGold_ = coins;
@@ -25630,10 +25630,10 @@ void GameHandler::handleAllAchievementData(network::Packet& packet) {
     achievementDates_.clear();
 
     // Parse achievement entries (id + packedDate pairs, sentinel 0xFFFFFFFF)
-    while (packet.getRemainingSize() >= 4) {
+    while (packet.hasRemaining(4)) {
         uint32_t id = packet.readUInt32();
         if (id == 0xFFFFFFFF) break;
-        if (packet.getRemainingSize() < 4) break;
+        if (!packet.hasRemaining(4)) break;
         uint32_t date = packet.readUInt32();
         earnedAchievements_.insert(id);
         achievementDates_[id] = date;
@@ -25641,11 +25641,11 @@ void GameHandler::handleAllAchievementData(network::Packet& packet) {
 
     // Parse criteria block: id + uint64 counter + uint32 date + uint32 flags, sentinel 0xFFFFFFFF
     criteriaProgress_.clear();
-    while (packet.getRemainingSize() >= 4) {
+    while (packet.hasRemaining(4)) {
         uint32_t id = packet.readUInt32();
         if (id == 0xFFFFFFFF) break;
         // counter(8) + date(4) + unknown(4) = 16 bytes
-        if (packet.getRemainingSize() < 16) break;
+        if (!packet.hasRemaining(16)) break;
         uint64_t counter = packet.readUInt64();
         packet.readUInt32();  // date
         packet.readUInt32();  // unknown / flags
@@ -25669,7 +25669,7 @@ void GameHandler::handleRespondInspectAchievements(network::Packet& packet) {
     loadAchievementNameCache();
 
     // Read the inspected player's packed guid
-    if (packet.getRemainingSize() < 1) return;
+    if (!packet.hasRemaining(1)) return;
     uint64_t inspectedGuid = packet.readPackedGuid();
     if (inspectedGuid == 0) {
         packet.skipAll();
@@ -25679,21 +25679,21 @@ void GameHandler::handleRespondInspectAchievements(network::Packet& packet) {
     std::unordered_set<uint32_t> achievements;
 
     // Achievement records: { uint32 id, uint32 packedDate } until sentinel 0xFFFFFFFF
-    while (packet.getRemainingSize() >= 4) {
+    while (packet.hasRemaining(4)) {
         uint32_t id = packet.readUInt32();
         if (id == 0xFFFFFFFF) break;
-        if (packet.getRemainingSize() < 4) break;
+        if (!packet.hasRemaining(4)) break;
         /*uint32_t date =*/ packet.readUInt32();
         achievements.insert(id);
     }
 
     // Criteria records: { uint32 id, uint64 counter, uint32 date, uint32 unk }
     // until sentinel 0xFFFFFFFF — consume but don't store for inspect use
-    while (packet.getRemainingSize() >= 4) {
+    while (packet.hasRemaining(4)) {
         uint32_t id = packet.readUInt32();
         if (id == 0xFFFFFFFF) break;
         // counter(8) + date(4) + unk(4) = 16 bytes
-        if (packet.getRemainingSize() < 16) break;
+        if (!packet.hasRemaining(16)) break;
         packet.readUInt64();  // counter
         packet.readUInt32();  // date
         packet.readUInt32();  // unk
@@ -25928,7 +25928,7 @@ void GameHandler::handleUpdateAuraDuration(uint8_t slot, uint32_t durationMs) {
 // ---------------------------------------------------------------------------
 
 void GameHandler::handleEquipmentSetList(network::Packet& packet) {
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t count = packet.readUInt32();
     if (count > 10) {
         LOG_WARNING("SMSG_EQUIPMENT_SET_LIST: unexpected count ", count, ", ignoring");
@@ -25938,7 +25938,7 @@ void GameHandler::handleEquipmentSetList(network::Packet& packet) {
     equipmentSets_.clear();
     equipmentSets_.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
-        if (packet.getRemainingSize() < 16) break;
+        if (!packet.hasRemaining(16)) break;
         EquipmentSet es;
         es.setGuid        = packet.readUInt64();
         es.setId          = packet.readUInt32();
@@ -25946,7 +25946,7 @@ void GameHandler::handleEquipmentSetList(network::Packet& packet) {
         es.iconName       = packet.readString();
         es.ignoreSlotMask = packet.readUInt32();
         for (int slot = 0; slot < 19; ++slot) {
-            if (packet.getRemainingSize() < 8) break;
+            if (!packet.hasRemaining(8)) break;
             es.itemGuids[slot] = packet.readUInt64();
         }
         equipmentSets_.push_back(std::move(es));
@@ -25970,7 +25970,7 @@ void GameHandler::handleEquipmentSetList(network::Packet& packet) {
 // ---------------------------------------------------------------------------
 
 void GameHandler::handleSetForcedReactions(network::Packet& packet) {
-    if (packet.getRemainingSize() < 4) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t count = packet.readUInt32();
     if (count > 64) {
         LOG_WARNING("SMSG_SET_FORCED_REACTIONS: suspicious count ", count, ", ignoring");
@@ -25979,7 +25979,7 @@ void GameHandler::handleSetForcedReactions(network::Packet& packet) {
     }
     forcedReactions_.clear();
     for (uint32_t i = 0; i < count; ++i) {
-        if (packet.getRemainingSize() < 8) break;
+        if (!packet.hasRemaining(8)) break;
         uint32_t factionId = packet.readUInt32();
         uint32_t reaction  = packet.readUInt32();
         forcedReactions_[factionId] = static_cast<uint8_t>(reaction);
