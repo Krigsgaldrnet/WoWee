@@ -639,6 +639,11 @@ void GameHandler::registerErrorHandler(LogicalOpcode op, const char* msg) {
 void GameHandler::registerHandler(LogicalOpcode op, void (GameHandler::*handler)(network::Packet&)) {
     dispatchTable_[op] = [this, handler](network::Packet& packet) { (this->*handler)(packet); };
 }
+void GameHandler::registerWorldHandler(LogicalOpcode op, void (GameHandler::*handler)(network::Packet&)) {
+    dispatchTable_[op] = [this, handler](network::Packet& packet) {
+        if (state == WorldState::IN_WORLD) (this->*handler)(packet);
+    };
+}
 
 GameHandler::GameHandler() {
     LOG_DEBUG("GameHandler created");
@@ -1577,9 +1582,9 @@ void GameHandler::registerOpcodeHandlers() {
     // -----------------------------------------------------------------------
     // Chat
     // -----------------------------------------------------------------------
-    dispatchTable_[Opcode::SMSG_MESSAGECHAT]    = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handleMessageChat(packet); };
-    dispatchTable_[Opcode::SMSG_GM_MESSAGECHAT] = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handleMessageChat(packet); };
-    dispatchTable_[Opcode::SMSG_TEXT_EMOTE]     = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handleTextEmote(packet); };
+    registerWorldHandler(Opcode::SMSG_MESSAGECHAT, &GameHandler::handleMessageChat);
+    registerWorldHandler(Opcode::SMSG_GM_MESSAGECHAT, &GameHandler::handleMessageChat);
+    registerWorldHandler(Opcode::SMSG_TEXT_EMOTE, &GameHandler::handleTextEmote);
     dispatchTable_[Opcode::SMSG_EMOTE] = [this](network::Packet& packet) {
         if (state != WorldState::IN_WORLD) return;
         if (packet.getRemainingSize() < 12) return;
@@ -1606,9 +1611,9 @@ void GameHandler::registerOpcodeHandlers() {
     // -----------------------------------------------------------------------
     // Player info queries / social
     // -----------------------------------------------------------------------
-    dispatchTable_[Opcode::SMSG_QUERY_TIME_RESPONSE] = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handleQueryTimeResponse(packet); };
-    dispatchTable_[Opcode::SMSG_PLAYED_TIME]         = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handlePlayedTime(packet); };
-    dispatchTable_[Opcode::SMSG_WHO]                 = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handleWho(packet); };
+    registerWorldHandler(Opcode::SMSG_QUERY_TIME_RESPONSE, &GameHandler::handleQueryTimeResponse);
+    registerWorldHandler(Opcode::SMSG_PLAYED_TIME, &GameHandler::handlePlayedTime);
+    registerWorldHandler(Opcode::SMSG_WHO, &GameHandler::handleWho);
     dispatchTable_[Opcode::SMSG_WHOIS] = [this](network::Packet& packet) {
         if (packet.hasData()) {
             std::string whoisText = packet.readString();
@@ -1623,7 +1628,7 @@ void GameHandler::registerOpcodeHandlers() {
             }
         }
     };
-    dispatchTable_[Opcode::SMSG_FRIEND_STATUS] = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handleFriendStatus(packet); };
+    registerWorldHandler(Opcode::SMSG_FRIEND_STATUS, &GameHandler::handleFriendStatus);
     registerHandler(Opcode::SMSG_CONTACT_LIST, &GameHandler::handleContactList);
     registerHandler(Opcode::SMSG_FRIEND_LIST, &GameHandler::handleFriendList);
     dispatchTable_[Opcode::SMSG_IGNORE_LIST] = [this](network::Packet& packet) {
@@ -1637,7 +1642,7 @@ void GameHandler::registerOpcodeHandlers() {
         }
         LOG_DEBUG("SMSG_IGNORE_LIST: loaded ", static_cast<int>(ignCount), " ignored players");
     };
-    dispatchTable_[Opcode::MSG_RANDOM_ROLL] = [this](network::Packet& packet) { if (state == WorldState::IN_WORLD) handleRandomRoll(packet); };
+    registerWorldHandler(Opcode::MSG_RANDOM_ROLL, &GameHandler::handleRandomRoll);
 
     // -----------------------------------------------------------------------
     // Item push / logout / entity queries
