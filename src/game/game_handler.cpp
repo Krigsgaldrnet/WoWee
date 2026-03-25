@@ -3924,11 +3924,10 @@ void GameHandler::registerOpcodeHandlers() {
         }
         // Only show failure to the player who attempted the dispel
         if (dispelCasterGuid == playerGuid) {
-            loadSpellNameCache();
-            auto it = spellNameCache_.find(dispelSpellId);
+            const auto& name = getSpellName(dispelSpellId);
             char buf[128];
-            if (it != spellNameCache_.end() && !it->second.name.empty())
-                std::snprintf(buf, sizeof(buf), "%s failed to dispel.", it->second.name.c_str());
+            if (!name.empty())
+                std::snprintf(buf, sizeof(buf), "%s failed to dispel.", name.c_str());
             else
                 std::snprintf(buf, sizeof(buf), "Dispel failed! (spell %u)", dispelSpellId);
             addSystemChatMessage(buf);
@@ -6387,10 +6386,7 @@ void GameHandler::registerOpcodeHandlers() {
                         const ItemQueryResponseData* info = getItemInfo(itemEntry);
                         std::string itemName = info && !info->name.empty()
                             ? info->name : ("item #" + std::to_string(itemEntry));
-                        loadSpellNameCache();
-                        auto spellIt = spellNameCache_.find(exeSpellId);
-                        std::string spellName = (spellIt != spellNameCache_.end() && !spellIt->second.name.empty())
-                            ? spellIt->second.name : "";
+                        const auto& spellName = getSpellName(exeSpellId);
                         std::string msg = spellName.empty()
                             ? ("You create: " + itemName + ".")
                             : ("You create " + itemName + " using " + spellName + ".");
@@ -18122,13 +18118,7 @@ void GameHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     // Detected via physical school mask (1) from DBC cache — covers warrior, rogue, DK, paladin,
     // feral druid, and hunter melee abilities generically.
     {
-        loadSpellNameCache();
-        bool isMeleeAbility = false;
-        auto cacheIt = spellNameCache_.find(spellId);
-        if (cacheIt != spellNameCache_.end() && cacheIt->second.schoolMask == 1) {
-            // Physical school and no cast time (instant) — treat as melee ability
-            isMeleeAbility = true;
-        }
+        bool isMeleeAbility = (getSpellSchoolMask(spellId) == 1);
         if (isMeleeAbility && target != 0) {
             auto entity = entityManager.getEntity(target);
             if (entity) {
@@ -18598,11 +18588,7 @@ void GameHandler::handleSpellStart(network::Packet& packet) {
         if (!isProfessionSpell(data.spellId)) {
             if (auto* renderer = core::Application::getInstance().getRenderer()) {
                 if (auto* ssm = renderer->getSpellSoundManager()) {
-                    loadSpellNameCache();
-                    auto it = spellNameCache_.find(data.spellId);
-                    auto school = (it != spellNameCache_.end() && it->second.schoolMask)
-                        ? schoolMaskToMagicSchool(it->second.schoolMask)
-                        : audio::SpellSoundManager::MagicSchool::ARCANE;
+                    auto school = schoolMaskToMagicSchool(getSpellSchoolMask(data.spellId));
                     ssm->playPrecast(school, audio::SpellSoundManager::SpellPower::MEDIUM);
                 }
             }
@@ -18640,12 +18626,7 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         if (!isProfessionSpell(data.spellId)) {
             if (auto* renderer = core::Application::getInstance().getRenderer()) {
                 if (auto* ssm = renderer->getSpellSoundManager()) {
-                    loadSpellNameCache();
-                    auto it = spellNameCache_.find(data.spellId);
-                    auto school = (it != spellNameCache_.end() && it->second.schoolMask)
-                        ? schoolMaskToMagicSchool(it->second.schoolMask)
-                        : audio::SpellSoundManager::MagicSchool::ARCANE;
-                    ssm->playCast(school);
+                    ssm->playCast(schoolMaskToMagicSchool(getSpellSchoolMask(data.spellId)));
                 }
             }
         }
@@ -18658,9 +18639,7 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         uint32_t sid = data.spellId;
         bool isMeleeAbility = false;
         if (!isProfessionSpell(sid)) {
-            loadSpellNameCache();
-            auto cacheIt = spellNameCache_.find(sid);
-            if (cacheIt != spellNameCache_.end() && cacheIt->second.schoolMask == 1) {
+            if (getSpellSchoolMask(sid) == 1) {
                 // Physical school — treat as instant melee ability if cast time is zero.
                 // We don't store cast time in the cache; use the fact that if we were not
                 // in a cast (casting == true with this spellId) then it was instant.
@@ -18729,12 +18708,7 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
         if (targetsPlayer) {
             if (auto* renderer = core::Application::getInstance().getRenderer()) {
                 if (auto* ssm = renderer->getSpellSoundManager()) {
-                    loadSpellNameCache();
-                    auto it = spellNameCache_.find(data.spellId);
-                    auto school = (it != spellNameCache_.end() && it->second.schoolMask)
-                        ? schoolMaskToMagicSchool(it->second.schoolMask)
-                        : audio::SpellSoundManager::MagicSchool::ARCANE;
-                    ssm->playCast(school);
+                    ssm->playCast(schoolMaskToMagicSchool(getSpellSchoolMask(data.spellId)));
                 }
             }
         }
@@ -18777,12 +18751,8 @@ void GameHandler::handleSpellGo(network::Packet& packet) {
     if (playerIsHit || playerHitEnemy) {
         if (auto* renderer = core::Application::getInstance().getRenderer()) {
             if (auto* ssm = renderer->getSpellSoundManager()) {
-                loadSpellNameCache();
-                auto it = spellNameCache_.find(data.spellId);
-                auto school = (it != spellNameCache_.end() && it->second.schoolMask)
-                    ? schoolMaskToMagicSchool(it->second.schoolMask)
-                    : audio::SpellSoundManager::MagicSchool::ARCANE;
-                ssm->playImpact(school, audio::SpellSoundManager::SpellPower::MEDIUM);
+                ssm->playImpact(schoolMaskToMagicSchool(getSpellSchoolMask(data.spellId)),
+                                audio::SpellSoundManager::SpellPower::MEDIUM);
             }
         }
     }
