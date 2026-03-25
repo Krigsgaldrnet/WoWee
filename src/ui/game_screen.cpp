@@ -1,4 +1,5 @@
 #include "ui/game_screen.hpp"
+#include "ui/ui_colors.hpp"
 #include "rendering/character_preview.hpp"
 #include "rendering/vk_context.hpp"
 #include "core/application.hpp"
@@ -49,13 +50,14 @@
 #include <unordered_set>
 
 namespace {
-    // Common ImGui colors
-    constexpr ImVec4 kColorRed        = {1.0f, 0.3f, 0.3f, 1.0f};
-    constexpr ImVec4 kColorGreen      = {0.4f, 1.0f, 0.4f, 1.0f};
-    constexpr ImVec4 kColorBrightGreen= {0.3f, 1.0f, 0.3f, 1.0f};
-    constexpr ImVec4 kColorYellow     = {1.0f, 1.0f, 0.3f, 1.0f};
-    constexpr ImVec4 kColorGray       = {0.6f, 0.6f, 0.6f, 1.0f};
-    constexpr ImVec4 kColorDarkGray   = {0.5f, 0.5f, 0.5f, 1.0f};
+    // Common ImGui colors (aliases into local namespace for brevity)
+    using namespace wowee::ui::colors;
+    constexpr auto& kColorRed        = kRed;
+    constexpr auto& kColorGreen      = kGreen;
+    constexpr auto& kColorBrightGreen= kBrightGreen;
+    constexpr auto& kColorYellow     = kYellow;
+    constexpr auto& kColorGray       = kGray;
+    constexpr auto& kColorDarkGray   = kDarkGray;
 
     // Common ImGui window flags for popup dialogs
     const ImGuiWindowFlags kDialogFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
@@ -87,21 +89,6 @@ namespace {
 
     // Render gold/silver/copper amounts in WoW-canonical colors on the current ImGui line.
     // Skips zero-value denominations (except copper, which is always shown when gold=silver=0).
-    void renderCoinsText(uint32_t g, uint32_t s, uint32_t c) {
-        bool any = false;
-        if (g > 0) {
-            ImGui::TextColored(ImVec4(1.00f, 0.82f, 0.00f, 1.0f), "%ug", g);
-            any = true;
-        }
-        if (s > 0 || g > 0) {
-            if (any) ImGui::SameLine(0, 3);
-            ImGui::TextColored(ImVec4(0.80f, 0.80f, 0.80f, 1.0f), "%us", s);
-            any = true;
-        }
-        if (any) ImGui::SameLine(0, 3);
-        ImGui::TextColored(ImVec4(0.72f, 0.45f, 0.20f, 1.0f), "%uc", c);
-    }
-
     // Return the canonical Blizzard class color as ImVec4.
     // classId is byte 1 of UNIT_FIELD_BYTES_0 (or CharacterData::classId).
     // Returns a neutral light-gray for unknown / class 0.
@@ -1419,15 +1406,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
 
         ImGui::BeginTooltip();
         // Quality color for name
-        ImVec4 qColor(1, 1, 1, 1);
-        switch (info->quality) {
-            case 0: qColor = ImVec4(0.62f, 0.62f, 0.62f, 1.0f); break; // Poor
-            case 1: qColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); break;    // Common
-            case 2: qColor = ImVec4(0.12f, 1.0f, 0.0f, 1.0f); break;   // Uncommon
-            case 3: qColor = ImVec4(0.0f, 0.44f, 0.87f, 1.0f); break;  // Rare
-            case 4: qColor = ImVec4(0.64f, 0.21f, 0.93f, 1.0f); break; // Epic
-            case 5: qColor = ImVec4(1.0f, 0.50f, 0.0f, 1.0f); break;   // Legendary
-        }
+        auto qColor = ui::getQualityColor(static_cast<game::ItemQuality>(info->quality));
         ImGui::TextColored(qColor, "%s", info->name.c_str());
 
         // Heroic indicator (green, matches WoW tooltip style)
@@ -14000,18 +13979,8 @@ void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
 
     if (ImGui::Begin("Loot Roll", nullptr, kDialogFlags)) {
         // Quality color for item name
-        static const ImVec4 kQualityColors[] = {
-            kColorGray,  // 0=poor (grey)
-            ImVec4(1.0f, 1.0f, 1.0f, 1.0f),  // 1=common (white)
-            ImVec4(0.1f, 1.0f, 0.1f, 1.0f),  // 2=uncommon (green)
-            ImVec4(0.0f, 0.44f, 0.87f, 1.0f),// 3=rare (blue)
-            ImVec4(0.64f, 0.21f, 0.93f, 1.0f),// 4=epic (purple)
-            ImVec4(1.0f, 0.5f, 0.0f, 1.0f),  // 5=legendary (orange)
-            ImVec4(0.90f, 0.80f, 0.50f, 1.0f),// 6=artifact (light gold)
-            ImVec4(0.90f, 0.80f, 0.50f, 1.0f),// 7=heirloom (light gold)
-        };
         uint8_t q = roll.itemQuality;
-        ImVec4 col = (q < 8) ? kQualityColors[q] : kQualityColors[1];
+        ImVec4 col = ui::getQualityColor(static_cast<game::ItemQuality>(q));
 
         // Countdown bar
         {
@@ -14057,7 +14026,7 @@ void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
             ? rollInfo->name.c_str()
             : roll.itemName.c_str();
         if (rollInfo && rollInfo->valid)
-            col = (rollInfo->quality < 8) ? kQualityColors[rollInfo->quality] : kQualityColors[1];
+            col = ui::getQualityColor(static_cast<game::ItemQuality>(rollInfo->quality));
         ImGui::TextColored(col, "[%s]", displayName);
         if (ImGui::IsItemHovered() && rollInfo && rollInfo->valid) {
             inventoryScreen.renderItemTooltip(*rollInfo);

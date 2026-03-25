@@ -1,4 +1,5 @@
 #include "ui/inventory_screen.hpp"
+#include "ui/ui_colors.hpp"
 #include "ui/keybinding_manager.hpp"
 #include "game/game_handler.hpp"
 #include "core/application.hpp"
@@ -74,20 +75,6 @@ const game::ItemSlot* findComparableEquipped(const game::Inventory& inventory, u
     }
 }
 
-void renderCoinsText(uint32_t g, uint32_t s, uint32_t c) {
-    bool any = false;
-    if (g > 0) {
-        ImGui::TextColored(ImVec4(1.00f, 0.82f, 0.00f, 1.0f), "%ug", g);
-        any = true;
-    }
-    if (s > 0 || g > 0) {
-        if (any) ImGui::SameLine(0, 3);
-        ImGui::TextColored(ImVec4(0.80f, 0.80f, 0.80f, 1.0f), "%us", s);
-        any = true;
-    }
-    if (any) ImGui::SameLine(0, 3);
-    ImGui::TextColored(ImVec4(0.72f, 0.45f, 0.20f, 1.0f), "%uc", c);
-}
 } // namespace
 
 InventoryScreen::~InventoryScreen() {
@@ -96,17 +83,7 @@ InventoryScreen::~InventoryScreen() {
 }
 
 ImVec4 InventoryScreen::getQualityColor(game::ItemQuality quality) {
-    switch (quality) {
-        case game::ItemQuality::POOR:      return ImVec4(0.62f, 0.62f, 0.62f, 1.0f); // Grey
-        case game::ItemQuality::COMMON:    return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);    // White
-        case game::ItemQuality::UNCOMMON:  return ImVec4(0.12f, 1.0f, 0.0f, 1.0f);   // Green
-        case game::ItemQuality::RARE:      return ImVec4(0.0f, 0.44f, 0.87f, 1.0f);  // Blue
-        case game::ItemQuality::EPIC:      return ImVec4(0.64f, 0.21f, 0.93f, 1.0f); // Purple
-        case game::ItemQuality::LEGENDARY: return ImVec4(1.0f, 0.50f, 0.0f, 1.0f);   // Orange
-        case game::ItemQuality::ARTIFACT:  return ImVec4(0.90f, 0.80f, 0.50f, 1.0f); // Light gold
-        case game::ItemQuality::HEIRLOOM:  return ImVec4(0.90f, 0.80f, 0.50f, 1.0f); // Light gold
-        default:                           return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-    }
+    return ui::getQualityColor(quality);
 }
 
 // ============================================================
