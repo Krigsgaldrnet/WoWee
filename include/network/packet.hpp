@@ -33,6 +33,7 @@ public:
     const std::vector<uint8_t>& getData() const { return data; }
     size_t getReadPos() const { return readPos; }
     size_t getSize() const { return data.size(); }
+    size_t getRemainingSize() const { return data.size() - readPos; }
     void setReadPos(size_t pos) { readPos = pos; }
 
 private:

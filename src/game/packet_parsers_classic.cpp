@@ -22,7 +22,7 @@ bool hasFullPackedGuid(const network::Packet& packet) {
             ++guidBytes;
         }
     }
-    return packet.getSize() - packet.getReadPos() >= guidBytes;
+    return packet.getRemainingSize() >= guidBytes;
 }
 
 std::string formatPacketBytes(const network::Packet& packet, size_t startPos) {
@@ -45,7 +45,7 @@ std::string formatPacketBytes(const network::Packet& packet, size_t startPos) {
 }
 
 bool skipClassicSpellCastTargets(network::Packet& packet, uint64_t* primaryTargetGuid = nullptr) {
-    if (packet.getSize() - packet.getReadPos() < 2) {
+    if (packet.getRemainingSize() < 2) {
         return false;
     }
 
@@ -80,7 +80,7 @@ bool skipClassicSpellCastTargets(network::Packet& packet, uint64_t* primaryTarge
     }
 
     if ((targetFlags & 0x0020) != 0) {                                  // SOURCE_LOCATION
-        if (packet.getSize() - packet.getReadPos() < 12) {
+        if (packet.getRemainingSize() < 12) {
             return false;
         }
         (void)packet.readFloat();
@@ -88,7 +88,7 @@ bool skipClassicSpellCastTargets(network::Packet& packet, uint64_t* primaryTarge
         (void)packet.readFloat();
     }
     if ((targetFlags & 0x0040) != 0) {                                  // DEST_LOCATION
-        if (packet.getSize() - packet.getReadPos() < 12) {
+        if (packet.getRemainingSize() < 12) {
             return false;
         }
         (void)packet.readFloat();
@@ -97,7 +97,7 @@ bool skipClassicSpellCastTargets(network::Packet& packet, uint64_t* primaryTarge
     }
 
     if ((targetFlags & 0x1000) != 0) {                                  // TRADE_ITEM
-        if (packet.getSize() - packet.getReadPos() < 1) {
+        if (packet.getRemainingSize() < 1) {
             return false;
         }
         (void)packet.readUInt8();
@@ -189,7 +189,7 @@ uint32_t classicWireMoveFlags(uint32_t internalFlags) {
 // Same as TBC: u8 UpdateFlags, JUMPING=0x2000, 8 speeds, no pitchRate
 // ============================================================================
 bool ClassicPacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& block) {
-    auto rem = [&]() -> size_t { return packet.getSize() - packet.getReadPos(); };
+    auto rem = [&]() -> size_t { return packet.getRemainingSize(); };
     if (rem() < 1) return false;
 
     // Classic: UpdateFlags is uint8 (same as TBC)
@@ -505,7 +505,7 @@ network::Packet ClassicPacketParsers::buildUseItem(uint8_t bagIndex, uint8_t slo
 bool ClassicPacketParsers::parseSpellStart(network::Packet& packet, SpellStartData& data) {
     data = SpellStartData{};
 
-    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    auto rem = [&]() { return packet.getRemainingSize(); };
     const size_t startPos = packet.getReadPos();
     if (rem() < 2) return false;
 
@@ -562,7 +562,7 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
     // Always reset output to avoid stale targets when callers reuse buffers.
     data = SpellGoData{};
 
-    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    auto rem = [&]() { return packet.getRemainingSize(); };
     const size_t startPos = packet.getReadPos();
     const bool traceSmallSpellGo = (packet.getSize() - startPos) <= 48;
     const auto traceFailure = [&](const char* stage, size_t pos, uint32_t value = 0) {
@@ -792,7 +792,7 @@ bool ClassicPacketParsers::parseSpellGo(network::Packet& packet, SpellGoData& da
 bool ClassicPacketParsers::parseAttackerStateUpdate(network::Packet& packet, AttackerStateUpdateData& data) {
     data = AttackerStateUpdateData{};
 
-    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    auto rem = [&]() { return packet.getRemainingSize(); };
     if (rem() < 5) return false;  // hitInfo(4) + at least GUID mask byte(1)
 
     const size_t startPos = packet.getReadPos();
@@ -862,7 +862,7 @@ bool ClassicPacketParsers::parseAttackerStateUpdate(network::Packet& packet, Att
 //       + uint8(periodicLog) + uint8(unused) + uint32(blocked) + uint32(flags)
 // ============================================================================
 bool ClassicPacketParsers::parseSpellDamageLog(network::Packet& packet, SpellDamageLogData& data) {
-    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    auto rem = [&]() { return packet.getRemainingSize(); };
     if (rem() < 2 || !hasFullPackedGuid(packet)) return false;
 
     data.targetGuid   = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
@@ -897,7 +897,7 @@ bool ClassicPacketParsers::parseSpellDamageLog(network::Packet& packet, SpellDam
 //       + uint32(heal) + uint32(overheal) + uint8(crit)
 // ============================================================================
 bool ClassicPacketParsers::parseSpellHealLog(network::Packet& packet, SpellHealLogData& data) {
-    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    auto rem = [&]() { return packet.getRemainingSize(); };
     if (rem() < 2 || !hasFullPackedGuid(packet)) return false;
 
     data.targetGuid = UpdateObjectParser::readPackedGuid(packet); // PackedGuid in Vanilla
@@ -939,7 +939,7 @@ bool ClassicPacketParsers::parseSpellHealLog(network::Packet& packet, SpellHealL
 //          + [uint32(maxDuration) + uint32(duration) if flags & 0x10]]*
 // ============================================================================
 bool ClassicPacketParsers::parseAuraUpdate(network::Packet& packet, AuraUpdateData& data, bool isAll) {
-    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    auto rem = [&]() { return packet.getRemainingSize(); };
     if (rem() < 1) return false;
 
     data.guid = UpdateObjectParser::readPackedGuid(packet);
@@ -992,7 +992,7 @@ bool ClassicPacketParsers::parseAuraUpdate(network::Packet& packet, AuraUpdateDa
 bool ClassicPacketParsers::parseNameQueryResponse(network::Packet& packet, NameQueryResponseData& data) {
     data = NameQueryResponseData{};
 
-    auto rem = [&]() { return packet.getSize() - packet.getReadPos(); };
+    auto rem = [&]() { return packet.getRemainingSize(); };
     if (rem() < 8) return false;
 
     data.guid = packet.readUInt64();     // full uint64, not PackedGuid
@@ -1039,7 +1039,7 @@ bool ClassicPacketParsers::parseCastFailed(network::Packet& packet, CastFailedDa
 // align with WotLK's getSpellCastResultString table.
 // ============================================================================
 bool ClassicPacketParsers::parseCastResult(network::Packet& packet, uint32_t& spellId, uint8_t& result) {
-    if (packet.getSize() - packet.getReadPos() < 5) return false;
+    if (packet.getRemainingSize() < 5) return false;
     spellId = packet.readUInt32();
     uint8_t vanillaResult = packet.readUInt8();
     // Shift +1: Vanilla result 0=AFFECTING_COMBAT maps to WotLK result 1=AFFECTING_COMBAT
@@ -1388,7 +1388,7 @@ bool ClassicPacketParsers::parseGameObjectQueryResponse(network::Packet& packet,
     }
 
     // Validate minimum size for fixed fields: type(4) + displayId(4)
-    if (packet.getSize() - packet.getReadPos() < 8) {
+    if (packet.getRemainingSize() < 8) {
         LOG_ERROR("Classic SMSG_GAMEOBJECT_QUERY_RESPONSE: truncated before names (entry=", data.entry, ")");
         return false;
     }
@@ -1402,7 +1402,7 @@ bool ClassicPacketParsers::parseGameObjectQueryResponse(network::Packet& packet,
     packet.readString();
 
     // Classic: data[24] comes immediately after names (no extra strings)
-    size_t remaining = packet.getSize() - packet.getReadPos();
+    size_t remaining = packet.getRemainingSize();
     if (remaining >= 24 * 4) {
         for (int i = 0; i < 24; i++) {
             data.data[i] = packet.readUInt32();
@@ -1435,7 +1435,7 @@ bool ClassicPacketParsers::parseGameObjectQueryResponse(network::Packet& packet,
 // ============================================================================
 
 bool ClassicPacketParsers::parseGossipMessage(network::Packet& packet, GossipMessageData& data) {
-    size_t remaining = packet.getSize() - packet.getReadPos();
+    size_t remaining = packet.getRemainingSize();
     if (remaining < 8 + 4 + 4) {
         LOG_ERROR("Classic SMSG_GOSSIP_MESSAGE too small: ", remaining, " bytes");
         return false;
@@ -1459,7 +1459,7 @@ bool ClassicPacketParsers::parseGossipMessage(network::Packet& packet, GossipMes
     data.options.reserve(optionCount);
     for (uint32_t i = 0; i < optionCount; ++i) {
         // Sanity check: ensure minimum bytes available for option (id(4)+icon(1)+isCoded(1)+text(1))
-        remaining = packet.getSize() - packet.getReadPos();
+        remaining = packet.getRemainingSize();
         if (remaining < 7) {
             LOG_WARNING("Classic gossip option ", i, " truncated (", remaining, " bytes left)");
             break;
@@ -1477,7 +1477,7 @@ bool ClassicPacketParsers::parseGossipMessage(network::Packet& packet, GossipMes
     }
 
     // Ensure we have at least 4 bytes for questCount
-    remaining = packet.getSize() - packet.getReadPos();
+    remaining = packet.getRemainingSize();
     if (remaining < 4) {
         LOG_WARNING("Classic SMSG_GOSSIP_MESSAGE truncated before questCount");
         return data.options.size() > 0;  // Return true if we got at least some options
@@ -1497,7 +1497,7 @@ bool ClassicPacketParsers::parseGossipMessage(network::Packet& packet, GossipMes
     data.quests.reserve(questCount);
     for (uint32_t i = 0; i < questCount; ++i) {
         // Sanity check: ensure minimum bytes available for quest (id(4)+icon(4)+level(4)+title(1))
-        remaining = packet.getSize() - packet.getReadPos();
+        remaining = packet.getRemainingSize();
         if (remaining < 13) {
             LOG_WARNING("Classic gossip quest ", i, " truncated (", remaining, " bytes left)");
             break;
@@ -1559,7 +1559,7 @@ network::Packet ClassicPacketParsers::buildSendMail(uint64_t mailboxGuid,
 // ============================================================================
 bool ClassicPacketParsers::parseMailList(network::Packet& packet,
                                          std::vector<MailMessage>& inbox) {
-    size_t remaining = packet.getSize() - packet.getReadPos();
+    size_t remaining = packet.getRemainingSize();
     if (remaining < 1) return false;
 
     uint8_t count = packet.readUInt8();
@@ -1569,7 +1569,7 @@ bool ClassicPacketParsers::parseMailList(network::Packet& packet,
     inbox.reserve(count);
 
     for (uint8_t i = 0; i < count; ++i) {
-        remaining = packet.getSize() - packet.getReadPos();
+        remaining = packet.getRemainingSize();
         if (remaining < 5) {
             LOG_WARNING("Classic mail entry ", i, " truncated (", remaining, " bytes left)");
             break;
@@ -1693,7 +1693,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     }
 
     // Validate minimum size for fixed fields: itemClass(4) + subClass(4) + 4 name strings + displayInfoId(4) + quality(4)
-    if (packet.getSize() - packet.getReadPos() < 8) {
+    if (packet.getRemainingSize() < 8) {
         LOG_ERROR("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before names (entry=", data.entry, ")");
         return false;
     }
@@ -1747,7 +1747,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     data.quality = packet.readUInt32();
 
     // Validate minimum size for fixed fields: Flags(4) + BuyPrice(4) + SellPrice(4) + inventoryType(4)
-    if (packet.getSize() - packet.getReadPos() < 16) {
+    if (packet.getRemainingSize() < 16) {
         LOG_ERROR("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before inventoryType (entry=", data.entry, ")");
         return false;
     }
@@ -1760,7 +1760,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     data.inventoryType = packet.readUInt32();
 
     // Validate minimum size for remaining fixed fields: 13×4 = 52 bytes
-    if (packet.getSize() - packet.getReadPos() < 52) {
+    if (packet.getRemainingSize() < 52) {
         LOG_ERROR("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before stats (entry=", data.entry, ")");
         return false;
     }
@@ -1781,12 +1781,12 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     data.containerSlots = packet.readUInt32();
 
     // Vanilla: 10 stat pairs, NO statsCount prefix (10×8 = 80 bytes)
-    if (packet.getSize() - packet.getReadPos() < 80) {
+    if (packet.getRemainingSize() < 80) {
         LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated in stats section (entry=", data.entry, ")");
         // Read what we can
     }
     for (uint32_t i = 0; i < 10; i++) {
-        if (packet.getSize() - packet.getReadPos() < 8) {
+        if (packet.getRemainingSize() < 8) {
             LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: stat ", i, " truncated (entry=", data.entry, ")");
             break;
         }
@@ -1813,7 +1813,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     bool haveWeaponDamage = false;
     for (int i = 0; i < 5; i++) {
         // Each damage entry is dmgMin(4) + dmgMax(4) + damageType(4) = 12 bytes
-        if (packet.getSize() - packet.getReadPos() < 12) {
+        if (packet.getRemainingSize() < 12) {
             LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: damage ", i, " truncated (entry=", data.entry, ")");
             break;
         }
@@ -1831,14 +1831,14 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     }
 
     // Validate minimum size for armor field (4 bytes)
-    if (packet.getSize() - packet.getReadPos() < 4) {
+    if (packet.getRemainingSize() < 4) {
         LOG_WARNING("Classic SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before armor (entry=", data.entry, ")");
         return true;  // Have core fields; armor is important but optional
     }
     data.armor = static_cast<int32_t>(packet.readUInt32());
 
     // Remaining tail can vary by core. Read resistances + delay when present.
-    if (packet.getSize() - packet.getReadPos() >= 28) {
+    if (packet.getRemainingSize() >= 28) {
         data.holyRes   = static_cast<int32_t>(packet.readUInt32()); // HolyRes
         data.fireRes   = static_cast<int32_t>(packet.readUInt32()); // FireRes
         data.natureRes = static_cast<int32_t>(packet.readUInt32()); // NatureRes
@@ -1849,7 +1849,7 @@ bool ClassicPacketParsers::parseItemQueryResponse(network::Packet& packet, ItemQ
     }
 
     // AmmoType + RangedModRange (2 fields, 8 bytes)
-    if (packet.getSize() - packet.getReadPos() >= 8) {
+    if (packet.getRemainingSize() >= 8) {
         packet.readUInt32(); // AmmoType
         packet.readFloat();  // RangedModRange
     }
@@ -1926,7 +1926,7 @@ namespace TurtleMoveFlags {
 }
 
 bool TurtlePacketParsers::parseMovementBlock(network::Packet& packet, UpdateBlock& block) {
-    auto rem = [&]() -> size_t { return packet.getSize() - packet.getReadPos(); };
+    auto rem = [&]() -> size_t { return packet.getRemainingSize(); };
     if (rem() < 1) return false;
 
     uint8_t updateFlags = packet.readUInt8();
