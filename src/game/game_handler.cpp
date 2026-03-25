@@ -3179,7 +3179,7 @@ void GameHandler::registerOpcodeHandlers() {
     }
     dispatchTable_[Opcode::SMSG_TRANSFER_PENDING] = [this](network::Packet& packet) {
         uint32_t pendingMapId = packet.readUInt32();
-        if (packet.getReadPos() + 8 <= packet.getSize()) {
+        if (packet.hasRemaining(8)) {
             packet.readUInt32(); // transportEntry
             packet.readUInt32(); // transportMapId
         }
@@ -17667,7 +17667,7 @@ void GameHandler::handleMonsterMoveTransport(network::Packet& packet) {
     if (!entity) return;
 
     // ---- Spline data (same format as SMSG_MONSTER_MOVE, transport-local coords) ----
-    if (packet.getReadPos() + 5 > packet.getSize()) {
+    if (!packet.hasRemaining(5)) {
         // No spline data — snap to start position
         if (transportManager_) {
             glm::vec3 localCanonical = core::coords::serverToCanonical(glm::vec3(localX, localY, localZ));
@@ -17699,12 +17699,12 @@ void GameHandler::handleMonsterMoveTransport(network::Packet& packet) {
     // Facing data based on moveType
     float facingAngle = entity->getOrientation();
     if (moveType == 2) {       // FacingSpot
-        if (packet.getReadPos() + 12 > packet.getSize()) return;
+        if (!packet.hasRemaining(12)) return;
         float sx = packet.readFloat(), sy = packet.readFloat(), sz = packet.readFloat();
         facingAngle = std::atan2(-(sy - localY), sx - localX);
         (void)sz;
     } else if (moveType == 3) { // FacingTarget
-        if (packet.getReadPos() + 8 > packet.getSize()) return;
+        if (!packet.hasRemaining(8)) return;
         uint64_t tgtGuid = packet.readUInt64();
         if (auto tgt = entityManager.getEntity(tgtGuid)) {
             float dx = tgt->getX() - entity->getX();
@@ -17713,27 +17713,27 @@ void GameHandler::handleMonsterMoveTransport(network::Packet& packet) {
                 facingAngle = std::atan2(-dy, dx);
         }
     } else if (moveType == 4) { // FacingAngle
-        if (packet.getReadPos() + 4 > packet.getSize()) return;
+        if (!packet.hasRemaining(4)) return;
         facingAngle = core::coords::serverToCanonicalYaw(packet.readFloat());
     }
 
-    if (packet.getReadPos() + 4 > packet.getSize()) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t splineFlags = packet.readUInt32();
 
     if (splineFlags & 0x00400000) { // Animation
-        if (packet.getReadPos() + 5 > packet.getSize()) return;
+        if (!packet.hasRemaining(5)) return;
         packet.readUInt8(); packet.readUInt32();
     }
 
-    if (packet.getReadPos() + 4 > packet.getSize()) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t duration = packet.readUInt32();
 
     if (splineFlags & 0x00000800) { // Parabolic
-        if (packet.getReadPos() + 8 > packet.getSize()) return;
+        if (!packet.hasRemaining(8)) return;
         packet.readFloat(); packet.readUInt32();
     }
 
-    if (packet.getReadPos() + 4 > packet.getSize()) return;
+    if (!packet.hasRemaining(4)) return;
     uint32_t pointCount = packet.readUInt32();
     constexpr uint32_t kMaxTransportSplinePoints = 1000;
     if (pointCount > kMaxTransportSplinePoints) {
@@ -17749,17 +17749,17 @@ void GameHandler::handleMonsterMoveTransport(network::Packet& packet) {
         const bool uncompressed = (splineFlags & (0x00080000 | 0x00002000)) != 0;
         if (uncompressed) {
             for (uint32_t i = 0; i < pointCount - 1; ++i) {
-                if (packet.getReadPos() + 12 > packet.getSize()) break;
+                if (!packet.hasRemaining(12)) break;
                 packet.readFloat(); packet.readFloat(); packet.readFloat();
             }
-            if (packet.getReadPos() + 12 <= packet.getSize()) {
+            if (packet.hasRemaining(12)) {
                 destLocalX = packet.readFloat();
                 destLocalY = packet.readFloat();
                 destLocalZ = packet.readFloat();
                 hasDest = true;
             }
         } else {
-            if (packet.getReadPos() + 12 <= packet.getSize()) {
+            if (packet.hasRemaining(12)) {
                 destLocalX = packet.readFloat();
                 destLocalY = packet.readFloat();
                 destLocalZ = packet.readFloat();
