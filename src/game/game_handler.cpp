@@ -626,6 +626,17 @@ void GameHandler::withSoundManager(ManagerGetter getter, Callback cb) {
     }
 }
 
+// Registration helpers for common dispatch table patterns
+void GameHandler::registerSkipHandler(LogicalOpcode op) {
+    dispatchTable_[op] = [](network::Packet& packet) { packet.skipAll(); };
+}
+void GameHandler::registerErrorHandler(LogicalOpcode op, const char* msg) {
+    dispatchTable_[op] = [this, msg](network::Packet&) {
+        addUIError(msg);
+        addSystemChatMessage(msg);
+    };
+}
+
 GameHandler::GameHandler() {
     LOG_DEBUG("GameHandler created");
 
@@ -1618,18 +1629,9 @@ void GameHandler::registerOpcodeHandlers() {
         std::string name = packet.readString();
         if (!name.empty()) addSystemChatMessage("Player name '" + name + "' is ambiguous.");
     };
-    dispatchTable_[Opcode::SMSG_CHAT_WRONG_FACTION] = [this](network::Packet& /*packet*/) {
-        addUIError("You cannot send messages to members of that faction.");
-        addSystemChatMessage("You cannot send messages to members of that faction.");
-    };
-    dispatchTable_[Opcode::SMSG_CHAT_NOT_IN_PARTY] = [this](network::Packet& /*packet*/) {
-        addUIError("You are not in a party.");
-        addSystemChatMessage("You are not in a party.");
-    };
-    dispatchTable_[Opcode::SMSG_CHAT_RESTRICTED] = [this](network::Packet& /*packet*/) {
-        addUIError("You cannot send chat messages in this area.");
-        addSystemChatMessage("You cannot send chat messages in this area.");
-    };
+    registerErrorHandler(Opcode::SMSG_CHAT_WRONG_FACTION, "You cannot send messages to members of that faction.");
+    registerErrorHandler(Opcode::SMSG_CHAT_NOT_IN_PARTY, "You are not in a party.");
+    registerErrorHandler(Opcode::SMSG_CHAT_RESTRICTED, "You cannot send chat messages in this area.");
 
     // -----------------------------------------------------------------------
     // Player info queries / social
@@ -1774,7 +1776,7 @@ void GameHandler::registerOpcodeHandlers() {
         if (msg > 0 && msg < 7 && kPetFeedback[msg]) addSystemChatMessage(kPetFeedback[msg]);
         packet.skipAll();
     };
-    dispatchTable_[Opcode::SMSG_PET_NAME_QUERY_RESPONSE] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::SMSG_PET_NAME_QUERY_RESPONSE);
 
     // -----------------------------------------------------------------------
     // Quest failures
@@ -2116,8 +2118,8 @@ void GameHandler::registerOpcodeHandlers() {
         pbMsg += '.';
         addSystemChatMessage(pbMsg);
     };
-    dispatchTable_[Opcode::SMSG_BINDER_CONFIRM] = [this](network::Packet& packet) { packet.skipAll(); };
-    dispatchTable_[Opcode::SMSG_SET_PHASE_SHIFT] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::SMSG_BINDER_CONFIRM);
+    registerSkipHandler(Opcode::SMSG_SET_PHASE_SHIFT);
     dispatchTable_[Opcode::SMSG_TOGGLE_XP_GAIN] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() < 1) return;
         uint8_t enabled = packet.readUInt8();
@@ -2175,7 +2177,7 @@ void GameHandler::registerOpcodeHandlers() {
     dispatchTable_[Opcode::SMSG_CLEAR_FAR_SIGHT_IMMEDIATE] = [this](network::Packet& /*packet*/) {
         LOG_DEBUG("SMSG_CLEAR_FAR_SIGHT_IMMEDIATE");
     };
-    dispatchTable_[Opcode::SMSG_COMBAT_EVENT_FAILED] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::SMSG_COMBAT_EVENT_FAILED);
     dispatchTable_[Opcode::SMSG_FORCE_ANIM] = [this](network::Packet& packet) {
         if (packet.getRemainingSize() >= 1) {
             uint64_t animGuid = packet.readPackedGuid();
@@ -7624,25 +7626,25 @@ void GameHandler::registerOpcodeHandlers() {
         }
     };
     // GM ticket status (new/updated); no ticket UI yet
-    dispatchTable_[Opcode::SMSG_GM_TICKET_STATUS_UPDATE] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::SMSG_GM_TICKET_STATUS_UPDATE);
     // Client uses this outbound; treat inbound variant as no-op for robustness.
-    dispatchTable_[Opcode::MSG_MOVE_WORLDPORT_ACK] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::MSG_MOVE_WORLDPORT_ACK);
     // Observed custom server packet (8 bytes). Safe-consume for now.
-    dispatchTable_[Opcode::MSG_MOVE_TIME_SKIPPED] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::MSG_MOVE_TIME_SKIPPED);
     // loggingOut_ already cleared by cancelLogout(); this is server's confirmation
-    dispatchTable_[Opcode::SMSG_LOGOUT_CANCEL_ACK] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::SMSG_LOGOUT_CANCEL_ACK);
     // These packets are not damage-shield events. Consume them without
     // synthesizing reflected damage entries or misattributing GUIDs.
-    dispatchTable_[Opcode::SMSG_AURACASTLOG] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::SMSG_AURACASTLOG);
     // These packets are not damage-shield events. Consume them without
     // synthesizing reflected damage entries or misattributing GUIDs.
-    dispatchTable_[Opcode::SMSG_SPELLBREAKLOG] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::SMSG_SPELLBREAKLOG);
     // Consume silently — informational, no UI action needed
-    dispatchTable_[Opcode::SMSG_ITEM_REFUND_INFO_RESPONSE] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::SMSG_ITEM_REFUND_INFO_RESPONSE);
     // Consume silently — informational, no UI action needed
-    dispatchTable_[Opcode::SMSG_LOOT_LIST] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::SMSG_LOOT_LIST);
     // Same format as LOCKOUT_ADDED; consume
-    dispatchTable_[Opcode::SMSG_CALENDAR_RAID_LOCKOUT_UPDATED] = [this](network::Packet& packet) { packet.skipAll(); };
+    registerSkipHandler(Opcode::SMSG_CALENDAR_RAID_LOCKOUT_UPDATED);
     // Consume — remaining server notifications not yet parsed
     for (auto op : {
         Opcode::SMSG_AFK_MONITOR_INFO_RESPONSE,

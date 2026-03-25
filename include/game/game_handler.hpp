@@ -2329,6 +2329,8 @@ private:
      */
     void handlePacket(network::Packet& packet);
     void registerOpcodeHandlers();
+    void registerSkipHandler(LogicalOpcode op);
+    void registerErrorHandler(LogicalOpcode op, const char* msg);
     void enqueueIncomingPacket(const network::Packet& packet);
     void enqueueIncomingPacketFront(network::Packet&& packet);
     void processQueuedIncomingPackets();
