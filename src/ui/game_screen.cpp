@@ -1396,34 +1396,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
 
         // Slot type
         if (info->inventoryType > 0) {
-            const char* slotName = "";
-            switch (info->inventoryType) {
-                case 1:  slotName = "Head"; break;
-                case 2:  slotName = "Neck"; break;
-                case 3:  slotName = "Shoulder"; break;
-                case 4:  slotName = "Shirt"; break;
-                case 5:  slotName = "Chest"; break;
-                case 6:  slotName = "Waist"; break;
-                case 7:  slotName = "Legs"; break;
-                case 8:  slotName = "Feet"; break;
-                case 9:  slotName = "Wrist"; break;
-                case 10: slotName = "Hands"; break;
-                case 11: slotName = "Finger"; break;
-                case 12: slotName = "Trinket"; break;
-                case 13: slotName = "One-Hand"; break;
-                case 14: slotName = "Shield"; break;
-                case 15: slotName = "Ranged"; break;
-                case 16: slotName = "Back"; break;
-                case 17: slotName = "Two-Hand"; break;
-                case 18: slotName = "Bag"; break;
-                case 19: slotName = "Tabard"; break;
-                case 20: slotName = "Robe"; break;
-                case 21: slotName = "Main Hand"; break;
-                case 22: slotName = "Off Hand"; break;
-                case 23: slotName = "Held In Off-hand"; break;
-                case 25: slotName = "Thrown"; break;
-                case 26: slotName = "Ranged"; break;
-            }
+            const char* slotName = ui::getInventorySlotName(info->inventoryType);
             if (slotName[0]) {
                 if (!info->subclassName.empty())
                     ImGui::TextColored(ui::colors::kLightGray, "%s  %s", slotName, info->subclassName.c_str());

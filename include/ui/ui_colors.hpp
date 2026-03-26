@@ -60,4 +60,49 @@ inline void renderCoinsFromCopper(uint64_t copper) {
                     static_cast<uint32_t>(copper % 100));
 }
 
+// ---- Inventory slot name from WoW inventory type ----
+inline const char* getInventorySlotName(uint32_t inventoryType) {
+    switch (inventoryType) {
+        case 1:  return "Head";
+        case 2:  return "Neck";
+        case 3:  return "Shoulder";
+        case 4:  return "Shirt";
+        case 5:  return "Chest";
+        case 6:  return "Waist";
+        case 7:  return "Legs";
+        case 8:  return "Feet";
+        case 9:  return "Wrist";
+        case 10: return "Hands";
+        case 11: return "Finger";
+        case 12: return "Trinket";
+        case 13: return "One-Hand";
+        case 14: return "Shield";
+        case 15: return "Ranged";
+        case 16: return "Back";
+        case 17: return "Two-Hand";
+        case 18: return "Bag";
+        case 19: return "Tabard";
+        case 20: return "Robe";
+        case 21: return "Main Hand";
+        case 22: return "Off Hand";
+        case 23: return "Held In Off-hand";
+        case 25: return "Thrown";
+        case 26: return "Ranged";
+        case 28: return "Relic";
+        default: return "";
+    }
+}
+
+// ---- Binding type display ----
+inline void renderBindingType(uint32_t bindType) {
+    constexpr ImVec4 kBindColor = {1.0f, 0.82f, 0.0f, 1.0f};
+    switch (bindType) {
+        case 1: ImGui::TextColored(kBindColor, "Binds when picked up"); break;
+        case 2: ImGui::TextColored(kBindColor, "Binds when equipped"); break;
+        case 3: ImGui::TextColored(kBindColor, "Binds when used"); break;
+        case 4: ImGui::TextColored(kBindColor, "Quest Item"); break;
+        default: break;
+    }
+}
+
 } // namespace wowee::ui
