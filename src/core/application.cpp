@@ -5997,7 +5997,7 @@ void Application::spawnOnlineCreature(uint64_t guid, uint32_t displayId, float x
                         // --- Equipment region layers (ItemDisplayInfo DBC) ---
                         auto idiDbc = am->loadDBC("ItemDisplayInfo.dbc");
                         if (idiDbc) {
-                            static const char* componentDirs[] = {
+                            static constexpr const char* componentDirs[] = {
                                 "ArmUpperTexture", "ArmLowerTexture", "HandTexture",
                                 "TorsoUpperTexture", "TorsoLowerTexture",
                                 "LegUpperTexture", "LegLowerTexture", "FootTexture",
@@ -7438,7 +7438,7 @@ void Application::setOnlinePlayerEquipment(uint64_t guid,
     charRenderer->setActiveGeosets(st.instanceId, geosets);
 
     // --- Textures (skin atlas compositing) ---
-    static const char* componentDirs[] = {
+    static constexpr const char* componentDirs[] = {
         "ArmUpperTexture",
         "ArmLowerTexture",
         "HandTexture",
@@ -8221,7 +8221,7 @@ void Application::processCreatureSpawnQueue(bool unlimited) {
                             // Equipment region textures
                             auto idiDbc = am->loadDBC("ItemDisplayInfo.dbc");
                             if (idiDbc) {
-                                static const char* compDirs[] = {
+                                static constexpr const char* compDirs[] = {
                                     "ArmUpperTexture", "ArmLowerTexture", "HandTexture",
                                     "TorsoUpperTexture", "TorsoLowerTexture",
                                     "LegUpperTexture", "LegLowerTexture", "FootTexture",
@@ -8439,7 +8439,7 @@ std::vector<std::string> Application::resolveEquipmentTexturePaths(uint64_t guid
     const auto* idiL = pipeline::getActiveDBCLayout()
         ? pipeline::getActiveDBCLayout()->getLayout("ItemDisplayInfo") : nullptr;
 
-    static const char* componentDirs[] = {
+    static constexpr const char* componentDirs[] = {
         "ArmUpperTexture", "ArmLowerTexture", "HandTexture",
         "TorsoUpperTexture", "TorsoLowerTexture",
         "LegUpperTexture", "LegLowerTexture", "FootTexture",

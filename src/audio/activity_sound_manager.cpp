@@ -355,7 +355,7 @@ void ActivitySoundManager::setCharacterVoiceProfile(const std::string& modelName
     std::string base = "Human";
 
     struct RaceMap { const char* token; const char* folder; const char* base; };
-    static const RaceMap races[] = {
+    static constexpr RaceMap races[] = {
         {"human", "Human", "Human"},
         {"orc", "Orc", "Orc"},
         {"dwarf", "Dwarf", "Dwarf"},

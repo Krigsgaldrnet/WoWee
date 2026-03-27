@@ -85,7 +85,7 @@ bool AmbientSoundManager::initialize(pipeline::AssetManager* assets) {
 
     // Load bird chirp sounds (daytime periodic) — up to 6 variants
     {
-        static const char* birdPaths[] = {
+        static constexpr const char* birdPaths[] = {
             "Sound\\Ambience\\BirdAmbience\\BirdChirp01.wav",
             "Sound\\Ambience\\BirdAmbience\\BirdChirp02.wav",
             "Sound\\Ambience\\BirdAmbience\\BirdChirp03.wav",
@@ -101,7 +101,7 @@ bool AmbientSoundManager::initialize(pipeline::AssetManager* assets) {
 
     // Load cricket/insect sounds (nighttime periodic)
     {
-        static const char* cricketPaths[] = {
+        static constexpr const char* cricketPaths[] = {
             "Sound\\Ambience\\Insect\\InsectMorning.wav",
             "Sound\\Ambience\\Insect\\InsectNight.wav",
         };

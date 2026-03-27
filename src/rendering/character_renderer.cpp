@@ -1122,7 +1122,7 @@ VkTexture* CharacterRenderer::compositeWithRegions(const std::string& basePath,
 
     // Region index -> pixel coordinates on the 256x256 base atlas
     // These are scaled up by (width/256, height/256) for larger textures (512x512, 1024x1024)
-    static const int regionCoords256[][2] = {
+    static constexpr int regionCoords256[][2] = {
         {   0,   0 },  // 0 = ArmUpper
         {   0,  64 },  // 1 = ArmLower
         {   0, 128 },  // 2 = Hand
@@ -1263,7 +1263,7 @@ VkTexture* CharacterRenderer::compositeWithRegions(const std::string& basePath,
     }
 
     // Expected region sizes on the 256x256 base atlas (scaled like coords)
-    static const int regionSizes256[][2] = {
+    static constexpr int regionSizes256[][2] = {
         { 128,  64 },  // 0 = ArmUpper
         { 128,  64 },  // 1 = ArmLower
         { 128,  32 },  // 2 = Hand

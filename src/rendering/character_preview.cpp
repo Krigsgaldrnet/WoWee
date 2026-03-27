@@ -643,7 +643,7 @@ bool CharacterPreview::applyEquipment(const std::vector<game::EquipmentItem>& eq
     // --- Textures (equipment overlays onto body skin) ---
     if (bodySkinPath_.empty()) return true; // geosets applied, but can't composite
 
-    static const char* componentDirs[] = {
+    static constexpr const char* componentDirs[] = {
         "ArmUpperTexture", "ArmLowerTexture", "HandTexture",
         "TorsoUpperTexture", "TorsoLowerTexture",
         "LegUpperTexture", "LegLowerTexture", "FootTexture",
