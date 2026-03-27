@@ -786,7 +786,8 @@ static uint32_t findMemType(VkPhysicalDevice pd, uint32_t filter, VkMemoryProper
     for (uint32_t i = 0; i < mp.memoryTypeCount; i++) {
         if ((filter & (1 << i)) && (mp.memoryTypes[i].propertyFlags & props) == props) return i;
     }
-    return 0;
+    LOG_ERROR("AuthScreen: no suitable memory type found");
+    return UINT32_MAX;
 }
 
 bool AuthScreen::loadBackgroundImage() {

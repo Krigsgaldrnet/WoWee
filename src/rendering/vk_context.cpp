@@ -1176,7 +1176,8 @@ static uint32_t findMemType(VkPhysicalDevice physDev, uint32_t typeFilter, VkMem
         if ((typeFilter & (1 << i)) && (memProps.memoryTypes[i].propertyFlags & props) == props)
             return i;
     }
-    return 0;
+    LOG_ERROR("VkContext: no suitable memory type found");
+    return UINT32_MAX;
 }
 
 VkDescriptorSet VkContext::uploadImGuiTexture(const uint8_t* rgba, int width, int height) {

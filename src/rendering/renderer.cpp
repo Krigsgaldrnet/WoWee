@@ -941,7 +941,7 @@ void Renderer::applyMsaaChange() {
     if (!vkCtx->recreateSwapchain(window->getWidth(), window->getHeight())) {
         LOG_ERROR("MSAA change failed — reverting to 1x");
         vkCtx->setMsaaSamples(VK_SAMPLE_COUNT_1_BIT);
-        vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
+        (void)vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
     }
 
     // Recreate all sub-renderer pipelines (they embed sample count from render pass)
@@ -1051,7 +1051,7 @@ void Renderer::beginFrame() {
 
     // Handle swapchain recreation if needed
     if (vkCtx->isSwapchainDirty()) {
-        vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
+        (void)vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
         // Rebuild water resources that reference swapchain extent/views
         if (waterRenderer) {
             waterRenderer->recreatePipelines();

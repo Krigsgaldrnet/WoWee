@@ -24,11 +24,11 @@ public:
     VkBuffer& operator=(VkBuffer&& other) noexcept;
 
     // Create a GPU-local buffer and upload data via staging
-    bool uploadToGPU(VkContext& ctx, const void* data, VkDeviceSize size,
+    [[nodiscard]] bool uploadToGPU(VkContext& ctx, const void* data, VkDeviceSize size,
         VkBufferUsageFlags usage);
 
     // Create a host-visible buffer (for uniform/dynamic data updated each frame)
-    bool createMapped(VmaAllocator allocator, VkDeviceSize size,
+    [[nodiscard]] bool createMapped(VmaAllocator allocator, VkDeviceSize size,
         VkBufferUsageFlags usage);
 
     // Update mapped buffer contents (only valid for mapped buffers)

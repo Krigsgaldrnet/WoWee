@@ -32,11 +32,11 @@ public:
     VkContext(const VkContext&) = delete;
     VkContext& operator=(const VkContext&) = delete;
 
-    bool initialize(SDL_Window* window);
+    [[nodiscard]] bool initialize(SDL_Window* window);
     void shutdown();
 
     // Swapchain management
-    bool recreateSwapchain(int width, int height);
+    [[nodiscard]] bool recreateSwapchain(int width, int height);
 
     // Frame operations
     VkCommandBuffer beginFrame(uint32_t& imageIndex);

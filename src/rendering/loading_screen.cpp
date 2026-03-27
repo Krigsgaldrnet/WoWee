@@ -78,7 +78,8 @@ static uint32_t findMemoryType(VkPhysicalDevice physDevice, uint32_t typeFilter,
             return i;
         }
     }
-    return 0;
+    LOG_ERROR("LoadingScreen: no suitable memory type found");
+    return UINT32_MAX;
 }
 
 bool LoadingScreen::loadImage(const std::string& path) {
@@ -420,7 +421,7 @@ void LoadingScreen::render() {
             int w = 0, h = 0;
             SDL_GetWindowSize(sdlWindow, &w, &h);
             if (w > 0 && h > 0) {
-                vkCtx->recreateSwapchain(w, h);
+                (void)vkCtx->recreateSwapchain(w, h);
             }
         }
 
