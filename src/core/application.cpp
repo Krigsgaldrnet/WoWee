@@ -2232,7 +2232,8 @@ void Application::setupUICallbacks() {
         size_t colonPos = realmAddress.find(':');
         if (colonPos != std::string::npos) {
             host = realmAddress.substr(0, colonPos);
-            port = static_cast<uint16_t>(std::stoi(realmAddress.substr(colonPos + 1)));
+            try { port = static_cast<uint16_t>(std::stoi(realmAddress.substr(colonPos + 1))); }
+            catch (...) { LOG_WARNING("Invalid port in realm address: ", realmAddress); }
         }
 
         // Connect to world server
@@ -9715,10 +9716,15 @@ Application::LastWorldInfo Application::loadLastWorldInfo() const {
     std::ifstream f(dir + "/last_world.cfg");
     if (!f) return info;
     std::string line;
-    if (std::getline(f, line)) info.mapId = static_cast<uint32_t>(std::stoul(line));
-    if (std::getline(f, line)) info.mapName = line;
-    if (std::getline(f, line)) info.x = std::stof(line);
-    if (std::getline(f, line)) info.y = std::stof(line);
+    try {
+        if (std::getline(f, line)) info.mapId = static_cast<uint32_t>(std::stoul(line));
+        if (std::getline(f, line)) info.mapName = line;
+        if (std::getline(f, line)) info.x = std::stof(line);
+        if (std::getline(f, line)) info.y = std::stof(line);
+    } catch (...) {
+        LOG_WARNING("Malformed last_world.cfg, ignoring saved position");
+        return info;
+    }
     info.valid = !info.mapName.empty();
     return info;
 }

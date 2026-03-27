@@ -192,10 +192,12 @@ void KeybindingManager::loadFromConfigFile(const std::string& filePath) {
             key = ImGuiKey_End;
         } else if (keyStr.find("F") == 0 && keyStr.length() <= 3) {
             // F1-F12 keys
-            int fNum = std::stoi(keyStr.substr(1));
-            if (fNum >= 1 && fNum <= 12) {
-                key = static_cast<ImGuiKey>(ImGuiKey_F1 + (fNum - 1));
-            }
+            try {
+                int fNum = std::stoi(keyStr.substr(1));
+                if (fNum >= 1 && fNum <= 12) {
+                    key = static_cast<ImGuiKey>(ImGuiKey_F1 + (fNum - 1));
+                }
+            } catch (...) {}
         }
 
         if (key == ImGuiKey_None) continue;

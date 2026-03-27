@@ -6036,8 +6036,12 @@ bool Renderer::loadTestTerrain(pipeline::AssetManager* assetManager, const std::
                 if (secondUnderscore != std::string::npos) {
                     size_t dot = filename.find('.', secondUnderscore);
                     if (dot != std::string::npos) {
-                        tileX = std::stoi(filename.substr(firstUnderscore + 1, secondUnderscore - firstUnderscore - 1));
-                        tileY = std::stoi(filename.substr(secondUnderscore + 1, dot - secondUnderscore - 1));
+                        try {
+                            tileX = std::stoi(filename.substr(firstUnderscore + 1, secondUnderscore - firstUnderscore - 1));
+                            tileY = std::stoi(filename.substr(secondUnderscore + 1, dot - secondUnderscore - 1));
+                        } catch (...) {
+                            LOG_WARNING("Failed to parse tile coords from: ", filename);
+                        }
                     }
                 }
             }
