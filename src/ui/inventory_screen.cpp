@@ -2613,7 +2613,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
                 else if (qi->itemClass == 4 && qi->subClass > 0) // Armor (skip subclass 0 = misc)
                     canUse = gameHandler_->canUseArmorSubclass(qi->subClass);
                 if (!canUse)
-                    ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "You can't use this type of item.");
+                    ImGui::TextColored(ui::colors::kBrightRed, "You can't use this type of item.");
             }
         }
     }
@@ -2728,7 +2728,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
     if (item.requiredLevel > 1) {
         uint32_t playerLvl = gameHandler_ ? gameHandler_->getPlayerLevel() : 0;
         bool meetsReq = (playerLvl >= item.requiredLevel);
-        ImVec4 reqColor = meetsReq ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+        ImVec4 reqColor = meetsReq ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ui::colors::kPaleRed;
         ImGui::TextColored(reqColor, "Requires Level %u", item.requiredLevel);
     }
     if (item.maxDurability > 0) {
@@ -2736,7 +2736,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         ImVec4 durColor;
         if (durPct > 0.5f)       durColor = ImVec4(0.1f, 1.0f, 0.1f, 1.0f);  // green
         else if (durPct > 0.25f) durColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);  // yellow
-        else                     durColor = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);  // red
+        else                     durColor = ui::colors::kBrightRed;  // red
         ImGui::TextColored(durColor, "Durability %u / %u",
                            item.curDurability, item.maxDurability);
     }
@@ -2761,11 +2761,11 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
                 const std::string& spText = spDesc.empty() ? gameHandler_->getSpellName(sp.spellId) : spDesc;
                 if (!spText.empty()) {
                     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 320.0f);
-                    ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f),
+                    ImGui::TextColored(ui::colors::kCyan,
                                        "%s: %s", trigger, spText.c_str());
                     ImGui::PopTextWrapPos();
                 } else {
-                    ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f),
+                    ImGui::TextColored(ui::colors::kCyan,
                                        "%s: Spell #%u", trigger, sp.spellId);
                 }
             }
@@ -2800,7 +2800,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
                 auto skPit = skills.find(qInfo->requiredSkill);
                 if (skPit != skills.end()) playerSkillVal = skPit->second.effectiveValue();
                 bool meetsSkill = (playerSkillVal == 0 || playerSkillVal >= qInfo->requiredSkillRank);
-                ImVec4 skColor = meetsSkill ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+                ImVec4 skColor = meetsSkill ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ui::colors::kPaleRed;
                 auto skIt = s_skillNamesB.find(qInfo->requiredSkill);
                 if (skIt != s_skillNamesB.end())
                     ImGui::TextColored(skColor, "Requires %s (%u)", skIt->second.c_str(), qInfo->requiredSkillRank);
@@ -3024,7 +3024,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemDef& item, const game::I
         if (permId != 0) {
             auto it2 = s_enchLookupB.find(permId);
             const char* ename = (it2 != s_enchLookupB.end()) ? it2->second.c_str() : nullptr;
-            if (ename) ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Enchanted: %s", ename);
+            if (ename) ImGui::TextColored(ui::colors::kCyan, "Enchanted: %s", ename);
         }
         if (tempId != 0) {
             auto it2 = s_enchLookupB.find(tempId);
@@ -3226,7 +3226,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
             else if (info.itemClass == 4 && info.subClass > 0) // Armor (skip subclass 0 = misc)
                 canUse = gameHandler_->canUseArmorSubclass(info.subClass);
             if (!canUse)
-                ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "You can't use this type of item.");
+                ImGui::TextColored(ui::colors::kBrightRed, "You can't use this type of item.");
         }
     }
 
@@ -3306,7 +3306,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
     if (info.requiredLevel > 1) {
         uint32_t playerLvl = gameHandler_ ? gameHandler_->getPlayerLevel() : 0;
         bool meetsReq = (playerLvl >= info.requiredLevel);
-        ImVec4 reqColor = meetsReq ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+        ImVec4 reqColor = meetsReq ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ui::colors::kPaleRed;
         ImGui::TextColored(reqColor, "Requires Level %u", info.requiredLevel);
     }
 
@@ -3338,7 +3338,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
             if (skPit != skills.end()) playerSkillVal = skPit->second.effectiveValue();
         }
         bool meetsSkill = (playerSkillVal == 0 || playerSkillVal >= info.requiredSkillRank);
-        ImVec4 skColor = meetsSkill ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+        ImVec4 skColor = meetsSkill ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ui::colors::kPaleRed;
         auto skIt = s_skillNames.find(info.requiredSkill);
         if (skIt != s_skillNames.end())
             ImGui::TextColored(skColor, "Requires %s (%u)", skIt->second.c_str(), info.requiredSkillRank);
@@ -3413,7 +3413,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
                 uint32_t pmask = (pc > 0 && pc <= 10) ? (1u << (pc - 1)) : 0;
                 playerAllowed = (pmask == 0 || (info.allowableClass & pmask));
             }
-            ImVec4 clColor = playerAllowed ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+            ImVec4 clColor = playerAllowed ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ui::colors::kPaleRed;
             ImGui::TextColored(clColor, "%s", classBuf);
         }
     }
@@ -3453,7 +3453,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
                     uint32_t pmask = (pr > 0 && pr <= 11) ? (1u << (pr - 1)) : 0;
                     playerAllowed = (pmask == 0 || (info.allowableRace & pmask));
                 }
-                ImVec4 rColor = playerAllowed ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+                ImVec4 rColor = playerAllowed ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : ui::colors::kPaleRed;
                 ImGui::TextColored(rColor, "%s", raceBuf);
             }
         }
@@ -3480,10 +3480,10 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
             const std::string& spName = spDesc.empty() ? gameHandler_->getSpellName(sp.spellId) : spDesc;
             if (!spName.empty()) {
                 ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 320.0f);
-                ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "%s: %s", trigger, spName.c_str());
+                ImGui::TextColored(ui::colors::kCyan, "%s: %s", trigger, spName.c_str());
                 ImGui::PopTextWrapPos();
             } else {
-                ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "%s: Spell #%u", trigger, sp.spellId);
+                ImGui::TextColored(ui::colors::kCyan, "%s: Spell #%u", trigger, sp.spellId);
             }
         }
     }
@@ -3535,7 +3535,7 @@ void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
         if (permId != 0) {
             auto it2 = s_enchLookup.find(permId);
             const char* ename = (it2 != s_enchLookup.end()) ? it2->second.c_str() : nullptr;
-            if (ename) ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Enchanted: %s", ename);
+            if (ename) ImGui::TextColored(ui::colors::kCyan, "Enchanted: %s", ename);
         }
         if (tempId != 0) {
             auto it2 = s_enchLookup.find(tempId);

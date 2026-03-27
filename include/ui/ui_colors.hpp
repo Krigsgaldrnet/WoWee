@@ -16,6 +16,12 @@ namespace colors {
     constexpr ImVec4 kLightGray   = {0.7f, 0.7f, 0.7f, 1.0f};
     constexpr ImVec4 kWhite       = {1.0f, 1.0f, 1.0f, 1.0f};
     constexpr ImVec4 kTooltipGold = {1.0f, 0.82f, 0.0f, 1.0f};
+    constexpr ImVec4 kBrightGold  = {1.0f, 0.85f, 0.0f, 1.0f};
+    constexpr ImVec4 kPaleRed     = {1.0f, 0.5f, 0.5f, 1.0f};
+    constexpr ImVec4 kBrightRed   = {1.0f, 0.2f, 0.2f, 1.0f};
+    constexpr ImVec4 kLightBlue   = {0.4f, 0.6f, 1.0f, 1.0f};
+    constexpr ImVec4 kManaBlue    = {0.2f, 0.2f, 0.9f, 1.0f};
+    constexpr ImVec4 kCyan        = {0.0f, 0.8f, 1.0f, 1.0f};
 
     // Coin colors
     constexpr ImVec4 kGold   = {1.00f, 0.82f, 0.00f, 1.0f};

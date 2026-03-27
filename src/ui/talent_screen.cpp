@@ -695,7 +695,7 @@ void TalentScreen::renderGlyphs(game::GameHandler& gameHandler) {
     const auto& glyphs = gameHandler.getGlyphs();
 
     ImGui::Spacing();
-    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "Major Glyphs");
+    ImGui::TextColored(ui::colors::kBrightGold, "Major Glyphs");
     ImGui::Separator();
 
     // WotLK: 6 glyph slots total. Slots 0,2,4 are major by convention from the server,

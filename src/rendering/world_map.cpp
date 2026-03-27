@@ -10,6 +10,7 @@
 #include "core/coordinates.hpp"
 #include "core/input.hpp"
 #include "core/logger.hpp"
+#include "ui/ui_colors.hpp"
 #include <imgui.h>
 #include <cmath>
 #include <cstdio>
@@ -1295,7 +1296,7 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
             ImGui::SetCursorPos(ImVec2(mapX + 8.0f, mapY + 8.0f));
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 0.8f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.1f, 0.9f));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.0f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ui::colors::kBrightGold);
             if (ImGui::Button("< Back")) goBack = true;
             ImGui::PopStyleColor(3);
 
@@ -1323,7 +1324,7 @@ void WorldMap::renderImGuiOverlay(const glm::vec3& playerRenderPos, int screenWi
             ImGui::SetCursorPos(ImVec2(mapX + 8.0f, worldBtnY));
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 0.8f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.1f, 0.9f));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.0f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ui::colors::kBrightGold);
             if (ImGui::Button("< World")) goWorld = true;
             ImGui::PopStyleColor(3);
 
