@@ -29,6 +29,7 @@ namespace wowee {
 namespace rendering {
 
 namespace {
+constexpr int kPomSampleTable[] = { 16, 32, 64 };
 } // namespace
 
 // Thread-local scratch buffers for collision queries (allows concurrent getFloorHeight/checkWallCollision calls)
@@ -661,10 +662,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             matData.enableNormalMap = normalMappingEnabled_ ? 1 : 0;
             matData.enablePOM = pomEnabled_ ? 1 : 0;
             matData.pomScale = 0.012f;
-            {
-                static const int pomSampleTable[] = { 16, 32, 64 };
-                matData.pomMaxSamples = pomSampleTable[std::clamp(pomQuality_, 0, 2)];
-            }
+            matData.pomMaxSamples = kPomSampleTable[std::clamp(pomQuality_, 0, 2)];
             matData.heightMapVariance = mb.heightMapVariance;
             matData.normalMapStrength = normalMapStrength_;
             matData.isLava = mb.isLava ? 1 : 0;
@@ -1330,8 +1328,7 @@ void WMORenderer::prepareRender() {
     // Update material UBOs if settings changed (mapped memory writes — main thread only)
     if (materialSettingsDirty_) {
         materialSettingsDirty_ = false;
-        static const int pomSampleTable[] = { 16, 32, 64 };
-        int maxSamples = pomSampleTable[std::clamp(pomQuality_, 0, 2)];
+        int maxSamples = kPomSampleTable[std::clamp(pomQuality_, 0, 2)];
         for (auto& [modelId, model] : loadedModels) {
             for (auto& group : model.groups) {
                 for (auto& mb : group.mergedBatches) {
