@@ -42,6 +42,17 @@ namespace colors {
     constexpr ImVec4 kLowHealthRed   = {0.8f, 0.2f, 0.2f, 1.0f};
     constexpr ImVec4 kDangerRed      = {0.7f, 0.2f, 0.2f, 1.0f};
 
+    // Button styling colors (accept/decline patterns)
+    constexpr ImVec4 kBtnGreen       = {0.15f, 0.5f, 0.15f, 1.0f};
+    constexpr ImVec4 kBtnGreenHover  = {0.2f, 0.7f, 0.2f, 1.0f};  // == kFriendlyGreen
+    constexpr ImVec4 kBtnRed         = {0.5f, 0.15f, 0.15f, 1.0f};
+    constexpr ImVec4 kBtnRedHover    = {0.7f, 0.3f, 0.3f, 1.0f};
+    constexpr ImVec4 kBtnDkGreen     = {0.2f, 0.5f, 0.2f, 1.0f};
+    constexpr ImVec4 kBtnDkGreenHover= {0.3f, 0.7f, 0.3f, 1.0f};
+    constexpr ImVec4 kBtnDkRed       = {0.5f, 0.2f, 0.2f, 1.0f};
+    constexpr ImVec4 kBtnDkRedHover  = {0.7f, 0.3f, 0.3f, 1.0f};
+    constexpr ImVec4 kMidHealthYellow= {0.8f, 0.8f, 0.2f, 1.0f};
+
     // Power-type colors (unit resource bars)
     constexpr ImVec4 kEnergyYellow    = {0.9f, 0.9f, 0.2f, 1.0f};
     constexpr ImVec4 kHappinessGreen  = {0.5f, 0.9f, 0.3f, 1.0f};

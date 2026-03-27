@@ -59,6 +59,12 @@ namespace {
     // Aura dispel-type names (indexed by dispelType 0-4)
     constexpr const char* kDispelNames[] = { "", "Magic", "Curse", "Disease", "Poison" };
 
+    // Abbreviated month names (indexed 0-11)
+    constexpr const char* kMonthAbbrev[12] = {
+        "Jan","Feb","Mar","Apr","May","Jun",
+        "Jul","Aug","Sep","Oct","Nov","Dec"
+    };
+
     // Raid mark names with symbol prefixes (indexed 0-7: Star..Skull)
     constexpr const char* kRaidMarkNames[] = {
         "{*} Star", "{O} Circle", "{<>} Diamond", "{^} Triangle",
@@ -71,7 +77,7 @@ namespace {
     // Build a WoW-format item link string for chat insertion.
     // Format: |cff<qualHex>|Hitem:<itemId>:0:0:0:0:0:0:0:0|h[<name>]|h|r
     std::string buildItemChatLink(uint32_t itemId, uint8_t quality, const std::string& name) {
-        static const char* kQualHex[] = {"9d9d9d","ffffff","1eff00","0070dd","a335ee","ff8000","e6cc80","e6cc80"};
+        static constexpr const char* kQualHex[] = {"9d9d9d","ffffff","1eff00","0070dd","a335ee","ff8000","e6cc80","e6cc80"};
         uint8_t qi = quality < 8 ? quality : 1;
         char buf[512];
         snprintf(buf, sizeof(buf), "|cff%s|Hitem:%u:0:0:0:0:0:0:0:0|h[%s]|h|r",
@@ -1462,7 +1468,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                 info->holyRes, info->fireRes, info->natureRes,
                 info->frostRes, info->shadowRes, info->arcaneRes
             };
-            static const char* resLabels[6] = {
+            static constexpr const char* resLabels[6] = {
                 "Holy Resistance", "Fire Resistance", "Nature Resistance",
                 "Frost Resistance", "Shadow Resistance", "Arcane Resistance"
             };
@@ -1689,7 +1695,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
                     }
                 }
             }
-            static const char* kRepRankNames[] = {
+            static constexpr const char* kRepRankNames[] = {
                 "Hated", "Hostile", "Unfriendly", "Neutral",
                 "Friendly", "Honored", "Revered", "Exalted"
             };
@@ -3550,7 +3556,7 @@ void GameScreen::renderPlayerFrame(game::GameHandler& gameHandler) {
                 ImVec4(0.20f, 0.55f, 0.90f, 1.0f), // Water — blue
                 ImVec4(0.70f, 0.90f, 1.00f, 1.0f), // Air   — pale sky
             };
-            static const char* kTotemNames[] = { "Earth", "Fire", "Water", "Air" };
+            static constexpr const char* kTotemNames[] = { "Earth", "Fire", "Water", "Air" };
 
             ImGui::Spacing();
             ImVec2 cursor = ImGui::GetCursorScreenPos();
@@ -3829,8 +3835,8 @@ void GameScreen::renderPetFrame(game::GameHandler& gameHandler) {
 
         // Stance row: Passive / Defensive / Aggressive — with Dismiss right-aligned
         {
-            static const char* kReactLabels[]     = { "Psv", "Def", "Agg" };
-            static const char* kReactTooltips[]   = { "Passive", "Defensive", "Aggressive" };
+            static constexpr const char* kReactLabels[]     = { "Psv", "Def", "Agg" };
+            static constexpr const char* kReactTooltips[]   = { "Passive", "Defensive", "Aggressive" };
             static constexpr ImVec4 kReactColors[]    = {
                 colors::kLightBlue,  // passive  — blue
                 ImVec4(0.3f, 0.85f, 0.3f, 1.0f), // defensive — green
@@ -4443,7 +4449,7 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                 float pct = static_cast<float>(hp) / static_cast<float>(maxHp);
                 ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
                     pct > 0.5f ? colors::kHealthGreen :
-                    pct > 0.2f ? ImVec4(0.8f, 0.8f, 0.2f, 1.0f) :
+                    pct > 0.2f ? colors::kMidHealthYellow :
                                  colors::kLowHealthRed);
 
                 char overlay[64];
@@ -6209,7 +6215,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             // /chathelp command — list chat-channel slash commands
             if (cmdLower == "chathelp") {
-                static const char* kChatHelp[] = {
+                static constexpr const char* kChatHelp[] = {
                     "--- Chat Channel Commands ---",
                     "/s [msg]          Say to nearby players",
                     "/y [msg]          Yell to a wider area",
@@ -6242,7 +6248,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             // /macrohelp command — list available macro conditionals
             if (cmdLower == "macrohelp") {
-                static const char* kMacroHelp[] = {
+                static constexpr const char* kMacroHelp[] = {
                     "--- Macro Conditionals ---",
                     "Usage: /cast [cond1,cond2] Spell1; [cond3] Spell2; Default",
                     "State:   [combat] [mounted] [swimming] [flying] [stealthed]",
@@ -6270,7 +6276,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             // /help command — list available slash commands
             if (cmdLower == "help" || cmdLower == "?") {
-                static const char* kHelpLines[] = {
+                static constexpr const char* kHelpLines[] = {
                     "--- Wowee Slash Commands ---",
                     "Chat: /s /y /p /g /raid /rw /o /bg /w <name> /r  /join /leave",
                     "Social: /who  /friend add/remove  /ignore  /unignore",
@@ -7026,7 +7032,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
                     chatInputBuffer[0] = '\0';
                     return;
                 }
-                static const char* kMarkWords[] = {
+                static constexpr const char* kMarkWords[] = {
                     "star", "circle", "diamond", "triangle", "moon", "square", "cross", "skull"
                 };
                 uint8_t icon = 7; // default: skull
@@ -8419,7 +8425,7 @@ void GameScreen::updateCharacterTextures(game::Inventory& inventory) {
     if (bodySkinPath.empty()) return;
 
     // Component directory names indexed by region
-    static const char* componentDirs[] = {
+    static constexpr const char* componentDirs[] = {
         "ArmUpperTexture",   // 0
         "ArmLowerTexture",   // 1
         "HandTexture",       // 2
@@ -8858,9 +8864,9 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
 
     // Per-slot rendering lambda — shared by both action bars
     const auto& bar = gameHandler.getActionBar();
-    static const char* keyLabels1[] = {"1","2","3","4","5","6","7","8","9","0","-","="};
+    static constexpr const char* keyLabels1[] = {"1","2","3","4","5","6","7","8","9","0","-","="};
     // "⇧N" labels for bar 2 (UTF-8: E2 87 A7 = U+21E7 UPWARDS WHITE ARROW)
-    static const char* keyLabels2[] = {
+    static constexpr const char* keyLabels2[] = {
         "\xe2\x87\xa7" "1", "\xe2\x87\xa7" "2", "\xe2\x87\xa7" "3",
         "\xe2\x87\xa7" "4", "\xe2\x87\xa7" "5", "\xe2\x87\xa7" "6",
         "\xe2\x87\xa7" "7", "\xe2\x87\xa7" "8", "\xe2\x87\xa7" "9",
@@ -12551,7 +12557,7 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
                 ImVec4 hpBarColor = memberOutOfRange
                     ? ImVec4(0.45f, 0.45f, 0.45f, 0.7f)
                     : (pct > 0.5f ? colors::kHealthGreen :
-                       pct > 0.2f ? ImVec4(0.8f, 0.8f, 0.2f, 1.0f) :
+                       pct > 0.2f ? colors::kMidHealthYellow :
                                     colors::kLowHealthRed);
                 ImGui::PushStyleColor(ImGuiCol_PlotHistogram, hpBarColor);
                 char hpText[32];
@@ -12654,7 +12660,7 @@ void GameScreen::renderPartyFrames(game::GameHandler& gameHandler) {
             if (auto* cs = gameHandler.getUnitCastState(member.guid)) {
                 float castPct = (cs->timeTotal > 0.0f)
                     ? (cs->timeTotal - cs->timeRemaining) / cs->timeTotal : 0.0f;
-                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.8f, 0.8f, 0.2f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, colors::kMidHealthYellow);
                 char pcastLabel[48];
                 const std::string& spellNm = gameHandler.getSpellName(cs->spellId);
                 if (!spellNm.empty())
@@ -13939,7 +13945,7 @@ void GameScreen::renderLootRollPopup(game::GameHandler& gameHandler) {
             ImGui::Separator();
             ImGui::TextDisabled("Rolls so far:");
             // Roll-type label + color
-            static const char* kRollLabels[] = {"Need", "Greed", "Disenchant", "Pass"};
+            static constexpr const char* kRollLabels[] = {"Need", "Greed", "Disenchant", "Pass"};
             static constexpr ImVec4 kRollColors[] = {
                 ImVec4(0.2f, 0.9f, 0.2f, 1.0f),  // Need  — green
                 ImVec4(0.3f, 0.6f, 1.0f, 1.0f),  // Greed — blue
@@ -14117,7 +14123,7 @@ void GameScreen::renderBgInvitePopup(game::GameHandler& gameHandler) {
         ImGui::PopStyleColor();
         ImGui::Spacing();
 
-        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.5f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button,        colors::kBtnGreen);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kFriendlyGreen);
         if (ImGui::Button("Enter Battleground", ImVec2(180, 30))) {
             gameHandler.acceptBattlefield(slot->queueSlot);
@@ -14126,7 +14132,7 @@ void GameScreen::renderBgInvitePopup(game::GameHandler& gameHandler) {
 
         ImGui::SameLine();
 
-        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.5f, 0.15f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button,        colors::kBtnRed);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kDangerRed);
         if (ImGui::Button("Leave Queue", ImVec2(175, 30))) {
             gameHandler.declineBattlefield(slot->queueSlot);
@@ -14174,7 +14180,7 @@ void GameScreen::renderBfMgrInvitePopup(game::GameHandler& gameHandler) {
         ImGui::TextWrapped("You are invited to join the outdoor battlefield. Do you want to enter?");
         ImGui::Spacing();
 
-        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.5f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button,        colors::kBtnGreen);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kFriendlyGreen);
         if (ImGui::Button("Enter Battlefield", ImVec2(178, 28))) {
             gameHandler.acceptBfMgrInvite();
@@ -14183,7 +14189,7 @@ void GameScreen::renderBfMgrInvitePopup(game::GameHandler& gameHandler) {
 
         ImGui::SameLine();
 
-        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.5f, 0.15f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button,        colors::kBtnRed);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kDangerRed);
         if (ImGui::Button("Decline", ImVec2(175, 28))) {
             gameHandler.declineBfMgrInvite();
@@ -14223,7 +14229,7 @@ void GameScreen::renderLfgProposalPopup(game::GameHandler& gameHandler) {
         ImGui::Separator();
         ImGui::Spacing();
 
-        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.15f, 0.5f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button,        colors::kBtnGreen);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kFriendlyGreen);
         if (ImGui::Button("Accept", ImVec2(155.0f, 30.0f))) {
             gameHandler.lfgAcceptProposal(gameHandler.getLfgProposalId(), true);
@@ -14232,7 +14238,7 @@ void GameScreen::renderLfgProposalPopup(game::GameHandler& gameHandler) {
 
         ImGui::SameLine();
 
-        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.5f, 0.15f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button,        colors::kBtnRed);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kDangerRed);
         if (ImGui::Button("Decline", ImVec2(155.0f, 30.0f))) {
             gameHandler.lfgAcceptProposal(gameHandler.getLfgProposalId(), false);
@@ -15855,7 +15861,7 @@ void GameScreen::renderGossipWindow(game::GameHandler& gameHandler) {
         ImGui::Spacing();
 
         // Gossip option icons - matches WoW GossipOptionIcon enum
-        static const char* gossipIcons[] = {
+        static constexpr const char* gossipIcons[] = {
             "[Chat]",          // 0 = GOSSIP_ICON_CHAT
             "[Vendor]",        // 1 = GOSSIP_ICON_VENDOR
             "[Taxi]",          // 2 = GOSSIP_ICON_TAXI
@@ -17932,8 +17938,8 @@ void GameScreen::renderResurrectDialog(game::GameHandler& gameHandler) {
         float spacing = 20.0f;
         ImGui::SetCursorPosX((dlgW - btnW * 2 - spacing) / 2);
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, colors::kBtnDkGreen);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kBtnDkGreenHover);
         if (ImGui::Button("Accept", ImVec2(btnW, 30))) {
             gameHandler.acceptResurrect();
         }
@@ -17941,8 +17947,8 @@ void GameScreen::renderResurrectDialog(game::GameHandler& gameHandler) {
 
         ImGui::SameLine(0, spacing);
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.2f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.3f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, colors::kBtnDkRed);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kBtnDkRedHover);
         if (ImGui::Button("Decline", ImVec2(btnW, 30))) {
             gameHandler.declineResurrect();
         }
@@ -18006,8 +18012,8 @@ void GameScreen::renderTalentWipeConfirmDialog(game::GameHandler& gameHandler) {
         float spacing = 20.0f;
         ImGui::SetCursorPosX((dlgW - btnW * 2 - spacing) / 2);
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, colors::kBtnDkGreen);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kBtnDkGreenHover);
         if (ImGui::Button("Confirm", ImVec2(btnW, 30))) {
             gameHandler.confirmTalentWipe();
         }
@@ -18015,8 +18021,8 @@ void GameScreen::renderTalentWipeConfirmDialog(game::GameHandler& gameHandler) {
 
         ImGui::SameLine(0, spacing);
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.2f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.3f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, colors::kBtnDkRed);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kBtnDkRedHover);
         if (ImGui::Button("Cancel", ImVec2(btnW, 30))) {
             gameHandler.cancelTalentWipe();
         }
@@ -18074,8 +18080,8 @@ void GameScreen::renderPetUnlearnConfirmDialog(game::GameHandler& gameHandler) {
         float spacing = 20.0f;
         ImGui::SetCursorPosX((dlgW - btnW * 2 - spacing) / 2);
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, colors::kBtnDkGreen);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kBtnDkGreenHover);
         if (ImGui::Button("Confirm##petunlearn", ImVec2(btnW, 30))) {
             gameHandler.confirmPetUnlearn();
         }
@@ -18083,8 +18089,8 @@ void GameScreen::renderPetUnlearnConfirmDialog(game::GameHandler& gameHandler) {
 
         ImGui::SameLine(0, spacing);
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.2f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.3f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, colors::kBtnDkRed);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kBtnDkRedHover);
         if (ImGui::Button("Cancel##petunlearn", ImVec2(btnW, 30))) {
             gameHandler.cancelPetUnlearn();
         }
@@ -18694,14 +18700,14 @@ void GameScreen::renderSettingsWindow() {
     auto* renderer = core::Application::getInstance().getRenderer();
     if (!window) return;
 
-    static const int kResolutions[][2] = {
+    static constexpr int kResolutions[][2] = {
         {1280, 720},
         {1600, 900},
         {1920, 1080},
         {2560, 1440},
         {3840, 2160},
     };
-    static const int kResCount = sizeof(kResolutions) / sizeof(kResolutions[0]);
+    static constexpr int kResCount = sizeof(kResolutions) / sizeof(kResolutions[0]);
     constexpr int kDefaultResW = 1920;
     constexpr int kDefaultResH = 1080;
     constexpr bool kDefaultFullscreen = false;
@@ -18908,7 +18914,7 @@ void GameScreen::renderSettingsWindow() {
                         }
                         const char* fsrQualityLabels[] = { "Native (100%)", "Ultra Quality (77%)", "Quality (67%)", "Balanced (59%)" };
                         static const float fsrScaleFactors[] = { 0.77f, 0.67f, 0.59f, 1.00f };
-                        static const int displayToInternal[] = { 3, 0, 1, 2 };
+                        static constexpr int displayToInternal[] = { 3, 0, 1, 2 };
                         pendingFSRQuality = std::clamp(pendingFSRQuality, 0, 3);
                         int fsrQualityDisplay = 0;
                         for (int i = 0; i < 4; ++i) {
@@ -19896,7 +19902,7 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
             if (!member.name.empty() && (mdx * mdx + mdy * mdy) < 64.0f) {
                 uint8_t pmk2 = gameHandler.getEntityRaidMark(member.guid);
                 if (pmk2 < game::GameHandler::kRaidMarkCount) {
-                    static const char* kMarkNames[] = {
+                    static constexpr const char* kMarkNames[] = {
                         "Star", "Circle", "Diamond", "Triangle",
                         "Moon", "Square", "Cross", "Skull"
                     };
@@ -20182,7 +20188,7 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
 
     // Instance difficulty indicator — just below zone name, inside minimap top edge
     if (gameHandler.isInInstance()) {
-        static const char* kDiffLabels[] = {"Normal", "Heroic", "25 Normal", "25 Heroic"};
+        static constexpr const char* kDiffLabels[] = {"Normal", "Heroic", "25 Normal", "25 Heroic"};
         uint32_t diff = gameHandler.getInstanceDifficulty();
         const char* label = (diff < 4) ? kDiffLabels[diff] : "Unknown";
 
@@ -21406,11 +21412,7 @@ void GameScreen::renderMailWindow(game::GameHandler& gameHandler) {
                     time_t expT = static_cast<time_t>(mail.expirationTime);
                     struct tm* tmExp = std::localtime(&expT);
                     if (tmExp) {
-                        static const char* kMon[12] = {
-                            "Jan","Feb","Mar","Apr","May","Jun",
-                            "Jul","Aug","Sep","Oct","Nov","Dec"
-                        };
-                        const char* mname = kMon[tmExp->tm_mon];
+                        const char* mname = kMonthAbbrev[tmExp->tm_mon];
                         int daysLeft = static_cast<int>(secsLeft / 86400.0f);
                         if (secsLeft <= 0.0f) {
                             ImGui::TextColored(kColorGray,
@@ -22699,7 +22701,7 @@ void GameScreen::renderDingEffect() {
         float yOff = ty + sz.y + 6.0f;
 
         // Build stat delta string: "+150 HP  +80 Mana  +2 Str  +2 Agi ..."
-        static const char* kStatLabels[] = { "Str", "Agi", "Sta", "Int", "Spi" };
+        static constexpr const char* kStatLabels[] = { "Str", "Agi", "Sta", "Int", "Spi" };
         char statBuf[128];
         int written = 0;
         if (dingHpDelta_ > 0)
@@ -23763,7 +23765,7 @@ void GameScreen::renderDungeonFinderWindow(game::GameHandler& gameHandler) {
             { 658, "Pit of Saron",                 3 },
             { 668, "Halls of Reflection",          3 },
         };
-        static const char* kCatHeaders[] = { nullptr, "-- Classic --", "-- TBC --", "-- WotLK --" };
+        static constexpr const char* kCatHeaders[] = { nullptr, "-- Classic --", "-- TBC --", "-- WotLK --" };
 
         // Find current index
         int curIdx = 0;
@@ -24577,11 +24579,7 @@ void GameScreen::renderAchievementWindow(game::GameHandler& gameHandler) {
                             int day     = (packed >> 17) & 0x1F;
                             int month   = (packed >> 21) & 0x0F;
                             int year    = ((packed >> 25) & 0x7F) + 2000;
-                            static const char* kMonths[12] = {
-                                "Jan","Feb","Mar","Apr","May","Jun",
-                                "Jul","Aug","Sep","Oct","Nov","Dec"
-                            };
-                            const char* mname = (month >= 1 && month <= 12) ? kMonths[month - 1] : "?";
+                            const char* mname = (month >= 1 && month <= 12) ? kMonthAbbrev[month - 1] : "?";
                             ImGui::TextDisabled("Earned: %s %d, %d  %02d:%02d", mname, day, year, hour, minute);
                         }
                         ImGui::EndTooltip();
@@ -25143,7 +25141,7 @@ void GameScreen::renderInspectWindow(game::GameHandler& gameHandler) {
     }
 
     // Slot index 0..18 maps to equipment slots 1..19 (WoW convention: slot 0 unused on server)
-    static const char* kSlotNames[19] = {
+    static constexpr const char* kSlotNames[19] = {
         "Head", "Neck", "Shoulder", "Shirt", "Chest",
         "Waist", "Legs", "Feet", "Wrist", "Hands",
         "Finger 1", "Finger 2", "Trinket 1", "Trinket 2", "Back",
