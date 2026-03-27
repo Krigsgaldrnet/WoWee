@@ -752,7 +752,7 @@ static int lua_UnitCreatureFamily(lua_State* L) {
     if (!unit) { return luaReturnNil(L); }
     uint32_t family = gh->getCreatureFamily(unit->getEntry());
     if (family == 0) { return luaReturnNil(L); }
-    static const char* kFamilies[] = {
+    static constexpr const char* kFamilies[] = {
         "", "Wolf", "Cat", "Spider", "Bear", "Boar", "Crocolisk", "Carrion Bird",
         "Crab", "Gorilla", "Raptor", "", "Tallstrider", "", "", "Felhunter",
         "Voidwalker", "Succubus", "", "Doomguard", "Scorpid", "Turtle", "",
@@ -2045,17 +2045,7 @@ static int lua_GetItemInfo(lua_State* L) {
 
     lua_pushstring(L, info->name.c_str());          // 1: name
     // Build item link with quality-colored text
-    static const char* kQualityHex[] = {
-        "ff9d9d9d", // 0 Poor (gray)
-        "ffffffff", // 1 Common (white)
-        "ff1eff00", // 2 Uncommon (green)
-        "ff0070dd", // 3 Rare (blue)
-        "ffa335ee", // 4 Epic (purple)
-        "ffff8000", // 5 Legendary (orange)
-        "ffe6cc80", // 6 Artifact (gold)
-        "ff00ccff", // 7 Heirloom (cyan)
-    };
-    const char* colorHex = (info->quality < 8) ? kQualityHex[info->quality] : "ffffffff";
+    const char* colorHex = (info->quality < 8) ? kQualHexAlpha[info->quality] : "ffffffff";
     char link[256];
     snprintf(link, sizeof(link), "|c%s|Hitem:%u:0:0:0:0:0:0:0|h[%s]|h|r",
              colorHex, itemId, info->name.c_str());
@@ -2065,7 +2055,7 @@ static int lua_GetItemInfo(lua_State* L) {
     lua_pushnumber(L, info->requiredLevel);          // 5: requiredLevel
     // 6: class (type string) — map itemClass to display name
     {
-        static const char* kItemClasses[] = {
+        static constexpr const char* kItemClasses[] = {
             "Consumable", "Bag", "Weapon", "Gem", "Armor", "Reagent", "Projectile",
             "Trade Goods", "Generic", "Recipe", "Money", "Quiver", "Quest", "Key",
             "Permanent", "Miscellaneous", "Glyph"
@@ -2080,7 +2070,7 @@ static int lua_GetItemInfo(lua_State* L) {
     lua_pushnumber(L, info->maxStack > 0 ? info->maxStack : 1); // 8: maxStack
     // 9: equipSlot — WoW inventoryType to INVTYPE string
     {
-        static const char* kInvTypes[] = {
+        static constexpr const char* kInvTypes[] = {
             "", "INVTYPE_HEAD", "INVTYPE_NECK", "INVTYPE_SHOULDER",
             "INVTYPE_BODY", "INVTYPE_CHEST", "INVTYPE_WAIST", "INVTYPE_LEGS",
             "INVTYPE_FEET", "INVTYPE_WRIST", "INVTYPE_HAND", "INVTYPE_FINGER",
@@ -3173,9 +3163,7 @@ static int lua_GetGuildRosterInfo(lua_State* L) {
         ? rankNames[m.rankIndex].c_str() : "");              // 2: rank name
     lua_pushnumber(L, m.rankIndex);                          // 3: rankIndex
     lua_pushnumber(L, m.level);                              // 4: level
-    static const char* kCls[] = {"","Warrior","Paladin","Hunter","Rogue","Priest",
-        "Death Knight","Shaman","Mage","Warlock","","Druid"};
-    lua_pushstring(L, m.classId < 12 ? kCls[m.classId] : "Unknown"); // 5: class
+    lua_pushstring(L, m.classId < 12 ? kLuaClasses[m.classId] : "Unknown"); // 5: class
     std::string zone;
     if (m.zoneId != 0 && m.online) zone = gh->getWhoAreaName(m.zoneId);
     lua_pushstring(L, zone.c_str());                         // 6: zone
@@ -3565,8 +3553,6 @@ static int lua_GetRaidRosterInfo(lua_State* L) {
     if (entity) {
         uint32_t bytes0 = entity->getField(game::fieldIndex(game::UF::UNIT_FIELD_BYTES_0));
         uint8_t classId = static_cast<uint8_t>((bytes0 >> 8) & 0xFF);
-        static const char* kLuaClasses[] = {"","Warrior","Paladin","Hunter","Rogue","Priest",
-            "Death Knight","Shaman","Mage","Warlock","","Druid"};
         if (classId > 0 && classId < 12) className = kLuaClasses[classId];
     }
     lua_pushstring(L, className.c_str());    // class (localized)
@@ -3649,7 +3635,7 @@ static int lua_UnitCreatureType(lua_State* L) {
     auto unit = std::dynamic_pointer_cast<game::Unit>(entity);
     if (!unit) { lua_pushstring(L, "Unknown"); return 1; }
     uint32_t ct = gh->getCreatureType(unit->getEntry());
-    static const char* kTypes[] = {
+    static constexpr const char* kTypes[] = {
         "Unknown", "Beast", "Dragonkin", "Demon", "Elemental",
         "Giant", "Undead", "Humanoid", "Critter", "Mechanical",
         "Not specified", "Totem", "Non-combat Pet", "Gas Cloud"
@@ -3687,10 +3673,6 @@ static int lua_GetPlayerInfoByGUID(lua_State* L) {
     const char* className = "Unknown";
     const char* raceName = "Unknown";
     if (guid == gh->getPlayerGuid()) {
-        static const char* kLuaClasses[] = {"","Warrior","Paladin","Hunter","Rogue","Priest",
-            "Death Knight","Shaman","Mage","Warlock","","Druid"};
-        static const char* kLuaRaces[] = {"","Human","Orc","Dwarf","Night Elf","Undead",
-            "Tauren","Gnome","Troll","","Blood Elf","Draenei"};
         uint8_t cid = gh->getPlayerClass();
         uint8_t rid = gh->getPlayerRace();
         if (cid < 12) className = kLuaClasses[cid];
@@ -3823,7 +3805,7 @@ static int lua_GetInstanceInfo(lua_State* L) {
     lua_pushstring(L, mapName.c_str());                    // 1: name
     lua_pushstring(L, gh->isInInstance() ? "party" : "none"); // 2: instanceType
     lua_pushnumber(L, gh->getInstanceDifficulty());        // 3: difficultyIndex
-    static const char* kDiff[] = {"Normal", "Heroic", "25 Normal", "25 Heroic"};
+    static constexpr const char* kDiff[] = {"Normal", "Heroic", "25 Normal", "25 Heroic"};
     uint32_t diff = gh->getInstanceDifficulty();
     lua_pushstring(L, (diff < 4) ? kDiff[diff] : "Normal"); // 4: difficultyName
     lua_pushnumber(L, 5);                                   // 5: maxPlayers (default 5-man)
@@ -5336,7 +5318,7 @@ void LuaEngine::registerCoreAPI() {
             if (!gh) return 0;
             const auto& opts = gh->getCurrentGossip().options;
             int n = 0;
-            static const char* kIcons[] = {"gossip","vendor","taxi","trainer","spiritguide","innkeeper","banker","petition","tabard","battlemaster","auctioneer"};
+            static constexpr const char* kIcons[] = {"gossip","vendor","taxi","trainer","spiritguide","innkeeper","banker","petition","tabard","battlemaster","auctioneer"};
             for (const auto& o : opts) {
                 lua_pushstring(L, o.text.c_str());
                 lua_pushstring(L, o.icon < 11 ? kIcons[o.icon] : "gossip");
@@ -5610,7 +5592,7 @@ void LuaEngine::registerCoreAPI() {
 
             const char* raceName = (w.raceId < 12) ? kLuaRaces[w.raceId] : "Unknown";
             const char* className = (w.classId < 12) ? kLuaClasses[w.classId] : "Unknown";
-            static const char* kClassFiles[] = {"","WARRIOR","PALADIN","HUNTER","ROGUE","PRIEST","DEATHKNIGHT","SHAMAN","MAGE","WARLOCK","","DRUID"};
+            static constexpr const char* kClassFiles[] = {"","WARRIOR","PALADIN","HUNTER","ROGUE","PRIEST","DEATHKNIGHT","SHAMAN","MAGE","WARLOCK","","DRUID"};
             const char* classFile = (w.classId < 12) ? kClassFiles[w.classId] : "WARRIOR";
             lua_pushstring(L, w.name.c_str());
             lua_pushstring(L, w.guildName.c_str());
