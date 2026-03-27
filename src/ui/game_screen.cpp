@@ -125,13 +125,9 @@ namespace {
         return static_cast<uint8_t>((bytes0 >> 8) & 0xFF);
     }
 
-    // Return the English class name for a class ID (1-11), or "Unknown".
+    // Alias for shared class name helper
     const char* classNameStr(uint8_t classId) {
-        static const char* kNames[] = {
-            "Unknown","Warrior","Paladin","Hunter","Rogue","Priest",
-            "Death Knight","Shaman","Mage","Warlock","","Druid"
-        };
-        return (classId < 12) ? kNames[classId] : "Unknown";
+        return wowee::game::getClassName(static_cast<wowee::game::Class>(classId));
     }
 
     bool isPortBotTarget(const std::string& target) {

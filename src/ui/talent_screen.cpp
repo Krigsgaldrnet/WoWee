@@ -13,16 +13,6 @@
 
 namespace wowee { namespace ui {
 
-// WoW class names indexed by class ID (1-11)
-static const char* classNames[] = {
-    "Unknown", "Warrior", "Paladin", "Hunter", "Rogue", "Priest",
-    "Death Knight", "Shaman", "Mage", "Warlock", "Unknown", "Druid"
-};
-
-static const char* getClassName(uint8_t classId) {
-    return (classId >= 1 && classId <= 11) ? classNames[classId] : "Unknown";
-}
-
 void TalentScreen::render(game::GameHandler& gameHandler) {
     // Talents toggle via keybinding (edge-triggered)
     // Customizable key (default: N) from KeybindingManager
@@ -51,7 +41,7 @@ void TalentScreen::render(game::GameHandler& gameHandler) {
     uint8_t playerClass = gameHandler.getPlayerClass();
     std::string title = "Talents";
     if (playerClass > 0) {
-        title = std::string(getClassName(playerClass)) + " Talents";
+        title = std::string(game::getClassName(static_cast<game::Class>(playerClass))) + " Talents";
     }
 
     bool windowOpen = open;
