@@ -18447,6 +18447,24 @@ if (ImGui::Checkbox("Extended Camera Zoom", &pendingExtendedZoom)) {
     }
     saveSettings();
 }
+if (ImGui::SliderFloat("Camera Stiffness", &pendingCameraStiffness, 5.0f, 100.0f, "%.0f")) {
+    if (renderer) {
+        if (auto* cameraController = renderer->getCameraController()) {
+            cameraController->setCameraSmoothSpeed(pendingCameraStiffness);
+        }
+    }
+    saveSettings();
+}
+ImGui::SetItemTooltip("Higher = tighter camera with less sway. Default: 20");
+if (ImGui::SliderFloat("Camera Pivot Height", &pendingPivotHeight, 0.0f, 3.0f, "%.1f")) {
+    if (renderer) {
+        if (auto* cameraController = renderer->getCameraController()) {
+            cameraController->setPivotHeight(pendingPivotHeight);
+        }
+    }
+    saveSettings();
+}
+ImGui::SetItemTooltip("Height of camera orbit point above feet. Lower = less detached feel. Default: 1.8");
 if (ImGui::IsItemHovered())
     ImGui::SetTooltip("Allow the camera to zoom out further than normal");
 
@@ -21294,6 +21312,8 @@ void GameScreen::saveSettings() {
     out << "mouse_sensitivity=" << pendingMouseSensitivity << "\n";
     out << "invert_mouse=" << (pendingInvertMouse ? 1 : 0) << "\n";
     out << "extended_zoom=" << (pendingExtendedZoom ? 1 : 0) << "\n";
+    out << "camera_stiffness=" << pendingCameraStiffness << "\n";
+    out << "camera_pivot_height=" << pendingPivotHeight << "\n";
     out << "fov=" << pendingFov << "\n";
 
     // Quest tracker position/size
@@ -21452,6 +21472,8 @@ void GameScreen::loadSettings() {
             else if (key == "mouse_sensitivity") pendingMouseSensitivity = std::clamp(std::stof(val), 0.05f, 1.0f);
             else if (key == "invert_mouse") pendingInvertMouse = (std::stoi(val) != 0);
             else if (key == "extended_zoom") pendingExtendedZoom = (std::stoi(val) != 0);
+            else if (key == "camera_stiffness") pendingCameraStiffness = std::clamp(std::stof(val), 5.0f, 100.0f);
+            else if (key == "camera_pivot_height") pendingPivotHeight = std::clamp(std::stof(val), 0.0f, 3.0f);
             else if (key == "fov") {
                 pendingFov = std::clamp(std::stof(val), 45.0f, 110.0f);
                 if (auto* renderer = core::Application::getInstance().getRenderer()) {

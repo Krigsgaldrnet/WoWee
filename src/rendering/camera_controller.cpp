@@ -181,7 +181,7 @@ void CameraController::update(float deltaTime) {
 
             // Pivot point at upper chest/neck
             float mountedOffset = mounted_ ? mountHeightOffset_ : 0.0f;
-            glm::vec3 pivot = targetPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT + mountedOffset);
+            glm::vec3 pivot = targetPos + glm::vec3(0.0f, 0.0f, pivotHeight_ + mountedOffset);
 
             // Camera direction from yaw/pitch
             glm::vec3 camDir = -forward3D;
@@ -201,7 +201,7 @@ void CameraController::update(float deltaTime) {
             if (glm::dot(smoothedCamPos, smoothedCamPos) < 1e-4f) {
                 smoothedCamPos = actualCam;
             }
-            float camLerp = 1.0f - std::exp(-CAM_SMOOTH_SPEED * deltaTime);
+            float camLerp = 1.0f - std::exp(-camSmoothSpeed_ * deltaTime);
             smoothedCamPos += (actualCam - smoothedCamPos) * camLerp;
 
             camera->setPosition(smoothedCamPos);
@@ -1450,7 +1450,7 @@ void CameraController::update(float deltaTime) {
                 if (terrainAtCam) {
                     // Keep pivot high enough so near-hill camera rays don't cut through terrain.
                     constexpr float kMinRayClearance = 2.0f;
-                    float basePivotZ = targetPos.z + PIVOT_HEIGHT + mountedOffset;
+                    float basePivotZ = targetPos.z + pivotHeight_ + mountedOffset;
                     float rayClearance = basePivotZ - *terrainAtCam;
                     if (rayClearance < kMinRayClearance) {
                         desiredLift = std::clamp(kMinRayClearance - rayClearance, 0.0f, 1.4f);
@@ -1468,7 +1468,7 @@ void CameraController::update(float deltaTime) {
             // are not relevant for camera pivoting.
             cachedPivotLift_ = 0.0f;
         }
-        glm::vec3 pivot = targetPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT + mountedOffset + pivotLift);
+        glm::vec3 pivot = targetPos + glm::vec3(0.0f, 0.0f, pivotHeight_ + mountedOffset + pivotLift);
 
         // Camera direction from yaw/pitch (already computed as forward3D)
         glm::vec3 camDir = -forward3D;  // Camera looks at pivot, so it's behind
@@ -1549,7 +1549,7 @@ void CameraController::update(float deltaTime) {
         if (glm::dot(smoothedCamPos, smoothedCamPos) < 1e-4f) {
             smoothedCamPos = actualCam;  // Initialize
         }
-        float camLerp = 1.0f - std::exp(-CAM_SMOOTH_SPEED * deltaTime);
+        float camLerp = 1.0f - std::exp(-camSmoothSpeed_ * deltaTime);
         smoothedCamPos += (actualCam - smoothedCamPos) * camLerp;
 
         // ===== Final floor clearance check =====
@@ -2090,7 +2090,7 @@ void CameraController::reset() {
             currentDistance = userTargetDistance;
             collisionDistance = currentDistance;
             float mountedOffset = mounted_ ? mountHeightOffset_ : 0.0f;
-            glm::vec3 pivot = spawnPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT + mountedOffset);
+            glm::vec3 pivot = spawnPos + glm::vec3(0.0f, 0.0f, pivotHeight_ + mountedOffset);
             glm::vec3 camDir = -forward3D;
             glm::vec3 camPos = pivot + camDir * currentDistance;
             smoothedCamPos = camPos;
@@ -2232,7 +2232,7 @@ void CameraController::reset() {
         collisionDistance = currentDistance;
 
         float mountedOffset = mounted_ ? mountHeightOffset_ : 0.0f;
-        glm::vec3 pivot = spawnPos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT + mountedOffset);
+        glm::vec3 pivot = spawnPos + glm::vec3(0.0f, 0.0f, pivotHeight_ + mountedOffset);
         glm::vec3 camDir = -forward3D;
         glm::vec3 camPos = pivot + camDir * currentDistance;
         smoothedCamPos = camPos;
@@ -2271,7 +2271,7 @@ void CameraController::teleportTo(const glm::vec3& pos) {
         camera->setRotation(yaw, pitch);
         glm::vec3 forward3D = camera->getForward();
         float mountedOffset = mounted_ ? mountHeightOffset_ : 0.0f;
-        glm::vec3 pivot = pos + glm::vec3(0.0f, 0.0f, PIVOT_HEIGHT + mountedOffset);
+        glm::vec3 pivot = pos + glm::vec3(0.0f, 0.0f, pivotHeight_ + mountedOffset);
         glm::vec3 camDir = -forward3D;
         glm::vec3 camPos = pivot + camDir * currentDistance;
         smoothedCamPos = camPos;
