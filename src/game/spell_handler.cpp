@@ -300,7 +300,9 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
         }
     }
 
-    // Face the target before casting any targeted spell (server checks facing arc)
+    // Face the target before casting any targeted spell (server checks facing arc).
+    // Send both SET_FACING and a HEARTBEAT so the server has the updated orientation
+    // before it processes the cast packet.
     if (target != 0) {
         auto entity = owner_.entityManager.getEntity(target);
         if (entity) {
@@ -310,6 +312,7 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
             if (lenSq > 0.01f) {
                 owner_.movementInfo.orientation = std::atan2(dy, dx);
                 owner_.sendMovement(Opcode::MSG_MOVE_SET_FACING);
+                owner_.sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
             }
         }
     }
