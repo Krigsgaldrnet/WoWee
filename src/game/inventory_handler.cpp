@@ -2065,6 +2065,7 @@ void InventoryHandler::resetTradeState() {
 void InventoryHandler::handleTradeStatus(network::Packet& packet) {
     if (packet.getSize() - packet.getReadPos() < 4) return;
     uint32_t status = packet.readUInt32();
+    LOG_WARNING("SMSG_TRADE_STATUS: status=", status, " size=", packet.getSize());
     switch (status) {
         case 0: // TRADE_STATUS_PLAYER_BUSY
             resetTradeState();
@@ -2131,9 +2132,10 @@ void InventoryHandler::handleTradeStatus(network::Packet& packet) {
 }
 
 void InventoryHandler::handleTradeStatusExtended(network::Packet& packet) {
+    LOG_WARNING("SMSG_TRADE_STATUS_EXTENDED: size=", packet.getSize(),
+                " readPos=", packet.getReadPos());
     // Parse trade items from both players
-    // WotLK: whichPlayer(1) + 7 items × (slot(1) + itemId(4) + displayId(4) + stackCount(4) + ...
-    //        + enchant(4) + creator(8) + suffixFactor(4) + charges(4)) + gold(4)
+    // WotLK: whichPlayer(1) + tradeCount(4) + 7 items × (slot(1) + 52 bytes per item) + gold(4)
     if (packet.getSize() - packet.getReadPos() < 1) return;
     uint8_t whichPlayer = packet.readUInt8();
     // 0 = own items, 1 = peer items
@@ -2146,7 +2148,9 @@ void InventoryHandler::handleTradeStatusExtended(network::Packet& packet) {
     for (uint32_t i = 0; i < tradeCount; ++i) {
         if (packet.getSize() - packet.getReadPos() < 1) break;
         uint8_t slotNum = packet.readUInt8();
-        if (packet.getSize() - packet.getReadPos() < 60) { packet.setReadPos(packet.getSize()); return; }
+        // Per-slot: uint32(item)+uint32(display)+uint32(stack)+uint32(wrapped)+uint64(creator)
+        //           +uint32(enchant)+3×uint32(gems)+uint32(maxDur)+uint32(dur)+uint32(spellCharges) = 52 bytes
+        if (packet.getSize() - packet.getReadPos() < 52) { packet.setReadPos(packet.getSize()); return; }
         uint32_t itemId    = packet.readUInt32();
         uint32_t displayId = packet.readUInt32();
         uint32_t stackCnt  = packet.readUInt32();
