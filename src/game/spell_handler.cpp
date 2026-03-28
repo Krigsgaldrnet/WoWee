@@ -323,6 +323,8 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     auto packet = owner_.packetParsers_
         ? owner_.packetParsers_->buildCastSpell(spellId, target, ++castCount_)
         : CastSpellPacket::build(spellId, target, ++castCount_);
+    LOG_WARNING("CMSG_CAST_SPELL: spellId=", spellId, " target=0x", std::hex, target, std::dec,
+                " castCount=", static_cast<int>(castCount_), " packetSize=", packet.getSize());
     owner_.socket->send(packet);
     LOG_INFO("Casting spell: ", spellId, " on 0x", std::hex, target, std::dec);
 
