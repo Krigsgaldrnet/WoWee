@@ -204,6 +204,7 @@ bool SpellHandler::isTargetCastInterruptible() const {
 }
 
 void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
+    LOG_WARNING("castSpell: spellId=", spellId, " target=0x", std::hex, targetGuid, std::dec);
     // Attack (6603) routes to auto-attack instead of cast
     if (spellId == 6603) {
         uint64_t target = targetGuid != 0 ? targetGuid : owner_.targetGuid;
@@ -2055,6 +2056,7 @@ void SpellHandler::handleCastResult(network::Packet& packet) {
     uint32_t castResultSpellId = 0;
     uint8_t  castResult        = 0;
     if (owner_.packetParsers_->parseCastResult(packet, castResultSpellId, castResult)) {
+        LOG_WARNING("SMSG_CAST_RESULT: spellId=", castResultSpellId, " result=", static_cast<int>(castResult));
         if (castResult != 0) {
             casting_ = false; castIsChannel_ = false; currentCastSpellId_ = 0; castTimeRemaining_ = 0.0f;
             owner_.lastInteractedGoGuid_ = 0;
