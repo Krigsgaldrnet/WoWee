@@ -698,7 +698,7 @@ void InventoryHandler::handleLootResponse(network::Packet& packet) {
     const bool wotlkLoot = isActiveExpansion("wotlk");
     if (!LootResponseParser::parse(packet, currentLoot_, wotlkLoot)) return;
     const bool hasLoot = !currentLoot_.items.empty() || currentLoot_.gold > 0;
-    if (!hasLoot && owner_.casting && owner_.currentCastSpellId != 0 && lastInteractedGoGuid_ != 0) {
+    if (!hasLoot && owner_.isCasting() && owner_.getCurrentCastSpellId() != 0 && lastInteractedGoGuid_ != 0) {
         LOG_DEBUG("Ignoring empty SMSG_LOOT_RESPONSE during gather cast");
         return;
     }
@@ -1500,14 +1500,30 @@ void InventoryHandler::refreshMailList() {
 
 void InventoryHandler::sendMail(const std::string& recipient, const std::string& subject,
                                 const std::string& body, uint64_t money, uint64_t cod) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || mailboxGuid_ == 0) return;
-    std::vector<uint64_t> itemGuids;
-    for (const auto& a : mailAttachments_) {
-        if (a.occupied()) itemGuids.push_back(a.itemGuid);
+    if (owner_.state != WorldState::IN_WORLD) {
+        LOG_WARNING("sendMail: not in world");
+        return;
     }
-    auto packet = SendMailPacket::build(mailboxGuid_, recipient, subject, body, money, cod,
-                                        itemGuids);
+    if (!owner_.socket) {
+        LOG_WARNING("sendMail: no socket");
+        return;
+    }
+    if (mailboxGuid_ == 0) {
+        LOG_WARNING("sendMail: mailboxGuid_ is 0 (mailbox closed?)");
+        return;
+    }
+    // Collect attached item GUIDs
+    std::vector<uint64_t> itemGuids;
+    for (const auto& att : mailAttachments_) {
+        if (att.occupied()) {
+            itemGuids.push_back(att.itemGuid);
+        }
+    }
+    auto packet = owner_.packetParsers_->buildSendMail(mailboxGuid_, recipient, subject, body, money, cod, itemGuids);
+    LOG_INFO("sendMail: to='", recipient, "' subject='", subject, "' money=", money,
+             " attachments=", itemGuids.size(), " mailboxGuid=", mailboxGuid_);
     owner_.socket->send(packet);
+    clearMailAttachments();
 }
 
 bool InventoryHandler::attachItemFromBackpack(int backpackIndex) {

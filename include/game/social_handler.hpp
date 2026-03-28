@@ -347,6 +347,7 @@ private:
     void handleSetFactionAtWar(network::Packet& packet);
     void handleSetFactionVisible(network::Packet& packet);
     void handleGroupSetLeader(network::Packet& packet);
+    void handleTalentsInfo(network::Packet& packet);
 
     GameHandler& owner_;
 

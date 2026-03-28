@@ -1221,7 +1221,6 @@ void SocialHandler::handleGroupDecline(network::Packet& packet) {
 
 void SocialHandler::handleGroupList(network::Packet& packet) {
     const bool hasRoles = isActiveExpansion("wotlk");
-    const uint32_t prevCount = partyData.memberCount;
     const uint8_t prevLootMethod = partyData.lootMethod;
     const bool wasInGroup = !partyData.isEmpty();
     partyData = GroupListData{};

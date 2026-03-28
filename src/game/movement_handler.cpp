@@ -431,7 +431,7 @@ void MovementHandler::sendMovement(Opcode opcode) {
     const bool wasMoving = (movementInfo.flags & kMoveMask) != 0;
 
     // Cancel any timed (non-channeled) cast the moment the player starts moving.
-    if (owner_.casting && !owner_.castIsChannel) {
+    if (owner_.isCasting() && !owner_.isChanneling()) {
         const bool isPositionalMove =
             opcode == Opcode::MSG_MOVE_START_FORWARD  ||
             opcode == Opcode::MSG_MOVE_START_BACKWARD ||
@@ -798,7 +798,7 @@ void MovementHandler::dismount() {
         owner_.socket->send(pkt);
         LOG_INFO("Sent CMSG_CANCEL_AURA (mount spell ", savedMountAura, ") — Classic fallback");
     } else {
-        for (const auto& a : owner_.playerAuras) {
+        for (const auto& a : owner_.getPlayerAuras()) {
             if (!a.isEmpty() && a.maxDurationMs < 0 && a.casterGuid == owner_.playerGuid) {
                 auto pkt = CancelAuraPacket::build(a.spellId);
                 owner_.socket->send(pkt);
@@ -1808,6 +1808,9 @@ void MovementHandler::handleTeleportAck(network::Packet& packet) {
     movementInfo.orientation = core::coords::serverToCanonicalYaw(orientation);
     movementInfo.flags = 0;
 
+    // Clear cast bar on teleport — SpellHandler owns the casting_ flag
+    if (owner_.spellHandler_) owner_.spellHandler_->resetCastState();
+
     if (owner_.socket) {
         network::Packet ack(wireOpcode(Opcode::MSG_MOVE_TELEPORT_ACK));
         const bool legacyGuidAck =
@@ -1869,10 +1872,7 @@ void MovementHandler::handleNewWorld(network::Packet& packet) {
         owner_.clearHostileAttackers();
         owner_.stopAutoAttack();
         owner_.tabCycleStale = true;
-        owner_.casting = false;
-        owner_.castIsChannel = false;
-        owner_.currentCastSpellId = 0;
-        owner_.castTimeRemaining = 0.0f;
+        owner_.resetCastState();
         owner_.craftQueueSpellId_ = 0;
         owner_.craftQueueRemaining_ = 0;
         owner_.queuedSpellId_ = 0;
@@ -1941,12 +1941,7 @@ void MovementHandler::handleNewWorld(network::Packet& packet) {
     owner_.areaTriggerCheckTimer_ = -5.0f;
     owner_.areaTriggerSuppressFirst_ = true;
     owner_.stopAutoAttack();
-    owner_.casting = false;
-    owner_.castIsChannel = false;
-    owner_.currentCastSpellId = 0;
-    owner_.pendingGameObjectInteractGuid_ = 0;
-    owner_.lastInteractedGoGuid_ = 0;
-    owner_.castTimeRemaining = 0.0f;
+    owner_.resetCastState();
     owner_.craftQueueSpellId_ = 0;
     owner_.craftQueueRemaining_ = 0;
     owner_.queuedSpellId_ = 0;

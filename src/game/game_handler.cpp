@@ -2660,8 +2660,7 @@ void GameHandler::registerOpcodeHandlers() {
     // Clear cached talent data so the talent screen reflects the reset.
     dispatchTable_[Opcode::SMSG_TALENTS_INVOLUNTARILY_RESET] = [this](network::Packet& packet) {
         // Clear cached talent data so the talent screen reflects the reset.
-        learnedTalents_[0].clear();
-        learnedTalents_[1].clear();
+        if (spellHandler_) spellHandler_->resetTalentState();
         addUIError("Your talents have been reset by the server.");
         addSystemChatMessage("Your talents have been reset by the server.");
         packet.skipAll();
@@ -4917,14 +4916,7 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
 
         // Reset talent initialization so the first SMSG_TALENTS_INFO after login
         // correctly sets the active spec (static locals don't reset across logins).
-        talentsInitialized_ = false;
-        learnedTalents_[0].clear();
-        learnedTalents_[1].clear();
-        learnedGlyphs_[0].fill(0);
-        learnedGlyphs_[1].fill(0);
-        unspentTalentPoints_[0] = 0;
-        unspentTalentPoints_[1] = 0;
-        activeTalentSpec_ = 0;
+        if (spellHandler_) spellHandler_->resetTalentState();
 
         // Auto-join default chat channels only on first world entry.
         autoJoinDefaultChannels();
@@ -5067,6 +5059,12 @@ void GameHandler::sendRequestVehicleExit() {
     network::Packet pkt(wireOpcode(Opcode::CMSG_REQUEST_VEHICLE_EXIT));
     socket->send(pkt);
     vehicleId_ = 0;  // Optimistically clear; server will confirm via SMSG_PLAYER_VEHICLE_DATA(0)
+}
+
+const std::vector<GameHandler::EquipmentSetInfo>& GameHandler::getEquipmentSets() const {
+    if (inventoryHandler_) return inventoryHandler_->getEquipmentSets();
+    static const std::vector<EquipmentSetInfo> empty;
+    return empty;
 }
 
 bool GameHandler::supportsEquipmentSets() const {

@@ -814,26 +814,35 @@ public:
     float getTargetCastTimeRemaining() const { return spellHandler_ ? spellHandler_->getTargetCastTimeRemaining() : 0.0f; }
     bool isTargetCastInterruptible() const { return spellHandler_ ? spellHandler_->isTargetCastInterruptible() : true; }
 
-    // Talents
-    uint8_t getActiveTalentSpec() const { return activeTalentSpec_; }
-    uint8_t getUnspentTalentPoints() const { return unspentTalentPoints_[activeTalentSpec_]; }
-    uint8_t getUnspentTalentPoints(uint8_t spec) const { return spec < 2 ? unspentTalentPoints_[spec] : 0; }
-    const std::unordered_map<uint32_t, uint8_t>& getLearnedTalents() const { return learnedTalents_[activeTalentSpec_]; }
+    // Talents — delegate to SpellHandler as canonical authority
+    uint8_t getActiveTalentSpec() const { return spellHandler_ ? spellHandler_->getActiveTalentSpec() : 0; }
+    uint8_t getUnspentTalentPoints() const { return spellHandler_ ? spellHandler_->getUnspentTalentPoints() : 0; }
+    uint8_t getUnspentTalentPoints(uint8_t spec) const { return spellHandler_ ? spellHandler_->getUnspentTalentPoints(spec) : 0; }
+    const std::unordered_map<uint32_t, uint8_t>& getLearnedTalents() const {
+        if (spellHandler_) return spellHandler_->getLearnedTalents();
+        static const std::unordered_map<uint32_t, uint8_t> empty;
+        return empty;
+    }
     const std::unordered_map<uint32_t, uint8_t>& getLearnedTalents(uint8_t spec) const {
-        static std::unordered_map<uint32_t, uint8_t> empty;
-        return spec < 2 ? learnedTalents_[spec] : empty;
+        if (spellHandler_) return spellHandler_->getLearnedTalents(spec);
+        static const std::unordered_map<uint32_t, uint8_t> empty;
+        return empty;
     }
 
     // Glyphs (WotLK): up to 6 glyph slots per spec (3 major + 3 minor)
     static constexpr uint8_t MAX_GLYPH_SLOTS = 6;
-    const std::array<uint16_t, MAX_GLYPH_SLOTS>& getGlyphs() const { return learnedGlyphs_[activeTalentSpec_]; }
+    const std::array<uint16_t, MAX_GLYPH_SLOTS>& getGlyphs() const {
+        if (spellHandler_) return spellHandler_->getGlyphs();
+        static const std::array<uint16_t, MAX_GLYPH_SLOTS> empty{};
+        return empty;
+    }
     const std::array<uint16_t, MAX_GLYPH_SLOTS>& getGlyphs(uint8_t spec) const {
-        static std::array<uint16_t, MAX_GLYPH_SLOTS> empty{};
-        return spec < 2 ? learnedGlyphs_[spec] : empty;
+        if (spellHandler_) return spellHandler_->getGlyphs(spec);
+        static const std::array<uint16_t, MAX_GLYPH_SLOTS> empty{};
+        return empty;
     }
     uint8_t getTalentRank(uint32_t talentId) const {
-        auto it = learnedTalents_[activeTalentSpec_].find(talentId);
-        return (it != learnedTalents_[activeTalentSpec_].end()) ? it->second : 0;
+        return spellHandler_ ? spellHandler_->getTalentRank(talentId) : 0;
     }
     void learnTalent(uint32_t talentId, uint32_t requestedRank);
     void switchTalentSpec(uint8_t newSpec);
@@ -1431,7 +1440,7 @@ public:
 
     // Equipment Sets (aliased from handler_types.hpp)
     using EquipmentSetInfo = game::EquipmentSetInfo;
-    const std::vector<EquipmentSetInfo>& getEquipmentSets() const { return equipmentSetInfo_; }
+    const std::vector<EquipmentSetInfo>& getEquipmentSets() const;
     bool supportsEquipmentSets() const;
     void useEquipmentSet(uint32_t setId);
     void saveEquipmentSet(const std::string& name, const std::string& iconName = "INV_Misc_QuestionMark",

@@ -136,7 +136,7 @@ void SpellHandler::registerOpcodes(DispatchTable& table) {
     table[Opcode::SMSG_ACHIEVEMENT_EARNED] = [this](network::Packet& packet) {
         handleAchievementEarned(packet);
     };
-    table[Opcode::SMSG_EQUIPMENT_SET_LIST] = [this](network::Packet& packet) { handleEquipmentSetList(packet); };
+    // SMSG_EQUIPMENT_SET_LIST — owned by InventoryHandler::registerOpcodes
 
     // ---- Cast result / spell visuals / cooldowns / modifiers ----
     table[Opcode::SMSG_CAST_RESULT] = [this](network::Packet& p) { handleCastResult(p); };
@@ -1423,43 +1423,7 @@ void SpellHandler::handleAchievementEarned(network::Packet& packet) {
         owner_.addonEventCallback_("ACHIEVEMENT_EARNED", {std::to_string(achievementId)});
 }
 
-void SpellHandler::handleEquipmentSetList(network::Packet& packet) {
-    if (packet.getSize() - packet.getReadPos() < 4) return;
-    uint32_t count = packet.readUInt32();
-    if (count > 10) {
-        LOG_WARNING("SMSG_EQUIPMENT_SET_LIST: unexpected count ", count, ", ignoring");
-        packet.setReadPos(packet.getSize());
-        return;
-    }
-    equipmentSets_.clear();
-    equipmentSets_.reserve(count);
-    for (uint32_t i = 0; i < count; ++i) {
-        if (packet.getSize() - packet.getReadPos() < 16) break;
-        EquipmentSet es;
-        es.setGuid        = packet.readUInt64();
-        es.setId          = packet.readUInt32();
-        es.name           = packet.readString();
-        es.iconName       = packet.readString();
-        es.ignoreSlotMask = packet.readUInt32();
-        for (int slot = 0; slot < 19; ++slot) {
-            if (packet.getSize() - packet.getReadPos() < 8) break;
-            es.itemGuids[slot] = packet.readUInt64();
-        }
-        equipmentSets_.push_back(std::move(es));
-    }
-    // Populate public-facing info
-    equipmentSetInfo_.clear();
-    equipmentSetInfo_.reserve(equipmentSets_.size());
-    for (const auto& es : equipmentSets_) {
-        EquipmentSetInfo info;
-        info.setGuid  = es.setGuid;
-        info.setId    = es.setId;
-        info.name     = es.name;
-        info.iconName = es.iconName;
-        equipmentSetInfo_.push_back(std::move(info));
-    }
-    LOG_INFO("SMSG_EQUIPMENT_SET_LIST: ", equipmentSets_.size(), " equipment sets received");
-}
+// SMSG_EQUIPMENT_SET_LIST — moved to InventoryHandler
 
 // ============================================================
 // Pet spell methods (moved from GameHandler)
@@ -1643,6 +1607,17 @@ void SpellHandler::resetCastState() {
     queuedSpellTarget_ = 0;
     owner_.pendingGameObjectInteractGuid_ = 0;
     owner_.lastInteractedGoGuid_ = 0;
+}
+
+void SpellHandler::resetTalentState() {
+    talentsInitialized_ = false;
+    learnedTalents_[0].clear();
+    learnedTalents_[1].clear();
+    learnedGlyphs_[0].fill(0);
+    learnedGlyphs_[1].fill(0);
+    unspentTalentPoints_[0] = 0;
+    unspentTalentPoints_[1] = 0;
+    activeTalentSpec_ = 0;
 }
 
 void SpellHandler::clearUnitCaches() {

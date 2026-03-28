@@ -162,8 +162,8 @@ public:
     void useItemInBag(int bagIndex, int slotIndex);
     void useItemById(uint32_t itemId);
 
-    // Equipment sets
-    const std::vector<EquipmentSetInfo>& getEquipmentSets() const { return equipmentSetInfo_; }
+    // Equipment sets — canonical data owned by InventoryHandler;
+    // GameHandler::getEquipmentSets() delegates to inventoryHandler_.
 
     // Pet spells
     void sendPetAction(uint32_t action, uint64_t targetGuid = 0);
@@ -186,6 +186,7 @@ public:
     // Cast state
     void stopCasting();
     void resetCastState();
+    void resetTalentState();
     void clearUnitCaches();
 
     // Aura duration
@@ -252,7 +253,6 @@ private:
     void handleUnlearnSpells(network::Packet& packet);
     void handleTalentsInfo(network::Packet& packet);
     void handleAchievementEarned(network::Packet& packet);
-    void handleEquipmentSetList(network::Packet& packet);
 
     friend class GameHandler;
     friend class InventoryHandler;
@@ -313,18 +313,6 @@ private:
     bool petUnlearnPending_ = false;
     uint64_t petUnlearnGuid_ = 0;
     uint32_t petUnlearnCost_ = 0;
-
-    // Equipment sets
-    struct EquipmentSet {
-        uint64_t setGuid = 0;
-        uint32_t setId = 0;
-        std::string name;
-        std::string iconName;
-        uint32_t ignoreSlotMask = 0;
-        std::array<uint64_t, 19> itemGuids{};
-    };
-    std::vector<EquipmentSet> equipmentSets_;
-    std::vector<EquipmentSetInfo> equipmentSetInfo_;
 };
 
 } // namespace game
