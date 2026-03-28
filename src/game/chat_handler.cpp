@@ -122,7 +122,12 @@ void ChatHandler::sendChatMessage(ChatType type, const std::string& message, con
 
     LOG_INFO("Sending chat message: [", getChatTypeString(type), "] ", message);
 
-    ChatLanguage language = ChatLanguage::COMMON;
+    // Use the player's faction language. AzerothCore rejects wrong language.
+    // Alliance races: Human(1), Dwarf(3), NightElf(4), Gnome(7), Draenei(11) → COMMON (7)
+    // Horde races: Orc(2), Undead(5), Tauren(6), Troll(8), BloodElf(10) → ORCISH (1)
+    uint8_t race = owner_.getPlayerRace();
+    bool isHorde = (race == 2 || race == 5 || race == 6 || race == 8 || race == 10);
+    ChatLanguage language = isHorde ? ChatLanguage::ORCISH : ChatLanguage::COMMON;
 
     auto packet = MessageChatPacket::build(type, language, message, target);
     owner_.socket->send(packet);
