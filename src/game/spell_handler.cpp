@@ -300,6 +300,20 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
         }
     }
 
+    // Face the target before casting any targeted spell (server checks facing arc)
+    if (target != 0) {
+        auto entity = owner_.entityManager.getEntity(target);
+        if (entity) {
+            float dx = entity->getX() - owner_.movementInfo.x;
+            float dy = entity->getY() - owner_.movementInfo.y;
+            float lenSq = dx * dx + dy * dy;
+            if (lenSq > 0.01f) {
+                owner_.movementInfo.orientation = std::atan2(dy, dx);
+                owner_.sendMovement(Opcode::MSG_MOVE_SET_FACING);
+            }
+        }
+    }
+
     auto packet = owner_.packetParsers_
         ? owner_.packetParsers_->buildCastSpell(spellId, target, ++castCount_)
         : CastSpellPacket::build(spellId, target, ++castCount_);
