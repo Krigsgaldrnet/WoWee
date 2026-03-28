@@ -5318,27 +5318,44 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                 idleIterations = 0;
             }
 
-            // Don't exit warmup until the terrain tile under the player's feet is loaded.
-            // Use the world entry position (from the server), not getCharacterPosition()
-            // which may be (0,0,0) during warmup.
-            bool terrainReady = true;
-            if (renderer && renderer->getTerrainManager()) {
-                auto* tm = renderer->getTerrainManager();
-                // Convert canonical server coords to render coords for terrain query
+            // Don't exit warmup until the ground under the player exists.
+            // In cities like Stormwind, players stand on WMO floors, not terrain.
+            // Check BOTH terrain AND WMO floor — require at least one to be valid.
+            bool groundReady = false;
+            if (renderer) {
                 glm::vec3 renderSpawn = core::coords::canonicalToRender(
                     glm::vec3(x, y, z));
-                terrainReady = tm->getHeightAt(renderSpawn.x, renderSpawn.y).has_value();
-                if (!terrainReady && elapsed > 5.0f && static_cast<int>(elapsed) % 3 == 0) {
-                    LOG_WARNING("Warmup: terrain not ready at spawn (", renderSpawn.x,
-                                ",", renderSpawn.y, ") after ", elapsed, "s");
+                float rx = renderSpawn.x, ry = renderSpawn.y, rz = renderSpawn.z;
+
+                // Check terrain
+                if (auto* tm = renderer->getTerrainManager()) {
+                    if (tm->getHeightAt(rx, ry).has_value()) groundReady = true;
+                }
+                // Check WMO floor (cities, buildings)
+                if (!groundReady) {
+                    if (auto* wmo = renderer->getWMORenderer()) {
+                        if (wmo->getFloorHeight(rx, ry, rz + 5.0f).has_value()) groundReady = true;
+                    }
+                }
+                // After minimum warmup, also accept if enough terrain tiles are loaded
+                // (player may be on M2 collision or other surface)
+                if (!groundReady && elapsed >= 8.0f) {
+                    if (auto* tm = renderer->getTerrainManager()) {
+                        groundReady = (tm->getLoadedTileCount() >= 4);
+                    }
+                }
+
+                if (!groundReady && elapsed > 5.0f && static_cast<int>(elapsed * 2) % 3 == 0) {
+                    LOG_WARNING("Warmup: ground not ready at spawn (", rx, ",", ry, ",", rz,
+                                ") after ", elapsed, "s");
                 }
             }
 
-            // Exit when: (min time passed AND queues drained AND terrain ready) OR hard cap
-            bool readyToExit = (elapsed >= kMinWarmupSeconds && idleIterations >= kIdleThreshold && terrainReady);
+            // Exit when: (min time passed AND queues drained AND ground ready) OR hard cap
+            bool readyToExit = (elapsed >= kMinWarmupSeconds && idleIterations >= kIdleThreshold && groundReady);
             if (readyToExit || elapsed >= kMaxWarmupSeconds) {
-                if (elapsed >= kMaxWarmupSeconds && !terrainReady) {
-                    LOG_WARNING("Warmup hit hard cap (", kMaxWarmupSeconds, "s), terrain NOT ready — may fall through world");
+                if (elapsed >= kMaxWarmupSeconds && !groundReady) {
+                    LOG_WARNING("Warmup hit hard cap (", kMaxWarmupSeconds, "s), ground NOT ready — may fall through world");
                 } else if (elapsed >= kMaxWarmupSeconds) {
                     LOG_WARNING("Warmup hit hard cap (", kMaxWarmupSeconds, "s), entering world with pending work");
                 }
