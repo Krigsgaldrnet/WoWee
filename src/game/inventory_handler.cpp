@@ -2102,7 +2102,9 @@ void InventoryHandler::handleTradeStatus(network::Packet& packet) {
             owner_.addSystemChatMessage("You are already trading.");
             break;
         case 7: // TRADE_STATUS_COMPLETE
-            resetTradeState();
+            // Don't reset immediately — TRADE_STATUS_EXTENDED may arrive in the same
+            // packet batch and needs the trade state to store final item/gold data.
+            tradeStatus_ = TradeStatus::None;
             owner_.addSystemChatMessage("Trade complete.");
             if (owner_.addonEventCallback_) {
                 owner_.addonEventCallback_("TRADE_CLOSED", {});
