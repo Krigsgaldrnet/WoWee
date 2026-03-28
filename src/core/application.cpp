@@ -5345,10 +5345,13 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                         }
                     }
                 }
-                // After 10s, accept any loaded terrain (fallback for unusual spawns)
-                if (!groundReady && elapsed >= 10.0f) {
+                // After 20s, accept any loaded terrain (fallback for unusual spawns)
+                if (!groundReady && elapsed >= 20.0f) {
                     if (auto* tm = renderer->getTerrainManager()) {
-                        groundReady = (tm->getLoadedTileCount() >= 4);
+                        if (tm->getLoadedTileCount() >= 4) {
+                            groundReady = true;
+                            LOG_WARNING("Warmup: using tile-count fallback (", tm->getLoadedTileCount(), " tiles) after ", elapsed, "s");
+                        }
                     }
                 }
 
