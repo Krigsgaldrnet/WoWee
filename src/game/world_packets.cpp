@@ -1908,6 +1908,19 @@ network::Packet DelIgnorePacket::build(uint64_t ignoreGuid) {
     return packet;
 }
 
+network::Packet ComplainPacket::build(uint64_t targetGuid, const std::string& reason) {
+    network::Packet packet(wireOpcode(Opcode::CMSG_COMPLAIN));
+    packet.writeUInt8(1);               // complaintType: 1 = spam
+    packet.writeUInt64(targetGuid);
+    packet.writeUInt32(0);              // unk
+    packet.writeUInt32(0);              // messageType
+    packet.writeUInt32(0);              // channelId
+    packet.writeUInt32(static_cast<uint32_t>(time(nullptr))); // timestamp
+    packet.writeString(reason);
+    LOG_DEBUG("Built CMSG_COMPLAIN: target=0x", std::hex, targetGuid, std::dec, " reason=", reason);
+    return packet;
+}
+
 // ============================================================
 // Logout Commands
 // ============================================================

@@ -550,6 +550,49 @@ private:
     };
     std::vector<GlowSprite> glowSprites_;  // Reused each frame
 
+    // Shadow-pass texture descriptor cache (reused each frame, cleared via pool reset)
+    std::unordered_map<VkImageView, VkDescriptorSet> shadowTexSetCache_;
+
+    // Ribbon draw-call list (reused each frame)
+    struct RibbonDrawCall {
+        VkDescriptorSet texSet;
+        VkPipeline      pipeline;
+        uint32_t        firstVertex;
+        uint32_t        vertexCount;
+    };
+    std::vector<RibbonDrawCall> ribbonDraws_;
+
+    // Particle group structures (reused each frame)
+    struct ParticleGroupKey {
+        VkTexture* texture;
+        uint8_t blendType;
+        uint16_t tilesX;
+        uint16_t tilesY;
+        bool operator==(const ParticleGroupKey& other) const {
+            return texture == other.texture &&
+                   blendType == other.blendType &&
+                   tilesX == other.tilesX &&
+                   tilesY == other.tilesY;
+        }
+    };
+    struct ParticleGroupKeyHash {
+        size_t operator()(const ParticleGroupKey& key) const {
+            size_t h1 = std::hash<uintptr_t>{}(reinterpret_cast<uintptr_t>(key.texture));
+            size_t h2 = std::hash<uint32_t>{}((static_cast<uint32_t>(key.tilesX) << 16) | key.tilesY);
+            size_t h3 = std::hash<uint8_t>{}(key.blendType);
+            return h1 ^ (h2 * 0x9e3779b9u) ^ (h3 * 0x85ebca6bu);
+        }
+    };
+    struct ParticleGroup {
+        VkTexture* texture;
+        uint8_t blendType;
+        uint16_t tilesX;
+        uint16_t tilesY;
+        VkDescriptorSet preAllocSet = VK_NULL_HANDLE;
+        std::vector<float> vertexData;
+    };
+    std::unordered_map<ParticleGroupKey, ParticleGroup, ParticleGroupKeyHash> particleGroups_;
+
     // Animation update buffers (avoid per-frame allocation)
     std::vector<size_t> boneWorkIndices_;        // Reused each frame
     std::vector<std::future<void>> animFutures_; // Reused each frame

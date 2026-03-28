@@ -4271,6 +4271,8 @@ void GameScreen::renderTargetFrame(game::GameHandler& gameHandler) {
                     gameHandler.addFriend(name);
                 if (ImGui::MenuItem("Ignore"))
                     gameHandler.addIgnore(name);
+                if (ImGui::MenuItem("Report Player"))
+                    gameHandler.reportPlayer(tGuid, "Reported via UI");
             }
             ImGui::Separator();
             if (ImGui::BeginMenu("Set Raid Mark")) {
@@ -12181,6 +12183,17 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
             if (mouse.x >= nx0 && mouse.x <= nx1 && mouse.y >= ny0 && mouse.y <= ny1) {
                 // Track mouseover for [target=mouseover] macro conditionals
                 gameHandler.setMouseoverGuid(guid);
+                // Hover tooltip: name, level/class, guild
+                ImGui::BeginTooltip();
+                ImGui::TextUnformatted(unitName.c_str());
+                if (isPlayer) {
+                    uint8_t cid = entityClassId(unit);
+                    ImGui::Text("Level %u %s", level, classNameStr(cid));
+                } else if (level > 0) {
+                    ImGui::Text("Level %u", level);
+                }
+                if (!subLabel.empty()) ImGui::TextColored(ImVec4(0.7f,0.7f,0.7f,1.0f), "%s", subLabel.c_str());
+                ImGui::EndTooltip();
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                     gameHandler.setTarget(guid);
                 } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {

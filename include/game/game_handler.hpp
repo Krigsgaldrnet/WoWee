@@ -718,6 +718,7 @@ public:
     // Combat and Trade
     void proposeDuel(uint64_t targetGuid);
     void initiateTrade(uint64_t targetGuid);
+    void reportPlayer(uint64_t targetGuid, const std::string& reason);
     void stopCasting();
 
     // ---- Phase 1: Name queries ----

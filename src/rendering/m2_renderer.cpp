@@ -2998,7 +2998,9 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
         vkResetDescriptorPool(vkCtx_->getDevice(), shadowTexPool_, 0);
     }
     // Cache: texture imageView -> allocated descriptor set (avoids duplicates within frame)
-    std::unordered_map<VkImageView, VkDescriptorSet> texSetCache;
+    // Reuse persistent map — pool reset already invalidated the sets.
+    shadowTexSetCache_.clear();
+    auto& texSetCache = shadowTexSetCache_;
 
     auto getTexDescSet = [&](VkTexture* tex) -> VkDescriptorSet {
         VkImageView iv = tex->getImageView();
@@ -3425,13 +3427,8 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
     float* dst     = static_cast<float*>(ribbonVBMapped_);
     size_t written = 0;
 
-    struct DrawCall {
-        VkDescriptorSet texSet;
-        VkPipeline      pipeline;
-        uint32_t        firstVertex;
-        uint32_t        vertexCount;
-    };
-    std::vector<DrawCall> draws;
+    ribbonDraws_.clear();
+    auto& draws = ribbonDraws_;
 
     for (const auto& inst : instances) {
         if (!inst.cachedModel) continue;
@@ -3539,36 +3536,12 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
     if (!particlePipeline_ || !m2ParticleVB_) return;
 
     // Collect all particles from all instances, grouped by texture+blend
-    struct ParticleGroupKey {
-        VkTexture* texture;
-        uint8_t blendType;
-        uint16_t tilesX;
-        uint16_t tilesY;
-
-        bool operator==(const ParticleGroupKey& other) const {
-            return texture == other.texture &&
-                   blendType == other.blendType &&
-                   tilesX == other.tilesX &&
-                   tilesY == other.tilesY;
-        }
-    };
-    struct ParticleGroupKeyHash {
-        size_t operator()(const ParticleGroupKey& key) const {
-            size_t h1 = std::hash<uintptr_t>{}(reinterpret_cast<uintptr_t>(key.texture));
-            size_t h2 = std::hash<uint32_t>{}((static_cast<uint32_t>(key.tilesX) << 16) | key.tilesY);
-            size_t h3 = std::hash<uint8_t>{}(key.blendType);
-            return h1 ^ (h2 * 0x9e3779b9u) ^ (h3 * 0x85ebca6bu);
-        }
-    };
-    struct ParticleGroup {
-        VkTexture* texture;
-        uint8_t blendType;
-        uint16_t tilesX;
-        uint16_t tilesY;
-        VkDescriptorSet preAllocSet = VK_NULL_HANDLE;  // Pre-allocated stable set, avoids per-frame alloc
-        std::vector<float> vertexData;  // 9 floats per particle
-    };
-    std::unordered_map<ParticleGroupKey, ParticleGroup, ParticleGroupKeyHash> groups;
+    // Reuse persistent map — clear each group's vertex data but keep bucket structure.
+    for (auto& [k, g] : particleGroups_) {
+        g.vertexData.clear();
+        g.preAllocSet = VK_NULL_HANDLE;
+    }
+    auto& groups = particleGroups_;
 
     size_t totalParticles = 0;
 

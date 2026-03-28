@@ -904,6 +904,12 @@ public:
     static network::Packet build(uint64_t ignoreGuid);
 };
 
+/** CMSG_COMPLAIN packet builder (player report) */
+class ComplainPacket {
+public:
+    static network::Packet build(uint64_t targetGuid, const std::string& reason);
+};
+
 // ============================================================
 // Logout Commands
 // ============================================================

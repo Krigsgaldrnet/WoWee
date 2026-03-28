@@ -13784,6 +13784,23 @@ void GameHandler::initiateTrade(uint64_t targetGuid) {
     LOG_INFO("Initiated trade with target: 0x", std::hex, targetGuid, std::dec);
 }
 
+void GameHandler::reportPlayer(uint64_t targetGuid, const std::string& reason) {
+    if (!isInWorld()) {
+        LOG_WARNING("Cannot report player: not in world or not connected");
+        return;
+    }
+
+    if (targetGuid == 0) {
+        addSystemChatMessage("You must target a player to report.");
+        return;
+    }
+
+    auto packet = ComplainPacket::build(targetGuid, reason);
+    socket->send(packet);
+    addSystemChatMessage("Player report submitted.");
+    LOG_INFO("Reported player: 0x", std::hex, targetGuid, std::dec, " reason=", reason);
+}
+
 void GameHandler::stopCasting() {
     if (!isInWorld()) {
         LOG_WARNING("Cannot stop casting: not in world or not connected");

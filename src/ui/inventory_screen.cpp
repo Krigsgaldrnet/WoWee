@@ -985,10 +985,15 @@ void InventoryScreen::renderSeparateBags(game::Inventory& inventory, uint64_t mo
 
     // Backpack window (bottom of stack)
     if (backpackOpen_) {
-        int bpRows = (inventory.getBackpackSize() + columns - 1) / columns;
+        int bpTotal = inventory.getBackpackSize();
+        int bpUsed = 0;
+        for (int i = 0; i < bpTotal; ++i) if (!inventory.getBackpackSlot(i).empty()) ++bpUsed;
+        char bpTitle[64];
+        snprintf(bpTitle, sizeof(bpTitle), "Backpack (%d/%d)", bpUsed, bpTotal);
+        int bpRows = (bpTotal + columns - 1) / columns;
         float bpH = bpRows * (slotSize + 4.0f) + 80.0f; // header + money + padding
         float defaultY = stackBottom - bpH;
-        renderBagWindow("Backpack", backpackOpen_, inventory, -1, stackX, defaultY, moneyCopper);
+        renderBagWindow(bpTitle, backpackOpen_, inventory, -1, stackX, defaultY, moneyCopper);
         stackBottom = defaultY - stackGap;
     }
 
@@ -1010,14 +1015,16 @@ void InventoryScreen::renderSeparateBags(game::Inventory& inventory, uint64_t mo
         float defaultY = stackBottom - bagH;
         stackBottom = defaultY - stackGap;
 
-        // Build title from equipped bag item name
-        char title[64];
+        // Build title from equipped bag item name, with used/total slot counts
+        int bagUsed = 0;
+        for (int si = 0; si < bagSize; ++si) if (!inventory.getBagSlot(bag, si).empty()) ++bagUsed;
+        char title[96];
         game::EquipSlot bagSlot = static_cast<game::EquipSlot>(static_cast<int>(game::EquipSlot::BAG1) + bag);
         const auto& bagItem = inventory.getEquipSlot(bagSlot);
         if (!bagItem.empty() && !bagItem.item.name.empty()) {
-            snprintf(title, sizeof(title), "%s##bag%d", bagItem.item.name.c_str(), bag);
+            snprintf(title, sizeof(title), "%s (%d/%d)##bag%d", bagItem.item.name.c_str(), bagUsed, bagSize, bag);
         } else {
-            snprintf(title, sizeof(title), "Bag Slot %d##bag%d", bag + 1, bag);
+            snprintf(title, sizeof(title), "Bag Slot %d (%d/%d)##bag%d", bag + 1, bagUsed, bagSize, bag);
         }
 
         renderBagWindow(title, bagOpen_[bag], inventory, bag, stackX, defaultY, 0);
