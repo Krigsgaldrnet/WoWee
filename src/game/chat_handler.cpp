@@ -197,14 +197,15 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
     }
 
     // Filter BG queue announcer spam (server-side module on ChromieCraft/AzerothCore).
-    // These are SYSTEM messages with BG queue status that flood the chat.
-    if (data.type == ChatType::SYSTEM) {
+    // Can arrive as SYSTEM, CHANNEL, or even SAY/YELL from special NPCs.
+    {
         const auto& msg = data.message;
-        // Common patterns: "[BG Queue Announcer]", "Queue status for", "[H: N/N, A: N/N]"
         if (msg.find("Queue status") != std::string::npos ||
             msg.find("BG Queue") != std::string::npos ||
             msg.find("Announcer]") != std::string::npos ||
-            (msg.find("[H:") != std::string::npos && msg.find("A:") != std::string::npos)) {
+            msg.find("BGAnnouncer") != std::string::npos ||
+            (msg.find("[H:") != std::string::npos && msg.find("A:") != std::string::npos) ||
+            (msg.find("[H: ") != std::string::npos && msg.find(", A: ") != std::string::npos)) {
             return; // Suppress BG queue announcer spam
         }
     }

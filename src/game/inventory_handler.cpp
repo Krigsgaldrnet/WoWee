@@ -3200,6 +3200,13 @@ void InventoryHandler::emitOtherPlayerEquipment(uint64_t guid) {
              " chest=", displayIds[4], " legs=", displayIds[6],
              " mainhand=", displayIds[15], " offhand=", displayIds[16]);
 
+    // Don't emit all-zero displayIds — that strips existing equipment for no reason.
+    // Wait until at least one item resolves before applying.
+    if (anyEntry && resolved == 0) {
+        LOG_WARNING("emitOtherPlayerEquipment: skipping all-zero emit (waiting for item queries)");
+        return;
+    }
+
     owner_.playerEquipmentCallback_(guid, displayIds, invTypes);
     owner_.otherPlayerVisibleDirty_.erase(guid);
 

@@ -7574,7 +7574,18 @@ void Application::setOnlinePlayerEquipment(uint64_t guid,
     if (!charRenderer) return;
     if (st.instanceId == 0 || st.modelId == 0) return;
 
-    if (st.bodySkinPath.empty()) return;
+    if (st.bodySkinPath.empty()) {
+        LOG_WARNING("setOnlinePlayerEquipment: bodySkinPath empty for guid=0x", std::hex, guid, std::dec,
+                    " instanceId=", st.instanceId, " — skipping equipment");
+        return;
+    }
+
+    int nonZeroDisplay = 0;
+    for (uint32_t d : displayInfoIds) if (d != 0) nonZeroDisplay++;
+    LOG_WARNING("setOnlinePlayerEquipment: guid=0x", std::hex, guid, std::dec,
+                " instanceId=", st.instanceId, " nonZeroDisplayIds=", nonZeroDisplay,
+                " head=", displayInfoIds[0], " chest=", displayInfoIds[4],
+                " legs=", displayInfoIds[6], " mainhand=", displayInfoIds[15]);
 
     auto displayInfoDbc = assetManager->loadDBC("ItemDisplayInfo.dbc");
     if (!displayInfoDbc) return;
