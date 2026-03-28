@@ -2114,7 +2114,7 @@ void MovementHandler::handleShowTaxiNodes(network::Packet& packet) {
     currentTaxiData_ = data;
     taxiNpcGuid_ = data.npcGuid;
     taxiWindowOpen_ = true;
-    owner_.gossipWindowOpen = false;
+    owner_.closeGossip();
     buildTaxiCostMap();
     auto it = taxiNodes_.find(data.nearestNode);
     if (it != taxiNodes_.end()) {

@@ -1289,7 +1289,7 @@ void InventoryHandler::useItemById(uint32_t itemId) {
 void InventoryHandler::handleListInventory(network::Packet& packet) {
     if (!ListInventoryParser::parse(packet, currentVendorItems_)) return;
     vendorWindowOpen_ = true;
-    owner_.gossipWindowOpen = false;
+    owner_.closeGossip();
     if (owner_.addonEventCallback_) owner_.addonEventCallback_("MERCHANT_SHOW", {});
 
     // Auto-sell grey items
@@ -1394,7 +1394,7 @@ void InventoryHandler::handleTrainerList(network::Packet& packet) {
     const bool isClassic = isClassicLikeExpansion();
     if (!TrainerListParser::parse(packet, currentTrainerList_, isClassic)) return;
     trainerWindowOpen_ = true;
-    owner_.gossipWindowOpen = false;
+    owner_.closeGossip();
     if (owner_.addonEventCallback_) owner_.addonEventCallback_("TRAINER_SHOW", {});
 
     LOG_INFO("Trainer list: ", currentTrainerList_.spells.size(), " spells");
@@ -1897,7 +1897,7 @@ void InventoryHandler::handleAuctionHello(network::Packet& packet) {
     auctionHouseId_ = houseId;
     auctionOpen_ = true;
     auctionActiveTab_ = 0;
-    owner_.gossipWindowOpen = false;
+    owner_.closeGossip();
     if (owner_.addonEventCallback_) owner_.addonEventCallback_("AUCTION_HOUSE_SHOW", {});
 }
 

@@ -1508,7 +1508,7 @@ void QuestHandler::handleGossipMessage(network::Packet& packet) {
     if (questDetailsOpen_) return; // Don't reopen gossip while viewing quest
     gossipWindowOpen_ = true;
     if (owner_.addonEventCallback_) owner_.addonEventCallback_("GOSSIP_SHOW", {});
-    owner_.vendorWindowOpen = false; // Close vendor if gossip opens
+    owner_.closeVendor(); // Close vendor if gossip opens
 
     // Update known quest-log entries based on gossip quests.
     bool hasAvailableQuest = false;
@@ -1612,7 +1612,7 @@ void QuestHandler::handleQuestgiverQuestList(network::Packet& packet) {
     currentGossip_ = std::move(data);
     gossipWindowOpen_ = true;
     if (owner_.addonEventCallback_) owner_.addonEventCallback_("GOSSIP_SHOW", {});
-    owner_.vendorWindowOpen = false;
+    owner_.closeVendor();
 
     bool hasAvailableQuest = false;
     bool hasRewardQuest = false;
