@@ -9366,8 +9366,15 @@ void GameScreen::renderActionBar(game::GameHandler& gameHandler) {
             actionBarDragIcon_ = 0;
         } else if (clicked && !slot.isEmpty()) {
             if (slot.type == game::ActionBarSlot::SPELL && slot.isReady()) {
-                uint64_t target = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
-                gameHandler.castSpell(slot.id, target);
+                // Check if this spell belongs to an item (e.g., Hearthstone spell 8690).
+                // Item-use spells must go through CMSG_USE_ITEM, not CMSG_CAST_SPELL.
+                uint32_t itemForSpell = gameHandler.getItemIdForSpell(slot.id);
+                if (itemForSpell != 0) {
+                    gameHandler.useItemById(itemForSpell);
+                } else {
+                    uint64_t target = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
+                    gameHandler.castSpell(slot.id, target);
+                }
             } else if (slot.type == game::ActionBarSlot::ITEM && slot.id != 0) {
                 gameHandler.useItemById(slot.id);
             } else if (slot.type == game::ActionBarSlot::MACRO) {

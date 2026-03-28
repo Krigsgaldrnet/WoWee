@@ -8556,6 +8556,34 @@ void GameHandler::useItemById(uint32_t itemId) {
     if (inventoryHandler_) inventoryHandler_->useItemById(itemId);
 }
 
+uint32_t GameHandler::getItemIdForSpell(uint32_t spellId) const {
+    if (spellId == 0) return 0;
+    // Search backpack and bags for an item whose on-use spell matches
+    for (int i = 0; i < inventory.getBackpackSize(); i++) {
+        const auto& slot = inventory.getBackpackSlot(i);
+        if (slot.empty()) continue;
+        auto* info = getItemInfo(slot.item.itemId);
+        if (!info || !info->valid) continue;
+        for (const auto& sp : info->spells) {
+            if (sp.spellId == spellId && (sp.spellTrigger == 0 || sp.spellTrigger == 5))
+                return slot.item.itemId;
+        }
+    }
+    for (int bag = 0; bag < inventory.NUM_BAG_SLOTS; bag++) {
+        for (int s = 0; s < inventory.getBagSize(bag); s++) {
+            const auto& slot = inventory.getBagSlot(bag, s);
+            if (slot.empty()) continue;
+            auto* info = getItemInfo(slot.item.itemId);
+            if (!info || !info->valid) continue;
+            for (const auto& sp : info->spells) {
+                if (sp.spellId == spellId && (sp.spellTrigger == 0 || sp.spellTrigger == 5))
+                    return slot.item.itemId;
+            }
+        }
+    }
+    return 0;
+}
+
 void GameHandler::unstuck() {
     if (unstuckCallback_) {
         unstuckCallback_();

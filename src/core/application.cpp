@@ -2436,13 +2436,25 @@ void Application::setupUICallbacks() {
             return;
         }
 
-        // Same-map teleport (taxi landing, GM teleport on same continent):
-        // just update position, let terrain streamer handle tile loading incrementally.
-        // A full reload is only needed on first entry or map change.
+        // Same-map teleport (taxi landing, GM teleport, hearthstone on same continent):
         if (mapId == loadedMapId_ && renderer && renderer->getTerrainManager()) {
-            LOG_INFO("Same-map teleport (map ", mapId, "), skipping full world reload");
+            // Check if teleport is far enough to need terrain loading (>500 render units)
+            glm::vec3 oldPos = renderer->getCharacterPosition();
             glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(x, y, z));
             glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
+            float teleportDistSq = glm::dot(renderPos - oldPos, renderPos - oldPos);
+            bool farTeleport = (teleportDistSq > 500.0f * 500.0f);
+
+            if (farTeleport) {
+                // Far same-map teleport (hearthstone, etc.): do a full world reload
+                // with loading screen to prevent falling through unloaded terrain.
+                LOG_WARNING("Far same-map teleport (dist=", std::sqrt(teleportDistSq),
+                            "), triggering full world reload with loading screen");
+                loadOnlineWorldTerrain(mapId, x, y, z);
+                return;
+            }
+            LOG_INFO("Same-map teleport (map ", mapId, "), skipping full world reload");
+            // canonical and renderPos already computed above for distance check
             renderer->getCharacterPosition() = renderPos;
             if (renderer->getCameraController()) {
                 auto* ft = renderer->getCameraController()->getFollowTargetMutable();

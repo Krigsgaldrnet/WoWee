@@ -1927,6 +1927,7 @@ public:
     void swapContainerItems(uint8_t srcBag, uint8_t srcSlot, uint8_t dstBag, uint8_t dstSlot);
     void swapBagSlots(int srcBagIndex, int dstBagIndex);
     void useItemById(uint32_t itemId);
+    uint32_t getItemIdForSpell(uint32_t spellId) const;
     bool isVendorWindowOpen() const;
     const ListInventoryData& getVendorItems() const;
     void setVendorCanRepair(bool v);
