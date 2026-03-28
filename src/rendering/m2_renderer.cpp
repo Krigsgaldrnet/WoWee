@@ -2058,10 +2058,15 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
         float paddedRadius = std::max(cullRadius * 1.5f, cullRadius + 3.0f);
         if (cullRadius > 0.0f && !updateFrustum.intersectsSphere(instance.position, paddedRadius)) continue;
 
+        // LOD 3 skip: models beyond 150 units use the lowest LOD mesh which has
+        // no visible skeletal animation.  Keep their last-computed bone matrices
+        // (always valid — seeded on spawn) and avoid the expensive per-bone work.
+        constexpr float kLOD3DistSq = 150.0f * 150.0f;
+        if (distSq > kLOD3DistSq) continue;
+
         // Distance-based frame skipping: update distant bones less frequently
         uint32_t boneInterval = 1;
-        if (distSq > 200.0f * 200.0f) boneInterval = 8;
-        else if (distSq > 100.0f * 100.0f) boneInterval = 4;
+        if (distSq > 100.0f * 100.0f) boneInterval = 4;
         else if (distSq > 50.0f * 50.0f) boneInterval = 2;
         instance.frameSkipCounter++;
         if ((instance.frameSkipCounter % boneInterval) != 0) continue;

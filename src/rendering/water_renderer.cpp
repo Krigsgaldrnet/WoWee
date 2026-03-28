@@ -5,6 +5,7 @@
 #include "rendering/vk_utils.hpp"
 #include "rendering/vk_frame_data.hpp"
 #include "rendering/camera.hpp"
+#include "rendering/frustum.hpp"
 #include "pipeline/adt_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "core/logger.hpp"
@@ -1039,7 +1040,7 @@ void WaterRenderer::clear() {
 // ==============================================================
 
 void WaterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
-                            const Camera& /*camera*/, float /*time*/, bool use1x, uint32_t frameIndex) {
+                            const Camera& camera, float /*time*/, bool use1x, uint32_t frameIndex) {
     VkPipeline pipeline = (use1x && water1xPipeline) ? water1xPipeline : waterPipeline;
     if (!renderingEnabled || surfaces.empty() || !pipeline) {
         if (renderDiagCounter_++ % 300 == 0 && !surfaces.empty()) {
@@ -1059,6 +1060,10 @@ void WaterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
         return;
     }
 
+    // Frustum culling setup
+    Frustum frustum;
+    frustum.extractFromMatrix(camera.getViewProjectionMatrix());
+
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
@@ -1069,6 +1074,27 @@ void WaterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
     for (const auto& surface : surfaces) {
         if (surface.vertexBuffer == VK_NULL_HANDLE || surface.indexCount == 0) continue;
         if (!surface.materialSet) continue;
+
+        // Frustum cull: compute AABB from surface origin + step vectors
+        {
+            const glm::vec3 extentX = surface.stepX * static_cast<float>(surface.width);
+            const glm::vec3 extentY = surface.stepY * static_cast<float>(surface.height);
+            const glm::vec3 c0 = surface.origin;
+            const glm::vec3 c1 = surface.origin + extentX;
+            const glm::vec3 c2 = surface.origin + extentY;
+            const glm::vec3 c3 = surface.origin + extentX + extentY;
+            const glm::vec3 aabbMin(
+                std::min({c0.x, c1.x, c2.x, c3.x}),
+                std::min({c0.y, c1.y, c2.y, c3.y}),
+                surface.minHeight
+            );
+            const glm::vec3 aabbMax(
+                std::max({c0.x, c1.x, c2.x, c3.x}),
+                std::max({c0.y, c1.y, c2.y, c3.y}),
+                surface.maxHeight
+            );
+            if (!frustum.intersectsAABB(aabbMin, aabbMax)) continue;
+        }
 
         bool isWmoWater = (surface.wmoId != 0);
         bool canalProfile = isWmoWater || (surface.liquidType == 5);
