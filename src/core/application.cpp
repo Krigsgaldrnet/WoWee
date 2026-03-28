@@ -5327,19 +5327,26 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                     glm::vec3(x, y, z));
                 float rx = renderSpawn.x, ry = renderSpawn.y, rz = renderSpawn.z;
 
-                // Check terrain
-                if (auto* tm = renderer->getTerrainManager()) {
-                    if (tm->getHeightAt(rx, ry).has_value()) groundReady = true;
-                }
-                // Check WMO floor (cities, buildings)
-                if (!groundReady) {
-                    if (auto* wmo = renderer->getWMORenderer()) {
-                        if (wmo->getFloorHeight(rx, ry, rz + 5.0f).has_value()) groundReady = true;
+                // Check WMO floor FIRST (cities like Stormwind stand on WMO floors).
+                // Terrain exists below WMOs but at the wrong height.
+                if (auto* wmo = renderer->getWMORenderer()) {
+                    auto wmoH = wmo->getFloorHeight(rx, ry, rz + 5.0f);
+                    if (wmoH.has_value() && std::abs(*wmoH - rz) < 15.0f) {
+                        groundReady = true;
                     }
                 }
-                // After minimum warmup, also accept if enough terrain tiles are loaded
-                // (player may be on M2 collision or other surface)
-                if (!groundReady && elapsed >= 8.0f) {
+                // Check terrain — but only if it's close to spawn Z (within 15 units).
+                // Terrain far below a WMO city doesn't count as ground.
+                if (!groundReady) {
+                    if (auto* tm = renderer->getTerrainManager()) {
+                        auto tH = tm->getHeightAt(rx, ry);
+                        if (tH.has_value() && std::abs(*tH - rz) < 15.0f) {
+                            groundReady = true;
+                        }
+                    }
+                }
+                // After 10s, accept any loaded terrain (fallback for unusual spawns)
+                if (!groundReady && elapsed >= 10.0f) {
                     if (auto* tm = renderer->getTerrainManager()) {
                         groundReady = (tm->getLoadedTileCount() >= 4);
                     }

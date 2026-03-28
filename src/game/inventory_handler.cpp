@@ -1086,12 +1086,17 @@ void InventoryHandler::useItemBySlot(int backpackIndex) {
                     break;
                 }
             }
+            LOG_WARNING("useItemBySlot: item='", slot.item.name, "' entry=", slot.item.itemId,
+                        " guid=0x", std::hex, itemGuid, std::dec,
+                        " spellId=", useSpellId, " spellCount=", info->spells.size());
         }
         auto packet = owner_.packetParsers_
             ? owner_.packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid, useSpellId)
             : UseItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid, useSpellId);
         owner_.socket->send(packet);
     } else if (itemGuid == 0) {
+        LOG_WARNING("useItemBySlot: itemGuid=0 for item='", slot.item.name,
+                    "' entry=", slot.item.itemId, " — cannot use");
         owner_.addSystemChatMessage("Cannot use that item right now.");
     }
 }
