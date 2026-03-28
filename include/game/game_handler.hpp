@@ -2568,10 +2568,10 @@ private:
 
     // Visible equipment for other players: detect the update-field layout (base + stride)
     // using the local player's own equipped items, then decode other players by index.
-    // WotLK 3.3.5a: PLAYER_VISIBLE_ITEM_1_ENTRYID = UNIT_END(148) + 0x0104 = 408, stride 2.
-    // Previous value 284 (UNIT_END+136) was wrong — landed in quest log fields.
+    // WotLK 3.3.5a: PLAYER_VISIBLE_ITEM_1_ENTRYID = PLAYER_FIELD_INV_SLOT_HEAD(324) - 19*2 = 286.
+    // 19 visible item slots × 2 fields (entry + enchant) = 38 fields before inventory.
     // The heuristic in maybeDetectVisibleItemLayout() can still override if needed.
-    int visibleItemEntryBase_ = 408;
+    int visibleItemEntryBase_ = 286;
     int visibleItemStride_ = 2;
     bool visibleItemLayoutVerified_ = false;  // true once heuristic confirms/overrides default
     std::unordered_map<uint64_t, std::array<uint32_t, 19>> otherPlayerVisibleItemEntries_;
