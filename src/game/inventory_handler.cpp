@@ -2370,13 +2370,18 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
 
         // Selectively re-emit only players whose equipment references this item entry
         const uint32_t resolvedEntry = data.entry;
+        int reemitCount = 0;
         for (const auto& [guid, entries] : owner_.otherPlayerVisibleItemEntries_) {
             for (uint32_t e : entries) {
                 if (e == resolvedEntry) {
                     emitOtherPlayerEquipment(guid);
+                    reemitCount++;
                     break;
                 }
             }
+        }
+        if (reemitCount > 0) {
+            LOG_WARNING("Re-emitted equipment for ", reemitCount, " players after resolving entry=", resolvedEntry);
         }
         // Same for inspect-based entries
         if (owner_.playerEquipmentCallback_) {

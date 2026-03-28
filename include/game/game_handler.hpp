@@ -2573,7 +2573,7 @@ private:
     //   [284]=3817(Buckler) [288]=3808(Boots) [292]=3252 [296]=3823 [300]=3845 etc.
     // Each visible item occupies 4 fields: entry(1) + enchant(1) + padding(2).
     int visibleItemEntryBase_ = 284;
-    int visibleItemStride_ = 4;
+    int visibleItemStride_ = 2;
     bool visibleItemLayoutVerified_ = false;  // true once heuristic confirms/overrides default
     std::unordered_map<uint64_t, std::array<uint32_t, 19>> otherPlayerVisibleItemEntries_;
     std::unordered_set<uint64_t> otherPlayerVisibleDirty_;
