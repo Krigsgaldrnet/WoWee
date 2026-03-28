@@ -1036,6 +1036,12 @@ bool UpdateObjectParser::parseMovementBlock(network::Packet& packet, UpdateBlock
             if (!splineParsed) {
                 splineParsed = tryParseSplinePoints(false, "wotlk-uncompressed");
             }
+            if (!splineParsed) {
+                LOG_WARNING("Spline parse failed for guid=0x", std::hex, block.guid, std::dec,
+                            " splineFlags=0x", std::hex, splineFlags, std::dec,
+                            " — aborting movement block");
+                return false;
+            }
         }
     }
     else if (updateFlags & UPDATEFLAG_POSITION) {
