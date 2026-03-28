@@ -9766,6 +9766,14 @@ bool GameHandler::isInGuild() const {
     return ch && ch->hasGuild();
 }
 
+bool GameHandler::hasPendingGroupInvite() const {
+    return socialHandler_ ? socialHandler_->hasPendingGroupInvite() : pendingGroupInvite;
+}
+const std::string& GameHandler::getPendingInviterName() const {
+    if (socialHandler_) return socialHandler_->getPendingInviterName();
+    return pendingInviterName;
+}
+
 const std::string& GameHandler::getGuildName() const {
     if (socialHandler_) return socialHandler_->getGuildName();
     static const std::string empty;

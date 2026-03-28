@@ -1253,8 +1253,8 @@ public:
     bool isInGroup() const { return !partyData.isEmpty(); }
     const GroupListData& getPartyData() const { return partyData; }
     const std::vector<ContactEntry>& getContacts() const { return contacts_; }
-    bool hasPendingGroupInvite() const { return pendingGroupInvite; }
-    const std::string& getPendingInviterName() const { return pendingInviterName; }
+    bool hasPendingGroupInvite() const;
+    const std::string& getPendingInviterName() const;
 
     // ---- Item text (books / readable items) ----
     bool isItemTextOpen() const;
