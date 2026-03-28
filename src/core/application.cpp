@@ -2779,6 +2779,9 @@ void Application::setupUICallbacks() {
                                               uint32_t appearanceBytes,
                                               uint8_t facialFeatures,
                                               float x, float y, float z, float orientation) {
+        LOG_WARNING("playerSpawnCallback: guid=0x", std::hex, guid, std::dec,
+                    " race=", static_cast<int>(raceId), " gender=", static_cast<int>(genderId),
+                    " pos=(", x, ",", y, ",", z, ")");
         // Skip local player — already spawned as the main character
         uint64_t localGuid = gameHandler ? gameHandler->getPlayerGuid() : 0;
         uint64_t activeGuid = gameHandler ? gameHandler->getActiveCharacterGuid() : 0;
@@ -5316,13 +5319,19 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             }
 
             // Don't exit warmup until the terrain tile under the player's feet is loaded.
-            // This prevents falling through the world on spawn.
+            // Use the world entry position (from the server), not getCharacterPosition()
+            // which may be (0,0,0) during warmup.
             bool terrainReady = true;
             if (renderer && renderer->getTerrainManager()) {
                 auto* tm = renderer->getTerrainManager();
-                float px = renderer->getCharacterPosition().x;
-                float py = renderer->getCharacterPosition().y;
-                terrainReady = tm->getHeightAt(px, py).has_value();
+                // Convert canonical server coords to render coords for terrain query
+                glm::vec3 renderSpawn = core::coords::canonicalToRender(
+                    glm::vec3(x, y, z));
+                terrainReady = tm->getHeightAt(renderSpawn.x, renderSpawn.y).has_value();
+                if (!terrainReady && elapsed > 5.0f && static_cast<int>(elapsed) % 3 == 0) {
+                    LOG_WARNING("Warmup: terrain not ready at spawn (", renderSpawn.x,
+                                ",", renderSpawn.y, ") after ", elapsed, "s");
+                }
             }
 
             // Exit when: (min time passed AND queues drained AND terrain ready) OR hard cap
@@ -9067,9 +9076,13 @@ void Application::processDeferredEquipmentQueue() {
 
     if (texturePaths.empty()) {
         // No textures to pre-decode — just apply directly (fast path)
+        LOG_WARNING("Equipment fast path for guid=0x", std::hex, guid, std::dec,
+                    " (no textures to pre-decode)");
         setOnlinePlayerEquipment(guid, equipData.first, equipData.second);
         return;
     }
+    LOG_WARNING("Equipment async pre-decode for guid=0x", std::hex, guid, std::dec,
+                " textures=", texturePaths.size());
 
     // Launch background BLP pre-decode
     auto* am = assetManager.get();
