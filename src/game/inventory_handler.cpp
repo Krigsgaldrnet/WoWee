@@ -2341,8 +2341,9 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
     }
 
     owner_.pendingItemQueries_.erase(data.entry);
-    LOG_DEBUG("handleItemQueryResponse: entry=", data.entry, " name='", data.name,
-              "' displayInfoId=", data.displayInfoId, " pending=", owner_.pendingItemQueries_.size());
+    LOG_WARNING("handleItemQueryResponse: entry=", data.entry, " name='", data.name,
+              "' displayInfoId=", data.displayInfoId, " valid=", data.valid,
+              " pending=", owner_.pendingItemQueries_.size());
 
     if (data.valid) {
         owner_.itemInfoCache_[data.entry] = data;
@@ -3105,7 +3106,7 @@ void InventoryHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::m
     int nonZero = 0;
     for (uint32_t e : newEntries) { if (e != 0) nonZero++; }
     if (nonZero > 0) {
-        LOG_INFO("updateOtherPlayerVisibleItems: guid=0x", std::hex, guid, std::dec,
+        LOG_WARNING("updateOtherPlayerVisibleItems: guid=0x", std::hex, guid, std::dec,
                  " nonZero=", nonZero, " base=", base, " stride=", stride,
                  " head=", newEntries[0], " shoulders=", newEntries[2],
                  " chest=", newEntries[4], " legs=", newEntries[6],
@@ -3166,7 +3167,7 @@ void InventoryHandler::emitOtherPlayerEquipment(uint64_t guid) {
         resolved++;
     }
 
-    LOG_INFO("emitOtherPlayerEquipment: guid=0x", std::hex, guid, std::dec,
+    LOG_WARNING("emitOtherPlayerEquipment: guid=0x", std::hex, guid, std::dec,
              " entries=", (anyEntry ? "yes" : "none"),
              " resolved=", resolved, " unresolved=", unresolved,
              " head=", displayIds[0], " shoulders=", displayIds[2],
