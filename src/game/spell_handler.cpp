@@ -847,7 +847,13 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
 
 void SpellHandler::handleSpellStart(network::Packet& packet) {
     SpellStartData data;
-    if (!owner_.packetParsers_->parseSpellStart(packet, data)) return;
+    if (!owner_.packetParsers_->parseSpellStart(packet, data)) {
+        LOG_WARNING("Failed to parse SMSG_SPELL_START, size=", packet.getSize());
+        return;
+    }
+    LOG_WARNING("SMSG_SPELL_START: caster=0x", std::hex, data.casterUnit, std::dec,
+                " spell=", data.spellId, " castTime=", data.castTime,
+                " isPlayer=", (data.casterUnit == owner_.playerGuid));
 
     // Track cast bar for any non-player caster
     if (data.casterUnit != owner_.playerGuid && data.castTime > 0) {
