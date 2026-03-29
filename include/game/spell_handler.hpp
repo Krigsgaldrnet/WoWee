@@ -79,6 +79,7 @@ public:
         auto it = unitCastStates_.find(guid);
         return (it != unitCastStates_.end() && it->second.casting) ? &it->second : nullptr;
     }
+    void clearUnitCastStates() { unitCastStates_.clear(); }
 
     // Target cast helpers
     bool isTargetCasting() const;

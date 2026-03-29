@@ -796,7 +796,7 @@ public:
 
     // 400ms spell-queue window: next spell to cast when current finishes
     uint32_t getQueuedSpellId() const;
-    void cancelQueuedSpell() { queuedSpellId_ = 0; queuedSpellTarget_ = 0; }
+    void cancelQueuedSpell() { if (spellHandler_) spellHandler_->cancelQueuedSpell(); }
 
     // Unit cast state (aliased from handler_types.hpp)
     using UnitCastState = game::UnitCastState;
@@ -2543,24 +2543,9 @@ private:
     uint64_t playerTransportStickyGuid_ = 0;       // Last transport player was on (temporary retention)
     float playerTransportStickyTimer_ = 0.0f;      // Seconds to keep sticky transport alive after transient clears
     std::unique_ptr<TransportManager> transportManager_;  // Transport movement manager
-    std::unordered_set<uint32_t> knownSpells;
-    std::unordered_map<uint32_t, float> spellCooldowns;    // spellId -> remaining seconds
     uint32_t weaponProficiency_ = 0;  // bitmask from SMSG_SET_PROFICIENCY itemClass=2
     uint32_t armorProficiency_  = 0;  // bitmask from SMSG_SET_PROFICIENCY itemClass=4
     std::vector<MinimapPing> minimapPings_;
-    uint8_t castCount = 0;
-    bool casting = false;
-    bool castIsChannel = false;
-    uint32_t currentCastSpellId = 0;
-    float castTimeRemaining = 0.0f;
-    // Repeat-craft queue: re-cast the same profession spell N more times after current cast finishes
-    uint32_t craftQueueSpellId_ = 0;
-    int craftQueueRemaining_ = 0;
-    // Spell queue: next spell to cast within the 400ms window before current cast ends
-    uint32_t queuedSpellId_     = 0;
-    uint64_t queuedSpellTarget_ = 0;
-    // Per-unit cast state (keyed by GUID, populated from SMSG_SPELL_START)
-    std::unordered_map<uint64_t, UnitCastState> unitCastStates_;
     uint64_t pendingGameObjectInteractGuid_ = 0;
 
     // Talents (dual-spec support)
@@ -2588,7 +2573,6 @@ private:
     float areaTriggerCheckTimer_ = 0.0f;
     bool areaTriggerSuppressFirst_ = false;  // suppress first check after map transfer
 
-    float castTimeTotal = 0.0f;
     std::array<ActionBarSlot, ACTION_BAR_SLOTS> actionBar{};
     std::unordered_map<uint32_t, std::string> macros_;  // client-side macro text (persisted in char config)
     std::vector<AuraSlot> playerAuras;

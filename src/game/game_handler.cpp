@@ -688,10 +688,6 @@ GameHandler::GameHandler() {
     wardenHandler_    = std::make_unique<WardenHandler>(*this);
     wardenHandler_->initModuleManager();
 
-    // Default spells always available
-    knownSpells.insert(6603);  // Attack
-    knownSpells.insert(8690);  // Hearthstone
-
     // Default action bar layout
     actionBar[0].type = ActionBarSlot::SPELL;
     actionBar[0].id = 6603;   // Attack in slot 1
@@ -1118,6 +1114,8 @@ for (auto& [guid, entity] : entityController_->getEntityManager().getEntities())
 }
 
 void GameHandler::updateTimers(float deltaTime) {
+    if (spellHandler_) spellHandler_->updateTimers(deltaTime);
+
     if (auctionSearchDelayTimer_ > 0.0f) {
         auctionSearchDelayTimer_ -= deltaTime;
         if (auctionSearchDelayTimer_ < 0.0f) auctionSearchDelayTimer_ = 0.0f;
@@ -4637,14 +4635,9 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     pendingQuestAcceptNpcGuids_.clear();
     npcQuestStatus_.clear();
     if (combatHandler_) combatHandler_->resetAllCombatState();
-    if (spellHandler_) { spellHandler_->casting_ = false; spellHandler_->castIsChannel_ = false; spellHandler_->currentCastSpellId_ = 0; }
+    if (spellHandler_) spellHandler_->resetCastState();
     pendingGameObjectInteractGuid_ = 0;
     lastInteractedGoGuid_ = 0;
-    if (spellHandler_) { spellHandler_->castTimeRemaining_ = 0.0f; spellHandler_->castTimeTotal_ = 0.0f; }
-    craftQueueSpellId_ = 0;
-    craftQueueRemaining_ = 0;
-    queuedSpellId_ = 0;
-    queuedSpellTarget_ = 0;
     playerDead_ = false;
     releasedSpirit_ = false;
     corpseGuid_ = 0;

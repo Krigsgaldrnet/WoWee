@@ -1880,10 +1880,6 @@ void MovementHandler::handleNewWorld(network::Packet& packet) {
         owner_.stopAutoAttack();
         owner_.tabCycleStale = true;
         owner_.resetCastState();
-        owner_.craftQueueSpellId_ = 0;
-        owner_.craftQueueRemaining_ = 0;
-        owner_.queuedSpellId_ = 0;
-        owner_.queuedSpellTarget_ = 0;
 
         if (owner_.socket) {
             network::Packet ack(wireOpcode(Opcode::MSG_MOVE_WORLDPORT_ACK));
@@ -1935,7 +1931,7 @@ void MovementHandler::handleNewWorld(network::Packet& packet) {
     owner_.otherPlayerVisibleItemEntries_.clear();
     owner_.otherPlayerVisibleDirty_.clear();
     otherPlayerMoveTimeMs_.clear();
-    owner_.unitCastStates_.clear();
+    if (owner_.spellHandler_) owner_.spellHandler_->clearUnitCastStates();
     owner_.unitAurasCache_.clear();
     owner_.clearCombatText();
     owner_.getEntityManager().clear();
@@ -1949,10 +1945,6 @@ void MovementHandler::handleNewWorld(network::Packet& packet) {
     owner_.areaTriggerSuppressFirst_ = true;
     owner_.stopAutoAttack();
     owner_.resetCastState();
-    owner_.craftQueueSpellId_ = 0;
-    owner_.craftQueueRemaining_ = 0;
-    owner_.queuedSpellId_ = 0;
-    owner_.queuedSpellTarget_ = 0;
 
     if (owner_.socket) {
         network::Packet ack(wireOpcode(Opcode::MSG_MOVE_WORLDPORT_ACK));

@@ -204,7 +204,7 @@ bool SpellHandler::isTargetCastInterruptible() const {
 }
 
 void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
-    LOG_WARNING("castSpell: spellId=", spellId, " target=0x", std::hex, targetGuid, std::dec);
+    LOG_DEBUG("castSpell: spellId=", spellId, " target=0x", std::hex, targetGuid, std::dec);
     // Attack (6603) routes to auto-attack instead of cast
     if (spellId == 6603) {
         uint64_t target = targetGuid != 0 ? targetGuid : owner_.targetGuid;
@@ -323,8 +323,8 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     auto packet = owner_.packetParsers_
         ? owner_.packetParsers_->buildCastSpell(spellId, target, ++castCount_)
         : CastSpellPacket::build(spellId, target, ++castCount_);
-    LOG_WARNING("CMSG_CAST_SPELL: spellId=", spellId, " target=0x", std::hex, target, std::dec,
-                " castCount=", static_cast<int>(castCount_), " packetSize=", packet.getSize());
+    LOG_DEBUG("CMSG_CAST_SPELL: spellId=", spellId, " target=0x", std::hex, target, std::dec,
+              " castCount=", static_cast<int>(castCount_), " packetSize=", packet.getSize());
     owner_.socket->send(packet);
     LOG_INFO("Casting spell: ", spellId, " on 0x", std::hex, target, std::dec);
 
@@ -851,9 +851,9 @@ void SpellHandler::handleSpellStart(network::Packet& packet) {
         LOG_WARNING("Failed to parse SMSG_SPELL_START, size=", packet.getSize());
         return;
     }
-    LOG_WARNING("SMSG_SPELL_START: caster=0x", std::hex, data.casterUnit, std::dec,
-                " spell=", data.spellId, " castTime=", data.castTime,
-                " isPlayer=", (data.casterUnit == owner_.playerGuid));
+    LOG_DEBUG("SMSG_SPELL_START: caster=0x", std::hex, data.casterUnit, std::dec,
+              " spell=", data.spellId, " castTime=", data.castTime,
+              " isPlayer=", (data.casterUnit == owner_.playerGuid));
 
     // Track cast bar for any non-player caster
     if (data.casterUnit != owner_.playerGuid && data.castTime > 0) {
@@ -2066,12 +2066,12 @@ void SpellHandler::handleCastResult(network::Packet& packet) {
     uint32_t castResultSpellId = 0;
     uint8_t  castResult        = 0;
     if (owner_.packetParsers_->parseCastResult(packet, castResultSpellId, castResult)) {
-        LOG_WARNING("SMSG_CAST_RESULT: spellId=", castResultSpellId, " result=", static_cast<int>(castResult));
+        LOG_DEBUG("SMSG_CAST_RESULT: spellId=", castResultSpellId, " result=", static_cast<int>(castResult));
         if (castResult != 0) {
             casting_ = false; castIsChannel_ = false; currentCastSpellId_ = 0; castTimeRemaining_ = 0.0f;
             owner_.lastInteractedGoGuid_ = 0;
-            owner_.craftQueueSpellId_ = 0; owner_.craftQueueRemaining_ = 0;
-            owner_.queuedSpellId_ = 0; owner_.queuedSpellTarget_ = 0;
+            craftQueueSpellId_ = 0; craftQueueRemaining_ = 0;
+            queuedSpellId_ = 0; queuedSpellTarget_ = 0;
             int playerPowerType = -1;
             if (auto pe = owner_.getEntityManager().getEntity(owner_.playerGuid)) {
                 if (auto pu = std::dynamic_pointer_cast<Unit>(pe))
