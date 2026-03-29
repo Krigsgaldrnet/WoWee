@@ -393,7 +393,7 @@ void EntityController::applyUpdateObjectBlock(const UpdateBlock& block, bool& ne
             handleCreateObject(block, newItemCreated);
             break;
         case UpdateType::VALUES:
-            handleValuesUpdate(block, newItemCreated);
+            handleValuesUpdate(block);
             break;
         case UpdateType::MOVEMENT:
             handleMovementUpdate(block);
@@ -433,9 +433,8 @@ void EntityController::updateNonPlayerTransportAttachment(const UpdateBlock& blo
 // 3f: Rebuild playerAuras from UNIT_FIELD_AURAS (Classic/vanilla only).
 //     blockFields is used to check if any aura field was updated in this packet.
 //     entity->getFields() is used for reading the full accumulated state.
-//     Note: CREATE originally normalised Classic flags (0x02→0x80) while VALUES
-//     used raw bytes; VALUES runs more frequently and overwrites CREATE's mapping
-//     immediately, so the helper uses raw bytes (matching VALUES behaviour).
+//     Normalises Classic harmful bit (0x02) to WotLK debuff bit (0x80) so
+//     downstream code checking for 0x80 works consistently across expansions.
 void EntityController::syncClassicAurasFromFields(const std::shared_ptr<Entity>& entity) {
     if (!isClassicLikeExpansion() || !owner_.spellHandler_) return;
 
@@ -467,6 +466,10 @@ void EntityController::syncClassicAurasFromFields(const std::shared_ptr<Entity>&
                 if (fit != allFields.end())
                     aFlag = static_cast<uint8_t>((fit->second >> ((slot % 4) * 8)) & 0xFF);
             }
+            // Normalize Classic harmful bit (0x02) to WotLK debuff bit (0x80)
+            // so downstream code checking for 0x80 works consistently.
+            if (aFlag & 0x02)
+                aFlag = (aFlag & ~0x02) | 0x80;
             a.flags = aFlag;
             a.durationMs = -1;
             a.maxDurationMs = -1;
@@ -742,7 +745,7 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
                     LOG_INFO("Player died! Corpse position cached at server=(",
                              owner_.corpseX_, ",", owner_.corpseY_, ",", owner_.corpseZ_,
                              ") map=", owner_.corpseMapId_);
-                                                                    pendingEvents_.emit("PLAYER_DEAD", {});
+                    pendingEvents_.emit("PLAYER_DEAD", {});
                 }
                 if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && owner_.npcDeathCallback_) {
                     owner_.npcDeathCallback_(block.guid);
@@ -754,11 +757,11 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
                     owner_.playerDead_ = false;
                     if (!wasGhost) {
                         LOG_INFO("Player resurrected!");
-                                                                    pendingEvents_.emit("PLAYER_ALIVE", {});
+                    pendingEvents_.emit("PLAYER_ALIVE", {});
                     } else {
                         LOG_INFO("Player entered ghost form");
                         owner_.releasedSpirit_ = false;
-                                                                    pendingEvents_.emit("PLAYER_UNGHOST", {});
+                    pendingEvents_.emit("PLAYER_UNGHOST", {});
                     }
                 }
                 if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && owner_.npcRespawnCallback_) {
@@ -1507,29 +1510,35 @@ void EntityController::onCreateCorpse(const UpdateBlock& block) {
 // Phase 5: Type-specific VALUES UPDATE handlers
 // ============================================================
 
+void EntityController::handleDisplayIdChange(const UpdateBlock& block,
+                                              const std::shared_ptr<Entity>& entity,
+                                              const std::shared_ptr<Unit>& unit,
+                                              const UnitFieldUpdateResult& result) {
+    if (!result.displayIdChanged || unit->getDisplayId() == 0 ||
+        unit->getDisplayId() == result.oldDisplayId)
+        return;
+
+    constexpr uint32_t UNIT_DYNFLAG_DEAD = 0x0008;
+    constexpr uint32_t UNIT_DYNFLAG_LOOTABLE = 0x0001;
+    bool isDeadNow = (unit->getHealth() == 0) ||
+        ((unit->getDynamicFlags() & (UNIT_DYNFLAG_DEAD | UNIT_DYNFLAG_LOOTABLE)) != 0);
+    dispatchEntitySpawn(block.guid, entity->getType(), entity, unit,
+                        isDeadNow && !result.npcDeathNotified);
+    if (owner_.addonEventCallback_) {
+        std::string uid;
+        if (block.guid == owner_.targetGuid) uid = "target";
+        else if (block.guid == owner_.focusGuid) uid = "focus";
+        else if (block.guid == owner_.petGuid_) uid = "pet";
+        if (!uid.empty())
+            pendingEvents_.emit("UNIT_MODEL_CHANGED", {uid});
+    }
+}
+
 void EntityController::onValuesUpdateUnit(const UpdateBlock& block, std::shared_ptr<Entity>& entity) {
     auto unit = std::static_pointer_cast<Unit>(entity);
     UnitFieldIndices ufi = UnitFieldIndices::resolve();
     UnitFieldUpdateResult result = applyUnitFieldsOnUpdate(block, entity, unit, ufi);
-
-    // Display ID changed — re-spawn/model-change notification
-    if (result.displayIdChanged && unit->getDisplayId() != 0 &&
-        unit->getDisplayId() != result.oldDisplayId) {
-        constexpr uint32_t UNIT_DYNFLAG_DEAD = 0x0008;
-        constexpr uint32_t UNIT_DYNFLAG_LOOTABLE = 0x0001;
-        bool isDeadNow = (unit->getHealth() == 0) ||
-            ((unit->getDynamicFlags() & (UNIT_DYNFLAG_DEAD | UNIT_DYNFLAG_LOOTABLE)) != 0);
-        dispatchEntitySpawn(block.guid, entity->getType(), entity, unit,
-                            isDeadNow && !result.npcDeathNotified);
-        if (owner_.addonEventCallback_) {
-            std::string uid;
-            if (block.guid == owner_.targetGuid) uid = "target";
-            else if (block.guid == owner_.focusGuid) uid = "focus";
-            else if (block.guid == owner_.petGuid_) uid = "pet";
-            if (!uid.empty())
-                pendingEvents_.emit("UNIT_MODEL_CHANGED", {uid});
-        }
-    }
+    handleDisplayIdChange(block, entity, unit, result);
 }
 
 void EntityController::onValuesUpdatePlayer(const UpdateBlock& block, std::shared_ptr<Entity>& entity) {
@@ -1549,23 +1558,7 @@ void EntityController::onValuesUpdatePlayer(const UpdateBlock& block, std::share
     }
 
     // 3e: Display ID changed — re-spawn/model-change
-    if (result.displayIdChanged && unit->getDisplayId() != 0 &&
-        unit->getDisplayId() != result.oldDisplayId) {
-        constexpr uint32_t UNIT_DYNFLAG_DEAD = 0x0008;
-        constexpr uint32_t UNIT_DYNFLAG_LOOTABLE = 0x0001;
-        bool isDeadNow = (unit->getHealth() == 0) ||
-            ((unit->getDynamicFlags() & (UNIT_DYNFLAG_DEAD | UNIT_DYNFLAG_LOOTABLE)) != 0);
-        dispatchEntitySpawn(block.guid, entity->getType(), entity, unit,
-                            isDeadNow && !result.npcDeathNotified);
-        if (owner_.addonEventCallback_) {
-            std::string uid;
-            if (block.guid == owner_.targetGuid) uid = "target";
-            else if (block.guid == owner_.focusGuid) uid = "focus";
-            else if (block.guid == owner_.petGuid_) uid = "pet";
-            if (!uid.empty())
-                pendingEvents_.emit("UNIT_MODEL_CHANGED", {uid});
-        }
-    }
+    handleDisplayIdChange(block, entity, unit, result);
 
     // 3d: Self-player stat/inventory/quest field updates
     if (block.guid == owner_.playerGuid) {
@@ -1669,7 +1662,7 @@ void EntityController::handleCreateObject(const UpdateBlock& block, bool& newIte
     flushPendingEvents();
 }
 
-void EntityController::handleValuesUpdate(const UpdateBlock& block, bool& /*newItemCreated*/) {
+void EntityController::handleValuesUpdate(const UpdateBlock& block) {
     auto entity = entityManager.getEntity(block.guid);
     if (!entity) return;
     pendingEvents_.clear();

@@ -152,7 +152,7 @@ private:
 
     // --- Phase 2: Update type handlers ---
     void handleCreateObject(const UpdateBlock& block, bool& newItemCreated);
-    void handleValuesUpdate(const UpdateBlock& block, bool& newItemCreated);
+    void handleValuesUpdate(const UpdateBlock& block);
     void handleMovementUpdate(const UpdateBlock& block);
 
     // --- Phase 3: Concern-specific helpers ---
@@ -253,6 +253,10 @@ private:
     void onCreateGameObject(const UpdateBlock& block, std::shared_ptr<Entity>& entity);
     void onCreateItem(const UpdateBlock& block, bool& newItemCreated);
     void onCreateCorpse(const UpdateBlock& block);
+    void handleDisplayIdChange(const UpdateBlock& block,
+                               const std::shared_ptr<Entity>& entity,
+                               const std::shared_ptr<Unit>& unit,
+                               const UnitFieldUpdateResult& result);
     void onValuesUpdateUnit(const UpdateBlock& block, std::shared_ptr<Entity>& entity);
     void onValuesUpdatePlayer(const UpdateBlock& block, std::shared_ptr<Entity>& entity);
     void onValuesUpdateItem(const UpdateBlock& block, std::shared_ptr<Entity>& entity);
