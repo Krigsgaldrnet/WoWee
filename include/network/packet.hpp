@@ -35,7 +35,9 @@ public:
     const std::vector<uint8_t>& getData() const { return data; }
     size_t getReadPos() const { return readPos; }
     size_t getSize() const { return data.size(); }
-    size_t getRemainingSize() const { return data.size() - readPos; }
+    // Clamp to 0 instead of wrapping to ~(size_t)0 when readPos overshoots
+    // (can happen via setReadPos with an unchecked offset).
+    size_t getRemainingSize() const { return (readPos <= data.size()) ? (data.size() - readPos) : 0; }
     bool hasRemaining(size_t need) const { return readPos <= data.size() && need <= (data.size() - readPos); }
     bool hasFullPackedGuid() const {
         if (readPos >= data.size()) return false;
