@@ -3538,7 +3538,8 @@ void Renderer::update(float deltaTime) {
 
     // Wait for M2 doodad animation to finish (was launched earlier in parallel with character anim)
     if (m2AnimLaunched) {
-        m2AnimFuture.get();
+        try { m2AnimFuture.get(); }
+        catch (const std::exception& e) { LOG_ERROR("M2 animation worker: ", e.what()); }
     }
 
     // Helper: play zone music, dispatching local files (file: prefix) vs MPQ paths
@@ -5576,9 +5577,15 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         }
 
         // --- Wait for workers ---
-        if (terrainFuture.valid()) lastTerrainRenderMs = terrainFuture.get();
-        if (wmoFuture.valid()) lastWMORenderMs = wmoFuture.get();
-        if (m2Future.valid()) lastM2RenderMs = m2Future.get();
+        // Guard with try-catch: future::get() re-throws any exception from the
+        // async task. Without this, a single bad_alloc in a render worker would
+        // propagate as an unhandled exception and terminate the process.
+        try { if (terrainFuture.valid()) lastTerrainRenderMs = terrainFuture.get(); }
+        catch (const std::exception& e) { LOG_ERROR("Terrain render worker: ", e.what()); }
+        try { if (wmoFuture.valid()) lastWMORenderMs = wmoFuture.get(); }
+        catch (const std::exception& e) { LOG_ERROR("WMO render worker: ", e.what()); }
+        try { if (m2Future.valid()) lastM2RenderMs = m2Future.get(); }
+        catch (const std::exception& e) { LOG_ERROR("M2 render worker: ", e.what()); }
 
         // --- Main thread: record post-opaque (SEC_POST) ---
         {

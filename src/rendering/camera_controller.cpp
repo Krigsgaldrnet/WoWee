@@ -1033,16 +1033,17 @@ void CameraController::update(float deltaTime) {
                         terrainH = terrainManager->getHeightAt(targetPos.x, targetPos.y);
                     }
                     if (wmoAsync) {
-                        auto [h, nz] = wmoFuture.get();
-                        wmoH = h;
-                        wmoNormalZ = nz;
+                        try { auto [h, nz] = wmoFuture.get(); wmoH = h; wmoNormalZ = nz; }
+                        catch (const std::exception& e) { LOG_ERROR("WMO floor query: ", e.what()); }
                     }
                     if (m2Async) {
-                        auto [h, nz] = m2Future.get();
-                        m2H = h;
-                        if (m2H && nz < MIN_WALKABLE_NORMAL_M2) {
-                            m2H = std::nullopt;
-                        }
+                        try {
+                            auto [h, nz] = m2Future.get();
+                            m2H = h;
+                            if (m2H && nz < MIN_WALKABLE_NORMAL_M2) {
+                                m2H = std::nullopt;
+                            }
+                        } catch (const std::exception& e) { LOG_ERROR("M2 floor query: ", e.what()); }
                     }
 
                     // Reject steep WMO slopes
