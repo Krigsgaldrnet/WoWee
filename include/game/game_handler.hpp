@@ -621,6 +621,7 @@ public:
     void reportPlayer(uint64_t targetGuid, const std::string& reason);
     void stopCasting();
     void resetCastState();       // force-clear all cast/craft/queue state without sending packets
+    void resetWardenState();     // clear all warden module/crypto state for connect/disconnect
     void clearUnitCaches();      // clear per-unit cast states and aura caches
 
     // ---- Phase 1: Name queries (delegated to EntityController) ----

@@ -714,19 +714,7 @@ bool GameHandler::connect(const std::string& host,
     // Diagnostic: dump session key for AUTH_REJECT debugging
     LOG_INFO("GameHandler session key (", sessionKey.size(), "): ",
              core::toHexString(sessionKey.data(), sessionKey.size()));
-    requiresWarden_ = false;
-    wardenGateSeen_ = false;
-    wardenGateElapsed_ = 0.0f;
-    wardenGateNextStatusLog_ = 2.0f;
-    wardenPacketsAfterGate_ = 0;
-    wardenCharEnumBlockedLogged_ = false;
-    wardenCrypto_.reset();
-    wardenState_ = WardenState::WAIT_MODULE_USE;
-    wardenModuleHash_.clear();
-    wardenModuleKey_.clear();
-    wardenModuleSize_ = 0;
-    wardenModuleData_.clear();
-    wardenLoadedModule_.reset();
+    resetWardenState();
 
     // Generate random client seed
     this->clientSeed = generateClientSeed();
@@ -755,6 +743,22 @@ bool GameHandler::connect(const std::string& host,
     return true;
 }
 
+void GameHandler::resetWardenState() {
+    requiresWarden_ = false;
+    wardenGateSeen_ = false;
+    wardenGateElapsed_ = 0.0f;
+    wardenGateNextStatusLog_ = 2.0f;
+    wardenPacketsAfterGate_ = 0;
+    wardenCharEnumBlockedLogged_ = false;
+    wardenCrypto_.reset();
+    wardenState_ = WardenState::WAIT_MODULE_USE;
+    wardenModuleHash_.clear();
+    wardenModuleKey_.clear();
+    wardenModuleSize_ = 0;
+    wardenModuleData_.clear();
+    wardenLoadedModule_.reset();
+}
+
 void GameHandler::disconnect() {
     if (onTaxiFlight_) {
         taxiRecoverPending_ = true;
@@ -771,19 +775,7 @@ void GameHandler::disconnect() {
     friendGuids_.clear();
     contacts_.clear();
     transportAttachments_.clear();
-    requiresWarden_ = false;
-    wardenGateSeen_ = false;
-    wardenGateElapsed_ = 0.0f;
-    wardenGateNextStatusLog_ = 2.0f;
-    wardenPacketsAfterGate_ = 0;
-    wardenCharEnumBlockedLogged_ = false;
-    wardenCrypto_.reset();
-    wardenState_ = WardenState::WAIT_MODULE_USE;
-    wardenModuleHash_.clear();
-    wardenModuleKey_.clear();
-    wardenModuleSize_ = 0;
-    wardenModuleData_.clear();
-    wardenLoadedModule_.reset();
+    resetWardenState();
     pendingIncomingPackets_.clear();
     // Fire despawn callbacks so the renderer releases M2/character model resources.
     for (const auto& [guid, entity] : entityController_->getEntityManager().getEntities()) {
@@ -3126,17 +3118,22 @@ void GameHandler::registerOpcodeHandlers() {
         packet.skipAll();
     };
 
-    // uint64 petGuid + uint32 cost (copper)
-    for (auto op : { Opcode::SMSG_PET_GUIDS, Opcode::SMSG_PET_DISMISS_SOUND, Opcode::SMSG_PET_ACTION_SOUND, Opcode::SMSG_PET_UNLEARN_CONFIRM }) {
-        dispatchTable_[op] = [this](network::Packet& packet) {
-            // uint64 petGuid + uint32 cost (copper)
-            if (packet.hasRemaining(12)) {
-                petUnlearnGuid_ = packet.readUInt64();
-                petUnlearnCost_ = packet.readUInt32();
-                petUnlearnPending_ = true;
-            }
-            packet.skipAll();
-        };
+    // SMSG_PET_UNLEARN_CONFIRM: uint64 petGuid + uint32 cost (copper).
+    // The other pet opcodes have different formats and must NOT set unlearn state.
+    dispatchTable_[Opcode::SMSG_PET_UNLEARN_CONFIRM] = [this](network::Packet& packet) {
+        if (packet.hasRemaining(12)) {
+            petUnlearnGuid_ = packet.readUInt64();
+            petUnlearnCost_ = packet.readUInt32();
+            petUnlearnPending_ = true;
+        }
+        packet.skipAll();
+    };
+    // These pet opcodes have incompatible formats — just consume the packet.
+    // Previously they shared the unlearn handler, which misinterpreted sound IDs
+    // or GUID lists as unlearn costs and could trigger a bogus unlearn dialog.
+    for (auto op : { Opcode::SMSG_PET_GUIDS, Opcode::SMSG_PET_DISMISS_SOUND,
+                     Opcode::SMSG_PET_ACTION_SOUND }) {
+        dispatchTable_[op] = [](network::Packet& packet) { packet.skipAll(); };
     }
     // Server signals that the pet can now be named (first tame)
     dispatchTable_[Opcode::SMSG_PET_RENAMEABLE] = [this](network::Packet& packet) {
