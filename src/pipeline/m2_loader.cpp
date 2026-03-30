@@ -515,6 +515,22 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
         ranges.push_back({0, disk.nTimestamps});
     }
 
+    // Read the flat key array ONCE before the per-sequence loop. Previously
+    // readArray was called inside the loop on every iteration, re-parsing and
+    // copying the entire array (O(sequences × keys) redundant memcpy).
+    struct Vec3Disk { float x, y, z; };
+    struct C4Quaternion { float x, y, z, w; };
+    std::vector<float> allFloatKeys;
+    std::vector<Vec3Disk> allVec3Keys;
+    std::vector<C4Quaternion> allQuatKeys;
+    if (type == TrackType::FLOAT) {
+        allFloatKeys = readArray<float>(data, disk.ofsKeys, disk.nKeys);
+    } else if (type == TrackType::VEC3) {
+        allVec3Keys = readArray<Vec3Disk>(data, disk.ofsKeys, disk.nKeys);
+    } else {
+        allQuatKeys = readArray<C4Quaternion>(data, disk.ofsKeys, disk.nKeys);
+    }
+
     track.sequences.resize(ranges.size());
 
     for (size_t i = 0; i < ranges.size(); i++) {
@@ -523,9 +539,6 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
         if (start >= end || start >= disk.nTimestamps) continue;
         end = std::min(end, disk.nTimestamps);
 
-        // Copy timestamps for this sequence, normalized to start at 0
-        // (vanilla stores absolute timestamps in the flat array, but the
-        // renderer expects 0-relative times matching sequence duration)
         track.sequences[i].timestamps.assign(
             allTimestamps.begin() + start, allTimestamps.begin() + end);
         if (!track.sequences[i].timestamps.empty()) {
@@ -535,31 +548,24 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
             }
         }
 
-        // Copy key values for this sequence
         if (start >= disk.nKeys) continue;
         uint32_t keyEnd = std::min(end, disk.nKeys);
         uint32_t keyCount = keyEnd - start;
 
         if (type == TrackType::FLOAT) {
-            auto allValues = readArray<float>(data, disk.ofsKeys, disk.nKeys);
             track.sequences[i].floatValues.assign(
-                allValues.begin() + start, allValues.begin() + start + keyCount);
+                allFloatKeys.begin() + start, allFloatKeys.begin() + start + keyCount);
         } else if (type == TrackType::VEC3) {
-            struct Vec3Disk { float x, y, z; };
-            auto allValues = readArray<Vec3Disk>(data, disk.ofsKeys, disk.nKeys);
             track.sequences[i].vec3Values.reserve(keyCount);
             for (uint32_t k = start; k < start + keyCount; k++) {
                 track.sequences[i].vec3Values.emplace_back(
-                    allValues[k].x, allValues[k].y, allValues[k].z);
+                    allVec3Keys[k].x, allVec3Keys[k].y, allVec3Keys[k].z);
             }
         } else {
             // Vanilla: C4Quaternion — full float[4] per key (XYZW on disk)
-            // NOT compressed int16 like WotLK
-            struct C4Quaternion { float x, y, z, w; };
-            auto allQ = readArray<C4Quaternion>(data, disk.ofsKeys, disk.nKeys);
             track.sequences[i].quatValues.reserve(keyCount);
             for (uint32_t k = start; k < start + keyCount; k++) {
-                const auto& fq = allQ[k];
+                const auto& fq = allQuatKeys[k];
                 // Disk order: XYZW, glm::quat constructor: (w, x, y, z)
                 glm::quat q(fq.w, fq.x, fq.y, fq.z);
                 float len = glm::length(q);
