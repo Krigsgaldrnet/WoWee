@@ -6226,10 +6226,13 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
     lastInteractedGoGuid_ = guid;
 
     if (chestLike) {
-        // Chest-like GOs also need a CMSG_LOOT to open the loot window.
-        // Sent in the same frame: USE transitions the GO to lootable state,
-        // then LOOT requests the contents.
-        lootTarget(guid);
+        // Don't send CMSG_LOOT immediately — the server may start a timed cast
+        // (e.g., "Opening") and the GO isn't lootable until the cast finishes.
+        // Sending LOOT prematurely gets an empty response or is silently dropped,
+        // which can interfere with the server's loot state machine.
+        // Instead, handleSpellGo will send LOOT after the cast completes
+        // (using lastInteractedGoGuid_ set above). For instant-open chests
+        // (no cast), the server sends SMSG_LOOT_RESPONSE directly after USE.
     } else if (isMailbox) {
         LOG_INFO("Mailbox interaction: opening mail UI and requesting mail list");
         mailboxGuid_ = guid;

@@ -794,6 +794,7 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
     currentCastSpellId_ = 0;
     castTimeRemaining_ = 0.0f;
     owner_.lastInteractedGoGuid_ = 0;
+    owner_.pendingGameObjectInteractGuid_ = 0;
     craftQueueSpellId_ = 0;
     craftQueueRemaining_ = 0;
     queuedSpellId_ = 0;
@@ -952,11 +953,15 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
         currentCastSpellId_ = 0;
         castTimeRemaining_ = 0.0f;
 
-        // Gather node looting
+        // Gather node looting: re-send CMSG_LOOT now that the cast completed.
         if (wasInTimedCast && owner_.lastInteractedGoGuid_ != 0) {
             owner_.lootTarget(owner_.lastInteractedGoGuid_);
             owner_.lastInteractedGoGuid_ = 0;
         }
+        // Clear the GO interaction guard so future cancelCast() calls work
+        // normally. Without this, pendingGameObjectInteractGuid_ stays stale
+        // and suppresses CMSG_CANCEL_CAST for ALL subsequent spell casts.
+        owner_.pendingGameObjectInteractGuid_ = 0;
 
         if (owner_.spellCastAnimCallback_) {
             owner_.spellCastAnimCallback_(owner_.playerGuid, false, false);
