@@ -1362,17 +1362,21 @@ void GameHandler::update(float deltaTime) {
             addSystemChatMessage("Interrupted.");
         }
         // Check if client-side cast timer expired (tick-down is in SpellHandler::updateTimers).
-        // For GO interaction casts, do NOT re-send CMSG_GAMEOBJ_USE — the server
-        // drives the interaction and sends SMSG_SPELL_GO + SMSG_LOOT_RESPONSE when
-        // the cast completes. Re-sending USE here sent a duplicate packet that
-        // confused the server's GO state machine, and resetCastState() then cleared
-        // lastInteractedGoGuid_ so the subsequent SMSG_SPELL_GO couldn't trigger loot.
+        // Two paths depending on whether this is a GO interaction cast:
         if (spellHandler_ && spellHandler_->casting_ && spellHandler_->castTimeRemaining_ <= 0.0f) {
             if (pendingGameObjectInteractGuid_ != 0) {
-                // Let the server finish — just clear the pending flag.
+                // GO interaction cast: do NOT call resetCastState() here. The server
+                // sends SMSG_SPELL_GO when the cast completes server-side (~50-200ms
+                // after the client timer expires due to float precision/frame timing).
+                // handleSpellGo checks `wasInTimedCast = casting_ && spellId == currentCastSpellId_`
+                // — if we clear those fields now, wasInTimedCast is false and the loot
+                // path (CMSG_LOOT via lastInteractedGoGuid_) never fires.
+                // Let the cast bar sit at 100% until SMSG_SPELL_GO arrives to clean up.
                 pendingGameObjectInteractGuid_ = 0;
+            } else {
+                // Regular cast with no GO pending: clean up immediately.
+                spellHandler_->resetCastState();
             }
-            spellHandler_->resetCastState();
         }
 
         // Unit cast states and spell cooldowns are ticked by SpellHandler::updateTimers()
