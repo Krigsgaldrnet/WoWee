@@ -685,16 +685,11 @@ void MovementHandler::forceClearTaxiAndMovementState() {
     taxiMountDisplayId_ = 0;
     owner_.currentMountDisplayId_ = 0;
     owner_.vehicleId_ = 0;
-    owner_.resurrectPending_ = false;
-    owner_.resurrectRequestPending_ = false;
-    owner_.selfResAvailable_ = false;
-    owner_.playerDead_ = false;
-    owner_.releasedSpirit_ = false;
-    owner_.corpseGuid_ = 0;
-    owner_.corpseReclaimAvailableMs_ = 0;
-    owner_.repopPending_ = false;
-    owner_.pendingSpiritHealerGuid_ = 0;
-    owner_.resurrectCasterGuid_ = 0;
+    // Death/resurrect state is intentionally NOT cleared here.
+    // Previously this method reset 10 death-related fields despite being named
+    // "forceClearTaxiAndMovementState", which could cancel pending resurrections
+    // or clear death state on taxi dismount. Death state is managed by
+    // entity_controller (markPlayerDead) and the resurrect packet handlers.
 
     movementInfo.flags = 0;
     movementInfo.flags2 = 0;
