@@ -1144,10 +1144,11 @@ void SocialHandler::uninvitePlayer(const std::string& playerName) {
 }
 
 void SocialHandler::leaveParty() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
-    auto packet = GroupDisbandPacket::build();
-    owner_.socket->send(packet);
-    owner_.addSystemChatMessage("You have left the group.");
+    // Delegates to leaveGroup which handles both the packet send AND local
+    // state cleanup (clearing partyData, firing addon events). Previously
+    // this method only sent the packet, leaving the client thinking it was
+    // still in a group until the server pushed a group list update.
+    leaveGroup();
 }
 
 void SocialHandler::setMainTank(uint64_t targetGuid) {
@@ -1500,7 +1501,8 @@ void SocialHandler::handleGuildEvent(network::Packet& packet) {
             break;
         default:
             msg = "Guild event " + std::to_string(data.eventType);
-            if (!data.numStrings && data.numStrings >= 1) msg += ": " + data.strings[0];
+            // Was `!numStrings && numStrings >= 1` — always false (0 can't be ≥1).
+            if (data.numStrings >= 1) msg += ": " + data.strings[0];
             break;
     }
 
