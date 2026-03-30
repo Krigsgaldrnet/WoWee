@@ -416,7 +416,6 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
                      " pendingBuyItemSlot=", pendingBuyItemSlot_);
             if (pendingBuybackSlot_ >= 0) {
                 if (errCode == 0) {
-                    constexpr uint16_t kWotlkCmsgBuybackItemOpcode = 0x290;
                     constexpr uint32_t kBuybackSlotEnd = 85;
                     if (pendingBuybackWireSlot_ >= 74 && pendingBuybackWireSlot_ < kBuybackSlotEnd &&
                         owner_.socket && owner_.state == WorldState::IN_WORLD && currentVendorItems_.vendorGuid != 0) {
@@ -424,10 +423,8 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
                         LOG_INFO("Buyback retry: vendorGuid=0x", std::hex, currentVendorItems_.vendorGuid,
                                  std::dec, " uiSlot=", pendingBuybackSlot_,
                                  " wireSlot=", pendingBuybackWireSlot_);
-                        network::Packet retry(kWotlkCmsgBuybackItemOpcode);
-                        retry.writeUInt64(currentVendorItems_.vendorGuid);
-                        retry.writeUInt32(pendingBuybackWireSlot_);
-                        owner_.socket->send(retry);
+                        owner_.socket->send(BuybackItemPacket::build(
+                            currentVendorItems_.vendorGuid, pendingBuybackWireSlot_));
                         return;
                     }
                     if (pendingBuybackSlot_ < static_cast<int>(buybackItems_.size())) {
@@ -1012,17 +1009,13 @@ void InventoryHandler::buyBackItem(uint32_t buybackSlot) {
     uint32_t wireSlot = kBuybackSlotStart + buybackSlot;
     pendingBuyItemId_ = 0;
     pendingBuyItemSlot_ = 0;
-    constexpr uint16_t kWotlkCmsgBuybackItemOpcode = 0x290;
     LOG_INFO("Buyback request: vendorGuid=0x", std::hex, currentVendorItems_.vendorGuid,
-             std::dec, " uiSlot=", buybackSlot, " wireSlot=", wireSlot,
-             " source=absolute-buyback-slot",
-             " wire=0x", std::hex, kWotlkCmsgBuybackItemOpcode, std::dec);
+             std::dec, " uiSlot=", buybackSlot, " wireSlot=", wireSlot);
     pendingBuybackSlot_ = static_cast<int>(buybackSlot);
     pendingBuybackWireSlot_ = wireSlot;
-    network::Packet packet(kWotlkCmsgBuybackItemOpcode);
-    packet.writeUInt64(currentVendorItems_.vendorGuid);
-    packet.writeUInt32(wireSlot);
-    owner_.socket->send(packet);
+    // Use the expansion-agnostic packet builder so the opcode resolves from
+    // the active expansion's JSON mapping rather than a hardcoded WotLK value.
+    owner_.socket->send(BuybackItemPacket::build(currentVendorItems_.vendorGuid, wireSlot));
 }
 
 void InventoryHandler::repairItem(uint64_t vendorGuid, uint64_t itemGuid) {
