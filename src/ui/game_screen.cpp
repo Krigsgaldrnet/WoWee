@@ -2260,19 +2260,19 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
 
         // Render message in a group so we can attach a right-click context menu
         ImGui::PushID(chatMsgIdx++);
-        if (isMention) {
-            // Golden highlight strip behind the text
-            ImVec2 groupMin = ImGui::GetCursorScreenPos();
-            float availW = ImGui::GetContentRegionAvail().x;
-            float lineH = ImGui::GetTextLineHeightWithSpacing();
-            ImGui::GetWindowDrawList()->AddRectFilled(
-                groupMin,
-                ImVec2(groupMin.x + availW, groupMin.y + lineH),
-                IM_COL32(255, 200, 50, 45));  // soft golden tint
-        }
         ImGui::BeginGroup();
         renderTextWithLinks(fullMsg, isMention ? ImVec4(1.0f, 0.9f, 0.35f, 1.0f) : color);
         ImGui::EndGroup();
+        if (isMention) {
+            // Draw highlight AFTER rendering so the rect covers all wrapped lines,
+            // not just the first. Previously used a pre-render single-lineH rect.
+            ImVec2 rMin = ImGui::GetItemRectMin();
+            ImVec2 rMax = ImGui::GetItemRectMax();
+            float availW = ImGui::GetContentRegionAvail().x + ImGui::GetCursorScreenPos().x - rMin.x;
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                rMin, ImVec2(rMin.x + availW, rMax.y),
+                IM_COL32(255, 200, 50, 45));  // soft golden tint
+        }
 
         // Right-click context menu (only for player messages with a sender)
         bool isPlayerMsg = !resolvedSenderName.empty() &&
@@ -2419,7 +2419,7 @@ void GameScreen::renderChatWindow(game::GameHandler& gameHandler) {
             size_t sp = buf.find(' ', 1);
             if (sp != std::string::npos) {
                 std::string cmd = buf.substr(1, sp - 1);
-                for (char& c : cmd) c = std::tolower(c);
+                for (char& c : cmd) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 int detected = -1;
                 bool isReply = false;
                 if (cmd == "s" || cmd == "say") detected = 0;
@@ -6036,7 +6036,7 @@ void GameScreen::sendChatMessage(game::GameHandler& gameHandler) {
 
             // Convert command to lowercase for comparison
             std::string cmdLower = cmd;
-            for (char& c : cmdLower) c = std::tolower(c);
+            for (char& c : cmdLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
             // /run <lua code> — execute Lua script via addon system
             if ((cmdLower == "run" || cmdLower == "script") && spacePos != std::string::npos) {
