@@ -11832,9 +11832,12 @@ void GameScreen::renderNameplates(game::GameHandler& gameHandler) {
         const float barH = 8.0f * nameplateScale_;
         const float barX = sx - barW * 0.5f;
 
-        float healthPct = std::clamp(
-            static_cast<float>(unit->getHealth()) / static_cast<float>(unit->getMaxHealth()),
-            0.0f, 1.0f);
+        // Guard against division by zero when maxHealth hasn't been populated yet
+        // (freshly spawned entity with default fields). 0/0 produces NaN which
+        // poisons all downstream geometry; +inf is clamped but still wasteful.
+        float healthPct = (unit->getMaxHealth() > 0)
+            ? std::clamp(static_cast<float>(unit->getHealth()) / static_cast<float>(unit->getMaxHealth()), 0.0f, 1.0f)
+            : 0.0f;
 
         drawList->AddRectFilled(ImVec2(barX,                 sy), ImVec2(barX + barW,               sy + barH), bgColor,    2.0f);
         // For corpses, don't fill health bar (just show grey background)
