@@ -98,7 +98,7 @@ void TransportManager::registerTransport(uint64_t guid, uint32_t wmoInstanceId, 
 
     if (transport.useClientAnimation && path.durationMs > 0) {
         // Seed to a stable phase based on our local clock so elevators don't all start at t=0.
-        transport.localClockMs = static_cast<uint32_t>(elapsedTime_ * 1000.0f) % path.durationMs;
+        transport.localClockMs = static_cast<uint32_t>(elapsedTime_ * 1000.0) % path.durationMs;
         LOG_INFO("TransportManager: Enabled client animation for transport 0x",
                  std::hex, guid, std::dec, " path=", pathId,
                  " durationMs=", path.durationMs, " seedMs=", transport.localClockMs,
@@ -259,7 +259,7 @@ void TransportManager::updateTransportMovement(ActiveTransport& transport, float
     }
 
     // Evaluate path time
-    uint32_t nowMs = static_cast<uint32_t>(elapsedTime_ * 1000.0f);
+    uint32_t nowMs = static_cast<uint32_t>(elapsedTime_ * 1000.0);
     uint32_t pathTimeMs = 0;
 
     if (transport.hasServerClock) {
@@ -1154,7 +1154,7 @@ bool TransportManager::assignTaxiPathToTransport(uint32_t entry, uint32_t taxiPa
 
         // Seed local clock to a deterministic phase
         if (path.durationMs > 0) {
-            transport.localClockMs = static_cast<uint32_t>(elapsedTime_ * 1000.0f) % path.durationMs;
+            transport.localClockMs = static_cast<uint32_t>(elapsedTime_ * 1000.0) % path.durationMs;
         }
 
         updateTransformMatrices(transport);

@@ -64,7 +64,7 @@ struct ActiveTransport {
     bool serverYawFlipped180;       // Auto-correction when server yaw is consistently opposite movement
     int serverYawAlignmentScore;    // Hysteresis score for yaw flip detection
 
-    float lastServerUpdate;         // Time of last server movement update
+    double lastServerUpdate;         // Time of last server movement update
     int serverUpdateCount;          // Number of server updates received
 
     // Dead-reckoning from latest authoritative updates (used only when updates are sparse).
@@ -147,7 +147,9 @@ private:
     rendering::WMORenderer* wmoRenderer_ = nullptr;
     rendering::M2Renderer* m2Renderer_ = nullptr;
     bool clientSideAnimation_ = false;  // DISABLED - use server positions instead of client prediction
-    float elapsedTime_ = 0.0f;  // Total elapsed time (seconds)
+    // double: float loses millisecond precision after ~4.5 hours (2^23 / 1000),
+    // causing transport path interpolation to visibly jerk in long play sessions.
+    double elapsedTime_ = 0.0;
 };
 
 } // namespace wowee::game
