@@ -50,11 +50,6 @@ ADTTerrain ADTLoader::load(const std::vector<uint8_t>& adtData) {
         size_t chunkSize = header.size;
 
         totalChunks++;
-        if (totalChunks <= 5) {
-            // Log first few chunks for debugging
-            char magic[5] = {0};
-            std::memcpy(magic, &header.magic, 4);
-        }
 
         // Parse based on chunk type
         if (header.magic == MVER) {
@@ -139,12 +134,15 @@ void ADTLoader::parseMVER(const uint8_t* data, size_t size, ADTTerrain& terrain)
 }
 
 void ADTLoader::parseMTEX(const uint8_t* data, size_t size, ADTTerrain& terrain) {
-    // MTEX contains null-terminated texture filenames
+    // MTEX contains null-terminated texture filenames.
+    // Use bounded scan instead of strlen to avoid reading past the chunk
+    // boundary if the last string is not null-terminated (truncated file).
     size_t offset = 0;
 
     while (offset < size) {
         const char* textureName = reinterpret_cast<const char*>(data + offset);
-        size_t nameLen = std::strlen(textureName);
+        size_t maxLen = size - offset;
+        size_t nameLen = strnlen(textureName, maxLen);
 
         if (nameLen == 0) {
             break;
@@ -163,7 +161,7 @@ void ADTLoader::parseMMDX(const uint8_t* data, size_t size, ADTTerrain& terrain)
 
     while (offset < size) {
         const char* modelName = reinterpret_cast<const char*>(data + offset);
-        size_t nameLen = std::strlen(modelName);
+        size_t nameLen = strnlen(modelName, size - offset);
 
         if (nameLen == 0) {
             break;
@@ -182,7 +180,7 @@ void ADTLoader::parseMWMO(const uint8_t* data, size_t size, ADTTerrain& terrain)
 
     while (offset < size) {
         const char* wmoName = reinterpret_cast<const char*>(data + offset);
-        size_t nameLen = std::strlen(wmoName);
+        size_t nameLen = strnlen(wmoName, size - offset);
 
         if (nameLen == 0) {
             break;
@@ -193,14 +191,6 @@ void ADTLoader::parseMWMO(const uint8_t* data, size_t size, ADTTerrain& terrain)
     }
 
     LOG_DEBUG("Loaded ", terrain.wmoNames.size(), " WMO names from MWMO chunk");
-    for (size_t i = 0; i < terrain.wmoNames.size(); i++) {
-        LOG_DEBUG("  WMO[", i, "]: ", terrain.wmoNames[i]);
-        // Flag potential duplicate cathedral models
-        if (terrain.wmoNames[i].find("cathedral") != std::string::npos ||
-            terrain.wmoNames[i].find("Cathedral") != std::string::npos) {
-            LOG_DEBUG("*** CATHEDRAL WMO FOUND: ", terrain.wmoNames[i]);
-        }
-    }
 }
 
 void ADTLoader::parseMDDF(const uint8_t* data, size_t size, ADTTerrain& terrain) {
@@ -256,22 +246,6 @@ void ADTLoader::parseMODF(const uint8_t* data, size_t size, ADTTerrain& terrain)
         placement.doodadSet = readUInt16(data, offset + 58);
 
         terrain.wmoPlacements.push_back(placement);
-
-        // Log STORMWIND.WMO placements to detect duplicates at different Z heights
-        if (placement.nameId < terrain.wmoNames.size()) {
-            const std::string& wmoName = terrain.wmoNames[placement.nameId];
-            std::string upperName = wmoName;
-            std::transform(upperName.begin(), upperName.end(), upperName.begin(), ::toupper);
-
-            if (upperName.find("STORMWIND.WMO") != std::string::npos) {
-                LOG_DEBUG("*** STORMWIND.WMO PLACEMENT:",
-                         " uniqueId=", placement.uniqueId,
-                         " pos=(", placement.position[0], ", ", placement.position[1], ", ", placement.position[2], ")",
-                         " rot=(", placement.rotation[0], ", ", placement.rotation[1], ", ", placement.rotation[2], ")",
-                         " doodadSet=", placement.doodadSet,
-                         " flags=0x", std::hex, placement.flags, std::dec);
-            }
-        }
     }
 
     LOG_DEBUG("Loaded ", terrain.wmoPlacements.size(), " WMO placements");
@@ -329,13 +303,14 @@ void ADTLoader::parseMCNK(const uint8_t* data, size_t size, int chunkIndex, ADTT
     // WoW ADT sub-chunks may have their own 8-byte headers (magic+size)
     // Check by inspecting the first 4 bytes at the offset
 
-    // Height map (MCVT) - 145 floats = 580 bytes
-    if (ofsHeight > 0 && ofsHeight + 580 <= size) {
-        // Check if this points to a sub-chunk header (magic "MCVT" = 0x4D435654)
+    // Height map (MCVT) - 145 floats = 580 bytes.
+    // Guard must include the potential 8-byte sub-chunk header, otherwise the
+    // parser reads up to 8 bytes past the validated range.
+    if (ofsHeight > 0 && ofsHeight + 580 + 8 <= size) {
         uint32_t possibleMagic = readUInt32(data, ofsHeight);
         uint32_t headerSkip = 0;
         if (possibleMagic == MCVT) {
-            headerSkip = 8;  // Skip magic + size
+            headerSkip = 8;
             if (chunkIndex == 0) {
                 LOG_DEBUG("MCNK sub-chunks have headers (MCVT magic found at offset ", ofsHeight, ")");
             }
@@ -343,8 +318,8 @@ void ADTLoader::parseMCNK(const uint8_t* data, size_t size, int chunkIndex, ADTT
         parseMCVT(data + ofsHeight + headerSkip, 580, chunk);
     }
 
-    // Normals (MCNR) - 145 normals (3 bytes each) + 13 padding = 448 bytes
-    if (ofsNormal > 0 && ofsNormal + 448 <= size) {
+    // Normals (MCNR) - 145 normals (3 bytes each) + 13 padding = 448 bytes.
+    if (ofsNormal > 0 && ofsNormal + 448 + 8 <= size) {
         uint32_t possibleMagic = readUInt32(data, ofsNormal);
         uint32_t skip = (possibleMagic == MCNR) ? 8 : 0;
         parseMCNR(data + ofsNormal + skip, 448, chunk);
