@@ -315,10 +315,13 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
             }
 
             case MODS: {
-                // Doodad sets
-                uint32_t nSets = chunkSize / 32;  // Each set is 32 bytes
+                // Doodad sets: 20-byte name + 3×uint32 = 32 bytes each.
+                // Use bounds check before memcpy to avoid OOB on truncated files
+                // (the raw memcpy bypassed the safe read<T> template).
+                uint32_t nSets = chunkSize / 32;
                 for (uint32_t i = 0; i < nSets; i++) {
                     WMODoodadSet set;
+                    if (offset + 20 > wmoData.size()) break;
                     std::memcpy(set.name, &wmoData[offset], 20);
                     offset += 20;
                     set.startIndex = read<uint32_t>(wmoData, offset);
