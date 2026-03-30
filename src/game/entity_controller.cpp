@@ -720,6 +720,24 @@ bool EntityController::applyUnitFieldsOnCreate(const UpdateBlock& block,
     return unitInitiallyDead;
 }
 
+// Consolidates player-death state into one place so both the health==0 and
+// dynFlags UNIT_DYNFLAG_DEAD paths share the same corpse-caching logic.
+// Classic WoW does not send SMSG_DEATH_RELEASE_LOC, so this cached position
+// is the primary source for canReclaimCorpse().
+void EntityController::markPlayerDead(const char* source) {
+    owner_.playerDead_ = true;
+    owner_.releasedSpirit_ = false;
+    // owner_.movementInfo is canonical (x=north, y=west); corpseX_/Y_ are
+    // raw server coords (x=west, y=north) — swap axes.
+    owner_.corpseX_     = owner_.movementInfo.y;
+    owner_.corpseY_     = owner_.movementInfo.x;
+    owner_.corpseZ_     = owner_.movementInfo.z;
+    owner_.corpseMapId_ = owner_.currentMapId_;
+    LOG_INFO("Player died (", source, "). Corpse cached at server=(",
+             owner_.corpseX_, ",", owner_.corpseY_, ",", owner_.corpseZ_,
+             ") map=", owner_.corpseMapId_);
+}
+
 // 3c: Apply unit fields during VALUES update — tracks health/power/display changes
 //     and fires events for transitions (death, resurrect, level up, etc.).
 EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdate(
@@ -740,21 +758,8 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
                 }
                 if (owner_.combatHandler_) owner_.combatHandler_->removeHostileAttacker(block.guid);
                 if (block.guid == owner_.playerGuid) {
-                    owner_.playerDead_ = true;
-                    owner_.releasedSpirit_ = false;
+                    markPlayerDead("health=0");
                     owner_.stopAutoAttack();
-                    // Cache death position as corpse location.
-                    // Classic WoW does not send SMSG_DEATH_RELEASE_LOC, so
-                    // this is the primary source for canReclaimCorpse().
-                    // owner_.movementInfo is canonical (x=north, y=west); owner_.corpseX_/Y_
-                    // are raw server coords (x=west, y=north) — swap axes.
-                    owner_.corpseX_     = owner_.movementInfo.y;   // canonical west  = server X
-                    owner_.corpseY_     = owner_.movementInfo.x;   // canonical north = server Y
-                    owner_.corpseZ_     = owner_.movementInfo.z;
-                    owner_.corpseMapId_ = owner_.currentMapId_;
-                    LOG_INFO("Player died! Corpse position cached at server=(",
-                             owner_.corpseX_, ",", owner_.corpseY_, ",", owner_.corpseZ_,
-                             ") map=", owner_.corpseMapId_);
                     pendingEvents_.emit("PLAYER_DEAD", {});
                 }
                 if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && owner_.npcDeathCallback_) {
@@ -807,13 +812,7 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
                 bool wasDead = (oldDyn & UNIT_DYNFLAG_DEAD) != 0;
                 bool nowDead = (val & UNIT_DYNFLAG_DEAD) != 0;
                 if (!wasDead && nowDead) {
-                    owner_.playerDead_ = true;
-                    owner_.releasedSpirit_ = false;
-                    owner_.corpseX_     = owner_.movementInfo.y;
-                    owner_.corpseY_     = owner_.movementInfo.x;
-                    owner_.corpseZ_     = owner_.movementInfo.z;
-                    owner_.corpseMapId_ = owner_.currentMapId_;
-                    LOG_INFO("Player died (dynamic flags). Corpse cached map=", owner_.corpseMapId_);
+                    markPlayerDead("dynFlags");
                 } else if (wasDead && !nowDead) {
                     owner_.playerDead_ = false;
                     owner_.releasedSpirit_ = false;

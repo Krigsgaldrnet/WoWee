@@ -169,6 +169,9 @@ private:
     void detectPlayerMountChange(uint32_t newMountDisplayId,
                                  const std::map<uint16_t, uint32_t>& blockFields);
 
+    // Shared player-death handler: caches corpse position, sets death state.
+    void markPlayerDead(const char* source);
+
     // --- Phase 4: Field index cache structs ---
     // Cached field indices resolved once per handler call to avoid repeated lookups.
     struct UnitFieldIndices {
