@@ -18,8 +18,6 @@
 namespace wowee {
 namespace game {
 
-// Free functions defined in game_handler.cpp
-std::string buildItemLink(uint32_t itemId, uint32_t quality, const std::string& name);
 std::string formatCopperAmount(uint32_t amount);
 
 InventoryHandler::InventoryHandler(GameHandler& owner)

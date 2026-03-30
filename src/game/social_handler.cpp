@@ -17,8 +17,6 @@
 namespace wowee {
 namespace game {
 
-// Free function defined in game_handler.cpp
-std::string buildItemLink(uint32_t itemId, uint32_t quality, const std::string& name);
 
 static bool packetHasRemaining(const network::Packet& packet, size_t need) {
     const size_t size = packet.getSize();

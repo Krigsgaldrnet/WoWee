@@ -60,23 +60,6 @@ static audio::SpellSoundManager::MagicSchool schoolMaskToMagicSchool(uint32_t ma
     return audio::SpellSoundManager::MagicSchool::ARCANE;
 }
 
-static std::string buildItemLink(uint32_t itemId, uint32_t quality, const std::string& name) {
-    static const char* kQualHex[] = {
-        "9d9d9d",  // 0 Poor
-        "ffffff",  // 1 Common
-        "1eff00",  // 2 Uncommon
-        "0070dd",  // 3 Rare
-        "a335ee",  // 4 Epic
-        "ff8000",  // 5 Legendary
-        "e6cc80",  // 6 Artifact
-        "e6cc80",  // 7 Heirloom
-    };
-    uint32_t qi = quality < 8 ? quality : 1u;
-    char buf[512];
-    snprintf(buf, sizeof(buf), "|cff%s|Hitem:%u:0:0:0:0:0:0:0:0|h[%s]|h|r",
-             kQualHex[qi], itemId, name.c_str());
-    return buf;
-}
 
 static std::string displaySpellName(GameHandler& handler, uint32_t spellId) {
     if (spellId == 0) return {};
