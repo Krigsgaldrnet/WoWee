@@ -3691,8 +3691,7 @@ void GameHandler::registerOpcodeHandlers() {
         std::string reason;
         if (packet.hasData())
             reason = packet.readString();
-        (void)kickerGuid;
-        (void)reasonType;
+        (void)kickerGuid;  // not displayed; reasonType IS used below
         std::string msg = "You have been removed from the group.";
         if (!reason.empty())
             msg = "You have been removed from the group: " + reason;
