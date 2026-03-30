@@ -8,6 +8,7 @@
 
 #include <cstring>
 #include <cstdlib>
+#include <iterator>
 #include <memory>
 #include <unordered_map>
 
@@ -104,7 +105,7 @@ static bool decodeWavCached(const std::vector<uint8_t>& wavData, DecodedWavCache
     constexpr size_t kMaxCachedSounds = 256;
     if (gDecodedWavCache.size() >= kMaxCachedSounds) {
         auto it = gDecodedWavCache.begin();
-        for (size_t n = gDecodedWavCache.size() / 2; n > 0; --n, ++it) {}
+        std::advance(it, gDecodedWavCache.size() / 2);
         gDecodedWavCache.erase(gDecodedWavCache.begin(), it);
     }
     gDecodedWavCache.emplace(key, entry);
