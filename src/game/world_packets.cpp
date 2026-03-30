@@ -2666,17 +2666,19 @@ network::Packet RandomRollPacket::build(uint32_t minRoll, uint32_t maxRoll) {
 }
 
 bool RandomRollParser::parse(network::Packet& packet, RandomRollData& data) {
-    // Validate minimum packet size: rollerGuid(8) + targetGuid(8) + minRoll(4) + maxRoll(4) + result(4)
-    if (!packet.hasRemaining(28)) {
+    // WotLK 3.3.5a format: min(4) + max(4) + result(4) + rollerGuid(8) = 20 bytes.
+    // Previously read guid first (treating min|max as a uint64 GUID), producing
+    // garbled roller identity and random numbers in /roll chat messages.
+    if (!packet.hasRemaining(20)) {
         LOG_WARNING("SMSG_RANDOM_ROLL: packet too small (", packet.getSize(), " bytes)");
         return false;
     }
 
-    data.rollerGuid = packet.readUInt64();
-    data.targetGuid = packet.readUInt64();
     data.minRoll = packet.readUInt32();
     data.maxRoll = packet.readUInt32();
     data.result = packet.readUInt32();
+    data.rollerGuid = packet.readUInt64();
+    data.targetGuid = 0;  // not present in protocol; kept for struct compatibility
     LOG_DEBUG("Parsed SMSG_RANDOM_ROLL: roller=0x", std::hex, data.rollerGuid, std::dec,
               " result=", data.result, " (", data.minRoll, "-", data.maxRoll, ")");
     return true;
@@ -3065,6 +3067,14 @@ bool ItemQueryResponseParser::parse(network::Packet& packet, ItemQueryResponseDa
     }
     packet.readUInt32(); // ScalingStatDistribution
     packet.readUInt32(); // ScalingStatValue
+
+    // WotLK 3.3.5a: 2 damage entries (12 bytes each) + armor + 6 resists + delay + ammoType + rangedModRange
+    // = 24 + 36 + 4 = 64 bytes minimum. Guard here because the section above
+    // returns early on truncation, and every other section has its own guard.
+    if (!packet.hasRemaining(64)) {
+        LOG_WARNING("SMSG_ITEM_QUERY_SINGLE_RESPONSE: truncated before damage/armor (entry=", data.entry, ")");
+        return true;
+    }
 
     // WotLK 3.3.5a: MAX_ITEM_PROTO_DAMAGES = 2
     bool haveWeaponDamage = false;
