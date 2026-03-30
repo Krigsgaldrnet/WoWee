@@ -49,11 +49,16 @@ T read(const std::vector<uint8_t>& data, uint32_t& offset) {
 template<typename T>
 std::vector<T> readArray(const std::vector<uint8_t>& data, uint32_t offset, uint32_t count) {
     std::vector<T> result;
-    if (offset + count * sizeof(T) > data.size()) {
+    // Use 64-bit arithmetic to prevent uint32 overflow on crafted count values.
+    // A large count (e.g., 0x20000001 with sizeof(T)=8) would wrap to a small
+    // value in 32-bit, pass the bounds check, then cause a multi-GB allocation.
+    uint64_t totalBytes = static_cast<uint64_t>(count) * sizeof(T);
+    constexpr uint64_t kMaxReadBytes = 64u * 1024u * 1024u;  // 64MB sanity cap
+    if (totalBytes > kMaxReadBytes || static_cast<uint64_t>(offset) + totalBytes > data.size()) {
         return result;
     }
     result.resize(count);
-    std::memcpy(result.data(), &data[offset], count * sizeof(T));
+    std::memcpy(result.data(), &data[offset], static_cast<size_t>(totalBytes));
     return result;
 }
 
