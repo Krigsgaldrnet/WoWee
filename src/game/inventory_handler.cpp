@@ -86,6 +86,7 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
     };
     for (auto op : { Opcode::SMSG_LOOT_CLEAR_MONEY }) {
         table[op] = [](network::Packet& /*packet*/) {};
+    }
 
     // ---- Read item (books) (moved from GameHandler) ----
     table[Opcode::SMSG_READ_ITEM_OK] = [this](network::Packet& packet) {
@@ -97,7 +98,6 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
         owner_.addSystemChatMessage("You cannot read this item.");
         packet.skipAll();
     };
-    }
 
     // ---- Loot roll start / notifications ----
     table[Opcode::SMSG_LOOT_START_ROLL] = [this](network::Packet& packet) {
