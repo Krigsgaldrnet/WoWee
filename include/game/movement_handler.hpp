@@ -211,6 +211,7 @@ private:
     uint32_t fallStartMs_ = 0;
 
     // Heartbeat timing
+    int heartbeatLogCount_ = 0;  // periodic position audit counter
     float timeSinceLastMoveHeartbeat_ = 0.0f;
     float moveHeartbeatInterval_ = 0.5f;
     uint32_t lastHeartbeatSendTimeMs_ = 0;

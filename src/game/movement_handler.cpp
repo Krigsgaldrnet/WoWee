@@ -457,12 +457,18 @@ void MovementHandler::sendMovement(Opcode opcode) {
             break;
         case Opcode::MSG_MOVE_START_ASCEND:
             movementInfo.flags |= static_cast<uint32_t>(MovementFlags::ASCENDING);
+            movementInfo.flags &= ~static_cast<uint32_t>(MovementFlags::DESCENDING);
             break;
         case Opcode::MSG_MOVE_STOP_ASCEND:
             movementInfo.flags &= ~static_cast<uint32_t>(MovementFlags::ASCENDING);
+            movementInfo.flags &= ~static_cast<uint32_t>(MovementFlags::DESCENDING);
             break;
         case Opcode::MSG_MOVE_START_DESCEND:
+            // Must set DESCENDING so outgoing movement packets carry the correct
+            // flag during flight descent. Only clearing ASCENDING left the flag
+            // field ambiguous (neither ascending nor descending).
             movementInfo.flags &= ~static_cast<uint32_t>(MovementFlags::ASCENDING);
+            movementInfo.flags |= static_cast<uint32_t>(MovementFlags::DESCENDING);
             break;
         default:
             break;
@@ -597,11 +603,10 @@ void MovementHandler::sendMovement(Opcode opcode) {
     wireInfo.y = serverPos.y;
     wireInfo.z = serverPos.z;
 
-    // Log outgoing position periodically to detect coordinate bugs
-    static int heartbeatLogCounter = 0;
-    if (opcode == Opcode::MSG_MOVE_HEARTBEAT && ++heartbeatLogCounter % 30 == 0) {
-        LOG_WARNING("HEARTBEAT pos canonical=(", movementInfo.x, ",", movementInfo.y, ",", movementInfo.z,
-                    ") wire=(", wireInfo.x, ",", wireInfo.y, ",", wireInfo.z, ")");
+    // Periodic position audit — DEBUG to avoid flooding production logs.
+    if (opcode == Opcode::MSG_MOVE_HEARTBEAT && ++heartbeatLogCount_ % 30 == 0) {
+        LOG_DEBUG("HEARTBEAT pos canonical=(", movementInfo.x, ",", movementInfo.y, ",", movementInfo.z,
+                  ") wire=(", wireInfo.x, ",", wireInfo.y, ",", wireInfo.z, ")");
     }
 
     wireInfo.orientation = core::coords::canonicalToServerYaw(wireInfo.orientation);
