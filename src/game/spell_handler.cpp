@@ -603,7 +603,7 @@ void SpellHandler::loadTalentDbc() {
     if (talentDbcLoaded_) return;
     talentDbcLoaded_ = true;
 
-    auto* am = core::Application::getInstance().getAssetManager();
+    auto* am = owner_.services().assetManager;
     if (!am || !am->isInitialized()) return;
 
     // Load Talent.dbc
@@ -800,7 +800,7 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
     queuedSpellTarget_ = 0;
 
     // Stop precast sound
-    if (auto* renderer = core::Application::getInstance().getRenderer()) {
+    if (auto* renderer = owner_.services().renderer) {
         if (auto* ssm = renderer->getSpellSoundManager()) {
             ssm->stopPrecast();
         }
@@ -822,7 +822,7 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
     msg.message = errMsg;
     owner_.addLocalChatMessage(msg);
 
-    if (auto* renderer = core::Application::getInstance().getRenderer()) {
+    if (auto* renderer = owner_.services().renderer) {
         if (auto* sfx = renderer->getUiSoundManager())
             sfx->playError();
     }
@@ -874,7 +874,7 @@ void SpellHandler::handleSpellStart(network::Packet& packet) {
 
         // Play precast sound — skip profession/tradeskill spells
         if (!owner_.isProfessionSpell(data.spellId)) {
-            if (auto* renderer = core::Application::getInstance().getRenderer()) {
+            if (auto* renderer = owner_.services().renderer) {
                 if (auto* ssm = renderer->getSpellSoundManager()) {
                     owner_.loadSpellNameCache();
                     auto it = owner_.spellNameCache_.find(data.spellId);
@@ -912,7 +912,7 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
     if (data.casterUnit == owner_.playerGuid) {
         // Play cast-complete sound
         if (!owner_.isProfessionSpell(data.spellId)) {
-            if (auto* renderer = core::Application::getInstance().getRenderer()) {
+            if (auto* renderer = owner_.services().renderer) {
                 if (auto* ssm = renderer->getSpellSoundManager()) {
                     owner_.loadSpellNameCache();
                     auto it = owner_.spellNameCache_.find(data.spellId);
@@ -936,7 +936,7 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
         }
         if (isMeleeAbility) {
             if (owner_.meleeSwingCallback_) owner_.meleeSwingCallback_();
-            if (auto* renderer = core::Application::getInstance().getRenderer()) {
+            if (auto* renderer = owner_.services().renderer) {
                 if (auto* csm = renderer->getCombatSoundManager()) {
                     csm->playWeaponSwing(audio::CombatSoundManager::WeaponSize::MEDIUM, false);
                     csm->playImpact(audio::CombatSoundManager::WeaponSize::MEDIUM,
@@ -983,7 +983,7 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
             if (tgt == owner_.playerGuid) { targetsPlayer = true; break; }
         }
         if (targetsPlayer) {
-            if (auto* renderer = core::Application::getInstance().getRenderer()) {
+            if (auto* renderer = owner_.services().renderer) {
                 if (auto* ssm = renderer->getSpellSoundManager()) {
                     owner_.loadSpellNameCache();
                     auto it = owner_.spellNameCache_.find(data.spellId);
@@ -1029,7 +1029,7 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
     }
 
     if (playerIsHit || playerHitEnemy) {
-        if (auto* renderer = core::Application::getInstance().getRenderer()) {
+        if (auto* renderer = owner_.services().renderer) {
             if (auto* ssm = renderer->getSpellSoundManager()) {
                 owner_.loadSpellNameCache();
                 auto it = owner_.spellNameCache_.find(data.spellId);
@@ -1389,7 +1389,7 @@ void SpellHandler::handleAchievementEarned(network::Packet& packet) {
 
         owner_.earnedAchievements_.insert(achievementId);
         owner_.achievementDates_[achievementId] = earnDate;
-        if (auto* renderer = core::Application::getInstance().getRenderer()) {
+        if (auto* renderer = owner_.services().renderer) {
             if (auto* sfx = renderer->getUiSoundManager())
                 sfx->playAchievementAlert();
         }
@@ -1667,7 +1667,7 @@ void SpellHandler::loadSpellNameCache() const {
     if (owner_.spellNameCacheLoaded_) return;
     owner_.spellNameCacheLoaded_ = true;
 
-    auto* am = core::Application::getInstance().getAssetManager();
+    auto* am = owner_.services().assetManager;
     if (!am || !am->isInitialized()) return;
 
     auto dbc = am->loadDBC("Spell.dbc");
@@ -1779,7 +1779,7 @@ void SpellHandler::loadSkillLineAbilityDbc() {
     if (owner_.skillLineAbilityLoaded_) return;
     owner_.skillLineAbilityLoaded_ = true;
 
-    auto* am = core::Application::getInstance().getAssetManager();
+    auto* am = owner_.services().assetManager;
     if (!am || !am->isInitialized()) return;
 
     auto slaDbc = am->loadDBC("SkillLineAbility.dbc");
@@ -1880,7 +1880,7 @@ const std::string& SpellHandler::getSpellDescription(uint32_t spellId) const {
 
 std::string SpellHandler::getEnchantName(uint32_t enchantId) const {
     if (enchantId == 0) return {};
-    auto* am = core::Application::getInstance().getAssetManager();
+    auto* am = owner_.services().assetManager;
     if (!am || !am->isInitialized()) return {};
     auto dbc = am->loadDBC("SpellItemEnchantment.dbc");
     if (!dbc || !dbc->isLoaded()) return {};
@@ -1928,7 +1928,7 @@ void SpellHandler::loadSkillLineDbc() {
     if (owner_.skillLineDbcLoaded_) return;
     owner_.skillLineDbcLoaded_ = true;
 
-    auto* am = core::Application::getInstance().getAssetManager();
+    auto* am = owner_.services().assetManager;
     if (!am || !am->isInitialized()) return;
 
     auto dbc = am->loadDBC("SkillLine.dbc");
@@ -2141,7 +2141,7 @@ void SpellHandler::handlePlaySpellVisual(network::Packet& packet) {
     uint64_t casterGuid = packet.readUInt64();
     uint32_t visualId   = packet.readUInt32();
     if (visualId == 0) return;
-    auto* renderer = core::Application::getInstance().getRenderer();
+    auto* renderer = owner_.services().renderer;
     if (!renderer) return;
     glm::vec3 spawnPos;
     if (casterGuid == owner_.playerGuid) {
@@ -2339,7 +2339,7 @@ void SpellHandler::handleSpellFailure(network::Packet& packet) {
         craftQueueRemaining_ = 0;
         queuedSpellId_ = 0;
         queuedSpellTarget_ = 0;
-        if (auto* renderer = core::Application::getInstance().getRenderer()) {
+        if (auto* renderer = owner_.services().renderer) {
             if (auto* ssm = renderer->getSpellSoundManager()) {
                 ssm->stopPrecast();
             }
