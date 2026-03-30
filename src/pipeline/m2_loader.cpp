@@ -364,7 +364,10 @@ std::vector<T> readArray(const std::vector<uint8_t>& data, uint32_t offset, uint
 }
 
 std::string readString(const std::vector<uint8_t>& data, uint32_t offset, uint32_t length) {
-    if (offset + length > data.size()) {
+    // Use size_t arithmetic to prevent uint32 wraparound (same fix as readArray).
+    // A crafted M2 with offset=0xFFFFFFFF, length=2 would wrap to 1 in uint32,
+    // passing the check and reading out of bounds.
+    if (static_cast<size_t>(offset) + static_cast<size_t>(length) > data.size()) {
         return "";
     }
 
