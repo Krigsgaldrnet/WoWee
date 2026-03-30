@@ -897,11 +897,7 @@ void SpellHandler::handleSpellStart(network::Packet& packet) {
 
     // Fire UNIT_SPELLCAST_START
     if (owner_.addonEventCallback_) {
-        std::string unitId;
-        if (data.casterUnit == owner_.playerGuid) unitId = "player";
-        else if (data.casterUnit == owner_.targetGuid) unitId = "target";
-        else if (data.casterUnit == owner_.focusGuid) unitId = "focus";
-        else if (data.casterUnit == owner_.petGuid_) unitId = "pet";
+        std::string unitId = owner_.guidToUnitId(data.casterUnit);
         if (!unitId.empty())
             owner_.addonEventCallback_("UNIT_SPELLCAST_START", {unitId, std::to_string(data.spellId)});
     }
@@ -1025,11 +1021,7 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
 
     // Fire UNIT_SPELLCAST_SUCCEEDED
     if (owner_.addonEventCallback_) {
-        std::string unitId;
-        if (data.casterUnit == owner_.playerGuid) unitId = "player";
-        else if (data.casterUnit == owner_.targetGuid) unitId = "target";
-        else if (data.casterUnit == owner_.focusGuid) unitId = "focus";
-        else if (data.casterUnit == owner_.petGuid_) unitId = "pet";
+        std::string unitId = owner_.guidToUnitId(data.casterUnit);
         if (!unitId.empty())
             owner_.addonEventCallback_("UNIT_SPELLCAST_SUCCEEDED", {unitId, std::to_string(data.spellId)});
     }
