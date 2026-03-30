@@ -512,9 +512,19 @@ void EntityController::detectPlayerMountChange(uint32_t newMountDisplayId,
         LOG_INFO("Mount detected: displayId=", newMountDisplayId, " auraSpellId=", owner_.mountAuraSpellId_);
     }
     if (old != 0 && newMountDisplayId == 0) {
+        // Only clear the specific mount aura, not all indefinite auras.
+        // Previously this cleared every aura with maxDurationMs < 0, which
+        // would strip racial passives, tracking, and zone buffs on dismount.
+        uint32_t mountSpell = owner_.mountAuraSpellId_;
         owner_.mountAuraSpellId_ = 0;
-        if (owner_.spellHandler_) for (auto& a : owner_.spellHandler_->playerAuras_)
-            if (!a.isEmpty() && a.maxDurationMs < 0) a = AuraSlot{};
+        if (mountSpell != 0 && owner_.spellHandler_) {
+            for (auto& a : owner_.spellHandler_->playerAuras_) {
+                if (!a.isEmpty() && a.spellId == mountSpell) {
+                    a = AuraSlot{};
+                    break;
+                }
+            }
+        }
     }
 }
 
