@@ -757,11 +757,11 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
                     owner_.playerDead_ = false;
                     if (!wasGhost) {
                         LOG_INFO("Player resurrected!");
-                    pendingEvents_.emit("PLAYER_ALIVE", {});
+                        pendingEvents_.emit("PLAYER_ALIVE", {});
                     } else {
                         LOG_INFO("Player entered ghost form");
                         owner_.releasedSpirit_ = false;
-                    pendingEvents_.emit("PLAYER_UNGHOST", {});
+                        pendingEvents_.emit("PLAYER_UNGHOST", {});
                     }
                 }
                 if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && owner_.npcRespawnCallback_) {
