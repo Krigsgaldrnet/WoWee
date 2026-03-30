@@ -762,6 +762,46 @@ void MovementHandler::dismount() {
 // Force Speed / Root / Flag Change Handlers
 // ============================================================
 
+// Shared force-ACK packet builder. All server-forced movement changes (speed,
+// root, flag, collision-height, knockback) require the same ACK structure:
+// GUID + counter + movement payload with server-space coordinates. Centralised
+// here so transport coordinate conversion can't diverge between handlers.
+network::Packet MovementHandler::buildForceAck(Opcode ackOpcode, uint32_t counter) {
+    network::Packet ack(wireOpcode(ackOpcode));
+    const bool legacyGuid =
+        isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
+    if (legacyGuid) {
+        ack.writeUInt64(owner_.playerGuid);
+    } else {
+        ack.writePackedGuid(owner_.playerGuid);
+    }
+    ack.writeUInt32(counter);
+
+    MovementInfo wire = movementInfo;
+    wire.time = nextMovementTimestampMs();
+    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
+        wire.transportTime = wire.time;
+        wire.transportTime2 = wire.time;
+    }
+    glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wire.x, wire.y, wire.z));
+    wire.x = serverPos.x;
+    wire.y = serverPos.y;
+    wire.z = serverPos.z;
+    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
+        glm::vec3 serverTransport =
+            core::coords::canonicalToServer(glm::vec3(wire.transportX, wire.transportY, wire.transportZ));
+        wire.transportX = serverTransport.x;
+        wire.transportY = serverTransport.y;
+        wire.transportZ = serverTransport.z;
+    }
+    if (owner_.packetParsers_) {
+        owner_.packetParsers_->writeMovementPayload(ack, wire);
+    } else {
+        MovementPacket::writeMovementPayload(ack, wire);
+    }
+    return ack;
+}
+
 void MovementHandler::handleForceSpeedChange(network::Packet& packet, const char* name,
                                               Opcode ackOpcode, float* speedStorage) {
     const bool fscTbcLike = isClassicLikeExpansion() || isActiveExpansion("tbc");
@@ -790,39 +830,7 @@ void MovementHandler::handleForceSpeedChange(network::Packet& packet, const char
     }
 
     if (owner_.socket) {
-        network::Packet ack(wireOpcode(ackOpcode));
-        const bool legacyGuidAck =
-            isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
-        if (legacyGuidAck) {
-            ack.writeUInt64(owner_.playerGuid);
-        } else {
-            ack.writePackedGuid(owner_.playerGuid);
-        }
-        ack.writeUInt32(counter);
-
-        MovementInfo wire = movementInfo;
-        wire.time = nextMovementTimestampMs();
-        if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
-            wire.transportTime = wire.time;
-            wire.transportTime2 = wire.time;
-        }
-        glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wire.x, wire.y, wire.z));
-        wire.x = serverPos.x;
-        wire.y = serverPos.y;
-        wire.z = serverPos.z;
-        if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
-            glm::vec3 serverTransport =
-                core::coords::canonicalToServer(glm::vec3(wire.transportX, wire.transportY, wire.transportZ));
-            wire.transportX = serverTransport.x;
-            wire.transportY = serverTransport.y;
-            wire.transportZ = serverTransport.z;
-        }
-        if (owner_.packetParsers_) {
-            owner_.packetParsers_->writeMovementPayload(ack, wire);
-        } else {
-            MovementPacket::writeMovementPayload(ack, wire);
-        }
-
+        auto ack = buildForceAck(ackOpcode, counter);
         ack.writeFloat(newSpeed);
         owner_.socket->send(ack);
     }
@@ -863,41 +871,9 @@ void MovementHandler::handleForceMoveRootState(network::Packet& packet, bool roo
     }
 
     if (!owner_.socket) return;
-    uint16_t ackWire = wireOpcode(rooted ? Opcode::CMSG_FORCE_MOVE_ROOT_ACK
-                                         : Opcode::CMSG_FORCE_MOVE_UNROOT_ACK);
-    if (ackWire == 0xFFFF) return;
-
-    network::Packet ack(ackWire);
-    const bool legacyGuidAck =
-        isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
-    if (legacyGuidAck) {
-        ack.writeUInt64(owner_.playerGuid);
-    } else {
-        ack.writePackedGuid(owner_.playerGuid);
-    }
-    ack.writeUInt32(counter);
-
-    MovementInfo wire = movementInfo;
-    wire.time = nextMovementTimestampMs();
-    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
-        wire.transportTime = wire.time;
-        wire.transportTime2 = wire.time;
-    }
-    glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wire.x, wire.y, wire.z));
-    wire.x = serverPos.x;
-    wire.y = serverPos.y;
-    wire.z = serverPos.z;
-    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
-        glm::vec3 serverTransport =
-            core::coords::canonicalToServer(glm::vec3(wire.transportX, wire.transportY, wire.transportZ));
-        wire.transportX = serverTransport.x;
-        wire.transportY = serverTransport.y;
-        wire.transportZ = serverTransport.z;
-    }
-    if (owner_.packetParsers_) owner_.packetParsers_->writeMovementPayload(ack, wire);
-    else MovementPacket::writeMovementPayload(ack, wire);
-
-    owner_.socket->send(ack);
+    Opcode ackOp = rooted ? Opcode::CMSG_FORCE_MOVE_ROOT_ACK : Opcode::CMSG_FORCE_MOVE_UNROOT_ACK;
+    if (wireOpcode(ackOp) == 0xFFFF) return;
+    owner_.socket->send(buildForceAck(ackOp, counter));
 }
 
 void MovementHandler::handleForceMoveFlagChange(network::Packet& packet, const char* name,
@@ -922,40 +898,8 @@ void MovementHandler::handleForceMoveFlagChange(network::Packet& packet, const c
     }
 
     if (!owner_.socket) return;
-    uint16_t ackWire = wireOpcode(ackOpcode);
-    if (ackWire == 0xFFFF) return;
-
-    network::Packet ack(ackWire);
-    const bool legacyGuidAck =
-        isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
-    if (legacyGuidAck) {
-        ack.writeUInt64(owner_.playerGuid);
-    } else {
-        ack.writePackedGuid(owner_.playerGuid);
-    }
-    ack.writeUInt32(counter);
-
-    MovementInfo wire = movementInfo;
-    wire.time = nextMovementTimestampMs();
-    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
-        wire.transportTime = wire.time;
-        wire.transportTime2 = wire.time;
-    }
-    glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wire.x, wire.y, wire.z));
-    wire.x = serverPos.x;
-    wire.y = serverPos.y;
-    wire.z = serverPos.z;
-    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
-        glm::vec3 serverTransport =
-            core::coords::canonicalToServer(glm::vec3(wire.transportX, wire.transportY, wire.transportZ));
-        wire.transportX = serverTransport.x;
-        wire.transportY = serverTransport.y;
-        wire.transportZ = serverTransport.z;
-    }
-    if (owner_.packetParsers_) owner_.packetParsers_->writeMovementPayload(ack, wire);
-    else MovementPacket::writeMovementPayload(ack, wire);
-
-    owner_.socket->send(ack);
+    if (wireOpcode(ackOpcode) == 0xFFFF) return;
+    owner_.socket->send(buildForceAck(ackOpcode, counter));
 }
 
 void MovementHandler::handleMoveSetCollisionHeight(network::Packet& packet) {
@@ -972,28 +916,11 @@ void MovementHandler::handleMoveSetCollisionHeight(network::Packet& packet) {
     if (guid != owner_.playerGuid) return;
     if (!owner_.socket) return;
 
-    uint16_t ackWire = wireOpcode(Opcode::CMSG_MOVE_SET_COLLISION_HGT_ACK);
-    if (ackWire == 0xFFFF) return;
-
-    network::Packet ack(ackWire);
-    const bool legacyGuidAck = isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
-    if (legacyGuidAck) {
-        ack.writeUInt64(owner_.playerGuid);
-    } else {
-        ack.writePackedGuid(owner_.playerGuid);
-    }
-    ack.writeUInt32(counter);
-
-    MovementInfo wire = movementInfo;
-    wire.time = nextMovementTimestampMs();
-    glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wire.x, wire.y, wire.z));
-    wire.x = serverPos.x;
-    wire.y = serverPos.y;
-    wire.z = serverPos.z;
-    if (owner_.packetParsers_) owner_.packetParsers_->writeMovementPayload(ack, wire);
-    else MovementPacket::writeMovementPayload(ack, wire);
+    if (wireOpcode(Opcode::CMSG_MOVE_SET_COLLISION_HGT_ACK) == 0xFFFF) return;
+    // buildForceAck now handles transport coordinate conversion, fixing the
+    // previous omission that caused desync when riding boats/zeppelins.
+    auto ack = buildForceAck(Opcode::CMSG_MOVE_SET_COLLISION_HGT_ACK, counter);
     ack.writeFloat(height);
-
     owner_.socket->send(ack);
 }
 
@@ -1020,40 +947,8 @@ void MovementHandler::handleMoveKnockBack(network::Packet& packet) {
     }
 
     if (!owner_.socket) return;
-    uint16_t ackWire = wireOpcode(Opcode::CMSG_MOVE_KNOCK_BACK_ACK);
-    if (ackWire == 0xFFFF) return;
-
-    network::Packet ack(ackWire);
-    const bool legacyGuidAck =
-        isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
-    if (legacyGuidAck) {
-        ack.writeUInt64(owner_.playerGuid);
-    } else {
-        ack.writePackedGuid(owner_.playerGuid);
-    }
-    ack.writeUInt32(counter);
-
-    MovementInfo wire = movementInfo;
-    wire.time = nextMovementTimestampMs();
-    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
-        wire.transportTime = wire.time;
-        wire.transportTime2 = wire.time;
-    }
-    glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wire.x, wire.y, wire.z));
-    wire.x = serverPos.x;
-    wire.y = serverPos.y;
-    wire.z = serverPos.z;
-    if (wire.hasFlag(MovementFlags::ONTRANSPORT)) {
-        glm::vec3 serverTransport =
-            core::coords::canonicalToServer(glm::vec3(wire.transportX, wire.transportY, wire.transportZ));
-        wire.transportX = serverTransport.x;
-        wire.transportY = serverTransport.y;
-        wire.transportZ = serverTransport.z;
-    }
-    if (owner_.packetParsers_) owner_.packetParsers_->writeMovementPayload(ack, wire);
-    else MovementPacket::writeMovementPayload(ack, wire);
-
-    owner_.socket->send(ack);
+    if (wireOpcode(Opcode::CMSG_MOVE_KNOCK_BACK_ACK) == 0xFFFF) return;
+    owner_.socket->send(buildForceAck(Opcode::CMSG_MOVE_KNOCK_BACK_ACK, counter));
 }
 
 // ============================================================
