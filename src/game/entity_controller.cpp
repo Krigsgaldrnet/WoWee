@@ -1228,8 +1228,8 @@ void EntityController::updateItemOnValuesUpdate(const UpdateBlock& block,
     }
     if (inventoryChanged) {
         owner_.rebuildOnlineInventory();
-            pendingEvents_.emit("BAG_UPDATE", {});
-            pendingEvents_.emit("UNIT_INVENTORY_CHANGED", {"player"});
+        pendingEvents_.emit("BAG_UPDATE", {});
+        pendingEvents_.emit("UNIT_INVENTORY_CHANGED", {"player"});
     }
 }
 
