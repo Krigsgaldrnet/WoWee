@@ -2623,6 +2623,53 @@ void InventoryHandler::extractContainerFields(uint64_t containerGuid, const std:
     }
 }
 
+// Builds an ItemDef from an OnlineItemInfo by merging server field data (stack
+// count, durability) with cached item info (name, stats, quality). Centralised
+// here so adding new ItemDef fields doesn't require editing 4 separate copy-
+// paste sites in rebuildOnlineInventory.
+ItemDef InventoryHandler::buildItemDef(uint32_t entry, uint32_t stackCount,
+                                       uint32_t curDur, uint32_t maxDur, uint64_t guid) {
+    ItemDef def;
+    def.itemId = entry;
+    def.stackCount = stackCount;
+    def.curDurability = curDur;
+    def.maxDurability = maxDur;
+    def.maxStack = 1;
+
+    auto infoIt = owner_.itemInfoCache_.find(entry);
+    if (infoIt != owner_.itemInfoCache_.end()) {
+        const auto& info = infoIt->second;
+        def.name = info.name;
+        def.quality = static_cast<ItemQuality>(info.quality);
+        def.inventoryType = info.inventoryType;
+        def.maxStack = std::max(1, info.maxStack);
+        def.displayInfoId = info.displayInfoId;
+        def.subclassName = info.subclassName;
+        def.damageMin = info.damageMin;
+        def.damageMax = info.damageMax;
+        def.delayMs = info.delayMs;
+        def.armor = info.armor;
+        def.stamina = info.stamina;
+        def.strength = info.strength;
+        def.agility = info.agility;
+        def.intellect = info.intellect;
+        def.spirit = info.spirit;
+        def.sellPrice = info.sellPrice;
+        def.itemLevel = info.itemLevel;
+        def.requiredLevel = info.requiredLevel;
+        def.bindType = info.bindType;
+        def.description = info.description;
+        def.startQuestId = info.startQuestId;
+        def.extraStats.clear();
+        for (const auto& es : info.extraStats)
+            def.extraStats.push_back({es.statType, es.statValue});
+    } else {
+        def.name = "Item " + std::to_string(def.itemId);
+        queryItemInfo(def.itemId, guid);
+    }
+    return def;
+}
+
 void InventoryHandler::rebuildOnlineInventory() {
 
     uint8_t savedBankBagSlots = owner_.inventory.getPurchasedBankBagSlots();
@@ -2633,147 +2680,27 @@ void InventoryHandler::rebuildOnlineInventory() {
     for (int i = 0; i < 23; i++) {
         uint64_t guid = owner_.equipSlotGuids_[i];
         if (guid == 0) continue;
-
         auto itemIt = owner_.onlineItems_.find(guid);
         if (itemIt == owner_.onlineItems_.end()) continue;
-
-        ItemDef def;
-        def.itemId = itemIt->second.entry;
-        def.stackCount = itemIt->second.stackCount;
-        def.curDurability = itemIt->second.curDurability;
-        def.maxDurability = itemIt->second.maxDurability;
-        def.maxStack = 1;
-
-        auto infoIt = owner_.itemInfoCache_.find(itemIt->second.entry);
-        if (infoIt != owner_.itemInfoCache_.end()) {
-            def.name = infoIt->second.name;
-            def.quality = static_cast<ItemQuality>(infoIt->second.quality);
-            def.inventoryType = infoIt->second.inventoryType;
-            def.maxStack = std::max(1, infoIt->second.maxStack);
-            def.displayInfoId = infoIt->second.displayInfoId;
-            def.subclassName = infoIt->second.subclassName;
-            def.damageMin = infoIt->second.damageMin;
-            def.damageMax = infoIt->second.damageMax;
-            def.delayMs = infoIt->second.delayMs;
-            def.armor = infoIt->second.armor;
-            def.stamina = infoIt->second.stamina;
-            def.strength = infoIt->second.strength;
-            def.agility = infoIt->second.agility;
-            def.intellect = infoIt->second.intellect;
-            def.spirit = infoIt->second.spirit;
-            def.sellPrice = infoIt->second.sellPrice;
-            def.itemLevel = infoIt->second.itemLevel;
-            def.requiredLevel = infoIt->second.requiredLevel;
-            def.bindType = infoIt->second.bindType;
-            def.description = infoIt->second.description;
-            def.startQuestId = infoIt->second.startQuestId;
-            def.extraStats.clear();
-            for (const auto& es : infoIt->second.extraStats)
-                def.extraStats.push_back({es.statType, es.statValue});
-        } else {
-            def.name = "Item " + std::to_string(def.itemId);
-            queryItemInfo(def.itemId, guid);
-        }
-
-        owner_.inventory.setEquipSlot(static_cast<EquipSlot>(i), def);
+        owner_.inventory.setEquipSlot(static_cast<EquipSlot>(i), buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
     }
 
     // Backpack slots
     for (int i = 0; i < 16; i++) {
         uint64_t guid = owner_.backpackSlotGuids_[i];
         if (guid == 0) continue;
-
         auto itemIt = owner_.onlineItems_.find(guid);
         if (itemIt == owner_.onlineItems_.end()) continue;
-
-        ItemDef def;
-        def.itemId = itemIt->second.entry;
-        def.stackCount = itemIt->second.stackCount;
-        def.curDurability = itemIt->second.curDurability;
-        def.maxDurability = itemIt->second.maxDurability;
-        def.maxStack = 1;
-
-        auto infoIt = owner_.itemInfoCache_.find(itemIt->second.entry);
-        if (infoIt != owner_.itemInfoCache_.end()) {
-            def.name = infoIt->second.name;
-            def.quality = static_cast<ItemQuality>(infoIt->second.quality);
-            def.inventoryType = infoIt->second.inventoryType;
-            def.maxStack = std::max(1, infoIt->second.maxStack);
-            def.displayInfoId = infoIt->second.displayInfoId;
-            def.subclassName = infoIt->second.subclassName;
-            def.damageMin = infoIt->second.damageMin;
-            def.damageMax = infoIt->second.damageMax;
-            def.delayMs = infoIt->second.delayMs;
-            def.armor = infoIt->second.armor;
-            def.stamina = infoIt->second.stamina;
-            def.strength = infoIt->second.strength;
-            def.agility = infoIt->second.agility;
-            def.intellect = infoIt->second.intellect;
-            def.spirit = infoIt->second.spirit;
-            def.sellPrice = infoIt->second.sellPrice;
-            def.itemLevel = infoIt->second.itemLevel;
-            def.requiredLevel = infoIt->second.requiredLevel;
-            def.bindType = infoIt->second.bindType;
-            def.description = infoIt->second.description;
-            def.startQuestId = infoIt->second.startQuestId;
-            def.extraStats.clear();
-            for (const auto& es : infoIt->second.extraStats)
-                def.extraStats.push_back({es.statType, es.statValue});
-        } else {
-            def.name = "Item " + std::to_string(def.itemId);
-            queryItemInfo(def.itemId, guid);
-        }
-
-        owner_.inventory.setBackpackSlot(i, def);
+        owner_.inventory.setBackpackSlot(i, buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
     }
 
     // Keyring slots
     for (int i = 0; i < game::Inventory::KEYRING_SLOTS; i++) {
         uint64_t guid = owner_.keyringSlotGuids_[i];
         if (guid == 0) continue;
-
         auto itemIt = owner_.onlineItems_.find(guid);
         if (itemIt == owner_.onlineItems_.end()) continue;
-
-        ItemDef def;
-        def.itemId = itemIt->second.entry;
-        def.stackCount = itemIt->second.stackCount;
-        def.curDurability = itemIt->second.curDurability;
-        def.maxDurability = itemIt->second.maxDurability;
-        def.maxStack = 1;
-
-        auto infoIt = owner_.itemInfoCache_.find(itemIt->second.entry);
-        if (infoIt != owner_.itemInfoCache_.end()) {
-            def.name = infoIt->second.name;
-            def.quality = static_cast<ItemQuality>(infoIt->second.quality);
-            def.inventoryType = infoIt->second.inventoryType;
-            def.maxStack = std::max(1, infoIt->second.maxStack);
-            def.displayInfoId = infoIt->second.displayInfoId;
-            def.subclassName = infoIt->second.subclassName;
-            def.damageMin = infoIt->second.damageMin;
-            def.damageMax = infoIt->second.damageMax;
-            def.delayMs = infoIt->second.delayMs;
-            def.armor = infoIt->second.armor;
-            def.stamina = infoIt->second.stamina;
-            def.strength = infoIt->second.strength;
-            def.agility = infoIt->second.agility;
-            def.intellect = infoIt->second.intellect;
-            def.spirit = infoIt->second.spirit;
-            def.sellPrice = infoIt->second.sellPrice;
-            def.itemLevel = infoIt->second.itemLevel;
-            def.requiredLevel = infoIt->second.requiredLevel;
-            def.bindType = infoIt->second.bindType;
-            def.description = infoIt->second.description;
-            def.startQuestId = infoIt->second.startQuestId;
-            def.extraStats.clear();
-            for (const auto& es : infoIt->second.extraStats)
-                def.extraStats.push_back({es.statType, es.statValue});
-        } else {
-            def.name = "Item " + std::to_string(def.itemId);
-            queryItemInfo(def.itemId, guid);
-        }
-
-        owner_.inventory.setKeyringSlot(i, def);
+        owner_.inventory.setKeyringSlot(i, buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
     }
 
     // Bag contents (BAG1-BAG4 are equip slots 19-22)
@@ -2818,46 +2745,11 @@ void InventoryHandler::rebuildOnlineInventory() {
 
             auto itemIt = owner_.onlineItems_.find(itemGuid);
             if (itemIt == owner_.onlineItems_.end()) continue;
-
-            ItemDef def;
-            def.itemId = itemIt->second.entry;
-            def.stackCount = itemIt->second.stackCount;
-        def.curDurability = itemIt->second.curDurability;
-        def.maxDurability = itemIt->second.maxDurability;
-            def.maxStack = 1;
-
-            auto infoIt = owner_.itemInfoCache_.find(itemIt->second.entry);
-            if (infoIt != owner_.itemInfoCache_.end()) {
-                def.name = infoIt->second.name;
-                def.quality = static_cast<ItemQuality>(infoIt->second.quality);
-                def.inventoryType = infoIt->second.inventoryType;
-                def.maxStack = std::max(1, infoIt->second.maxStack);
-                def.displayInfoId = infoIt->second.displayInfoId;
-                def.subclassName = infoIt->second.subclassName;
-                def.damageMin = infoIt->second.damageMin;
-                def.damageMax = infoIt->second.damageMax;
-                def.delayMs = infoIt->second.delayMs;
-                def.armor = infoIt->second.armor;
-                def.stamina = infoIt->second.stamina;
-                def.strength = infoIt->second.strength;
-                def.agility = infoIt->second.agility;
-                def.intellect = infoIt->second.intellect;
-                def.spirit = infoIt->second.spirit;
-                def.sellPrice = infoIt->second.sellPrice;
-                def.itemLevel = infoIt->second.itemLevel;
-                def.requiredLevel = infoIt->second.requiredLevel;
-                def.bindType = infoIt->second.bindType;
-                def.description = infoIt->second.description;
-                def.startQuestId = infoIt->second.startQuestId;
-                def.extraStats.clear();
-                for (const auto& es : infoIt->second.extraStats)
-                    def.extraStats.push_back({es.statType, es.statValue});
-                def.bagSlots = infoIt->second.containerSlots;
-            } else {
-                def.name = "Item " + std::to_string(def.itemId);
-                queryItemInfo(def.itemId, itemGuid);
-            }
-
+            ItemDef def = buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, itemGuid);
+            // Bags inside bags need containerSlots for the UI slot-count display.
+            auto bagInfoIt = owner_.itemInfoCache_.find(itemIt->second.entry);
+            if (bagInfoIt != owner_.itemInfoCache_.end())
+                def.bagSlots = bagInfoIt->second.containerSlots;
             owner_.inventory.setBagSlot(bagIdx, s, def);
         }
     }

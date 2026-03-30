@@ -233,6 +233,7 @@ public:
     void detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields);
     bool applyInventoryFields(const std::map<uint16_t, uint32_t>& fields);
     void extractContainerFields(uint64_t containerGuid, const std::map<uint16_t, uint32_t>& fields);
+    ItemDef buildItemDef(uint32_t entry, uint32_t stackCount, uint32_t curDur, uint32_t maxDur, uint64_t guid);
     void rebuildOnlineInventory();
     void maybeDetectVisibleItemLayout();
     void updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields);
