@@ -14,6 +14,19 @@
 namespace wowee {
 namespace rendering {
 
+namespace {
+// Seeded RNG for weather particle positions and cycle durations.
+// Replaces bare rand() which defaults to seed 1 without srand(),
+// producing identical weather patterns on every launch.
+std::mt19937& weatherRng() {
+    static std::mt19937 gen(std::random_device{}());
+    return gen;
+}
+float weatherRandFloat() {
+    return std::uniform_real_distribution<float>(0.0f, 1.0f)(weatherRng());
+}
+} // namespace
+
 Weather::Weather() {
 }
 
@@ -324,7 +337,7 @@ void Weather::resetParticles(const Camera& camera) {
     for (int i = 0; i < particleCount; ++i) {
         Particle p;
         p.position = getRandomPosition(cameraPos);
-        p.position.y = cameraPos.y + SPAWN_HEIGHT * (static_cast<float>(rand()) / RAND_MAX);
+        p.position.y = cameraPos.y + SPAWN_HEIGHT * (weatherRandFloat());
         p.lifetime = 0.0f;
 
         if (weatherType == Type::RAIN) {
@@ -456,19 +469,19 @@ void Weather::updateZoneWeather(uint32_t zoneId, float deltaTime) {
             targetIntensity_ = 0.0f;
         } else {
             // Roll whether weather is active based on probability
-            float roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+            float roll = weatherRandFloat();
             zoneWeatherActive_ = (roll < it->second.probability);
 
             if (zoneWeatherActive_) {
                 weatherType = it->second.type;
                 // Random intensity within configured range
-                float t = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                float t = weatherRandFloat();
                 targetIntensity_ = glm::mix(it->second.minIntensity, it->second.maxIntensity, t);
                 // Random cycle duration: 3-8 minutes
-                zoneWeatherCycleDuration_ = 180.0f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 300.0f;
+                zoneWeatherCycleDuration_ = 180.0f + weatherRandFloat() * 300.0f;
             } else {
                 targetIntensity_ = 0.0f;
-                zoneWeatherCycleDuration_ = 120.0f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 180.0f;
+                zoneWeatherCycleDuration_ = 120.0f + weatherRandFloat() * 180.0f;
             }
         }
     }
@@ -496,19 +509,19 @@ void Weather::updateZoneWeather(uint32_t zoneId, float deltaTime) {
 
         auto it = zoneWeatherTable_.find(zoneId);
         if (it != zoneWeatherTable_.end()) {
-            float roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+            float roll = weatherRandFloat();
             zoneWeatherActive_ = (roll < it->second.probability);
 
             if (zoneWeatherActive_) {
                 weatherType = it->second.type;
-                float t = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                float t = weatherRandFloat();
                 targetIntensity_ = glm::mix(it->second.minIntensity, it->second.maxIntensity, t);
             } else {
                 targetIntensity_ = 0.0f;
             }
 
             // New cycle duration
-            zoneWeatherCycleDuration_ = 180.0f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 300.0f;
+            zoneWeatherCycleDuration_ = 180.0f + weatherRandFloat() * 300.0f;
         }
     }
 }
