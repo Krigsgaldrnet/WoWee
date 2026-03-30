@@ -35,7 +35,6 @@ std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler
 
     // Replace $g placeholders
     size_t pos = 0;
-    pos = 0;
     while ((pos = result.find('$', pos)) != std::string::npos) {
         if (pos + 1 >= result.length()) break;
         char marker = result[pos + 1];
