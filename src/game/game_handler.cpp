@@ -1116,6 +1116,17 @@ for (auto& [guid, entity] : entityController_->getEntityManager().getEntities())
 void GameHandler::updateTimers(float deltaTime) {
     if (spellHandler_) spellHandler_->updateTimers(deltaTime);
 
+    // Periodically clear stale pending item queries so they can be retried.
+    // Without this, a lost/malformed response leaves the entry stuck forever.
+    pendingItemQueryTimer_ += deltaTime;
+    if (pendingItemQueryTimer_ >= 5.0f) {
+        pendingItemQueryTimer_ = 0.0f;
+        if (!pendingItemQueries_.empty()) {
+            LOG_DEBUG("Clearing ", pendingItemQueries_.size(), " stale pending item queries");
+            pendingItemQueries_.clear();
+        }
+    }
+
     if (auctionSearchDelayTimer_ > 0.0f) {
         auctionSearchDelayTimer_ -= deltaTime;
         if (auctionSearchDelayTimer_ < 0.0f) auctionSearchDelayTimer_ = 0.0f;

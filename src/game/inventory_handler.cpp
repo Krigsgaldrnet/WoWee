@@ -2352,6 +2352,13 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
         ? owner_.packetParsers_->parseItemQueryResponse(packet, data)
         : ItemQueryResponseParser::parse(packet, data);
     if (!parsed) {
+        // Extract entry from raw packet so we can clear the pending query even on parse failure.
+        // Without this, the entry stays in pendingItemQueries_ forever, blocking retries.
+        if (packet.getSize() >= 4) {
+            packet.setReadPos(0);
+            uint32_t rawEntry = packet.readUInt32() & ~0x80000000u;
+            owner_.pendingItemQueries_.erase(rawEntry);
+        }
         LOG_WARNING("handleItemQueryResponse: parse failed, size=", packet.getSize());
         return;
     }

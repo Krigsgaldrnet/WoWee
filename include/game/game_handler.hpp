@@ -2455,6 +2455,7 @@ private:
     std::unordered_map<uint64_t, OnlineItemInfo> onlineItems_;
     std::unordered_map<uint32_t, ItemQueryResponseData> itemInfoCache_;
     std::unordered_set<uint32_t> pendingItemQueries_;
+    float pendingItemQueryTimer_ = 0.0f;
 
     // Deferred SMSG_ITEM_PUSH_RESULT notifications for items whose info wasn't
     // cached at arrival time; emitted once the query response arrives.
