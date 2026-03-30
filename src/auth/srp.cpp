@@ -117,8 +117,9 @@ std::vector<uint8_t> SRP::computeAuthHash(const std::string& username,
     // Convert to uppercase (WoW requirement)
     std::string upperUser = username;
     std::string upperPass = password;
-    std::transform(upperUser.begin(), upperUser.end(), upperUser.begin(), ::toupper);
-    std::transform(upperPass.begin(), upperPass.end(), upperPass.begin(), ::toupper);
+    auto toUpper = [](unsigned char c) { return static_cast<char>(std::toupper(c)); };
+    std::transform(upperUser.begin(), upperUser.end(), upperUser.begin(), toUpper);
+    std::transform(upperPass.begin(), upperPass.end(), upperPass.begin(), toUpper);
 
     // H(I:P)
     std::string combined = upperUser + ":" + upperPass;

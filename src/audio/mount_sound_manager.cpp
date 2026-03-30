@@ -495,7 +495,7 @@ MountType MountSoundManager::detectMountType(uint32_t creatureDisplayId) const {
 MountFamily MountSoundManager::detectMountFamilyFromPath(const std::string& modelPath) const {
     // Convert path to lowercase for matching
     std::string lower = modelPath;
-    for (char& c : lower) c = std::tolower(c);
+    for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
     // Check creature model path for family keywords
     if (lower.find("tallstrider") != std::string::npos ||

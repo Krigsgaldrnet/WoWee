@@ -57,7 +57,8 @@ bool detectOutboundIPv4(std::array<uint8_t, 4>& outIp) {
 network::Packet LogonChallengePacket::build(const std::string& account, const ClientInfo& info) {
     // Convert account to uppercase
     std::string upperAccount = account;
-    std::transform(upperAccount.begin(), upperAccount.end(), upperAccount.begin(), ::toupper);
+    std::transform(upperAccount.begin(), upperAccount.end(), upperAccount.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
     // Calculate payload size (everything after cmd + error + size)
     // game(4) + version(3) + build(2) + platform(4) + os(4) + locale(4) +

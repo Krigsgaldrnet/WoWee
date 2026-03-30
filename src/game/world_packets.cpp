@@ -80,7 +80,7 @@ network::Packet AuthSessionPacket::build(uint32_t build,
     // Convert account name to uppercase
     std::string upperAccount = accountName;
     std::transform(upperAccount.begin(), upperAccount.end(),
-                   upperAccount.begin(), ::toupper);
+                   upperAccount.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
     LOG_INFO("Building CMSG_AUTH_SESSION for account: ", upperAccount);
 
