@@ -1413,15 +1413,12 @@ void SpellHandler::handleAchievementEarned(network::Packet& packet) {
                           static_cast<unsigned long long>(guid));
             senderName = tmp;
         }
-        char buf[256];
-        if (!achName.empty()) {
-            std::snprintf(buf, sizeof(buf), "%s has earned the achievement: %s",
-                          senderName.c_str(), achName.c_str());
-        } else {
-            std::snprintf(buf, sizeof(buf), "%s has earned an achievement! (ID %u)",
-                          senderName.c_str(), achievementId);
-        }
-        owner_.addSystemChatMessage(buf);
+        // Use std::string instead of fixed char[256] — achievement names can be
+        // long and combined with senderName could exceed 256 bytes, silently truncating.
+        std::string msg = senderName + (!achName.empty()
+            ? " has earned the achievement: " + achName
+            : " has earned an achievement! (ID " + std::to_string(achievementId) + ")");
+        owner_.addSystemChatMessage(msg);
     }
 
     LOG_INFO("SMSG_ACHIEVEMENT_EARNED: guid=0x", std::hex, guid, std::dec,
