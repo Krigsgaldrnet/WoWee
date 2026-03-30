@@ -2118,18 +2118,19 @@ void Renderer::updateCharacterAnimation() {
             // Idle fidgets: random one-shot animations when standing still
             if (!moving && mountAction_ == MountAction::None && mountActiveFidget_ == 0 && !mountAnims_.fidgets.empty()) {
                 mountIdleFidgetTimer_ += lastDeltaTime_;
-                static float nextFidgetTime = 6.0f + (rand() % 7);  // 6-12 seconds
+                // Use the seeded mt19937 for timing so fidgets aren't deterministic
+                // across launches (rand() without srand() always starts from seed 1).
+                static std::mt19937 idleRng(std::random_device{}());
+                static float nextFidgetTime = std::uniform_real_distribution<float>(6.0f, 12.0f)(idleRng);
 
                 if (mountIdleFidgetTimer_ >= nextFidgetTime) {
-                    // Trigger random fidget animation
-                    static std::mt19937 rng(std::random_device{}());
                     std::uniform_int_distribution<size_t> dist(0, mountAnims_.fidgets.size() - 1);
-                    uint32_t fidgetAnim = mountAnims_.fidgets[dist(rng)];
+                    uint32_t fidgetAnim = mountAnims_.fidgets[dist(idleRng)];
 
                     characterRenderer->playAnimation(mountInstanceId_, fidgetAnim, false);
-                    mountActiveFidget_ = fidgetAnim;  // Track active fidget
+                    mountActiveFidget_ = fidgetAnim;
                     mountIdleFidgetTimer_ = 0.0f;
-                    nextFidgetTime = 6.0f + (rand() % 7);  // Randomize next fidget time
+                    nextFidgetTime = std::uniform_real_distribution<float>(6.0f, 12.0f)(idleRng);
 
                     LOG_DEBUG("Mount idle fidget: playing anim ", fidgetAnim);
                 }
@@ -2141,12 +2142,13 @@ void Renderer::updateCharacterAnimation() {
             // Idle ambient sounds: snorts and whinnies only, infrequent
             if (!moving && mountSoundManager) {
                 mountIdleSoundTimer_ += lastDeltaTime_;
-                static float nextIdleSoundTime = 45.0f + (rand() % 46);  // 45-90 seconds
+                static std::mt19937 soundRng(std::random_device{}());
+                static float nextIdleSoundTime = std::uniform_real_distribution<float>(45.0f, 90.0f)(soundRng);
 
                 if (mountIdleSoundTimer_ >= nextIdleSoundTime) {
                     mountSoundManager->playIdleSound();
                     mountIdleSoundTimer_ = 0.0f;
-                    nextIdleSoundTime = 45.0f + (rand() % 46);  // Randomize next sound time
+                    nextIdleSoundTime = std::uniform_real_distribution<float>(45.0f, 90.0f)(soundRng);
                 }
             } else if (moving) {
                 mountIdleSoundTimer_ = 0.0f;  // Reset timer when moving

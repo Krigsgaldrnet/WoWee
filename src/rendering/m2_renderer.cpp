@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <random>
 #include <limits>
 #include <future>
 #include <thread>
@@ -30,6 +31,21 @@ namespace wowee {
 namespace rendering {
 
 namespace {
+
+// Seeded RNG for animation time offsets and variation timers. Using rand()
+// without srand() produces the same sequence every launch, causing all
+// doodads (trees, torches, grass) to sway/flicker in sync.
+std::mt19937& rng() {
+    static std::mt19937 gen(std::random_device{}());
+    return gen;
+}
+uint32_t randRange(uint32_t maxExclusive) {
+    if (maxExclusive == 0) return 0;
+    return std::uniform_int_distribution<uint32_t>(0, maxExclusive - 1)(rng());
+}
+float randFloat(float lo, float hi) {
+    return std::uniform_real_distribution<float>(lo, hi)(rng());
+}
 
 // Shared lava UV scroll timer — ensures consistent animation across all render passes
 const auto kLavaAnimStart = std::chrono::steady_clock::now();
@@ -1596,8 +1612,8 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
         instance.currentSequenceIndex = 0;
         instance.idleSequenceIndex = 0;
         instance.animDuration = static_cast<float>(mdl.sequences[0].duration);
-        instance.animTime = static_cast<float>(rand() % std::max(1u, mdl.sequences[0].duration));
-        instance.variationTimer = 3000.0f + static_cast<float>(rand() % 8000);
+        instance.animTime = static_cast<float>(randRange(std::max(1u, mdl.sequences[0].duration)));
+        instance.variationTimer = randFloat(3000.0f, 11000.0f);
 
         // Seed bone matrices from an existing instance of the same model so the
         // new instance renders immediately instead of being invisible until the
@@ -1703,8 +1719,8 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
         instance.currentSequenceIndex = 0;
         instance.idleSequenceIndex = 0;
         instance.animDuration = static_cast<float>(mdl2.sequences[0].duration);
-        instance.animTime = static_cast<float>(rand() % std::max(1u, mdl2.sequences[0].duration));
-        instance.variationTimer = 3000.0f + static_cast<float>(rand() % 8000);
+        instance.animTime = static_cast<float>(randRange(std::max(1u, mdl2.sequences[0].duration)));
+        instance.variationTimer = randFloat(3000.0f, 11000.0f);
 
         // Seed bone matrices from an existing sibling so the instance renders immediately
         for (const auto& existing : instances) {
@@ -1718,7 +1734,7 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
             computeBoneMatrices(mdl2, instance);
         }
     } else {
-        instance.animTime = static_cast<float>(rand()) / RAND_MAX * 10000.0f;
+        instance.animTime = randFloat(0.0f, 10000.0f);
     }
 
     // Register in dedup map
@@ -2021,7 +2037,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
                     instance.animDuration = static_cast<float>(model.sequences[instance.idleSequenceIndex].duration);
                 }
                 instance.animTime = 0.0f;
-                instance.variationTimer = 4000.0f + static_cast<float>(rand() % 6000);
+                instance.variationTimer = randFloat(4000.0f, 10000.0f);
             } else {
                 // Use iterative subtraction instead of fmod() to preserve precision
                 float duration = std::max(1.0f, instance.animDuration);
@@ -2035,7 +2051,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
         if (!instance.playingVariation && model.idleVariationIndices.size() > 1) {
             instance.variationTimer -= dtMs;
             if (instance.variationTimer <= 0.0f) {
-                int pick = rand() % static_cast<int>(model.idleVariationIndices.size());
+                int pick = static_cast<int>(randRange(static_cast<uint32_t>(model.idleVariationIndices.size())));
                 int newSeq = model.idleVariationIndices[pick];
                 if (newSeq != instance.currentSequenceIndex && newSeq < static_cast<int>(model.sequences.size())) {
                     instance.playingVariation = true;
@@ -2043,7 +2059,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
                     instance.animDuration = static_cast<float>(model.sequences[newSeq].duration);
                     instance.animTime = 0.0f;
                 } else {
-                    instance.variationTimer = 2000.0f + static_cast<float>(rand() % 4000);
+                    instance.variationTimer = randFloat(2000.0f, 6000.0f);
                 }
             }
         }
