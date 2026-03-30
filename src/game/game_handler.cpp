@@ -887,7 +887,8 @@ void GameHandler::updateNetworking(float deltaTime) {
             rxSilenceLogged_ = true;
             LOG_WARNING("RX SILENCE: No packets from server for ", silenceMs, "ms — possible soft disconnect");
         }
-        if (silenceMs > 15000 && silenceMs < 15500) {
+        if (silenceMs > 15000 && !rxSilence15sLogged_) {
+            rxSilence15sLogged_ = true;
             LOG_WARNING("RX SILENCE: 15s — server appears to have stopped sending");
         }
     }
@@ -4126,6 +4127,7 @@ void GameHandler::enqueueIncomingPacket(const network::Packet& packet) {
     pendingIncomingPackets_.push_back(packet);
     lastRxTime_ = std::chrono::steady_clock::now();
     rxSilenceLogged_ = false;
+    rxSilence15sLogged_ = false;
 }
 
 void GameHandler::enqueueIncomingPacketFront(network::Packet&& packet) {
@@ -4568,17 +4570,10 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     playerRangedCritPct_ = -1.0f;
     std::fill(std::begin(playerSpellCritPct_), std::end(playerSpellCritPct_), -1.0f);
     std::fill(std::begin(playerCombatRatings_), std::end(playerCombatRatings_), -1);
-    if (spellHandler_) spellHandler_->knownSpells_.clear();
-    if (spellHandler_) spellHandler_->spellCooldowns_.clear();
+    if (spellHandler_) spellHandler_->resetAllState();
     spellFlatMods_.clear();
     spellPctMods_.clear();
     actionBar = {};
-    if (spellHandler_) {
-        spellHandler_->playerAuras_.clear();
-        spellHandler_->targetAuras_.clear();
-        spellHandler_->unitAurasCache_.clear();
-    }
-    if (spellHandler_) spellHandler_->unitCastStates_.clear();
     petGuid_ = 0;
     stableWindowOpen_  = false;
     stableMasterGuid_  = 0;
@@ -4598,7 +4593,7 @@ void GameHandler::selectCharacter(uint64_t characterGuid) {
     pendingQuestAcceptNpcGuids_.clear();
     npcQuestStatus_.clear();
     if (combatHandler_) combatHandler_->resetAllCombatState();
-    if (spellHandler_) spellHandler_->resetCastState();
+    // resetCastState() already called inside resetAllState() above
     pendingGameObjectInteractGuid_ = 0;
     lastInteractedGoGuid_ = 0;
     playerDead_ = false;

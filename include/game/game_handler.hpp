@@ -3047,6 +3047,7 @@ private:
     // ---- RX silence detection ----
     std::chrono::steady_clock::time_point lastRxTime_{};
     bool rxSilenceLogged_ = false;
+    bool rxSilence15sLogged_ = false;
 
     // ---- XP tracking ----
     uint32_t playerXp_ = 0;
