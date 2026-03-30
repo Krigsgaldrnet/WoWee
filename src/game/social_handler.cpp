@@ -170,7 +170,7 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
             owner_.addonEventCallback_("READY_CHECK", {readyCheckInitiator_});
     };
     table[Opcode::MSG_RAID_READY_CHECK_CONFIRM] = [this](network::Packet& packet) {
-        if (!packet.hasRemaining(9)) { packet.setReadPos(packet.getSize()); return; }
+        if (!packet.hasRemaining(9)) { packet.skipAll(); return; }
         uint64_t respGuid = packet.readUInt64();
         uint8_t  isReady  = packet.readUInt8();
         if (isReady) ++readyCheckReadyCount_; else ++readyCheckNotReadyCount_;
@@ -323,6 +323,7 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
     // ---- Instance ----
     for (auto op : { Opcode::SMSG_INSTANCE_DIFFICULTY, Opcode::MSG_SET_DUNGEON_DIFFICULTY }) {
         table[op] = [this](network::Packet& packet) { handleInstanceDifficulty(packet); };
+    }
 
     // ---- Guild / RAF / PvP AFK (moved from GameHandler) ----
     table[Opcode::SMSG_GUILD_DECLINE] = [this](network::Packet& packet) {
@@ -364,7 +365,6 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
         }
         packet.skipAll();
     };
-    }
     table[Opcode::SMSG_INSTANCE_SAVE_CREATED] = [this](network::Packet& /*packet*/) {
         owner_.addSystemChatMessage("You are now saved to this instance.");
     };
@@ -448,7 +448,7 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
         owner_.addSystemChatMessage("Dungeon Finder: You may continue your dungeon.");
     };
     table[Opcode::SMSG_LFG_ROLE_CHOSEN] = [this](network::Packet& packet) {
-        if (!packet.hasRemaining(13)) { packet.setReadPos(packet.getSize()); return; }
+        if (!packet.hasRemaining(13)) { packet.skipAll(); return; }
         uint64_t roleGuid = packet.readUInt64();
         uint8_t  ready    = packet.readUInt8();
         uint32_t roles    = packet.readUInt32();
@@ -462,14 +462,14 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
             if (auto u = std::dynamic_pointer_cast<Unit>(e))
                 pName = u->getName();
         if (ready) owner_.addSystemChatMessage(pName + " has chosen: " + roleName);
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
     };
     for (auto op : { Opcode::SMSG_LFG_UPDATE_SEARCH, Opcode::SMSG_UPDATE_LFG_LIST,
                      Opcode::SMSG_LFG_PLAYER_INFO, Opcode::SMSG_LFG_PARTY_INFO }) {
-        table[op] = [](network::Packet& packet) { packet.setReadPos(packet.getSize()); };
+        table[op] = [](network::Packet& packet) { packet.skipAll(); };
     }
     table[Opcode::SMSG_OPEN_LFG_DUNGEON_FINDER] = [this](network::Packet& packet) {
-        packet.setReadPos(packet.getSize());
+        packet.skipAll();
         if (owner_.openLfgCallback_) owner_.openLfgCallback_();
     };
 
@@ -1031,7 +1031,7 @@ void SocialHandler::reportPlayer(uint64_t targetGuid, const std::string& reason)
 }
 
 void SocialHandler::handleDuelRequested(network::Packet& packet) {
-    if (!packet.hasRemaining(16)) { packet.setReadPos(packet.getSize()); return; }
+    if (!packet.hasRemaining(16)) { packet.skipAll(); return; }
     duelChallengerGuid_ = packet.readUInt64();
     duelFlagGuid_       = packet.readUInt64();
     duelChallengerName_.clear();
@@ -1316,7 +1316,7 @@ void SocialHandler::handlePartyMemberStats(network::Packet& packet, bool isFull)
     for (auto& m : partyData.members) {
         if (m.guid == memberGuid) { member = &m; break; }
     }
-    if (!member) { packet.setReadPos(packet.getSize()); return; }
+    if (!member) { packet.skipAll(); return; }
 
     if (updateFlags & 0x0001) { if (remaining() >= 2) member->onlineStatus = packet.readUInt16(); }
     if (updateFlags & 0x0002) {
@@ -1612,7 +1612,7 @@ void SocialHandler::handlePetitionQueryResponse(network::Packet& packet) {
     std::string guildName = packet.readString();
     /*std::string body =*/ packet.readString();
     if (petitionInfo_.petitionGuid == petGuid) petitionInfo_.guildName = guildName;
-    packet.setReadPos(packet.getSize());
+    packet.skipAll();
 }
 
 void SocialHandler::handlePetitionShowSignatures(network::Packet& packet) {
@@ -1772,7 +1772,7 @@ void SocialHandler::handleFriendList(network::Packet& packet) {
 
 void SocialHandler::handleContactList(network::Packet& packet) {
     auto rem = [&]() { return packet.getRemainingSize(); };
-    if (rem() < 8) { packet.setReadPos(packet.getSize()); return; }
+    if (rem() < 8) { packet.skipAll(); return; }
     owner_.lastContactListMask_  = packet.readUInt32();
     owner_.lastContactListCount_ = packet.readUInt32();
     owner_.contacts_.clear();
@@ -2392,7 +2392,7 @@ void SocialHandler::handlePvpLogData(network::Packet& packet) {
     bgScoreboard_.isArena = (packet.readUInt8() != 0);
     if (bgScoreboard_.isArena) {
         for (int t = 0; t < 2; ++t) {
-            if (remaining() < 20) { packet.setReadPos(packet.getSize()); return; }
+            if (remaining() < 20) { packet.skipAll(); return; }
             bgScoreboard_.arenaTeams[t].ratingChange = packet.readUInt32();
             bgScoreboard_.arenaTeams[t].newRating = packet.readUInt32();
             packet.readUInt32(); packet.readUInt32(); packet.readUInt32();
