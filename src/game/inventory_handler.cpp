@@ -1047,7 +1047,7 @@ void InventoryHandler::autoEquipItemBySlot(int backpackIndex) {
     if (slot.empty()) return;
 
     if (owner_.state == WorldState::IN_WORLD && owner_.socket) {
-        auto packet = AutoEquipItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex));
+        auto packet = AutoEquipItemPacket::build(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex));
         owner_.socket->send(packet);
     }
 }
@@ -1087,8 +1087,8 @@ void InventoryHandler::useItemBySlot(int backpackIndex) {
                         " spellId=", useSpellId, " spellCount=", info->spells.size());
         }
         auto packet = owner_.packetParsers_
-            ? owner_.packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid, useSpellId)
-            : UseItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid, useSpellId);
+            ? owner_.packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex), itemGuid, useSpellId)
+            : UseItemPacket::build(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex), itemGuid, useSpellId);
         owner_.socket->send(packet);
     } else if (itemGuid == 0) {
         LOG_WARNING("useItemBySlot: itemGuid=0 for item='", slot.item.name,
@@ -1145,8 +1145,8 @@ void InventoryHandler::openItemBySlot(int backpackIndex) {
     if (backpackIndex < 0 || backpackIndex >= owner_.inventory.getBackpackSize()) return;
     if (owner_.inventory.getBackpackSlot(backpackIndex).empty()) return;
     if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
-    auto packet = OpenItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex));
-    LOG_INFO("openItemBySlot: CMSG_OPEN_ITEM bag=0xFF slot=", (23 + backpackIndex));
+    auto packet = OpenItemPacket::build(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex));
+    LOG_INFO("openItemBySlot: CMSG_OPEN_ITEM bag=0xFF slot=", (Inventory::NUM_EQUIP_SLOTS + backpackIndex));
     owner_.socket->send(packet);
 }
 
@@ -1181,7 +1181,7 @@ void InventoryHandler::splitItem(uint8_t srcBag, uint8_t srcSlot, uint8_t count)
     int freeBp = owner_.inventory.findFreeBackpackSlot();
     if (freeBp >= 0) {
         uint8_t dstBag = 0xFF;
-        uint8_t dstSlot = static_cast<uint8_t>(23 + freeBp);
+        uint8_t dstSlot = static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + freeBp);
         LOG_INFO("splitItem: src(bag=", (int)srcBag, " slot=", (int)srcSlot,
                  ") count=", (int)count, " -> dst(bag=0xFF slot=", (int)dstSlot, ")");
         auto packet = SplitItemPacket::build(srcBag, srcSlot, dstBag, dstSlot, count);
@@ -1248,7 +1248,7 @@ void InventoryHandler::unequipToBackpack(EquipSlot equipSlot) {
     uint8_t srcBag = 0xFF;
     uint8_t srcSlot = static_cast<uint8_t>(equipSlot);
     uint8_t dstBag = 0xFF;
-    uint8_t dstSlot = static_cast<uint8_t>(23 + freeSlot);
+    uint8_t dstSlot = static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + freeSlot);
 
     LOG_INFO("UnequipToBackpack: equipSlot=", (int)srcSlot,
              " -> backpackIndex=", freeSlot, " (dstSlot=", (int)dstSlot, ")");
@@ -1538,7 +1538,7 @@ bool InventoryHandler::attachItemFromBackpack(int backpackIndex) {
             mailAttachments_[i].itemGuid = itemGuid;
             mailAttachments_[i].item = slot.item;
             mailAttachments_[i].srcBag = 0xFF;
-            mailAttachments_[i].srcSlot = static_cast<uint8_t>(23 + backpackIndex);
+            mailAttachments_[i].srcSlot = static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex);
             return true;
         }
     }
@@ -1730,7 +1730,7 @@ void InventoryHandler::withdrawItem(uint8_t srcBag, uint8_t srcSlot) {
         owner_.addSystemChatMessage("Inventory is full.");
         return;
     }
-    uint8_t dstSlot = static_cast<uint8_t>(23 + freeSlot);
+    uint8_t dstSlot = static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + freeSlot);
     auto packet = SwapItemPacket::build(0xFF, dstSlot, srcBag, srcSlot);
     owner_.socket->send(packet);
 }
@@ -2225,7 +2225,7 @@ void InventoryHandler::useEquipmentSet(uint32_t setId) {
             for (int bp = 0; bp < 16 && !found; ++bp) {
                 if (owner_.getBackpackItemGuid(bp) == itemGuid) {
                     srcBag = 0xFF;
-                    srcSlot = static_cast<uint8_t>(23 + bp);
+                    srcSlot = static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + bp);
                     found = true;
                 }
             }
@@ -2355,6 +2355,8 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
         // Without this, the entry stays in pendingItemQueries_ forever, blocking retries.
         if (packet.getSize() >= 4) {
             packet.setReadPos(0);
+            // High bit indicates a negative (invalid/missing) item entry response;
+            // mask it off so we can still clear the pending query by entry ID.
             uint32_t rawEntry = packet.readUInt32() & ~0x80000000u;
             owner_.pendingItemQueries_.erase(rawEntry);
         }

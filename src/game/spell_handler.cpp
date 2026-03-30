@@ -471,8 +471,8 @@ void SpellHandler::useItemBySlot(int backpackIndex) {
     if (itemGuid != 0 && owner_.state == WorldState::IN_WORLD && owner_.socket) {
         uint32_t useSpellId = findOnUseSpellId(slot.item.itemId);
         auto packet = owner_.packetParsers_
-            ? owner_.packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid, useSpellId)
-            : UseItemPacket::build(0xFF, static_cast<uint8_t>(23 + backpackIndex), itemGuid, useSpellId);
+            ? owner_.packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex), itemGuid, useSpellId)
+            : UseItemPacket::build(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex), itemGuid, useSpellId);
         owner_.socket->send(packet);
     } else if (itemGuid == 0) {
         owner_.addSystemChatMessage("Cannot use that item right now.");
