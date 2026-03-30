@@ -1709,7 +1709,6 @@ void Renderer::setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float h
     }
 
     // Ensure we have fallbacks for movement
-    if (mountAnims_.stand == 0) mountAnims_.stand = 0;  // Force 0 even if not found
     if (mountAnims_.run == 0) mountAnims_.run = mountAnims_.stand;  // Fallback to stand if no run
 
     core::Logger::getInstance().debug("Mount animation set: jumpStart=", mountAnims_.jumpStart,
@@ -3502,7 +3501,9 @@ void Renderer::update(float deltaTime) {
         bool isIndoor = insideWmo;
         bool isSwimming = cameraController->isSwimming();
 
-        // Check if inside blacksmith (96048 = Goldshire blacksmith)
+        // Detect blacksmith buildings to play ambient forge/anvil sounds.
+        // 96048 is the WMO group ID for the Goldshire blacksmith interior.
+        // TODO: extend to other smithy WMO IDs (Ironforge, Orgrimmar, etc.)
         bool isBlacksmith = (insideWmoId == 96048);
 
         // Sync weather audio with visual weather system
@@ -3582,8 +3583,8 @@ void Renderer::update(float deltaTime) {
                     lastLoggedWmoId = wmoModelId;
                 }
 
-                // Blacksmith detection
-                if (wmoModelId == 96048) {  // Goldshire blacksmith
+                // Detect blacksmith WMO for ambient forge sounds
+                if (wmoModelId == 96048) {  // Goldshire blacksmith interior
                     insideBlacksmith = true;
                     LOG_INFO("Detected blacksmith WMO ", wmoModelId);
                 }

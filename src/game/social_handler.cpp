@@ -20,9 +20,12 @@ namespace game {
 
 
 
+// LFG join result codes from LFGJoinResult enum (WotLK 3.3.5a).
+// Case 0 = success (no error message needed), returns nullptr so the caller
+// knows not to display an error string.
 static const char* lfgJoinResultString(uint8_t result) {
     switch (result) {
-        case 0:  return nullptr;
+        case 0:  return nullptr;  // LFG_JOIN_OK
         case 1:  return "Role check failed.";
         case 2:  return "No LFG slots available for your group.";
         case 3:  return "No LFG object found.";
@@ -37,6 +40,7 @@ static const char* lfgJoinResultString(uint8_t result) {
         case 12: return "A party member is marked as a deserter.";
         case 13: return "You are on a random dungeon cooldown.";
         case 14: return "A party member is on a random dungeon cooldown.";
+        case 15: return "Cannot join dungeon finder.";  // LFG_JOIN_INTERNAL_ERROR
         case 16: return "No spec/role available.";
         default: return "Cannot join dungeon finder.";
     }
