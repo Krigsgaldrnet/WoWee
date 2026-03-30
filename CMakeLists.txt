@@ -338,7 +338,7 @@ endif()
 # macOS cross-compilation: the Vulkan loader (MoltenVK) is not available at link
 # time. Allow unresolved Vulkan symbols — they are resolved at runtime.
 if(CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    add_link_options("-undefined" "dynamic_lookup")
+    set(WOWEE_MACOS_CROSS_COMPILE TRUE)
 endif()
 # GL/GLEW kept temporarily for unconverted sub-renderers during Vulkan migration.
 # These files compile against GL types but their code is never called — the Vulkan
@@ -782,6 +782,11 @@ endif()
 add_executable(wowee ${WOWEE_SOURCES} ${WOWEE_HEADERS} ${WOWEE_PLATFORM_SOURCES})
 if(TARGET opcodes-generate)
     add_dependencies(wowee opcodes-generate)
+endif()
+# macOS cross-compilation: MoltenVK is not available at link time.
+# Allow unresolved Vulkan symbols — resolved at runtime. Scoped to wowee only.
+if(WOWEE_MACOS_CROSS_COMPILE)
+    target_link_options(wowee PRIVATE "-undefined" "dynamic_lookup")
 endif()
 
 # FidelityFX-SDK headers can trigger compiler-specific pragma/unused-static noise

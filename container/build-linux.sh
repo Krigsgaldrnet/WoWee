@@ -11,6 +11,7 @@ OUT=/out
 NPROC=$(nproc)
 
 echo "==> [linux] Copying source tree..."
+mkdir -p /wowee-build-src
 tar -C "${SRC}" \
     --exclude='./build' --exclude='./logs' --exclude='./cache' \
     --exclude='./container' --exclude='./.git' \

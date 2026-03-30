@@ -32,7 +32,6 @@ FROM ubuntu:24.04 AS builder
 # Default: arm64. Override with MACOS_ARCH=x86_64 env var at run time.
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV OSXCROSS_VERSION=1.5
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -61,7 +60,7 @@ RUN apt-get update && \
         gnupg \
         software-properties-common && \
     wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-    echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" > /etc/apt/sources.list.d/llvm-18.list && \
+    echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-18 main" > /etc/apt/sources.list.d/llvm-18.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         clang-18 \
@@ -81,7 +80,6 @@ COPY --from=sdk-fetcher /opt/sdk/ /opt/osxcross/tarballs/
 
 ENV MACOSX_DEPLOYMENT_TARGET=13.0
 RUN cd /opt/osxcross && \
-    unset OSXCROSS_VERSION && \
     UNATTENDED=1 ./build.sh && \
     rm -rf /opt/osxcross/build /opt/osxcross/tarballs
 

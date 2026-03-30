@@ -921,6 +921,7 @@ void Application::shutdown() {
     world.reset();
     LOG_WARNING("Resetting gameHandler...");
     gameHandler.reset();
+    gameServices_ = {};
     LOG_WARNING("Resetting authHandler...");
     authHandler.reset();
     LOG_WARNING("Resetting assetManager...");

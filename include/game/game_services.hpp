@@ -14,7 +14,7 @@ namespace game {
 struct GameServices {
     rendering::Renderer* renderer = nullptr;
     pipeline::AssetManager* assetManager = nullptr;
-    game::ExpansionRegistry* expansionRegistry = nullptr;
+    ExpansionRegistry* expansionRegistry = nullptr;
     uint32_t gryphonDisplayId = 0;
     uint32_t wyvernDisplayId = 0;
 };
