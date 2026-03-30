@@ -544,24 +544,28 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
     };
 
     table[Opcode::SMSG_AUCTION_BIDDER_NOTIFICATION] = [this](network::Packet& packet) {
-        if (packet.getSize() - packet.getReadPos() >= 8) {
-            /*uint32_t auctionId =*/ packet.readUInt32();
-            uint32_t itemEntry = packet.readUInt32();
-            int32_t bidRandProp = 0;
-            if (packet.getSize() - packet.getReadPos() >= 4)
-                bidRandProp = static_cast<int32_t>(packet.readUInt32());
-            owner_.ensureItemInfo(itemEntry);
-            auto* info = owner_.getItemInfo(itemEntry);
-            std::string rawName2 = info && !info->name.empty() ? info->name : ("Item #" + std::to_string(itemEntry));
-            if (bidRandProp != 0) {
-                std::string suffix = owner_.getRandomPropertyName(bidRandProp);
-                if (!suffix.empty()) rawName2 += " " + suffix;
-            }
-            uint32_t bidQuality = info ? info->quality : 1u;
-            std::string bidLink = buildItemLink(itemEntry, bidQuality, rawName2);
-            owner_.addSystemChatMessage("You have been outbid on " + bidLink + ".");
+        // WotLK format: auctionHouseId(4) + auctionId(4) + bidderGuid(8) +
+        // bidAmount(4) + outbidAmount(4) + itemEntry(4) + randomPropertyId(4) = 32 bytes.
+        // Previously read auctionHouseId as auctionId and auctionId as itemEntry,
+        // so outbid messages always referenced the wrong item.
+        if (!packet.hasRemaining(32)) { packet.skipAll(); return; }
+        /*uint32_t auctionHouseId =*/ packet.readUInt32();
+        /*uint32_t auctionId      =*/ packet.readUInt32();
+        /*uint64_t bidderGuid     =*/ packet.readUInt64();
+        /*uint32_t bidAmount      =*/ packet.readUInt32();
+        /*uint32_t outbidAmount   =*/ packet.readUInt32();
+        uint32_t itemEntry = packet.readUInt32();
+        int32_t bidRandProp = static_cast<int32_t>(packet.readUInt32());
+        owner_.ensureItemInfo(itemEntry);
+        auto* info = owner_.getItemInfo(itemEntry);
+        std::string rawName = info && !info->name.empty() ? info->name : ("Item #" + std::to_string(itemEntry));
+        if (bidRandProp != 0) {
+            std::string suffix = owner_.getRandomPropertyName(bidRandProp);
+            if (!suffix.empty()) rawName += " " + suffix;
         }
-        packet.setReadPos(packet.getSize());
+        uint32_t bidQuality = info ? info->quality : 1u;
+        owner_.addSystemChatMessage("You have been outbid on " + buildItemLink(itemEntry, bidQuality, rawName) + ".");
+        packet.skipAll();
     };
 
     table[Opcode::SMSG_AUCTION_REMOVED_NOTIFICATION] = [this](network::Packet& packet) {
