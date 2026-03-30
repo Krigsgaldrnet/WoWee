@@ -2479,8 +2479,9 @@ void SocialHandler::handleSetFactionStanding(network::Packet& packet) {
             owner_.addSystemChatMessage(buf);
             owner_.watchedFactionId_ = factionId;
             if (owner_.repChangeCallback_) owner_.repChangeCallback_(name, delta, standing);
-                owner_.fireAddonEvent("UPDATE_FACTION", {});
-                owner_.fireAddonEvent("CHAT_MSG_COMBAT_FACTION_CHANGE", {std::string(buf)});
+            // These events fire unconditionally on any rep change (not gated by callback).
+            owner_.fireAddonEvent("UPDATE_FACTION", {});
+            owner_.fireAddonEvent("CHAT_MSG_COMBAT_FACTION_CHANGE", {std::string(buf)});
         }
     }
 }
