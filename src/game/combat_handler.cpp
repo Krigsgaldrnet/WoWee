@@ -519,7 +519,6 @@ void CombatHandler::handleAttackerStateUpdate(network::Packet& packet) {
             addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(totalResisted), 0, isPlayerAttacker, 0, data.attackerGuid, data.targetGuid);
     }
 
-    (void)isPlayerTarget;
 }
 
 void CombatHandler::handleSpellDamageLog(network::Packet& packet) {
