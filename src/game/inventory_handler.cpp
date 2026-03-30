@@ -1665,9 +1665,10 @@ void InventoryHandler::handleReceivedMail(network::Packet& packet) {
 }
 
 void InventoryHandler::handleQueryNextMailTime(network::Packet& packet) {
-    if (packet.getSize() - packet.getReadPos() < 8) return;
-    float nextTime = *reinterpret_cast<const float*>(&packet.getData()[packet.getReadPos()]);
-    packet.readUInt32(); // skip
+    if (!packet.hasRemaining(8)) return;
+    // readFloat() uses memcpy internally, avoiding the strict aliasing violation
+    // that the previous reinterpret_cast<float*> on raw packet bytes had.
+    float nextTime = packet.readFloat();
     uint32_t count = packet.readUInt32();
     hasNewMail_ = (nextTime >= 0.0f && count > 0);
     packet.setReadPos(packet.getSize());
