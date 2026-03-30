@@ -169,8 +169,8 @@ void CombatHandler::registerOpcodes(DispatchTable& table) {
     table[Opcode::SMSG_PVP_CREDIT] = [this](network::Packet& p) { handlePvpCredit(p); };
     table[Opcode::SMSG_PROCRESIST] = [this](network::Packet& p) { handleProcResist(p); };
 
-    // ---- Environmental / reflect / immune / resist ----
-    table[Opcode::SMSG_ENVIRONMENTALDAMAGELOG] = [this](network::Packet& p) { handleEnvironmentalDamageLog(p); };
+    // SMSG_ENVIRONMENTALDAMAGELOG is an alias for SMSG_ENVIRONMENTAL_DAMAGE_LOG
+    // (registered above at line 108 with envType forwarding). No separate handler needed.
     table[Opcode::SMSG_SPELLDAMAGESHIELD] = [this](network::Packet& p) { handleSpellDamageShield(p); };
     table[Opcode::SMSG_SPELLORDAMAGE_IMMUNE] = [this](network::Packet& p) { handleSpellOrDamageImmune(p); };
     table[Opcode::SMSG_RESISTLOG] = [this](network::Packet& p) { handleResistLog(p); };
@@ -800,24 +800,6 @@ void CombatHandler::handleProcResist(network::Packet& packet) {
 // Environmental / reflect / immune / resist
 // ============================================================
 
-void CombatHandler::handleEnvironmentalDamageLog(network::Packet& packet) {
-    // uint64 victimGuid + uint8 envDamageType + uint32 damage + uint32 absorb + uint32 resist
-    if (!packet.hasRemaining(21)) return;
-    uint64_t victimGuid = packet.readUInt64();
-    /*uint8_t  envType =*/ packet.readUInt8();
-    uint32_t damage   = packet.readUInt32();
-    uint32_t absorb   = packet.readUInt32();
-    uint32_t resist   = packet.readUInt32();
-    if (victimGuid == owner_.playerGuid) {
-        // Environmental damage: no caster GUID, victim = player
-        if (damage > 0)
-            addCombatText(CombatTextEntry::ENVIRONMENTAL, static_cast<int32_t>(damage), 0, false, 0, 0, victimGuid);
-        if (absorb > 0)
-            addCombatText(CombatTextEntry::ABSORB, static_cast<int32_t>(absorb), 0, false, 0, 0, victimGuid);
-        if (resist > 0)
-            addCombatText(CombatTextEntry::RESIST, static_cast<int32_t>(resist), 0, false, 0, 0, victimGuid);
-    }
-}
 
 void CombatHandler::handleSpellDamageShield(network::Packet& packet) {
     // Classic: packed_guid victim + packed_guid caster + spellId(4) + damage(4) + schoolMask(4)

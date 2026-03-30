@@ -137,7 +137,6 @@ private:
     void handleUpdateComboPoints(network::Packet& packet);
     void handlePvpCredit(network::Packet& packet);
     void handleProcResist(network::Packet& packet);
-    void handleEnvironmentalDamageLog(network::Packet& packet);
     void handleSpellDamageShield(network::Packet& packet);
     void handleSpellOrDamageImmune(network::Packet& packet);
     void handleResistLog(network::Packet& packet);
