@@ -71,8 +71,11 @@ BLPImage BLPLoader::loadBLP1(const uint8_t* data, size_t size) {
 
     const uint8_t* mipData = data + offset;
 
-    // Allocate output buffer
-    int pixelCount = image.width * image.height;
+    if (image.width <= 0 || image.height <= 0 || image.width > 4096 || image.height > 4096) {
+        LOG_ERROR("BLP1 dimensions out of range: ", image.width, "x", image.height);
+        return BLPImage();
+    }
+    uint32_t pixelCount = static_cast<uint32_t>(image.width) * static_cast<uint32_t>(image.height);
     image.data.resize(pixelCount * 4);  // RGBA8
 
     decompressPalette(mipData, image.data.data(), header.palette,
@@ -141,9 +144,19 @@ BLPImage BLPLoader::loadBLP2(const uint8_t* data, size_t size) {
 
     const uint8_t* mipData = data + offset;
 
-    // Allocate output buffer
-    int pixelCount = image.width * image.height;
-    image.data.resize(pixelCount * 4);  // RGBA8
+    if (image.width <= 0 || image.height <= 0 || image.width > 4096 || image.height > 4096) {
+        LOG_ERROR("BLP2 dimensions out of range: ", image.width, "x", image.height);
+        return BLPImage();
+    }
+    uint32_t pixelCount = static_cast<uint32_t>(image.width) * static_cast<uint32_t>(image.height);
+    uint32_t requiredArgb = pixelCount * 4;
+    // For ARGB8888 the source must be at least pixelCount*4 bytes; for DXT/palette
+    // the source is smaller but the decompressors have their own internal bounds.
+    if (image.compression == BLPCompression::ARGB8888 && mipSize < requiredArgb) {
+        LOG_ERROR("BLP2 ARGB8888 mipSize (", mipSize, ") < required (", requiredArgb, ")");
+        return BLPImage();
+    }
+    image.data.resize(requiredArgb);  // RGBA8
 
     switch (image.compression) {
         case BLPCompression::DXT1:
@@ -164,7 +177,7 @@ BLPImage BLPLoader::loadBLP2(const uint8_t* data, size_t size) {
             break;
 
         case BLPCompression::ARGB8888:
-            for (int i = 0; i < pixelCount; i++) {
+            for (uint32_t i = 0; i < pixelCount; i++) {
                 image.data[i * 4 + 0] = mipData[i * 4 + 2];  // R
                 image.data[i * 4 + 1] = mipData[i * 4 + 1];  // G
                 image.data[i * 4 + 2] = mipData[i * 4 + 0];  // B
