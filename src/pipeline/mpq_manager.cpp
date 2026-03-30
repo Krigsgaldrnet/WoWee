@@ -310,7 +310,7 @@ std::vector<uint8_t> MPQManager::readFile(const std::string& filename) const {
                 std::string entryName = entry.path().filename().string();
                 // Case-insensitive comparison
                 if (std::equal(comp.begin(), comp.end(), entryName.begin(), entryName.end(),
-                              [](char a, char b) { return std::tolower(a) == std::tolower(b); })) {
+                              [](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); })) {
                     searchPath = entry.path();
                     found = true;
                     break;

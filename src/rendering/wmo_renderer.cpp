@@ -773,7 +773,7 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             // Convert .mdx/.mdl to .m2
             if (m2Path.size() > 4) {
                 std::string ext = m2Path.substr(m2Path.size() - 4);
-                for (char& c : ext) c = std::tolower(c);
+                for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 if (ext == ".mdx" || ext == ".mdl") {
                     m2Path = m2Path.substr(0, m2Path.size() - 4) + ".m2";
                 }

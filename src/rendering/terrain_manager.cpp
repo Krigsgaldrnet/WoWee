@@ -534,7 +534,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                 if (basePath.size() > 4) {
                     extension = basePath.substr(basePath.size() - 4);
                     std::string extLower = extension;
-                    for (char& c : extLower) c = std::tolower(c);
+                    for (char& c : extLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                     if (extLower == ".wmo") {
                         basePath = basePath.substr(0, basePath.size() - 4);
                     }
@@ -612,7 +612,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
 
                         if (m2Path.size() > 4) {
                             std::string ext = m2Path.substr(m2Path.size() - 4);
-                            for (char& c : ext) c = std::tolower(c);
+                            for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                             if (ext == ".mdx" || ext == ".mdl") {
                                 m2Path = m2Path.substr(0, m2Path.size() - 4) + ".m2";
                             }

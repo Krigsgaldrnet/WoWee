@@ -1002,7 +1002,7 @@ VkTexture* CharacterRenderer::compositeTextures(const std::vector<std::string>& 
             int dstX = 0, dstY = 0;
             int expectedW256 = 0, expectedH256 = 0; // Expected size at 256-base
             std::string pathLower = layerPaths[layer];
-            for (auto& c : pathLower) c = std::tolower(c);
+            for (auto& c : pathLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
             if (pathLower.find("faceupper") != std::string::npos) {
                 dstX = faceUpperRegion256.x; dstY = faceUpperRegion256.y;
@@ -1220,7 +1220,7 @@ VkTexture* CharacterRenderer::compositeWithRegions(const std::string& basePath,
             // WoW 256-scale atlas coordinates (from CharComponentTextureSections)
             int dstX = 0, dstY = 0;
             std::string pathLower = ul;
-            for (auto& c : pathLower) c = std::tolower(c);
+            for (auto& c : pathLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
             // Scale factor from 256-base coordinates to actual canvas size
             int coordScale = width / 256;

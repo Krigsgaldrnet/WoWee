@@ -454,8 +454,9 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
             if (!usingStoredHash) {
                 std::string upperUser = username;
                 std::string upperPass = password;
-                std::transform(upperUser.begin(), upperUser.end(), upperUser.begin(), ::toupper);
-                std::transform(upperPass.begin(), upperPass.end(), upperPass.begin(), ::toupper);
+                auto toUp = [](unsigned char c) { return static_cast<char>(std::toupper(c)); };
+                std::transform(upperUser.begin(), upperUser.end(), upperUser.begin(), toUp);
+                std::transform(upperPass.begin(), upperPass.end(), upperPass.begin(), toUp);
                 std::string combined = upperUser + ":" + upperPass;
                 auto hash = auth::Crypto::sha1(combined);
                 savedPasswordHash = hexEncode(hash);

@@ -5606,7 +5606,7 @@ void Application::buildCreatureDisplayLookups() {
 
     // Resolve gryphon/wyvern display IDs by exact model path so taxi mounts have textures.
     auto toLower = [](std::string s) {
-        for (char& c : s) c = static_cast<char>(::tolower(c));
+        for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         return s;
     };
     auto normalizePath = [&](const std::string& p) {
@@ -8251,7 +8251,7 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
                     if (basePath.size() > 4) {
                         extension = basePath.substr(basePath.size() - 4);
                         std::string extLower = extension;
-                        for (char& c : extLower) c = static_cast<char>(std::tolower(c));
+                        for (char& c : extLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                         if (extLower == ".wmo") {
                             basePath = basePath.substr(0, basePath.size() - 4);
                         }
@@ -8423,7 +8423,8 @@ void Application::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_t 
         // Freeze animation for static gameobjects, but let portals/effects/transports animate
         bool isTransportGO = gameHandler && gameHandler->isTransportGuid(guid);
         std::string lowerPath = modelPath;
-        std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
+        std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         bool isAnimatedEffect = (lowerPath.find("instanceportal") != std::string::npos ||
                                   lowerPath.find("instancenewportal") != std::string::npos ||
                                   lowerPath.find("portalfx") != std::string::npos ||
