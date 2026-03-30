@@ -245,7 +245,7 @@ std::vector<Inventory::SwapOp> Inventory::computeSortSwaps() const {
     }
     for (int b = 0; b < NUM_BAG_SLOTS; ++b) {
         for (int s = 0; s < bags[b].size; ++s) {
-            entries.push_back({static_cast<uint8_t>(19 + b), static_cast<uint8_t>(s),
+            entries.push_back({static_cast<uint8_t>(FIRST_BAG_EQUIP_SLOT + b), static_cast<uint8_t>(s),
                                bags[b].slots[s].item.itemId, bags[b].slots[s].item.quality,
                                bags[b].slots[s].item.stackCount});
         }

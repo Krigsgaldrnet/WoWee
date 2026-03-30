@@ -6371,7 +6371,7 @@ void GameHandler::offerQuestFromItem(uint64_t itemGuid, uint32_t questId) {
 uint64_t GameHandler::getBagItemGuid(int bagIndex, int slotIndex) const {
     if (bagIndex < 0 || bagIndex >= inventory.NUM_BAG_SLOTS) return 0;
     if (slotIndex < 0) return 0;
-    uint64_t bagGuid = equipSlotGuids_[19 + bagIndex];
+    uint64_t bagGuid = equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
     if (bagGuid == 0) return 0;
     auto it = containerContents_.find(bagGuid);
     if (it == containerContents_.end()) return 0;

@@ -486,7 +486,7 @@ void SpellHandler::useItemInBag(int bagIndex, int slotIndex) {
     if (slot.empty()) return;
 
     uint64_t itemGuid = 0;
-    uint64_t bagGuid = owner_.equipSlotGuids_[19 + bagIndex];
+    uint64_t bagGuid = owner_.equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
     if (bagGuid != 0) {
         auto it = owner_.containerContents_.find(bagGuid);
         if (it != owner_.containerContents_.end() && slotIndex < static_cast<int>(it->second.numSlots)) {
@@ -502,7 +502,7 @@ void SpellHandler::useItemInBag(int bagIndex, int slotIndex) {
 
     if (itemGuid != 0 && owner_.state == WorldState::IN_WORLD && owner_.socket) {
         uint32_t useSpellId = findOnUseSpellId(slot.item.itemId);
-        uint8_t wowBag = static_cast<uint8_t>(19 + bagIndex);
+        uint8_t wowBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex);
         auto packet = owner_.packetParsers_
             ? owner_.packetParsers_->buildUseItem(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId)
             : UseItemPacket::build(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId);

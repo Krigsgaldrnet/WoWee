@@ -1362,6 +1362,7 @@ void CombatHandler::togglePvp() {
     auto entity = owner_.getEntityManager().getEntity(owner_.playerGuid);
     bool currentlyPvp = false;
     if (entity) {
+        // UNIT_FIELD_FLAGS (index 59), bit 0x1000 = UNIT_FLAG_PVP
         currentlyPvp = (entity->getField(59) & 0x00001000) != 0;
     }
     if (currentlyPvp) {

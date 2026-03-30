@@ -981,7 +981,7 @@ void InventoryHandler::sellItemInBag(int bagIndex, int slotIndex) {
     }
 
     uint64_t itemGuid = 0;
-    uint64_t bagGuid = owner_.equipSlotGuids_[19 + bagIndex];
+    uint64_t bagGuid = owner_.equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
     if (bagGuid != 0) {
         auto it = owner_.containerContents_.find(bagGuid);
         if (it != owner_.containerContents_.end() && slotIndex < static_cast<int>(it->second.numSlots)) {
@@ -1058,7 +1058,7 @@ void InventoryHandler::autoEquipItemInBag(int bagIndex, int slotIndex) {
 
     if (owner_.state == WorldState::IN_WORLD && owner_.socket) {
         auto packet = AutoEquipItemPacket::build(
-            static_cast<uint8_t>(19 + bagIndex), static_cast<uint8_t>(slotIndex));
+            static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex), static_cast<uint8_t>(slotIndex));
         owner_.socket->send(packet);
     }
 }
@@ -1104,7 +1104,7 @@ void InventoryHandler::useItemInBag(int bagIndex, int slotIndex) {
     if (slot.empty()) return;
 
     uint64_t itemGuid = 0;
-    uint64_t bagGuid = owner_.equipSlotGuids_[19 + bagIndex];
+    uint64_t bagGuid = owner_.equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
     if (bagGuid != 0) {
         auto it = owner_.containerContents_.find(bagGuid);
         if (it != owner_.containerContents_.end() && slotIndex < static_cast<int>(it->second.numSlots)) {
@@ -1128,7 +1128,7 @@ void InventoryHandler::useItemInBag(int bagIndex, int slotIndex) {
                 }
             }
         }
-        uint8_t wowBag = static_cast<uint8_t>(19 + bagIndex);
+        uint8_t wowBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex);
         auto packet = owner_.packetParsers_
             ? owner_.packetParsers_->buildUseItem(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId)
             : UseItemPacket::build(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId);
@@ -1155,7 +1155,7 @@ void InventoryHandler::openItemInBag(int bagIndex, int slotIndex) {
     if (slotIndex < 0 || slotIndex >= owner_.inventory.getBagSize(bagIndex)) return;
     if (owner_.inventory.getBagSlot(bagIndex, slotIndex).empty()) return;
     if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
-    uint8_t wowBag = static_cast<uint8_t>(19 + bagIndex);
+    uint8_t wowBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex);
     auto packet = OpenItemPacket::build(wowBag, static_cast<uint8_t>(slotIndex));
     LOG_INFO("openItemInBag: CMSG_OPEN_ITEM bag=", (int)wowBag, " slot=", slotIndex);
     owner_.socket->send(packet);
@@ -1192,7 +1192,7 @@ void InventoryHandler::splitItem(uint8_t srcBag, uint8_t srcSlot, uint8_t count)
         int bagSize = owner_.inventory.getBagSize(b);
         for (int s = 0; s < bagSize; s++) {
             if (owner_.inventory.getBagSlot(b, s).empty()) {
-                uint8_t dstBag = static_cast<uint8_t>(19 + b);
+                uint8_t dstBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + b);
                 uint8_t dstSlot = static_cast<uint8_t>(s);
                 LOG_INFO("splitItem: src(bag=", (int)srcBag, " slot=", (int)srcSlot,
                          ") count=", (int)count, " -> dst(bag=", (int)dstBag,
@@ -1227,8 +1227,8 @@ void InventoryHandler::swapBagSlots(int srcBagIndex, int dstBagIndex) {
     owner_.inventory.swapBagContents(srcBagIndex, dstBagIndex);
 
     if (owner_.socket && owner_.socket->isConnected()) {
-        uint8_t srcSlot = static_cast<uint8_t>(19 + srcBagIndex);
-        uint8_t dstSlot = static_cast<uint8_t>(19 + dstBagIndex);
+        uint8_t srcSlot = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + srcBagIndex);
+        uint8_t dstSlot = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + dstBagIndex);
         LOG_INFO("swapBagSlots: bag ", srcBagIndex, " (slot ", (int)srcSlot,
                  ") <-> bag ", dstBagIndex, " (slot ", (int)dstSlot, ")");
         auto packet = SwapItemPacket::build(255, dstSlot, 255, srcSlot);
@@ -1550,7 +1550,7 @@ bool InventoryHandler::attachItemFromBag(int bagIndex, int slotIndex) {
     if (slotIndex < 0 || slotIndex >= owner_.inventory.getBagSize(bagIndex)) return false;
     const auto& slot = owner_.inventory.getBagSlot(bagIndex, slotIndex);
     if (slot.empty()) return false;
-    uint64_t bagGuid = owner_.equipSlotGuids_[19 + bagIndex];
+    uint64_t bagGuid = owner_.equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
     if (bagGuid == 0) return false;
     auto it = owner_.containerContents_.find(bagGuid);
     if (it == owner_.containerContents_.end()) return false;
@@ -1561,7 +1561,7 @@ bool InventoryHandler::attachItemFromBag(int bagIndex, int slotIndex) {
         if (!mailAttachments_[i].occupied()) {
             mailAttachments_[i].itemGuid = itemGuid;
             mailAttachments_[i].item = slot.item;
-            mailAttachments_[i].srcBag = static_cast<uint8_t>(19 + bagIndex);
+            mailAttachments_[i].srcBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex);
             mailAttachments_[i].srcSlot = static_cast<uint8_t>(slotIndex);
             return true;
         }
@@ -2233,7 +2233,7 @@ void InventoryHandler::useEquipmentSet(uint32_t setId) {
                 int bagSize = owner_.inventory.getBagSize(bag);
                 for (int s = 0; s < bagSize && !found; ++s) {
                     if (owner_.getBagItemGuid(bag, s) == itemGuid) {
-                        srcBag = static_cast<uint8_t>(19 + bag);
+                        srcBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bag);
                         srcSlot = static_cast<uint8_t>(s);
                         found = true;
                     }
@@ -2712,7 +2712,7 @@ void InventoryHandler::rebuildOnlineInventory() {
 
     // Bag contents (BAG1-BAG4 are equip slots 19-22)
     for (int bagIdx = 0; bagIdx < 4; bagIdx++) {
-        uint64_t bagGuid = owner_.equipSlotGuids_[19 + bagIdx];
+        uint64_t bagGuid = owner_.equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIdx];
         if (bagGuid == 0) continue;
 
         // Determine bag size from container fields or item template
@@ -2736,11 +2736,11 @@ void InventoryHandler::rebuildOnlineInventory() {
         owner_.inventory.setBagSize(bagIdx, numSlots);
 
         // Also set bagSlots on the equipped bag item (for UI display)
-        auto& bagEquipSlot = owner_.inventory.getEquipSlot(static_cast<EquipSlot>(19 + bagIdx));
+        auto& bagEquipSlot = owner_.inventory.getEquipSlot(static_cast<EquipSlot>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIdx));
         if (!bagEquipSlot.empty()) {
             ItemDef bagDef = bagEquipSlot.item;
             bagDef.bagSlots = numSlots;
-            owner_.inventory.setEquipSlot(static_cast<EquipSlot>(19 + bagIdx), bagDef);
+            owner_.inventory.setEquipSlot(static_cast<EquipSlot>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIdx), bagDef);
         }
 
         // Populate bag slot items
