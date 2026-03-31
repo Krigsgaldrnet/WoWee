@@ -5385,8 +5385,12 @@ void Application::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                         }
                     }
                 }
-                // After 20s, accept any loaded terrain (fallback for unusual spawns)
-                if (!groundReady && elapsed >= 20.0f) {
+                // After 5s with enough tiles loaded, accept terrain as ready even if
+                // the height sample doesn't match spawn Z exactly. This handles cases
+                // where getHeightAt returns a slightly different value than the server's
+                // spawn Z (e.g. terrain LOD, MCNK chunk boundaries, or spawn inside a
+                // building where floor height differs from terrain below).
+                if (!groundReady && elapsed >= 5.0f) {
                     if (auto* tm = renderer->getTerrainManager()) {
                         if (tm->getLoadedTileCount() >= 4) {
                             groundReady = true;

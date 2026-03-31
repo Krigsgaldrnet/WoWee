@@ -536,19 +536,16 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                 bool isClassic = (owner_.build <= 6005) && !isTurtle;
 
                 if (!isTurtle && !isClassic) {
-                    // WotLK/TBC (AzerothCore, etc.): strict servers BAN for wrong HASH_RESULT.
-                    // Without a matching CR entry we cannot compute the correct hash
-                    // (requires executing the module's native init function).
-                    // Safest action: don't respond. Server will time-out and kick (not ban).
+                    // WotLK/TBC: don't respond to HASH_REQUEST without a valid CR match.
+                    // ChromieCraft/AzerothCore tolerates the silence (no ban, no kick),
+                    // but REJECTS a wrong hash and closes the connection immediately.
+                    // Staying silent lets the server continue the session without Warden checks.
                     LOG_WARNING("Warden: HASH_REQUEST seed=", seedHex,
-                                " — no CR match, SKIPPING response to avoid account ban");
-                    LOG_WARNING("Warden: To fix, provide a .cr file with the correct seed→reply entry for this module");
-                    // Stay in WAIT_HASH_REQUEST — server will eventually kick.
+                                " — no CR match, skipping response (server tolerates silence)");
+                    wardenState_ = WardenState::WAIT_CHECKS;
                     break;
                 }
 
-                // Turtle/Classic: lenient servers (log-only penalties, no bans).
-                // Send a best-effort fallback hash so we can continue the handshake.
                 LOG_WARNING("Warden: No CR match (seed=", seedHex,
                             "), sending fallback hash (lenient server)");
 
