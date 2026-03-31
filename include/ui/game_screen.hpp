@@ -9,6 +9,7 @@
 #include "ui/spellbook_screen.hpp"
 #include "ui/talent_screen.hpp"
 #include "ui/keybinding_manager.hpp"
+#include "ui/chat_panel.hpp"
 #include <vulkan/vulkan.h>
 #include <imgui.h>
 #include <string>
@@ -37,55 +38,19 @@ public:
     /**
      * Check if chat input is active
      */
-    bool isChatInputActive() const { return chatInputActive; }
+    bool isChatInputActive() const { return chatPanel_.isChatInputActive(); }
 
     void saveSettings();
     void loadSettings();
     void applyAudioVolumes(rendering::Renderer* renderer);
 
 private:
-    // Chat state
-    char chatInputBuffer[512] = "";
-    char whisperTargetBuffer[256] = "";
-    bool chatInputActive = false;
-    int selectedChatType = 0;  // 0=SAY, 1=YELL, 2=PARTY, 3=GUILD, 4=WHISPER, ..., 10=CHANNEL
-    int lastChatType = 0;  // Track chat type changes
-    int selectedChannelIdx = 0; // Index into joinedChannels_ when selectedChatType==10
-    bool chatInputMoveCursorToEnd = false;
-
-    // Chat sent-message history (Up/Down arrow recall)
-    std::vector<std::string> chatSentHistory_;
-    int chatHistoryIdx_ = -1;  // -1 = not browsing history
-
-    // Set to true by /stopmacro; checked in executeMacroText to halt remaining commands.
-    bool macroStopped_ = false;
+    // Chat panel (extracted from GameScreen — owns all chat state and rendering)
+    ChatPanel chatPanel_;
 
     // Action bar error-flash: spellId → wall-clock time (seconds) when the flash ends.
     // Populated by the SpellCastFailedCallback; queried during action bar button rendering.
     std::unordered_map<uint32_t, float> actionFlashEndTimes_;
-
-    // Cached game handler for input callbacks (set each frame in render)
-    game::GameHandler* cachedGameHandler_ = nullptr;
-
-    // Tab-completion state for slash commands and player names
-    std::string chatTabPrefix_;            // prefix captured on first Tab press
-    std::vector<std::string> chatTabMatches_;  // matching command list
-    int chatTabMatchIdx_ = -1;             // active match index (-1 = inactive)
-
-    // Mention notification: plays a sound when the player's name appears in chat
-    size_t chatMentionSeenCount_ = 0;      // how many messages have been scanned for mentions
-
-    // Chat tabs
-    int activeChatTab_ = 0;
-    struct ChatTab {
-        std::string name;
-        uint64_t typeMask;  // bitmask of ChatType values to show (64-bit: types go up to 84)
-    };
-    std::vector<ChatTab> chatTabs_;
-    std::vector<int> chatTabUnread_;   // unread message count per tab (0 = none)
-    size_t chatTabSeenCount_ = 0;      // how many history messages have been processed
-    void initChatTabs();
-    bool shouldShowMessage(const game::MessageChatData& msg, int tabIndex) const;
 
     // UI state
     bool showEntityWindow = false;
@@ -165,13 +130,7 @@ private:
     char petitionNameBuffer_[64] = {0};
     char addRankNameBuffer_[64] = {0};
     bool showAddRankModal_ = false;
-    bool refocusChatInput = false;
     bool vendorBagsOpened_ = false;  // Track if bags were auto-opened for current vendor session
-    bool chatScrolledUp_ = false;         // true when user has scrolled above the latest messages
-    bool chatForceScrollToBottom_ = false; // set to true to jump to bottom next frame
-    bool chatWindowLocked = true;
-    ImVec2 chatWindowPos_ = ImVec2(0.0f, 0.0f);
-    bool chatWindowPosInit_ = false;
     ImVec2 questTrackerPos_ = ImVec2(-1.0f, -1.0f);  // <0 = use default
     ImVec2 questTrackerSize_ = ImVec2(220.0f, 200.0f); // saved size
     float questTrackerRightOffset_ = -1.0f;            // pixels from right edge; <0 = use default
@@ -287,27 +246,6 @@ private:
     void renderEntityList(game::GameHandler& gameHandler);
 
     /**
-     * Render chat window
-     */
-    void renderChatWindow(game::GameHandler& gameHandler);
-
-    /**
-     * Send chat message
-     */
-    void sendChatMessage(game::GameHandler& gameHandler);
-    void executeMacroText(game::GameHandler& gameHandler, const std::string& macroText);
-
-    /**
-     * Get chat type name
-     */
-    const char* getChatTypeName(game::ChatType type) const;
-
-    /**
-     * Get chat type color
-     */
-    ImVec4 getChatTypeColor(game::ChatType type) const;
-
-    /**
      * Render player unit frame (top-left)
      */
     void renderPlayerFrame(game::GameHandler& gameHandler);
@@ -385,7 +323,6 @@ private:
     void renderEscapeMenu();
     void renderSettingsWindow();
     void renderSettingsAudioTab();
-    void renderSettingsChatTab();
     void renderSettingsAboutTab();
     void renderSettingsInterfaceTab();
     void renderSettingsGameplayTab();
@@ -402,7 +339,6 @@ private:
     void renderBfMgrInvitePopup(game::GameHandler& gameHandler);
     void renderLfgProposalPopup(game::GameHandler& gameHandler);
     void renderLfgRoleCheckPopup(game::GameHandler& gameHandler);
-    void renderChatBubbles(game::GameHandler& gameHandler);
     void renderMailWindow(game::GameHandler& gameHandler);
     void renderMailComposeWindow(game::GameHandler& gameHandler);
     void renderBankWindow(game::GameHandler& gameHandler);
@@ -527,33 +463,8 @@ private:
     uint8_t lfgRoles_ = 0x08;  // default: DPS (0x02=tank, 0x04=healer, 0x08=dps)
     uint32_t lfgSelectedDungeon_ = 861;  // default: random dungeon (entry 861 = Random Dungeon WotLK)
 
-    // Chat settings
-    bool chatShowTimestamps_ = false;
-    int chatFontSize_ = 1;  // 0=small, 1=medium, 2=large
-    bool chatAutoJoinGeneral_ = true;
-    bool chatAutoJoinTrade_ = true;
-    bool chatAutoJoinLocalDefense_ = true;
-    bool chatAutoJoinLFG_ = true;
-    bool chatAutoJoinLocal_ = true;
-
-    // Join channel input buffer
-    char joinChannelBuffer_[128] = "";
-
     static std::string getSettingsPath();
 
-    // Gender placeholder replacement
-    std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler);
-
-    // Chat bubbles
-    struct ChatBubble {
-        uint64_t senderGuid = 0;
-        std::string message;
-        float timeRemaining = 0.0f;
-        float totalDuration = 0.0f;
-        bool isYell = false;
-    };
-    std::vector<ChatBubble> chatBubbles_;
-    bool chatBubbleCallbackSet_ = false;
     bool levelUpCallbackSet_ = false;
     bool achievementCallbackSet_ = false;
 
