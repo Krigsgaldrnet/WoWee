@@ -1191,7 +1191,7 @@ void ActionBarPanel::renderStanceBar(game::GameHandler& gameHandler,
 }
 
 void ActionBarPanel::renderBagBar(game::GameHandler& gameHandler,
-                         SettingsPanel& settingsPanel,
+                         SettingsPanel& /*settingsPanel*/,
                          InventoryScreen& inventoryScreen) {
     ImVec2 displaySize = ImGui::GetIO().DisplaySize;
     float screenW = displaySize.x > 0.0f ? displaySize.x : 1280.0f;

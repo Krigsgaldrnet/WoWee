@@ -2110,9 +2110,9 @@ std::unordered_map<std::string, CastSeqState> s_castSeqStates;
 
 
 void ChatPanel::sendChatMessage(game::GameHandler& gameHandler,
-                                 InventoryScreen& inventoryScreen,
-                                 SpellbookScreen& spellbookScreen,
-                                 QuestLogScreen& questLogScreen) {
+                                 InventoryScreen& /*inventoryScreen*/,
+                                 SpellbookScreen& /*spellbookScreen*/,
+                                 QuestLogScreen& /*questLogScreen*/) {
     if (strlen(chatInputBuffer_) > 0) {
         std::string input(chatInputBuffer_);
 
