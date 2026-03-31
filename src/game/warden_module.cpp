@@ -115,13 +115,10 @@ bool WardenModule::load(const std::vector<uint8_t>& moduleData,
         LOG_ERROR("WardenModule: Address relocations failed; continuing with unrelocated image");
     }
 
-    // Step 7: Bind APIs
-    if (!bindAPIs()) {
-        LOG_ERROR("WardenModule: API binding failed!");
-        // Note: Currently returns true (stub) on both Windows and Linux
-    }
-
-    // Step 8: Initialize module
+    // Step 7+8: Initialize module (creates emulator) then bind APIs (patches IAT).
+    // API binding must happen after emulator setup (needs stub addresses) but before
+    // the module entry point is called (needs resolved imports). Both are handled
+    // inside initializeModule().
     if (!initializeModule()) {
         LOG_ERROR("WardenModule: Module initialization failed; continuing with stub callbacks");
     }
@@ -780,64 +777,99 @@ bool WardenModule::bindAPIs() {
 
     LOG_INFO("WardenModule: Binding Windows APIs for module...");
 
-    // Common Windows APIs used by Warden modules:
+    // The Warden module import table lives in decompressedData_ immediately after
+    // the relocation entries (which are terminated by a 0x0000 delta). Format:
     //
-    // kernel32.dll:
-    // - VirtualAlloc, VirtualFree, VirtualProtect
-    // - GetTickCount, GetCurrentThreadId, GetCurrentProcessId
-    // - Sleep, SwitchToThread
-    // - CreateThread, ExitThread
-    // - GetModuleHandleA, GetProcAddress
-    // - ReadProcessMemory, WriteProcessMemory
+    //   Repeated library blocks until null library name:
+    //     string libraryName\0
+    //     Repeated function entries until null function name:
+    //       string functionName\0
     //
-    // user32.dll:
-    // - GetForegroundWindow, GetWindowTextA
-    //
-    // ntdll.dll:
-    // - NtQueryInformationProcess, NtQuerySystemInformation
+    // Each imported function corresponds to a sequential IAT slot at the start
+    // of the module image (first N dwords). We patch each with the emulator's
+    // stub address so calls into Windows APIs land on our Unicorn hooks.
 
-    #ifdef _WIN32
-        // On Windows: Use GetProcAddress to resolve imports
-        LOG_INFO("WardenModule: Platform: Windows - using GetProcAddress");
+    if (relocDataOffset_ == 0 || relocDataOffset_ >= decompressedData_.size()) {
+        LOG_WARNING("WardenModule: No relocation/import data — skipping API binding");
+        return true;
+    }
 
-        HMODULE kernel32 = GetModuleHandleA("kernel32.dll");
-        HMODULE user32 = GetModuleHandleA("user32.dll");
-        HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    // Skip past relocation entries (delta-encoded uint16 pairs, 0x0000 terminated)
+    size_t pos = relocDataOffset_;
+    while (pos + 2 <= decompressedData_.size()) {
+        uint16_t delta = decompressedData_[pos] | (decompressedData_[pos + 1] << 8);
+        pos += 2;
+        if (delta == 0) break;
+    }
 
-        if (!kernel32 || !user32 || !ntdll) {
-            LOG_ERROR("WardenModule: Failed to get module handles");
-            return false;
+    if (pos >= decompressedData_.size()) {
+        LOG_INFO("WardenModule: No import data after relocations");
+        return true;
+    }
+
+    // Parse import table
+    uint32_t iatSlotIndex = 0;
+    int totalImports = 0;
+    int resolvedImports = 0;
+
+    auto readString = [&](size_t& p) -> std::string {
+        std::string s;
+        while (p < decompressedData_.size() && decompressedData_[p] != 0) {
+            s.push_back(static_cast<char>(decompressedData_[p]));
+            p++;
         }
+        if (p < decompressedData_.size()) p++; // skip null terminator
+        return s;
+    };
 
-        // TODO: Parse module's import table
-        // - Find import directory in PE headers
-        // - For each imported DLL:
-        //   - For each imported function:
-        //     - Resolve address using GetProcAddress
-        //     - Write address to Import Address Table (IAT)
+    while (pos < decompressedData_.size()) {
+        std::string libraryName = readString(pos);
+        if (libraryName.empty()) break; // null library name = end of imports
 
-        LOG_WARNING("WardenModule: Windows API binding is STUB (needs PE import table parsing)");
-        LOG_INFO("WardenModule:   Would parse PE headers and patch IAT with resolved addresses");
+        // Read functions for this library
+        while (pos < decompressedData_.size()) {
+            std::string functionName = readString(pos);
+            if (functionName.empty()) break; // null function name = next library
 
-    #else
-        // On Linux: Cannot directly execute Windows code
-        // Options:
-        // 1. Use Wine to provide Windows API compatibility
-        // 2. Implement Windows API stubs (limited functionality)
-        // 3. Use binfmt_misc + Wine (transparent Windows executable support)
+            totalImports++;
 
-        LOG_WARNING("WardenModule: Platform: Linux - Windows module execution NOT supported");
-        LOG_INFO("WardenModule: Options:");
-        LOG_INFO("WardenModule:   1. Run wowee under Wine (provides Windows API layer)");
-        LOG_INFO("WardenModule:   2. Use a Windows VM");
-        LOG_INFO("WardenModule:   3. Implement Windows API stubs (limited, complex)");
+            // Look up the emulator's stub address for this API
+            uint32_t resolvedAddr = 0;
+            #ifdef HAVE_UNICORN
+            if (emulator_) {
+                // Check if this API was pre-registered in setupCommonAPIHooks()
+                resolvedAddr = emulator_->getAPIAddress(libraryName, functionName);
+                if (resolvedAddr == 0) {
+                    // Not pre-registered — create a no-op stub that returns 0.
+                    // Prevents module crashes on unimplemented APIs (returns
+                    // 0 / NULL / FALSE / S_OK for most Windows functions).
+                    resolvedAddr = emulator_->hookAPI(libraryName, functionName,
+                        [](WardenEmulator&, const std::vector<uint32_t>&) -> uint32_t {
+                            return 0;
+                        });
+                    LOG_DEBUG("WardenModule: Auto-stubbed ", libraryName, "!", functionName);
+                }
+            }
+            #endif
 
-        // For now, we'll return true to continue the loading pipeline
-        // Real execution would fail, but this allows testing the infrastructure
-        LOG_WARNING("WardenModule: Skipping API binding (Linux platform limitation)");
-    #endif
+            // Patch IAT slot in module image
+            if (resolvedAddr != 0) {
+                uint32_t iatOffset = iatSlotIndex * 4;
+                if (iatOffset + 4 <= moduleSize_) {
+                    uint8_t* slot = static_cast<uint8_t*>(moduleMemory_) + iatOffset;
+                    std::memcpy(slot, &resolvedAddr, 4);
+                    resolvedImports++;
+                    LOG_DEBUG("WardenModule: IAT[", iatSlotIndex, "] = ", libraryName,
+                              "!", functionName, " → 0x", std::hex, resolvedAddr, std::dec);
+                }
+            }
+            iatSlotIndex++;
+        }
+    }
 
-    return true; // Return true to continue (stub implementation)
+    LOG_INFO("WardenModule: Bound ", resolvedImports, "/", totalImports,
+             " API imports (", iatSlotIndex, " IAT slots patched)");
+    return true;
 }
 
 bool WardenModule::initializeModule() {
@@ -952,8 +984,14 @@ bool WardenModule::initializeModule() {
             return false;
         }
 
-        // Setup Windows API hooks
+        // Setup Windows API hooks (VirtualAlloc, GetTickCount, ReadProcessMemory, etc.)
         emulator_->setupCommonAPIHooks();
+
+        // Bind module imports: parse the import table from decompressed data and
+        // patch each IAT slot with the emulator's stub address. Must happen after
+        // setupCommonAPIHooks() (which registers the stubs) and before calling the
+        // module entry point (which uses the resolved imports).
+        bindAPIs();
 
         {
             char addrBuf[32];
