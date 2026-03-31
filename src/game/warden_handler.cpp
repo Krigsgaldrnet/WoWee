@@ -440,8 +440,21 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                     }
                 }
 
-                // Load the module (decrypt, decompress, parse, relocate)
+                // Load the module (decrypt, decompress, parse, relocate, init)
                 wardenLoadedModule_ = std::make_shared<WardenModule>();
+                // Inject crypto and socket so module callbacks (sendPacket, generateRC4)
+                // can reach the network layer during initializeModule().
+                wardenLoadedModule_->setCallbackDependencies(
+                    wardenCrypto_.get(),
+                    [this](const uint8_t* data, size_t len) {
+                        if (!wardenCrypto_ || !owner_.socket) return;
+                        std::vector<uint8_t> plaintext(data, data + len);
+                        auto encrypted = wardenCrypto_->encrypt(plaintext);
+                        network::Packet pkt(wireOpcode(Opcode::CMSG_WARDEN_DATA));
+                        for (uint8_t b : encrypted) pkt.writeUInt8(b);
+                        owner_.socket->send(pkt);
+                        LOG_DEBUG("Warden: Module sendPacket callback sent ", len, " bytes");
+                    });
                 if (wardenLoadedModule_->load(wardenModuleData_, wardenModuleHash_, wardenModuleKey_)) { // codeql[cpp/weak-cryptographic-algorithm]
                     LOG_INFO("Warden: Module loaded successfully (image size=",
                              wardenLoadedModule_->getModuleSize(), " bytes)");

@@ -1,4 +1,5 @@
 #include "game/warden_module.hpp"
+#include "game/warden_crypto.hpp"
 #include "auth/crypto.hpp"
 #include "core/logger.hpp"
 #include <cstring>
@@ -30,8 +31,18 @@ namespace wowee {
 namespace game {
 
 // ============================================================================
+// Thread-local pointer to the active WardenModule instance during initializeModule().
+// C function pointer callbacks (sendPacket, validateModule, generateRC4) can't capture
+// state, so they use this to reach the module's crypto and socket dependencies.
+static thread_local WardenModule* tl_activeModule = nullptr;
+
 // WardenModule Implementation
 // ============================================================================
+
+void WardenModule::setCallbackDependencies(WardenCrypto* crypto, SendPacketFunc sendFunc) {
+    callbackCrypto_ = crypto;
+    callbackSendPacket_ = std::move(sendFunc);
+}
 
 WardenModule::WardenModule()
     : loaded_(false)
@@ -867,33 +878,54 @@ bool WardenModule::initializeModule() {
         void (*logMessage)(const char* msg);
     };
 
-    // Setup client callbacks (used when calling module entry point below)
+    // Setup client callbacks (used when calling module entry point below).
+    // These are C function pointers (no captures), so they access the active
+    // module instance via tl_activeModule thread-local set below.
     [[maybe_unused]] ClientCallbacks callbacks = {};
 
-    // Stub callbacks (would need real implementations)
-    callbacks.sendPacket = []([[maybe_unused]] uint8_t* data, size_t len) {
+    callbacks.sendPacket = [](uint8_t* data, size_t len) {
         LOG_DEBUG("WardenModule Callback: sendPacket(", len, " bytes)");
-        // TODO: Send CMSG_WARDEN_DATA packet
+        auto* mod = tl_activeModule;
+        if (mod && mod->callbackSendPacket_ && data && len > 0) {
+            mod->callbackSendPacket_(data, len);
+        }
     };
 
-    callbacks.validateModule = []([[maybe_unused]] uint8_t* hash) {
+    callbacks.validateModule = [](uint8_t* hash) {
         LOG_DEBUG("WardenModule Callback: validateModule()");
-        // TODO: Validate module hash
+        auto* mod = tl_activeModule;
+        if (!mod || !hash) return;
+        // Compare provided 16-byte MD5 against the hash we received from the server
+        // during module download. Mismatch means the module was corrupted in transit.
+        const auto& expected = mod->md5Hash_;
+        if (expected.size() == 16 && std::memcmp(hash, expected.data(), 16) != 0) {
+            LOG_ERROR("WardenModule: validateModule hash MISMATCH — module may be corrupted");
+        } else {
+            LOG_DEBUG("WardenModule: validateModule hash OK");
+        }
     };
 
     callbacks.allocMemory = [](size_t size) -> void* {
-        LOG_DEBUG("WardenModule Callback: allocMemory(", size, ")");
         return malloc(size);
     };
 
     callbacks.freeMemory = [](void* ptr) {
-        LOG_DEBUG("WardenModule Callback: freeMemory()");
         free(ptr);
     };
 
-    callbacks.generateRC4 = []([[maybe_unused]] uint8_t* seed) {
+    callbacks.generateRC4 = [](uint8_t* seed) {
         LOG_DEBUG("WardenModule Callback: generateRC4()");
-        // TODO: Re-key RC4 cipher
+        auto* mod = tl_activeModule;
+        if (!mod || !mod->callbackCrypto_ || !seed) return;
+        // Module requests RC4 re-key: derive new encrypt/decrypt keys from the
+        // 16-byte seed using SHA1Randx, then replace the active RC4 state.
+        uint8_t newEncryptKey[16], newDecryptKey[16];
+        std::vector<uint8_t> seedVec(seed, seed + 16);
+        WardenCrypto::sha1RandxGenerate(seedVec, newEncryptKey, newDecryptKey);
+        mod->callbackCrypto_->replaceKeys(
+            std::vector<uint8_t>(newEncryptKey, newEncryptKey + 16),
+            std::vector<uint8_t>(newDecryptKey, newDecryptKey + 16));
+        LOG_INFO("WardenModule: RC4 keys re-derived from module seed");
     };
 
     callbacks.getTime = []() -> uint32_t {
@@ -903,6 +935,9 @@ bool WardenModule::initializeModule() {
     callbacks.logMessage = [](const char* msg) {
         LOG_INFO("WardenModule Log: ", msg);
     };
+
+    // Set thread-local context so C callbacks can access this module's state
+    tl_activeModule = this;
 
     // Module entry point is typically at offset 0 (first bytes of loaded code)
     // Function signature: WardenFuncList* (*entryPoint)(ClientCallbacks*)
@@ -1087,8 +1122,11 @@ bool WardenModule::initializeModule() {
     // 3. Exception handling for crashes
     // 4. Sandboxing for security
 
-    LOG_WARNING("WardenModule: Module initialization is STUB");
-    return true; // Stub implementation
+    // Clear thread-local context — callbacks are only valid during init
+    tl_activeModule = nullptr;
+
+    LOG_WARNING("WardenModule: Module initialization complete (callbacks wired)");
+    return true;
 }
 
 // ============================================================================
