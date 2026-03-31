@@ -15,7 +15,6 @@ depends=(
   'zlib'              # Network packet decompression and Warden module inflate
   'ffmpeg'            # Video playback (login cinematics)
   'unicorn'           # Warden anti-cheat x86 emulation (cross-platform, no Wine)
-  'glew'              # OpenGL extensions (legacy fallback, linked but unused at runtime)
   'libx11'            # X11 windowing support
   'stormlib'          # AUR — MPQ extraction (wowee-extract-assets uses libstorm.so)
 )

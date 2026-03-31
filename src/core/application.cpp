@@ -48,7 +48,6 @@
 #include "pipeline/dbc_layout.hpp"
 
 #include <SDL2/SDL.h>
-// GL/glew.h removed — Vulkan migration Phase 1
 #include <cstdlib>
 #include <climits>
 #include <algorithm>

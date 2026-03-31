@@ -340,12 +340,6 @@ endif()
 if(CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(WOWEE_MACOS_CROSS_COMPILE TRUE)
 endif()
-# GL/GLEW kept temporarily for unconverted sub-renderers during Vulkan migration.
-# These files compile against GL types but their code is never called — the Vulkan
-# path is the only active rendering backend. Remove in Phase 7 when all renderers
-# are converted and grep confirms zero GL references.
-find_package(OpenGL QUIET)
-find_package(GLEW QUIET)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -584,12 +578,9 @@ set(WOWEE_SOURCES
     # Rendering
     src/rendering/renderer.cpp
     src/rendering/amd_fsr3_runtime.cpp
-    src/rendering/shader.cpp
-    src/rendering/mesh.cpp
     src/rendering/camera.cpp
     src/rendering/camera_controller.cpp
     src/rendering/material.cpp
-    src/rendering/scene.cpp
     src/rendering/terrain_renderer.cpp
     src/rendering/terrain_manager.cpp
     src/rendering/frustum.cpp
@@ -617,7 +608,6 @@ set(WOWEE_SOURCES
     src/rendering/levelup_effect.cpp
     src/rendering/charge_effect.cpp
     src/rendering/loading_screen.cpp
-    $<$<BOOL:${HAVE_FFMPEG}>:${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/video_player.cpp>
 
     # UI
     src/ui/ui_manager.cpp
@@ -704,12 +694,9 @@ set(WOWEE_HEADERS
     include/rendering/vk_pipeline.hpp
     include/rendering/vk_render_target.hpp
     include/rendering/renderer.hpp
-    include/rendering/shader.hpp
-    include/rendering/mesh.hpp
     include/rendering/camera.hpp
     include/rendering/camera_controller.hpp
     include/rendering/material.hpp
-    include/rendering/scene.hpp
     include/rendering/terrain_renderer.hpp
     include/rendering/terrain_manager.hpp
     include/rendering/frustum.hpp
@@ -728,7 +715,6 @@ set(WOWEE_HEADERS
     include/rendering/character_preview.hpp
     include/rendering/wmo_renderer.hpp
     include/rendering/loading_screen.hpp
-    include/rendering/video_player.hpp
 
     include/ui/ui_manager.hpp
     include/ui/auth_screen.hpp
@@ -827,14 +813,6 @@ target_link_libraries(wowee PRIVATE
     lua51
     ${CMAKE_DL_LIBS}
 )
-
-# GL/GLEW linked temporarily for unconverted sub-renderers (removed in Phase 7)
-if(TARGET OpenGL::GL)
-    target_link_libraries(wowee PRIVATE OpenGL::GL)
-endif()
-if(TARGET GLEW::GLEW)
-    target_link_libraries(wowee PRIVATE GLEW::GLEW)
-endif()
 
 if(HAVE_FFMPEG)
     target_compile_definitions(wowee PRIVATE HAVE_FFMPEG)

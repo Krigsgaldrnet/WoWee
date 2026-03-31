@@ -1,7 +1,6 @@
 #include "rendering/renderer.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
-#include "rendering/scene.hpp"
 #include "rendering/terrain_renderer.hpp"
 #include "rendering/terrain_manager.hpp"
 #include "rendering/performance_hud.hpp"
@@ -26,7 +25,6 @@
 #include "rendering/minimap.hpp"
 #include "rendering/world_map.hpp"
 #include "rendering/quest_marker_renderer.hpp"
-#include "rendering/shader.hpp"
 #include "game/game_handler.hpp"
 #include "pipeline/m2_loader.hpp"
 #include <algorithm>
@@ -673,9 +671,6 @@ bool Renderer::initialize(core::Window* win) {
     cameraController->setUseWoWSpeed(true);  // Use realistic WoW movement speed
     cameraController->setMouseSensitivity(0.15f);
 
-    // Create scene
-    scene = std::make_unique<Scene>();
-
     // Create performance HUD
     performanceHUD = std::make_unique<PerformanceHUD>();
     performanceHUD->setPosition(PerformanceHUD::Position::TOP_LEFT);
@@ -877,7 +872,6 @@ void Renderer::shutdown() {
     zoneManager.reset();
 
     performanceHUD.reset();
-    scene.reset();
     cameraController.reset();
     camera.reset();
 
