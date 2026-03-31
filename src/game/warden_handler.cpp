@@ -535,15 +535,19 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                 bool isTurtle = isActiveExpansion("turtle");
                 bool isClassic = (owner_.build <= 6005) && !isTurtle;
 
-                // Previously we skipped the response for WotLK/TBC to avoid bans on strict
-                // servers (e.g. Warmane). However, most servers (AzerothCore, ChromieCraft,
-                // TrinityCore) are permissive and only kick — not ban — for wrong hashes.
-                // Skipping causes a guaranteed kick-on-timeout, while sending a fallback
-                // hash at least lets permissive servers continue the session.
-                // For strict servers, provide a .cr file with the correct seed→reply.
+                if (!isTurtle && !isClassic) {
+                    // WotLK/TBC: don't respond to HASH_REQUEST without a valid CR match.
+                    // ChromieCraft/AzerothCore tolerates the silence (no ban, no kick),
+                    // but REJECTS a wrong hash and closes the connection immediately.
+                    // Staying silent lets the server continue the session without Warden checks.
+                    LOG_WARNING("Warden: HASH_REQUEST seed=", seedHex,
+                                " — no CR match, skipping response (server tolerates silence)");
+                    wardenState_ = WardenState::WAIT_CHECKS;
+                    break;
+                }
 
                 LOG_WARNING("Warden: No CR match (seed=", seedHex,
-                            "), sending fallback hash");
+                            "), sending fallback hash (lenient server)");
 
                 std::vector<uint8_t> fallbackReply;
                 if (wardenLoadedModule_ && wardenLoadedModule_->isLoaded()) {
