@@ -2352,7 +2352,7 @@ void Application::setupUICallbacks() {
 
         // Reconnect to the same map: terrain stays loaded but all online entities are stale.
         // Despawn them properly so the server's fresh CREATE_OBJECTs will re-populate the world.
-        if (mapId == loadedMapId_ && renderer && renderer->getTerrainManager() && isInitialEntry) {
+        if (entitySpawner_ && mapId == loadedMapId_ && renderer && renderer->getTerrainManager() && isInitialEntry) {
             LOG_INFO("Reconnect to same map ", mapId, ": clearing stale online entities (terrain preserved)");
 
             // Pending spawn queues and failure caches — clear so previously-failed GUIDs can retry.
@@ -2739,6 +2739,7 @@ void Application::setupUICallbacks() {
 
     // Creature spawn callback (online mode) - spawn creature models
     gameHandler->setCreatureSpawnCallback([this](uint64_t guid, uint32_t displayId, float x, float y, float z, float orientation, float scale) {
+        if (!entitySpawner_) return;
         // Queue spawns to avoid hanging when many creatures appear at once.
         // Deduplicate so repeated updates don't flood pending queue.
         if (entitySpawner_->isCreatureSpawned(guid)) return;
@@ -2754,6 +2755,7 @@ void Application::setupUICallbacks() {
                                               uint32_t appearanceBytes,
                                               uint8_t facialFeatures,
                                               float x, float y, float z, float orientation) {
+        if (!entitySpawner_) return;
         LOG_WARNING("playerSpawnCallback: guid=0x", std::hex, guid, std::dec,
                     " race=", static_cast<int>(raceId), " gender=", static_cast<int>(genderId),
                     " pos=(", x, ",", y, ",", z, ")");
@@ -2774,6 +2776,7 @@ void Application::setupUICallbacks() {
     gameHandler->setPlayerEquipmentCallback([this](uint64_t guid,
                                                   const std::array<uint32_t, 19>& displayInfoIds,
                                                   const std::array<uint8_t, 19>& inventoryTypes) {
+        if (!entitySpawner_) return;
         // Queue equipment compositing instead of doing it immediately —
         // compositeWithRegions is expensive (file I/O + CPU blit + GPU upload)
         // and causes frame stutters if multiple players update at once.
@@ -2782,25 +2785,30 @@ void Application::setupUICallbacks() {
 
     // Creature despawn callback (online mode) - remove creature models
     gameHandler->setCreatureDespawnCallback([this](uint64_t guid) {
+        if (!entitySpawner_) return;
         entitySpawner_->despawnCreature(guid);
     });
 
     gameHandler->setPlayerDespawnCallback([this](uint64_t guid) {
+        if (!entitySpawner_) return;
         entitySpawner_->despawnPlayer(guid);
     });
 
     // GameObject spawn callback (online mode) - spawn static models (mailboxes, etc.)
     gameHandler->setGameObjectSpawnCallback([this](uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation, float scale) {
+        if (!entitySpawner_) return;
         entitySpawner_->queueGameObjectSpawn(guid, entry, displayId, x, y, z, orientation, scale);
     });
 
     // GameObject despawn callback (online mode) - remove static models
     gameHandler->setGameObjectDespawnCallback([this](uint64_t guid) {
+        if (!entitySpawner_) return;
         entitySpawner_->despawnGameObject(guid);
     });
 
     // GameObject custom animation callback (e.g. chest opening)
     gameHandler->setGameObjectCustomAnimCallback([this](uint64_t guid, uint32_t /*animId*/) {
+        if (!entitySpawner_) return;
         auto& goInstances = entitySpawner_->getGameObjectInstances();
         auto it = goInstances.find(guid);
         if (it == goInstances.end() || !renderer) return;
@@ -3084,6 +3092,7 @@ void Application::setupUICallbacks() {
 
     // Creature move callback (online mode) - update creature positions
     gameHandler->setCreatureMoveCallback([this](uint64_t guid, float x, float y, float z, uint32_t durationMs) {
+        if (!entitySpawner_) return;
         if (!renderer || !renderer->getCharacterRenderer()) return;
         uint32_t instanceId = 0;
         bool isPlayer = false;
@@ -3119,6 +3128,7 @@ void Application::setupUICallbacks() {
     });
 
     gameHandler->setGameObjectMoveCallback([this](uint64_t guid, float x, float y, float z, float orientation) {
+        if (!entitySpawner_) return;
         auto& goInstMap = entitySpawner_->getGameObjectInstances();
         auto it = goInstMap.find(guid);
         if (it == goInstMap.end() || !renderer) {
@@ -3144,6 +3154,7 @@ void Application::setupUICallbacks() {
 
     // Transport spawn callback (online mode) - register transports with TransportManager
     gameHandler->setTransportSpawnCallback([this](uint64_t guid, uint32_t entry, uint32_t displayId, float x, float y, float z, float orientation) {
+        if (!entitySpawner_) return;
         if (!renderer) return;
 
         // Get the GameObject instance now so late queue processing can rely on stable IDs.
@@ -3164,6 +3175,7 @@ void Application::setupUICallbacks() {
 
     // Transport move callback (online mode) - update transport gameobject positions
     gameHandler->setTransportMoveCallback([this](uint64_t guid, float x, float y, float z, float orientation) {
+        if (!entitySpawner_) return;
         LOG_DEBUG("Transport move callback: GUID=0x", std::hex, guid, std::dec,
                  " pos=(", x, ", ", y, ", ", z, ") orientation=", orientation);
 
@@ -3297,6 +3309,7 @@ void Application::setupUICallbacks() {
 
     // NPC/player death callback (online mode) - play death animation
     gameHandler->setNpcDeathCallback([this](uint64_t guid) {
+        if (!entitySpawner_) return;
         entitySpawner_->markCreatureDead(guid);
         if (!renderer || !renderer->getCharacterRenderer()) return;
         uint32_t instanceId = entitySpawner_->getCreatureInstanceId(guid);
@@ -3308,6 +3321,7 @@ void Application::setupUICallbacks() {
 
     // NPC/player respawn callback (online mode) - reset to idle animation
     gameHandler->setNpcRespawnCallback([this](uint64_t guid) {
+        if (!entitySpawner_) return;
         entitySpawner_->unmarkCreatureDead(guid);
         if (!renderer || !renderer->getCharacterRenderer()) return;
         uint32_t instanceId = entitySpawner_->getCreatureInstanceId(guid);
@@ -3319,6 +3333,7 @@ void Application::setupUICallbacks() {
 
     // NPC/player swing callback (online mode) - play attack animation
     gameHandler->setNpcSwingCallback([this](uint64_t guid) {
+        if (!entitySpawner_) return;
         if (!renderer || !renderer->getCharacterRenderer()) return;
         uint32_t instanceId = entitySpawner_->getCreatureInstanceId(guid);
         if (instanceId == 0) instanceId = entitySpawner_->getPlayerInstanceId(guid);
@@ -3342,6 +3357,7 @@ void Application::setupUICallbacks() {
     // Swim/walking state is now authoritative from the move-flags callback below.
     // animId=38 (JumpMid): airborne jump animation; land detection is via per-frame sync.
     gameHandler->setUnitAnimHintCallback([this](uint64_t guid, uint32_t animId) {
+        if (!entitySpawner_) return;
         if (!renderer) return;
         auto* cr = renderer->getCharacterRenderer();
         if (!cr) return;
@@ -3359,6 +3375,7 @@ void Application::setupUICallbacks() {
     // a player already swimming when we join will have SWIMMING set on the first heartbeat.
     // Walking(4) vs Running(5) is also driven here from the WALKING flag.
     gameHandler->setUnitMoveFlagsCallback([this](uint64_t guid, uint32_t moveFlags) {
+        if (!entitySpawner_) return;
         const bool isSwimming = (moveFlags & static_cast<uint32_t>(game::MovementFlags::SWIMMING)) != 0;
         const bool isWalking  = (moveFlags & static_cast<uint32_t>(game::MovementFlags::WALKING))  != 0;
         const bool isFlying   = (moveFlags & static_cast<uint32_t>(game::MovementFlags::FLYING))   != 0;
@@ -3375,6 +3392,7 @@ void Application::setupUICallbacks() {
 
     // Emote animation callback — play server-driven emote animations on NPCs and other players
     gameHandler->setEmoteAnimCallback([this](uint64_t guid, uint32_t emoteAnim) {
+        if (!entitySpawner_) return;
         if (!renderer || emoteAnim == 0) return;
         auto* cr = renderer->getCharacterRenderer();
         if (!cr) return;
@@ -3392,6 +3410,7 @@ void Application::setupUICallbacks() {
 
     // Spell cast animation callback — play cast animation on caster (player or NPC/other player)
     gameHandler->setSpellCastAnimCallback([this](uint64_t guid, bool start, bool /*isChannel*/) {
+        if (!entitySpawner_) return;
         if (!renderer) return;
         auto* cr = renderer->getCharacterRenderer();
         if (!cr) return;
@@ -5288,6 +5307,7 @@ void Application::updateQuestMarkers() {
 }
 
 void Application::setupTestTransport() {
+    if (!entitySpawner_) return;
     if (entitySpawner_->isTestTransportSetup()) return;
     if (!gameHandler || !renderer || !assetManager) return;
 
