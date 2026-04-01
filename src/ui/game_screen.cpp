@@ -631,7 +631,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     if (inventoryScreen.consumeEquipmentDirty() || gameHandler.consumeOnlineEquipmentDirty()) {
         updateCharacterGeosets(gameHandler.getInventory());
         updateCharacterTextures(gameHandler.getInventory());
-        core::Application::getInstance().loadEquippedWeapons();
+        if (auto* ac = core::Application::getInstance().getAppearanceComposer()) ac->loadEquippedWeapons();
         inventoryScreen.markPreviewDirty();
         // Update renderer weapon type for animation selection
         auto* r = core::Application::getInstance().getRenderer();

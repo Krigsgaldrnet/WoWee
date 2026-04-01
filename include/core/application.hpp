@@ -3,6 +3,7 @@
 #include "core/window.hpp"
 #include "core/input.hpp"
 #include "core/entity_spawner.hpp"
+#include "core/appearance_composer.hpp"
 #include "game/character.hpp"
 #include "game/game_services.hpp"
 #include "pipeline/blp_loader.hpp"
@@ -73,9 +74,7 @@ public:
     // Singleton access
     static Application& getInstance() { return *instance; }
 
-    // Weapon loading (called at spawn and on equipment change)
-    void loadEquippedWeapons();
-    bool loadWeaponM2(const std::string& m2Path, pipeline::M2Model& outModel);
+
 
     // Logout to login screen
     void logoutToLogin();
@@ -85,23 +84,25 @@ public:
     bool getRenderFootZForGuid(uint64_t guid, float& outFootZ) const;
     bool getRenderPositionForGuid(uint64_t guid, glm::vec3& outPos) const;
 
-    // Character skin composite state (saved at spawn for re-compositing on equipment change)
-    const std::string& getBodySkinPath() const { return bodySkinPath_; }
-    const std::vector<std::string>& getUnderwearPaths() const { return underwearPaths_; }
-    uint32_t getSkinTextureSlotIndex() const { return skinTextureSlotIndex_; }
-    uint32_t getCloakTextureSlotIndex() const { return cloakTextureSlotIndex_; }
+    // Character skin composite state — delegated to AppearanceComposer
+    const std::string& getBodySkinPath() const { return appearanceComposer_ ? appearanceComposer_->getBodySkinPath() : emptyString_; }
+    const std::vector<std::string>& getUnderwearPaths() const { return appearanceComposer_ ? appearanceComposer_->getUnderwearPaths() : emptyStringVec_; }
+    uint32_t getSkinTextureSlotIndex() const { return appearanceComposer_ ? appearanceComposer_->getSkinTextureSlotIndex() : 0; }
+    uint32_t getCloakTextureSlotIndex() const { return appearanceComposer_ ? appearanceComposer_->getCloakTextureSlotIndex() : 0; }
     uint32_t getGryphonDisplayId() const { return entitySpawner_ ? entitySpawner_->getGryphonDisplayId() : 0; }
     uint32_t getWyvernDisplayId() const { return entitySpawner_ ? entitySpawner_->getWyvernDisplayId() : 0; }
 
     // Entity spawner access
     EntitySpawner* getEntitySpawner() { return entitySpawner_.get(); }
 
+    // Appearance composer access
+    AppearanceComposer* getAppearanceComposer() { return appearanceComposer_.get(); }
+
 private:
     void update(float deltaTime);
     void render();
     void setupUICallbacks();
     void spawnPlayerCharacter();
-    std::string getPlayerModelPath() const;
     static const char* mapIdToName(uint32_t mapId);
     static const char* mapDisplayName(uint32_t mapId);
     void loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float z);
@@ -123,6 +124,7 @@ private:
     std::unique_ptr<game::ExpansionRegistry> expansionRegistry_;
     std::unique_ptr<pipeline::DBCLayout> dbcLayout_;
     std::unique_ptr<EntitySpawner> entitySpawner_;
+    std::unique_ptr<AppearanceComposer> appearanceComposer_;
 
     AppState state = AppState::AUTHENTICATION;
     bool running = false;
@@ -140,11 +142,9 @@ private:
     uint32_t spawnedAppearanceBytes_ = 0;
     uint8_t spawnedFacialFeatures_ = 0;
 
-    // Saved at spawn for skin re-compositing
-    std::string bodySkinPath_;
-    std::vector<std::string> underwearPaths_;
-    uint32_t skinTextureSlotIndex_ = 0;
-    uint32_t cloakTextureSlotIndex_ = 0;
+    // Static empty values for null-safe delegation
+    static inline const std::string emptyString_;
+    static inline const std::vector<std::string> emptyStringVec_;
 
     bool lastTaxiFlight_ = false;
     uint32_t loadedMapId_ = 0xFFFFFFFF;  // Map ID of currently loaded terrain (0xFFFFFFFF = none)
@@ -174,7 +174,6 @@ private:
     glm::vec3 chargeEndPos_{0.0f};    // Render coordinates
     uint64_t chargeTargetGuid_ = 0;
 
-    bool weaponsSheathed_ = false;
     bool wasAutoAttacking_ = false;
     bool mapNameCacheLoaded_ = false;
     std::unordered_map<uint32_t, std::string> mapNameById_;

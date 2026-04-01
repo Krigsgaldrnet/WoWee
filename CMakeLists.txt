@@ -487,6 +487,7 @@ set(WOWEE_SOURCES
     # Core
     src/core/application.cpp
     src/core/entity_spawner.cpp
+    src/core/appearance_composer.cpp
     src/core/window.cpp
     src/core/input.cpp
     src/core/logger.cpp
