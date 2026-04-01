@@ -50,13 +50,16 @@ bool AudioCoordinator::initialize() {
 void AudioCoordinator::initializeWithAssets(pipeline::AssetManager* assetManager) {
     if (!audioAvailable_ || !assetManager) return;
 
-    // MusicManager needs asset manager for zone music lookups
-    if (musicManager_) {
-        musicManager_->initialize(assetManager);
-    }
-
-    // Other managers may need asset manager for sound bank loading
-    // (Add similar calls as needed for other managers)
+    if (musicManager_) musicManager_->initialize(assetManager);
+    if (footstepManager_) footstepManager_->initialize(assetManager);
+    if (activitySoundManager_) activitySoundManager_->initialize(assetManager);
+    if (mountSoundManager_) mountSoundManager_->initialize(assetManager);
+    if (npcVoiceManager_) npcVoiceManager_->initialize(assetManager);
+    if (ambientSoundManager_) ambientSoundManager_->initialize(assetManager);
+    if (uiSoundManager_) uiSoundManager_->initialize(assetManager);
+    if (combatSoundManager_) combatSoundManager_->initialize(assetManager);
+    if (spellSoundManager_) spellSoundManager_->initialize(assetManager);
+    if (movementSoundManager_) movementSoundManager_->initialize(assetManager);
 
     LOG_INFO("AudioCoordinator initialized with asset manager");
 }

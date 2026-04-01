@@ -125,6 +125,11 @@ bool Application::initialize() {
         return false;
     }
 
+    // Create and initialize audio coordinator (owns all audio managers)
+    audioCoordinator_ = std::make_unique<audio::AudioCoordinator>();
+    audioCoordinator_->initialize();
+    renderer->setAudioCoordinator(audioCoordinator_.get());
+
     // Create UI manager
     uiManager = std::make_unique<ui::UIManager>();
     if (!uiManager->initialize(window.get())) {
@@ -844,6 +849,12 @@ void Application::shutdown() {
     }
     LOG_WARNING("Renderer shutdown complete, resetting...");
     renderer.reset();
+
+    // Shutdown audio coordinator after renderer (renderer may reference audio during shutdown)
+    if (audioCoordinator_) {
+        audioCoordinator_->shutdown();
+    }
+    audioCoordinator_.reset();
 
     LOG_WARNING("Resetting world...");
     world.reset();

@@ -39,6 +39,7 @@
 #include "core/logger.hpp"
 #include "game/world.hpp"
 #include "game/zone_manager.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/audio_engine.hpp"
 #include "audio/music_manager.hpp"
 #include "audio/footstep_manager.hpp"
@@ -56,6 +57,8 @@
 #include "rendering/vk_pipeline.hpp"
 #include "rendering/vk_utils.hpp"
 #include "rendering/amd_fsr3_runtime.hpp"
+#include "rendering/spell_visual_system.hpp"
+#include "rendering/post_process_pipeline.hpp"
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -82,6 +85,19 @@
 
 namespace wowee {
 namespace rendering {
+
+// Audio accessor pass-throughs — delegate to AudioCoordinator (owned by Application).
+// These remain until §4.2 (AnimationController) removes Renderer's last audio usage.
+audio::MusicManager* Renderer::getMusicManager() { return audioCoordinator_ ? audioCoordinator_->getMusicManager() : nullptr; }
+audio::FootstepManager* Renderer::getFootstepManager() { return audioCoordinator_ ? audioCoordinator_->getFootstepManager() : nullptr; }
+audio::ActivitySoundManager* Renderer::getActivitySoundManager() { return audioCoordinator_ ? audioCoordinator_->getActivitySoundManager() : nullptr; }
+audio::MountSoundManager* Renderer::getMountSoundManager() { return audioCoordinator_ ? audioCoordinator_->getMountSoundManager() : nullptr; }
+audio::NpcVoiceManager* Renderer::getNpcVoiceManager() { return audioCoordinator_ ? audioCoordinator_->getNpcVoiceManager() : nullptr; }
+audio::AmbientSoundManager* Renderer::getAmbientSoundManager() { return audioCoordinator_ ? audioCoordinator_->getAmbientSoundManager() : nullptr; }
+audio::UiSoundManager* Renderer::getUiSoundManager() { return audioCoordinator_ ? audioCoordinator_->getUiSoundManager() : nullptr; }
+audio::CombatSoundManager* Renderer::getCombatSoundManager() { return audioCoordinator_ ? audioCoordinator_->getCombatSoundManager() : nullptr; }
+audio::SpellSoundManager* Renderer::getSpellSoundManager() { return audioCoordinator_ ? audioCoordinator_->getSpellSoundManager() : nullptr; }
+audio::MovementSoundManager* Renderer::getMovementSoundManager() { return audioCoordinator_ ? audioCoordinator_->getMovementSoundManager() : nullptr; }
 
 struct EmoteInfo {
     uint32_t animId = 0;
@@ -728,27 +744,17 @@ bool Renderer::initialize(core::Window* win) {
         zoneManager->enrichFromDBC(assetManager);
     }
 
-    // Initialize AudioEngine (singleton)
-    if (!audio::AudioEngine::instance().initialize()) {
-        LOG_WARNING("Failed to initialize AudioEngine - audio will be disabled");
-    }
-
-    // Create music manager (initialized later with asset manager)
-    musicManager = std::make_unique<audio::MusicManager>();
-    footstepManager = std::make_unique<audio::FootstepManager>();
-    activitySoundManager = std::make_unique<audio::ActivitySoundManager>();
-    mountSoundManager = std::make_unique<audio::MountSoundManager>();
-    npcVoiceManager = std::make_unique<audio::NpcVoiceManager>();
-    ambientSoundManager = std::make_unique<audio::AmbientSoundManager>();
-    uiSoundManager = std::make_unique<audio::UiSoundManager>();
-    combatSoundManager = std::make_unique<audio::CombatSoundManager>();
-    spellSoundManager = std::make_unique<audio::SpellSoundManager>();
-    movementSoundManager = std::make_unique<audio::MovementSoundManager>();
+    // Audio is now owned by AudioCoordinator (created by Application).
+    // Renderer receives AudioCoordinator* via setAudioCoordinator().
 
     // Create secondary command buffer resources for multithreaded rendering
     if (!createSecondaryCommandResources()) {
         LOG_WARNING("Failed to create secondary command buffers — falling back to single-threaded rendering");
     }
+
+    // Create PostProcessPipeline (§4.3 — owns FSR/FXAA/FSR2/FSR3/brightness)
+    postProcessPipeline_ = std::make_unique<PostProcessPipeline>();
+    postProcessPipeline_->initialize(vkCtx);
 
     LOG_INFO("Renderer initialized");
     return true;
@@ -827,31 +833,20 @@ void Renderer::shutdown() {
         wmoRenderer.reset();
     }
 
+    // Shutdown SpellVisualSystem before M2Renderer (it holds M2Renderer pointer) (§4.4)
+    if (spellVisualSystem_) {
+        spellVisualSystem_->shutdown();
+        spellVisualSystem_.reset();
+    }
+
     LOG_WARNING("Renderer::shutdown - m2Renderer...");
     if (m2Renderer) {
         m2Renderer->shutdown();
         m2Renderer.reset();
     }
 
-    LOG_WARNING("Renderer::shutdown - musicManager...");
-    if (musicManager) {
-        musicManager->shutdown();
-        musicManager.reset();
-    }
-    LOG_WARNING("Renderer::shutdown - footstepManager...");
-    if (footstepManager) {
-        footstepManager->shutdown();
-        footstepManager.reset();
-    }
-    LOG_WARNING("Renderer::shutdown - activitySoundManager...");
-    if (activitySoundManager) {
-        activitySoundManager->shutdown();
-        activitySoundManager.reset();
-    }
-
-    LOG_WARNING("Renderer::shutdown - AudioEngine...");
-    // Shutdown AudioEngine singleton
-    audio::AudioEngine::instance().shutdown();
+    // Audio shutdown is handled by AudioCoordinator (owned by Application).
+    audioCoordinator_ = nullptr;
 
     // Cleanup Vulkan selection circle resources
     if (vkCtx) {
@@ -864,9 +859,11 @@ void Renderer::shutdown() {
         if (overlayPipelineLayout) { vkDestroyPipelineLayout(device, overlayPipelineLayout, nullptr); overlayPipelineLayout = VK_NULL_HANDLE; }
     }
 
-    destroyFSRResources();
-    destroyFSR2Resources();
-    destroyFXAAResources();
+    // Shutdown post-process pipeline (FSR/FXAA/FSR2 resources) (§4.3)
+    if (postProcessPipeline_) {
+        postProcessPipeline_->shutdown();
+        postProcessPipeline_.reset();
+    }
     destroyPerFrameResources();
 
     zoneManager.reset();
@@ -905,7 +902,7 @@ void Renderer::setMsaaSamples(VkSampleCountFlagBits samples) {
     if (!vkCtx) return;
 
     // FSR2 requires non-MSAA render pass — block MSAA changes while FSR2 is active
-    if (fsr2_.enabled && samples > VK_SAMPLE_COUNT_1_BIT) return;
+    if (postProcessPipeline_ && postProcessPipeline_->isFsr2BlockingMsaa() && samples > VK_SAMPLE_COUNT_1_BIT) return;
 
     // Clamp to device maximum
     VkSampleCountFlagBits maxSamples = vkCtx->getMaxUsableSampleCount();
@@ -969,9 +966,7 @@ void Renderer::applyMsaaChange() {
     VkDevice device = vkCtx->getDevice();
     if (selCirclePipeline) { vkDestroyPipeline(device, selCirclePipeline, nullptr); selCirclePipeline = VK_NULL_HANDLE; }
     if (overlayPipeline) { vkDestroyPipeline(device, overlayPipeline, nullptr); overlayPipeline = VK_NULL_HANDLE; }
-    if (fsr_.sceneFramebuffer) destroyFSRResources();   // Will be lazily recreated in beginFrame()
-    if (fsr2_.sceneFramebuffer) destroyFSR2Resources();
-    if (fxaa_.sceneFramebuffer) destroyFXAAResources(); // Will be lazily recreated in beginFrame()
+    if (postProcessPipeline_) postProcessPipeline_->destroyAllResources(); // Will be lazily recreated in beginFrame()
 
     // Reinitialize ImGui Vulkan backend with new MSAA sample count
     ImGui_ImplVulkan_Shutdown();
@@ -1001,47 +996,8 @@ void Renderer::beginFrame() {
         applyMsaaChange();
     }
 
-    // FSR resource management (safe: between frames, no command buffer in flight)
-    if (fsr_.needsRecreate && fsr_.sceneFramebuffer) {
-        destroyFSRResources();
-        fsr_.needsRecreate = false;
-        if (!fsr_.enabled) LOG_INFO("FSR: disabled");
-    }
-    if (fsr_.enabled && !fsr2_.enabled && !fsr_.sceneFramebuffer) {
-        if (!initFSRResources()) {
-            LOG_ERROR("FSR: initialization failed, disabling");
-            fsr_.enabled = false;
-        }
-    }
-
-    // FSR 2.2 resource management
-    if (fsr2_.needsRecreate && fsr2_.sceneFramebuffer) {
-        destroyFSR2Resources();
-        fsr2_.needsRecreate = false;
-        if (!fsr2_.enabled) LOG_INFO("FSR2: disabled");
-    }
-    if (fsr2_.enabled && !fsr2_.sceneFramebuffer) {
-        if (!initFSR2Resources()) {
-            LOG_ERROR("FSR2: initialization failed, disabling");
-            fsr2_.enabled = false;
-        }
-    }
-
-    // FXAA resource management — FXAA can coexist with FSR1 and FSR3.
-    // When both FXAA and FSR3 are enabled, FXAA runs as a post-FSR3 pass.
-    // Do not force this pass for ghost mode; keep AA quality strictly user-controlled.
-    const bool useFXAAPostPass = fxaa_.enabled;
-    if ((fxaa_.needsRecreate || !useFXAAPostPass) && fxaa_.sceneFramebuffer) {
-        destroyFXAAResources();
-        fxaa_.needsRecreate = false;
-        if (!useFXAAPostPass) LOG_INFO("FXAA: disabled");
-    }
-    if (useFXAAPostPass && !fxaa_.sceneFramebuffer) {
-        if (!initFXAAResources()) {
-            LOG_ERROR("FXAA: initialization failed, disabling");
-            fxaa_.enabled = false;
-        }
-    }
+    // Post-process resource management (§4.3 — delegates to PostProcessPipeline)
+    if (postProcessPipeline_) postProcessPipeline_->manageResources();
 
     // Handle swapchain recreation if needed
     if (vkCtx->isSwapchainDirty()) {
@@ -1050,20 +1006,8 @@ void Renderer::beginFrame() {
         if (waterRenderer) {
             waterRenderer->recreatePipelines();
         }
-        // Recreate FSR resources for new swapchain dimensions
-        if (fsr_.enabled && !fsr2_.enabled) {
-            destroyFSRResources();
-            initFSRResources();
-        }
-        if (fsr2_.enabled) {
-            destroyFSR2Resources();
-            initFSR2Resources();
-        }
-        // Recreate FXAA resources for new swapchain dimensions.
-        if (useFXAAPostPass) {
-            destroyFXAAResources();
-            initFXAAResources();
-        }
+        // Recreate post-process resources for new swapchain dimensions
+        if (postProcessPipeline_) postProcessPipeline_->handleSwapchainResize();
     }
 
     // Acquire swapchain image and begin command buffer
@@ -1073,35 +1017,8 @@ void Renderer::beginFrame() {
         return;
     }
 
-    // FSR2 jitter pattern.
-    if (fsr2_.enabled && fsr2_.sceneFramebuffer && camera) {
-        if (!fsr2_.useAmdBackend) {
-            camera->setJitter(0.0f, 0.0f);
-        } else {
-#if WOWEE_HAS_AMD_FSR2
-            // AMD-recommended jitter sequence in pixel space, converted to NDC projection offset.
-            int32_t phaseCount = ffxFsr2GetJitterPhaseCount(
-                static_cast<int32_t>(fsr2_.internalWidth),
-                static_cast<int32_t>(vkCtx->getSwapchainExtent().width));
-            float jitterX = 0.0f;
-            float jitterY = 0.0f;
-            if (phaseCount > 0 &&
-                ffxFsr2GetJitterOffset(&jitterX, &jitterY, static_cast<int32_t>(fsr2_.frameIndex % static_cast<uint32_t>(phaseCount)), phaseCount) == FFX_OK) {
-                float ndcJx = (2.0f * jitterX) / static_cast<float>(fsr2_.internalWidth);
-                float ndcJy = (2.0f * jitterY) / static_cast<float>(fsr2_.internalHeight);
-                // Keep projection jitter and FSR dispatch jitter in sync.
-                camera->setJitter(fsr2_.jitterSign * ndcJx, fsr2_.jitterSign * ndcJy);
-            } else {
-                camera->setJitter(0.0f, 0.0f);
-            }
-#else
-            const float jitterScale = 0.5f;
-            float jx = (halton(fsr2_.frameIndex + 1, 2) - 0.5f) * 2.0f * jitterScale / static_cast<float>(fsr2_.internalWidth);
-            float jy = (halton(fsr2_.frameIndex + 1, 3) - 0.5f) * 2.0f * jitterScale / static_cast<float>(fsr2_.internalHeight);
-            camera->setJitter(fsr2_.jitterSign * jx, fsr2_.jitterSign * jy);
-#endif
-        }
-    }
+    // FSR2 jitter pattern (§4.3 — delegates to PostProcessPipeline)
+    if (postProcessPipeline_ && camera) postProcessPipeline_->applyJitter(camera.get());
 
     // Update per-frame UBO with current camera/lighting state
     updatePerFrameUBO();
@@ -1140,24 +1057,16 @@ void Renderer::beginFrame() {
     } // !skipPrePasses
 
     // --- Begin render pass ---
-    // If FSR is enabled, render scene to off-screen target at reduced resolution.
-    // Otherwise, render directly to swapchain.
+    // Select framebuffer: PP off-screen target or swapchain (§4.3 — PostProcessPipeline)
     VkRenderPassBeginInfo rpInfo{};
     rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     rpInfo.renderPass = vkCtx->getImGuiRenderPass();
 
     VkExtent2D renderExtent;
-    if (fsr2_.enabled && fsr2_.sceneFramebuffer) {
-        rpInfo.framebuffer = fsr2_.sceneFramebuffer;
-        renderExtent = { fsr2_.internalWidth, fsr2_.internalHeight };
-    } else if (useFXAAPostPass && fxaa_.sceneFramebuffer) {
-        // FXAA takes priority over FSR1: renders at native res with AA post-process.
-        // When both FSR1 and FXAA are enabled, FXAA wins (native res, no downscale).
-        rpInfo.framebuffer = fxaa_.sceneFramebuffer;
-        renderExtent = vkCtx->getSwapchainExtent();  // native resolution — no downscaling
-    } else if (fsr_.enabled && fsr_.sceneFramebuffer) {
-        rpInfo.framebuffer = fsr_.sceneFramebuffer;
-        renderExtent = { fsr_.internalWidth, fsr_.internalHeight };
+    VkFramebuffer ppFB = postProcessPipeline_ ? postProcessPipeline_->getSceneFramebuffer() : VK_NULL_HANDLE;
+    if (ppFB != VK_NULL_HANDLE) {
+        rpInfo.framebuffer = ppFB;
+        renderExtent = postProcessPipeline_->getSceneRenderExtent();
     } else {
         rpInfo.framebuffer = vkCtx->getSwapchainFramebuffers()[currentImageIndex];
         renderExtent = vkCtx->getSwapchainExtent();
@@ -1213,223 +1122,10 @@ void Renderer::endFrame() {
     // post-proc paths end it and begin a new INLINE pass for the swapchain output.
     endFrameInlineMode_ = false;
 
-    if (fsr2_.enabled && fsr2_.sceneFramebuffer) {
-        // End the off-screen scene render pass
-        vkCmdEndRenderPass(currentCmd);
-
-        if (fsr2_.useAmdBackend) {
-            // Compute passes: motion vectors -> temporal accumulation
-            dispatchMotionVectors();
-            if (fsr2_.amdFsr3FramegenEnabled && fsr2_.amdFsr3FramegenRuntimeReady) {
-                dispatchAmdFsr3Framegen();
-                if (!fsr2_.amdFsr3FramegenRuntimeActive) {
-                    dispatchAmdFsr2();
-                }
-            } else {
-                dispatchAmdFsr2();
-            }
-
-            // Transition post-FSR input for sharpen pass.
-            if (fsr2_.amdFsr3FramegenRuntimeActive && fsr2_.framegenOutput.image) {
-                transitionImageLayout(currentCmd, fsr2_.framegenOutput.image,
-                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-                fsr2_.framegenOutputValid = true;
-            } else {
-                transitionImageLayout(currentCmd, fsr2_.history[fsr2_.currentHistory].image,
-                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-            }
-        } else {
-            transitionImageLayout(currentCmd, fsr2_.sceneColor.image,
-                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-        }
-
-        // FSR3+FXAA combined: re-point FXAA's descriptor to the FSR3 temporal output
-        // so renderFXAAPass() applies spatial AA on the temporally-stabilized frame.
-        // This must happen outside the render pass (descriptor updates are CPU-side).
-        if (fxaa_.enabled && fxaa_.descSet && fxaa_.sceneSampler) {
-            VkImageView fsr3OutputView = VK_NULL_HANDLE;
-            if (fsr2_.useAmdBackend) {
-                if (fsr2_.amdFsr3FramegenRuntimeActive && fsr2_.framegenOutput.image)
-                    fsr3OutputView = fsr2_.framegenOutput.imageView;
-                else if (fsr2_.history[fsr2_.currentHistory].image)
-                    fsr3OutputView = fsr2_.history[fsr2_.currentHistory].imageView;
-            } else if (fsr2_.history[fsr2_.currentHistory].image) {
-                fsr3OutputView = fsr2_.history[fsr2_.currentHistory].imageView;
-            }
-            if (fsr3OutputView) {
-                VkDescriptorImageInfo imgInfo{};
-                imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                imgInfo.imageView   = fsr3OutputView;
-                imgInfo.sampler     = fxaa_.sceneSampler;
-                VkWriteDescriptorSet write{};
-                write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                write.dstSet           = fxaa_.descSet;
-                write.dstBinding       = 0;
-                write.descriptorCount  = 1;
-                write.descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                write.pImageInfo       = &imgInfo;
-                vkUpdateDescriptorSets(vkCtx->getDevice(), 1, &write, 0, nullptr);
-            }
-        }
-
-        // Begin swapchain render pass at full resolution for sharpening + ImGui
-        VkRenderPassBeginInfo rpInfo{};
-        rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpInfo.renderPass = vkCtx->getImGuiRenderPass();
-        rpInfo.framebuffer = vkCtx->getSwapchainFramebuffers()[currentImageIndex];
-        rpInfo.renderArea.offset = {0, 0};
-        rpInfo.renderArea.extent = vkCtx->getSwapchainExtent();
-
-        bool msaaOn = (vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT);
-        VkClearValue clearValues[4]{};
-        clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        clearValues[1].depthStencil = {1.0f, 0};
-        clearValues[2].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        clearValues[3].depthStencil = {1.0f, 0};
-        rpInfo.clearValueCount = msaaOn ? (vkCtx->getDepthResolveImageView() ? 4u : 3u) : 2u;
-        rpInfo.pClearValues = clearValues;
-
-        endFrameInlineMode_ = true; vkCmdBeginRenderPass(currentCmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        VkExtent2D ext = vkCtx->getSwapchainExtent();
-        VkViewport vp{};
-        vp.width = static_cast<float>(ext.width);
-        vp.height = static_cast<float>(ext.height);
-        vp.maxDepth = 1.0f;
-        vkCmdSetViewport(currentCmd, 0, 1, &vp);
-        VkRect2D sc{};
-        sc.extent = ext;
-        vkCmdSetScissor(currentCmd, 0, 1, &sc);
-
-        // When FXAA is also enabled: apply FXAA on the FSR3 temporal output instead
-        // of RCAS sharpening. FXAA descriptor is temporarily pointed to the FSR3
-        // history buffer (which is already in SHADER_READ_ONLY_OPTIMAL). This gives
-        // FSR3 temporal stability + FXAA spatial edge smoothing ("ultra quality native").
-        if (fxaa_.enabled && fxaa_.pipeline && fxaa_.descSet) {
-            renderFXAAPass();
-        } else {
-            // Draw RCAS sharpening from accumulated history buffer
-            renderFSR2Sharpen();
-        }
-
-        // Restore FXAA descriptor to its normal scene color source so standalone
-        // FXAA frames are not affected by the FSR3 history pointer set above.
-        if (fxaa_.enabled && fxaa_.descSet && fxaa_.sceneSampler && fxaa_.sceneColor.imageView) {
-            VkDescriptorImageInfo restoreInfo{};
-            restoreInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            restoreInfo.imageView   = fxaa_.sceneColor.imageView;
-            restoreInfo.sampler     = fxaa_.sceneSampler;
-            VkWriteDescriptorSet restoreWrite{};
-            restoreWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            restoreWrite.dstSet          = fxaa_.descSet;
-            restoreWrite.dstBinding      = 0;
-            restoreWrite.descriptorCount = 1;
-            restoreWrite.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            restoreWrite.pImageInfo      = &restoreInfo;
-            vkUpdateDescriptorSets(vkCtx->getDevice(), 1, &restoreWrite, 0, nullptr);
-        }
-
-        // Maintain frame bookkeeping
-        fsr2_.prevViewProjection = camera->getViewProjectionMatrix();
-        fsr2_.prevJitter = camera->getJitter();
-        camera->clearJitter();
-        if (fsr2_.useAmdBackend) {
-            fsr2_.currentHistory = 1 - fsr2_.currentHistory;
-        }
-        fsr2_.frameIndex = (fsr2_.frameIndex + 1) % 256;  // Wrap to keep Halton values well-distributed
-
-    } else if (fxaa_.enabled && fxaa_.sceneFramebuffer) {
-        // End the off-screen scene render pass
-        vkCmdEndRenderPass(currentCmd);
-
-        // Transition resolved scene color: PRESENT_SRC_KHR → SHADER_READ_ONLY
-        transitionImageLayout(currentCmd, fxaa_.sceneColor.image,
-            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-
-        // Begin swapchain render pass (1x — no MSAA on the output pass)
-        VkRenderPassBeginInfo rpInfo{};
-        rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpInfo.renderPass = vkCtx->getImGuiRenderPass();
-        rpInfo.framebuffer = vkCtx->getSwapchainFramebuffers()[currentImageIndex];
-        rpInfo.renderArea.offset = {0, 0};
-        rpInfo.renderArea.extent = vkCtx->getSwapchainExtent();
-        // The swapchain render pass always has 2 attachments when MSAA is off;
-        // FXAA output goes to the non-MSAA swapchain directly.
-        VkClearValue fxaaClear[2]{};
-        fxaaClear[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        fxaaClear[1].depthStencil = {1.0f, 0};
-        rpInfo.clearValueCount = 2;
-        rpInfo.pClearValues = fxaaClear;
-
-        vkCmdBeginRenderPass(currentCmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        VkExtent2D ext = vkCtx->getSwapchainExtent();
-        VkViewport vp{};
-        vp.width = static_cast<float>(ext.width);
-        vp.height = static_cast<float>(ext.height);
-        vp.maxDepth = 1.0f;
-        vkCmdSetViewport(currentCmd, 0, 1, &vp);
-        VkRect2D sc{};
-        sc.extent = ext;
-        vkCmdSetScissor(currentCmd, 0, 1, &sc);
-
-        // Draw FXAA pass
-        renderFXAAPass();
-
-    } else if (fsr_.enabled && fsr_.sceneFramebuffer) {
-        // FSR1 upscale path — only runs when FXAA is not active.
-        // When both FSR1 and FXAA are enabled, FXAA took priority above.
-        vkCmdEndRenderPass(currentCmd);
-
-        // Transition scene color (1x resolve/color target): PRESENT_SRC_KHR → SHADER_READ_ONLY
-        transitionImageLayout(currentCmd, fsr_.sceneColor.image,
-            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-
-        // Begin swapchain render pass at full resolution
-        VkRenderPassBeginInfo fsrRpInfo{};
-        fsrRpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        fsrRpInfo.renderPass = vkCtx->getImGuiRenderPass();
-        fsrRpInfo.framebuffer = vkCtx->getSwapchainFramebuffers()[currentImageIndex];
-        fsrRpInfo.renderArea.offset = {0, 0};
-        fsrRpInfo.renderArea.extent = vkCtx->getSwapchainExtent();
-
-        bool fsrMsaaOn = (vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT);
-        VkClearValue fsrClearValues[4]{};
-        fsrClearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        fsrClearValues[1].depthStencil = {1.0f, 0};
-        fsrClearValues[2].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        fsrClearValues[3].depthStencil = {1.0f, 0};
-        if (fsrMsaaOn) {
-            bool depthRes = (vkCtx->getDepthResolveImageView() != VK_NULL_HANDLE);
-            fsrRpInfo.clearValueCount = depthRes ? 4 : 3;
-        } else {
-            fsrRpInfo.clearValueCount = 2;
-        }
-        fsrRpInfo.pClearValues = fsrClearValues;
-
-        vkCmdBeginRenderPass(currentCmd, &fsrRpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        VkExtent2D fsrExt = vkCtx->getSwapchainExtent();
-        VkViewport fsrVp{};
-        fsrVp.width = static_cast<float>(fsrExt.width);
-        fsrVp.height = static_cast<float>(fsrExt.height);
-        fsrVp.maxDepth = 1.0f;
-        vkCmdSetViewport(currentCmd, 0, 1, &fsrVp);
-        VkRect2D fsrSc{};
-        fsrSc.extent = fsrExt;
-        vkCmdSetScissor(currentCmd, 0, 1, &fsrSc);
-
-        renderFSRUpscale();
+    // Post-process execution (§4.3 — delegates to PostProcessPipeline)
+    if (postProcessPipeline_) {
+        endFrameInlineMode_ = postProcessPipeline_->executePostProcessing(
+            currentCmd, currentImageIndex, camera.get(), lastDeltaTime_);
     }
 
     // ImGui rendering — must respect the subpass contents mode of the
@@ -1714,9 +1410,9 @@ void Renderer::setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float h
         " fidgets=", mountAnims_.fidgets.size());
 
     // Notify mount sound manager
-    if (mountSoundManager) {
+    if (getMountSoundManager()) {
         bool isFlying = taxiFlight_;  // Taxi flights are flying mounts
-        mountSoundManager->onMount(mountDisplayId, isFlying, modelPath);
+        getMountSoundManager()->onMount(mountDisplayId, isFlying, modelPath);
     }
 }
 
@@ -1737,8 +1433,8 @@ void Renderer::clearMount() {
     }
 
     // Notify mount sound manager
-    if (mountSoundManager) {
-        mountSoundManager->onDismount();
+    if (getMountSoundManager()) {
+        getMountSoundManager()->onDismount();
     }
 }
 
@@ -1999,8 +1695,8 @@ void Renderer::updateCharacterAnimation() {
                     mountAction_ = MountAction::Jump;
                     mountActionPhase_ = 1;  // Start in airborne phase
                     mountAnimId = mountAnims_.jumpLoop;
-                    if (mountSoundManager) {
-                        mountSoundManager->playJumpSound();
+                    if (getMountSoundManager()) {
+                        getMountSoundManager()->playJumpSound();
                     }
                     if (cameraController) {
                         cameraController->triggerMountJump();
@@ -2013,8 +1709,8 @@ void Renderer::updateCharacterAnimation() {
                     mountActionPhase_ = 0;
                     mountAnimId = mountAnims_.rearUp;
                     // Trigger semantic rear-up sound
-                    if (mountSoundManager) {
-                        mountSoundManager->playRearUpSound();
+                    if (getMountSoundManager()) {
+                        getMountSoundManager()->playRearUpSound();
                     }
                 }
             }
@@ -2043,8 +1739,8 @@ void Renderer::updateCharacterAnimation() {
                         mountActionPhase_ = 2;
                         mountAnimId = mountAnims_.jumpEnd;
                         // Trigger semantic landing sound
-                        if (mountSoundManager) {
-                            mountSoundManager->playLandSound();
+                        if (getMountSoundManager()) {
+                            getMountSoundManager()->playLandSound();
                         }
                     } else if (mountActionPhase_ == 1 && grounded && mountAnims_.jumpEnd == 0) {
                         // No JumpEnd animation, return directly to movement after landing
@@ -2133,13 +1829,13 @@ void Renderer::updateCharacterAnimation() {
             }
 
             // Idle ambient sounds: snorts and whinnies only, infrequent
-            if (!moving && mountSoundManager) {
+            if (!moving && getMountSoundManager()) {
                 mountIdleSoundTimer_ += lastDeltaTime_;
                 static std::mt19937 soundRng(std::random_device{}());
                 static float nextIdleSoundTime = std::uniform_real_distribution<float>(45.0f, 90.0f)(soundRng);
 
                 if (mountIdleSoundTimer_ >= nextIdleSoundTime) {
-                    mountSoundManager->playIdleSound();
+                    getMountSoundManager()->playIdleSound();
                     mountIdleSoundTimer_ = 0.0f;
                     nextIdleSoundTime = std::uniform_real_distribution<float>(45.0f, 90.0f)(soundRng);
                 }
@@ -2730,199 +2426,11 @@ void Renderer::stopChargeEffect() {
     }
 }
 
-// ─── Spell Visual Effects ────────────────────────────────────────────────────
-
-void Renderer::loadSpellVisualDbc() {
-    if (spellVisualDbcLoaded_) return;
-    spellVisualDbcLoaded_ = true; // Set early to prevent re-entry on failure
-
-    if (!cachedAssetManager) {
-        cachedAssetManager = core::Application::getInstance().getAssetManager();
-    }
-    if (!cachedAssetManager) return;
-
-    auto* layout = pipeline::getActiveDBCLayout();
-    const pipeline::DBCFieldMap* svLayout  = layout ? layout->getLayout("SpellVisual")           : nullptr;
-    const pipeline::DBCFieldMap* kitLayout = layout ? layout->getLayout("SpellVisualKit")        : nullptr;
-    const pipeline::DBCFieldMap* fxLayout  = layout ? layout->getLayout("SpellVisualEffectName") : nullptr;
-
-    uint32_t svCastKitField   = svLayout  ? (*svLayout)["CastKit"]       : 2;
-    uint32_t svImpactKitField = svLayout  ? (*svLayout)["ImpactKit"]     : 3;
-    uint32_t svMissileField   = svLayout  ? (*svLayout)["MissileModel"]  : 8;
-    uint32_t kitSpecial0Field = kitLayout ? (*kitLayout)["SpecialEffect0"] : 11;
-    uint32_t kitBaseField     = kitLayout ? (*kitLayout)["BaseEffect"]     : 5;
-    uint32_t fxFilePathField  = fxLayout  ? (*fxLayout)["FilePath"]       : 2;
-
-    // Helper to look up effectName path from a kit ID
-    // Load SpellVisualEffectName.dbc — ID → M2 path
-    auto fxDbc = cachedAssetManager->loadDBC("SpellVisualEffectName.dbc");
-    if (!fxDbc || !fxDbc->isLoaded() || fxDbc->getFieldCount() <= fxFilePathField) {
-        LOG_DEBUG("SpellVisual: SpellVisualEffectName.dbc unavailable (fc=",
-                  fxDbc ? fxDbc->getFieldCount() : 0, ")");
-        return;
-    }
-    std::unordered_map<uint32_t, std::string> effectPaths; // effectNameId → path
-    for (uint32_t i = 0; i < fxDbc->getRecordCount(); ++i) {
-        uint32_t id   = fxDbc->getUInt32(i, 0);
-        std::string p = fxDbc->getString(i, fxFilePathField);
-        if (id && !p.empty()) effectPaths[id] = p;
-    }
-
-    // Load SpellVisualKit.dbc — kitId → best SpellVisualEffectName ID
-    auto kitDbc = cachedAssetManager->loadDBC("SpellVisualKit.dbc");
-    std::unordered_map<uint32_t, uint32_t> kitToEffectName; // kitId → effectNameId
-    if (kitDbc && kitDbc->isLoaded()) {
-        uint32_t fc = kitDbc->getFieldCount();
-        for (uint32_t i = 0; i < kitDbc->getRecordCount(); ++i) {
-            uint32_t kitId = kitDbc->getUInt32(i, 0);
-            if (!kitId) continue;
-            // Prefer SpecialEffect0, fall back to BaseEffect
-            uint32_t eff = 0;
-            if (kitSpecial0Field < fc) eff = kitDbc->getUInt32(i, kitSpecial0Field);
-            if (!eff && kitBaseField < fc) eff = kitDbc->getUInt32(i, kitBaseField);
-            if (eff) kitToEffectName[kitId] = eff;
-        }
-    }
-
-    // Helper: resolve path for a given kit ID
-    auto kitPath = [&](uint32_t kitId) -> std::string {
-        if (!kitId) return {};
-        auto kitIt = kitToEffectName.find(kitId);
-        if (kitIt == kitToEffectName.end()) return {};
-        auto fxIt = effectPaths.find(kitIt->second);
-        return (fxIt != effectPaths.end()) ? fxIt->second : std::string{};
-    };
-    auto missilePath = [&](uint32_t effId) -> std::string {
-        if (!effId) return {};
-        auto fxIt = effectPaths.find(effId);
-        return (fxIt != effectPaths.end()) ? fxIt->second : std::string{};
-    };
-
-    // Load SpellVisual.dbc — visualId → cast/impact M2 paths via kit chain
-    auto svDbc = cachedAssetManager->loadDBC("SpellVisual.dbc");
-    if (!svDbc || !svDbc->isLoaded()) {
-        LOG_DEBUG("SpellVisual: SpellVisual.dbc unavailable");
-        return;
-    }
-    uint32_t svFc = svDbc->getFieldCount();
-    uint32_t loadedCast = 0, loadedImpact = 0;
-    for (uint32_t i = 0; i < svDbc->getRecordCount(); ++i) {
-        uint32_t vid = svDbc->getUInt32(i, 0);
-        if (!vid) continue;
-
-        // Cast path: CastKit → SpecialEffect0/BaseEffect, fallback to MissileModel
-        {
-            std::string path;
-            if (svCastKitField < svFc)
-                path = kitPath(svDbc->getUInt32(i, svCastKitField));
-            if (path.empty() && svMissileField < svFc)
-                path = missilePath(svDbc->getUInt32(i, svMissileField));
-            if (!path.empty()) { spellVisualCastPath_[vid] = path; ++loadedCast; }
-        }
-        // Impact path: ImpactKit → SpecialEffect0/BaseEffect, fallback to MissileModel
-        {
-            std::string path;
-            if (svImpactKitField < svFc)
-                path = kitPath(svDbc->getUInt32(i, svImpactKitField));
-            if (path.empty() && svMissileField < svFc)
-                path = missilePath(svDbc->getUInt32(i, svMissileField));
-            if (!path.empty()) { spellVisualImpactPath_[vid] = path; ++loadedImpact; }
-        }
-    }
-    LOG_INFO("SpellVisual: loaded cast=", loadedCast, " impact=", loadedImpact,
-             " visual→M2 mappings (of ", svDbc->getRecordCount(), " records)");
-}
+// ─── Spell Visual Effects — delegated to SpellVisualSystem (§4.4) ────────────
 
 void Renderer::playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition,
                                 bool useImpactKit) {
-    if (!m2Renderer || visualId == 0) return;
-
-    if (!cachedAssetManager)
-        cachedAssetManager = core::Application::getInstance().getAssetManager();
-    if (!cachedAssetManager) return;
-
-    if (!spellVisualDbcLoaded_) loadSpellVisualDbc();
-
-    // Select cast or impact path map
-    auto& pathMap = useImpactKit ? spellVisualImpactPath_ : spellVisualCastPath_;
-    auto pathIt = pathMap.find(visualId);
-    if (pathIt == pathMap.end()) return; // No model for this visual
-
-    const std::string& modelPath = pathIt->second;
-
-    // Get or assign a model ID for this path
-    auto midIt = spellVisualModelIds_.find(modelPath);
-    uint32_t modelId = 0;
-    if (midIt != spellVisualModelIds_.end()) {
-        modelId = midIt->second;
-    } else {
-        if (nextSpellVisualModelId_ >= 999800) {
-            LOG_WARNING("SpellVisual: model ID pool exhausted");
-            return;
-        }
-        modelId = nextSpellVisualModelId_++;
-        spellVisualModelIds_[modelPath] = modelId;
-    }
-
-    // Skip models that have previously failed to load (avoid repeated I/O)
-    if (spellVisualFailedModels_.count(modelId)) return;
-
-    // Load the M2 model if not already loaded
-    if (!m2Renderer->hasModel(modelId)) {
-        auto m2Data = cachedAssetManager->readFile(modelPath);
-        if (m2Data.empty()) {
-            LOG_DEBUG("SpellVisual: could not read model: ", modelPath);
-            spellVisualFailedModels_.insert(modelId);
-            return;
-        }
-        pipeline::M2Model model = pipeline::M2Loader::load(m2Data);
-        if (model.vertices.empty() && model.particleEmitters.empty()) {
-            LOG_DEBUG("SpellVisual: empty model: ", modelPath);
-            spellVisualFailedModels_.insert(modelId);
-            return;
-        }
-        // Load skin file for WotLK-format M2s
-        if (model.version >= 264) {
-            std::string skinPath = modelPath.substr(0, modelPath.rfind('.')) + "00.skin";
-            auto skinData = cachedAssetManager->readFile(skinPath);
-            if (!skinData.empty()) pipeline::M2Loader::loadSkin(skinData, model);
-        }
-        if (!m2Renderer->loadModel(model, modelId)) {
-            LOG_WARNING("SpellVisual: failed to load model to GPU: ", modelPath);
-            spellVisualFailedModels_.insert(modelId);
-            return;
-        }
-        LOG_DEBUG("SpellVisual: loaded model id=", modelId, " path=", modelPath);
-    }
-
-    // Spawn instance at world position
-    uint32_t instanceId = m2Renderer->createInstance(modelId, worldPosition,
-                                                       glm::vec3(0.0f), 1.0f);
-    if (instanceId == 0) {
-        LOG_WARNING("SpellVisual: failed to create instance for visualId=", visualId);
-        return;
-    }
-    // Determine lifetime from M2 animation duration (clamp to reasonable range)
-    float animDurMs = m2Renderer->getInstanceAnimDuration(instanceId);
-    float duration = (animDurMs > 100.0f)
-        ? std::clamp(animDurMs / 1000.0f, 0.5f, SPELL_VISUAL_MAX_DURATION)
-        : SPELL_VISUAL_DEFAULT_DURATION;
-    activeSpellVisuals_.push_back({instanceId, 0.0f, duration});
-    LOG_DEBUG("SpellVisual: spawned visualId=", visualId, " instanceId=", instanceId,
-              " duration=", duration, "s model=", modelPath);
-}
-
-void Renderer::updateSpellVisuals(float deltaTime) {
-    if (activeSpellVisuals_.empty() || !m2Renderer) return;
-    for (auto it = activeSpellVisuals_.begin(); it != activeSpellVisuals_.end(); ) {
-        it->elapsed += deltaTime;
-        if (it->elapsed >= it->duration) {
-            m2Renderer->removeInstance(it->instanceId);
-            it = activeSpellVisuals_.erase(it);
-        } else {
-            ++it;
-        }
-    }
+    if (spellVisualSystem_) spellVisualSystem_->playSpellVisual(visualId, worldPosition, useImpactKit);
 }
 
 void Renderer::triggerMeleeSwing() {
@@ -2937,8 +2445,8 @@ void Renderer::triggerMeleeSwing() {
     if (durationSec < 0.25f) durationSec = 0.25f;
     if (durationSec > 1.0f) durationSec = 1.0f;
     meleeSwingTimer = durationSec;
-    if (activitySoundManager) {
-        activitySoundManager->playMeleeSwing();
+    if (getActivitySoundManager()) {
+        getActivitySoundManager()->playMeleeSwing();
     }
 }
 
@@ -3022,13 +2530,7 @@ void Renderer::resetCombatVisualState() {
     meleeSwingTimer = 0.0f;
     meleeSwingCooldown = 0.0f;
     // Clear lingering spell visual instances from the previous map/combat session.
-    // Without this, old effects could remain visible after teleport or map change.
-    for (auto& sv : activeSpellVisuals_) {
-        if (m2Renderer) m2Renderer->removeInstance(sv.instanceId);
-    }
-    activeSpellVisuals_.clear();
-    // Reset the negative cache so models that failed during asset loading can retry.
-    spellVisualFailedModels_.clear();
+    if (spellVisualSystem_) spellVisualSystem_->reset();
 }
 
 bool Renderer::isMoving() const {
@@ -3318,8 +2820,8 @@ void Renderer::update(float deltaTime) {
     if (chargeEffect) {
         chargeEffect->update(deltaTime);
     }
-    // Update transient spell visual instances
-    updateSpellVisuals(deltaTime);
+    // Update transient spell visual instances (delegated to SpellVisualSystem §4.4)
+    if (spellVisualSystem_) spellVisualSystem_->update(deltaTime);
 
 
     // Launch M2 doodad animation on background thread (overlaps with character animation + audio)
@@ -3345,8 +2847,8 @@ void Renderer::update(float deltaTime) {
     audio::AudioEngine::instance().update(deltaTime);
 
     // Footsteps: animation-event driven + surface query at event time.
-    if (footstepManager) {
-        footstepManager->update(deltaTime);
+    if (getFootstepManager()) {
+        getFootstepManager()->update(deltaTime);
         cachedFootstepUpdateTimer += deltaTime;  // Update surface cache timer
         bool canPlayFootsteps = characterRenderer && characterInstanceId > 0 &&
             cameraController && cameraController->isThirdPerson() &&
@@ -3382,7 +2884,7 @@ void Renderer::update(float deltaTime) {
                         return mountFootstepLastNormTime < eventNorm || eventNorm <= norm;
                     };
                     if (crossed(0.25f) || crossed(0.75f)) {
-                        footstepManager->playFootstep(resolveFootstepSurface(), true);
+                        getFootstepManager()->playFootstep(resolveFootstepSurface(), true);
                     }
                     mountFootstepLastNormTime = norm;
                 }
@@ -3397,11 +2899,11 @@ void Renderer::update(float deltaTime) {
             if (characterRenderer->getAnimationState(characterInstanceId, animId, animTimeMs, animDurationMs) &&
                 shouldTriggerFootstepEvent(animId, animTimeMs, animDurationMs)) {
                 auto surface = resolveFootstepSurface();
-                footstepManager->playFootstep(surface, cameraController->isSprinting());
+                getFootstepManager()->playFootstep(surface, cameraController->isSprinting());
                 // Play additional splash sound and spawn foot splash particles when wading
                 if (surface == audio::FootstepSurface::WATER) {
-                    if (movementSoundManager) {
-                        movementSoundManager->playWaterFootstep(audio::MovementSoundManager::CharacterSize::MEDIUM);
+                    if (getMovementSoundManager()) {
+                        getMovementSoundManager()->playWaterFootstep(audio::MovementSoundManager::CharacterSize::MEDIUM);
                     }
                     if (swimEffects && waterRenderer) {
                         auto wh = waterRenderer->getWaterHeightAt(characterPosition.x, characterPosition.y);
@@ -3419,8 +2921,8 @@ void Renderer::update(float deltaTime) {
     }
 
     // Activity SFX: animation/state-driven jump, landing, and swim loops/splashes.
-    if (activitySoundManager) {
-        activitySoundManager->update(deltaTime);
+    if (getActivitySoundManager()) {
+        getActivitySoundManager()->update(deltaTime);
         if (cameraController && cameraController->isThirdPerson()) {
             bool grounded = cameraController->isGrounded();
             bool jumping = cameraController->isJumping();
@@ -3437,25 +2939,25 @@ void Renderer::update(float deltaTime) {
             }
 
             if (jumping && !sfxPrevJumping && !swimming) {
-                activitySoundManager->playJump();
+                getActivitySoundManager()->playJump();
             }
 
             if (grounded && !sfxPrevGrounded) {
                 bool hardLanding = sfxPrevFalling;
-                activitySoundManager->playLanding(resolveFootstepSurface(), hardLanding);
+                getActivitySoundManager()->playLanding(resolveFootstepSurface(), hardLanding);
             }
 
             if (swimming && !sfxPrevSwimming) {
-                activitySoundManager->playWaterEnter();
+                getActivitySoundManager()->playWaterEnter();
             } else if (!swimming && sfxPrevSwimming) {
-                activitySoundManager->playWaterExit();
+                getActivitySoundManager()->playWaterExit();
             }
 
-            activitySoundManager->setSwimmingState(swimming, moving);
+            getActivitySoundManager()->setSwimmingState(swimming, moving);
 
             // Fade music underwater
-            if (musicManager) {
-                musicManager->setUnderwaterMode(swimming);
+            if (getMusicManager()) {
+                getMusicManager()->setUnderwaterMode(swimming);
             }
 
             sfxPrevGrounded = grounded;
@@ -3463,23 +2965,23 @@ void Renderer::update(float deltaTime) {
             sfxPrevFalling = falling;
             sfxPrevSwimming = swimming;
         } else {
-            activitySoundManager->setSwimmingState(false, false);
+            getActivitySoundManager()->setSwimmingState(false, false);
             // Restore music volume when activity sounds disabled
-            if (musicManager) {
-                musicManager->setUnderwaterMode(false);
+            if (getMusicManager()) {
+                getMusicManager()->setUnderwaterMode(false);
             }
             sfxStateInitialized = false;
         }
     }
 
     // Mount ambient sounds: wing flaps, breathing, etc.
-    if (mountSoundManager) {
-        mountSoundManager->update(deltaTime);
+    if (getMountSoundManager()) {
+        getMountSoundManager()->update(deltaTime);
         if (cameraController && isMounted()) {
             bool moving = cameraController->isMoving();
             bool flying = taxiFlight_ || !cameraController->isGrounded();  // Flying if taxi or airborne
-            mountSoundManager->setMoving(moving);
-            mountSoundManager->setFlying(flying);
+            getMountSoundManager()->setMoving(moving);
+            getMountSoundManager()->setFlying(flying);
         }
     }
 
@@ -3491,7 +2993,7 @@ void Renderer::update(float deltaTime) {
     playerIndoors_ = insideWmo;
 
     // Ambient environmental sounds: fireplaces, water, birds, etc.
-    if (ambientSoundManager && camera && wmoRenderer && cameraController) {
+    if (getAmbientSoundManager() && camera && wmoRenderer && cameraController) {
         bool isIndoor = insideWmo;
         bool isSwimming = cameraController->isSwimming();
 
@@ -3525,10 +3027,10 @@ void Renderer::update(float deltaTime) {
                 }
             }
 
-            ambientSoundManager->setWeather(audioWeatherType);
+            getAmbientSoundManager()->setWeather(audioWeatherType);
         }
 
-        ambientSoundManager->update(deltaTime, camPos, isIndoor, isSwimming, isBlacksmith);
+        getAmbientSoundManager()->update(deltaTime, camPos, isIndoor, isSwimming, isBlacksmith);
     }
 
     // Wait for M2 doodad animation to finish (was launched earlier in parallel with character anim)
@@ -3541,14 +3043,14 @@ void Renderer::update(float deltaTime) {
     auto playZoneMusic = [&](const std::string& music) {
         if (music.empty()) return;
         if (music.rfind("file:", 0) == 0) {
-            musicManager->crossfadeToFile(music.substr(5));
+            getMusicManager()->crossfadeToFile(music.substr(5));
         } else {
-            musicManager->crossfadeTo(music);
+            getMusicManager()->crossfadeTo(music);
         }
     };
 
     // Update zone detection and music
-    if (zoneManager && musicManager && terrainManager && camera) {
+    if (zoneManager && getMusicManager() && terrainManager && camera) {
         // Prefer server-authoritative zone ID (from SMSG_INIT_WORLD_STATES);
         // fall back to tile-based lookup for single-player / offline mode.
         const auto* gh = core::Application::getInstance().getGameHandler();
@@ -3613,7 +3115,7 @@ void Renderer::update(float deltaTime) {
             if (!inTavern_ && !tavernMusic.empty()) {
                 inTavern_ = true;
                 LOG_INFO("Entered tavern");
-                musicManager->playMusic(tavernMusic, true);  // Immediate playback, looping
+                getMusicManager()->playMusic(tavernMusic, true);  // Immediate playback, looping
                 musicSwitchCooldown_ = 6.0f;
             }
         } else if (inTavern_) {
@@ -3635,7 +3137,7 @@ void Renderer::update(float deltaTime) {
             if (!inBlacksmith_) {
                 inBlacksmith_ = true;
                 LOG_INFO("Entered blacksmith - stopping music");
-                musicManager->stopMusic();
+                getMusicManager()->stopMusic();
             }
         } else if (inBlacksmith_) {
             // Exited blacksmith - restore zone music with crossfade
@@ -3667,15 +3169,15 @@ void Renderer::update(float deltaTime) {
                 }
             }
             // Update ambient sound manager zone type
-            if (ambientSoundManager) {
-                ambientSoundManager->setZoneId(zoneId);
+            if (getAmbientSoundManager()) {
+                getAmbientSoundManager()->setZoneId(zoneId);
             }
         }
 
-        musicManager->update(deltaTime);
+        getMusicManager()->update(deltaTime);
 
         // When a track finishes, pick a new random track from the current zone
-        if (!musicManager->isPlaying() && !inTavern_ && !inBlacksmith_ &&
+        if (!getMusicManager()->isPlaying() && !inTavern_ && !inBlacksmith_ &&
             currentZoneId != 0 && musicSwitchCooldown_ <= 0.0f) {
             std::string music = zoneManager->getRandomMusic(currentZoneId);
             if (!music.empty()) {
@@ -3716,24 +3218,24 @@ void Renderer::runDeferredWorldInitStep(float deltaTime) {
 
     switch (deferredWorldInitStage_) {
         case 0:
-            if (ambientSoundManager) {
-                ambientSoundManager->initialize(cachedAssetManager);
+            if (getAmbientSoundManager()) {
+                getAmbientSoundManager()->initialize(cachedAssetManager);
             }
-            if (terrainManager && ambientSoundManager) {
-                terrainManager->setAmbientSoundManager(ambientSoundManager.get());
+            if (terrainManager && getAmbientSoundManager()) {
+                terrainManager->setAmbientSoundManager(getAmbientSoundManager());
             }
             break;
         case 1:
-            if (uiSoundManager) uiSoundManager->initialize(cachedAssetManager);
+            if (getUiSoundManager()) getUiSoundManager()->initialize(cachedAssetManager);
             break;
         case 2:
-            if (combatSoundManager) combatSoundManager->initialize(cachedAssetManager);
+            if (getCombatSoundManager()) getCombatSoundManager()->initialize(cachedAssetManager);
             break;
         case 3:
-            if (spellSoundManager) spellSoundManager->initialize(cachedAssetManager);
+            if (getSpellSoundManager()) getSpellSoundManager()->initialize(cachedAssetManager);
             break;
         case 4:
-            if (movementSoundManager) movementSoundManager->initialize(cachedAssetManager);
+            if (getMovementSoundManager()) getMovementSoundManager()->initialize(cachedAssetManager);
             break;
         case 5:
             if (questMarkerRenderer) questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, cachedAssetManager);
@@ -3958,1489 +3460,107 @@ void Renderer::renderOverlay(const glm::vec4& color, VkCommandBuffer overrideCmd
     vkCmdDraw(cmd, 3, 1, 0, 0); // fullscreen triangle
 }
 
-// ========================= FSR 1.0 Upscaling =========================
+// ========================= PostProcessPipeline delegation stubs (§4.3) =========================
 
-bool Renderer::initFSRResources() {
-    if (!vkCtx) return false;
-
-    VkDevice device = vkCtx->getDevice();
-    VmaAllocator alloc = vkCtx->getAllocator();
-    VkExtent2D swapExtent = vkCtx->getSwapchainExtent();
-    VkSampleCountFlagBits msaa = vkCtx->getMsaaSamples();
-    bool useMsaa = (msaa > VK_SAMPLE_COUNT_1_BIT);
-    bool useDepthResolve = (vkCtx->getDepthResolveImageView() != VK_NULL_HANDLE);
-
-    fsr_.internalWidth = static_cast<uint32_t>(swapExtent.width * fsr_.scaleFactor);
-    fsr_.internalHeight = static_cast<uint32_t>(swapExtent.height * fsr_.scaleFactor);
-    fsr_.internalWidth = (fsr_.internalWidth + 1) & ~1u;
-    fsr_.internalHeight = (fsr_.internalHeight + 1) & ~1u;
-
-    LOG_INFO("FSR: initializing at ", fsr_.internalWidth, "x", fsr_.internalHeight,
-             " -> ", swapExtent.width, "x", swapExtent.height,
-             " (scale=", fsr_.scaleFactor, ", MSAA=", static_cast<int>(msaa), "x)");
-
-    VkFormat colorFmt = vkCtx->getSwapchainFormat();
-    VkFormat depthFmt = vkCtx->getDepthFormat();
-
-    // sceneColor: always 1x, always sampled — this is what FSR reads
-    // Non-MSAA: direct render target. MSAA: resolve target.
-    fsr_.sceneColor = createImage(device, alloc, fsr_.internalWidth, fsr_.internalHeight,
-        colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-    if (!fsr_.sceneColor.image) {
-        LOG_ERROR("FSR: failed to create scene color image");
-        return false;
-    }
-
-    // sceneDepth: matches current MSAA sample count
-    fsr_.sceneDepth = createImage(device, alloc, fsr_.internalWidth, fsr_.internalHeight,
-        depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, msaa);
-    if (!fsr_.sceneDepth.image) {
-        LOG_ERROR("FSR: failed to create scene depth image");
-        destroyFSRResources();
-        return false;
-    }
-
-    if (useMsaa) {
-        // sceneMsaaColor: multisampled color target
-        fsr_.sceneMsaaColor = createImage(device, alloc, fsr_.internalWidth, fsr_.internalHeight,
-            colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, msaa);
-        if (!fsr_.sceneMsaaColor.image) {
-            LOG_ERROR("FSR: failed to create MSAA color image");
-            destroyFSRResources();
-            return false;
-        }
-
-        if (useDepthResolve) {
-            fsr_.sceneDepthResolve = createImage(device, alloc, fsr_.internalWidth, fsr_.internalHeight,
-                depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-            if (!fsr_.sceneDepthResolve.image) {
-                LOG_ERROR("FSR: failed to create depth resolve image");
-                destroyFSRResources();
-                return false;
-            }
-        }
-    }
-
-    // Build framebuffer matching the main render pass attachment layout:
-    //   Non-MSAA:              [color, depth]
-    //   MSAA (no depth res):   [msaaColor, depth, resolve]
-    //   MSAA (depth res):      [msaaColor, depth, resolve, depthResolve]
-    VkImageView fbAttachments[4]{};
-    uint32_t fbCount;
-    if (useMsaa) {
-        fbAttachments[0] = fsr_.sceneMsaaColor.imageView;
-        fbAttachments[1] = fsr_.sceneDepth.imageView;
-        fbAttachments[2] = fsr_.sceneColor.imageView;  // resolve target
-        fbCount = 3;
-        if (useDepthResolve) {
-            fbAttachments[3] = fsr_.sceneDepthResolve.imageView;
-            fbCount = 4;
-        }
-    } else {
-        fbAttachments[0] = fsr_.sceneColor.imageView;
-        fbAttachments[1] = fsr_.sceneDepth.imageView;
-        fbCount = 2;
-    }
-
-    VkFramebufferCreateInfo fbInfo{};
-    fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    fbInfo.renderPass = vkCtx->getImGuiRenderPass();
-    fbInfo.attachmentCount = fbCount;
-    fbInfo.pAttachments = fbAttachments;
-    fbInfo.width = fsr_.internalWidth;
-    fbInfo.height = fsr_.internalHeight;
-    fbInfo.layers = 1;
-
-    if (vkCreateFramebuffer(device, &fbInfo, nullptr, &fsr_.sceneFramebuffer) != VK_SUCCESS) {
-        LOG_ERROR("FSR: failed to create scene framebuffer");
-        destroyFSRResources();
-        return false;
-    }
-
-    // Sampler for the resolved scene color
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    fsr_.sceneSampler = vkCtx->getOrCreateSampler(samplerInfo);
-    if (fsr_.sceneSampler == VK_NULL_HANDLE) {
-        LOG_ERROR("FSR: failed to create sampler");
-        destroyFSRResources();
-        return false;
-    }
-
-    // Descriptor set layout: binding 0 = combined image sampler
-    VkDescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
-    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    binding.descriptorCount = 1;
-    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &binding;
-    vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &fsr_.descSetLayout);
-
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = 1;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    vkCreateDescriptorPool(device, &poolInfo, nullptr, &fsr_.descPool);
-
-    VkDescriptorSetAllocateInfo dsAllocInfo{};
-    dsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    dsAllocInfo.descriptorPool = fsr_.descPool;
-    dsAllocInfo.descriptorSetCount = 1;
-    dsAllocInfo.pSetLayouts = &fsr_.descSetLayout;
-    vkAllocateDescriptorSets(device, &dsAllocInfo, &fsr_.descSet);
-
-    // Always bind the 1x sceneColor (FSR reads the resolved image)
-    VkDescriptorImageInfo imgInfo{};
-    imgInfo.sampler = fsr_.sceneSampler;
-    imgInfo.imageView = fsr_.sceneColor.imageView;
-    imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = fsr_.descSet;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo = &imgInfo;
-    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
-
-    // Pipeline layout
-    VkPushConstantRange pc{};
-    pc.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    pc.offset = 0;
-    pc.size = 64;
-    VkPipelineLayoutCreateInfo plCI{};
-    plCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    plCI.setLayoutCount = 1;
-    plCI.pSetLayouts = &fsr_.descSetLayout;
-    plCI.pushConstantRangeCount = 1;
-    plCI.pPushConstantRanges = &pc;
-    vkCreatePipelineLayout(device, &plCI, nullptr, &fsr_.pipelineLayout);
-
-    // Load shaders
-    VkShaderModule vertMod, fragMod;
-    if (!vertMod.loadFromFile(device, "assets/shaders/postprocess.vert.spv") ||
-        !fragMod.loadFromFile(device, "assets/shaders/fsr_easu.frag.spv")) {
-        LOG_ERROR("FSR: failed to load shaders");
-        destroyFSRResources();
-        return false;
-    }
-
-    // FSR upscale pipeline renders into the swapchain pass at full resolution
-    // Must match swapchain pass MSAA setting
-    fsr_.pipeline = PipelineBuilder()
-        .setShaders(vertMod.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
-                    fragMod.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
-        .setVertexInput({}, {})
-        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
-        .setNoDepthTest()
-        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
-        .setMultisample(msaa)
-        .setLayout(fsr_.pipelineLayout)
-        .setRenderPass(vkCtx->getImGuiRenderPass())
-        .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
-        .build(device, vkCtx->getPipelineCache());
-
-    vertMod.destroy();
-    fragMod.destroy();
-
-    if (!fsr_.pipeline) {
-        LOG_ERROR("FSR: failed to create upscale pipeline");
-        destroyFSRResources();
-        return false;
-    }
-
-    LOG_INFO("FSR: initialized successfully");
-    return true;
-}
-
-void Renderer::destroyFSRResources() {
-    if (!vkCtx) return;
-
-    VkDevice device = vkCtx->getDevice();
-    VmaAllocator alloc = vkCtx->getAllocator();
-    vkDeviceWaitIdle(device);
-
-    if (fsr_.pipeline) { vkDestroyPipeline(device, fsr_.pipeline, nullptr); fsr_.pipeline = VK_NULL_HANDLE; }
-    if (fsr_.pipelineLayout) { vkDestroyPipelineLayout(device, fsr_.pipelineLayout, nullptr); fsr_.pipelineLayout = VK_NULL_HANDLE; }
-    if (fsr_.descPool) { vkDestroyDescriptorPool(device, fsr_.descPool, nullptr); fsr_.descPool = VK_NULL_HANDLE; fsr_.descSet = VK_NULL_HANDLE; }
-    if (fsr_.descSetLayout) { vkDestroyDescriptorSetLayout(device, fsr_.descSetLayout, nullptr); fsr_.descSetLayout = VK_NULL_HANDLE; }
-    if (fsr_.sceneFramebuffer) { vkDestroyFramebuffer(device, fsr_.sceneFramebuffer, nullptr); fsr_.sceneFramebuffer = VK_NULL_HANDLE; }
-    fsr_.sceneSampler = VK_NULL_HANDLE; // Owned by VkContext sampler cache
-    destroyImage(device, alloc, fsr_.sceneDepthResolve);
-    destroyImage(device, alloc, fsr_.sceneMsaaColor);
-    destroyImage(device, alloc, fsr_.sceneDepth);
-    destroyImage(device, alloc, fsr_.sceneColor);
-
-    fsr_.internalWidth = 0;
-    fsr_.internalHeight = 0;
-}
-
-void Renderer::renderFSRUpscale() {
-    if (!fsr_.pipeline || currentCmd == VK_NULL_HANDLE) return;
-
-    VkExtent2D outExtent = vkCtx->getSwapchainExtent();
-    float inW = static_cast<float>(fsr_.internalWidth);
-    float inH = static_cast<float>(fsr_.internalHeight);
-    float outW = static_cast<float>(outExtent.width);
-    float outH = static_cast<float>(outExtent.height);
-
-    // FSR push constants
-    struct {
-        glm::vec4 con0;  // inputSize.xy, 1/inputSize.xy
-        glm::vec4 con1;  // inputSize.xy / outputSize.xy, 0.5 * inputSize.xy / outputSize.xy
-        glm::vec4 con2;  // outputSize.xy, 1/outputSize.xy
-        glm::vec4 con3;  // sharpness, 0, 0, 0
-    } fsrConst;
-
-    fsrConst.con0 = glm::vec4(inW, inH, 1.0f / inW, 1.0f / inH);
-    fsrConst.con1 = glm::vec4(inW / outW, inH / outH, 0.5f * inW / outW, 0.5f * inH / outH);
-    fsrConst.con2 = glm::vec4(outW, outH, 1.0f / outW, 1.0f / outH);
-    fsrConst.con3 = glm::vec4(fsr_.sharpness, 0.0f, 0.0f, 0.0f);
-
-    vkCmdBindPipeline(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fsr_.pipeline);
-    vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        fsr_.pipelineLayout, 0, 1, &fsr_.descSet, 0, nullptr);
-    vkCmdPushConstants(currentCmd, fsr_.pipelineLayout,
-        VK_SHADER_STAGE_FRAGMENT_BIT, 0, 64, &fsrConst);
-    vkCmdDraw(currentCmd, 3, 1, 0, 0);
-}
-
-void Renderer::setFSREnabled(bool enabled) {
-    if (fsr_.enabled == enabled) return;
-    fsr_.enabled = enabled;
-
-    if (enabled) {
-        // FSR1 upscaling renders its own AA — disable MSAA to avoid redundant work
-        if (vkCtx && vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT) {
-            pendingMsaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
-            msaaChangePending_ = true;
-        }
-    } else {
-        // Defer destruction to next beginFrame() — can't destroy mid-render
-        fsr_.needsRecreate = true;
-    }
-    // Resources created/destroyed lazily in beginFrame()
-}
-
-void Renderer::setFSRQuality(float scaleFactor) {
-    scaleFactor = glm::clamp(scaleFactor, 0.5f, 1.0f);
-    fsr_.scaleFactor = scaleFactor;
-    fsr2_.scaleFactor = scaleFactor;
-    // Don't destroy/recreate mid-frame — mark for lazy recreation in next beginFrame()
-    if (fsr_.enabled && fsr_.sceneFramebuffer) {
-        fsr_.needsRecreate = true;
-    }
-    if (fsr2_.enabled && fsr2_.sceneFramebuffer) {
-        fsr2_.needsRecreate = true;
-        fsr2_.needsHistoryReset = true;
-    }
-}
-
-void Renderer::setFSRSharpness(float sharpness) {
-    fsr_.sharpness = glm::clamp(sharpness, 0.0f, 2.0f);
-    fsr2_.sharpness = glm::clamp(sharpness, 0.0f, 2.0f);
-}
-
-// ========================= End FSR 1.0 =========================
-
-// ========================= FSR 2.2 Temporal Upscaling =========================
-
-float Renderer::halton(uint32_t index, uint32_t base) {
-    float f = 1.0f;
-    float r = 0.0f;
-    uint32_t current = index;
-    while (current > 0) {
-        f /= static_cast<float>(base);
-        r += f * static_cast<float>(current % base);
-        current /= base;
-    }
-    return r;
-}
-
-bool Renderer::initFSR2Resources() {
-    if (!vkCtx) return false;
-
-    VkDevice device = vkCtx->getDevice();
-    VmaAllocator alloc = vkCtx->getAllocator();
-    VkExtent2D swapExtent = vkCtx->getSwapchainExtent();
-
-    // Temporary stability fallback: keep FSR2 path at native internal resolution
-    // until temporal reprojection is reworked.
-    fsr2_.internalWidth = static_cast<uint32_t>(swapExtent.width * fsr2_.scaleFactor);
-    fsr2_.internalHeight = static_cast<uint32_t>(swapExtent.height * fsr2_.scaleFactor);
-    fsr2_.internalWidth = (fsr2_.internalWidth + 1) & ~1u;
-    fsr2_.internalHeight = (fsr2_.internalHeight + 1) & ~1u;
-
-    LOG_INFO("FSR2: initializing at ", fsr2_.internalWidth, "x", fsr2_.internalHeight,
-             " -> ", swapExtent.width, "x", swapExtent.height,
-             " (scale=", fsr2_.scaleFactor, ")");
-    fsr2_.useAmdBackend = false;
-    fsr2_.amdFsr3FramegenRuntimeActive = false;
-    fsr2_.amdFsr3FramegenRuntimeReady = false;
-    fsr2_.framegenOutputValid = false;
-    fsr2_.amdFsr3RuntimePath = "Path C";
-    fsr2_.amdFsr3RuntimeLastError.clear();
-    fsr2_.amdFsr3UpscaleDispatchCount = 0;
-    fsr2_.amdFsr3FramegenDispatchCount = 0;
-    fsr2_.amdFsr3FallbackCount = 0;
-    fsr2_.amdFsr3InteropSyncValue = 1;
-#if WOWEE_HAS_AMD_FSR2
-    LOG_INFO("FSR2: AMD FidelityFX SDK detected at build time.");
-#else
-    LOG_WARNING("FSR2: AMD FidelityFX SDK not detected; using internal fallback path.");
-#endif
-
-    VkFormat colorFmt = vkCtx->getSwapchainFormat();
-    VkFormat depthFmt = vkCtx->getDepthFormat();
-
-    // Scene color (internal resolution, 1x — FSR2 replaces MSAA)
-    fsr2_.sceneColor = createImage(device, alloc, fsr2_.internalWidth, fsr2_.internalHeight,
-        colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-    if (!fsr2_.sceneColor.image) { LOG_ERROR("FSR2: failed to create scene color"); return false; }
-
-    // Scene depth (internal resolution, 1x, sampled for motion vectors)
-    fsr2_.sceneDepth = createImage(device, alloc, fsr2_.internalWidth, fsr2_.internalHeight,
-        depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-    if (!fsr2_.sceneDepth.image) { LOG_ERROR("FSR2: failed to create scene depth"); destroyFSR2Resources(); return false; }
-
-    // Motion vector buffer (internal resolution)
-    fsr2_.motionVectors = createImage(device, alloc, fsr2_.internalWidth, fsr2_.internalHeight,
-        VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-    if (!fsr2_.motionVectors.image) { LOG_ERROR("FSR2: failed to create motion vectors"); destroyFSR2Resources(); return false; }
-
-    // History buffers (display resolution, ping-pong)
-    for (int i = 0; i < 2; i++) {
-        fsr2_.history[i] = createImage(device, alloc, swapExtent.width, swapExtent.height,
-            VK_FORMAT_R16G16B16A16_SFLOAT,
-            VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-        if (!fsr2_.history[i].image) { LOG_ERROR("FSR2: failed to create history buffer ", i); destroyFSR2Resources(); return false; }
-    }
-    fsr2_.framegenOutput = createImage(device, alloc, swapExtent.width, swapExtent.height,
-        VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-    if (!fsr2_.framegenOutput.image) { LOG_ERROR("FSR2: failed to create framegen output"); destroyFSR2Resources(); return false; }
-
-    // Scene framebuffer (non-MSAA: [color, depth])
-    // Must use the same render pass as the swapchain — which must be non-MSAA when FSR2 is active
-    VkImageView fbAttachments[2] = { fsr2_.sceneColor.imageView, fsr2_.sceneDepth.imageView };
-    VkFramebufferCreateInfo fbInfo{};
-    fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    fbInfo.renderPass = vkCtx->getImGuiRenderPass();
-    fbInfo.attachmentCount = 2;
-    fbInfo.pAttachments = fbAttachments;
-    fbInfo.width = fsr2_.internalWidth;
-    fbInfo.height = fsr2_.internalHeight;
-    fbInfo.layers = 1;
-    if (vkCreateFramebuffer(device, &fbInfo, nullptr, &fsr2_.sceneFramebuffer) != VK_SUCCESS) {
-        LOG_ERROR("FSR2: failed to create scene framebuffer");
-        destroyFSR2Resources();
-        return false;
-    }
-
-    // Samplers
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    fsr2_.linearSampler = vkCtx->getOrCreateSampler(samplerInfo);
-
-    samplerInfo.minFilter = VK_FILTER_NEAREST;
-    samplerInfo.magFilter = VK_FILTER_NEAREST;
-    fsr2_.nearestSampler = vkCtx->getOrCreateSampler(samplerInfo);
-
-#if WOWEE_HAS_AMD_FSR2
-    // Initialize AMD FSR2 context; fall back to internal path on any failure.
-    fsr2_.amdScratchBufferSize = ffxFsr2GetScratchMemorySizeVK(vkCtx->getPhysicalDevice());
-    if (fsr2_.amdScratchBufferSize > 0) {
-        fsr2_.amdScratchBuffer = std::malloc(fsr2_.amdScratchBufferSize);
-    }
-    if (!fsr2_.amdScratchBuffer) {
-        LOG_WARNING("FSR2 AMD: failed to allocate scratch buffer, using internal fallback.");
-    } else {
-        FfxErrorCode ifaceErr = ffxFsr2GetInterfaceVK(
-            &fsr2_.amdInterface,
-            fsr2_.amdScratchBuffer,
-            fsr2_.amdScratchBufferSize,
-            vkCtx->getPhysicalDevice(),
-            vkGetDeviceProcAddr);
-        if (ifaceErr != FFX_OK) {
-            LOG_WARNING("FSR2 AMD: ffxFsr2GetInterfaceVK failed (", static_cast<int>(ifaceErr), "), using internal fallback.");
-            std::free(fsr2_.amdScratchBuffer);
-            fsr2_.amdScratchBuffer = nullptr;
-            fsr2_.amdScratchBufferSize = 0;
-        } else {
-            FfxFsr2ContextDescription ctxDesc{};
-            ctxDesc.flags = FFX_FSR2_ENABLE_AUTO_EXPOSURE | FFX_FSR2_ENABLE_MOTION_VECTORS_JITTER_CANCELLATION;
-            ctxDesc.maxRenderSize.width = fsr2_.internalWidth;
-            ctxDesc.maxRenderSize.height = fsr2_.internalHeight;
-            ctxDesc.displaySize.width = swapExtent.width;
-            ctxDesc.displaySize.height = swapExtent.height;
-            ctxDesc.callbacks = fsr2_.amdInterface;
-            ctxDesc.device = ffxGetDeviceVK(vkCtx->getDevice());
-            ctxDesc.fpMessage = nullptr;
-
-            FfxErrorCode ctxErr = ffxFsr2ContextCreate(&fsr2_.amdContext, &ctxDesc);
-            if (ctxErr == FFX_OK) {
-                fsr2_.useAmdBackend = true;
-                LOG_INFO("FSR2 AMD: context created successfully.");
-#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
-                // FSR3 frame generation runtime uses AMD FidelityFX SDK which can
-                // corrupt Vulkan driver state on NVIDIA GPUs when context creation
-                // fails, causing subsequent vkCmdBeginRenderPass to crash.
-                // Skip FSR3 frame gen entirely on non-AMD GPUs.
-                if (fsr2_.amdFsr3FramegenEnabled && vkCtx->isAmdGpu()) {
-                    fsr2_.amdFsr3FramegenRuntimeActive = false;
-                    if (!fsr2_.amdFsr3Runtime) fsr2_.amdFsr3Runtime = std::make_unique<AmdFsr3Runtime>();
-                    AmdFsr3RuntimeInitDesc fgInit{};
-                    fgInit.physicalDevice = vkCtx->getPhysicalDevice();
-                    fgInit.device = vkCtx->getDevice();
-                    fgInit.getDeviceProcAddr = vkGetDeviceProcAddr;
-                    fgInit.maxRenderWidth = fsr2_.internalWidth;
-                    fgInit.maxRenderHeight = fsr2_.internalHeight;
-                    fgInit.displayWidth = swapExtent.width;
-                    fgInit.displayHeight = swapExtent.height;
-                    fgInit.colorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-                    fgInit.hdrInput = false;
-                    fgInit.depthInverted = false;
-                    fgInit.enableFrameGeneration = true;
-                    fsr2_.amdFsr3FramegenRuntimeReady = fsr2_.amdFsr3Runtime->initialize(fgInit);
-                    if (fsr2_.amdFsr3FramegenRuntimeReady) {
-                        fsr2_.amdFsr3RuntimeLastError.clear();
-                        fsr2_.amdFsr3RuntimePath = "Path A";
-                        LOG_INFO("FSR3 framegen runtime library loaded from ", fsr2_.amdFsr3Runtime->loadedLibraryPath(),
-                                 " (upscale+framegen dispatch enabled)");
-                    } else {
-                        fsr2_.amdFsr3RuntimePath = "Path C";
-                        fsr2_.amdFsr3RuntimeLastError = fsr2_.amdFsr3Runtime->lastError();
-                        LOG_WARNING("FSR3 framegen toggle is enabled, but runtime initialization failed. ",
-                                    "path=", fsr2_.amdFsr3RuntimePath,
-                                    " error=", fsr2_.amdFsr3RuntimeLastError.empty() ? "(none)" : fsr2_.amdFsr3RuntimeLastError,
-                                    " runtimeLib=", fsr2_.amdFsr3Runtime->loadedLibraryPath().empty() ? "(not loaded)" : fsr2_.amdFsr3Runtime->loadedLibraryPath());
-                    }
-                }
-#endif
-            } else {
-                LOG_WARNING("FSR2 AMD: context creation failed (", static_cast<int>(ctxErr), "), using internal fallback.");
-                std::free(fsr2_.amdScratchBuffer);
-                fsr2_.amdScratchBuffer = nullptr;
-                fsr2_.amdScratchBufferSize = 0;
-            }
-        }
-    }
-#endif
-
-    // --- Motion Vector Compute Pipeline ---
-    {
-        // Descriptor set layout: binding 0 = depth (sampler), binding 1 = motion vectors (storage image)
-        VkDescriptorSetLayoutBinding bindings[2] = {};
-        bindings[0].binding = 0;
-        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        bindings[1].binding = 1;
-        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[1].descriptorCount = 1;
-        bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-        layoutInfo.bindingCount = 2;
-        layoutInfo.pBindings = bindings;
-        vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &fsr2_.motionVecDescSetLayout);
-
-        VkPushConstantRange pc{};
-        pc.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        pc.offset = 0;
-        pc.size = 2 * sizeof(glm::mat4);  // 128 bytes
-
-        VkPipelineLayoutCreateInfo plCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-        plCI.setLayoutCount = 1;
-        plCI.pSetLayouts = &fsr2_.motionVecDescSetLayout;
-        plCI.pushConstantRangeCount = 1;
-        plCI.pPushConstantRanges = &pc;
-        vkCreatePipelineLayout(device, &plCI, nullptr, &fsr2_.motionVecPipelineLayout);
-
-        VkShaderModule compMod;
-        if (!compMod.loadFromFile(device, "assets/shaders/fsr2_motion.comp.spv")) {
-            LOG_ERROR("FSR2: failed to load motion vector compute shader");
-            destroyFSR2Resources();
-            return false;
-        }
-
-        VkComputePipelineCreateInfo cpCI{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-        cpCI.stage = compMod.stageInfo(VK_SHADER_STAGE_COMPUTE_BIT);
-        cpCI.layout = fsr2_.motionVecPipelineLayout;
-        if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &cpCI, nullptr, &fsr2_.motionVecPipeline) != VK_SUCCESS) {
-            LOG_ERROR("FSR2: failed to create motion vector pipeline");
-            compMod.destroy();
-            destroyFSR2Resources();
-            return false;
-        }
-        compMod.destroy();
-
-        // Descriptor pool + set
-        VkDescriptorPoolSize poolSizes[2] = {};
-        poolSizes[0] = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
-        poolSizes[1] = {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1};
-        VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-        poolInfo.maxSets = 1;
-        poolInfo.poolSizeCount = 2;
-        poolInfo.pPoolSizes = poolSizes;
-        vkCreateDescriptorPool(device, &poolInfo, nullptr, &fsr2_.motionVecDescPool);
-
-        VkDescriptorSetAllocateInfo dsAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-        dsAI.descriptorPool = fsr2_.motionVecDescPool;
-        dsAI.descriptorSetCount = 1;
-        dsAI.pSetLayouts = &fsr2_.motionVecDescSetLayout;
-        vkAllocateDescriptorSets(device, &dsAI, &fsr2_.motionVecDescSet);
-
-        // Write descriptors
-        VkDescriptorImageInfo depthImgInfo{};
-        depthImgInfo.sampler = fsr2_.nearestSampler;
-        depthImgInfo.imageView = fsr2_.sceneDepth.imageView;
-        depthImgInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-
-        VkDescriptorImageInfo mvImgInfo{};
-        mvImgInfo.imageView = fsr2_.motionVectors.imageView;
-        mvImgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        VkWriteDescriptorSet writes[2] = {};
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = fsr2_.motionVecDescSet;
-        writes[0].dstBinding = 0;
-        writes[0].descriptorCount = 1;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[0].pImageInfo = &depthImgInfo;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = fsr2_.motionVecDescSet;
-        writes[1].dstBinding = 1;
-        writes[1].descriptorCount = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[1].pImageInfo = &mvImgInfo;
-
-        vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
-    }
-
-    // --- Temporal Accumulation Compute Pipeline ---
-    {
-        // bindings: 0=sceneColor, 1=depth, 2=motionVectors, 3=historyInput, 4=historyOutput
-        VkDescriptorSetLayoutBinding bindings[5] = {};
-        for (int i = 0; i < 4; i++) {
-            bindings[i].binding = i;
-            bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            bindings[i].descriptorCount = 1;
-            bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        }
-        bindings[4].binding = 4;
-        bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[4].descriptorCount = 1;
-        bindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-        layoutInfo.bindingCount = 5;
-        layoutInfo.pBindings = bindings;
-        vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &fsr2_.accumulateDescSetLayout);
-
-        VkPushConstantRange pc{};
-        pc.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        pc.offset = 0;
-        pc.size = 4 * sizeof(glm::vec4);  // 64 bytes
-
-        VkPipelineLayoutCreateInfo plCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-        plCI.setLayoutCount = 1;
-        plCI.pSetLayouts = &fsr2_.accumulateDescSetLayout;
-        plCI.pushConstantRangeCount = 1;
-        plCI.pPushConstantRanges = &pc;
-        vkCreatePipelineLayout(device, &plCI, nullptr, &fsr2_.accumulatePipelineLayout);
-
-        VkShaderModule compMod;
-        if (!compMod.loadFromFile(device, "assets/shaders/fsr2_accumulate.comp.spv")) {
-            LOG_ERROR("FSR2: failed to load accumulation compute shader");
-            destroyFSR2Resources();
-            return false;
-        }
-
-        VkComputePipelineCreateInfo cpCI{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-        cpCI.stage = compMod.stageInfo(VK_SHADER_STAGE_COMPUTE_BIT);
-        cpCI.layout = fsr2_.accumulatePipelineLayout;
-        if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &cpCI, nullptr, &fsr2_.accumulatePipeline) != VK_SUCCESS) {
-            LOG_ERROR("FSR2: failed to create accumulation pipeline");
-            compMod.destroy();
-            destroyFSR2Resources();
-            return false;
-        }
-        compMod.destroy();
-
-        // Descriptor pool: 2 sets (ping-pong), each with 4 samplers + 1 storage image
-        VkDescriptorPoolSize poolSizes[2] = {};
-        poolSizes[0] = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8};
-        poolSizes[1] = {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2};
-        VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-        poolInfo.maxSets = 2;
-        poolInfo.poolSizeCount = 2;
-        poolInfo.pPoolSizes = poolSizes;
-        vkCreateDescriptorPool(device, &poolInfo, nullptr, &fsr2_.accumulateDescPool);
-
-        // Allocate 2 descriptor sets (one per ping-pong direction)
-        VkDescriptorSetLayout layouts[2] = { fsr2_.accumulateDescSetLayout, fsr2_.accumulateDescSetLayout };
-        VkDescriptorSetAllocateInfo dsAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-        dsAI.descriptorPool = fsr2_.accumulateDescPool;
-        dsAI.descriptorSetCount = 2;
-        dsAI.pSetLayouts = layouts;
-        vkAllocateDescriptorSets(device, &dsAI, fsr2_.accumulateDescSets);
-
-        // Write descriptors for both ping-pong sets
-        for (int pp = 0; pp < 2; pp++) {
-            int inputHistory = 1 - pp;   // Read from the other
-            int outputHistory = pp;       // Write to this one
-
-            // The accumulation shader already performs custom Lanczos reconstruction.
-            // Use nearest here to avoid double filtering (linear + Lanczos) softening.
-            VkDescriptorImageInfo colorInfo{fsr2_.nearestSampler, fsr2_.sceneColor.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            VkDescriptorImageInfo depthInfo{fsr2_.nearestSampler, fsr2_.sceneDepth.imageView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
-            VkDescriptorImageInfo mvInfo{fsr2_.nearestSampler, fsr2_.motionVectors.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            VkDescriptorImageInfo histInInfo{fsr2_.linearSampler, fsr2_.history[inputHistory].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            VkDescriptorImageInfo histOutInfo{VK_NULL_HANDLE, fsr2_.history[outputHistory].imageView, VK_IMAGE_LAYOUT_GENERAL};
-
-            VkWriteDescriptorSet writes[5] = {};
-            for (int w = 0; w < 5; w++) {
-                writes[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[w].dstSet = fsr2_.accumulateDescSets[pp];
-                writes[w].dstBinding = w;
-                writes[w].descriptorCount = 1;
-            }
-            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; writes[0].pImageInfo = &colorInfo;
-            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; writes[1].pImageInfo = &depthInfo;
-            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; writes[2].pImageInfo = &mvInfo;
-            writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; writes[3].pImageInfo = &histInInfo;
-            writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;          writes[4].pImageInfo = &histOutInfo;
-
-            vkUpdateDescriptorSets(device, 5, writes, 0, nullptr);
-        }
-    }
-
-    // --- RCAS Sharpening Pipeline (fragment shader, fullscreen pass) ---
-    {
-        VkDescriptorSetLayoutBinding binding{};
-        binding.binding = 0;
-        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        binding.descriptorCount = 1;
-        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &binding;
-        vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &fsr2_.sharpenDescSetLayout);
-
-        VkPushConstantRange pc{};
-        pc.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        pc.offset = 0;
-        pc.size = sizeof(glm::vec4);
-
-        VkPipelineLayoutCreateInfo plCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-        plCI.setLayoutCount = 1;
-        plCI.pSetLayouts = &fsr2_.sharpenDescSetLayout;
-        plCI.pushConstantRangeCount = 1;
-        plCI.pPushConstantRanges = &pc;
-        vkCreatePipelineLayout(device, &plCI, nullptr, &fsr2_.sharpenPipelineLayout);
-
-        VkShaderModule vertMod, fragMod;
-        if (!vertMod.loadFromFile(device, "assets/shaders/postprocess.vert.spv") ||
-            !fragMod.loadFromFile(device, "assets/shaders/fsr2_sharpen.frag.spv")) {
-            LOG_ERROR("FSR2: failed to load sharpen shaders");
-            destroyFSR2Resources();
-            return false;
-        }
-
-        fsr2_.sharpenPipeline = PipelineBuilder()
-            .setShaders(vertMod.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
-                        fragMod.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
-            .setVertexInput({}, {})
-            .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
-            .setNoDepthTest()
-            .setColorBlendAttachment(PipelineBuilder::blendDisabled())
-            .setMultisample(VK_SAMPLE_COUNT_1_BIT)
-            .setLayout(fsr2_.sharpenPipelineLayout)
-            .setRenderPass(vkCtx->getImGuiRenderPass())
-            .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
-            .build(device, vkCtx->getPipelineCache());
-
-        vertMod.destroy();
-        fragMod.destroy();
-
-        if (!fsr2_.sharpenPipeline) {
-            LOG_ERROR("FSR2: failed to create sharpen pipeline");
-            destroyFSR2Resources();
-            return false;
-        }
-
-        // Descriptor pool + sets for sharpen pass (double-buffered to avoid race condition)
-        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
-        VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-        poolInfo.maxSets = 2;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes = &poolSize;
-        vkCreateDescriptorPool(device, &poolInfo, nullptr, &fsr2_.sharpenDescPool);
-
-        VkDescriptorSetLayout layouts[2] = {fsr2_.sharpenDescSetLayout, fsr2_.sharpenDescSetLayout};
-        VkDescriptorSetAllocateInfo dsAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-        dsAI.descriptorPool = fsr2_.sharpenDescPool;
-        dsAI.descriptorSetCount = 2;
-        dsAI.pSetLayouts = layouts;
-        vkAllocateDescriptorSets(device, &dsAI, fsr2_.sharpenDescSets);
-        // Descriptors updated dynamically each frame to point at the correct history buffer
-    }
-
-    fsr2_.needsHistoryReset = true;
-    fsr2_.frameIndex = 0;
-    LOG_INFO("FSR2: initialized successfully");
-    return true;
-}
-
-void Renderer::destroyFSR2Resources() {
-    if (!vkCtx) return;
-
-    VkDevice device = vkCtx->getDevice();
-    VmaAllocator alloc = vkCtx->getAllocator();
-    vkDeviceWaitIdle(device);
-
-#if WOWEE_HAS_AMD_FSR2
-    if (fsr2_.useAmdBackend) {
-        ffxFsr2ContextDestroy(&fsr2_.amdContext);
-        fsr2_.useAmdBackend = false;
-    }
-    if (fsr2_.amdScratchBuffer) {
-        std::free(fsr2_.amdScratchBuffer);
-        fsr2_.amdScratchBuffer = nullptr;
-    }
-    fsr2_.amdScratchBufferSize = 0;
-#endif
-    fsr2_.amdFsr3FramegenRuntimeActive = false;
-    fsr2_.amdFsr3FramegenRuntimeReady = false;
-    fsr2_.framegenOutputValid = false;
-    fsr2_.amdFsr3RuntimePath = "Path C";
-    fsr2_.amdFsr3RuntimeLastError.clear();
-    fsr2_.amdFsr3InteropSyncValue = 1;
-#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
-    if (fsr2_.amdFsr3Runtime) {
-        fsr2_.amdFsr3Runtime->shutdown();
-        fsr2_.amdFsr3Runtime.reset();
-    }
-#endif
-
-    if (fsr2_.sharpenPipeline) { vkDestroyPipeline(device, fsr2_.sharpenPipeline, nullptr); fsr2_.sharpenPipeline = VK_NULL_HANDLE; }
-    if (fsr2_.sharpenPipelineLayout) { vkDestroyPipelineLayout(device, fsr2_.sharpenPipelineLayout, nullptr); fsr2_.sharpenPipelineLayout = VK_NULL_HANDLE; }
-    if (fsr2_.sharpenDescPool) { vkDestroyDescriptorPool(device, fsr2_.sharpenDescPool, nullptr); fsr2_.sharpenDescPool = VK_NULL_HANDLE; fsr2_.sharpenDescSets[0] = fsr2_.sharpenDescSets[1] = VK_NULL_HANDLE; }
-    if (fsr2_.sharpenDescSetLayout) { vkDestroyDescriptorSetLayout(device, fsr2_.sharpenDescSetLayout, nullptr); fsr2_.sharpenDescSetLayout = VK_NULL_HANDLE; }
-
-    if (fsr2_.accumulatePipeline) { vkDestroyPipeline(device, fsr2_.accumulatePipeline, nullptr); fsr2_.accumulatePipeline = VK_NULL_HANDLE; }
-    if (fsr2_.accumulatePipelineLayout) { vkDestroyPipelineLayout(device, fsr2_.accumulatePipelineLayout, nullptr); fsr2_.accumulatePipelineLayout = VK_NULL_HANDLE; }
-    if (fsr2_.accumulateDescPool) { vkDestroyDescriptorPool(device, fsr2_.accumulateDescPool, nullptr); fsr2_.accumulateDescPool = VK_NULL_HANDLE; fsr2_.accumulateDescSets[0] = fsr2_.accumulateDescSets[1] = VK_NULL_HANDLE; }
-    if (fsr2_.accumulateDescSetLayout) { vkDestroyDescriptorSetLayout(device, fsr2_.accumulateDescSetLayout, nullptr); fsr2_.accumulateDescSetLayout = VK_NULL_HANDLE; }
-
-    if (fsr2_.motionVecPipeline) { vkDestroyPipeline(device, fsr2_.motionVecPipeline, nullptr); fsr2_.motionVecPipeline = VK_NULL_HANDLE; }
-    if (fsr2_.motionVecPipelineLayout) { vkDestroyPipelineLayout(device, fsr2_.motionVecPipelineLayout, nullptr); fsr2_.motionVecPipelineLayout = VK_NULL_HANDLE; }
-    if (fsr2_.motionVecDescPool) { vkDestroyDescriptorPool(device, fsr2_.motionVecDescPool, nullptr); fsr2_.motionVecDescPool = VK_NULL_HANDLE; fsr2_.motionVecDescSet = VK_NULL_HANDLE; }
-    if (fsr2_.motionVecDescSetLayout) { vkDestroyDescriptorSetLayout(device, fsr2_.motionVecDescSetLayout, nullptr); fsr2_.motionVecDescSetLayout = VK_NULL_HANDLE; }
-
-    if (fsr2_.sceneFramebuffer) { vkDestroyFramebuffer(device, fsr2_.sceneFramebuffer, nullptr); fsr2_.sceneFramebuffer = VK_NULL_HANDLE; }
-    fsr2_.linearSampler = VK_NULL_HANDLE;  // Owned by VkContext sampler cache
-    fsr2_.nearestSampler = VK_NULL_HANDLE; // Owned by VkContext sampler cache
-
-    destroyImage(device, alloc, fsr2_.motionVectors);
-    for (int i = 0; i < 2; i++) destroyImage(device, alloc, fsr2_.history[i]);
-    destroyImage(device, alloc, fsr2_.framegenOutput);
-    destroyImage(device, alloc, fsr2_.sceneDepth);
-    destroyImage(device, alloc, fsr2_.sceneColor);
-
-    fsr2_.internalWidth = 0;
-    fsr2_.internalHeight = 0;
-}
-
-void Renderer::dispatchMotionVectors() {
-    if (!fsr2_.motionVecPipeline || currentCmd == VK_NULL_HANDLE) return;
-
-    // Transition depth: DEPTH_STENCIL_ATTACHMENT → DEPTH_STENCIL_READ_ONLY
-    transitionImageLayout(currentCmd, fsr2_.sceneDepth.image,
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-
-    // Transition motion vectors: UNDEFINED → GENERAL
-    transitionImageLayout(currentCmd, fsr2_.motionVectors.image,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-
-    vkCmdBindPipeline(currentCmd, VK_PIPELINE_BIND_POINT_COMPUTE, fsr2_.motionVecPipeline);
-    vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-        fsr2_.motionVecPipelineLayout, 0, 1, &fsr2_.motionVecDescSet, 0, nullptr);
-
-    // Reprojection with jittered matrices:
-    // reconstruct world position from current depth, then project into previous clip.
-    struct {
-        glm::mat4 prevViewProjection;
-        glm::mat4 invCurrentViewProj;
-    } pc;
-
-    glm::mat4 currentVP = camera->getViewProjectionMatrix();
-    pc.prevViewProjection = fsr2_.prevViewProjection;
-    pc.invCurrentViewProj = glm::inverse(currentVP);
-
-    vkCmdPushConstants(currentCmd, fsr2_.motionVecPipelineLayout,
-        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
-
-    uint32_t gx = (fsr2_.internalWidth + 7) / 8;
-    uint32_t gy = (fsr2_.internalHeight + 7) / 8;
-    vkCmdDispatch(currentCmd, gx, gy, 1);
-
-    // Transition motion vectors: GENERAL → SHADER_READ_ONLY for accumulation
-    transitionImageLayout(currentCmd, fsr2_.motionVectors.image,
-        VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-}
-
-void Renderer::dispatchTemporalAccumulate() {
-    if (!fsr2_.accumulatePipeline || currentCmd == VK_NULL_HANDLE) return;
-
-    VkExtent2D swapExtent = vkCtx->getSwapchainExtent();
-    uint32_t outputIdx = fsr2_.currentHistory;
-    uint32_t inputIdx = 1 - outputIdx;
-
-    // Transition scene color: PRESENT_SRC_KHR → SHADER_READ_ONLY
-    transitionImageLayout(currentCmd, fsr2_.sceneColor.image,
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-
-    // History layout lifecycle:
-    //   First frame: both in UNDEFINED
-    //   Subsequent frames: both in SHADER_READ_ONLY (output was transitioned for sharpen,
-    //                      input was left in SHADER_READ_ONLY from its sharpen read)
-    VkImageLayout historyOldLayout = fsr2_.needsHistoryReset
-        ? VK_IMAGE_LAYOUT_UNDEFINED
-        : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    // Transition history input: SHADER_READ_ONLY → SHADER_READ_ONLY (barrier for sync)
-    transitionImageLayout(currentCmd, fsr2_.history[inputIdx].image,
-        historyOldLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,  // sharpen read in previous frame
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-
-    // Transition history output: SHADER_READ_ONLY → GENERAL (for compute write)
-    transitionImageLayout(currentCmd, fsr2_.history[outputIdx].image,
-        historyOldLayout, VK_IMAGE_LAYOUT_GENERAL,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-
-    vkCmdBindPipeline(currentCmd, VK_PIPELINE_BIND_POINT_COMPUTE, fsr2_.accumulatePipeline);
-    vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-        fsr2_.accumulatePipelineLayout, 0, 1, &fsr2_.accumulateDescSets[outputIdx], 0, nullptr);
-
-    // Push constants
-    struct {
-        glm::vec4 internalSize;
-        glm::vec4 displaySize;
-        glm::vec4 jitterOffset;
-        glm::vec4 params;
-    } pc;
-
-    pc.internalSize = glm::vec4(
-        static_cast<float>(fsr2_.internalWidth), static_cast<float>(fsr2_.internalHeight),
-        1.0f / fsr2_.internalWidth, 1.0f / fsr2_.internalHeight);
-    pc.displaySize = glm::vec4(
-        static_cast<float>(swapExtent.width), static_cast<float>(swapExtent.height),
-        1.0f / swapExtent.width, 1.0f / swapExtent.height);
-    glm::vec2 jitter = camera->getJitter();
-    pc.jitterOffset = glm::vec4(jitter.x, jitter.y, 0.0f, 0.0f);
-    pc.params = glm::vec4(
-        fsr2_.needsHistoryReset ? 1.0f : 0.0f,
-        fsr2_.sharpness,
-        static_cast<float>(fsr2_.convergenceFrame),
-        0.0f);
-
-    vkCmdPushConstants(currentCmd, fsr2_.accumulatePipelineLayout,
-        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
-
-    uint32_t gx = (swapExtent.width + 7) / 8;
-    uint32_t gy = (swapExtent.height + 7) / 8;
-    vkCmdDispatch(currentCmd, gx, gy, 1);
-
-    fsr2_.needsHistoryReset = false;
-}
-
-void Renderer::dispatchAmdFsr2() {
-    if (currentCmd == VK_NULL_HANDLE || !camera) return;
-#if WOWEE_HAS_AMD_FSR2
-    if (!fsr2_.useAmdBackend) return;
-
-    VkExtent2D swapExtent = vkCtx->getSwapchainExtent();
-    uint32_t outputIdx = fsr2_.currentHistory;
-
-    transitionImageLayout(currentCmd, fsr2_.sceneColor.image,
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-    transitionImageLayout(currentCmd, fsr2_.motionVectors.image,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-    transitionImageLayout(currentCmd, fsr2_.sceneDepth.image,
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-    transitionImageLayout(currentCmd, fsr2_.history[outputIdx].image,
-        fsr2_.needsHistoryReset ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_IMAGE_LAYOUT_GENERAL,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-
-    FfxFsr2DispatchDescription desc{};
-    desc.commandList = ffxGetCommandListVK(currentCmd);
-    desc.color = ffxGetTextureResourceVK(&fsr2_.amdContext,
-        fsr2_.sceneColor.image, fsr2_.sceneColor.imageView,
-        fsr2_.internalWidth, fsr2_.internalHeight, vkCtx->getSwapchainFormat(),
-        L"FSR2_InputColor", FFX_RESOURCE_STATE_COMPUTE_READ);
-    desc.depth = ffxGetTextureResourceVK(&fsr2_.amdContext,
-        fsr2_.sceneDepth.image, fsr2_.sceneDepth.imageView,
-        fsr2_.internalWidth, fsr2_.internalHeight, vkCtx->getDepthFormat(),
-        L"FSR2_InputDepth", FFX_RESOURCE_STATE_COMPUTE_READ);
-    desc.motionVectors = ffxGetTextureResourceVK(&fsr2_.amdContext,
-        fsr2_.motionVectors.image, fsr2_.motionVectors.imageView,
-        fsr2_.internalWidth, fsr2_.internalHeight, VK_FORMAT_R16G16_SFLOAT,
-        L"FSR2_InputMotionVectors", FFX_RESOURCE_STATE_COMPUTE_READ);
-    desc.output = ffxGetTextureResourceVK(&fsr2_.amdContext,
-        fsr2_.history[outputIdx].image, fsr2_.history[outputIdx].imageView,
-        swapExtent.width, swapExtent.height, VK_FORMAT_R16G16B16A16_SFLOAT,
-        L"FSR2_Output", FFX_RESOURCE_STATE_UNORDERED_ACCESS);
-
-    // Camera jitter is stored as NDC projection offsets; convert to render-pixel offsets.
-    // Do not apply jitterSign again here: it is already baked into camera jitter.
-    glm::vec2 jitterNdc = camera->getJitter();
-    desc.jitterOffset.x = jitterNdc.x * 0.5f * static_cast<float>(fsr2_.internalWidth);
-    desc.jitterOffset.y = jitterNdc.y * 0.5f * static_cast<float>(fsr2_.internalHeight);
-    desc.motionVectorScale.x = static_cast<float>(fsr2_.internalWidth) * fsr2_.motionVecScaleX;
-    desc.motionVectorScale.y = static_cast<float>(fsr2_.internalHeight) * fsr2_.motionVecScaleY;
-    desc.renderSize.width = fsr2_.internalWidth;
-    desc.renderSize.height = fsr2_.internalHeight;
-    desc.enableSharpening = false;  // Keep existing RCAS post pass.
-    desc.sharpness = 0.0f;
-    desc.frameTimeDelta = glm::max(0.001f, lastDeltaTime_ * 1000.0f);
-    desc.preExposure = 1.0f;
-    desc.reset = fsr2_.needsHistoryReset;
-    desc.cameraNear = camera->getNearPlane();
-    desc.cameraFar = camera->getFarPlane();
-    desc.cameraFovAngleVertical = glm::radians(camera->getFovDegrees());
-    desc.viewSpaceToMetersFactor = 1.0f;
-    desc.enableAutoReactive = false;
-
-    FfxErrorCode dispatchErr = ffxFsr2ContextDispatch(&fsr2_.amdContext, &desc);
-    if (dispatchErr != FFX_OK) {
-        LOG_WARNING("FSR2 AMD: dispatch failed (", static_cast<int>(dispatchErr), "), forcing history reset.");
-        fsr2_.needsHistoryReset = true;
-    } else {
-        fsr2_.needsHistoryReset = false;
-    }
-#endif
-}
-
-void Renderer::dispatchAmdFsr3Framegen() {
-#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
-    if (!fsr2_.amdFsr3FramegenEnabled) {
-        fsr2_.amdFsr3FramegenRuntimeActive = false;
-        return;
-    }
-    if (!fsr2_.amdFsr3Runtime || !fsr2_.amdFsr3FramegenRuntimeReady) {
-        fsr2_.amdFsr3FramegenRuntimeActive = false;
-        return;
-    }
-    uint32_t outputIdx = fsr2_.currentHistory;
-    transitionImageLayout(currentCmd, fsr2_.sceneColor.image,
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-    transitionImageLayout(currentCmd, fsr2_.motionVectors.image,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-    transitionImageLayout(currentCmd, fsr2_.sceneDepth.image,
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-    transitionImageLayout(currentCmd, fsr2_.history[outputIdx].image,
-        fsr2_.needsHistoryReset ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_IMAGE_LAYOUT_GENERAL,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-    if (fsr2_.amdFsr3FramegenEnabled && fsr2_.framegenOutput.image) {
-        transitionImageLayout(currentCmd, fsr2_.framegenOutput.image,
-            fsr2_.framegenOutputValid ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_GENERAL,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-    }
-
-    AmdFsr3RuntimeDispatchDesc fgDispatch{};
-    fgDispatch.commandBuffer = currentCmd;
-    fgDispatch.colorImage = fsr2_.sceneColor.image;
-    fgDispatch.depthImage = fsr2_.sceneDepth.image;
-    fgDispatch.motionVectorImage = fsr2_.motionVectors.image;
-    fgDispatch.outputImage = fsr2_.history[fsr2_.currentHistory].image;
-    fgDispatch.renderWidth = fsr2_.internalWidth;
-    fgDispatch.renderHeight = fsr2_.internalHeight;
-    fgDispatch.outputWidth = vkCtx->getSwapchainExtent().width;
-    fgDispatch.outputHeight = vkCtx->getSwapchainExtent().height;
-    fgDispatch.colorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-    fgDispatch.depthFormat = vkCtx->getDepthFormat();
-    fgDispatch.motionVectorFormat = VK_FORMAT_R16G16_SFLOAT;
-    fgDispatch.outputFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-    fgDispatch.frameGenOutputImage = fsr2_.framegenOutput.image;
-    glm::vec2 jitterNdc = camera ? camera->getJitter() : glm::vec2(0.0f);
-    fgDispatch.jitterX = jitterNdc.x * 0.5f * static_cast<float>(fsr2_.internalWidth);
-    fgDispatch.jitterY = jitterNdc.y * 0.5f * static_cast<float>(fsr2_.internalHeight);
-    fgDispatch.motionScaleX = static_cast<float>(fsr2_.internalWidth) * fsr2_.motionVecScaleX;
-    fgDispatch.motionScaleY = static_cast<float>(fsr2_.internalHeight) * fsr2_.motionVecScaleY;
-    fgDispatch.frameTimeDeltaMs = glm::max(0.001f, lastDeltaTime_ * 1000.0f);
-    fgDispatch.cameraNear = camera ? camera->getNearPlane() : 0.1f;
-    fgDispatch.cameraFar = camera ? camera->getFarPlane() : 1000.0f;
-    fgDispatch.cameraFovYRadians = camera ? glm::radians(camera->getFovDegrees()) : 1.0f;
-    fgDispatch.reset = fsr2_.needsHistoryReset;
-
-
-    if (!fsr2_.amdFsr3Runtime->dispatchUpscale(fgDispatch)) {
-        static bool warnedRuntimeDispatch = false;
-        if (!warnedRuntimeDispatch) {
-            warnedRuntimeDispatch = true;
-            LOG_WARNING("FSR3 runtime upscale dispatch failed; falling back to FSR2 dispatch output.");
-        }
-        fsr2_.amdFsr3RuntimeLastError = fsr2_.amdFsr3Runtime->lastError();
-        fsr2_.amdFsr3FallbackCount++;
-        fsr2_.amdFsr3FramegenRuntimeActive = false;
-        return;
-    }
-    fsr2_.amdFsr3RuntimeLastError.clear();
-    fsr2_.amdFsr3UpscaleDispatchCount++;
-
-    if (!fsr2_.amdFsr3FramegenEnabled) {
-        fsr2_.amdFsr3FramegenRuntimeActive = false;
-        return;
-    }
-    if (!fsr2_.amdFsr3Runtime->isFrameGenerationReady()) {
-        fsr2_.amdFsr3FramegenRuntimeActive = false;
-        return;
-    }
-    if (!fsr2_.amdFsr3Runtime->dispatchFrameGeneration(fgDispatch)) {
-        static bool warnedFgDispatch = false;
-        if (!warnedFgDispatch) {
-            warnedFgDispatch = true;
-            LOG_WARNING("FSR3 runtime frame generation dispatch failed; using upscaled output only.");
-        }
-        fsr2_.amdFsr3RuntimeLastError = fsr2_.amdFsr3Runtime->lastError();
-        fsr2_.amdFsr3FallbackCount++;
-        fsr2_.amdFsr3FramegenRuntimeActive = false;
-        return;
-    }
-    fsr2_.amdFsr3RuntimeLastError.clear();
-    fsr2_.amdFsr3FramegenDispatchCount++;
-    fsr2_.framegenOutputValid = true;
-    fsr2_.amdFsr3FramegenRuntimeActive = true;
-#else
-    fsr2_.amdFsr3FramegenRuntimeActive = false;
-#endif
-}
-
-void Renderer::renderFSR2Sharpen() {
-    if (!fsr2_.sharpenPipeline || currentCmd == VK_NULL_HANDLE) return;
-
-    VkExtent2D ext = vkCtx->getSwapchainExtent();
-    uint32_t outputIdx = fsr2_.currentHistory;
-
-    // Use per-frame descriptor set to avoid race with in-flight command buffers
-    uint32_t frameIdx = vkCtx->getCurrentFrame();
-    VkDescriptorSet descSet = fsr2_.sharpenDescSets[frameIdx];
-
-    // Update sharpen descriptor to point at current history output
-    VkDescriptorImageInfo imgInfo{};
-    imgInfo.sampler = fsr2_.linearSampler;
-    if (fsr2_.useAmdBackend) {
-        imgInfo.imageView = (fsr2_.amdFsr3FramegenEnabled && fsr2_.amdFsr3FramegenRuntimeActive && fsr2_.framegenOutput.imageView)
-            ? fsr2_.framegenOutput.imageView
-            : fsr2_.history[outputIdx].imageView;
-    } else {
-        imgInfo.imageView = fsr2_.sceneColor.imageView;
-    }
-    imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    write.dstSet = descSet;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo = &imgInfo;
-    vkUpdateDescriptorSets(vkCtx->getDevice(), 1, &write, 0, nullptr);
-
-    vkCmdBindPipeline(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fsr2_.sharpenPipeline);
-    vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        fsr2_.sharpenPipelineLayout, 0, 1, &descSet, 0, nullptr);
-
-    glm::vec4 params(1.0f / ext.width, 1.0f / ext.height, fsr2_.sharpness, 0.0f);
-    vkCmdPushConstants(currentCmd, fsr2_.sharpenPipelineLayout,
-        VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(glm::vec4), &params);
-
-    vkCmdDraw(currentCmd, 3, 1, 0, 0);
-}
-
-void Renderer::setFSR2Enabled(bool enabled) {
-    if (fsr2_.enabled == enabled) return;
-    fsr2_.enabled = enabled;
-
-    if (enabled) {
-        static bool initFramegenToggleFromEnv = false;
-        if (!initFramegenToggleFromEnv) {
-            initFramegenToggleFromEnv = true;
-            if (std::getenv("WOWEE_ENABLE_AMD_FSR3_FRAMEGEN_RUNTIME") != nullptr) {
-                fsr2_.amdFsr3FramegenEnabled = true;
-            }
-        }
-        // FSR2 replaces both FSR1 and MSAA
-        if (fsr_.enabled) {
-            fsr_.enabled = false;
-            fsr_.needsRecreate = true;
-        }
-        // FSR2 requires non-MSAA render pass (its framebuffer has 2 attachments)
-        if (vkCtx && vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT) {
-            pendingMsaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
-            msaaChangePending_ = true;
-        }
-        // Use FSR1's scale factor and sharpness as defaults
-        fsr2_.scaleFactor = fsr_.scaleFactor;
-        fsr2_.sharpness = fsr_.sharpness;
-        fsr2_.needsHistoryReset = true;
-    } else {
-        fsr2_.needsRecreate = true;
-        if (camera) camera->clearJitter();
-    }
-}
-
-void Renderer::setFSR2DebugTuning(float jitterSign, float motionVecScaleX, float motionVecScaleY) {
-    fsr2_.jitterSign = glm::clamp(jitterSign, -2.0f, 2.0f);
-    fsr2_.motionVecScaleX = glm::clamp(motionVecScaleX, -2.0f, 2.0f);
-    fsr2_.motionVecScaleY = glm::clamp(motionVecScaleY, -2.0f, 2.0f);
-}
-
-void Renderer::setAmdFsr3FramegenEnabled(bool enabled) {
-    if (fsr2_.amdFsr3FramegenEnabled == enabled) return;
-    fsr2_.amdFsr3FramegenEnabled = enabled;
-#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
-    if (enabled) {
-        fsr2_.amdFsr3FramegenRuntimeActive = false;
-        fsr2_.framegenOutputValid = false;
-        fsr2_.needsRecreate = true;
-        fsr2_.needsHistoryReset = true;
-        fsr2_.amdFsr3FramegenRuntimeReady = false;
-        fsr2_.amdFsr3RuntimePath = "Path C";
-        fsr2_.amdFsr3RuntimeLastError.clear();
-        LOG_INFO("FSR3 framegen requested; runtime will initialize on next FSR2 resource creation.");
-    } else {
-        fsr2_.amdFsr3FramegenRuntimeActive = false;
-        fsr2_.amdFsr3FramegenRuntimeReady = false;
-        fsr2_.framegenOutputValid = false;
-        fsr2_.needsHistoryReset = true;
-        fsr2_.needsRecreate = true;
-        fsr2_.amdFsr3RuntimePath = "Path C";
-        fsr2_.amdFsr3RuntimeLastError = "disabled by user";
-        if (fsr2_.amdFsr3Runtime) {
-            fsr2_.amdFsr3Runtime->shutdown();
-            fsr2_.amdFsr3Runtime.reset();
-        }
-        LOG_INFO("FSR3 framegen disabled; forcing FSR2-only path rebuild.");
-    }
-#else
-    fsr2_.amdFsr3FramegenRuntimeActive = false;
-    fsr2_.amdFsr3FramegenRuntimeReady = false;
-    fsr2_.framegenOutputValid = false;
-    if (enabled) {
-        LOG_WARNING("FSR3 framegen requested, but AMD FSR3 framegen SDK headers are unavailable in this build.");
-    }
-#endif
-}
-
-// ========================= End FSR 2.2 =========================
-
-// ========================= FXAA Post-Process =========================
-
-bool Renderer::initFXAAResources() {
-    if (!vkCtx) return false;
-
-    VkDevice device = vkCtx->getDevice();
-    VmaAllocator alloc = vkCtx->getAllocator();
-    VkExtent2D ext = vkCtx->getSwapchainExtent();
-    VkSampleCountFlagBits msaa = vkCtx->getMsaaSamples();
-    bool useMsaa = (msaa > VK_SAMPLE_COUNT_1_BIT);
-    bool useDepthResolve = (vkCtx->getDepthResolveImageView() != VK_NULL_HANDLE);
-
-    LOG_INFO("FXAA: initializing at ", ext.width, "x", ext.height,
-             " (MSAA=", static_cast<int>(msaa), "x)");
-
-    VkFormat colorFmt = vkCtx->getSwapchainFormat();
-    VkFormat depthFmt = vkCtx->getDepthFormat();
-
-    // sceneColor: 1x resolved color target — FXAA reads from here
-    fxaa_.sceneColor = createImage(device, alloc, ext.width, ext.height,
-        colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-    if (!fxaa_.sceneColor.image) {
-        LOG_ERROR("FXAA: failed to create scene color image");
-        return false;
-    }
-
-    // sceneDepth: depth buffer at current MSAA sample count
-    fxaa_.sceneDepth = createImage(device, alloc, ext.width, ext.height,
-        depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, msaa);
-    if (!fxaa_.sceneDepth.image) {
-        LOG_ERROR("FXAA: failed to create scene depth image");
-        destroyFXAAResources();
-        return false;
-    }
-
-    if (useMsaa) {
-        fxaa_.sceneMsaaColor = createImage(device, alloc, ext.width, ext.height,
-            colorFmt, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, msaa);
-        if (!fxaa_.sceneMsaaColor.image) {
-            LOG_ERROR("FXAA: failed to create MSAA color image");
-            destroyFXAAResources();
-            return false;
-        }
-        if (useDepthResolve) {
-            fxaa_.sceneDepthResolve = createImage(device, alloc, ext.width, ext.height,
-                depthFmt, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-            if (!fxaa_.sceneDepthResolve.image) {
-                LOG_ERROR("FXAA: failed to create depth resolve image");
-                destroyFXAAResources();
-                return false;
-            }
-        }
-    }
-
-    // Framebuffer — same attachment layout as main render pass
-    VkImageView fbAttachments[4]{};
-    uint32_t fbCount;
-    if (useMsaa) {
-        fbAttachments[0] = fxaa_.sceneMsaaColor.imageView;
-        fbAttachments[1] = fxaa_.sceneDepth.imageView;
-        fbAttachments[2] = fxaa_.sceneColor.imageView;  // resolve target
-        fbCount = 3;
-        if (useDepthResolve) {
-            fbAttachments[3] = fxaa_.sceneDepthResolve.imageView;
-            fbCount = 4;
-        }
-    } else {
-        fbAttachments[0] = fxaa_.sceneColor.imageView;
-        fbAttachments[1] = fxaa_.sceneDepth.imageView;
-        fbCount = 2;
-    }
-
-    VkFramebufferCreateInfo fbInfo{};
-    fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    fbInfo.renderPass = vkCtx->getImGuiRenderPass();
-    fbInfo.attachmentCount = fbCount;
-    fbInfo.pAttachments = fbAttachments;
-    fbInfo.width = ext.width;
-    fbInfo.height = ext.height;
-    fbInfo.layers = 1;
-    if (vkCreateFramebuffer(device, &fbInfo, nullptr, &fxaa_.sceneFramebuffer) != VK_SUCCESS) {
-        LOG_ERROR("FXAA: failed to create scene framebuffer");
-        destroyFXAAResources();
-        return false;
-    }
-
-    // Sampler
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    fxaa_.sceneSampler = vkCtx->getOrCreateSampler(samplerInfo);
-    if (fxaa_.sceneSampler == VK_NULL_HANDLE) {
-        LOG_ERROR("FXAA: failed to create sampler");
-        destroyFXAAResources();
-        return false;
-    }
-
-    // Descriptor set layout: binding 0 = combined image sampler
-    VkDescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
-    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    binding.descriptorCount = 1;
-    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &binding;
-    vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &fxaa_.descSetLayout);
-
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = 1;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    vkCreateDescriptorPool(device, &poolInfo, nullptr, &fxaa_.descPool);
-
-    VkDescriptorSetAllocateInfo dsAllocInfo{};
-    dsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    dsAllocInfo.descriptorPool = fxaa_.descPool;
-    dsAllocInfo.descriptorSetCount = 1;
-    dsAllocInfo.pSetLayouts = &fxaa_.descSetLayout;
-    vkAllocateDescriptorSets(device, &dsAllocInfo, &fxaa_.descSet);
-
-    // Bind the resolved 1x sceneColor
-    VkDescriptorImageInfo imgInfo{};
-    imgInfo.sampler = fxaa_.sceneSampler;
-    imgInfo.imageView = fxaa_.sceneColor.imageView;
-    imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = fxaa_.descSet;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo = &imgInfo;
-    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
-
-    // Pipeline layout — push constant holds vec4(rcpFrame.xy, sharpness, pad)
-    VkPushConstantRange pc{};
-    pc.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    pc.offset = 0;
-    pc.size = 16;  // vec4
-    VkPipelineLayoutCreateInfo plCI{};
-    plCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    plCI.setLayoutCount = 1;
-    plCI.pSetLayouts = &fxaa_.descSetLayout;
-    plCI.pushConstantRangeCount = 1;
-    plCI.pPushConstantRanges = &pc;
-    vkCreatePipelineLayout(device, &plCI, nullptr, &fxaa_.pipelineLayout);
-
-    // FXAA pipeline — fullscreen triangle into the swapchain render pass
-    // Uses VK_SAMPLE_COUNT_1_BIT: it always runs after MSAA resolve.
-    VkShaderModule vertMod, fragMod;
-    if (!vertMod.loadFromFile(device, "assets/shaders/postprocess.vert.spv") ||
-        !fragMod.loadFromFile(device, "assets/shaders/fxaa.frag.spv")) {
-        LOG_ERROR("FXAA: failed to load shaders");
-        destroyFXAAResources();
-        return false;
-    }
-
-    fxaa_.pipeline = PipelineBuilder()
-        .setShaders(vertMod.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
-                    fragMod.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
-        .setVertexInput({}, {})
-        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
-        .setNoDepthTest()
-        .setColorBlendAttachment(PipelineBuilder::blendDisabled())
-        .setMultisample(VK_SAMPLE_COUNT_1_BIT)  // swapchain pass is always 1x
-        .setLayout(fxaa_.pipelineLayout)
-        .setRenderPass(vkCtx->getImGuiRenderPass())
-        .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
-        .build(device, vkCtx->getPipelineCache());
-
-    vertMod.destroy();
-    fragMod.destroy();
-
-    if (!fxaa_.pipeline) {
-        LOG_ERROR("FXAA: failed to create pipeline");
-        destroyFXAAResources();
-        return false;
-    }
-
-    LOG_INFO("FXAA: initialized successfully");
-    return true;
-}
-
-void Renderer::destroyFXAAResources() {
-    if (!vkCtx) return;
-    VkDevice device = vkCtx->getDevice();
-    VmaAllocator alloc = vkCtx->getAllocator();
-    vkDeviceWaitIdle(device);
-
-    if (fxaa_.pipeline)       { vkDestroyPipeline(device, fxaa_.pipeline, nullptr);             fxaa_.pipeline = VK_NULL_HANDLE; }
-    if (fxaa_.pipelineLayout) { vkDestroyPipelineLayout(device, fxaa_.pipelineLayout, nullptr); fxaa_.pipelineLayout = VK_NULL_HANDLE; }
-    if (fxaa_.descPool)       { vkDestroyDescriptorPool(device, fxaa_.descPool, nullptr);       fxaa_.descPool = VK_NULL_HANDLE; fxaa_.descSet = VK_NULL_HANDLE; }
-    if (fxaa_.descSetLayout)  { vkDestroyDescriptorSetLayout(device, fxaa_.descSetLayout, nullptr); fxaa_.descSetLayout = VK_NULL_HANDLE; }
-    if (fxaa_.sceneFramebuffer) { vkDestroyFramebuffer(device, fxaa_.sceneFramebuffer, nullptr); fxaa_.sceneFramebuffer = VK_NULL_HANDLE; }
-    fxaa_.sceneSampler = VK_NULL_HANDLE; // Owned by VkContext sampler cache
-    destroyImage(device, alloc, fxaa_.sceneDepthResolve);
-    destroyImage(device, alloc, fxaa_.sceneMsaaColor);
-    destroyImage(device, alloc, fxaa_.sceneDepth);
-    destroyImage(device, alloc, fxaa_.sceneColor);
-}
-
-void Renderer::renderFXAAPass() {
-    if (!fxaa_.pipeline || currentCmd == VK_NULL_HANDLE) return;
-    VkExtent2D ext = vkCtx->getSwapchainExtent();
-
-    vkCmdBindPipeline(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fxaa_.pipeline);
-    vkCmdBindDescriptorSets(currentCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            fxaa_.pipelineLayout, 0, 1, &fxaa_.descSet, 0, nullptr);
-
-    // Pass rcpFrame + sharpness + effect flag (vec4, 16 bytes).
-    // When FSR2/FSR3 is active alongside FXAA, forward FSR2's sharpness so the
-    // post-FXAA unsharp-mask step restores the crispness that FXAA's blur removes.
-    float sharpness = fsr2_.enabled ? fsr2_.sharpness : 0.0f;
-    float pc[4] = {
-        1.0f / static_cast<float>(ext.width),
-        1.0f / static_cast<float>(ext.height),
-        sharpness,
-        0.0f
-    };
-    vkCmdPushConstants(currentCmd, fxaa_.pipelineLayout,
-                       VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, pc);
-
-    vkCmdDraw(currentCmd, 3, 1, 0, 0);  // fullscreen triangle
+PostProcessPipeline* Renderer::getPostProcessPipeline() const {
+    return postProcessPipeline_.get();
 }
 
 void Renderer::setFXAAEnabled(bool enabled) {
-    if (fxaa_.enabled == enabled) return;
-    // FXAA is a post-process AA pass intended to supplement FSR temporal output.
-    // It conflicts with MSAA (which resolves AA during the scene render pass), so
-    // refuse to enable FXAA when hardware MSAA is active.
-    if (enabled && vkCtx && vkCtx->getMsaaSamples() > VK_SAMPLE_COUNT_1_BIT) {
-        LOG_INFO("FXAA: blocked while MSAA is active — disable MSAA first");
-        return;
-    }
-    fxaa_.enabled = enabled;
-    if (!enabled) {
-        fxaa_.needsRecreate = true;  // defer destruction to next beginFrame()
-    }
+    if (postProcessPipeline_) postProcessPipeline_->setFXAAEnabled(enabled);
+}
+bool Renderer::isFXAAEnabled() const {
+    return postProcessPipeline_ && postProcessPipeline_->isFXAAEnabled();
 }
 
-// ========================= End FXAA =========================
+void Renderer::setFSREnabled(bool enabled) {
+    if (!postProcessPipeline_) return;
+    auto req = postProcessPipeline_->setFSREnabled(enabled);
+    if (req.requested) {
+        pendingMsaaSamples_ = req.samples;
+        msaaChangePending_ = true;
+    }
+}
+bool Renderer::isFSREnabled() const {
+    return postProcessPipeline_ && postProcessPipeline_->isFSREnabled();
+}
+void Renderer::setFSRQuality(float scaleFactor) {
+    if (postProcessPipeline_) postProcessPipeline_->setFSRQuality(scaleFactor);
+}
+void Renderer::setFSRSharpness(float sharpness) {
+    if (postProcessPipeline_) postProcessPipeline_->setFSRSharpness(sharpness);
+}
+float Renderer::getFSRScaleFactor() const {
+    return postProcessPipeline_ ? postProcessPipeline_->getFSRScaleFactor() : 1.0f;
+}
+float Renderer::getFSRSharpness() const {
+    return postProcessPipeline_ ? postProcessPipeline_->getFSRSharpness() : 0.0f;
+}
+
+void Renderer::setFSR2Enabled(bool enabled) {
+    if (!postProcessPipeline_) return;
+    auto req = postProcessPipeline_->setFSR2Enabled(enabled, camera.get());
+    if (req.requested) {
+        pendingMsaaSamples_ = req.samples;
+        msaaChangePending_ = true;
+    }
+}
+bool Renderer::isFSR2Enabled() const {
+    return postProcessPipeline_ && postProcessPipeline_->isFSR2Enabled();
+}
+void Renderer::setFSR2DebugTuning(float jitterSign, float motionVecScaleX, float motionVecScaleY) {
+    if (postProcessPipeline_) postProcessPipeline_->setFSR2DebugTuning(jitterSign, motionVecScaleX, motionVecScaleY);
+}
+
+void Renderer::setAmdFsr3FramegenEnabled(bool enabled) {
+    if (postProcessPipeline_) postProcessPipeline_->setAmdFsr3FramegenEnabled(enabled);
+}
+bool Renderer::isAmdFsr3FramegenEnabled() const {
+    return postProcessPipeline_ && postProcessPipeline_->isAmdFsr3FramegenEnabled();
+}
+float Renderer::getFSR2JitterSign() const {
+    return postProcessPipeline_ ? postProcessPipeline_->getFSR2JitterSign() : 1.0f;
+}
+float Renderer::getFSR2MotionVecScaleX() const {
+    return postProcessPipeline_ ? postProcessPipeline_->getFSR2MotionVecScaleX() : 1.0f;
+}
+float Renderer::getFSR2MotionVecScaleY() const {
+    return postProcessPipeline_ ? postProcessPipeline_->getFSR2MotionVecScaleY() : 1.0f;
+}
+bool Renderer::isAmdFsr2SdkAvailable() const {
+    return postProcessPipeline_ && postProcessPipeline_->isAmdFsr2SdkAvailable();
+}
+bool Renderer::isAmdFsr3FramegenSdkAvailable() const {
+    return postProcessPipeline_ && postProcessPipeline_->isAmdFsr3FramegenSdkAvailable();
+}
+bool Renderer::isAmdFsr3FramegenRuntimeActive() const {
+    return postProcessPipeline_ && postProcessPipeline_->isAmdFsr3FramegenRuntimeActive();
+}
+bool Renderer::isAmdFsr3FramegenRuntimeReady() const {
+    return postProcessPipeline_ && postProcessPipeline_->isAmdFsr3FramegenRuntimeReady();
+}
+const char* Renderer::getAmdFsr3FramegenRuntimePath() const {
+    return postProcessPipeline_ ? postProcessPipeline_->getAmdFsr3FramegenRuntimePath() : "";
+}
+const std::string& Renderer::getAmdFsr3FramegenRuntimeError() const {
+    static const std::string empty;
+    return postProcessPipeline_ ? postProcessPipeline_->getAmdFsr3FramegenRuntimeError() : empty;
+}
+size_t Renderer::getAmdFsr3UpscaleDispatchCount() const {
+    return postProcessPipeline_ ? postProcessPipeline_->getAmdFsr3UpscaleDispatchCount() : 0;
+}
+size_t Renderer::getAmdFsr3FramegenDispatchCount() const {
+    return postProcessPipeline_ ? postProcessPipeline_->getAmdFsr3FramegenDispatchCount() : 0;
+}
+size_t Renderer::getAmdFsr3FallbackCount() const {
+    return postProcessPipeline_ ? postProcessPipeline_->getAmdFsr3FallbackCount() : 0;
+}
+void Renderer::setBrightness(float b) {
+    if (postProcessPipeline_) postProcessPipeline_->setBrightness(b);
+}
+float Renderer::getBrightness() const {
+    return postProcessPipeline_ ? postProcessPipeline_->getBrightness() : 1.0f;
+}
 
 void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     (void)world;
@@ -5619,11 +3739,14 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                 renderOverlay(glm::vec4(0.30f, 0.35f, 0.42f, 0.45f), cmd);
             }
             // Brightness overlay (applied before minimap so it doesn't affect UI)
-            if (brightness_ < 0.99f) {
-                renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - brightness_), cmd);
-            } else if (brightness_ > 1.01f) {
-                float alpha = (brightness_ - 1.0f) / 1.0f; // maps 1.0-2.0 → 0.0-1.0
-                renderOverlay(glm::vec4(1.0f, 1.0f, 1.0f, alpha), cmd);
+            {
+                float br = postProcessPipeline_ ? postProcessPipeline_->getBrightness() : 1.0f;
+                if (br < 0.99f) {
+                    renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - br), cmd);
+                } else if (br > 1.01f) {
+                    float alpha = (br - 1.0f) / 1.0f;
+                    renderOverlay(glm::vec4(1.0f, 1.0f, 1.0f, alpha), cmd);
+                }
             }
             if (minimap && minimap->isEnabled() && camera && window) {
                 glm::vec3 minimapCenter = camera->getPosition();
@@ -5764,11 +3887,14 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             renderOverlay(glm::vec4(0.30f, 0.35f, 0.42f, 0.45f));
         }
         // Brightness overlay (applied before minimap so it doesn't affect UI)
-        if (brightness_ < 0.99f) {
-            renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - brightness_));
-        } else if (brightness_ > 1.01f) {
-            float alpha = (brightness_ - 1.0f) / 1.0f;
-            renderOverlay(glm::vec4(1.0f, 1.0f, 1.0f, alpha));
+        {
+            float br = postProcessPipeline_ ? postProcessPipeline_->getBrightness() : 1.0f;
+            if (br < 0.99f) {
+                renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - br));
+            } else if (br > 1.01f) {
+                float alpha = (br - 1.0f) / 1.0f;
+                renderOverlay(glm::vec4(1.0f, 1.0f, 1.0f, alpha));
+            }
         }
         if (minimap && minimap->isEnabled() && camera && window) {
             glm::vec3 minimapCenter = camera->getPosition();
@@ -5859,6 +3985,11 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
         if (swimEffects) {
             swimEffects->setM2Renderer(m2Renderer.get());
         }
+        // Initialize SpellVisualSystem once M2Renderer is available (§4.4)
+        if (!spellVisualSystem_) {
+            spellVisualSystem_ = std::make_unique<SpellVisualSystem>();
+            spellVisualSystem_->initialize(m2Renderer.get());
+        }
     }
     if (!wmoRenderer) {
         wmoRenderer = std::make_unique<WMORenderer>();
@@ -5901,8 +4032,8 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
             terrainManager->setWMORenderer(wmoRenderer.get());
         }
         // Set ambient sound manager for environmental audio emitters
-        if (ambientSoundManager) {
-            terrainManager->setAmbientSoundManager(ambientSoundManager.get());
+        if (getAmbientSoundManager()) {
+            terrainManager->setAmbientSoundManager(getAmbientSoundManager());
         }
         // Pass asset manager to character renderer for texture loading
         if (characterRenderer) {
@@ -5933,36 +4064,36 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
     if (worldMap) worldMap->setMapName(mapName);
 
     // Initialize audio managers
-    if (musicManager && assetManager && !cachedAssetManager) {
+    if (getMusicManager() && assetManager && !cachedAssetManager) {
         audio::AudioEngine::instance().setAssetManager(assetManager);
-        musicManager->initialize(assetManager);
-        if (footstepManager) {
-            footstepManager->initialize(assetManager);
+        getMusicManager()->initialize(assetManager);
+        if (getFootstepManager()) {
+            getFootstepManager()->initialize(assetManager);
         }
-        if (activitySoundManager) {
-            activitySoundManager->initialize(assetManager);
+        if (getActivitySoundManager()) {
+            getActivitySoundManager()->initialize(assetManager);
         }
-        if (mountSoundManager) {
-            mountSoundManager->initialize(assetManager);
+        if (getMountSoundManager()) {
+            getMountSoundManager()->initialize(assetManager);
         }
-        if (npcVoiceManager) {
-            npcVoiceManager->initialize(assetManager);
+        if (getNpcVoiceManager()) {
+            getNpcVoiceManager()->initialize(assetManager);
         }
         if (!deferredWorldInitEnabled_) {
-            if (ambientSoundManager) {
-                ambientSoundManager->initialize(assetManager);
+            if (getAmbientSoundManager()) {
+                getAmbientSoundManager()->initialize(assetManager);
             }
-            if (uiSoundManager) {
-                uiSoundManager->initialize(assetManager);
+            if (getUiSoundManager()) {
+                getUiSoundManager()->initialize(assetManager);
             }
-            if (combatSoundManager) {
-                combatSoundManager->initialize(assetManager);
+            if (getCombatSoundManager()) {
+                getCombatSoundManager()->initialize(assetManager);
             }
-            if (spellSoundManager) {
-                spellSoundManager->initialize(assetManager);
+            if (getSpellSoundManager()) {
+                getSpellSoundManager()->initialize(assetManager);
             }
-            if (movementSoundManager) {
-                movementSoundManager->initialize(assetManager);
+            if (getMovementSoundManager()) {
+                getMovementSoundManager()->initialize(assetManager);
             }
             if (questMarkerRenderer) {
                 questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, assetManager);
@@ -5971,7 +4102,7 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
             if (envFlagEnabled("WOWEE_PREWARM_ZONE_MUSIC", false)) {
                 if (zoneManager) {
                     for (const auto& musicPath : zoneManager->getAllMusicPaths()) {
-                        musicManager->preloadMusic(musicPath);
+                        getMusicManager()->preloadMusic(musicPath);
                     }
                 }
                 static const std::vector<std::string> tavernTracks = {
@@ -5981,7 +4112,7 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
                     "Sound\\Music\\ZoneMusic\\TavernHuman\\RA_HumanTavern2A.mp3",
                 };
                 for (const auto& musicPath : tavernTracks) {
-                    musicManager->preloadMusic(musicPath);
+                    getMusicManager()->preloadMusic(musicPath);
                 }
             }
         } else {
@@ -6120,42 +4251,42 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
     }
 
     // Initialize music manager with asset manager
-    if (musicManager && cachedAssetManager) {
-        if (!musicManager->isInitialized()) {
-            musicManager->initialize(cachedAssetManager);
+    if (getMusicManager() && cachedAssetManager) {
+        if (!getMusicManager()->isInitialized()) {
+            getMusicManager()->initialize(cachedAssetManager);
         }
     }
-    if (footstepManager && cachedAssetManager) {
-        if (!footstepManager->isInitialized()) {
-            footstepManager->initialize(cachedAssetManager);
+    if (getFootstepManager() && cachedAssetManager) {
+        if (!getFootstepManager()->isInitialized()) {
+            getFootstepManager()->initialize(cachedAssetManager);
         }
     }
-    if (activitySoundManager && cachedAssetManager) {
-        if (!activitySoundManager->isInitialized()) {
-            activitySoundManager->initialize(cachedAssetManager);
+    if (getActivitySoundManager() && cachedAssetManager) {
+        if (!getActivitySoundManager()->isInitialized()) {
+            getActivitySoundManager()->initialize(cachedAssetManager);
         }
     }
-    if (mountSoundManager && cachedAssetManager) {
-        mountSoundManager->initialize(cachedAssetManager);
+    if (getMountSoundManager() && cachedAssetManager) {
+        getMountSoundManager()->initialize(cachedAssetManager);
     }
-    if (npcVoiceManager && cachedAssetManager) {
-        npcVoiceManager->initialize(cachedAssetManager);
+    if (getNpcVoiceManager() && cachedAssetManager) {
+        getNpcVoiceManager()->initialize(cachedAssetManager);
     }
     if (!deferredWorldInitEnabled_) {
-        if (ambientSoundManager && cachedAssetManager) {
-            ambientSoundManager->initialize(cachedAssetManager);
+        if (getAmbientSoundManager() && cachedAssetManager) {
+            getAmbientSoundManager()->initialize(cachedAssetManager);
         }
-        if (uiSoundManager && cachedAssetManager) {
-            uiSoundManager->initialize(cachedAssetManager);
+        if (getUiSoundManager() && cachedAssetManager) {
+            getUiSoundManager()->initialize(cachedAssetManager);
         }
-        if (combatSoundManager && cachedAssetManager) {
-            combatSoundManager->initialize(cachedAssetManager);
+        if (getCombatSoundManager() && cachedAssetManager) {
+            getCombatSoundManager()->initialize(cachedAssetManager);
         }
-        if (spellSoundManager && cachedAssetManager) {
-            spellSoundManager->initialize(cachedAssetManager);
+        if (getSpellSoundManager() && cachedAssetManager) {
+            getSpellSoundManager()->initialize(cachedAssetManager);
         }
-        if (movementSoundManager && cachedAssetManager) {
-            movementSoundManager->initialize(cachedAssetManager);
+        if (getMovementSoundManager() && cachedAssetManager) {
+            getMovementSoundManager()->initialize(cachedAssetManager);
         }
         if (questMarkerRenderer && cachedAssetManager) {
             questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, cachedAssetManager);
@@ -6167,8 +4298,8 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
     }
 
     // Wire ambient sound manager to terrain manager for emitter registration
-    if (terrainManager && ambientSoundManager) {
-        terrainManager->setAmbientSoundManager(ambientSoundManager.get());
+    if (terrainManager && getAmbientSoundManager()) {
+        terrainManager->setAmbientSoundManager(getAmbientSoundManager());
     }
 
     // Wire WMO, M2, and water renderer to camera controller
@@ -6197,10 +4328,6 @@ void Renderer::setTerrainStreaming(bool enabled) {
         terrainManager->setStreamingEnabled(enabled);
         LOG_INFO("Terrain streaming: ", enabled ? "ON" : "OFF");
     }
-}
-
-const char* Renderer::getAmdFsr3FramegenRuntimePath() const {
-    return fsr2_.amdFsr3RuntimePath.c_str();
 }
 
 void Renderer::renderHUD() {

@@ -14,16 +14,12 @@
 #include "rendering/vk_frame_data.hpp"
 #include "rendering/vk_utils.hpp"
 #include "rendering/sky_system.hpp"
-#if WOWEE_HAS_AMD_FSR2
-#include "ffx_fsr2.h"
-#include "ffx_fsr2_vk.h"
-#endif
 
 namespace wowee {
 namespace core { class Window; }
 namespace rendering { class VkContext; }
 namespace game { class World; class ZoneManager; class GameHandler; }
-namespace audio { class MusicManager; class FootstepManager; class ActivitySoundManager; class MountSoundManager; class NpcVoiceManager; class AmbientSoundManager; class UiSoundManager; class CombatSoundManager; class SpellSoundManager; class MovementSoundManager; enum class FootstepSurface : uint8_t; enum class VoiceType; }
+namespace audio { class AudioCoordinator; class MusicManager; class FootstepManager; class ActivitySoundManager; class MountSoundManager; class NpcVoiceManager; class AmbientSoundManager; class UiSoundManager; class CombatSoundManager; class SpellSoundManager; class MovementSoundManager; enum class FootstepSurface : uint8_t; enum class VoiceType; }
 namespace pipeline { class AssetManager; }
 
 namespace rendering {
@@ -54,6 +50,8 @@ class WorldMap;
 class QuestMarkerRenderer;
 class CharacterPreview;
 class AmdFsr3Runtime;
+class SpellVisualSystem;
+class PostProcessPipeline;
 
 class Renderer {
 public:
@@ -157,9 +155,10 @@ public:
     bool captureScreenshot(const std::string& outputPath);
 
     // Spell visual effects (SMSG_PLAY_SPELL_VISUAL / SMSG_PLAY_SPELL_IMPACT)
-    // useImpactKit=false → CastKit path; useImpactKit=true → ImpactKit path
+    // Delegates to SpellVisualSystem (owned by Renderer)
     void playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition,
                          bool useImpactKit = false);
+    SpellVisualSystem* getSpellVisualSystem() const { return spellVisualSystem_.get(); }
     bool isEmoteActive() const { return emoteActive; }
     static std::string getEmoteText(const std::string& emoteName, const std::string* targetName = nullptr);
     static uint32_t getEmoteDbcId(const std::string& emoteName);
@@ -197,17 +196,21 @@ public:
     double getLastTerrainRenderMs() const { return lastTerrainRenderMs; }
     double getLastWMORenderMs() const { return lastWMORenderMs; }
     double getLastM2RenderMs() const { return lastM2RenderMs; }
-    audio::MusicManager* getMusicManager() { return musicManager.get(); }
+    // Audio accessors — delegate to AudioCoordinator (owned by Application).
+    // These pass-throughs remain until §4.2 moves animation audio out of Renderer.
+    void setAudioCoordinator(audio::AudioCoordinator* ac) { audioCoordinator_ = ac; }
+    audio::AudioCoordinator* getAudioCoordinator() { return audioCoordinator_; }
+    audio::MusicManager* getMusicManager();
+    audio::FootstepManager* getFootstepManager();
+    audio::ActivitySoundManager* getActivitySoundManager();
+    audio::MountSoundManager* getMountSoundManager();
+    audio::NpcVoiceManager* getNpcVoiceManager();
+    audio::AmbientSoundManager* getAmbientSoundManager();
+    audio::UiSoundManager* getUiSoundManager();
+    audio::CombatSoundManager* getCombatSoundManager();
+    audio::SpellSoundManager* getSpellSoundManager();
+    audio::MovementSoundManager* getMovementSoundManager();
     game::ZoneManager* getZoneManager() { return zoneManager.get(); }
-    audio::FootstepManager* getFootstepManager() { return footstepManager.get(); }
-    audio::ActivitySoundManager* getActivitySoundManager() { return activitySoundManager.get(); }
-    audio::MountSoundManager* getMountSoundManager() { return mountSoundManager.get(); }
-    audio::NpcVoiceManager* getNpcVoiceManager() { return npcVoiceManager.get(); }
-    audio::AmbientSoundManager* getAmbientSoundManager() { return ambientSoundManager.get(); }
-    audio::UiSoundManager* getUiSoundManager() { return uiSoundManager.get(); }
-    audio::CombatSoundManager* getCombatSoundManager() { return combatSoundManager.get(); }
-    audio::SpellSoundManager* getSpellSoundManager() { return spellSoundManager.get(); }
-    audio::MovementSoundManager* getMovementSoundManager() { return movementSoundManager.get(); }
     LightingManager* getLightingManager() { return lightingManager.get(); }
 
 private:
@@ -239,16 +242,7 @@ private:
     std::unique_ptr<Minimap> minimap;
     std::unique_ptr<WorldMap> worldMap;
     std::unique_ptr<QuestMarkerRenderer> questMarkerRenderer;
-    std::unique_ptr<audio::MusicManager> musicManager;
-    std::unique_ptr<audio::FootstepManager> footstepManager;
-    std::unique_ptr<audio::ActivitySoundManager> activitySoundManager;
-    std::unique_ptr<audio::MountSoundManager> mountSoundManager;
-    std::unique_ptr<audio::NpcVoiceManager> npcVoiceManager;
-    std::unique_ptr<audio::AmbientSoundManager> ambientSoundManager;
-    std::unique_ptr<audio::UiSoundManager> uiSoundManager;
-    std::unique_ptr<audio::CombatSoundManager> combatSoundManager;
-    std::unique_ptr<audio::SpellSoundManager> spellSoundManager;
-    std::unique_ptr<audio::MovementSoundManager> movementSoundManager;
+    audio::AudioCoordinator* audioCoordinator_ = nullptr;  // Owned by Application
     std::unique_ptr<game::ZoneManager> zoneManager;
     // Shadow mapping (Vulkan)
     static constexpr uint32_t SHADOW_MAP_SIZE = 4096;
@@ -282,42 +276,35 @@ public:
     float getShadowDistance() const { return shadowDistance_; }
     void setMsaaSamples(VkSampleCountFlagBits samples);
 
-    // FXAA post-process anti-aliasing (combinable with MSAA)
+    // Post-process pipeline API — delegates to PostProcessPipeline (§4.3)
+    PostProcessPipeline* getPostProcessPipeline() const;
     void setFXAAEnabled(bool enabled);
-    bool isFXAAEnabled() const { return fxaa_.enabled; }
-
-    // FSR (FidelityFX Super Resolution) upscaling
+    bool isFXAAEnabled() const;
     void setFSREnabled(bool enabled);
-    bool isFSREnabled() const { return fsr_.enabled; }
-    void setFSRQuality(float scaleFactor);  // 0.59=Balanced, 0.67=Quality, 0.77=UltraQuality, 1.00=Native
-    void setFSRSharpness(float sharpness);  // 0.0 - 2.0
-    float getFSRScaleFactor() const { return fsr_.scaleFactor; }
-    float getFSRSharpness() const { return fsr_.sharpness; }
+    bool isFSREnabled() const;
+    void setFSRQuality(float scaleFactor);
+    void setFSRSharpness(float sharpness);
+    float getFSRScaleFactor() const;
+    float getFSRSharpness() const;
     void setFSR2Enabled(bool enabled);
-    bool isFSR2Enabled() const { return fsr2_.enabled; }
+    bool isFSR2Enabled() const;
     void setFSR2DebugTuning(float jitterSign, float motionVecScaleX, float motionVecScaleY);
     void setAmdFsr3FramegenEnabled(bool enabled);
-    bool isAmdFsr3FramegenEnabled() const { return fsr2_.amdFsr3FramegenEnabled; }
-    float getFSR2JitterSign() const { return fsr2_.jitterSign; }
-    float getFSR2MotionVecScaleX() const { return fsr2_.motionVecScaleX; }
-    float getFSR2MotionVecScaleY() const { return fsr2_.motionVecScaleY; }
-#if WOWEE_HAS_AMD_FSR2
-    bool isAmdFsr2SdkAvailable() const { return true; }
-#else
-    bool isAmdFsr2SdkAvailable() const { return false; }
-#endif
-#if WOWEE_HAS_AMD_FSR3_FRAMEGEN
-    bool isAmdFsr3FramegenSdkAvailable() const { return true; }
-#else
-    bool isAmdFsr3FramegenSdkAvailable() const { return false; }
-#endif
-    bool isAmdFsr3FramegenRuntimeActive() const { return fsr2_.amdFsr3FramegenRuntimeActive; }
-    bool isAmdFsr3FramegenRuntimeReady() const { return fsr2_.amdFsr3FramegenRuntimeReady; }
+    bool isAmdFsr3FramegenEnabled() const;
+    float getFSR2JitterSign() const;
+    float getFSR2MotionVecScaleX() const;
+    float getFSR2MotionVecScaleY() const;
+    bool isAmdFsr2SdkAvailable() const;
+    bool isAmdFsr3FramegenSdkAvailable() const;
+    bool isAmdFsr3FramegenRuntimeActive() const;
+    bool isAmdFsr3FramegenRuntimeReady() const;
     const char* getAmdFsr3FramegenRuntimePath() const;
-    const std::string& getAmdFsr3FramegenRuntimeError() const { return fsr2_.amdFsr3RuntimeLastError; }
-    size_t getAmdFsr3UpscaleDispatchCount() const { return fsr2_.amdFsr3UpscaleDispatchCount; }
-    size_t getAmdFsr3FramegenDispatchCount() const { return fsr2_.amdFsr3FramegenDispatchCount; }
-    size_t getAmdFsr3FallbackCount() const { return fsr2_.amdFsr3FallbackCount; }
+    const std::string& getAmdFsr3FramegenRuntimeError() const;
+    size_t getAmdFsr3UpscaleDispatchCount() const;
+    size_t getAmdFsr3FramegenDispatchCount() const;
+    size_t getAmdFsr3FallbackCount() const;
+    void setBrightness(float b);
+    float getBrightness() const;
 
     void setWaterRefractionEnabled(bool enabled);
     bool isWaterRefractionEnabled() const;
@@ -331,23 +318,11 @@ private:
 
     pipeline::AssetManager* cachedAssetManager = nullptr;
 
-    // Spell visual effects — transient M2 instances spawned by SMSG_PLAY_SPELL_VISUAL/IMPACT
-    struct SpellVisualInstance {
-        uint32_t instanceId;
-        float elapsed;
-        float duration;  // per-instance lifetime in seconds (from M2 anim or default)
-    };
-    std::vector<SpellVisualInstance> activeSpellVisuals_;
-    std::unordered_map<uint32_t, std::string> spellVisualCastPath_;   // visualId → cast M2 path
-    std::unordered_map<uint32_t, std::string> spellVisualImpactPath_; // visualId → impact M2 path
-    std::unordered_map<std::string, uint32_t> spellVisualModelIds_;   // M2 path → M2Renderer modelId
-    std::unordered_set<uint32_t> spellVisualFailedModels_;           // modelIds that failed to load (negative cache)
-    uint32_t nextSpellVisualModelId_ = 999000; // Reserved range 999000-999799
-    bool spellVisualDbcLoaded_ = false;
-    void loadSpellVisualDbc();
-    void updateSpellVisuals(float deltaTime);
-    static constexpr float SPELL_VISUAL_MAX_DURATION = 5.0f;
-    static constexpr float SPELL_VISUAL_DEFAULT_DURATION = 2.0f;
+    // Spell visual effects — owned SpellVisualSystem (extracted from Renderer §4.4)
+    std::unique_ptr<SpellVisualSystem> spellVisualSystem_;
+
+    // Post-process pipeline — owns all FSR/FXAA/FSR2 state (extracted §4.3)
+    std::unique_ptr<PostProcessPipeline> postProcessPipeline_;
 
     uint32_t currentZoneId = 0;
     std::string currentZoneName;
@@ -407,155 +382,6 @@ private:
     VkPipelineLayout overlayPipelineLayout = VK_NULL_HANDLE;
     void initOverlayPipeline();
     void renderOverlay(const glm::vec4& color, VkCommandBuffer overrideCmd = VK_NULL_HANDLE);
-
-    // Brightness (1.0 = default, <1 darkens, >1 brightens)
-    float brightness_ = 1.0f;
-public:
-    void setBrightness(float b) { brightness_ = b; }
-    float getBrightness() const { return brightness_; }
-private:
-
-    // FSR 1.0 upscaling state
-    struct FSRState {
-        bool enabled = false;
-        bool needsRecreate = false;
-        float scaleFactor = 1.00f;  // Native default
-        float sharpness = 1.6f;
-        uint32_t internalWidth = 0;
-        uint32_t internalHeight = 0;
-
-        // Off-screen scene target (reduced resolution)
-        AllocatedImage sceneColor{};        // 1x color (non-MSAA render target / MSAA resolve target)
-        AllocatedImage sceneDepth{};        // Depth (matches current MSAA sample count)
-        AllocatedImage sceneMsaaColor{};    // MSAA color target (only when MSAA > 1x)
-        AllocatedImage sceneDepthResolve{}; // Depth resolve (only when MSAA + depth resolve)
-        VkFramebuffer sceneFramebuffer = VK_NULL_HANDLE;
-        VkSampler sceneSampler = VK_NULL_HANDLE;
-
-        // Upscale pipeline
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-        VkDescriptorSetLayout descSetLayout = VK_NULL_HANDLE;
-        VkDescriptorPool descPool = VK_NULL_HANDLE;
-        VkDescriptorSet descSet = VK_NULL_HANDLE;
-    };
-    FSRState fsr_;
-    bool initFSRResources();
-    void destroyFSRResources();
-    void renderFSRUpscale();
-
-    // FXAA post-process state
-    struct FXAAState {
-        bool enabled       = false;
-        bool needsRecreate = false;
-
-        // Off-screen scene target (same resolution as swapchain — no scaling)
-        AllocatedImage sceneColor{};        // 1x resolved color target
-        AllocatedImage sceneDepth{};        // Depth (matches MSAA sample count)
-        AllocatedImage sceneMsaaColor{};    // MSAA color target (when MSAA > 1x)
-        AllocatedImage sceneDepthResolve{}; // Depth resolve (MSAA + depth resolve)
-        VkFramebuffer sceneFramebuffer = VK_NULL_HANDLE;
-        VkSampler sceneSampler         = VK_NULL_HANDLE;
-
-        // FXAA fullscreen pipeline
-        VkPipeline           pipeline          = VK_NULL_HANDLE;
-        VkPipelineLayout     pipelineLayout    = VK_NULL_HANDLE;
-        VkDescriptorSetLayout descSetLayout    = VK_NULL_HANDLE;
-        VkDescriptorPool     descPool          = VK_NULL_HANDLE;
-        VkDescriptorSet      descSet           = VK_NULL_HANDLE;
-    };
-    FXAAState fxaa_;
-    bool initFXAAResources();
-    void destroyFXAAResources();
-    void renderFXAAPass();
-
-    // FSR 2.2 temporal upscaling state
-    struct FSR2State {
-        bool enabled = false;
-        bool needsRecreate = false;
-        float scaleFactor = 0.77f;
-        float sharpness = 3.0f;  // Very strong RCAS to counteract upscale softness
-        uint32_t internalWidth = 0;
-        uint32_t internalHeight = 0;
-
-        // Off-screen scene targets (internal resolution, no MSAA — FSR2 replaces AA)
-        AllocatedImage sceneColor{};
-        AllocatedImage sceneDepth{};
-        VkFramebuffer sceneFramebuffer = VK_NULL_HANDLE;
-
-        // Samplers
-        VkSampler linearSampler = VK_NULL_HANDLE;   // For color
-        VkSampler nearestSampler = VK_NULL_HANDLE;  // For depth / motion vectors
-
-        // Motion vector buffer (internal resolution)
-        AllocatedImage motionVectors{};
-
-        // History buffers (display resolution, ping-pong)
-        AllocatedImage history[2]{};
-        AllocatedImage framegenOutput{};
-        bool framegenOutputValid = false;
-        uint32_t currentHistory = 0;  // Output index (0 or 1)
-
-        // Compute pipelines
-        VkPipeline motionVecPipeline = VK_NULL_HANDLE;
-        VkPipelineLayout motionVecPipelineLayout = VK_NULL_HANDLE;
-        VkDescriptorSetLayout motionVecDescSetLayout = VK_NULL_HANDLE;
-        VkDescriptorPool motionVecDescPool = VK_NULL_HANDLE;
-        VkDescriptorSet motionVecDescSet = VK_NULL_HANDLE;
-
-        VkPipeline accumulatePipeline = VK_NULL_HANDLE;
-        VkPipelineLayout accumulatePipelineLayout = VK_NULL_HANDLE;
-        VkDescriptorSetLayout accumulateDescSetLayout = VK_NULL_HANDLE;
-        VkDescriptorPool accumulateDescPool = VK_NULL_HANDLE;
-        VkDescriptorSet accumulateDescSets[2] = {};  // Per ping-pong
-
-        // RCAS sharpening pass (display resolution)
-        VkPipeline sharpenPipeline = VK_NULL_HANDLE;
-        VkPipelineLayout sharpenPipelineLayout = VK_NULL_HANDLE;
-        VkDescriptorSetLayout sharpenDescSetLayout = VK_NULL_HANDLE;
-        VkDescriptorPool sharpenDescPool = VK_NULL_HANDLE;
-        VkDescriptorSet sharpenDescSets[2] = {};
-
-        // Previous frame state for motion vector reprojection
-        glm::mat4 prevViewProjection = glm::mat4(1.0f);
-        glm::vec2 prevJitter = glm::vec2(0.0f);
-        uint32_t frameIndex = 0;
-        bool needsHistoryReset = true;
-        bool useAmdBackend = false;
-        bool amdFsr3FramegenEnabled = false;
-        bool amdFsr3FramegenRuntimeActive = false;
-        bool amdFsr3FramegenRuntimeReady = false;
-        std::string amdFsr3RuntimePath = "Path C";
-        std::string amdFsr3RuntimeLastError{};
-        size_t amdFsr3UpscaleDispatchCount = 0;
-        size_t amdFsr3FramegenDispatchCount = 0;
-        size_t amdFsr3FallbackCount = 0;
-        uint64_t amdFsr3InteropSyncValue = 1;
-        float jitterSign = 0.38f;
-        float motionVecScaleX = 1.0f;
-        float motionVecScaleY = 1.0f;
-#if WOWEE_HAS_AMD_FSR2
-        FfxFsr2Context amdContext{};
-        FfxFsr2Interface amdInterface{};
-        void* amdScratchBuffer = nullptr;
-        size_t amdScratchBufferSize = 0;
-#endif
-        std::unique_ptr<AmdFsr3Runtime> amdFsr3Runtime;
-
-        // Convergent accumulation: jitter for N frames then freeze
-        int convergenceFrame = 0;
-        static constexpr int convergenceMaxFrames = 8;
-        glm::mat4 lastStableVP = glm::mat4(1.0f);
-    };
-    FSR2State fsr2_;
-    bool initFSR2Resources();
-    void destroyFSR2Resources();
-    void dispatchMotionVectors();
-    void dispatchTemporalAccumulate();
-    void dispatchAmdFsr2();
-    void dispatchAmdFsr3Framegen();
-    void renderFSR2Sharpen();
-    static float halton(uint32_t index, uint32_t base);
 
     // Footstep event tracking (animation-driven)
     uint32_t footstepLastAnimationId = 0;

@@ -611,6 +611,8 @@ set(WOWEE_SOURCES
     src/rendering/mount_dust.cpp
     src/rendering/levelup_effect.cpp
     src/rendering/charge_effect.cpp
+    src/rendering/spell_visual_system.cpp
+    src/rendering/post_process_pipeline.cpp
     src/rendering/loading_screen.cpp
 
     # UI
