@@ -23,6 +23,7 @@
 #include <unordered_map>
 
 namespace wowee {
+namespace core { class AppearanceComposer; }
 namespace pipeline { class AssetManager; }
 namespace rendering { class Renderer; }
 namespace ui {
@@ -50,7 +51,12 @@ public:
     void saveSettings();
     void loadSettings();
 
+    // Dependency injection for extracted classes (Phase A singleton breaking)
+    void setAppearanceComposer(core::AppearanceComposer* ac) { appearanceComposer_ = ac; }
+
 private:
+    // Injected dependencies (replaces getInstance() calls)
+    core::AppearanceComposer* appearanceComposer_ = nullptr;
     // Chat panel (extracted from GameScreen — owns all chat state and rendering)
     ChatPanel chatPanel_;
 

@@ -2,6 +2,7 @@
 #include "ui/ui_colors.hpp"
 #include "rendering/vk_context.hpp"
 #include "core/application.hpp"
+#include "core/appearance_composer.hpp"
 #include "addons/addon_manager.hpp"
 #include "core/coordinates.hpp"
 #include "core/input.hpp"
@@ -631,7 +632,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     if (inventoryScreen.consumeEquipmentDirty() || gameHandler.consumeOnlineEquipmentDirty()) {
         updateCharacterGeosets(gameHandler.getInventory());
         updateCharacterTextures(gameHandler.getInventory());
-        if (auto* ac = core::Application::getInstance().getAppearanceComposer()) ac->loadEquippedWeapons();
+        if (appearanceComposer_) appearanceComposer_->loadEquippedWeapons();
         inventoryScreen.markPreviewDirty();
         // Update renderer weapon type for animation selection
         auto* r = core::Application::getInstance().getRenderer();

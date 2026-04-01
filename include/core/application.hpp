@@ -29,7 +29,7 @@ namespace ui { class UIManager; }
 namespace auth { class AuthHandler; }
 namespace game { class GameHandler; class World; class ExpansionRegistry; }
 namespace pipeline { class AssetManager; class DBCLayout; struct M2Model; struct WMOModel; }
-namespace audio { enum class VoiceType; }
+namespace audio { enum class VoiceType; class AudioCoordinator; }
 namespace addons { class AddonManager; }
 
 namespace core {
@@ -104,6 +104,9 @@ public:
     // World loader access
     WorldLoader* getWorldLoader() { return worldLoader_.get(); }
 
+    // Audio coordinator access (Section 4.1: extracted audio subsystem)
+    audio::AudioCoordinator* getAudioCoordinator() { return audioCoordinator_.get(); }
+
 private:
     void update(float deltaTime);
     void render();
@@ -129,6 +132,7 @@ private:
     std::unique_ptr<EntitySpawner> entitySpawner_;
     std::unique_ptr<AppearanceComposer> appearanceComposer_;
     std::unique_ptr<WorldLoader> worldLoader_;
+    std::unique_ptr<audio::AudioCoordinator> audioCoordinator_;
 
     AppState state = AppState::AUTHENTICATION;
     bool running = false;

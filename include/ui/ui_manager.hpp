@@ -13,7 +13,7 @@ union SDL_Event;
 namespace wowee {
 
 // Forward declarations
-namespace core { class Window; enum class AppState; }
+namespace core { class Window; class AppearanceComposer; enum class AppState; }
 namespace auth { class AuthHandler; }
 namespace game { class GameHandler; }
 
@@ -68,6 +68,11 @@ public:
     CharacterCreateScreen& getCharacterCreateScreen() { return *characterCreateScreen; }
     CharacterScreen& getCharacterScreen() { return *characterScreen; }
     GameScreen& getGameScreen() { return *gameScreen; }
+
+    // Dependency injection forwarding (Phase A singleton breaking)
+    void setAppearanceComposer(core::AppearanceComposer* ac) {
+        if (gameScreen) gameScreen->setAppearanceComposer(ac);
+    }
 
 private:
     core::Window* window = nullptr;

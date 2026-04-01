@@ -31,6 +31,7 @@
 #include "audio/footstep_manager.hpp"
 #include "audio/activity_sound_manager.hpp"
 #include "audio/audio_engine.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "addons/addon_manager.hpp"
 #include <imgui.h>
 #include "pipeline/m2_loader.hpp"
@@ -222,6 +223,11 @@ bool Application::initialize() {
         appearanceComposer_ = std::make_unique<AppearanceComposer>(
             renderer.get(), assetManager.get(), gameHandler.get(),
             dbcLayout_.get(), entitySpawner_.get());
+
+        // Wire AppearanceComposer to UI components (Phase A singleton breaking)
+        if (uiManager) {
+            uiManager->setAppearanceComposer(appearanceComposer_.get());
+        }
 
         // Ensure the main in-world CharacterRenderer can load textures immediately.
         // Previously this was only wired during terrain initialization, which meant early spawns

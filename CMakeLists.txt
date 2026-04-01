@@ -544,6 +544,7 @@ set(WOWEE_SOURCES
 
     # Audio
     src/audio/audio_engine.cpp
+    src/audio/audio_coordinator.cpp
     src/audio/music_manager.cpp
     src/audio/footstep_manager.cpp
     src/audio/activity_sound_manager.cpp
