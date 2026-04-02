@@ -6,6 +6,7 @@
 #include "game/update_field_table.hpp"
 #include "game/opcode_table.hpp"
 #include "rendering/renderer.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/combat_sound_manager.hpp"
 #include "audio/activity_sound_manager.hpp"
 #include "core/application.hpp"
@@ -451,8 +452,8 @@ void CombatHandler::handleAttackerStateUpdate(network::Packet& packet) {
     }
 
     // Play combat sounds via CombatSoundManager + character vocalizations
-    if (auto* renderer = owner_.services().renderer) {
-        if (auto* csm = renderer->getCombatSoundManager()) {
+    if (auto* ac = owner_.services().audioCoordinator) {
+        if (auto* csm = ac->getCombatSoundManager()) {
             auto weaponSize = audio::CombatSoundManager::WeaponSize::MEDIUM;
             if (data.isMiss()) {
                 csm->playWeaponMiss(false);
@@ -466,7 +467,7 @@ void CombatHandler::handleAttackerStateUpdate(network::Packet& packet) {
             }
         }
         // Character vocalizations
-        if (auto* asm_ = renderer->getActivitySoundManager()) {
+        if (auto* asm_ = ac->getActivitySoundManager()) {
             if (isPlayerAttacker && !data.isMiss() && data.victimState != 1 && data.victimState != 2) {
                 asm_->playAttackGrunt();
             }

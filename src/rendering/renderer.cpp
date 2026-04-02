@@ -59,6 +59,7 @@
 #include "rendering/amd_fsr3_runtime.hpp"
 #include "rendering/spell_visual_system.hpp"
 #include "rendering/post_process_pipeline.hpp"
+#include "rendering/animation_controller.hpp"
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -86,34 +87,6 @@
 namespace wowee {
 namespace rendering {
 
-// Audio accessor pass-throughs — delegate to AudioCoordinator (owned by Application).
-// These remain until §4.2 (AnimationController) removes Renderer's last audio usage.
-audio::MusicManager* Renderer::getMusicManager() { return audioCoordinator_ ? audioCoordinator_->getMusicManager() : nullptr; }
-audio::FootstepManager* Renderer::getFootstepManager() { return audioCoordinator_ ? audioCoordinator_->getFootstepManager() : nullptr; }
-audio::ActivitySoundManager* Renderer::getActivitySoundManager() { return audioCoordinator_ ? audioCoordinator_->getActivitySoundManager() : nullptr; }
-audio::MountSoundManager* Renderer::getMountSoundManager() { return audioCoordinator_ ? audioCoordinator_->getMountSoundManager() : nullptr; }
-audio::NpcVoiceManager* Renderer::getNpcVoiceManager() { return audioCoordinator_ ? audioCoordinator_->getNpcVoiceManager() : nullptr; }
-audio::AmbientSoundManager* Renderer::getAmbientSoundManager() { return audioCoordinator_ ? audioCoordinator_->getAmbientSoundManager() : nullptr; }
-audio::UiSoundManager* Renderer::getUiSoundManager() { return audioCoordinator_ ? audioCoordinator_->getUiSoundManager() : nullptr; }
-audio::CombatSoundManager* Renderer::getCombatSoundManager() { return audioCoordinator_ ? audioCoordinator_->getCombatSoundManager() : nullptr; }
-audio::SpellSoundManager* Renderer::getSpellSoundManager() { return audioCoordinator_ ? audioCoordinator_->getSpellSoundManager() : nullptr; }
-audio::MovementSoundManager* Renderer::getMovementSoundManager() { return audioCoordinator_ ? audioCoordinator_->getMovementSoundManager() : nullptr; }
-
-struct EmoteInfo {
-    uint32_t animId = 0;
-    uint32_t dbcId = 0;  // EmotesText.dbc record ID (for CMSG_TEXT_EMOTE)
-    bool loop = false;
-    std::string textNoTarget;       // sender sees, no target: "You dance."
-    std::string textTarget;         // sender sees, with target: "You dance with %s."
-    std::string othersNoTarget;     // others see, no target: "%s dances."
-    std::string othersTarget;       // others see, with target: "%s dances with %s."
-    std::string command;
-};
-
-static std::unordered_map<std::string, EmoteInfo> EMOTE_TABLE;
-static std::unordered_map<uint32_t, const EmoteInfo*> EMOTE_BY_DBCID; // reverse lookup: dbcId → EmoteInfo*
-static bool emoteTableLoaded = false;
-
 static bool envFlagEnabled(const char* key, bool defaultValue) {
     const char* raw = std::getenv(key);
     if (!raw || !*raw) return defaultValue;
@@ -131,173 +104,6 @@ static int envIntOrDefault(const char* key, int defaultValue) {
     long n = std::strtol(raw, &end, 10);
     if (end == raw) return defaultValue;
     return static_cast<int>(n);
-}
-
-
-
-static std::vector<std::string> parseEmoteCommands(const std::string& raw) {
-    std::vector<std::string> out;
-    std::string cur;
-    for (char c : raw) {
-        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
-            cur.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-        } else if (!cur.empty()) {
-            out.push_back(cur);
-            cur.clear();
-        }
-    }
-    if (!cur.empty()) out.push_back(cur);
-    return out;
-}
-
-static bool isLoopingEmote(const std::string& command) {
-    static const std::unordered_set<std::string> kLooping = {
-        "dance",
-        "train",
-    };
-    return kLooping.find(command) != kLooping.end();
-}
-
-static void loadFallbackEmotes() {
-    if (!EMOTE_TABLE.empty()) return;
-    EMOTE_TABLE = {
-        {"wave",    {67,  0, false, "You wave.", "You wave at %s.", "%s waves.", "%s waves at %s.", "wave"}},
-        {"bow",     {66,  0, false, "You bow down graciously.", "You bow down before %s.", "%s bows down graciously.", "%s bows down before %s.", "bow"}},
-        {"laugh",   {70,  0, false, "You laugh.", "You laugh at %s.", "%s laughs.", "%s laughs at %s.", "laugh"}},
-        {"point",   {84,  0, false, "You point over yonder.", "You point at %s.", "%s points over yonder.", "%s points at %s.", "point"}},
-        {"cheer",   {68,  0, false, "You cheer!", "You cheer at %s.", "%s cheers!", "%s cheers at %s.", "cheer"}},
-        {"dance",   {69,  0, true,  "You burst into dance.", "You dance with %s.", "%s bursts into dance.", "%s dances with %s.", "dance"}},
-        {"kneel",   {75,  0, false, "You kneel down.", "You kneel before %s.", "%s kneels down.", "%s kneels before %s.", "kneel"}},
-        {"applaud", {80,  0, false, "You applaud. Bravo!", "You applaud at %s. Bravo!", "%s applauds. Bravo!", "%s applauds at %s. Bravo!", "applaud"}},
-        {"shout",   {81,  0, false, "You shout.", "You shout at %s.", "%s shouts.", "%s shouts at %s.", "shout"}},
-        {"chicken", {78,  0, false, "With arms flapping, you strut around. Cluck, Cluck, Chicken!",
-                     "With arms flapping, you strut around %s. Cluck, Cluck, Chicken!",
-                     "%s struts around. Cluck, Cluck, Chicken!", "%s struts around %s. Cluck, Cluck, Chicken!", "chicken"}},
-        {"cry",     {77,  0, false, "You cry.", "You cry on %s's shoulder.", "%s cries.", "%s cries on %s's shoulder.", "cry"}},
-        {"kiss",    {76,  0, false, "You blow a kiss into the wind.", "You blow a kiss to %s.", "%s blows a kiss into the wind.", "%s blows a kiss to %s.", "kiss"}},
-        {"roar",    {74,  0, false, "You roar with bestial vigor. So fierce!", "You roar with bestial vigor at %s. So fierce!", "%s roars with bestial vigor. So fierce!", "%s roars with bestial vigor at %s. So fierce!", "roar"}},
-        {"salute",  {113, 0, false, "You salute.", "You salute %s with respect.", "%s salutes.", "%s salutes %s with respect.", "salute"}},
-        {"rude",    {73,  0, false, "You make a rude gesture.", "You make a rude gesture at %s.", "%s makes a rude gesture.", "%s makes a rude gesture at %s.", "rude"}},
-        {"flex",    {82,  0, false, "You flex your muscles. Oooooh so strong!", "You flex at %s. Oooooh so strong!", "%s flexes. Oooooh so strong!", "%s flexes at %s. Oooooh so strong!", "flex"}},
-        {"shy",     {83,  0, false, "You smile shyly.", "You smile shyly at %s.", "%s smiles shyly.", "%s smiles shyly at %s.", "shy"}},
-        {"beg",     {79,  0, false, "You beg everyone around you. How pathetic.", "You beg %s. How pathetic.", "%s begs everyone around. How pathetic.", "%s begs %s. How pathetic.", "beg"}},
-        {"eat",     {61,  0, false, "You begin to eat.", "You begin to eat in front of %s.", "%s begins to eat.", "%s begins to eat in front of %s.", "eat"}},
-    };
-}
-
-static std::string replacePlaceholders(const std::string& text, const std::string* targetName) {
-    if (text.empty()) return text;
-    std::string out;
-    out.reserve(text.size() + 16);
-    for (size_t i = 0; i < text.size(); ++i) {
-        if (text[i] == '%' && i + 1 < text.size() && text[i + 1] == 's') {
-            if (targetName && !targetName->empty()) out += *targetName;
-            i++;
-        } else {
-            out.push_back(text[i]);
-        }
-    }
-    return out;
-}
-
-static void loadEmotesFromDbc() {
-    if (emoteTableLoaded) return;
-    emoteTableLoaded = true;
-
-    auto* assetManager = core::Application::getInstance().getAssetManager();
-    if (!assetManager) {
-        LOG_WARNING("Emotes: no AssetManager");
-        loadFallbackEmotes();
-        return;
-    }
-
-    auto emotesTextDbc = assetManager->loadDBC("EmotesText.dbc");
-    auto emotesTextDataDbc = assetManager->loadDBC("EmotesTextData.dbc");
-    if (!emotesTextDbc || !emotesTextDataDbc || !emotesTextDbc->isLoaded() || !emotesTextDataDbc->isLoaded()) {
-        LOG_WARNING("Emotes: DBCs not available (EmotesText/EmotesTextData)");
-        loadFallbackEmotes();
-        return;
-    }
-
-    const auto* activeLayout = pipeline::getActiveDBCLayout();
-    const auto* etdL = activeLayout ? activeLayout->getLayout("EmotesTextData") : nullptr;
-    const auto* emL  = activeLayout ? activeLayout->getLayout("Emotes") : nullptr;
-    const auto* etL  = activeLayout ? activeLayout->getLayout("EmotesText") : nullptr;
-
-    std::unordered_map<uint32_t, std::string> textData;
-    textData.reserve(emotesTextDataDbc->getRecordCount());
-    for (uint32_t r = 0; r < emotesTextDataDbc->getRecordCount(); ++r) {
-        uint32_t id = emotesTextDataDbc->getUInt32(r, etdL ? (*etdL)["ID"] : 0);
-        std::string text = emotesTextDataDbc->getString(r, etdL ? (*etdL)["Text"] : 1);
-        if (!text.empty()) textData.emplace(id, std::move(text));
-    }
-
-    std::unordered_map<uint32_t, uint32_t> emoteIdToAnim;
-    if (auto emotesDbc = assetManager->loadDBC("Emotes.dbc"); emotesDbc && emotesDbc->isLoaded()) {
-        emoteIdToAnim.reserve(emotesDbc->getRecordCount());
-        for (uint32_t r = 0; r < emotesDbc->getRecordCount(); ++r) {
-            uint32_t emoteId = emotesDbc->getUInt32(r, emL ? (*emL)["ID"] : 0);
-            uint32_t animId = emotesDbc->getUInt32(r, emL ? (*emL)["AnimID"] : 2);
-            if (animId != 0) emoteIdToAnim[emoteId] = animId;
-        }
-    }
-
-    EMOTE_TABLE.clear();
-    EMOTE_TABLE.reserve(emotesTextDbc->getRecordCount());
-    for (uint32_t r = 0; r < emotesTextDbc->getRecordCount(); ++r) {
-        uint32_t recordId = emotesTextDbc->getUInt32(r, etL ? (*etL)["ID"] : 0);
-        std::string cmdRaw = emotesTextDbc->getString(r, etL ? (*etL)["Command"] : 1);
-        if (cmdRaw.empty()) continue;
-
-        uint32_t emoteRef = emotesTextDbc->getUInt32(r, etL ? (*etL)["EmoteRef"] : 2);
-        uint32_t animId = 0;
-        auto animIt = emoteIdToAnim.find(emoteRef);
-        if (animIt != emoteIdToAnim.end()) {
-            animId = animIt->second;
-        } else {
-            animId = emoteRef;  // fallback if EmotesText stores animation id directly
-        }
-
-        uint32_t senderTargetTextId = emotesTextDbc->getUInt32(r, etL ? (*etL)["SenderTargetTextID"] : 5);
-        uint32_t senderNoTargetTextId = emotesTextDbc->getUInt32(r, etL ? (*etL)["SenderNoTargetTextID"] : 9);
-        uint32_t othersTargetTextId = emotesTextDbc->getUInt32(r, etL ? (*etL)["OthersTargetTextID"] : 3);
-        uint32_t othersNoTargetTextId = emotesTextDbc->getUInt32(r, etL ? (*etL)["OthersNoTargetTextID"] : 7);
-
-        std::string textTarget, textNoTarget, oTarget, oNoTarget;
-        if (auto it = textData.find(senderTargetTextId); it != textData.end()) textTarget = it->second;
-        if (auto it = textData.find(senderNoTargetTextId); it != textData.end()) textNoTarget = it->second;
-        if (auto it = textData.find(othersTargetTextId); it != textData.end()) oTarget = it->second;
-        if (auto it = textData.find(othersNoTargetTextId); it != textData.end()) oNoTarget = it->second;
-
-        for (const std::string& cmd : parseEmoteCommands(cmdRaw)) {
-            if (cmd.empty()) continue;
-            EmoteInfo info;
-            info.animId = animId;
-            info.dbcId = recordId;
-            info.loop = isLoopingEmote(cmd);
-            info.textNoTarget = textNoTarget;
-            info.textTarget = textTarget;
-            info.othersNoTarget = oNoTarget;
-            info.othersTarget = oTarget;
-            info.command = cmd;
-            EMOTE_TABLE.emplace(cmd, std::move(info));
-        }
-    }
-
-    if (EMOTE_TABLE.empty()) {
-        LOG_WARNING("Emotes: DBC loaded but no commands parsed, using fallback list");
-        loadFallbackEmotes();
-    } else {
-        LOG_INFO("Emotes: loaded ", EMOTE_TABLE.size(), " commands from DBC");
-    }
-
-    // Build reverse lookup by dbcId (only first command per emote needed)
-    EMOTE_BY_DBCID.clear();
-    for (auto& [cmd, info] : EMOTE_TABLE) {
-        if (info.dbcId != 0) {
-            EMOTE_BY_DBCID.emplace(info.dbcId, &info);
-        }
-    }
 }
 
 Renderer::Renderer() = default;
@@ -827,6 +633,9 @@ void Renderer::shutdown() {
         characterRenderer.reset();
     }
 
+    // Shutdown AnimationController before renderers it references (§4.2)
+    animationController_.reset();
+
     LOG_WARNING("Renderer::shutdown - wmoRenderer...");
     if (wmoRenderer) {
         wmoRenderer->shutdown();
@@ -1175,1107 +984,57 @@ void Renderer::setCharacterFollow(uint32_t instanceId) {
     if (cameraController && instanceId > 0) {
         cameraController->setFollowTarget(&characterPosition);
     }
+    if (animationController_) animationController_->onCharacterFollow(instanceId);
 }
 
 void Renderer::setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float heightOffset, const std::string& modelPath) {
-    mountInstanceId_ = mountInstId;
-    mountHeightOffset_ = heightOffset;
-    mountSeatAttachmentId_ = -1;
-    smoothedMountSeatPos_ = characterPosition;
-    mountSeatSmoothingInit_ = false;
-    mountAction_ = MountAction::None;  // Clear mount action state
-    mountActionPhase_ = 0;
-    charAnimState = CharAnimState::MOUNT;
-    if (cameraController) {
-        cameraController->setMounted(true);
-        cameraController->setMountHeightOffset(heightOffset);
-    }
-
-    // Debug: dump available mount animations
-    if (characterRenderer && mountInstId > 0) {
-        characterRenderer->dumpAnimations(mountInstId);
-    }
-
-    // Discover mount animation capabilities (property-based, not hardcoded IDs)
-    LOG_DEBUG("=== Mount Animation Dump (Display ID ", mountDisplayId, ") ===");
-    characterRenderer->dumpAnimations(mountInstId);
-
-    // Get all sequences for property-based analysis
-    std::vector<pipeline::M2Sequence> sequences;
-    if (!characterRenderer->getAnimationSequences(mountInstId, sequences)) {
-        LOG_WARNING("Failed to get animation sequences for mount, using fallback IDs");
-        sequences.clear();
-    }
-
-    // Helper: ID-based fallback finder
-    auto findFirst = [&](std::initializer_list<uint32_t> candidates) -> uint32_t {
-        for (uint32_t id : candidates) {
-            if (characterRenderer->hasAnimation(mountInstId, id)) {
-                return id;
-            }
-        }
-        return 0;
-    };
-
-    // Property-based jump animation discovery with chain-based scoring
-    auto discoverJumpSet = [&]() {
-        // Debug: log all sequences for analysis
-        LOG_DEBUG("=== Full sequence table for mount ===");
-        for (const auto& seq : sequences) {
-            LOG_DEBUG("SEQ id=", seq.id,
-                     " dur=", seq.duration,
-                     " flags=0x", std::hex, seq.flags, std::dec,
-                     " moveSpd=", seq.movingSpeed,
-                     " blend=", seq.blendTime,
-                     " next=", seq.nextAnimation,
-                     " alias=", seq.aliasNext);
-        }
-        LOG_DEBUG("=== End sequence table ===");
-
-        // Known combat/bad animation IDs to avoid
-        std::set<uint32_t> forbiddenIds = {53, 54, 16};  // jumpkick, attack
-
-        auto scoreNear = [](int a, int b) -> int {
-            int d = std::abs(a - b);
-            return (d <= 8) ? (20 - d) : 0; // within 8 IDs gets points
-        };
-
-        auto isForbidden = [&](uint32_t id) {
-            return forbiddenIds.count(id) != 0;
-        };
-
-        auto findSeqById = [&](uint32_t id) -> const pipeline::M2Sequence* {
-            for (const auto& s : sequences) {
-                if (s.id == id) return &s;
-            }
-            return nullptr;
-        };
-
-        uint32_t runId = findFirst({5, 4});
-        uint32_t standId = findFirst({0});
-
-        // Step A: Find loop candidates
-        std::vector<uint32_t> loops;
-        for (const auto& seq : sequences) {
-            if (isForbidden(seq.id)) continue;
-            // Bit 0x01 NOT set = loops (0x20, 0x60), bit 0x01 set = non-looping (0x21, 0x61)
-            bool isLoop = (seq.flags & 0x01) == 0;
-            if (isLoop && seq.duration >= 350 && seq.duration <= 1000 &&
-                seq.id != runId && seq.id != standId) {
-                loops.push_back(seq.id);
-            }
-        }
-
-        // Choose loop: prefer one near known classic IDs (38), else best duration
-        uint32_t loop = 0;
-        if (!loops.empty()) {
-            uint32_t best = loops[0];
-            int bestScore = -999;
-            for (uint32_t id : loops) {
-                int sc = 0;
-                sc += scoreNear(static_cast<int>(id), 38);  // classic hint
-                const auto* s = findSeqById(id);
-                if (s) sc += (s->duration >= 500 && s->duration <= 800) ? 5 : 0;
-                if (sc > bestScore) {
-                    bestScore = sc;
-                    best = id;
-                }
-            }
-            loop = best;
-        }
-
-        // Step B: Score start/end candidates
-        uint32_t start = 0, end = 0;
-        int bestStart = -999, bestEnd = -999;
-
-        for (const auto& seq : sequences) {
-            if (isForbidden(seq.id)) continue;
-            // Only consider non-looping animations for start/end
-            bool isLoop = (seq.flags & 0x01) == 0;
-            if (isLoop) continue;
-
-            // Start window
-            if (seq.duration >= 450 && seq.duration <= 1100) {
-                int sc = 0;
-                if (loop) sc += scoreNear(static_cast<int>(seq.id), static_cast<int>(loop));
-                // Chain bonus: if this start points at loop or near it
-                if (loop && (seq.nextAnimation == static_cast<int16_t>(loop) || seq.aliasNext == loop)) sc += 30;
-                if (loop && scoreNear(seq.nextAnimation, static_cast<int>(loop)) > 0) sc += 10;
-                // Penalize "stop/brake-ish": very long blendTime can be a stop transition
-                if (seq.blendTime > 400) sc -= 5;
-
-                if (sc > bestStart) {
-                    bestStart = sc;
-                    start = seq.id;
-                }
-            }
-
-            // End window
-            if (seq.duration >= 650 && seq.duration <= 1600) {
-                int sc = 0;
-                if (loop) sc += scoreNear(static_cast<int>(seq.id), static_cast<int>(loop));
-                // Chain bonus: end often points to run/stand or has no next
-                if (seq.nextAnimation == static_cast<int16_t>(runId) || seq.nextAnimation == static_cast<int16_t>(standId)) sc += 10;
-                if (seq.nextAnimation < 0) sc += 5; // no chain sometimes = terminal
-                if (sc > bestEnd) {
-                    bestEnd = sc;
-                    end = seq.id;
-                }
-            }
-        }
-
-        LOG_DEBUG("Property-based jump discovery: start=", start, " loop=", loop, " end=", end,
-                 " scores: start=", bestStart, " end=", bestEnd);
-        return std::make_tuple(start, loop, end);
-    };
-
-    auto [discoveredStart, discoveredLoop, discoveredEnd] = discoverJumpSet();
-
-    // Use discovered animations, fallback to known IDs if discovery fails
-    mountAnims_.jumpStart = discoveredStart > 0 ? discoveredStart : findFirst({40, 37});
-    mountAnims_.jumpLoop  = discoveredLoop > 0 ? discoveredLoop : findFirst({38});
-    mountAnims_.jumpEnd   = discoveredEnd > 0 ? discoveredEnd : findFirst({39});
-    mountAnims_.rearUp    = findFirst({94, 92, 40}); // RearUp/Special
-    mountAnims_.run       = findFirst({5, 4});       // Run/Walk
-    mountAnims_.stand     = findFirst({0});          // Stand (almost always 0)
-
-    // Discover idle fidget animations using proper WoW M2 metadata (frequency, replay timers)
-    mountAnims_.fidgets.clear();
-    core::Logger::getInstance().debug("Scanning for fidget animations in ", sequences.size(), " sequences");
-
-    // DEBUG: Log ALL non-looping, short, stationary animations to identify stamps/tosses
-    core::Logger::getInstance().debug("=== ALL potential fidgets (no metadata filter) ===");
-    for (const auto& seq : sequences) {
-        bool isLoop = (seq.flags & 0x01) == 0;
-        bool isStationary = std::abs(seq.movingSpeed) < 0.05f;
-        bool reasonableDuration = seq.duration >= 400 && seq.duration <= 2500;
-
-        if (!isLoop && reasonableDuration && isStationary) {
-            core::Logger::getInstance().debug("  ALL: id=", seq.id,
-                " dur=", seq.duration, "ms",
-                " freq=", seq.frequency,
-                " replay=", seq.replayMin, "-", seq.replayMax,
-                " flags=0x", std::hex, seq.flags, std::dec,
-                " next=", seq.nextAnimation);
-        }
-    }
-
-    // Proper fidget discovery: frequency > 0 + replay timers indicate random idle animations
-    for (const auto& seq : sequences) {
-        bool isLoop = (seq.flags & 0x01) == 0;
-        bool hasFrequency = seq.frequency > 0;
-        bool hasReplay = seq.replayMax > 0;
-        bool isStationary = std::abs(seq.movingSpeed) < 0.05f;
-        bool reasonableDuration = seq.duration >= 400 && seq.duration <= 2500;
-
-        // Log candidates with metadata
-        if (!isLoop && reasonableDuration && isStationary && (hasFrequency || hasReplay)) {
-            core::Logger::getInstance().debug("  Candidate: id=", seq.id,
-                " dur=", seq.duration, "ms",
-                " freq=", seq.frequency,
-                " replay=", seq.replayMin, "-", seq.replayMax,
-                " next=", seq.nextAnimation,
-                " speed=", seq.movingSpeed);
-        }
-
-        // Exclude known problematic animations: death (5-6), wounds (7-9), combat (16-21), attacks (11-15)
-        bool isDeathOrWound = (seq.id >= 5 && seq.id <= 9);
-        bool isAttackOrCombat = (seq.id >= 11 && seq.id <= 21);
-        bool isSpecial = (seq.id == 2 || seq.id == 3);  // Often aggressive specials
-
-        // Select fidgets: (frequency OR replay) + exclude problematic ID ranges
-        // Relaxed back to OR since some mounts may only have one metadata marker
-        if (!isLoop && (hasFrequency || hasReplay) && isStationary && reasonableDuration &&
-            !isDeathOrWound && !isAttackOrCombat && !isSpecial) {
-            // Bonus: chains back to stand (indicates idle behavior)
-            bool chainsToStand = (seq.nextAnimation == static_cast<int16_t>(mountAnims_.stand)) ||
-                                 (seq.aliasNext == mountAnims_.stand) ||
-                                 (seq.nextAnimation == -1);
-
-            mountAnims_.fidgets.push_back(seq.id);
-            core::Logger::getInstance().debug("  >> Selected fidget: id=", seq.id,
-                (chainsToStand ? " (chains to stand)" : ""));
-        }
-    }
-
-    // Ensure we have fallbacks for movement
-    if (mountAnims_.run == 0) mountAnims_.run = mountAnims_.stand;  // Fallback to stand if no run
-
-    core::Logger::getInstance().debug("Mount animation set: jumpStart=", mountAnims_.jumpStart,
-        " jumpLoop=", mountAnims_.jumpLoop,
-        " jumpEnd=", mountAnims_.jumpEnd,
-        " rearUp=", mountAnims_.rearUp,
-        " run=", mountAnims_.run,
-        " stand=", mountAnims_.stand,
-        " fidgets=", mountAnims_.fidgets.size());
-
-    // Notify mount sound manager
-    if (getMountSoundManager()) {
-        bool isFlying = taxiFlight_;  // Taxi flights are flying mounts
-        getMountSoundManager()->onMount(mountDisplayId, isFlying, modelPath);
-    }
+    if (animationController_) animationController_->setMounted(mountInstId, mountDisplayId, heightOffset, modelPath);
 }
 
 void Renderer::clearMount() {
-    mountInstanceId_ = 0;
-    mountHeightOffset_ = 0.0f;
-    mountPitch_ = 0.0f;
-    mountRoll_ = 0.0f;
-    mountSeatAttachmentId_ = -1;
-    smoothedMountSeatPos_ = glm::vec3(0.0f);
-    mountSeatSmoothingInit_ = false;
-    mountAction_ = MountAction::None;
-    mountActionPhase_ = 0;
-    charAnimState = CharAnimState::IDLE;
-    if (cameraController) {
-        cameraController->setMounted(false);
-        cameraController->setMountHeightOffset(0.0f);
-    }
-
-    // Notify mount sound manager
-    if (getMountSoundManager()) {
-        getMountSoundManager()->onDismount();
-    }
+    if (animationController_) animationController_->clearMount();
 }
 
-uint32_t Renderer::resolveMeleeAnimId() {
-    if (!characterRenderer || characterInstanceId == 0) {
-        meleeAnimId = 0;
-        meleeAnimDurationMs = 0.0f;
-        return 0;
-    }
 
-    if (meleeAnimId != 0 && characterRenderer->hasAnimation(characterInstanceId, meleeAnimId)) {
-        return meleeAnimId;
-    }
-
-    std::vector<pipeline::M2Sequence> sequences;
-    if (!characterRenderer->getAnimationSequences(characterInstanceId, sequences)) {
-        meleeAnimId = 0;
-        meleeAnimDurationMs = 0.0f;
-        return 0;
-    }
-
-    auto findDuration = [&](uint32_t id) -> float {
-        for (const auto& seq : sequences) {
-            if (seq.id == id && seq.duration > 0) {
-                return static_cast<float>(seq.duration);
-            }
-        }
-        return 0.0f;
-    };
-
-    // Select animation priority based on equipped weapon type
-    // WoW inventory types: 17 = 2H weapon, 13/21 = 1H, 0 = unarmed
-    // WoW anim IDs: 16 = unarmed, 17 = 1H attack, 18 = 2H attack
-    const uint32_t* attackCandidates;
-    size_t candidateCount;
-    static const uint32_t candidates2H[] = {18, 17, 16, 19, 20, 21};
-    static const uint32_t candidates1H[] = {17, 18, 16, 19, 20, 21};
-    static const uint32_t candidatesUnarmed[] = {16, 17, 18, 19, 20, 21};
-    if (equippedWeaponInvType_ == 17) { // INVTYPE_2HWEAPON
-        attackCandidates = candidates2H;
-        candidateCount = 6;
-    } else if (equippedWeaponInvType_ == 0) {
-        attackCandidates = candidatesUnarmed;
-        candidateCount = 6;
-    } else {
-        attackCandidates = candidates1H;
-        candidateCount = 6;
-    }
-    for (size_t ci = 0; ci < candidateCount; ci++) {
-        uint32_t id = attackCandidates[ci];
-        if (characterRenderer->hasAnimation(characterInstanceId, id)) {
-            meleeAnimId = id;
-            meleeAnimDurationMs = findDuration(id);
-            return meleeAnimId;
-        }
-    }
-
-    const uint32_t avoidIds[] = {0, 1, 4, 5, 11, 12, 13, 37, 38, 39, 41, 42, 97};
-    auto isAvoid = [&](uint32_t id) -> bool {
-        for (uint32_t avoid : avoidIds) {
-            if (id == avoid) return true;
-        }
-        return false;
-    };
-
-    uint32_t bestId = 0;
-    uint32_t bestDuration = 0;
-    for (const auto& seq : sequences) {
-        if (seq.duration == 0) continue;
-        if (isAvoid(seq.id)) continue;
-        if (seq.movingSpeed > 0.1f) continue;
-        if (seq.duration < 150 || seq.duration > 2000) continue;
-        if (bestId == 0 || seq.duration < bestDuration) {
-            bestId = seq.id;
-            bestDuration = seq.duration;
-        }
-    }
-
-    if (bestId == 0) {
-        for (const auto& seq : sequences) {
-            if (seq.duration == 0) continue;
-            if (isAvoid(seq.id)) continue;
-            if (bestId == 0 || seq.duration < bestDuration) {
-                bestId = seq.id;
-                bestDuration = seq.duration;
-            }
-        }
-    }
-
-    meleeAnimId = bestId;
-    meleeAnimDurationMs = static_cast<float>(bestDuration);
-    return meleeAnimId;
-}
-
-void Renderer::updateCharacterAnimation() {
-    // WoW WotLK AnimationData.dbc IDs
-    constexpr uint32_t ANIM_STAND      = 0;
-    constexpr uint32_t ANIM_WALK       = 4;
-    constexpr uint32_t ANIM_RUN        = 5;
-    // Candidate locomotion clips by common WotLK IDs.
-    constexpr uint32_t ANIM_STRAFE_RUN_RIGHT  = 92;
-    constexpr uint32_t ANIM_STRAFE_RUN_LEFT   = 93;
-    constexpr uint32_t ANIM_STRAFE_WALK_LEFT  = 11;
-    constexpr uint32_t ANIM_STRAFE_WALK_RIGHT = 12;
-    constexpr uint32_t ANIM_BACKPEDAL         = 13;
-    constexpr uint32_t ANIM_JUMP_START = 37;
-    constexpr uint32_t ANIM_JUMP_MID   = 38;
-    constexpr uint32_t ANIM_JUMP_END   = 39;
-    constexpr uint32_t ANIM_SIT_DOWN   = 97;  // SitGround — transition to sitting
-    constexpr uint32_t ANIM_SITTING    = 97;  // Hold on same animation (no separate idle)
-    constexpr uint32_t ANIM_SWIM_IDLE  = 41;  // Treading water (SwimIdle)
-    constexpr uint32_t ANIM_SWIM       = 42;  // Swimming forward (Swim)
-    constexpr uint32_t ANIM_MOUNT      = 91;  // Seated on mount
-    // Canonical player ready stances (AnimationData.dbc)
-    constexpr uint32_t ANIM_READY_UNARMED = 22;  // ReadyUnarmed
-    constexpr uint32_t ANIM_READY_1H      = 23;  // Ready1H
-    constexpr uint32_t ANIM_READY_2H      = 24;  // Ready2H
-    constexpr uint32_t ANIM_READY_2H_L    = 25;  // Ready2HL (some 2H left-handed rigs)
-    constexpr uint32_t ANIM_FLY_IDLE   = 158; // Flying mount idle/hover
-    constexpr uint32_t ANIM_FLY_FORWARD = 159; // Flying mount forward
-
-    CharAnimState newState = charAnimState;
-
-    const bool rawMoving = cameraController->isMoving();
-    const bool rawSprinting = cameraController->isSprinting();
-    constexpr float kLocomotionStopGraceSec = 0.12f;
-    if (rawMoving) {
-        locomotionStopGraceTimer_ = kLocomotionStopGraceSec;
-        locomotionWasSprinting_ = rawSprinting;
-    } else {
-        locomotionStopGraceTimer_ = std::max(0.0f, locomotionStopGraceTimer_ - lastDeltaTime_);
-    }
-    // Debounce brief input/state dropouts (notably during both-mouse steering) so
-    // locomotion clips do not restart every few frames.
-    bool moving = rawMoving || locomotionStopGraceTimer_ > 0.0f;
-    bool movingForward = cameraController->isMovingForward();
-    bool movingBackward = cameraController->isMovingBackward();
-    bool autoRunning = cameraController->isAutoRunning();
-    bool strafeLeft = cameraController->isStrafingLeft();
-    bool strafeRight = cameraController->isStrafingRight();
-    // Strafe animation only plays during *pure* strafing (no forward/backward/autorun).
-    // When forward+strafe are both held, the walk/run animation plays — same as the real client.
-    bool pureStrafe = !movingForward && !movingBackward && !autoRunning;
-    bool anyStrafeLeft = strafeLeft && !strafeRight && pureStrafe;
-    bool anyStrafeRight = strafeRight && !strafeLeft && pureStrafe;
-    bool grounded = cameraController->isGrounded();
-    bool jumping = cameraController->isJumping();
-    bool sprinting = rawSprinting || (!rawMoving && moving && locomotionWasSprinting_);
-    bool sitting = cameraController->isSitting();
-    bool swim = cameraController->isSwimming();
-    bool forceMelee = meleeSwingTimer > 0.0f && grounded && !swim;
-
-    // When mounted, force MOUNT state and skip normal transitions
-    if (isMounted()) {
-        newState = CharAnimState::MOUNT;
-        charAnimState = newState;
-
-        // Play seated animation on player
-        uint32_t currentAnimId = 0;
-        float currentAnimTimeMs = 0.0f, currentAnimDurationMs = 0.0f;
-        bool haveState = characterRenderer->getAnimationState(characterInstanceId, currentAnimId, currentAnimTimeMs, currentAnimDurationMs);
-        if (!haveState || currentAnimId != ANIM_MOUNT) {
-            characterRenderer->playAnimation(characterInstanceId, ANIM_MOUNT, true);
-        }
-
-        // Sync mount instance position and rotation
-        float mountBob = 0.0f;
-        float mountYawRad = glm::radians(characterYaw);
-        if (mountInstanceId_ > 0) {
-            characterRenderer->setInstancePosition(mountInstanceId_, characterPosition);
-
-            // Procedural lean into turns (ground mounts only, optional enhancement)
-            if (!taxiFlight_ && moving && lastDeltaTime_ > 0.0f) {
-                float currentYawDeg = characterYaw;
-                float turnRate = (currentYawDeg - prevMountYaw_) / lastDeltaTime_;
-                // Normalize to [-180, 180] for wrap-around
-                while (turnRate > 180.0f) turnRate -= 360.0f;
-                while (turnRate < -180.0f) turnRate += 360.0f;
-
-                float targetLean = glm::clamp(turnRate * 0.15f, -0.25f, 0.25f);
-                mountRoll_ = glm::mix(mountRoll_, targetLean, lastDeltaTime_ * 6.0f);
-                prevMountYaw_ = currentYawDeg;
-            } else {
-                // Return to upright when not turning
-                mountRoll_ = glm::mix(mountRoll_, 0.0f, lastDeltaTime_ * 8.0f);
-            }
-
-            // Apply pitch (up/down), roll (banking), and yaw for realistic flight
-            characterRenderer->setInstanceRotation(mountInstanceId_, glm::vec3(mountPitch_, mountRoll_, mountYawRad));
-
-            // Drive mount model animation: idle when still, run when moving
-            auto pickMountAnim = [&](std::initializer_list<uint32_t> candidates, uint32_t fallback) -> uint32_t {
-                for (uint32_t id : candidates) {
-                    if (characterRenderer->hasAnimation(mountInstanceId_, id)) {
-                        return id;
-                    }
-                }
-                return fallback;
-            };
-
-            uint32_t mountAnimId = ANIM_STAND;
-
-            // Get current mount animation state (used throughout)
-            uint32_t curMountAnim = 0;
-            float curMountTime = 0, curMountDur = 0;
-            bool haveMountState = characterRenderer->getAnimationState(mountInstanceId_, curMountAnim, curMountTime, curMountDur);
-
-            // Taxi flight: use flying animations instead of ground movement
-            if (taxiFlight_) {
-                // Log available animations once when taxi starts
-                if (!taxiAnimsLogged_) {
-                    taxiAnimsLogged_ = true;
-                    LOG_INFO("Taxi flight active: mountInstanceId_=", mountInstanceId_,
-                             " curMountAnim=", curMountAnim, " haveMountState=", haveMountState);
-                    std::vector<pipeline::M2Sequence> seqs;
-                    if (characterRenderer->getAnimationSequences(mountInstanceId_, seqs)) {
-                        std::string animList;
-                        for (const auto& s : seqs) {
-                            if (!animList.empty()) animList += ", ";
-                            animList += std::to_string(s.id);
-                        }
-                        LOG_INFO("Taxi mount available animations: [", animList, "]");
-                    }
-                }
-
-                // Try multiple flying animation IDs in priority order:
-                // 159=FlyForward, 158=FlyIdle (WotLK flying mounts)
-                // 234=FlyRun, 229=FlyStand (Vanilla creature fly anims)
-                // 233=FlyWalk, 141=FlyMounted, 369=FlyRun (alternate IDs)
-                // 6=Fly (classic creature fly)
-                // Fallback: Run, then Stand (hover)
-                uint32_t flyAnims[] = {ANIM_FLY_FORWARD, ANIM_FLY_IDLE, 234, 229, 233, 141, 369, 6, ANIM_RUN};
-                mountAnimId = ANIM_STAND; // ultimate fallback: hover/idle
-                for (uint32_t fa : flyAnims) {
-                    if (characterRenderer->hasAnimation(mountInstanceId_, fa)) {
-                        mountAnimId = fa;
-                        break;
-                    }
-                }
-
-                if (!haveMountState || curMountAnim != mountAnimId) {
-                    LOG_INFO("Taxi mount: playing animation ", mountAnimId);
-                    characterRenderer->playAnimation(mountInstanceId_, mountAnimId, true);
-                }
-
-                // Skip all ground mount logic (jumps, fidgets, etc.)
-                goto taxi_mount_done;
-            } else {
-                taxiAnimsLogged_ = false;
-            }
-
-            // Check for jump trigger - use cached per-mount animation IDs
-            if (cameraController->isJumpKeyPressed() && grounded && mountAction_ == MountAction::None) {
-                if (moving && mountAnims_.jumpLoop > 0) {
-                    // Moving: skip JumpStart (looks like stopping), go straight to airborne loop
-                    LOG_DEBUG("Mount jump triggered while moving: using jumpLoop anim ", mountAnims_.jumpLoop);
-                    characterRenderer->playAnimation(mountInstanceId_, mountAnims_.jumpLoop, true);
-                    mountAction_ = MountAction::Jump;
-                    mountActionPhase_ = 1;  // Start in airborne phase
-                    mountAnimId = mountAnims_.jumpLoop;
-                    if (getMountSoundManager()) {
-                        getMountSoundManager()->playJumpSound();
-                    }
-                    if (cameraController) {
-                        cameraController->triggerMountJump();
-                    }
-                } else if (!moving && mountAnims_.rearUp > 0) {
-                    // Standing still: rear-up flourish
-                    LOG_DEBUG("Mount rear-up triggered: playing rearUp anim ", mountAnims_.rearUp);
-                    characterRenderer->playAnimation(mountInstanceId_, mountAnims_.rearUp, false);
-                    mountAction_ = MountAction::RearUp;
-                    mountActionPhase_ = 0;
-                    mountAnimId = mountAnims_.rearUp;
-                    // Trigger semantic rear-up sound
-                    if (getMountSoundManager()) {
-                        getMountSoundManager()->playRearUpSound();
-                    }
-                }
-            }
-
-            // Handle active mount actions (jump chaining or rear-up)
-            if (mountAction_ != MountAction::None) {
-                bool animFinished = haveMountState && curMountDur > 0.1f &&
-                                   (curMountTime >= curMountDur - 0.05f);
-
-                if (mountAction_ == MountAction::Jump) {
-                    // Jump sequence: start → loop → end (physics-driven)
-                    if (mountActionPhase_ == 0 && animFinished && mountAnims_.jumpLoop > 0) {
-                        // JumpStart finished, go to JumpLoop (airborne)
-                        LOG_DEBUG("Mount jump: phase 0→1 (JumpStart→JumpLoop anim ", mountAnims_.jumpLoop, ")");
-                        characterRenderer->playAnimation(mountInstanceId_, mountAnims_.jumpLoop, true);
-                        mountActionPhase_ = 1;
-                        mountAnimId = mountAnims_.jumpLoop;
-                    } else if (mountActionPhase_ == 0 && animFinished && mountAnims_.jumpLoop == 0) {
-                        // No JumpLoop, go straight to airborne phase 1 (hold JumpStart pose)
-                        LOG_DEBUG("Mount jump: phase 0→1 (no JumpLoop, holding JumpStart)");
-                        mountActionPhase_ = 1;
-                    } else if (mountActionPhase_ == 1 && grounded && mountAnims_.jumpEnd > 0) {
-                        // Landed after airborne phase! Go to JumpEnd (grounded-triggered)
-                        LOG_DEBUG("Mount jump: phase 1→2 (landed, JumpEnd anim ", mountAnims_.jumpEnd, ")");
-                        characterRenderer->playAnimation(mountInstanceId_, mountAnims_.jumpEnd, false);
-                        mountActionPhase_ = 2;
-                        mountAnimId = mountAnims_.jumpEnd;
-                        // Trigger semantic landing sound
-                        if (getMountSoundManager()) {
-                            getMountSoundManager()->playLandSound();
-                        }
-                    } else if (mountActionPhase_ == 1 && grounded && mountAnims_.jumpEnd == 0) {
-                        // No JumpEnd animation, return directly to movement after landing
-                        LOG_DEBUG("Mount jump: phase 1→done (landed, no JumpEnd, returning to ",
-                                 moving ? "run" : "stand", " anim ", (moving ? mountAnims_.run : mountAnims_.stand), ")");
-                        mountAction_ = MountAction::None;
-                        mountAnimId = moving ? mountAnims_.run : mountAnims_.stand;
-                        characterRenderer->playAnimation(mountInstanceId_, mountAnimId, true);
-                    } else if (mountActionPhase_ == 2 && animFinished) {
-                        // JumpEnd finished, return to movement
-                        LOG_DEBUG("Mount jump: phase 2→done (JumpEnd finished, returning to ",
-                                 moving ? "run" : "stand", " anim ", (moving ? mountAnims_.run : mountAnims_.stand), ")");
-                        mountAction_ = MountAction::None;
-                        mountAnimId = moving ? mountAnims_.run : mountAnims_.stand;
-                        characterRenderer->playAnimation(mountInstanceId_, mountAnimId, true);
-                    } else {
-                        mountAnimId = curMountAnim;  // Keep current jump animation
-                    }
-                } else if (mountAction_ == MountAction::RearUp) {
-                    // Rear-up: single animation, return to stand when done
-                    if (animFinished) {
-                        LOG_DEBUG("Mount rear-up: finished, returning to ",
-                                 moving ? "run" : "stand", " anim ", (moving ? mountAnims_.run : mountAnims_.stand));
-                        mountAction_ = MountAction::None;
-                        mountAnimId = moving ? mountAnims_.run : mountAnims_.stand;
-                        characterRenderer->playAnimation(mountInstanceId_, mountAnimId, true);
-                    } else {
-                        mountAnimId = curMountAnim;  // Keep current rear-up animation
-                    }
-                }
-            } else if (moving) {
-                // Normal movement animations
-                if (anyStrafeLeft) {
-                    mountAnimId = pickMountAnim({ANIM_STRAFE_RUN_LEFT, ANIM_STRAFE_WALK_LEFT, ANIM_RUN}, ANIM_RUN);
-                } else if (anyStrafeRight) {
-                    mountAnimId = pickMountAnim({ANIM_STRAFE_RUN_RIGHT, ANIM_STRAFE_WALK_RIGHT, ANIM_RUN}, ANIM_RUN);
-                } else if (movingBackward) {
-                    mountAnimId = pickMountAnim({ANIM_BACKPEDAL}, ANIM_RUN);
-                } else {
-                    mountAnimId = ANIM_RUN;
-                }
-            }
-
-            // Cancel active fidget immediately if movement starts
-            if (moving && mountActiveFidget_ != 0) {
-                mountActiveFidget_ = 0;
-                // Force play run animation to stop fidget immediately
-                characterRenderer->playAnimation(mountInstanceId_, mountAnimId, true);
-            }
-
-            // Check if active fidget has completed (only when not moving)
-            if (!moving && mountActiveFidget_ != 0) {
-                uint32_t curAnim = 0;
-                float curTime = 0.0f, curDur = 0.0f;
-                if (characterRenderer->getAnimationState(mountInstanceId_, curAnim, curTime, curDur)) {
-                    // If animation changed or completed, clear active fidget
-                    if (curAnim != mountActiveFidget_ || curTime >= curDur * 0.95f) {
-                        mountActiveFidget_ = 0;
-                        LOG_DEBUG("Mount fidget completed");
-                    }
-                }
-            }
-
-            // Idle fidgets: random one-shot animations when standing still
-            if (!moving && mountAction_ == MountAction::None && mountActiveFidget_ == 0 && !mountAnims_.fidgets.empty()) {
-                mountIdleFidgetTimer_ += lastDeltaTime_;
-                // Use the seeded mt19937 for timing so fidgets aren't deterministic
-                // across launches (rand() without srand() always starts from seed 1).
-                static std::mt19937 idleRng(std::random_device{}());
-                static float nextFidgetTime = std::uniform_real_distribution<float>(6.0f, 12.0f)(idleRng);
-
-                if (mountIdleFidgetTimer_ >= nextFidgetTime) {
-                    std::uniform_int_distribution<size_t> dist(0, mountAnims_.fidgets.size() - 1);
-                    uint32_t fidgetAnim = mountAnims_.fidgets[dist(idleRng)];
-
-                    characterRenderer->playAnimation(mountInstanceId_, fidgetAnim, false);
-                    mountActiveFidget_ = fidgetAnim;
-                    mountIdleFidgetTimer_ = 0.0f;
-                    nextFidgetTime = std::uniform_real_distribution<float>(6.0f, 12.0f)(idleRng);
-
-                    LOG_DEBUG("Mount idle fidget: playing anim ", fidgetAnim);
-                }
-            }
-            if (moving) {
-                mountIdleFidgetTimer_ = 0.0f;  // Reset timer when moving
-            }
-
-            // Idle ambient sounds: snorts and whinnies only, infrequent
-            if (!moving && getMountSoundManager()) {
-                mountIdleSoundTimer_ += lastDeltaTime_;
-                static std::mt19937 soundRng(std::random_device{}());
-                static float nextIdleSoundTime = std::uniform_real_distribution<float>(45.0f, 90.0f)(soundRng);
-
-                if (mountIdleSoundTimer_ >= nextIdleSoundTime) {
-                    getMountSoundManager()->playIdleSound();
-                    mountIdleSoundTimer_ = 0.0f;
-                    nextIdleSoundTime = std::uniform_real_distribution<float>(45.0f, 90.0f)(soundRng);
-                }
-            } else if (moving) {
-                mountIdleSoundTimer_ = 0.0f;  // Reset timer when moving
-            }
-
-            // Only update animation if it changed and we're not in an action sequence or playing a fidget
-            if (mountAction_ == MountAction::None && mountActiveFidget_ == 0 && (!haveMountState || curMountAnim != mountAnimId)) {
-                bool loop = true;  // Normal movement animations loop
-                characterRenderer->playAnimation(mountInstanceId_, mountAnimId, loop);
-            }
-
-            taxi_mount_done:
-            // Rider bob: sinusoidal motion synced to mount's run animation (only used in fallback positioning)
-            mountBob = 0.0f;
-            if (moving && haveMountState && curMountDur > 1.0f) {
-                // Wrap mount time preserving precision via subtraction instead of fmod
-                float wrappedTime = curMountTime;
-                while (wrappedTime >= curMountDur) {
-                    wrappedTime -= curMountDur;
-                }
-                float norm = wrappedTime / curMountDur;
-                // One bounce per stride cycle
-                float bobSpeed = taxiFlight_ ? 2.0f : 1.0f;
-                mountBob = std::sin(norm * 2.0f * 3.14159f * bobSpeed) * 0.12f;
-            }
-        }
-
-        // Use mount's attachment point for proper bone-driven rider positioning.
-        if (taxiFlight_) {
-            glm::mat4 mountSeatTransform(1.0f);
-            bool haveSeat = false;
-            static constexpr uint32_t kTaxiSeatAttachmentId = 0;  // deterministic rider seat
-            if (mountSeatAttachmentId_ == -1) {
-                mountSeatAttachmentId_ = static_cast<int>(kTaxiSeatAttachmentId);
-            }
-            if (mountSeatAttachmentId_ >= 0) {
-                haveSeat = characterRenderer->getAttachmentTransform(
-                    mountInstanceId_, static_cast<uint32_t>(mountSeatAttachmentId_), mountSeatTransform);
-            }
-            if (!haveSeat) {
-                mountSeatAttachmentId_ = -2;
-            }
-
-            if (haveSeat) {
-                glm::vec3 targetRiderPos = glm::vec3(mountSeatTransform[3]) + glm::vec3(0.0f, 0.0f, 0.02f);
-                // Taxi passengers should be rigidly parented to mount attachment transforms.
-                // Smoothing here introduces visible seat lag/drift on turns.
-                mountSeatSmoothingInit_ = false;
-                smoothedMountSeatPos_ = targetRiderPos;
-                characterRenderer->setInstancePosition(characterInstanceId, targetRiderPos);
-            } else {
-                mountSeatSmoothingInit_ = false;
-                glm::vec3 playerPos = characterPosition + glm::vec3(0.0f, 0.0f, mountHeightOffset_ + 0.10f);
-                characterRenderer->setInstancePosition(characterInstanceId, playerPos);
-            }
-
-            float riderPitch = mountPitch_ * 0.35f;
-            float riderRoll = mountRoll_ * 0.35f;
-            characterRenderer->setInstanceRotation(characterInstanceId, glm::vec3(riderPitch, riderRoll, mountYawRad));
-            return;
-        }
-
-        // Ground mounts: try a seat attachment first.
-        glm::mat4 mountSeatTransform;
-        bool haveSeat = false;
-        if (mountSeatAttachmentId_ >= 0) {
-            haveSeat = characterRenderer->getAttachmentTransform(
-                mountInstanceId_, static_cast<uint32_t>(mountSeatAttachmentId_), mountSeatTransform);
-        } else if (mountSeatAttachmentId_ == -1) {
-            // Probe common rider seat attachment IDs once per mount.
-            static constexpr uint32_t kSeatAttachments[] = {0, 5, 6, 7, 8};
-            for (uint32_t attId : kSeatAttachments) {
-                if (characterRenderer->getAttachmentTransform(mountInstanceId_, attId, mountSeatTransform)) {
-                    mountSeatAttachmentId_ = static_cast<int>(attId);
-                    haveSeat = true;
-                    break;
-                }
-            }
-            if (!haveSeat) {
-                mountSeatAttachmentId_ = -2;
-            }
-        }
-
-        if (haveSeat) {
-            // Extract position from mount seat transform (attachment point already includes proper seat height)
-            glm::vec3 mountSeatPos = glm::vec3(mountSeatTransform[3]);
-
-            // Keep seat offset minimal; large offsets amplify visible bobble.
-            glm::vec3 seatOffset = glm::vec3(0.0f, 0.0f, taxiFlight_ ? 0.04f : 0.08f);
-            glm::vec3 targetRiderPos = mountSeatPos + seatOffset;
-            // When moving, smoothing the seat position produces visible lag that looks like
-            // the rider sliding toward the rump. Anchor rigidly while moving.
-            if (moving) {
-                mountSeatSmoothingInit_ = false;
-                smoothedMountSeatPos_ = targetRiderPos;
-            } else if (!mountSeatSmoothingInit_) {
-                smoothedMountSeatPos_ = targetRiderPos;
-                mountSeatSmoothingInit_ = true;
-            } else {
-                float smoothHz = taxiFlight_ ? 10.0f : 14.0f;
-                float alpha = 1.0f - std::exp(-smoothHz * std::max(lastDeltaTime_, 0.001f));
-                smoothedMountSeatPos_ = glm::mix(smoothedMountSeatPos_, targetRiderPos, alpha);
-            }
-
-            // Position rider at mount seat
-            characterRenderer->setInstancePosition(characterInstanceId, smoothedMountSeatPos_);
-
-            // Rider uses character facing yaw, not mount bone rotation
-            // (rider faces character direction, seat bone only provides position)
-            float yawRad = glm::radians(characterYaw);
-            float riderPitch = mountPitch_ * 0.35f;
-            float riderRoll = mountRoll_ * 0.35f;
-            characterRenderer->setInstanceRotation(characterInstanceId, glm::vec3(riderPitch, riderRoll, yawRad));
-        } else {
-            // Fallback to old manual positioning if attachment not found
-            mountSeatSmoothingInit_ = false;
-            float yawRad = glm::radians(characterYaw);
-            glm::mat4 mountRotation = glm::mat4(1.0f);
-            mountRotation = glm::rotate(mountRotation, yawRad, glm::vec3(0.0f, 0.0f, 1.0f));
-            mountRotation = glm::rotate(mountRotation, mountRoll_, glm::vec3(1.0f, 0.0f, 0.0f));
-            mountRotation = glm::rotate(mountRotation, mountPitch_, glm::vec3(0.0f, 1.0f, 0.0f));
-            glm::vec3 localOffset(0.0f, 0.0f, mountHeightOffset_ + mountBob);
-            glm::vec3 worldOffset = glm::vec3(mountRotation * glm::vec4(localOffset, 0.0f));
-            glm::vec3 playerPos = characterPosition + worldOffset;
-            characterRenderer->setInstancePosition(characterInstanceId, playerPos);
-            characterRenderer->setInstanceRotation(characterInstanceId, glm::vec3(mountPitch_, mountRoll_, yawRad));
-        }
-        return;
-    }
-
-    if (!forceMelee) switch (charAnimState) {
-        case CharAnimState::IDLE:
-            if (swim) {
-                newState = moving ? CharAnimState::SWIM : CharAnimState::SWIM_IDLE;
-            } else if (sitting && grounded) {
-                newState = CharAnimState::SIT_DOWN;
-            } else if (!grounded && jumping) {
-                newState = CharAnimState::JUMP_START;
-            } else if (!grounded) {
-                newState = CharAnimState::JUMP_MID;
-            } else if (moving && sprinting) {
-                newState = CharAnimState::RUN;
-            } else if (moving) {
-                newState = CharAnimState::WALK;
-            } else if (inCombat_ && grounded) {
-                newState = CharAnimState::COMBAT_IDLE;
-            }
-            break;
-
-        case CharAnimState::WALK:
-            if (swim) {
-                newState = moving ? CharAnimState::SWIM : CharAnimState::SWIM_IDLE;
-            } else if (!grounded && jumping) {
-                newState = CharAnimState::JUMP_START;
-            } else if (!grounded) {
-                newState = CharAnimState::JUMP_MID;
-            } else if (!moving) {
-                newState = CharAnimState::IDLE;
-            } else if (sprinting) {
-                newState = CharAnimState::RUN;
-            }
-            break;
-
-        case CharAnimState::RUN:
-            if (swim) {
-                newState = moving ? CharAnimState::SWIM : CharAnimState::SWIM_IDLE;
-            } else if (!grounded && jumping) {
-                newState = CharAnimState::JUMP_START;
-            } else if (!grounded) {
-                newState = CharAnimState::JUMP_MID;
-            } else if (!moving) {
-                newState = CharAnimState::IDLE;
-            } else if (!sprinting) {
-                newState = CharAnimState::WALK;
-            }
-            break;
-
-        case CharAnimState::JUMP_START:
-            if (swim) {
-                newState = CharAnimState::SWIM_IDLE;
-            } else if (grounded) {
-                newState = CharAnimState::JUMP_END;
-            } else {
-                newState = CharAnimState::JUMP_MID;
-            }
-            break;
-
-        case CharAnimState::JUMP_MID:
-            if (swim) {
-                newState = CharAnimState::SWIM_IDLE;
-            } else if (grounded) {
-                newState = CharAnimState::JUMP_END;
-            }
-            break;
-
-        case CharAnimState::JUMP_END:
-            if (swim) {
-                newState = moving ? CharAnimState::SWIM : CharAnimState::SWIM_IDLE;
-            } else if (moving && sprinting) {
-                newState = CharAnimState::RUN;
-            } else if (moving) {
-                newState = CharAnimState::WALK;
-            } else {
-                newState = CharAnimState::IDLE;
-            }
-            break;
-
-        case CharAnimState::SIT_DOWN:
-            if (swim) {
-                newState = CharAnimState::SWIM_IDLE;
-            } else if (!sitting) {
-                newState = CharAnimState::IDLE;
-            }
-            break;
-
-        case CharAnimState::SITTING:
-            if (swim) {
-                newState = CharAnimState::SWIM_IDLE;
-            } else if (!sitting) {
-                newState = CharAnimState::IDLE;
-            }
-            break;
-
-        case CharAnimState::EMOTE:
-            if (swim) {
-                cancelEmote();
-                newState = CharAnimState::SWIM_IDLE;
-            } else if (jumping || !grounded) {
-                cancelEmote();
-                newState = CharAnimState::JUMP_START;
-            } else if (moving) {
-                cancelEmote();
-                newState = sprinting ? CharAnimState::RUN : CharAnimState::WALK;
-            } else if (sitting) {
-                cancelEmote();
-                newState = CharAnimState::SIT_DOWN;
-            } else if (!emoteLoop && characterRenderer && characterInstanceId > 0) {
-                // Auto-cancel non-looping emotes once animation completes
-                uint32_t curId = 0; float curT = 0.0f, curDur = 0.0f;
-                if (characterRenderer->getAnimationState(characterInstanceId, curId, curT, curDur)
-                        && curDur > 0.1f && curT >= curDur - 0.05f) {
-                    cancelEmote();
-                    newState = CharAnimState::IDLE;
-                }
-            }
-            break;
-
-        case CharAnimState::SWIM_IDLE:
-            if (!swim) {
-                newState = moving ? CharAnimState::WALK : CharAnimState::IDLE;
-            } else if (moving) {
-                newState = CharAnimState::SWIM;
-            }
-            break;
-
-        case CharAnimState::SWIM:
-            if (!swim) {
-                newState = moving ? CharAnimState::WALK : CharAnimState::IDLE;
-            } else if (!moving) {
-                newState = CharAnimState::SWIM_IDLE;
-            }
-            break;
-
-        case CharAnimState::MELEE_SWING:
-            if (swim) {
-                newState = CharAnimState::SWIM_IDLE;
-            } else if (!grounded && jumping) {
-                newState = CharAnimState::JUMP_START;
-            } else if (!grounded) {
-                newState = CharAnimState::JUMP_MID;
-            } else if (moving && sprinting) {
-                newState = CharAnimState::RUN;
-            } else if (moving) {
-                newState = CharAnimState::WALK;
-            } else if (sitting) {
-                newState = CharAnimState::SIT_DOWN;
-            } else if (inCombat_) {
-                newState = CharAnimState::COMBAT_IDLE;
-            } else {
-                newState = CharAnimState::IDLE;
-            }
-            break;
-
-        case CharAnimState::MOUNT:
-            // If we got here, the mount state was cleared externally but the
-            // animation state hasn't been reset yet. Fall back to normal logic.
-            if (swim) {
-                newState = moving ? CharAnimState::SWIM : CharAnimState::SWIM_IDLE;
-            } else if (sitting && grounded) {
-                newState = CharAnimState::SIT_DOWN;
-            } else if (!grounded && jumping) {
-                newState = CharAnimState::JUMP_START;
-            } else if (!grounded) {
-                newState = CharAnimState::JUMP_MID;
-            } else if (moving && sprinting) {
-                newState = CharAnimState::RUN;
-            } else if (moving) {
-                newState = CharAnimState::WALK;
-            } else {
-                newState = CharAnimState::IDLE;
-            }
-            break;
-
-        case CharAnimState::COMBAT_IDLE:
-            if (swim) {
-                newState = moving ? CharAnimState::SWIM : CharAnimState::SWIM_IDLE;
-            } else if (!grounded && jumping) {
-                newState = CharAnimState::JUMP_START;
-            } else if (!grounded) {
-                newState = CharAnimState::JUMP_MID;
-            } else if (moving && sprinting) {
-                newState = CharAnimState::RUN;
-            } else if (moving) {
-                newState = CharAnimState::WALK;
-            } else if (!inCombat_) {
-                newState = CharAnimState::IDLE;
-            }
-            break;
-
-        case CharAnimState::CHARGE:
-            // Stay in CHARGE until charging_ is cleared
-            break;
-    }
-
-    if (forceMelee) {
-        newState = CharAnimState::MELEE_SWING;
-    }
-
-    if (charging_) {
-        newState = CharAnimState::CHARGE;
-    }
-
-    if (newState != charAnimState) {
-        charAnimState = newState;
-    }
-
-    auto pickFirstAvailable = [&](std::initializer_list<uint32_t> candidates, uint32_t fallback) -> uint32_t {
-        for (uint32_t id : candidates) {
-            if (characterRenderer->hasAnimation(characterInstanceId, id)) {
-                return id;
-            }
-        }
-        return fallback;
-    };
-
-    uint32_t animId = ANIM_STAND;
-    bool loop = true;
-
-    switch (charAnimState) {
-        case CharAnimState::IDLE:       animId = ANIM_STAND;      loop = true;  break;
-        case CharAnimState::WALK:
-            if (movingBackward) {
-                animId = pickFirstAvailable({ANIM_BACKPEDAL}, ANIM_WALK);
-            } else if (anyStrafeLeft) {
-                animId = pickFirstAvailable({ANIM_STRAFE_WALK_LEFT, ANIM_STRAFE_RUN_LEFT}, ANIM_WALK);
-            } else if (anyStrafeRight) {
-                animId = pickFirstAvailable({ANIM_STRAFE_WALK_RIGHT, ANIM_STRAFE_RUN_RIGHT}, ANIM_WALK);
-            } else {
-                animId = pickFirstAvailable({ANIM_WALK, ANIM_RUN}, ANIM_STAND);
-            }
-            loop = true;
-            break;
-        case CharAnimState::RUN:
-            if (movingBackward) {
-                animId = pickFirstAvailable({ANIM_BACKPEDAL}, ANIM_WALK);
-            } else if (anyStrafeLeft) {
-                animId = pickFirstAvailable({ANIM_STRAFE_RUN_LEFT}, ANIM_RUN);
-            } else if (anyStrafeRight) {
-                animId = pickFirstAvailable({ANIM_STRAFE_RUN_RIGHT}, ANIM_RUN);
-            } else {
-                animId = pickFirstAvailable({ANIM_RUN, ANIM_WALK}, ANIM_STAND);
-            }
-            loop = true;
-            break;
-        case CharAnimState::JUMP_START: animId = ANIM_JUMP_START; loop = false; break;
-        case CharAnimState::JUMP_MID:   animId = ANIM_JUMP_MID;   loop = false; break;
-        case CharAnimState::JUMP_END:   animId = ANIM_JUMP_END;   loop = false; break;
-        case CharAnimState::SIT_DOWN:   animId = ANIM_SIT_DOWN;   loop = false; break;
-        case CharAnimState::SITTING:    animId = ANIM_SITTING;    loop = true;  break;
-        case CharAnimState::EMOTE:      animId = emoteAnimId;     loop = emoteLoop; break;
-        case CharAnimState::SWIM_IDLE:  animId = ANIM_SWIM_IDLE;  loop = true;  break;
-        case CharAnimState::SWIM:       animId = ANIM_SWIM;       loop = true;  break;
-        case CharAnimState::MELEE_SWING:
-            animId = resolveMeleeAnimId();
-            if (animId == 0) {
-                animId = ANIM_STAND;
-            }
-            loop = false;
-            break;
-        case CharAnimState::MOUNT:      animId = ANIM_MOUNT;      loop = true;  break;
-        case CharAnimState::COMBAT_IDLE:
-            animId = pickFirstAvailable(
-                {ANIM_READY_1H, ANIM_READY_2H, ANIM_READY_2H_L, ANIM_READY_UNARMED},
-                ANIM_STAND);
-            loop = true;
-            break;
-        case CharAnimState::CHARGE:
-            animId = ANIM_RUN;
-            loop = true;
-            break;
-    }
-
-    uint32_t currentAnimId = 0;
-    float currentAnimTimeMs = 0.0f;
-    float currentAnimDurationMs = 0.0f;
-    bool haveState = characterRenderer->getAnimationState(characterInstanceId, currentAnimId, currentAnimTimeMs, currentAnimDurationMs);
-    // Some frames may transiently fail getAnimationState() while resources/instance state churn.
-    // Avoid reissuing the same clip on those frames, which restarts locomotion and causes hitches.
-    const bool requestChanged = (lastPlayerAnimRequest_ != animId) || (lastPlayerAnimLoopRequest_ != loop);
-    const bool shouldPlay = (haveState && currentAnimId != animId) || (!haveState && requestChanged);
-    if (shouldPlay) {
-        characterRenderer->playAnimation(characterInstanceId, animId, loop);
-        lastPlayerAnimRequest_ = animId;
-        lastPlayerAnimLoopRequest_ = loop;
-    }
-}
 
 void Renderer::playEmote(const std::string& emoteName) {
-    loadEmotesFromDbc();
-    auto it = EMOTE_TABLE.find(emoteName);
-    if (it == EMOTE_TABLE.end()) return;
-
-    const auto& info = it->second;
-    if (info.animId == 0) return;
-    emoteActive = true;
-    emoteAnimId = info.animId;
-    emoteLoop = info.loop;
-    charAnimState = CharAnimState::EMOTE;
-
-    if (characterRenderer && characterInstanceId > 0) {
-        characterRenderer->playAnimation(characterInstanceId, emoteAnimId, emoteLoop);
-    }
+    if (animationController_) animationController_->playEmote(emoteName);
 }
 
 void Renderer::cancelEmote() {
-    emoteActive = false;
-    emoteAnimId = 0;
-    emoteLoop = false;
+    if (animationController_) animationController_->cancelEmote();
+}
+
+bool Renderer::isEmoteActive() const {
+    return animationController_ && animationController_->isEmoteActive();
+}
+
+void Renderer::setInCombat(bool combat) {
+    if (animationController_) animationController_->setInCombat(combat);
+}
+
+void Renderer::setEquippedWeaponType(uint32_t inventoryType) {
+    if (animationController_) animationController_->setEquippedWeaponType(inventoryType);
+}
+
+void Renderer::setCharging(bool c) {
+    if (animationController_) animationController_->setCharging(c);
+}
+
+bool Renderer::isCharging() const {
+    return animationController_ && animationController_->isCharging();
+}
+
+void Renderer::setTaxiFlight(bool taxi) {
+    if (animationController_) animationController_->setTaxiFlight(taxi);
+}
+
+void Renderer::setMountPitchRoll(float pitch, float roll) {
+    if (animationController_) animationController_->setMountPitchRoll(pitch, roll);
+}
+
+bool Renderer::isMounted() const {
+    return animationController_ && animationController_->isMounted();
 }
 
 bool Renderer::captureScreenshot(const std::string& outputPath) {
@@ -2374,56 +1133,19 @@ bool Renderer::captureScreenshot(const std::string& outputPath) {
 }
 
 void Renderer::triggerLevelUpEffect(const glm::vec3& position) {
-    if (!levelUpEffect) return;
-
-    // Lazy-load the M2 model on first trigger
-    if (!levelUpEffect->isModelLoaded() && m2Renderer) {
-        if (!cachedAssetManager) {
-            cachedAssetManager = core::Application::getInstance().getAssetManager();
-        }
-        if (!cachedAssetManager) {
-            LOG_WARNING("LevelUpEffect: no asset manager available");
-        } else {
-            auto m2Data = cachedAssetManager->readFile("Spells\\LevelUp\\LevelUp.m2");
-            auto skinData = cachedAssetManager->readFile("Spells\\LevelUp\\LevelUp00.skin");
-            LOG_INFO("LevelUpEffect: m2Data=", m2Data.size(), " skinData=", skinData.size());
-            if (!m2Data.empty()) {
-                levelUpEffect->loadModel(m2Renderer.get(), m2Data, skinData);
-            } else {
-                LOG_WARNING("LevelUpEffect: failed to read Spell\\LevelUp\\LevelUp.m2");
-            }
-        }
-    }
-
-    levelUpEffect->trigger(position);
+    if (animationController_) animationController_->triggerLevelUpEffect(position);
 }
 
 void Renderer::startChargeEffect(const glm::vec3& position, const glm::vec3& direction) {
-    if (!chargeEffect) return;
-
-    // Lazy-load M2 models on first use
-    if (!chargeEffect->isActive() && m2Renderer) {
-        if (!cachedAssetManager) {
-            cachedAssetManager = core::Application::getInstance().getAssetManager();
-        }
-        if (cachedAssetManager) {
-            chargeEffect->tryLoadM2Models(m2Renderer.get(), cachedAssetManager);
-        }
-    }
-
-    chargeEffect->start(position, direction);
+    if (animationController_) animationController_->startChargeEffect(position, direction);
 }
 
 void Renderer::emitChargeEffect(const glm::vec3& position, const glm::vec3& direction) {
-    if (chargeEffect) {
-        chargeEffect->emit(position, direction);
-    }
+    if (animationController_) animationController_->emitChargeEffect(position, direction);
 }
 
 void Renderer::stopChargeEffect() {
-    if (chargeEffect) {
-        chargeEffect->stop();
-    }
+    if (animationController_) animationController_->stopChargeEffect();
 }
 
 // ─── Spell Visual Effects — delegated to SpellVisualSystem (§4.4) ────────────
@@ -2434,211 +1156,37 @@ void Renderer::playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition
 }
 
 void Renderer::triggerMeleeSwing() {
-    if (!characterRenderer || characterInstanceId == 0) return;
-    if (meleeSwingCooldown > 0.0f) return;
-    if (emoteActive) {
-        cancelEmote();
-    }
-    resolveMeleeAnimId();
-    meleeSwingCooldown = 0.1f;
-    float durationSec = meleeAnimDurationMs > 0.0f ? meleeAnimDurationMs / 1000.0f : 0.6f;
-    if (durationSec < 0.25f) durationSec = 0.25f;
-    if (durationSec > 1.0f) durationSec = 1.0f;
-    meleeSwingTimer = durationSec;
-    if (getActivitySoundManager()) {
-        getActivitySoundManager()->playMeleeSwing();
-    }
+    if (animationController_) animationController_->triggerMeleeSwing();
 }
 
 std::string Renderer::getEmoteText(const std::string& emoteName, const std::string* targetName) {
-    loadEmotesFromDbc();
-    auto it = EMOTE_TABLE.find(emoteName);
-    if (it != EMOTE_TABLE.end()) {
-        const auto& info = it->second;
-        const std::string& base = (targetName ? info.textTarget : info.textNoTarget);
-        if (!base.empty()) {
-            return replacePlaceholders(base, targetName);
-        }
-        if (targetName && !targetName->empty()) {
-            return "You " + info.command + " at " + *targetName + ".";
-        }
-        return "You " + info.command + ".";
-    }
-    return "";
+    return AnimationController::getEmoteText(emoteName, targetName);
 }
 
 uint32_t Renderer::getEmoteDbcId(const std::string& emoteName) {
-    loadEmotesFromDbc();
-    auto it = EMOTE_TABLE.find(emoteName);
-    if (it != EMOTE_TABLE.end()) {
-        return it->second.dbcId;
-    }
-    return 0;
+    return AnimationController::getEmoteDbcId(emoteName);
 }
 
 std::string Renderer::getEmoteTextByDbcId(uint32_t dbcId, const std::string& senderName,
                                            const std::string* targetName) {
-    loadEmotesFromDbc();
-    auto it = EMOTE_BY_DBCID.find(dbcId);
-    if (it == EMOTE_BY_DBCID.end()) return "";
-
-    const EmoteInfo& info = *it->second;
-
-    // Use "others see" text templates: "%s dances." / "%s dances with %s."
-    if (targetName && !targetName->empty()) {
-        if (!info.othersTarget.empty()) {
-            // Replace first %s with sender, second %s with target
-            std::string out;
-            out.reserve(info.othersTarget.size() + senderName.size() + targetName->size());
-            bool firstReplaced = false;
-            for (size_t i = 0; i < info.othersTarget.size(); ++i) {
-                if (info.othersTarget[i] == '%' && i + 1 < info.othersTarget.size() && info.othersTarget[i + 1] == 's') {
-                    out += firstReplaced ? *targetName : senderName;
-                    firstReplaced = true;
-                    ++i;
-                } else {
-                    out.push_back(info.othersTarget[i]);
-                }
-            }
-            return out;
-        }
-        return senderName + " " + info.command + "s at " + *targetName + ".";
-    } else {
-        if (!info.othersNoTarget.empty()) {
-            return replacePlaceholders(info.othersNoTarget, &senderName);
-        }
-        return senderName + " " + info.command + "s.";
-    }
+    return AnimationController::getEmoteTextByDbcId(dbcId, senderName, targetName);
 }
 
 uint32_t Renderer::getEmoteAnimByDbcId(uint32_t dbcId) {
-    loadEmotesFromDbc();
-    auto it = EMOTE_BY_DBCID.find(dbcId);
-    if (it != EMOTE_BY_DBCID.end()) {
-        return it->second->animId;
-    }
-    return 0;
+    return AnimationController::getEmoteAnimByDbcId(dbcId);
 }
 
 void Renderer::setTargetPosition(const glm::vec3* pos) {
-    targetPosition = pos;
+    if (animationController_) animationController_->setTargetPosition(pos);
 }
 
 void Renderer::resetCombatVisualState() {
-    inCombat_ = false;
-    targetPosition = nullptr;
-    meleeSwingTimer = 0.0f;
-    meleeSwingCooldown = 0.0f;
-    // Clear lingering spell visual instances from the previous map/combat session.
+    if (animationController_) animationController_->resetCombatVisualState();
     if (spellVisualSystem_) spellVisualSystem_->reset();
 }
 
 bool Renderer::isMoving() const {
     return cameraController && cameraController->isMoving();
-}
-
-bool Renderer::isFootstepAnimationState() const {
-    return charAnimState == CharAnimState::WALK || charAnimState == CharAnimState::RUN;
-}
-
-bool Renderer::shouldTriggerFootstepEvent(uint32_t animationId, float animationTimeMs, float animationDurationMs) {
-    if (animationDurationMs <= 1.0f) {
-        footstepNormInitialized = false;
-        return false;
-    }
-
-    // Wrap animation time preserving precision via subtraction instead of fmod
-    float wrappedTime = animationTimeMs;
-    while (wrappedTime >= animationDurationMs) {
-        wrappedTime -= animationDurationMs;
-    }
-    if (wrappedTime < 0.0f) wrappedTime += animationDurationMs;
-    float norm = wrappedTime / animationDurationMs;
-
-    if (animationId != footstepLastAnimationId) {
-        footstepLastAnimationId = animationId;
-        footstepLastNormTime = norm;
-        footstepNormInitialized = true;
-        return false;
-    }
-
-    if (!footstepNormInitialized) {
-        footstepNormInitialized = true;
-        footstepLastNormTime = norm;
-        return false;
-    }
-
-    auto crossed = [&](float eventNorm) {
-        if (footstepLastNormTime <= norm) {
-            return footstepLastNormTime < eventNorm && eventNorm <= norm;
-        }
-        return footstepLastNormTime < eventNorm || eventNorm <= norm;
-    };
-
-    bool trigger = crossed(0.22f) || crossed(0.72f);
-    footstepLastNormTime = norm;
-    return trigger;
-}
-
-audio::FootstepSurface Renderer::resolveFootstepSurface() const {
-    if (!cameraController || !cameraController->isThirdPerson()) {
-        return audio::FootstepSurface::STONE;
-    }
-
-    const glm::vec3& p = characterPosition;
-
-    // Cache footstep surface to avoid expensive queries every step
-    // Only update if moved >1.5 units or timer expired (0.5s)
-    float distSq = glm::dot(p - cachedFootstepPosition, p - cachedFootstepPosition);
-    if (distSq < 2.25f && cachedFootstepUpdateTimer < 0.5f) {
-        return cachedFootstepSurface;
-    }
-
-    // Update cache
-    cachedFootstepPosition = p;
-    cachedFootstepUpdateTimer = 0.0f;
-
-    if (cameraController->isSwimming()) {
-        cachedFootstepSurface = audio::FootstepSurface::WATER;
-        return audio::FootstepSurface::WATER;
-    }
-
-    if (waterRenderer) {
-        auto waterH = waterRenderer->getWaterHeightAt(p.x, p.y);
-        if (waterH && p.z < (*waterH + 0.25f)) {
-            cachedFootstepSurface = audio::FootstepSurface::WATER;
-            return audio::FootstepSurface::WATER;
-        }
-    }
-
-    if (wmoRenderer) {
-        auto wmoFloor = wmoRenderer->getFloorHeight(p.x, p.y, p.z + 1.5f);
-        auto terrainFloor = terrainManager ? terrainManager->getHeightAt(p.x, p.y) : std::nullopt;
-        if (wmoFloor && (!terrainFloor || *wmoFloor >= *terrainFloor - 0.1f)) {
-            cachedFootstepSurface = audio::FootstepSurface::STONE;
-            return audio::FootstepSurface::STONE;
-        }
-    }
-
-    // Determine surface type (expensive - only done when cache needs update)
-    audio::FootstepSurface surface = audio::FootstepSurface::STONE;
-
-    if (terrainManager) {
-        auto texture = terrainManager->getDominantTextureAt(p.x, p.y);
-        if (texture) {
-            std::string t = *texture;
-            for (char& c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            if (t.find("snow") != std::string::npos || t.find("ice") != std::string::npos) surface = audio::FootstepSurface::SNOW;
-            else if (t.find("grass") != std::string::npos || t.find("moss") != std::string::npos || t.find("leaf") != std::string::npos) surface = audio::FootstepSurface::GRASS;
-            else if (t.find("sand") != std::string::npos || t.find("dirt") != std::string::npos || t.find("mud") != std::string::npos) surface = audio::FootstepSurface::DIRT;
-            else if (t.find("wood") != std::string::npos || t.find("timber") != std::string::npos) surface = audio::FootstepSurface::WOOD;
-            else if (t.find("metal") != std::string::npos || t.find("iron") != std::string::npos) surface = audio::FootstepSurface::METAL;
-            else if (t.find("stone") != std::string::npos || t.find("rock") != std::string::npos || t.find("cobble") != std::string::npos || t.find("brick") != std::string::npos) surface = audio::FootstepSurface::STONE;
-        }
-    }
-
-    cachedFootstepSurface = surface;
-    return surface;
 }
 
 void Renderer::update(float deltaTime) {
@@ -2649,7 +1197,7 @@ void Renderer::update(float deltaTime) {
     runDeferredWorldInitStep(deltaTime);
 
     auto updateStart = std::chrono::steady_clock::now();
-    lastDeltaTime_ = deltaTime;  // Cache for use in updateCharacterAnimation()
+    lastDeltaTime_ = deltaTime;
 
     if (wmoRenderer) wmoRenderer->resetQueryStats();
     if (m2Renderer) m2Renderer->resetQueryStats();
@@ -2675,7 +1223,7 @@ void Renderer::update(float deltaTime) {
     // Visibility hardening: ensure player instance cannot stay hidden after
     // taxi/camera transitions, but preserve first-person self-hide.
     if (characterRenderer && characterInstanceId > 0 && cameraController) {
-        if ((cameraController->isThirdPerson() && !cameraController->isFirstPersonView()) || taxiFlight_) {
+        if ((cameraController->isThirdPerson() && !cameraController->isFirstPersonView()) || (animationController_ && animationController_->isTaxiFlight())) {
             characterRenderer->setInstanceVisible(characterInstanceId, true);
         }
     }
@@ -2720,25 +1268,17 @@ void Renderer::update(float deltaTime) {
 
     // Sync character model position/rotation and animation with follow target
     if (characterInstanceId > 0 && characterRenderer && cameraController) {
-        if (meleeSwingCooldown > 0.0f) {
-            meleeSwingCooldown = std::max(0.0f, meleeSwingCooldown - deltaTime);
-        }
-        if (meleeSwingTimer > 0.0f) {
-            meleeSwingTimer = std::max(0.0f, meleeSwingTimer - deltaTime);
-        }
-
         characterRenderer->setInstancePosition(characterInstanceId, characterPosition);
 
         // Movement-facing comes from camera controller and is decoupled from LMB orbit.
-        // During taxi flights, orientation is controlled by the flight path (not player input)
-        if (taxiFlight_) {
-            // Taxi flight: use orientation from flight path
+        bool taxiFlight = animationController_ && animationController_->isTaxiFlight();
+        if (taxiFlight) {
             characterYaw = cameraController->getFacingYaw();
         } else if (cameraController->isMoving() || cameraController->isRightMouseHeld()) {
             characterYaw = cameraController->getFacingYaw();
-        } else if (inCombat_ && targetPosition && !emoteActive && !isMounted()) {
-            // Face target when in combat and idle
-            glm::vec3 toTarget = *targetPosition - characterPosition;
+        } else if (animationController_ && animationController_->isInCombat() &&
+                   animationController_->getTargetPosition() && !animationController_->isEmoteActive() && !isMounted()) {
+            glm::vec3 toTarget = *animationController_->getTargetPosition() - characterPosition;
             if (toTarget.x * toTarget.x + toTarget.y * toTarget.y > 0.01f) {
                 float targetYaw = glm::degrees(std::atan2(toTarget.y, toTarget.x));
                 float diff = targetYaw - characterYaw;
@@ -2755,8 +1295,12 @@ void Renderer::update(float deltaTime) {
         float yawRad = glm::radians(characterYaw);
         characterRenderer->setInstanceRotation(characterInstanceId, glm::vec3(0.0f, 0.0f, yawRad));
 
-        // Update animation based on movement state
-        updateCharacterAnimation();
+        // Update animation based on movement state (delegated to AnimationController §4.2)
+        if (animationController_) {
+            animationController_->updateMeleeTimers(deltaTime);
+            animationController_->setDeltaTime(deltaTime);
+            animationController_->updateCharacterAnimation();
+        }
     }
 
     // Update terrain streaming
@@ -2795,7 +1339,7 @@ void Renderer::update(float deltaTime) {
         mountDust->update(deltaTime);
 
         // Spawn dust when mounted and moving on ground
-        if (isMounted() && camera && cameraController && !taxiFlight_) {
+        if (isMounted() && camera && cameraController && !(animationController_ && animationController_->isTaxiFlight())) {
             bool isMoving = cameraController->isMoving();
             bool onGround = cameraController->isGrounded();
 
@@ -2807,7 +1351,8 @@ void Renderer::update(float deltaTime) {
                 velocity.z = 0.0f;  // Ignore vertical component
 
                 // Spawn dust at mount's feet (slightly below character position)
-                glm::vec3 dustPos = characterPosition - glm::vec3(0.0f, 0.0f, mountHeightOffset_ * 0.8f);
+                float mho = animationController_ ? animationController_->getMountHeightOffset() : 0.0f;
+                glm::vec3 dustPos = characterPosition - glm::vec3(0.0f, 0.0f, mho * 0.8f);
                 mountDust->spawnDust(dustPos, velocity, isMoving);
             }
         }
@@ -2846,144 +1391,11 @@ void Renderer::update(float deltaTime) {
     // Update AudioEngine (cleanup finished sounds, etc.)
     audio::AudioEngine::instance().update(deltaTime);
 
-    // Footsteps: animation-event driven + surface query at event time.
-    if (getFootstepManager()) {
-        getFootstepManager()->update(deltaTime);
-        cachedFootstepUpdateTimer += deltaTime;  // Update surface cache timer
-        bool canPlayFootsteps = characterRenderer && characterInstanceId > 0 &&
-            cameraController && cameraController->isThirdPerson() &&
-            cameraController->isGrounded() && !cameraController->isSwimming();
+    // Footsteps: delegated to AnimationController (§4.2)
+    if (animationController_) animationController_->updateFootsteps(deltaTime);
 
-        if (canPlayFootsteps && isMounted() && mountInstanceId_ > 0 && !taxiFlight_) {
-            // Mount footsteps: use mount's animation for timing
-            uint32_t animId = 0;
-            float animTimeMs = 0.0f, animDurationMs = 0.0f;
-            if (characterRenderer->getAnimationState(mountInstanceId_, animId, animTimeMs, animDurationMs) &&
-                animDurationMs > 1.0f && cameraController->isMoving()) {
-                // Wrap animation time preserving precision via subtraction instead of fmod
-                float wrappedTime = animTimeMs;
-                while (wrappedTime >= animDurationMs) {
-                    wrappedTime -= animDurationMs;
-                }
-                if (wrappedTime < 0.0f) wrappedTime += animDurationMs;
-                float norm = wrappedTime / animDurationMs;
-
-                if (animId != mountFootstepLastAnimId) {
-                    mountFootstepLastAnimId = animId;
-                    mountFootstepLastNormTime = norm;
-                    mountFootstepNormInitialized = true;
-                } else if (!mountFootstepNormInitialized) {
-                    mountFootstepNormInitialized = true;
-                    mountFootstepLastNormTime = norm;
-                } else {
-                    // Mount gait: 2 hoofbeats per cycle (synced with animation)
-                    auto crossed = [&](float eventNorm) {
-                        if (mountFootstepLastNormTime <= norm) {
-                            return mountFootstepLastNormTime < eventNorm && eventNorm <= norm;
-                        }
-                        return mountFootstepLastNormTime < eventNorm || eventNorm <= norm;
-                    };
-                    if (crossed(0.25f) || crossed(0.75f)) {
-                        getFootstepManager()->playFootstep(resolveFootstepSurface(), true);
-                    }
-                    mountFootstepLastNormTime = norm;
-                }
-            } else {
-                mountFootstepNormInitialized = false;
-            }
-            footstepNormInitialized = false;  // Reset player footstep tracking
-        } else if (canPlayFootsteps && isFootstepAnimationState()) {
-            uint32_t animId = 0;
-            float animTimeMs = 0.0f;
-            float animDurationMs = 0.0f;
-            if (characterRenderer->getAnimationState(characterInstanceId, animId, animTimeMs, animDurationMs) &&
-                shouldTriggerFootstepEvent(animId, animTimeMs, animDurationMs)) {
-                auto surface = resolveFootstepSurface();
-                getFootstepManager()->playFootstep(surface, cameraController->isSprinting());
-                // Play additional splash sound and spawn foot splash particles when wading
-                if (surface == audio::FootstepSurface::WATER) {
-                    if (getMovementSoundManager()) {
-                        getMovementSoundManager()->playWaterFootstep(audio::MovementSoundManager::CharacterSize::MEDIUM);
-                    }
-                    if (swimEffects && waterRenderer) {
-                        auto wh = waterRenderer->getWaterHeightAt(characterPosition.x, characterPosition.y);
-                        if (wh) {
-                            swimEffects->spawnFootSplash(characterPosition, *wh);
-                        }
-                    }
-                }
-            }
-            mountFootstepNormInitialized = false;
-        } else {
-            footstepNormInitialized = false;
-            mountFootstepNormInitialized = false;
-        }
-    }
-
-    // Activity SFX: animation/state-driven jump, landing, and swim loops/splashes.
-    if (getActivitySoundManager()) {
-        getActivitySoundManager()->update(deltaTime);
-        if (cameraController && cameraController->isThirdPerson()) {
-            bool grounded = cameraController->isGrounded();
-            bool jumping = cameraController->isJumping();
-            bool falling = cameraController->isFalling();
-            bool swimming = cameraController->isSwimming();
-            bool moving = cameraController->isMoving();
-
-            if (!sfxStateInitialized) {
-                sfxPrevGrounded = grounded;
-                sfxPrevJumping = jumping;
-                sfxPrevFalling = falling;
-                sfxPrevSwimming = swimming;
-                sfxStateInitialized = true;
-            }
-
-            if (jumping && !sfxPrevJumping && !swimming) {
-                getActivitySoundManager()->playJump();
-            }
-
-            if (grounded && !sfxPrevGrounded) {
-                bool hardLanding = sfxPrevFalling;
-                getActivitySoundManager()->playLanding(resolveFootstepSurface(), hardLanding);
-            }
-
-            if (swimming && !sfxPrevSwimming) {
-                getActivitySoundManager()->playWaterEnter();
-            } else if (!swimming && sfxPrevSwimming) {
-                getActivitySoundManager()->playWaterExit();
-            }
-
-            getActivitySoundManager()->setSwimmingState(swimming, moving);
-
-            // Fade music underwater
-            if (getMusicManager()) {
-                getMusicManager()->setUnderwaterMode(swimming);
-            }
-
-            sfxPrevGrounded = grounded;
-            sfxPrevJumping = jumping;
-            sfxPrevFalling = falling;
-            sfxPrevSwimming = swimming;
-        } else {
-            getActivitySoundManager()->setSwimmingState(false, false);
-            // Restore music volume when activity sounds disabled
-            if (getMusicManager()) {
-                getMusicManager()->setUnderwaterMode(false);
-            }
-            sfxStateInitialized = false;
-        }
-    }
-
-    // Mount ambient sounds: wing flaps, breathing, etc.
-    if (getMountSoundManager()) {
-        getMountSoundManager()->update(deltaTime);
-        if (cameraController && isMounted()) {
-            bool moving = cameraController->isMoving();
-            bool flying = taxiFlight_ || !cameraController->isGrounded();  // Flying if taxi or airborne
-            getMountSoundManager()->setMoving(moving);
-            getMountSoundManager()->setFlying(flying);
-        }
-    }
+    // Activity SFX + mount ambient sounds: delegated to AnimationController (§4.2)
+    if (animationController_) animationController_->updateSfxState(deltaTime);
 
     const bool canQueryWmo = (camera && wmoRenderer);
     const glm::vec3 camPos = camera ? camera->getPosition() : glm::vec3(0.0f);
@@ -2993,7 +1405,7 @@ void Renderer::update(float deltaTime) {
     playerIndoors_ = insideWmo;
 
     // Ambient environmental sounds: fireplaces, water, birds, etc.
-    if (getAmbientSoundManager() && camera && wmoRenderer && cameraController) {
+    if (audioCoordinator_->getAmbientSoundManager() && camera && wmoRenderer && cameraController) {
         bool isIndoor = insideWmo;
         bool isSwimming = cameraController->isSwimming();
 
@@ -3027,10 +1439,10 @@ void Renderer::update(float deltaTime) {
                 }
             }
 
-            getAmbientSoundManager()->setWeather(audioWeatherType);
+            audioCoordinator_->getAmbientSoundManager()->setWeather(audioWeatherType);
         }
 
-        getAmbientSoundManager()->update(deltaTime, camPos, isIndoor, isSwimming, isBlacksmith);
+        audioCoordinator_->getAmbientSoundManager()->update(deltaTime, camPos, isIndoor, isSwimming, isBlacksmith);
     }
 
     // Wait for M2 doodad animation to finish (was launched earlier in parallel with character anim)
@@ -3043,14 +1455,14 @@ void Renderer::update(float deltaTime) {
     auto playZoneMusic = [&](const std::string& music) {
         if (music.empty()) return;
         if (music.rfind("file:", 0) == 0) {
-            getMusicManager()->crossfadeToFile(music.substr(5));
+            audioCoordinator_->getMusicManager()->crossfadeToFile(music.substr(5));
         } else {
-            getMusicManager()->crossfadeTo(music);
+            audioCoordinator_->getMusicManager()->crossfadeTo(music);
         }
     };
 
     // Update zone detection and music
-    if (zoneManager && getMusicManager() && terrainManager && camera) {
+    if (zoneManager && audioCoordinator_->getMusicManager() && terrainManager && camera) {
         // Prefer server-authoritative zone ID (from SMSG_INIT_WORLD_STATES);
         // fall back to tile-based lookup for single-player / offline mode.
         const auto* gh = core::Application::getInstance().getGameHandler();
@@ -3115,7 +1527,7 @@ void Renderer::update(float deltaTime) {
             if (!inTavern_ && !tavernMusic.empty()) {
                 inTavern_ = true;
                 LOG_INFO("Entered tavern");
-                getMusicManager()->playMusic(tavernMusic, true);  // Immediate playback, looping
+                audioCoordinator_->getMusicManager()->playMusic(tavernMusic, true);  // Immediate playback, looping
                 musicSwitchCooldown_ = 6.0f;
             }
         } else if (inTavern_) {
@@ -3137,7 +1549,7 @@ void Renderer::update(float deltaTime) {
             if (!inBlacksmith_) {
                 inBlacksmith_ = true;
                 LOG_INFO("Entered blacksmith - stopping music");
-                getMusicManager()->stopMusic();
+                audioCoordinator_->getMusicManager()->stopMusic();
             }
         } else if (inBlacksmith_) {
             // Exited blacksmith - restore zone music with crossfade
@@ -3169,15 +1581,15 @@ void Renderer::update(float deltaTime) {
                 }
             }
             // Update ambient sound manager zone type
-            if (getAmbientSoundManager()) {
-                getAmbientSoundManager()->setZoneId(zoneId);
+            if (audioCoordinator_->getAmbientSoundManager()) {
+                audioCoordinator_->getAmbientSoundManager()->setZoneId(zoneId);
             }
         }
 
-        getMusicManager()->update(deltaTime);
+        audioCoordinator_->getMusicManager()->update(deltaTime);
 
         // When a track finishes, pick a new random track from the current zone
-        if (!getMusicManager()->isPlaying() && !inTavern_ && !inBlacksmith_ &&
+        if (!audioCoordinator_->getMusicManager()->isPlaying() && !inTavern_ && !inBlacksmith_ &&
             currentZoneId != 0 && musicSwitchCooldown_ <= 0.0f) {
             std::string music = zoneManager->getRandomMusic(currentZoneId);
             if (!music.empty()) {
@@ -3218,24 +1630,24 @@ void Renderer::runDeferredWorldInitStep(float deltaTime) {
 
     switch (deferredWorldInitStage_) {
         case 0:
-            if (getAmbientSoundManager()) {
-                getAmbientSoundManager()->initialize(cachedAssetManager);
+            if (audioCoordinator_->getAmbientSoundManager()) {
+                audioCoordinator_->getAmbientSoundManager()->initialize(cachedAssetManager);
             }
-            if (terrainManager && getAmbientSoundManager()) {
-                terrainManager->setAmbientSoundManager(getAmbientSoundManager());
+            if (terrainManager && audioCoordinator_->getAmbientSoundManager()) {
+                terrainManager->setAmbientSoundManager(audioCoordinator_->getAmbientSoundManager());
             }
             break;
         case 1:
-            if (getUiSoundManager()) getUiSoundManager()->initialize(cachedAssetManager);
+            if (audioCoordinator_->getUiSoundManager()) audioCoordinator_->getUiSoundManager()->initialize(cachedAssetManager);
             break;
         case 2:
-            if (getCombatSoundManager()) getCombatSoundManager()->initialize(cachedAssetManager);
+            if (audioCoordinator_->getCombatSoundManager()) audioCoordinator_->getCombatSoundManager()->initialize(cachedAssetManager);
             break;
         case 3:
-            if (getSpellSoundManager()) getSpellSoundManager()->initialize(cachedAssetManager);
+            if (audioCoordinator_->getSpellSoundManager()) audioCoordinator_->getSpellSoundManager()->initialize(cachedAssetManager);
             break;
         case 4:
-            if (getMovementSoundManager()) getMovementSoundManager()->initialize(cachedAssetManager);
+            if (audioCoordinator_->getMovementSoundManager()) audioCoordinator_->getMovementSoundManager()->initialize(cachedAssetManager);
             break;
         case 5:
             if (questMarkerRenderer) questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, cachedAssetManager);
@@ -4011,6 +2423,12 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
         }
     }
 
+    // Initialize AnimationController (§4.2)
+    if (!animationController_) {
+        animationController_ = std::make_unique<AnimationController>();
+        animationController_->initialize(this);
+    }
+
     // Create and initialize terrain manager
     if (!terrainManager) {
         terrainManager = std::make_unique<TerrainManager>();
@@ -4032,8 +2450,8 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
             terrainManager->setWMORenderer(wmoRenderer.get());
         }
         // Set ambient sound manager for environmental audio emitters
-        if (getAmbientSoundManager()) {
-            terrainManager->setAmbientSoundManager(getAmbientSoundManager());
+        if (audioCoordinator_->getAmbientSoundManager()) {
+            terrainManager->setAmbientSoundManager(audioCoordinator_->getAmbientSoundManager());
         }
         // Pass asset manager to character renderer for texture loading
         if (characterRenderer) {
@@ -4064,36 +2482,36 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
     if (worldMap) worldMap->setMapName(mapName);
 
     // Initialize audio managers
-    if (getMusicManager() && assetManager && !cachedAssetManager) {
+    if (audioCoordinator_->getMusicManager() && assetManager && !cachedAssetManager) {
         audio::AudioEngine::instance().setAssetManager(assetManager);
-        getMusicManager()->initialize(assetManager);
-        if (getFootstepManager()) {
-            getFootstepManager()->initialize(assetManager);
+        audioCoordinator_->getMusicManager()->initialize(assetManager);
+        if (audioCoordinator_->getFootstepManager()) {
+            audioCoordinator_->getFootstepManager()->initialize(assetManager);
         }
-        if (getActivitySoundManager()) {
-            getActivitySoundManager()->initialize(assetManager);
+        if (audioCoordinator_->getActivitySoundManager()) {
+            audioCoordinator_->getActivitySoundManager()->initialize(assetManager);
         }
-        if (getMountSoundManager()) {
-            getMountSoundManager()->initialize(assetManager);
+        if (audioCoordinator_->getMountSoundManager()) {
+            audioCoordinator_->getMountSoundManager()->initialize(assetManager);
         }
-        if (getNpcVoiceManager()) {
-            getNpcVoiceManager()->initialize(assetManager);
+        if (audioCoordinator_->getNpcVoiceManager()) {
+            audioCoordinator_->getNpcVoiceManager()->initialize(assetManager);
         }
         if (!deferredWorldInitEnabled_) {
-            if (getAmbientSoundManager()) {
-                getAmbientSoundManager()->initialize(assetManager);
+            if (audioCoordinator_->getAmbientSoundManager()) {
+                audioCoordinator_->getAmbientSoundManager()->initialize(assetManager);
             }
-            if (getUiSoundManager()) {
-                getUiSoundManager()->initialize(assetManager);
+            if (audioCoordinator_->getUiSoundManager()) {
+                audioCoordinator_->getUiSoundManager()->initialize(assetManager);
             }
-            if (getCombatSoundManager()) {
-                getCombatSoundManager()->initialize(assetManager);
+            if (audioCoordinator_->getCombatSoundManager()) {
+                audioCoordinator_->getCombatSoundManager()->initialize(assetManager);
             }
-            if (getSpellSoundManager()) {
-                getSpellSoundManager()->initialize(assetManager);
+            if (audioCoordinator_->getSpellSoundManager()) {
+                audioCoordinator_->getSpellSoundManager()->initialize(assetManager);
             }
-            if (getMovementSoundManager()) {
-                getMovementSoundManager()->initialize(assetManager);
+            if (audioCoordinator_->getMovementSoundManager()) {
+                audioCoordinator_->getMovementSoundManager()->initialize(assetManager);
             }
             if (questMarkerRenderer) {
                 questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, assetManager);
@@ -4102,7 +2520,7 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
             if (envFlagEnabled("WOWEE_PREWARM_ZONE_MUSIC", false)) {
                 if (zoneManager) {
                     for (const auto& musicPath : zoneManager->getAllMusicPaths()) {
-                        getMusicManager()->preloadMusic(musicPath);
+                        audioCoordinator_->getMusicManager()->preloadMusic(musicPath);
                     }
                 }
                 static const std::vector<std::string> tavernTracks = {
@@ -4112,7 +2530,7 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
                     "Sound\\Music\\ZoneMusic\\TavernHuman\\RA_HumanTavern2A.mp3",
                 };
                 for (const auto& musicPath : tavernTracks) {
-                    getMusicManager()->preloadMusic(musicPath);
+                    audioCoordinator_->getMusicManager()->preloadMusic(musicPath);
                 }
             }
         } else {
@@ -4251,42 +2669,42 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
     }
 
     // Initialize music manager with asset manager
-    if (getMusicManager() && cachedAssetManager) {
-        if (!getMusicManager()->isInitialized()) {
-            getMusicManager()->initialize(cachedAssetManager);
+    if (audioCoordinator_->getMusicManager() && cachedAssetManager) {
+        if (!audioCoordinator_->getMusicManager()->isInitialized()) {
+            audioCoordinator_->getMusicManager()->initialize(cachedAssetManager);
         }
     }
-    if (getFootstepManager() && cachedAssetManager) {
-        if (!getFootstepManager()->isInitialized()) {
-            getFootstepManager()->initialize(cachedAssetManager);
+    if (audioCoordinator_->getFootstepManager() && cachedAssetManager) {
+        if (!audioCoordinator_->getFootstepManager()->isInitialized()) {
+            audioCoordinator_->getFootstepManager()->initialize(cachedAssetManager);
         }
     }
-    if (getActivitySoundManager() && cachedAssetManager) {
-        if (!getActivitySoundManager()->isInitialized()) {
-            getActivitySoundManager()->initialize(cachedAssetManager);
+    if (audioCoordinator_->getActivitySoundManager() && cachedAssetManager) {
+        if (!audioCoordinator_->getActivitySoundManager()->isInitialized()) {
+            audioCoordinator_->getActivitySoundManager()->initialize(cachedAssetManager);
         }
     }
-    if (getMountSoundManager() && cachedAssetManager) {
-        getMountSoundManager()->initialize(cachedAssetManager);
+    if (audioCoordinator_->getMountSoundManager() && cachedAssetManager) {
+        audioCoordinator_->getMountSoundManager()->initialize(cachedAssetManager);
     }
-    if (getNpcVoiceManager() && cachedAssetManager) {
-        getNpcVoiceManager()->initialize(cachedAssetManager);
+    if (audioCoordinator_->getNpcVoiceManager() && cachedAssetManager) {
+        audioCoordinator_->getNpcVoiceManager()->initialize(cachedAssetManager);
     }
     if (!deferredWorldInitEnabled_) {
-        if (getAmbientSoundManager() && cachedAssetManager) {
-            getAmbientSoundManager()->initialize(cachedAssetManager);
+        if (audioCoordinator_->getAmbientSoundManager() && cachedAssetManager) {
+            audioCoordinator_->getAmbientSoundManager()->initialize(cachedAssetManager);
         }
-        if (getUiSoundManager() && cachedAssetManager) {
-            getUiSoundManager()->initialize(cachedAssetManager);
+        if (audioCoordinator_->getUiSoundManager() && cachedAssetManager) {
+            audioCoordinator_->getUiSoundManager()->initialize(cachedAssetManager);
         }
-        if (getCombatSoundManager() && cachedAssetManager) {
-            getCombatSoundManager()->initialize(cachedAssetManager);
+        if (audioCoordinator_->getCombatSoundManager() && cachedAssetManager) {
+            audioCoordinator_->getCombatSoundManager()->initialize(cachedAssetManager);
         }
-        if (getSpellSoundManager() && cachedAssetManager) {
-            getSpellSoundManager()->initialize(cachedAssetManager);
+        if (audioCoordinator_->getSpellSoundManager() && cachedAssetManager) {
+            audioCoordinator_->getSpellSoundManager()->initialize(cachedAssetManager);
         }
-        if (getMovementSoundManager() && cachedAssetManager) {
-            getMovementSoundManager()->initialize(cachedAssetManager);
+        if (audioCoordinator_->getMovementSoundManager() && cachedAssetManager) {
+            audioCoordinator_->getMovementSoundManager()->initialize(cachedAssetManager);
         }
         if (questMarkerRenderer && cachedAssetManager) {
             questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, cachedAssetManager);
@@ -4298,8 +2716,8 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
     }
 
     // Wire ambient sound manager to terrain manager for emitter registration
-    if (terrainManager && getAmbientSoundManager()) {
-        terrainManager->setAmbientSoundManager(getAmbientSoundManager());
+    if (terrainManager && audioCoordinator_->getAmbientSoundManager()) {
+        terrainManager->setAmbientSoundManager(audioCoordinator_->getAmbientSoundManager());
     }
 
     // Wire WMO, M2, and water renderer to camera controller

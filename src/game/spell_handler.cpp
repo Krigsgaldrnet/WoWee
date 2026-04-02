@@ -4,6 +4,7 @@
 #include "game/packet_parsers.hpp"
 #include "game/entity.hpp"
 #include "rendering/renderer.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/spell_sound_manager.hpp"
 #include "audio/combat_sound_manager.hpp"
 #include "core/application.hpp"
@@ -795,8 +796,8 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
     queuedSpellTarget_ = 0;
 
     // Stop precast sound
-    if (auto* renderer = owner_.services().renderer) {
-        if (auto* ssm = renderer->getSpellSoundManager()) {
+    if (auto* ac = owner_.services().audioCoordinator) {
+        if (auto* ssm = ac->getSpellSoundManager()) {
             ssm->stopPrecast();
         }
     }
@@ -817,8 +818,8 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
     msg.message = errMsg;
     owner_.addLocalChatMessage(msg);
 
-    if (auto* renderer = owner_.services().renderer) {
-        if (auto* sfx = renderer->getUiSoundManager())
+    if (auto* ac = owner_.services().audioCoordinator) {
+        if (auto* sfx = ac->getUiSoundManager())
             sfx->playError();
     }
 
@@ -869,8 +870,8 @@ void SpellHandler::handleSpellStart(network::Packet& packet) {
 
         // Play precast sound — skip profession/tradeskill spells
         if (!owner_.isProfessionSpell(data.spellId)) {
-            if (auto* renderer = owner_.services().renderer) {
-                if (auto* ssm = renderer->getSpellSoundManager()) {
+            if (auto* ac = owner_.services().audioCoordinator) {
+                if (auto* ssm = ac->getSpellSoundManager()) {
                     owner_.loadSpellNameCache();
                     auto it = owner_.spellNameCache_.find(data.spellId);
                     auto school = (it != owner_.spellNameCache_.end() && it->second.schoolMask)
@@ -907,8 +908,8 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
     if (data.casterUnit == owner_.playerGuid) {
         // Play cast-complete sound
         if (!owner_.isProfessionSpell(data.spellId)) {
-            if (auto* renderer = owner_.services().renderer) {
-                if (auto* ssm = renderer->getSpellSoundManager()) {
+            if (auto* ac = owner_.services().audioCoordinator) {
+                if (auto* ssm = ac->getSpellSoundManager()) {
                     owner_.loadSpellNameCache();
                     auto it = owner_.spellNameCache_.find(data.spellId);
                     auto school = (it != owner_.spellNameCache_.end() && it->second.schoolMask)
@@ -931,8 +932,8 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
         }
         if (isMeleeAbility) {
             if (owner_.meleeSwingCallback_) owner_.meleeSwingCallback_();
-            if (auto* renderer = owner_.services().renderer) {
-                if (auto* csm = renderer->getCombatSoundManager()) {
+            if (auto* ac = owner_.services().audioCoordinator) {
+                if (auto* csm = ac->getCombatSoundManager()) {
                     csm->playWeaponSwing(audio::CombatSoundManager::WeaponSize::MEDIUM, false);
                     csm->playImpact(audio::CombatSoundManager::WeaponSize::MEDIUM,
                                     audio::CombatSoundManager::ImpactType::FLESH, false);
@@ -990,8 +991,8 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
             if (tgt == owner_.playerGuid) { targetsPlayer = true; break; }
         }
         if (targetsPlayer) {
-            if (auto* renderer = owner_.services().renderer) {
-                if (auto* ssm = renderer->getSpellSoundManager()) {
+            if (auto* ac = owner_.services().audioCoordinator) {
+                if (auto* ssm = ac->getSpellSoundManager()) {
                     owner_.loadSpellNameCache();
                     auto it = owner_.spellNameCache_.find(data.spellId);
                     auto school = (it != owner_.spellNameCache_.end() && it->second.schoolMask)
@@ -1036,8 +1037,8 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
     }
 
     if (playerIsHit || playerHitEnemy) {
-        if (auto* renderer = owner_.services().renderer) {
-            if (auto* ssm = renderer->getSpellSoundManager()) {
+        if (auto* ac = owner_.services().audioCoordinator) {
+            if (auto* ssm = ac->getSpellSoundManager()) {
                 owner_.loadSpellNameCache();
                 auto it = owner_.spellNameCache_.find(data.spellId);
                 auto school = (it != owner_.spellNameCache_.end() && it->second.schoolMask)
@@ -1396,8 +1397,8 @@ void SpellHandler::handleAchievementEarned(network::Packet& packet) {
 
         owner_.earnedAchievements_.insert(achievementId);
         owner_.achievementDates_[achievementId] = earnDate;
-        if (auto* renderer = owner_.services().renderer) {
-            if (auto* sfx = renderer->getUiSoundManager())
+        if (auto* ac = owner_.services().audioCoordinator) {
+            if (auto* sfx = ac->getUiSoundManager())
                 sfx->playAchievementAlert();
         }
         if (owner_.achievementEarnedCallback_) {
@@ -2350,8 +2351,8 @@ void SpellHandler::handleSpellFailure(network::Packet& packet) {
         craftQueueRemaining_ = 0;
         queuedSpellId_ = 0;
         queuedSpellTarget_ = 0;
-        if (auto* renderer = owner_.services().renderer) {
-            if (auto* ssm = renderer->getSpellSoundManager()) {
+        if (auto* ac = owner_.services().audioCoordinator) {
+            if (auto* ssm = ac->getSpellSoundManager()) {
                 ssm->stopPrecast();
             }
         }

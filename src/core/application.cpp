@@ -152,6 +152,7 @@ bool Application::initialize() {
 
     // Populate game services — all subsystems now available
     gameServices_.renderer = renderer.get();
+    gameServices_.audioCoordinator = audioCoordinator_.get();
     gameServices_.assetManager = assetManager.get();
     gameServices_.expansionRegistry = expansionRegistry_.get();
 
@@ -1091,7 +1092,7 @@ void Application::logoutToLogin() {
         }
         renderer->clearMount();
         renderer->setCharacterFollow(0);
-        if (auto* music = renderer->getMusicManager()) {
+        if (auto* music = audioCoordinator_ ? audioCoordinator_->getMusicManager() : nullptr) {
             music->stopMusic(0.0f);
         }
     }
@@ -2828,7 +2829,7 @@ void Application::setupUICallbacks() {
     // Resolves soundId → SoundEntries.dbc → MPQ path → MusicManager.
     gameHandler->setPlayMusicCallback([this](uint32_t soundId) {
         if (!assetManager || !renderer) return;
-        auto* music = renderer->getMusicManager();
+        auto* music = audioCoordinator_ ? audioCoordinator_->getMusicManager() : nullptr;
         if (!music) return;
 
         auto dbc = assetManager->loadDBC("SoundEntries.dbc");
@@ -3418,7 +3419,7 @@ void Application::setupUICallbacks() {
 
     // NPC greeting callback - play voice line
     gameHandler->setNpcGreetingCallback([this](uint64_t guid, const glm::vec3& position) {
-        if (renderer && renderer->getNpcVoiceManager()) {
+        if (audioCoordinator_ && audioCoordinator_->getNpcVoiceManager()) {
             // Convert canonical to render coords for 3D audio
             glm::vec3 renderPos = core::coords::canonicalToRender(position);
 
@@ -3431,13 +3432,13 @@ void Application::setupUICallbacks() {
                 voiceType = entitySpawner_->detectVoiceTypeFromDisplayId(displayId);
             }
 
-            renderer->getNpcVoiceManager()->playGreeting(guid, voiceType, renderPos);
+            audioCoordinator_->getNpcVoiceManager()->playGreeting(guid, voiceType, renderPos);
         }
     });
 
     // NPC farewell callback - play farewell voice line
     gameHandler->setNpcFarewellCallback([this](uint64_t guid, const glm::vec3& position) {
-        if (renderer && renderer->getNpcVoiceManager()) {
+        if (audioCoordinator_ && audioCoordinator_->getNpcVoiceManager()) {
             glm::vec3 renderPos = core::coords::canonicalToRender(position);
 
             audio::VoiceType voiceType = audio::VoiceType::GENERIC;
@@ -3448,13 +3449,13 @@ void Application::setupUICallbacks() {
                 voiceType = entitySpawner_->detectVoiceTypeFromDisplayId(displayId);
             }
 
-            renderer->getNpcVoiceManager()->playFarewell(guid, voiceType, renderPos);
+            audioCoordinator_->getNpcVoiceManager()->playFarewell(guid, voiceType, renderPos);
         }
     });
 
     // NPC vendor callback - play vendor voice line
     gameHandler->setNpcVendorCallback([this](uint64_t guid, const glm::vec3& position) {
-        if (renderer && renderer->getNpcVoiceManager()) {
+        if (audioCoordinator_ && audioCoordinator_->getNpcVoiceManager()) {
             glm::vec3 renderPos = core::coords::canonicalToRender(position);
 
             audio::VoiceType voiceType = audio::VoiceType::GENERIC;
@@ -3465,13 +3466,13 @@ void Application::setupUICallbacks() {
                 voiceType = entitySpawner_->detectVoiceTypeFromDisplayId(displayId);
             }
 
-            renderer->getNpcVoiceManager()->playVendor(guid, voiceType, renderPos);
+            audioCoordinator_->getNpcVoiceManager()->playVendor(guid, voiceType, renderPos);
         }
     });
 
     // NPC aggro callback - play combat start voice line
     gameHandler->setNpcAggroCallback([this](uint64_t guid, const glm::vec3& position) {
-        if (renderer && renderer->getNpcVoiceManager()) {
+        if (audioCoordinator_ && audioCoordinator_->getNpcVoiceManager()) {
             glm::vec3 renderPos = core::coords::canonicalToRender(position);
 
             audio::VoiceType voiceType = audio::VoiceType::GENERIC;
@@ -3482,7 +3483,7 @@ void Application::setupUICallbacks() {
                 voiceType = entitySpawner_->detectVoiceTypeFromDisplayId(displayId);
             }
 
-            renderer->getNpcVoiceManager()->playAggro(guid, voiceType, renderPos);
+            audioCoordinator_->getNpcVoiceManager()->playAggro(guid, voiceType, renderPos);
         }
     });
 
@@ -3718,7 +3719,7 @@ void Application::spawnPlayerCharacter() {
         playerCharacterSpawned = true;
 
         // Set voice profile to match character race/gender
-        if (auto* asm_ = renderer->getActivitySoundManager()) {
+        if (auto* asm_ = audioCoordinator_ ? audioCoordinator_->getActivitySoundManager() : nullptr) {
             const char* raceFolder = "Human";
             const char* raceBase = "Human";
             switch (playerRace_) {

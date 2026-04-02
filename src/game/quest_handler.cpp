@@ -6,6 +6,7 @@
 #include "game/packet_parsers.hpp"
 #include "network/world_socket.hpp"
 #include "rendering/renderer.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/ui_sound_manager.hpp"
 #include "core/application.hpp"
 #include "core/logger.hpp"
@@ -469,8 +470,8 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
                         owner_.questCompleteCallback_(questId, it->title);
                     }
                     // Play quest-complete sound
-                    if (auto* renderer = owner_.services().renderer) {
-                        if (auto* sfx = renderer->getUiSoundManager())
+                    if (auto* ac = owner_.services().audioCoordinator) {
+                        if (auto* sfx = ac->getUiSoundManager())
                             sfx->playQuestComplete();
                     }
                     questLog_.erase(it);
@@ -1095,8 +1096,8 @@ void QuestHandler::acceptQuest() {
     pendingQuestAcceptNpcGuids_[questId] = npcGuid;
 
     // Play quest-accept sound
-    if (auto* renderer = owner_.services().renderer) {
-        if (auto* sfx = renderer->getUiSoundManager())
+    if (auto* ac = owner_.services().audioCoordinator) {
+        if (auto* sfx = ac->getUiSoundManager())
             sfx->playQuestActivate();
     }
 

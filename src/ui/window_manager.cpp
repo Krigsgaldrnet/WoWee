@@ -16,6 +16,7 @@
 #include "game/game_handler.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/dbc_layout.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/ui_sound_manager.hpp"
 #include "audio/music_manager.hpp"
 #include <imgui.h>
@@ -1701,9 +1702,9 @@ void WindowManager::renderEscapeMenu(SettingsPanel& settingsPanel) {
             settingsPanel.showEscapeSettingsNotice = false;
         }
         if (ImGui::Button("Quit", ImVec2(-1, 0))) {
-            auto* renderer = services_.renderer;
-            if (renderer) {
-                if (auto* music = renderer->getMusicManager()) {
+            auto* ac = services_.audioCoordinator;
+            if (ac) {
+                if (auto* music = ac->getMusicManager()) {
                     music->stopMusic(0.0f);
                 }
             }

@@ -19,7 +19,7 @@ namespace wowee {
 namespace core { class Window; }
 namespace rendering { class VkContext; }
 namespace game { class World; class ZoneManager; class GameHandler; }
-namespace audio { class AudioCoordinator; class MusicManager; class FootstepManager; class ActivitySoundManager; class MountSoundManager; class NpcVoiceManager; class AmbientSoundManager; class UiSoundManager; class CombatSoundManager; class SpellSoundManager; class MovementSoundManager; enum class FootstepSurface : uint8_t; enum class VoiceType; }
+namespace audio { class AudioCoordinator; }
 namespace pipeline { class AssetManager; }
 
 namespace rendering {
@@ -52,6 +52,10 @@ class CharacterPreview;
 class AmdFsr3Runtime;
 class SpellVisualSystem;
 class PostProcessPipeline;
+class AnimationController;
+class LevelUpEffect;
+class ChargeEffect;
+class SwimEffects;
 
 class Renderer {
 public:
@@ -146,7 +150,7 @@ public:
     float getCharacterYaw() const { return characterYaw; }
     void setCharacterYaw(float yawDeg) { characterYaw = yawDeg; }
 
-    // Emote support
+    // Emote support — delegates to AnimationController (§4.2)
     void playEmote(const std::string& emoteName);
     void triggerLevelUpEffect(const glm::vec3& position);
     void cancelEmote();
@@ -159,31 +163,37 @@ public:
     void playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition,
                          bool useImpactKit = false);
     SpellVisualSystem* getSpellVisualSystem() const { return spellVisualSystem_.get(); }
-    bool isEmoteActive() const { return emoteActive; }
+    bool isEmoteActive() const;
     static std::string getEmoteText(const std::string& emoteName, const std::string* targetName = nullptr);
     static uint32_t getEmoteDbcId(const std::string& emoteName);
     static std::string getEmoteTextByDbcId(uint32_t dbcId, const std::string& senderName, const std::string* targetName = nullptr);
     static uint32_t getEmoteAnimByDbcId(uint32_t dbcId);
 
-    // Targeting support
+    // Targeting support — delegates to AnimationController (§4.2)
     void setTargetPosition(const glm::vec3* pos);
-    void setInCombat(bool combat) { inCombat_ = combat; }
+    void setInCombat(bool combat);
     void resetCombatVisualState();
     bool isMoving() const;
     void triggerMeleeSwing();
-    void setEquippedWeaponType(uint32_t inventoryType) { equippedWeaponInvType_ = inventoryType; meleeAnimId = 0; }
-    void setCharging(bool charging) { charging_ = charging; }
-    bool isCharging() const { return charging_; }
+    void setEquippedWeaponType(uint32_t inventoryType);
+    void setCharging(bool charging);
+    bool isCharging() const;
     void startChargeEffect(const glm::vec3& position, const glm::vec3& direction);
     void emitChargeEffect(const glm::vec3& position, const glm::vec3& direction);
     void stopChargeEffect();
 
-    // Mount rendering
+    // Mount rendering — delegates to AnimationController (§4.2)
     void setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float heightOffset, const std::string& modelPath = "");
-    void setTaxiFlight(bool onTaxi) { taxiFlight_ = onTaxi; }
-    void setMountPitchRoll(float pitch, float roll) { mountPitch_ = pitch; mountRoll_ = roll; }
+    void setTaxiFlight(bool onTaxi);
+    void setMountPitchRoll(float pitch, float roll);
     void clearMount();
-    bool isMounted() const { return mountInstanceId_ != 0; }
+    bool isMounted() const;
+
+    // AnimationController access (§4.2)
+    AnimationController* getAnimationController() const { return animationController_.get(); }
+    LevelUpEffect* getLevelUpEffect() const { return levelUpEffect.get(); }
+    ChargeEffect* getChargeEffect() const { return chargeEffect.get(); }
+    SwimEffects* getSwimEffects() const { return swimEffects.get(); }
 
     // Selection circle for targeted entity
     void setSelectionCircle(const glm::vec3& pos, float radius, const glm::vec3& color);
@@ -196,20 +206,9 @@ public:
     double getLastTerrainRenderMs() const { return lastTerrainRenderMs; }
     double getLastWMORenderMs() const { return lastWMORenderMs; }
     double getLastM2RenderMs() const { return lastM2RenderMs; }
-    // Audio accessors — delegate to AudioCoordinator (owned by Application).
-    // These pass-throughs remain until §4.2 moves animation audio out of Renderer.
+    // Audio coordinator — owned by Application, set via setAudioCoordinator().
     void setAudioCoordinator(audio::AudioCoordinator* ac) { audioCoordinator_ = ac; }
     audio::AudioCoordinator* getAudioCoordinator() { return audioCoordinator_; }
-    audio::MusicManager* getMusicManager();
-    audio::FootstepManager* getFootstepManager();
-    audio::ActivitySoundManager* getActivitySoundManager();
-    audio::MountSoundManager* getMountSoundManager();
-    audio::NpcVoiceManager* getNpcVoiceManager();
-    audio::AmbientSoundManager* getAmbientSoundManager();
-    audio::UiSoundManager* getUiSoundManager();
-    audio::CombatSoundManager* getCombatSoundManager();
-    audio::SpellSoundManager* getSpellSoundManager();
-    audio::MovementSoundManager* getMovementSoundManager();
     game::ZoneManager* getZoneManager() { return zoneManager.get(); }
     LightingManager* getLightingManager() { return lightingManager.get(); }
 
@@ -243,6 +242,7 @@ private:
     std::unique_ptr<WorldMap> worldMap;
     std::unique_ptr<QuestMarkerRenderer> questMarkerRenderer;
     audio::AudioCoordinator* audioCoordinator_ = nullptr;  // Owned by Application
+    std::unique_ptr<AnimationController> animationController_;  // §4.2
     std::unique_ptr<game::ZoneManager> zoneManager;
     // Shadow mapping (Vulkan)
     static constexpr uint32_t SHADOW_MAP_SIZE = 4096;
@@ -340,27 +340,7 @@ private:
     uint32_t characterInstanceId = 0;
     float characterYaw = 0.0f;
 
-    // Character animation state
-    enum class CharAnimState { IDLE, WALK, RUN, JUMP_START, JUMP_MID, JUMP_END, SIT_DOWN, SITTING, EMOTE, SWIM_IDLE, SWIM, MELEE_SWING, MOUNT, CHARGE, COMBAT_IDLE };
-    CharAnimState charAnimState = CharAnimState::IDLE;
-    float locomotionStopGraceTimer_ = 0.0f;
-    bool locomotionWasSprinting_ = false;
-    uint32_t lastPlayerAnimRequest_ = UINT32_MAX;
-    bool lastPlayerAnimLoopRequest_ = true;
-    void updateCharacterAnimation();
-    bool isFootstepAnimationState() const;
-    bool shouldTriggerFootstepEvent(uint32_t animationId, float animationTimeMs, float animationDurationMs);
-    audio::FootstepSurface resolveFootstepSurface() const;
-    uint32_t resolveMeleeAnimId();
 
-    // Emote state
-    bool emoteActive = false;
-    uint32_t emoteAnimId = 0;
-    bool emoteLoop = false;
-
-    // Target facing
-    const glm::vec3* targetPosition = nullptr;
-    bool inCombat_ = false;
 
     // Selection circle rendering (Vulkan)
     VkPipeline selCirclePipeline = VK_NULL_HANDLE;
@@ -383,64 +363,7 @@ private:
     void initOverlayPipeline();
     void renderOverlay(const glm::vec4& color, VkCommandBuffer overrideCmd = VK_NULL_HANDLE);
 
-    // Footstep event tracking (animation-driven)
-    uint32_t footstepLastAnimationId = 0;
-    float footstepLastNormTime = 0.0f;
-    bool footstepNormInitialized = false;
 
-    // Footstep surface cache (avoid expensive queries every step)
-    mutable audio::FootstepSurface cachedFootstepSurface{};
-    mutable glm::vec3 cachedFootstepPosition{0.0f, 0.0f, 0.0f};
-    mutable float cachedFootstepUpdateTimer{999.0f};  // Force initial query
-
-    // Mount footstep tracking (separate from player's)
-    uint32_t mountFootstepLastAnimId = 0;
-    float mountFootstepLastNormTime = 0.0f;
-    bool mountFootstepNormInitialized = false;
-    bool sfxStateInitialized = false;
-    bool sfxPrevGrounded = true;
-    bool sfxPrevJumping = false;
-    bool sfxPrevFalling = false;
-    bool sfxPrevSwimming = false;
-
-    bool charging_ = false;
-    float meleeSwingTimer = 0.0f;
-    float meleeSwingCooldown = 0.0f;
-    float meleeAnimDurationMs = 0.0f;
-    uint32_t meleeAnimId = 0;
-    uint32_t equippedWeaponInvType_ = 0;
-
-    // Mount state
-    // Mount animation capabilities (discovered at mount time, varies per model)
-    struct MountAnimSet {
-        uint32_t jumpStart = 0;  // Jump start animation
-        uint32_t jumpLoop = 0;   // Jump airborne loop
-        uint32_t jumpEnd = 0;    // Jump landing
-        uint32_t rearUp = 0;     // Rear-up / special flourish
-        uint32_t run = 0;        // Run animation (discovered, don't assume)
-        uint32_t stand = 0;      // Stand animation (discovered)
-        std::vector<uint32_t> fidgets;  // Idle fidget animations (head turn, tail swish, etc.)
-    };
-
-    enum class MountAction { None, Jump, RearUp };
-
-    uint32_t mountInstanceId_ = 0;
-    float mountHeightOffset_ = 0.0f;
-    float mountPitch_ = 0.0f;  // Up/down tilt (radians)
-    float mountRoll_ = 0.0f;   // Left/right banking (radians)
-    int mountSeatAttachmentId_ = -1;  // -1 unknown, -2 unavailable
-    glm::vec3 smoothedMountSeatPos_ = glm::vec3(0.0f);
-    bool mountSeatSmoothingInit_ = false;
-    float prevMountYaw_ = 0.0f; // Previous yaw for turn rate calculation (procedural lean)
-    float lastDeltaTime_ = 0.0f; // Cached for use in updateCharacterAnimation()
-    MountAction mountAction_ = MountAction::None;  // Current mount action (jump/rear-up)
-    uint32_t mountActionPhase_ = 0;  // 0=start, 1=loop, 2=end (for jump chaining)
-    MountAnimSet mountAnims_;  // Cached animation IDs for current mount
-    float mountIdleFidgetTimer_ = 0.0f;  // Timer for random idle fidgets
-    float mountIdleSoundTimer_ = 0.0f;   // Timer for ambient idle sounds
-    uint32_t mountActiveFidget_ = 0;     // Currently playing fidget animation ID (0 = none)
-    bool taxiFlight_ = false;
-    bool taxiAnimsLogged_ = false;
 
     // Vulkan frame state
     VkContext* vkCtx = nullptr;
@@ -491,6 +414,7 @@ private:
 
     bool parallelRecordingEnabled_ = false;  // set true after pools/buffers created
     bool endFrameInlineMode_ = false;       // true when endFrame switched to INLINE render pass
+    float lastDeltaTime_ = 0.0f;           // cached for post-process pipeline
     bool createSecondaryCommandResources();
     void destroySecondaryCommandResources();
     VkCommandBuffer beginSecondary(uint32_t secondaryIndex);

@@ -613,6 +613,7 @@ set(WOWEE_SOURCES
     src/rendering/charge_effect.cpp
     src/rendering/spell_visual_system.cpp
     src/rendering/post_process_pipeline.cpp
+    src/rendering/animation_controller.cpp
     src/rendering/loading_screen.cpp
 
     # UI
