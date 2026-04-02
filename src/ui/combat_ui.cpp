@@ -15,6 +15,7 @@
 #include "rendering/camera.hpp"
 #include "game/game_handler.hpp"
 #include "pipeline/asset_manager.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/audio_engine.hpp"
 #include "audio/ui_sound_manager.hpp"
 #include <imgui.h>
@@ -283,9 +284,11 @@ void CombatUI::renderRaidWarningOverlay(game::GameHandler& gameHandler) {
                     raidWarnEntries_.erase(raidWarnEntries_.begin());
             }
             // Whisper audio notification
-            if (msg.type == game::ChatType::WHISPER && renderer) {
-                if (auto* ui = renderer->getUiSoundManager())
-                    ui->playWhisperReceived();
+            if (msg.type == game::ChatType::WHISPER) {
+                if (auto* ac = services_.audioCoordinator) {
+                    if (auto* ui = ac->getUiSoundManager())
+                        ui->playWhisperReceived();
+                }
             }
         }
         raidWarnChatSeenCount_ = newCount;

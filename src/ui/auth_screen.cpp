@@ -6,6 +6,7 @@
 #include "rendering/renderer.hpp"
 #include "rendering/vk_context.hpp"
 #include "pipeline/asset_manager.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/music_manager.hpp"
 #include "game/expansion_profile.hpp"
 #include <imgui.h>
@@ -199,20 +200,20 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
     }
 
     auto& app = core::Application::getInstance();
-    auto* renderer = app.getRenderer();
+    auto* ac = app.getAudioCoordinator();
     if (!musicInitAttempted) {
         musicInitAttempted = true;
         auto* assets = app.getAssetManager();
-        if (renderer) {
-            auto* music = renderer->getMusicManager();
+        if (ac) {
+            auto* music = ac->getMusicManager();
             if (music && assets && assets->isInitialized() && !music->isInitialized()) {
                 music->initialize(assets);
             }
         }
     }
     // Login screen music
-    if (renderer) {
-        auto* music = renderer->getMusicManager();
+    if (ac) {
+        auto* music = ac->getMusicManager();
         if (music) {
             if (!loginMusicVolumeAdjusted_) {
                 savedMusicVolume_ = music->getVolume();
@@ -506,9 +507,9 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
 
 void AuthScreen::stopLoginMusic() {
     auto& app = core::Application::getInstance();
-    auto* renderer = app.getRenderer();
-    if (!renderer) return;
-    auto* music = renderer->getMusicManager();
+    auto* ac = app.getAudioCoordinator();
+    if (!ac) return;
+    auto* music = ac->getMusicManager();
     if (!music) return;
     if (musicPlaying) {
         music->stopMusic(500.0f);

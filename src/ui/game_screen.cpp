@@ -14,6 +14,7 @@
 #include "rendering/character_renderer.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/audio_engine.hpp"
 #include "audio/music_manager.hpp"
 #include "game/zone_manager.hpp"
@@ -285,8 +286,8 @@ void GameScreen::render(game::GameHandler& gameHandler) {
             uiErrors_.push_back({msg, 0.0f});
             if (uiErrors_.size() > 5) uiErrors_.erase(uiErrors_.begin());
             // Play error sound for each new error (rate-limited by deque cap of 5)
-            if (auto* r = services_.renderer) {
-                if (auto* sfx = r->getUiSoundManager()) sfx->playError();
+            if (auto* ac = services_.audioCoordinator) {
+                if (auto* sfx = ac->getUiSoundManager()) sfx->playError();
             }
         });
         uiErrorCallbackSet_ = true;
@@ -345,9 +346,9 @@ void GameScreen::render(game::GameHandler& gameHandler) {
 
     // Apply saved volume settings once when audio managers first become available
     if (!settingsPanel_.volumeSettingsApplied_) {
-        auto* renderer = services_.renderer;
-        if (renderer && renderer->getUiSoundManager()) {
-            settingsPanel_.applyAudioVolumes(renderer);
+        auto* ac = services_.audioCoordinator;
+        if (ac && ac->getUiSoundManager()) {
+            settingsPanel_.applyAudioVolumes(ac);
             settingsPanel_.volumeSettingsApplied_ = true;
         }
     }
@@ -6525,38 +6526,38 @@ void GameScreen::renderMinimapMarkers(game::GameHandler& gameHandler) {
     }
 
     auto applyMuteState = [&]() {
-        auto* activeRenderer = services_.renderer;
+        auto* ac = services_.audioCoordinator;
         float masterScale = settingsPanel_.soundMuted_ ? 0.0f : static_cast<float>(settingsPanel_.pendingMasterVolume) / 100.0f;
         audio::AudioEngine::instance().setMasterVolume(masterScale);
-        if (!activeRenderer) return;
-        if (auto* music = activeRenderer->getMusicManager()) {
+        if (!ac) return;
+        if (auto* music = ac->getMusicManager()) {
             music->setVolume(settingsPanel_.pendingMusicVolume);
         }
-        if (auto* ambient = activeRenderer->getAmbientSoundManager()) {
+        if (auto* ambient = ac->getAmbientSoundManager()) {
             ambient->setVolumeScale(settingsPanel_.pendingAmbientVolume / 100.0f);
         }
-        if (auto* ui = activeRenderer->getUiSoundManager()) {
+        if (auto* ui = ac->getUiSoundManager()) {
             ui->setVolumeScale(settingsPanel_.pendingUiVolume / 100.0f);
         }
-        if (auto* combat = activeRenderer->getCombatSoundManager()) {
+        if (auto* combat = ac->getCombatSoundManager()) {
             combat->setVolumeScale(settingsPanel_.pendingCombatVolume / 100.0f);
         }
-        if (auto* spell = activeRenderer->getSpellSoundManager()) {
+        if (auto* spell = ac->getSpellSoundManager()) {
             spell->setVolumeScale(settingsPanel_.pendingSpellVolume / 100.0f);
         }
-        if (auto* movement = activeRenderer->getMovementSoundManager()) {
+        if (auto* movement = ac->getMovementSoundManager()) {
             movement->setVolumeScale(settingsPanel_.pendingMovementVolume / 100.0f);
         }
-        if (auto* footstep = activeRenderer->getFootstepManager()) {
+        if (auto* footstep = ac->getFootstepManager()) {
             footstep->setVolumeScale(settingsPanel_.pendingFootstepVolume / 100.0f);
         }
-        if (auto* npcVoice = activeRenderer->getNpcVoiceManager()) {
+        if (auto* npcVoice = ac->getNpcVoiceManager()) {
             npcVoice->setVolumeScale(settingsPanel_.pendingNpcVoiceVolume / 100.0f);
         }
-        if (auto* mount = activeRenderer->getMountSoundManager()) {
+        if (auto* mount = ac->getMountSoundManager()) {
             mount->setVolumeScale(settingsPanel_.pendingMountVolume / 100.0f);
         }
-        if (auto* activity = activeRenderer->getActivitySoundManager()) {
+        if (auto* activity = ac->getActivitySoundManager()) {
             activity->setVolumeScale(settingsPanel_.pendingActivityVolume / 100.0f);
         }
     };

@@ -6,6 +6,7 @@
 #include "core/logger.hpp"
 #include "core/application.hpp"
 #include "rendering/renderer.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/ui_sound_manager.hpp"
 #include "game/expansion_profile.hpp"
 #include <imgui.h>
@@ -1003,9 +1004,9 @@ static int lua_IsInRaid(lua_State* L) {
 
 // PlaySound(soundId) — play a WoW UI sound by ID or name
 static int lua_PlaySound(lua_State* L) {
-    auto* renderer = core::Application::getInstance().getRenderer();
-    if (!renderer) return 0;
-    auto* sfx = renderer->getUiSoundManager();
+    auto* ac = core::Application::getInstance().getAudioCoordinator();
+    if (!ac) return 0;
+    auto* sfx = ac->getUiSoundManager();
     if (!sfx) return 0;
 
     // Accept numeric sound ID or string name

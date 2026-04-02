@@ -17,6 +17,7 @@
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/character_renderer.hpp"
 #include "game/zone_manager.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/audio_engine.hpp"
 #include "audio/music_manager.hpp"
 #include "audio/ambient_sound_manager.hpp"
@@ -439,7 +440,7 @@ ImGui::BeginChild("AudioSettings", ImVec2(0, 360), true);
 
 // Helper lambda to apply audio settings
 auto applyAudioSettings = [&]() {
-    applyAudioVolumes(renderer);
+    applyAudioVolumes(services_.audioCoordinator);
     saveCallback();
 };
 
@@ -1227,29 +1228,29 @@ std::string SettingsPanel::getSettingsPath() {
     return dir + "/settings.cfg";
 }
 
-void SettingsPanel::applyAudioVolumes(rendering::Renderer* renderer) {
-    if (!renderer) return;
+void SettingsPanel::applyAudioVolumes(audio::AudioCoordinator* ac) {
+    if (!ac) return;
     float masterScale = soundMuted_ ? 0.0f : static_cast<float>(pendingMasterVolume) / 100.0f;
     audio::AudioEngine::instance().setMasterVolume(masterScale);
-    if (auto* music = renderer->getMusicManager())
+    if (auto* music = ac->getMusicManager())
         music->setVolume(pendingMusicVolume);
-    if (auto* ambient = renderer->getAmbientSoundManager())
+    if (auto* ambient = ac->getAmbientSoundManager())
         ambient->setVolumeScale(pendingAmbientVolume / 100.0f);
-    if (auto* ui = renderer->getUiSoundManager())
+    if (auto* ui = ac->getUiSoundManager())
         ui->setVolumeScale(pendingUiVolume / 100.0f);
-    if (auto* combat = renderer->getCombatSoundManager())
+    if (auto* combat = ac->getCombatSoundManager())
         combat->setVolumeScale(pendingCombatVolume / 100.0f);
-    if (auto* spell = renderer->getSpellSoundManager())
+    if (auto* spell = ac->getSpellSoundManager())
         spell->setVolumeScale(pendingSpellVolume / 100.0f);
-    if (auto* movement = renderer->getMovementSoundManager())
+    if (auto* movement = ac->getMovementSoundManager())
         movement->setVolumeScale(pendingMovementVolume / 100.0f);
-    if (auto* footstep = renderer->getFootstepManager())
+    if (auto* footstep = ac->getFootstepManager())
         footstep->setVolumeScale(pendingFootstepVolume / 100.0f);
-    if (auto* npcVoice = renderer->getNpcVoiceManager())
+    if (auto* npcVoice = ac->getNpcVoiceManager())
         npcVoice->setVolumeScale(pendingNpcVoiceVolume / 100.0f);
-    if (auto* mount = renderer->getMountSoundManager())
+    if (auto* mount = ac->getMountSoundManager())
         mount->setVolumeScale(pendingMountVolume / 100.0f);
-    if (auto* activity = renderer->getActivitySoundManager())
+    if (auto* activity = ac->getActivitySoundManager())
         activity->setVolumeScale(pendingActivityVolume / 100.0f);
 }
 

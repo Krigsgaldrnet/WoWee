@@ -2,6 +2,7 @@
 #include "game/game_handler.hpp"
 #include "core/application.hpp"
 #include "rendering/renderer.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/ui_sound_manager.hpp"
 
 #include <imgui.h>
@@ -461,11 +462,13 @@ void ToastManager::triggerDing(uint32_t newLevel, uint32_t hpDelta, uint32_t man
     dingStats_[3]  = intel;
     dingStats_[4]  = spi;
 
-    auto* renderer = services_.renderer;
-    if (renderer) {
-        if (auto* sfx = renderer->getUiSoundManager()) {
+    auto* ac = services_.audioCoordinator;
+    if (ac) {
+        if (auto* sfx = ac->getUiSoundManager()) {
             sfx->playLevelUp();
         }
+    }
+    if (auto* renderer = services_.renderer) {
         renderer->playEmote("cheer");
     }
 }
@@ -550,9 +553,9 @@ void ToastManager::triggerAchievementToast(uint32_t achievementId, std::string n
     achievementToastTimer_ = ACHIEVEMENT_TOAST_DURATION;
 
     // Play a UI sound if available
-    auto* renderer = services_.renderer;
-    if (renderer) {
-        if (auto* sfx = renderer->getUiSoundManager()) {
+    auto* ac = services_.audioCoordinator;
+    if (ac) {
+        if (auto* sfx = ac->getUiSoundManager()) {
             sfx->playAchievementAlert();
         }
     }

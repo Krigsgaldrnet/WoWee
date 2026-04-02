@@ -11,6 +11,7 @@
 #include "rendering/renderer.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/audio_engine.hpp"
 #include "audio/ui_sound_manager.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -1109,8 +1110,8 @@ void ChatPanel::render(game::GameHandler& gameHandler,
             std::string bodyLower = mMsg.message;
             for (auto& c : bodyLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             if (bodyLower.find(selfNameLower) != std::string::npos) {
-                if (auto* renderer = services_.renderer) {
-                    if (auto* ui = renderer->getUiSoundManager())
+                if (auto* ac = services_.audioCoordinator) {
+                    if (auto* ui = ac->getUiSoundManager())
                         ui->playWhisperReceived();
                 }
                 break; // play at most once per scan pass

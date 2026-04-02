@@ -17,6 +17,7 @@
 #include "game/update_field_table.hpp"
 #include "game/expansion_profile.hpp"
 #include "rendering/renderer.hpp"
+#include "audio/audio_coordinator.hpp"
 #include "audio/activity_sound_manager.hpp"
 #include "audio/combat_sound_manager.hpp"
 #include "audio/spell_sound_manager.hpp"
@@ -599,8 +600,8 @@ static QuestQueryRewards tryParseQuestRewards(const std::vector<uint8_t>& data,
 
 template<typename ManagerGetter, typename Callback>
 void GameHandler::withSoundManager(ManagerGetter getter, Callback cb) {
-    if (auto* renderer = services_.renderer) {
-        if (auto* mgr = (renderer->*getter)()) cb(mgr);
+    if (auto* ac = services_.audioCoordinator) {
+        if (auto* mgr = (ac->*getter)()) cb(mgr);
     }
 }
 
@@ -1198,9 +1199,9 @@ void GameHandler::updateTimers(float deltaTime) {
             }
             if (!alreadyAnnounced && pendingLootMoneyAmount_ > 0) {
                 addSystemChatMessage("Looted: " + formatCopperAmount(pendingLootMoneyAmount_));
-                auto* renderer = services_.renderer;
-                if (renderer) {
-                    if (auto* sfx = renderer->getUiSoundManager()) {
+                auto* ac = services_.audioCoordinator;
+                if (ac) {
+                    if (auto* sfx = ac->getUiSoundManager()) {
                         if (pendingLootMoneyAmount_ >= 10000) {
                             sfx->playLootCoinLarge();
                         } else {
@@ -1974,7 +1975,7 @@ void GameHandler::registerOpcodeHandlers() {
         ping.age  = 0.0f;
         minimapPings_.push_back(ping);
         if (senderGuid != playerGuid) {
-                            withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playMinimapPing(); });
+                            withSoundManager(&audio::AudioCoordinator::getUiSoundManager, [](auto* sfx) { sfx->playMinimapPing(); });
         }
     };
     dispatchTable_[Opcode::SMSG_ZONE_UNDER_ATTACK] = [this](network::Packet& packet) {
@@ -2124,7 +2125,7 @@ void GameHandler::registerOpcodeHandlers() {
                     if (info && info->type == 17) {
                         addUIError("A fish is on your line!");
                         addSystemChatMessage("A fish is on your line!");
-                        withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playQuestUpdate(); });
+                        withSoundManager(&audio::AudioCoordinator::getUiSoundManager, [](auto* sfx) { sfx->playQuestUpdate(); });
                     }
                 }
             }
@@ -2350,7 +2351,7 @@ void GameHandler::registerOpcodeHandlers() {
                     }
                     if (newLevel > oldLevel) {
                         addSystemChatMessage("You have reached level " + std::to_string(newLevel) + "!");
-                        withSoundManager(&rendering::Renderer::getUiSoundManager, [](auto* sfx) { sfx->playLevelUp(); });
+                        withSoundManager(&audio::AudioCoordinator::getUiSoundManager, [](auto* sfx) { sfx->playLevelUp(); });
                         if (levelUpCallback_) levelUpCallback_(newLevel);
                         fireAddonEvent("PLAYER_LEVEL_UP", {std::to_string(newLevel)});
                     }

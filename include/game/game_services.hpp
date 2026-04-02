@@ -4,6 +4,7 @@
 namespace wowee {
 namespace rendering { class Renderer; }
 namespace pipeline { class AssetManager; }
+namespace audio { class AudioCoordinator; }
 namespace game { class ExpansionRegistry; }
 
 namespace game {
@@ -13,6 +14,7 @@ namespace game {
 // Replaces hidden Application::getInstance() singleton access.
 struct GameServices {
     rendering::Renderer* renderer = nullptr;
+    audio::AudioCoordinator* audioCoordinator = nullptr;
     pipeline::AssetManager* assetManager = nullptr;
     ExpansionRegistry* expansionRegistry = nullptr;
     uint32_t gryphonDisplayId = 0;

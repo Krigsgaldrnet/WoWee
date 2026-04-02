@@ -8,6 +8,7 @@
 
 namespace wowee {
 namespace rendering { class Renderer; }
+namespace audio { class AudioCoordinator; }
 namespace ui {
 
 class InventoryScreen;
@@ -144,8 +145,8 @@ public:
     void renderSettingsWindow(InventoryScreen& inventoryScreen, ChatPanel& chatPanel,
                               std::function<void()> saveCallback);
 
-    /// Apply audio volume levels to all renderer sound managers
-    void applyAudioVolumes(rendering::Renderer* renderer);
+    /// Apply audio volume levels to all audio coordinator sound managers
+    void applyAudioVolumes(audio::AudioCoordinator* ac);
 
     /// Return the platform-specific settings file path
     static std::string getSettingsPath();
