@@ -103,6 +103,9 @@ add_executable(test_m2_structs
 target_include_directories(test_m2_structs PRIVATE ${TEST_INCLUDE_DIRS})
 target_include_directories(test_m2_structs SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
 target_link_libraries(test_m2_structs PRIVATE catch2_main)
+if(TARGET glm::glm)
+    target_link_libraries(test_m2_structs PRIVATE glm::glm)
+endif()
 add_test(NAME m2_structs COMMAND test_m2_structs)
 register_test_target(test_m2_structs)
 
@@ -126,6 +129,9 @@ add_executable(test_frustum
 target_include_directories(test_frustum PRIVATE ${TEST_INCLUDE_DIRS})
 target_include_directories(test_frustum SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
 target_link_libraries(test_frustum PRIVATE catch2_main)
+if(TARGET glm::glm)
+    target_link_libraries(test_frustum PRIVATE glm::glm)
+endif()
 add_test(NAME frustum COMMAND test_frustum)
 register_test_target(test_frustum)
 
