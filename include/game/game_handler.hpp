@@ -606,7 +606,16 @@ public:
     bool isAfk() const { return afkStatus_; }
     bool isDnd() const { return dndStatus_; }
     void replyToLastWhisper(const std::string& message);
-    std::string getLastWhisperSender() const { return lastWhisperSender_; }
+    std::string getLastWhisperSender() const {
+        if (!lastWhisperSender_.empty()) return lastWhisperSender_;
+        // Name may not have been cached when whisper arrived — resolve from GUID
+        if (lastWhisperSenderGuid_ != 0) {
+            const auto& cache = getPlayerNameCache();
+            auto it = cache.find(lastWhisperSenderGuid_);
+            if (it != cache.end()) return it->second;
+        }
+        return "";
+    }
     void setLastWhisperSender(const std::string& name) { lastWhisperSender_ = name; }
 
     // Party/Raid management
@@ -2436,6 +2445,7 @@ private:
     std::string afkMessage_;
     std::string dndMessage_;
     std::string lastWhisperSender_;
+    uint64_t lastWhisperSenderGuid_ = 0;
 
     // ---- Online item tracking ----
     struct OnlineItemInfo {

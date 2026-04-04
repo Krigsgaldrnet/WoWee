@@ -253,8 +253,9 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     };
 
     // --- Build pipelines ---
-    auto buildCharPipeline = [&](VkPipelineColorBlendAttachmentState blendState, bool depthWrite) -> VkPipeline {
-        return PipelineBuilder()
+    auto buildCharPipeline = [&](VkPipelineColorBlendAttachmentState blendState,
+                                  bool depthWrite, bool alphaToCoverage = false) -> VkPipeline {
+        auto builder = PipelineBuilder()
             .setShaders(charVert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
                         charFrag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
             .setVertexInput({charBinding}, charAttrs)
@@ -262,7 +263,10 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
             .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
             .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
             .setColorBlendAttachment(blendState)
-            .setMultisample(samples)
+            .setMultisample(samples);
+        if (alphaToCoverage)
+            builder.setAlphaToCoverage(true);
+        return builder
             .setLayout(pipelineLayout_)
             .setRenderPass(mainPass)
             .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
@@ -270,7 +274,7 @@ bool CharacterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFram
     };
 
     opaquePipeline_ = buildCharPipeline(PipelineBuilder::blendDisabled(), true);
-    alphaTestPipeline_ = buildCharPipeline(PipelineBuilder::blendAlpha(), true);
+    alphaTestPipeline_ = buildCharPipeline(PipelineBuilder::blendDisabled(), true, true);
     alphaPipeline_ = buildCharPipeline(PipelineBuilder::blendAlpha(), false);
     additivePipeline_ = buildCharPipeline(PipelineBuilder::blendAdditive(), false);
 
@@ -1481,6 +1485,8 @@ void CharacterRenderer::setupModelBuffers(M2ModelGPU& gpuModel) {
     std::vector<glm::vec3> bitanAccum(vertCount, glm::vec3(0.0f));
 
     // Copy base vertex data
+    size_t numBones = model.bones.size();
+    int outOfRangeCount = 0, ge128Count = 0, nonzeroWeightOOR = 0;
     for (size_t i = 0; i < vertCount; i++) {
         const auto& src = model.vertices[i];
         auto& dst = gpuVerts[i];
@@ -1490,6 +1496,22 @@ void CharacterRenderer::setupModelBuffers(M2ModelGPU& gpuModel) {
         dst.normal = src.normal;
         dst.texCoords = src.texCoords[0]; // Use first UV set
         dst.tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f); // default
+
+        // Diagnostic: check bone indices
+        for (int j = 0; j < 4; j++) {
+            uint8_t bi = src.boneIndices[j];
+            uint8_t bw = src.boneWeights[j];
+            if (bi >= numBones) {
+                outOfRangeCount++;
+                if (bw > 0) nonzeroWeightOOR++;
+            }
+            if (bi >= 128) ge128Count++;
+        }
+    }
+    if (outOfRangeCount > 0 || ge128Count > 0) {
+        LOG_WARNING("VERTEX DIAG: model bones=", numBones, " verts=", vertCount,
+                    " outOfRange=", outOfRangeCount, " (nonzeroWeight=", nonzeroWeightOOR, ")",
+                    " ge128=", ge128Count);
     }
 
     // Accumulate tangent/bitangent per triangle
@@ -1690,6 +1712,9 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
         float distSq = glm::distance2(inst.position, cameraPos);
         if (distSq >= animUpdateRadiusSq) continue;
 
+        // Advance global sequence timer (accumulates independently of animation wrapping)
+        inst.globalSequenceTime += deltaTime * 1000.0f;
+
         // Always advance animation time (cheap)
         if (inst.cachedModel && !inst.cachedModel->data.sequences.empty()) {
             if (inst.currentSequenceIndex < 0) {
@@ -1852,8 +1877,10 @@ int CharacterRenderer::findKeyframeIndex(const std::vector<uint32_t>& timestamps
 }
 
 // Resolve sequence index and time for a track, handling global sequences.
+// globalSeqTime is a separate accumulating timer that is NOT wrapped at the
+// current animation's sequence duration, so global sequences get full range.
 static void resolveTrackTime(const pipeline::M2AnimationTrack& track,
-                              int seqIdx, float time,
+                              int seqIdx, float animTime, float globalSeqTime,
                               const std::vector<uint32_t>& globalSeqDurations,
                               int& outSeqIdx, float& outTime) {
     if (track.globalSequence >= 0 &&
@@ -1861,14 +1888,14 @@ static void resolveTrackTime(const pipeline::M2AnimationTrack& track,
         outSeqIdx = 0;
         float dur = static_cast<float>(globalSeqDurations[track.globalSequence]);
         if (dur > 0.0f) {
-            outTime = std::fmod(time, dur);
+            outTime = std::fmod(globalSeqTime, dur);
             if (outTime < 0.0f) outTime += dur;
         } else {
             outTime = 0.0f;
         }
     } else {
         outSeqIdx = seqIdx;
-        outTime = time;
+        outTime = animTime;
     }
 }
 
@@ -1954,12 +1981,26 @@ void CharacterRenderer::calculateBoneMatrices(CharacterInstance& instance) {
 
     const auto& gsd = model.globalSequenceDurations;
 
+    // One-time diagnostic: check bone ordering (parents must precede children)
+    static bool checkedBoneOrder = false;
+    if (!checkedBoneOrder) {
+        checkedBoneOrder = true;
+        for (size_t i = 0; i < numBones; i++) {
+            const auto& bone = model.bones[i];
+            if (bone.parentBone >= 0 && static_cast<size_t>(bone.parentBone) >= i) {
+                LOG_WARNING("Bone ", i, " references parent ", bone.parentBone,
+                            " which comes AFTER it — will use stale matrix!");
+            }
+        }
+    }
+
     for (size_t i = 0; i < numBones; i++) {
         const auto& bone = model.bones[i];
 
         // Local transform includes pivot bracket: T(pivot)*T*R*S*T(-pivot)
         // At rest this is identity, so no separate bind pose is needed
-        glm::mat4 localTransform = getBoneTransform(bone, instance.animationTime, instance.currentSequenceIndex, gsd);
+        glm::mat4 localTransform = getBoneTransform(bone, instance.animationTime, instance.globalSequenceTime,
+                                                    instance.currentSequenceIndex, gsd);
 
         // Compose with parent
         if (bone.parentBone >= 0 && static_cast<size_t>(bone.parentBone) < numBones) {
@@ -1967,19 +2008,39 @@ void CharacterRenderer::calculateBoneMatrices(CharacterInstance& instance) {
         } else {
             instance.boneMatrices[i] = localTransform;
         }
+
+        // Diagnostic: detect bones with extreme translation
+        float tx = std::abs(instance.boneMatrices[i][3][0]);
+        float ty = std::abs(instance.boneMatrices[i][3][1]);
+        float tz = std::abs(instance.boneMatrices[i][3][2]);
+        static int diagFrames = 0;
+        if (diagFrames < 3 && (tx > 50.0f || ty > 50.0f || tz > 50.0f)) {
+            LOG_WARNING("BONE DIAG: bone[", i, "] keyBone=", bone.keyBoneId,
+                        " flags=0x", std::hex, bone.flags, std::dec,
+                        " parent=", bone.parentBone,
+                        " pivot=(", bone.pivot.x, ",", bone.pivot.y, ",", bone.pivot.z, ")",
+                        " mat_t=(", instance.boneMatrices[i][3][0], ",",
+                        instance.boneMatrices[i][3][1], ",", instance.boneMatrices[i][3][2], ")",
+                        " local_t=(", localTransform[3][0], ",", localTransform[3][1], ",",
+                        localTransform[3][2], ")",
+                        " animTime=", instance.animationTime,
+                        " gsTime=", instance.globalSequenceTime,
+                        " seqIdx=", instance.currentSequenceIndex);
+        }
+        if (i == numBones - 1) diagFrames++;
     }
 }
 
-glm::mat4 CharacterRenderer::getBoneTransform(const pipeline::M2Bone& bone, float time, int sequenceIndex,
-                                               const std::vector<uint32_t>& globalSeqDurations) {
+glm::mat4 CharacterRenderer::getBoneTransform(const pipeline::M2Bone& bone, float animTime, float globalSeqTime,
+                                               int sequenceIndex, const std::vector<uint32_t>& globalSeqDurations) {
     // Resolve global sequences: bones with globalSequence >= 0 use sequence 0
     // with time wrapped at the global sequence duration, independent of the
     // character's current animation.
     int tSeq, rSeq, sSeq;
     float tTime, rTime, sTime;
-    resolveTrackTime(bone.translation, sequenceIndex, time, globalSeqDurations, tSeq, tTime);
-    resolveTrackTime(bone.rotation, sequenceIndex, time, globalSeqDurations, rSeq, rTime);
-    resolveTrackTime(bone.scale, sequenceIndex, time, globalSeqDurations, sSeq, sTime);
+    resolveTrackTime(bone.translation, sequenceIndex, animTime, globalSeqTime, globalSeqDurations, tSeq, tTime);
+    resolveTrackTime(bone.rotation, sequenceIndex, animTime, globalSeqTime, globalSeqDurations, rSeq, rTime);
+    resolveTrackTime(bone.scale, sequenceIndex, animTime, globalSeqTime, globalSeqDurations, sSeq, sTime);
 
     glm::vec3 translation = interpolateVec3(bone.translation, tSeq, tTime, glm::vec3(0.0f));
     glm::quat rotation = interpolateQuat(bone.rotation, rSeq, rTime);
@@ -2017,6 +2078,13 @@ void CharacterRenderer::prepareRender(uint32_t frameIndex) {
             vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci,
                             &instance.boneBuffer[frameIndex], &instance.boneAlloc[frameIndex], &allocInfo);
             instance.boneMapped[frameIndex] = allocInfo.pMappedData;
+
+            // Initialize all bone slots to identity so out-of-range indices
+            // produce correct (neutral) transforms instead of GPU garbage
+            if (instance.boneMapped[frameIndex]) {
+                auto* dst = static_cast<glm::mat4*>(instance.boneMapped[frameIndex]);
+                for (int j = 0; j < MAX_BONES; j++) dst[j] = glm::mat4(1.0f);
+            }
 
             VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
             ai.descriptorPool = boneDescPool_;
@@ -2140,6 +2208,13 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci,
                                 &instance.boneBuffer[frameIndex], &instance.boneAlloc[frameIndex], &allocInfo);
                 instance.boneMapped[frameIndex] = allocInfo.pMappedData;
+
+                // Initialize all bone slots to identity so out-of-range indices
+                // produce correct (neutral) transforms instead of GPU garbage
+                if (instance.boneMapped[frameIndex]) {
+                    auto* dst = static_cast<glm::mat4*>(instance.boneMapped[frameIndex]);
+                    for (int j = 0; j < MAX_BONES; j++) dst[j] = glm::mat4(1.0f);
+                }
 
                 // Allocate descriptor set for bone SSBO
                 VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -2277,12 +2352,49 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 return whiteTexture_.get();
             };
 
-            // Draw batches (submeshes) with per-batch textures
+            // One-time batch diagnostic for first character instance
+            static bool batchDiagDone = false;
+            if (!batchDiagDone && !instance.hasOverrideModelMatrix) {
+                batchDiagDone = true;
+                for (const auto& b : gpuModel.data.batches) {
+                    uint16_t bm = 0, mf = 0;
+                    if (b.materialIndex < gpuModel.data.materials.size()) {
+                        bm = gpuModel.data.materials[b.materialIndex].blendMode;
+                        mf = gpuModel.data.materials[b.materialIndex].flags;
+                    }
+                    uint16_t bg = static_cast<uint16_t>(b.submeshId / 100);
+                    bool active = instance.activeGeosets.empty() ||
+                                  instance.activeGeosets.count(b.submeshId);
+                    LOG_WARNING("BATCH DIAG: submesh=", b.submeshId, " group=", bg,
+                                " blend=", bm, " matFlags=0x", std::hex, mf, std::dec,
+                                " texIdx=", b.textureIndex, " matIdx=", b.materialIndex,
+                                " active=", active);
+                }
+            }
+
+            // Draw batches in two passes: opaque (blendMode 0) first, then
+            // alpha-key/blend after.  This ensures capes and body parts write
+            // depth before hair overlay, preventing hair→cape z-fight.
+            auto getBatchBlendMode = [&](const pipeline::M2Batch& b) -> uint16_t {
+                if (b.materialIndex < gpuModel.data.materials.size())
+                    return gpuModel.data.materials[b.materialIndex].blendMode;
+                return 0;
+            };
+            for (int pass = 0; pass < 2; pass++) {
             for (const auto& batch : gpuModel.data.batches) {
+                uint16_t bm = getBatchBlendMode(batch);
+                if (pass == 0 && bm != 0) continue;  // pass 0: opaque only
+                if (pass == 1 && bm == 0) continue;   // pass 1: non-opaque only
                 if (applyGeosetFilter) {
                     if (instance.activeGeosets.find(batch.submeshId) == instance.activeGeosets.end()) {
                         continue;
                     }
+                } else {
+                    // Even without a geoset filter, skip eye glow (group 17)
+                    // and group 18 unless explicitly opted in. These geosets are
+                    // only for DK/NE eye glow and should be off by default.
+                    uint16_t grp = batch.submeshId / 100;
+                    if (grp == 17 || grp == 18) continue;
                 }
 
                 // Resolve texture for this batch (prefer hair textures for hair geosets).
@@ -2429,7 +2541,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 // Create per-batch material UBO
                 CharMaterialUBO matData{};
                 matData.opacity = instance.opacity;
-                matData.alphaTest = (blendNeedsCutout || alphaCutout) ? 1 : 0;
+                matData.alphaTest = blendNeedsCutout ? 1 : 0;
                 matData.colorKeyBlack = (blendNeedsCutout || colorKeyBlack) ? 1 : 0;
                 matData.unlit = unlit ? 1 : 0;
                 matData.emissiveBoost = emissiveBoost;
@@ -2489,6 +2601,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
 
                 vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
             }
+            } // end pass loop
         } else {
             // Draw entire model with first texture
             VkTexture* texPtr = !gpuModel.textureIds.empty() ? gpuModel.textureIds[0] : whiteTexture_.get();
@@ -2781,6 +2894,13 @@ void CharacterRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& light
                     &inst.boneBuffer[frameIndex], &inst.boneAlloc[frameIndex], &ai);
                 inst.boneMapped[frameIndex] = ai.pMappedData;
 
+                // Initialize all bone slots to identity so out-of-range indices
+                // produce correct (neutral) transforms instead of GPU garbage
+                if (inst.boneMapped[frameIndex]) {
+                    auto* dst = static_cast<glm::mat4*>(inst.boneMapped[frameIndex]);
+                    for (int j = 0; j < MAX_BONES; j++) dst[j] = glm::mat4(1.0f);
+                }
+
                 VkDescriptorSetAllocateInfo dsAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
                 dsAI.descriptorPool = boneDescPool_;
                 dsAI.descriptorSetCount = 1;
@@ -2840,6 +2960,10 @@ void CharacterRenderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& light
             if (blendMode >= 2) continue; // skip transparent
             if (applyGeosetFilter &&
                 inst.activeGeosets.find(batch.submeshId) == inst.activeGeosets.end()) continue;
+            if (!applyGeosetFilter) {
+                uint16_t grp = batch.submeshId / 100;
+                if (grp == 17 || grp == 18) continue;
+            }
             vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
         }
     }
@@ -3377,8 +3501,9 @@ void CharacterRenderer::recreatePipelines() {
         {5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, static_cast<uint32_t>(offsetof(CharVertexGPU, tangent))},
     };
 
-    auto buildCharPipeline = [&](VkPipelineColorBlendAttachmentState blendState, bool depthWrite) -> VkPipeline {
-        return PipelineBuilder()
+    auto buildCharPipeline = [&](VkPipelineColorBlendAttachmentState blendState,
+                                  bool depthWrite, bool alphaToCoverage = false) -> VkPipeline {
+        auto builder = PipelineBuilder()
             .setShaders(charVert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
                         charFrag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
             .setVertexInput({charBinding}, charAttrs)
@@ -3386,7 +3511,10 @@ void CharacterRenderer::recreatePipelines() {
             .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
             .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
             .setColorBlendAttachment(blendState)
-            .setMultisample(samples)
+            .setMultisample(samples);
+        if (alphaToCoverage)
+            builder.setAlphaToCoverage(true);
+        return builder
             .setLayout(pipelineLayout_)
             .setRenderPass(mainPass)
             .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
@@ -3398,7 +3526,7 @@ void CharacterRenderer::recreatePipelines() {
              " pipelineLayout=", (void*)pipelineLayout_);
 
     opaquePipeline_ = buildCharPipeline(PipelineBuilder::blendDisabled(), true);
-    alphaTestPipeline_ = buildCharPipeline(PipelineBuilder::blendAlpha(), true);
+    alphaTestPipeline_ = buildCharPipeline(PipelineBuilder::blendDisabled(), true, true);
     alphaPipeline_ = buildCharPipeline(PipelineBuilder::blendAlpha(), false);
     additivePipeline_ = buildCharPipeline(PipelineBuilder::blendAdditive(), false);
 
