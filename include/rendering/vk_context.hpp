@@ -19,8 +19,6 @@ static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 struct FrameData {
     VkCommandPool commandPool = VK_NULL_HANDLE;
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
-    VkSemaphore imageAvailableSemaphore = VK_NULL_HANDLE;
-    VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
     VkFence inFlightFence = VK_NULL_HANDLE;
 };
 
@@ -196,6 +194,12 @@ private:
     // Per-frame resources
     FrameData frames[MAX_FRAMES_IN_FLIGHT];
     uint32_t currentFrame = 0;
+
+    // Per-swapchain-image semaphores (avoids reuse while presentation engine holds them)
+    std::vector<VkSemaphore> imageAcquiredSemaphores_;   // [swapchainImageCount], per-image
+    std::vector<VkSemaphore> renderFinishedSemaphores_;  // [swapchainImageCount], per-image
+    VkSemaphore nextAcquireSemaphore_ = VK_NULL_HANDLE;  // free semaphore for next acquire
+    VkSemaphore currentAcquireSemaphore_ = VK_NULL_HANDLE; // the one used for the current frame
 
     // Immediate submit resources
     VkCommandPool immCommandPool = VK_NULL_HANDLE;

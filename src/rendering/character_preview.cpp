@@ -135,13 +135,72 @@ void CharacterPreview::createFBO() {
         vkCtx_->endSingleTimeCommands(cmd);
     }
 
-    // 2. Create 1x1 dummy white texture (shadow map placeholder)
+    // 2. Create 1x1 dummy depth texture (shadow map placeholder, depth=1.0 = no shadow).
+    //    Must be a depth format for sampler2DShadow compatibility.
     {
-        uint8_t white[] = {255, 255, 255, 255};
-        dummyWhiteTex_ = std::make_unique<VkTexture>();
-        dummyWhiteTex_->upload(*vkCtx_, white, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, false);
-        dummyWhiteTex_->createSampler(device, VK_FILTER_NEAREST, VK_FILTER_NEAREST,
-                                       VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        VkImageCreateInfo imgCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        imgCI.imageType = VK_IMAGE_TYPE_2D;
+        imgCI.format = VK_FORMAT_D16_UNORM;
+        imgCI.extent = {1, 1, 1};
+        imgCI.mipLevels = 1;
+        imgCI.arrayLayers = 1;
+        imgCI.samples = VK_SAMPLE_COUNT_1_BIT;
+        imgCI.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imgCI.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        VmaAllocationCreateInfo allocCI{};
+        allocCI.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+        if (vmaCreateImage(vkCtx_->getAllocator(), &imgCI, &allocCI,
+                &dummyShadowImage_, &dummyShadowAlloc_, nullptr) != VK_SUCCESS) {
+            LOG_ERROR("CharacterPreview: failed to create dummy shadow image");
+            return;
+        }
+        VkImageViewCreateInfo viewCI{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        viewCI.image = dummyShadowImage_;
+        viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewCI.format = VK_FORMAT_D16_UNORM;
+        viewCI.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+        if (vkCreateImageView(device, &viewCI, nullptr, &dummyShadowView_) != VK_SUCCESS) {
+            LOG_ERROR("CharacterPreview: failed to create dummy shadow image view");
+            return;
+        }
+        // Clear to depth 1.0 and transition to shader-read layout
+        vkCtx_->immediateSubmit([&](VkCommandBuffer cmd) {
+            VkImageMemoryBarrier toTransfer{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            toTransfer.image = dummyShadowImage_;
+            toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toTransfer.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+            toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 0, 0, nullptr, 0, nullptr, 1, &toTransfer);
+            VkClearDepthStencilValue clearVal{1.0f, 0};
+            VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+            vkCmdClearDepthStencilImage(cmd, dummyShadowImage_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearVal, 1, &range);
+            VkImageMemoryBarrier toRead{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            toRead.image = dummyShadowImage_;
+            toRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            toRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            toRead.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toRead.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toRead.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+            toRead.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            toRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 0, 0, nullptr, 0, nullptr, 1, &toRead);
+        });
+        // Comparison sampler for sampler2DShadow
+        VkSamplerCreateInfo sampCI{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        sampCI.magFilter = VK_FILTER_NEAREST;
+        sampCI.minFilter = VK_FILTER_NEAREST;
+        sampCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        sampCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        sampCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        sampCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+        sampCI.compareEnable = VK_TRUE;
+        sampCI.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        dummyShadowSampler_ = vkCtx_->getOrCreateSampler(sampCI);
     }
 
     // 3. Create descriptor pool for per-frame sets (2 UBO + 2 sampler)
@@ -200,7 +259,10 @@ void CharacterPreview::createFBO() {
         descBuf.offset = 0;
         descBuf.range = sizeof(GPUPerFrameData);
 
-        VkDescriptorImageInfo shadowImg = dummyWhiteTex_->descriptorInfo();
+        VkDescriptorImageInfo shadowImg{};
+        shadowImg.sampler = dummyShadowSampler_;
+        shadowImg.imageView = dummyShadowView_;
+        shadowImg.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkWriteDescriptorSet writes[2]{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -250,7 +312,9 @@ void CharacterPreview::destroyFBO() {
         previewDescPool_ = VK_NULL_HANDLE;
     }
 
-    dummyWhiteTex_.reset();
+    // dummyShadowSampler_ is owned by VkContext sampler cache — do NOT destroy
+    if (dummyShadowView_) { vkDestroyImageView(device, dummyShadowView_, nullptr); dummyShadowView_ = VK_NULL_HANDLE; }
+    if (dummyShadowImage_) { vmaDestroyImage(allocator, dummyShadowImage_, dummyShadowAlloc_); dummyShadowImage_ = VK_NULL_HANDLE; dummyShadowAlloc_ = VK_NULL_HANDLE; }
 
     if (renderTarget_) {
         renderTarget_->destroy(device, allocator);

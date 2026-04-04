@@ -122,11 +122,14 @@ void VkContext::shutdown() {
     // Destroy sync objects
     for (auto& frame : frames) {
         if (frame.inFlightFence) vkDestroyFence(device, frame.inFlightFence, nullptr);
-        if (frame.renderFinishedSemaphore) vkDestroySemaphore(device, frame.renderFinishedSemaphore, nullptr);
-        if (frame.imageAvailableSemaphore) vkDestroySemaphore(device, frame.imageAvailableSemaphore, nullptr);
         if (frame.commandPool) vkDestroyCommandPool(device, frame.commandPool, nullptr);
         frame = {};
     }
+    for (auto sem : imageAcquiredSemaphores_) { if (sem) vkDestroySemaphore(device, sem, nullptr); }
+    imageAcquiredSemaphores_.clear();
+    for (auto sem : renderFinishedSemaphores_) { if (sem) vkDestroySemaphore(device, sem, nullptr); }
+    renderFinishedSemaphores_.clear();
+    if (nextAcquireSemaphore_) { vkDestroySemaphore(device, nextAcquireSemaphore_, nullptr); nextAcquireSemaphore_ = VK_NULL_HANDLE; }
 
     // Clean up any in-flight async upload batches (device already idle)
     for (auto& batch : inFlightBatches_) {
@@ -684,12 +687,30 @@ bool VkContext::createSyncObjects() {
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Start signaled so first frame doesn't block
 
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vkCreateSemaphore(device, &semInfo, nullptr, &frames[i].imageAvailableSemaphore) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &semInfo, nullptr, &frames[i].renderFinishedSemaphore) != VK_SUCCESS ||
-            vkCreateFence(device, &fenceInfo, nullptr, &frames[i].inFlightFence) != VK_SUCCESS) {
+        if (vkCreateFence(device, &fenceInfo, nullptr, &frames[i].inFlightFence) != VK_SUCCESS) {
             LOG_ERROR("Failed to create sync objects for frame ", i);
             return false;
         }
+    }
+
+    // Per-swapchain-image semaphores: avoids reuse while the presentation engine
+    // still holds a reference.  After acquiring image N we swap the acquire semaphore
+    // into imageAcquiredSemaphores_[N], recycling the old one for the next acquire.
+    const uint32_t imgCount = static_cast<uint32_t>(swapchainImages.size());
+    imageAcquiredSemaphores_.resize(imgCount);
+    renderFinishedSemaphores_.resize(imgCount);
+    for (uint32_t i = 0; i < imgCount; i++) {
+        if (vkCreateSemaphore(device, &semInfo, nullptr, &imageAcquiredSemaphores_[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semInfo, nullptr, &renderFinishedSemaphores_[i]) != VK_SUCCESS) {
+            LOG_ERROR("Failed to create per-image semaphores for image ", i);
+            return false;
+        }
+    }
+    // One extra acquire semaphore — we need it for the next vkAcquireNextImageKHR
+    // before we know which image we'll get.
+    if (vkCreateSemaphore(device, &semInfo, nullptr, &nextAcquireSemaphore_) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create next-acquire semaphore");
+        return false;
     }
 
     // Immediate submit fence (not signaled initially)
@@ -1416,6 +1437,26 @@ bool VkContext::recreateSwapchain(int width, int height) {
     swapchainImages = vkbSwap.get_images().value();
     swapchainImageViews = vkbSwap.get_image_views().value();
 
+    // Resize per-image semaphore arrays if the swapchain image count changed
+    {
+        const uint32_t newCount = static_cast<uint32_t>(swapchainImages.size());
+        const uint32_t oldCount = static_cast<uint32_t>(imageAcquiredSemaphores_.size());
+        VkSemaphoreCreateInfo semInfo{};
+        semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        // Destroy excess semaphores if shrinking
+        for (uint32_t i = newCount; i < oldCount; i++) {
+            if (imageAcquiredSemaphores_[i]) vkDestroySemaphore(device, imageAcquiredSemaphores_[i], nullptr);
+            if (renderFinishedSemaphores_[i]) vkDestroySemaphore(device, renderFinishedSemaphores_[i], nullptr);
+        }
+        imageAcquiredSemaphores_.resize(newCount);
+        renderFinishedSemaphores_.resize(newCount);
+        // Create new semaphores if growing
+        for (uint32_t i = oldCount; i < newCount; i++) {
+            vkCreateSemaphore(device, &semInfo, nullptr, &imageAcquiredSemaphores_[i]);
+            vkCreateSemaphore(device, &semInfo, nullptr, &renderFinishedSemaphores_[i]);
+        }
+    }
+
     // Recreate depth buffer + MSAA color image + depth resolve image
     destroyMsaaColorImage();
     destroyDepthResolveImage();
@@ -1693,9 +1734,11 @@ VkCommandBuffer VkContext::beginFrame(uint32_t& imageIndex) {
     // Any work queued for this frame slot is now guaranteed to be unused by the GPU.
     runDeferredCleanup(currentFrame);
 
-    // Acquire next swapchain image
+    // Acquire next swapchain image using the free semaphore.
+    // After acquiring we swap it into the per-image slot so the old per-image
+    // semaphore (now released by the presentation engine) becomes the free one.
     VkResult result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX,
-        frame.imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+        nextAcquireSemaphore_, VK_NULL_HANDLE, &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         swapchainDirty = true;
@@ -1705,6 +1748,13 @@ VkCommandBuffer VkContext::beginFrame(uint32_t& imageIndex) {
         LOG_ERROR("Failed to acquire swapchain image");
         return VK_NULL_HANDLE;
     }
+
+    // Swap semaphores: the image's old acquire semaphore is now free (the presentation
+    // engine released it when this image was re-acquired).  The semaphore we just used
+    // becomes the per-image one for submit/present.
+    currentAcquireSemaphore_ = nextAcquireSemaphore_;
+    nextAcquireSemaphore_ = imageAcquiredSemaphores_[imageIndex];
+    imageAcquiredSemaphores_[imageIndex] = currentAcquireSemaphore_;
 
     vkResetFences(device, 1, &frame.inFlightFence);
     vkResetCommandBuffer(frame.commandBuffer, 0);
@@ -1731,15 +1781,20 @@ void VkContext::endFrame(VkCommandBuffer cmd, uint32_t imageIndex) {
 
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
+    // Use per-image semaphores: acquire semaphore was swapped into the per-image
+    // slot in beginFrame; renderFinished is also indexed by the acquired image.
+    VkSemaphore& acquireSem = imageAcquiredSemaphores_[imageIndex];
+    VkSemaphore& renderSem = renderFinishedSemaphores_[imageIndex];
+
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &frame.imageAvailableSemaphore;
+    submitInfo.pWaitSemaphores = &acquireSem;
     submitInfo.pWaitDstStageMask = &waitStage;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
     submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &frame.renderFinishedSemaphore;
+    submitInfo.pSignalSemaphores = &renderSem;
 
     VkResult submitResult = vkQueueSubmit(graphicsQueue, 1, &submitInfo, frame.inFlightFence);
     if (submitResult != VK_SUCCESS) {
@@ -1752,7 +1807,7 @@ void VkContext::endFrame(VkCommandBuffer cmd, uint32_t imageIndex) {
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &frame.renderFinishedSemaphore;
+    presentInfo.pWaitSemaphores = &renderSem;
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &swapchain;
     presentInfo.pImageIndices = &imageIndex;

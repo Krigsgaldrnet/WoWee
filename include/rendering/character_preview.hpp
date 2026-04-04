@@ -75,8 +75,11 @@ private:
     void* previewUBOMapped_[MAX_FRAMES] = {};
     VkDescriptorSet previewPerFrameSet_[MAX_FRAMES] = {};
 
-    // Dummy 1x1 white texture for shadow map placeholder
-    std::unique_ptr<VkTexture> dummyWhiteTex_;
+    // Dummy 1x1 depth texture for shadow map placeholder (sampler2DShadow compatible)
+    VkImage dummyShadowImage_ = VK_NULL_HANDLE;
+    VkImageView dummyShadowView_ = VK_NULL_HANDLE;
+    VmaAllocation dummyShadowAlloc_ = VK_NULL_HANDLE;
+    VkSampler dummyShadowSampler_ = VK_NULL_HANDLE; // owned by VkContext sampler cache
 
     // ImGui texture handle for displaying the preview (VkDescriptorSet in Vulkan backend)
     VkDescriptorSet imguiTextureId_ = VK_NULL_HANDLE;
