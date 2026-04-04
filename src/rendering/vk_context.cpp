@@ -106,14 +106,20 @@ bool VkContext::initialize(SDL_Window* window) {
 }
 
 void VkContext::shutdown() {
+    if (!device && !instance) return;  // Already shut down or never initialized
+
     LOG_WARNING("VkContext::shutdown - vkDeviceWaitIdle...");
     if (device) {
         vkDeviceWaitIdle(device);
     }
 
-    // With the device idle, it is safe to run any deferred per-frame cleanup.
+    // Clear deferred cleanup queues WITHOUT executing them.  By this point the
+    // sub-renderers (which own the descriptor pools/buffers these lambdas
+    // reference) have already been destroyed, so running them would call
+    // vkFreeDescriptorSets on invalid pools.  vkDestroyDevice reclaims all
+    // device-child resources anyway.
     for (uint32_t fi = 0; fi < MAX_FRAMES_IN_FLIGHT; fi++) {
-        runDeferredCleanup(fi);
+        deferredCleanup_[fi].clear();
     }
 
     LOG_WARNING("VkContext::shutdown - destroyImGuiResources...");
