@@ -1860,10 +1860,25 @@ void InventoryHandler::auctionSearch(const std::string& name, uint8_t levelMin, 
     auctionSearchDelayTimer_ = 5.0f;
 }
 
-void InventoryHandler::auctionSellItem(uint64_t itemGuid, uint32_t stackCount, uint32_t bid,
+void InventoryHandler::auctionSellItem(int backpackIndex, uint32_t bid,
                                         uint32_t buyout, uint32_t duration) {
     if (owner_.state != WorldState::IN_WORLD || !owner_.socket || auctioneerGuid_ == 0) return;
-    auto packet = AuctionSellItemPacket::build(auctioneerGuid_, itemGuid, stackCount, bid, buyout, duration);
+    if (backpackIndex < 0 || backpackIndex >= owner_.inventory.getBackpackSize()) return;
+    const auto& slot = owner_.inventory.getBackpackSlot(backpackIndex);
+    if (slot.empty()) return;
+
+    uint64_t itemGuid = owner_.backpackSlotGuids_[backpackIndex];
+    if (itemGuid == 0) {
+        itemGuid = owner_.resolveOnlineItemGuid(slot.item.itemId);
+    }
+    if (itemGuid == 0) {
+        LOG_ERROR("auctionSellItem: could not resolve GUID for backpack slot ", backpackIndex);
+        return;
+    }
+
+    uint32_t stackCount = slot.item.stackCount;
+    auto packet = AuctionSellItemPacket::build(auctioneerGuid_, itemGuid, stackCount, bid, buyout, duration,
+                                                isPreWotlk());
     owner_.socket->send(packet);
 }
 

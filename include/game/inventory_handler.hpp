@@ -194,7 +194,7 @@ public:
     void auctionSearch(const std::string& name, uint8_t levelMin, uint8_t levelMax,
                        uint32_t quality, uint32_t itemClass, uint32_t itemSubClass,
                        uint32_t invTypeMask, uint8_t usableOnly, uint32_t offset = 0);
-    void auctionSellItem(uint64_t itemGuid, uint32_t stackCount, uint32_t bid,
+    void auctionSellItem(int backpackIndex, uint32_t bid,
                          uint32_t buyout, uint32_t duration);
     void auctionPlaceBid(uint32_t auctionId, uint32_t amount);
     void auctionBuyout(uint32_t auctionId, uint32_t buyoutPrice);

@@ -3375,16 +3375,11 @@ void WindowManager::renderAuctionHouseWindow(game::GameHandler& gameHandler,
                                   + static_cast<uint32_t>(auctionSellBuyout_[2]);
             const uint32_t durationMins[] = {720, 1440, 2880};
             uint32_t dur = durationMins[auctionSellDuration_];
-            uint64_t itemGuid = gameHandler.getBackpackItemGuid(auctionSellSlotIndex_);
-            const auto& slot = gameHandler.getInventory().getBackpackSlot(auctionSellSlotIndex_);
-            uint32_t stackCount = slot.item.stackCount;
-            if (itemGuid != 0) {
-                gameHandler.auctionSellItem(itemGuid, stackCount, bidCopper, buyoutCopper, dur);
-                // Clear sell inputs
-                auctionSellSlotIndex_ = -1;
-                auctionSellBid_[0] = auctionSellBid_[1] = auctionSellBid_[2] = 0;
-                auctionSellBuyout_[0] = auctionSellBuyout_[1] = auctionSellBuyout_[2] = 0;
-            }
+            gameHandler.auctionSellItem(auctionSellSlotIndex_, bidCopper, buyoutCopper, dur);
+            // Clear sell inputs
+            auctionSellSlotIndex_ = -1;
+            auctionSellBid_[0] = auctionSellBid_[1] = auctionSellBid_[2] = 0;
+            auctionSellBuyout_[0] = auctionSellBuyout_[1] = auctionSellBuyout_[2] = 0;
         }
         if (!canCreate) ImGui::EndDisabled();
 

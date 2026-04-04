@@ -6640,9 +6640,9 @@ void GameHandler::auctionSearch(const std::string& name, uint8_t levelMin, uint8
     if (inventoryHandler_) inventoryHandler_->auctionSearch(name, levelMin, levelMax, quality, itemClass, itemSubClass, invTypeMask, usableOnly, offset);
 }
 
-void GameHandler::auctionSellItem(uint64_t itemGuid, uint32_t stackCount,
-                                    uint32_t bid, uint32_t buyout, uint32_t duration) {
-    if (inventoryHandler_) inventoryHandler_->auctionSellItem(itemGuid, stackCount, bid, buyout, duration);
+void GameHandler::auctionSellItem(int backpackIndex, uint32_t bid,
+                                    uint32_t buyout, uint32_t duration) {
+    if (inventoryHandler_) inventoryHandler_->auctionSellItem(backpackIndex, bid, buyout, duration);
 }
 
 void GameHandler::auctionPlaceBid(uint32_t auctionId, uint32_t amount) {

@@ -5726,13 +5726,20 @@ network::Packet AuctionListItemsPacket::build(
 network::Packet AuctionSellItemPacket::build(
     uint64_t auctioneerGuid, uint64_t itemGuid,
     uint32_t stackCount, uint32_t bid,
-    uint32_t buyout, uint32_t duration)
+    uint32_t buyout, uint32_t duration,
+    bool preWotlk)
 {
     network::Packet p(wireOpcode(Opcode::CMSG_AUCTION_SELL_ITEM));
     p.writeUInt64(auctioneerGuid);
-    p.writeUInt32(1);  // item count (WotLK supports multiple, we send 1)
-    p.writeUInt64(itemGuid);
-    p.writeUInt32(stackCount);
+    if (!preWotlk) {
+        // WotLK: itemCount(4) + per-item [guid(8) + stackCount(4)]
+        p.writeUInt32(1);
+        p.writeUInt64(itemGuid);
+        p.writeUInt32(stackCount);
+    } else {
+        // Classic/TBC: just itemGuid, no count fields
+        p.writeUInt64(itemGuid);
+    }
     p.writeUInt32(bid);
     p.writeUInt32(buyout);
     p.writeUInt32(duration);

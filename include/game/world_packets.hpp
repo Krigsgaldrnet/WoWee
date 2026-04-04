@@ -2736,7 +2736,8 @@ class AuctionSellItemPacket {
 public:
     static network::Packet build(uint64_t auctioneerGuid, uint64_t itemGuid,
                                   uint32_t stackCount, uint32_t bid,
-                                  uint32_t buyout, uint32_t duration);
+                                  uint32_t buyout, uint32_t duration,
+                                  bool preWotlk = false);
 };
 
 /** CMSG_AUCTION_PLACE_BID packet builder */
