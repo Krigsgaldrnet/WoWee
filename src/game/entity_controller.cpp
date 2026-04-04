@@ -1988,6 +1988,11 @@ void EntityController::handleNameQueryResponse(network::Packet& packet) {
             }
         }
 
+        // Backfill whisper reply target if the name arrived after the whisper.
+        if (owner_.lastWhisperSenderGuid_ == data.guid && owner_.lastWhisperSender_.empty()) {
+            owner_.lastWhisperSender_ = data.name;
+        }
+
         // Backfill mail inbox sender names
         for (auto& mail : owner_.mailInbox_) {
             if (mail.messageType == 0 && mail.senderGuid == data.guid) {
