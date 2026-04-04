@@ -1840,6 +1840,22 @@ VkCommandBuffer VkContext::beginFrame(uint32_t& imageIndex) {
 
     vkBeginCommandBuffer(frame.commandBuffer, &beginInfo);
 
+    // If async upload batches are still in flight (submitted to the transfer queue),
+    // wait for their fences and insert a memory barrier so the graphics queue sees
+    // the completed layout transitions and transfer writes.
+    if (!inFlightBatches_.empty()) {
+        waitAllUploads();
+
+        VkMemoryBarrier memBarrier{};
+        memBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        memBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        memBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(frame.commandBuffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0, 1, &memBarrier, 0, nullptr, 0, nullptr);
+    }
+
     return frame.commandBuffer;
 }
 
