@@ -255,15 +255,22 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
     }
 
     // Track whisper sender for /r command
-    if (data.type == ChatType::WHISPER && !data.senderName.empty()) {
-        owner_.lastWhisperSender_ = data.senderName;
+    if (data.type == ChatType::WHISPER) {
+        // Always store GUID so getLastWhisperSender() can resolve the name
+        // from the player name cache even if name wasn't available yet
+        if (data.senderGuid != 0)
+            owner_.lastWhisperSenderGuid_ = data.senderGuid;
+        if (!data.senderName.empty())
+            owner_.lastWhisperSender_ = data.senderName;
 
-        if (owner_.afkStatus_ && !data.senderName.empty()) {
-            std::string reply = owner_.afkMessage_.empty() ? "Away from Keyboard" : owner_.afkMessage_;
-            sendChatMessage(ChatType::WHISPER, "<AFK> " + reply, data.senderName);
-        } else if (owner_.dndStatus_ && !data.senderName.empty()) {
-            std::string reply = owner_.dndMessage_.empty() ? "Do Not Disturb" : owner_.dndMessage_;
-            sendChatMessage(ChatType::WHISPER, "<DND> " + reply, data.senderName);
+        if (!data.senderName.empty()) {
+            if (owner_.afkStatus_) {
+                std::string reply = owner_.afkMessage_.empty() ? "Away from Keyboard" : owner_.afkMessage_;
+                sendChatMessage(ChatType::WHISPER, "<AFK> " + reply, data.senderName);
+            } else if (owner_.dndStatus_) {
+                std::string reply = owner_.dndMessage_.empty() ? "Do Not Disturb" : owner_.dndMessage_;
+                sendChatMessage(ChatType::WHISPER, "<DND> " + reply, data.senderName);
+            }
         }
     }
 
