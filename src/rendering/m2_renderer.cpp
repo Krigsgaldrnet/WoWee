@@ -814,7 +814,7 @@ void M2Renderer::shutdown() {
     // Destroy shadow resources
     destroyPipeline(shadowPipeline_);
     if (shadowPipelineLayout_) { vkDestroyPipelineLayout(device, shadowPipelineLayout_, nullptr); shadowPipelineLayout_ = VK_NULL_HANDLE; }
-    if (shadowTexPool_) { vkDestroyDescriptorPool(device, shadowTexPool_, nullptr); shadowTexPool_ = VK_NULL_HANDLE; }
+    for (auto& pool : shadowTexPool_) { if (pool) { vkDestroyDescriptorPool(device, pool, nullptr); pool = VK_NULL_HANDLE; } }
     if (shadowParamsPool_) { vkDestroyDescriptorPool(device, shadowParamsPool_, nullptr); shadowParamsPool_ = VK_NULL_HANDLE; }
     if (shadowParamsLayout_) { vkDestroyDescriptorSetLayout(device, shadowParamsLayout_, nullptr); shadowParamsLayout_ = VK_NULL_HANDLE; }
     if (shadowParamsUBO_) { vmaDestroyBuffer(alloc, shadowParamsUBO_, shadowParamsAlloc_); shadowParamsUBO_ = VK_NULL_HANDLE; }
@@ -2939,7 +2939,7 @@ bool M2Renderer::initializeShadow(VkRenderPass shadowRenderPass) {
     writes[1].pBufferInfo = &bufInfo;
     vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
 
-    // Per-frame pool for foliage shadow texture sets (reset each frame)
+    // Per-frame pools for foliage shadow texture sets (one per frame-in-flight, reset each frame)
     {
         VkDescriptorPoolSize texPoolSizes[2]{};
         texPoolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -2951,9 +2951,11 @@ bool M2Renderer::initializeShadow(VkRenderPass shadowRenderPass) {
         texPoolCI.maxSets = 256;
         texPoolCI.poolSizeCount = 2;
         texPoolCI.pPoolSizes = texPoolSizes;
-        if (vkCreateDescriptorPool(device, &texPoolCI, nullptr, &shadowTexPool_) != VK_SUCCESS) {
-            LOG_ERROR("M2Renderer: failed to create shadow texture pool");
-            return false;
+        for (uint32_t f = 0; f < kShadowTexPoolFrames; ++f) {
+            if (vkCreateDescriptorPool(device, &texPoolCI, nullptr, &shadowTexPool_[f]) != VK_SUCCESS) {
+                LOG_ERROR("M2Renderer: failed to create shadow texture pool ", f);
+                return false;
+            }
         }
     }
 
@@ -3029,9 +3031,11 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
 
     const float shadowRadiusSq = shadowRadius * shadowRadius;
 
-    // Reset per-frame texture descriptor pool for foliage alpha-test sets
-    if (shadowTexPool_) {
-        vkResetDescriptorPool(vkCtx_->getDevice(), shadowTexPool_, 0);
+    // Reset this frame slot's texture descriptor pool (safe: fence was waited on in beginFrame)
+    const uint32_t frameIdx = vkCtx_->getCurrentFrame();
+    VkDescriptorPool curShadowTexPool = shadowTexPool_[frameIdx];
+    if (curShadowTexPool) {
+        vkResetDescriptorPool(vkCtx_->getDevice(), curShadowTexPool, 0);
     }
     // Cache: texture imageView -> allocated descriptor set (avoids duplicates within frame)
     // Reuse persistent map — pool reset already invalidated the sets.
@@ -3046,7 +3050,7 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
         VkDescriptorSet set = VK_NULL_HANDLE;
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        ai.descriptorPool = shadowTexPool_;
+        ai.descriptorPool = curShadowTexPool;
         ai.descriptorSetCount = 1;
         ai.pSetLayouts = &shadowParamsLayout_;
         if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &set) != VK_SUCCESS) {

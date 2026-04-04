@@ -391,8 +391,9 @@ private:
     VkDescriptorSet shadowParamsSet_ = VK_NULL_HANDLE;
     ::VkBuffer shadowParamsUBO_ = VK_NULL_HANDLE;
     VmaAllocation shadowParamsAlloc_ = VK_NULL_HANDLE;
-    // Per-frame pool for foliage shadow texture descriptor sets
-    VkDescriptorPool shadowTexPool_ = VK_NULL_HANDLE;
+    // Per-frame pools for foliage shadow texture descriptor sets (one per frame-in-flight)
+    static constexpr uint32_t kShadowTexPoolFrames = 2;
+    VkDescriptorPool shadowTexPool_[kShadowTexPoolFrames] = {};
 
     // Particle pipelines
     VkPipeline particlePipeline_ = VK_NULL_HANDLE;       // M2 emitter particles

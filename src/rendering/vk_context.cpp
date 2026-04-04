@@ -279,8 +279,11 @@ bool VkContext::createSurface(SDL_Window* window) {
 
 bool VkContext::selectPhysicalDevice() {
     vkb::PhysicalDeviceSelector selector{vkbInstance_};
+    VkPhysicalDeviceFeatures requiredFeatures{};
+    requiredFeatures.samplerAnisotropy = VK_TRUE;
     selector.set_surface(surface)
             .set_minimum_version(1, 1)
+            .set_required_features(requiredFeatures)
             .prefer_gpu_device_type(vkb::PreferredDeviceType::discrete);
 
     auto physRet = selector.select();
