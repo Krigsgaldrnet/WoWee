@@ -809,14 +809,17 @@ void Renderer::beginFrame() {
     if (vkCtx->isDeviceLost()) return;
 
     // Apply deferred MSAA change between frames (before any rendering state is used)
+    g_crashRenderPhase = "bf:msaa";
     if (msaaChangePending_) {
         applyMsaaChange();
     }
 
     // Post-process resource management (§4.3 — delegates to PostProcessPipeline)
+    g_crashRenderPhase = "bf:pp";
     if (postProcessPipeline_) postProcessPipeline_->manageResources();
 
     // Handle swapchain recreation if needed
+    g_crashRenderPhase = "bf:swap";
     if (vkCtx->isSwapchainDirty()) {
         (void)vkCtx->recreateSwapchain(window->getWidth(), window->getHeight());
         // Rebuild water resources that reference swapchain extent/views
@@ -828,6 +831,7 @@ void Renderer::beginFrame() {
     }
 
     // Acquire swapchain image and begin command buffer
+    g_crashRenderPhase = "bf:acquire";
     currentCmd = vkCtx->beginFrame(currentImageIndex);
     if (currentCmd == VK_NULL_HANDLE) {
         // Swapchain out of date, will retry next frame
@@ -835,6 +839,7 @@ void Renderer::beginFrame() {
     }
 
     // FSR2 jitter pattern (§4.3 — delegates to PostProcessPipeline)
+    g_crashRenderPhase = "bf:jitter";
     if (postProcessPipeline_ && camera) postProcessPipeline_->applyJitter(camera.get());
 
     // Update per-frame UBO with current camera/lighting state
