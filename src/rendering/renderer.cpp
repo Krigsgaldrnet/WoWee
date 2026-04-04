@@ -1,3 +1,5 @@
+extern volatile const char* g_crashRenderPhase;
+
 #include "rendering/renderer.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
@@ -836,6 +838,7 @@ void Renderer::beginFrame() {
     if (postProcessPipeline_ && camera) postProcessPipeline_->applyJitter(camera.get());
 
     // Update per-frame UBO with current camera/lighting state
+    g_crashRenderPhase = "bf:ubo";
     updatePerFrameUBO();
 
     // GPU crash diagnostic: skip all pre-passes to isolate crash source
@@ -844,6 +847,7 @@ void Renderer::beginFrame() {
     if (!skipPrePasses) {
     // --- Off-screen pre-passes (before main render pass) ---
     // Minimap composite (renders 3x3 tile grid into 768x768 render target)
+    g_crashRenderPhase = "bf:minimap";
     if (minimap && minimap->isEnabled() && camera) {
         glm::vec3 minimapCenter = camera->getPosition();
         if (cameraController && cameraController->isThirdPerson())
@@ -851,11 +855,13 @@ void Renderer::beginFrame() {
         minimap->compositePass(currentCmd, minimapCenter);
     }
     // World map composite (renders zone tiles into 1024x768 render target)
+    g_crashRenderPhase = "bf:worldmap";
     if (worldMap) {
         worldMap->compositePass(currentCmd);
     }
 
     // Character preview composite passes
+    g_crashRenderPhase = "bf:preview";
     for (auto* preview : activePreviews_) {
         if (preview && preview->isModelLoaded()) {
             preview->compositePass(currentCmd, vkCtx->getCurrentFrame());
@@ -863,15 +869,18 @@ void Renderer::beginFrame() {
     }
 
     // Shadow pre-pass (before main render pass)
+    g_crashRenderPhase = "bf:shadow";
     if (shadowsEnabled && shadowDepthImage[0] != VK_NULL_HANDLE) {
         renderShadowPass();
     }
 
     // Water reflection pre-pass (renders scene from mirrored camera into 512x512 texture)
+    g_crashRenderPhase = "bf:reflection";
     renderReflectionPass();
     } // !skipPrePasses
 
     // --- Begin render pass ---
+    g_crashRenderPhase = "bf:renderpass";
     // Select framebuffer: PP off-screen target or swapchain (§4.3 — PostProcessPipeline)
     VkRenderPassBeginInfo rpInfo{};
     rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
