@@ -10,6 +10,7 @@
 #include <X11/Xlib.h>
 #include <execinfo.h>
 #include <unistd.h>
+#include <cstring>
 
 // Keep a persistent X11 connection for emergency mouse release in signal handlers.
 // XOpenDisplay inside a signal handler is unreliable, so we open it once at startup.
@@ -26,32 +27,45 @@ static void releaseMouseGrab() {
 static void releaseMouseGrab() {}
 #endif
 
+// Render-phase marker set by GameScreen::render() — lets crash handler
+// identify which render call was active when backtrace is incomplete.
+extern volatile const char* g_crashRenderPhase;
+
+#ifdef __linux__
+static void crashHandlerSigaction(int sig, siginfo_t* info, void* /*ucontext*/) {
+    releaseMouseGrab();
+    void* frames[64];
+    int n = backtrace(frames, 64);
+    const char* sigName = (sig == SIGSEGV) ? "SIGSEGV" :
+                          (sig == SIGABRT) ? "SIGABRT" :
+                          (sig == SIGFPE)  ? "SIGFPE"  : "UNKNOWN";
+    const char* phase = (const char*)g_crashRenderPhase;
+    void* faultAddr = info ? info->si_addr : nullptr;
+    fprintf(stderr, "\n=== CRASH: signal %s (%d) renderPhase=%s faultAddr=%p ===\n",
+            sigName, sig, phase ? phase : "?", faultAddr);
+    backtrace_symbols_fd(frames, n, STDERR_FILENO);
+    FILE* f = fopen("/tmp/wowee_debug.log", "a");
+    if (f) {
+        fprintf(f, "\n=== CRASH: signal %s (%d) renderPhase=%s faultAddr=%p ===\n",
+                sigName, sig, phase ? phase : "?", faultAddr);
+        fflush(f);
+        backtrace_symbols_fd(frames, n, fileno(f));
+        fclose(f);
+    }
+    // Re-raise with default handler
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = SIG_DFL;
+    sigaction(sig, &sa, nullptr);
+    raise(sig);
+}
+#else
 static void crashHandler(int sig) {
     releaseMouseGrab();
-#ifdef __linux__
-    // Dump backtrace to debug log
-    {
-        void* frames[64];
-        int n = backtrace(frames, 64);
-        const char* sigName = (sig == SIGSEGV) ? "SIGSEGV" :
-                              (sig == SIGABRT) ? "SIGABRT" :
-                              (sig == SIGFPE)  ? "SIGFPE"  : "UNKNOWN";
-        // Write to stderr and to the debug log file
-        fprintf(stderr, "\n=== CRASH: signal %s (%d) ===\n", sigName, sig);
-        backtrace_symbols_fd(frames, n, STDERR_FILENO);
-        FILE* f = fopen("/tmp/wowee_debug.log", "a");
-        if (f) {
-            fprintf(f, "\n=== CRASH: signal %s (%d) ===\n", sigName, sig);
-            fflush(f);
-            // Also write backtrace to the log file fd
-            backtrace_symbols_fd(frames, n, fileno(f));
-            fclose(f);
-        }
-    }
-#endif
     std::signal(sig, SIG_DFL);
     std::raise(sig);
 }
+#endif
 
 static wowee::core::LogLevel readLogLevelFromEnv() {
     const char* raw = std::getenv("WOWEE_LOG_LEVEL");
@@ -69,12 +83,25 @@ static wowee::core::LogLevel readLogLevelFromEnv() {
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 #ifdef __linux__
     g_emergencyDisplay = XOpenDisplay(nullptr);
-#endif
+    // Use sigaction for SIGSEGV/SIGABRT/SIGFPE to get si_addr (faulting address)
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_sigaction = crashHandlerSigaction;
+        sa.sa_flags = SA_SIGINFO;
+        sigaction(SIGSEGV, &sa, nullptr);
+        sigaction(SIGABRT, &sa, nullptr);
+        sigaction(SIGFPE,  &sa, nullptr);
+    }
+    std::signal(SIGTERM, [](int) { std::_Exit(1); });
+    std::signal(SIGINT,  [](int) { std::_Exit(1); });
+#else
     std::signal(SIGSEGV, crashHandler);
     std::signal(SIGABRT, crashHandler);
     std::signal(SIGFPE,  crashHandler);
     std::signal(SIGTERM, crashHandler);
     std::signal(SIGINT,  crashHandler);
+#endif
     try {
         wowee::core::Logger::getInstance().setLogLevel(readLogLevelFromEnv());
         LOG_INFO("=== Wowee Native Client ===");

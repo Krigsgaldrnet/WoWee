@@ -935,9 +935,11 @@ else()
     # -g3          — maximum DWARF debug info (includes macro definitions)
     # -Og          — optimise for debugging (better than -O0, keeps most frames)
     # -fno-omit-frame-pointer — preserve frame pointers so stack traces are clean
+    # Frame pointers in all configs (negligible perf cost, critical for crash backtraces)
     target_compile_options(wowee PRIVATE
-        $<$<CONFIG:Debug>:-g3 -Og -fno-omit-frame-pointer>
-        $<$<CONFIG:RelWithDebInfo>:-g -fno-omit-frame-pointer>
+        -fno-omit-frame-pointer
+        $<$<CONFIG:Debug>:-g3 -Og>
+        $<$<CONFIG:RelWithDebInfo>:-g>
     )
 endif()
 

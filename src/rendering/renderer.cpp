@@ -792,6 +792,10 @@ void Renderer::applyMsaaChange() {
     initInfo.ImageCount = vkCtx->getSwapchainImageCount();
     initInfo.PipelineInfoMain.RenderPass = vkCtx->getImGuiRenderPass();
     initInfo.PipelineInfoMain.MSAASamples = vkCtx->getMsaaSamples();
+    initInfo.CheckVkResultFn = [](VkResult err) {
+        if (err != VK_SUCCESS)
+            LOG_ERROR("ImGui Vulkan error: ", static_cast<int>(err));
+    };
     ImGui_ImplVulkan_Init(&initInfo);
 
     LOG_INFO("MSAA change complete");
