@@ -520,8 +520,10 @@ void CharacterRenderer::destroyInstanceBones(CharacterInstance& inst, bool defer
                 vmaDestroyBuffer(alloc, boneBuf, boneAlloc);
             }
         } else if (boneSet != VK_NULL_HANDLE || boneBuf) {
+            // Loop destroys bone sets for ALL frame slots — the other slot's
+            // command buffer may still be in flight. Wait for all fences.
             VkDescriptorPool pool = boneDescPool_;
-            vkCtx_->deferAfterFrameFence([device, alloc, pool, boneSet, boneBuf, boneAlloc]() {
+            vkCtx_->deferAfterAllFrameFences([device, alloc, pool, boneSet, boneBuf, boneAlloc]() {
                 if (boneSet != VK_NULL_HANDLE && pool != VK_NULL_HANDLE) {
                     VkDescriptorSet s = boneSet;
                     vkFreeDescriptorSets(device, pool, 1, &s);

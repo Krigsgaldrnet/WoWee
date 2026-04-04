@@ -867,10 +867,11 @@ void M2Renderer::destroyInstanceBones(M2Instance& inst, bool defer) {
                 vmaDestroyBuffer(alloc, boneBuf, boneAlloc);
             }
         } else if (boneSet != VK_NULL_HANDLE || boneBuf) {
-            // Deferred destruction — previous frame's command buffer may still
-            // reference these descriptor sets and buffers.
+            // Deferred destruction — the loop destroys bone sets for ALL frame
+            // slots, so the other slot's command buffer may still be in flight.
+            // Must wait for all fences, not just the current frame's.
             VkDescriptorPool pool = boneDescPool_;
-            vkCtx_->deferAfterFrameFence([device, alloc, pool, boneSet, boneBuf, boneAlloc]() {
+            vkCtx_->deferAfterAllFrameFences([device, alloc, pool, boneSet, boneBuf, boneAlloc]() {
                 if (boneSet != VK_NULL_HANDLE) {
                     VkDescriptorSet s = boneSet;
                     vkFreeDescriptorSets(device, pool, 1, &s);
