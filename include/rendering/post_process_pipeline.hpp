@@ -182,7 +182,9 @@ private:
         VkPipelineLayout     pipelineLayout    = VK_NULL_HANDLE;
         VkDescriptorSetLayout descSetLayout    = VK_NULL_HANDLE;
         VkDescriptorPool     descPool          = VK_NULL_HANDLE;
-        VkDescriptorSet      descSet           = VK_NULL_HANDLE;
+        // Per-frame descriptor sets to avoid race with in-flight command buffers
+        static constexpr uint32_t DESC_SET_COUNT = 2; // matches MAX_FRAMES_IN_FLIGHT
+        VkDescriptorSet      descSet[DESC_SET_COUNT] = {};
     };
     FXAAState fxaa_;
     bool initFXAAResources();

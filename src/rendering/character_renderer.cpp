@@ -472,11 +472,31 @@ void CharacterRenderer::createFallbackTextures(VkDevice device) {
     }
 }
 
-void CharacterRenderer::destroyModelGPU(M2ModelGPU& gpuModel) {
+void CharacterRenderer::destroyModelGPU(M2ModelGPU& gpuModel, bool defer) {
     if (!vkCtx_) return;
     VmaAllocator alloc = vkCtx_->getAllocator();
-    if (gpuModel.vertexBuffer) { vmaDestroyBuffer(alloc, gpuModel.vertexBuffer, gpuModel.vertexAlloc); gpuModel.vertexBuffer = VK_NULL_HANDLE; }
-    if (gpuModel.indexBuffer) { vmaDestroyBuffer(alloc, gpuModel.indexBuffer, gpuModel.indexAlloc); gpuModel.indexBuffer = VK_NULL_HANDLE; }
+
+    // Snapshot raw handles and null the model fields immediately
+    ::VkBuffer vb = gpuModel.vertexBuffer;
+    VmaAllocation vbAlloc = gpuModel.vertexAlloc;
+    ::VkBuffer ib = gpuModel.indexBuffer;
+    VmaAllocation ibAlloc = gpuModel.indexAlloc;
+    gpuModel.vertexBuffer = VK_NULL_HANDLE;
+    gpuModel.vertexAlloc = VK_NULL_HANDLE;
+    gpuModel.indexBuffer = VK_NULL_HANDLE;
+    gpuModel.indexAlloc = VK_NULL_HANDLE;
+
+    if (!defer) {
+        // Safe after vkDeviceWaitIdle (shutdown / clear paths)
+        if (vb) vmaDestroyBuffer(alloc, vb, vbAlloc);
+        if (ib) vmaDestroyBuffer(alloc, ib, ibAlloc);
+    } else if (vb || ib) {
+        // Streaming path: in-flight command buffers may still reference these
+        vkCtx_->deferAfterFrameFence([alloc, vb, vbAlloc, ib, ibAlloc]() {
+            if (vb) vmaDestroyBuffer(alloc, vb, vbAlloc);
+            if (ib) vmaDestroyBuffer(alloc, ib, ibAlloc);
+        });
+    }
 }
 
 void CharacterRenderer::destroyInstanceBones(CharacterInstance& inst, bool defer) {
@@ -1412,7 +1432,7 @@ bool CharacterRenderer::loadModel(const pipeline::M2Model& model, uint32_t id) {
 
     if (models.find(id) != models.end()) {
         core::Logger::getInstance().warning("Model ID ", id, " already loaded, replacing");
-        destroyModelGPU(models[id]);
+        destroyModelGPU(models[id], /*defer=*/true);
     }
 
     M2ModelGPU gpuModel;

@@ -208,7 +208,7 @@ private:
     void calculateBoneMatrices(CharacterInstance& instance);
     glm::mat4 getBoneTransform(const pipeline::M2Bone& bone, float time, int sequenceIndex);
     glm::mat4 getModelMatrix(const CharacterInstance& instance) const;
-    void destroyModelGPU(M2ModelGPU& gpuModel);
+    void destroyModelGPU(M2ModelGPU& gpuModel, bool defer = false);
     void destroyInstanceBones(CharacterInstance& inst, bool defer = false);
 
     // Keyframe interpolation helpers

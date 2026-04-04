@@ -198,7 +198,9 @@ bool PostProcessPipeline::executePostProcessing(VkCommandBuffer cmd, uint32_t im
         // FSR3+FXAA combined: re-point FXAA's descriptor to the FSR3 temporal output
         // so renderFXAAPass() applies spatial AA on the temporally-stabilized frame.
         // This must happen outside the render pass (descriptor updates are CPU-side).
-        if (fxaa_.enabled && fxaa_.descSet && fxaa_.sceneSampler) {
+        // Use per-frame descriptor set to avoid race with in-flight command buffers.
+        uint32_t fxaaFrameIdx = vkCtx_->getCurrentFrame();
+        if (fxaa_.enabled && fxaa_.descSet[fxaaFrameIdx] && fxaa_.sceneSampler) {
             VkImageView fsr3OutputView = VK_NULL_HANDLE;
             if (fsr2_.useAmdBackend) {
                 if (fsr2_.amdFsr3FramegenRuntimeActive && fsr2_.framegenOutput.image)
@@ -215,7 +217,7 @@ bool PostProcessPipeline::executePostProcessing(VkCommandBuffer cmd, uint32_t im
                 imgInfo.sampler     = fxaa_.sceneSampler;
                 VkWriteDescriptorSet write{};
                 write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                write.dstSet           = fxaa_.descSet;
+                write.dstSet           = fxaa_.descSet[fxaaFrameIdx];
                 write.dstBinding       = 0;
                 write.descriptorCount  = 1;
                 write.descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -257,23 +259,23 @@ bool PostProcessPipeline::executePostProcessing(VkCommandBuffer cmd, uint32_t im
         // of RCAS sharpening. FXAA descriptor is temporarily pointed to the FSR3
         // history buffer (which is already in SHADER_READ_ONLY_OPTIMAL). This gives
         // FSR3 temporal stability + FXAA spatial edge smoothing ("ultra quality native").
-        if (fxaa_.enabled && fxaa_.pipeline && fxaa_.descSet) {
+        if (fxaa_.enabled && fxaa_.pipeline && fxaa_.descSet[fxaaFrameIdx]) {
             renderFXAAPass();
         } else {
             // Draw RCAS sharpening from accumulated history buffer
             renderFSR2Sharpen();
         }
 
-        // Restore FXAA descriptor to its normal scene color source so standalone
-        // FXAA frames are not affected by the FSR3 history pointer set above.
-        if (fxaa_.enabled && fxaa_.descSet && fxaa_.sceneSampler && fxaa_.sceneColor.imageView) {
+        // Restore this frame's FXAA descriptor to its normal scene color source
+        // so standalone FXAA frames are not affected by the FSR3 history pointer.
+        if (fxaa_.enabled && fxaa_.descSet[fxaaFrameIdx] && fxaa_.sceneSampler && fxaa_.sceneColor.imageView) {
             VkDescriptorImageInfo restoreInfo{};
             restoreInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             restoreInfo.imageView   = fxaa_.sceneColor.imageView;
             restoreInfo.sampler     = fxaa_.sceneSampler;
             VkWriteDescriptorSet restoreWrite{};
             restoreWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            restoreWrite.dstSet          = fxaa_.descSet;
+            restoreWrite.dstSet          = fxaa_.descSet[fxaaFrameIdx];
             restoreWrite.dstBinding      = 0;
             restoreWrite.descriptorCount = 1;
             restoreWrite.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1754,36 +1756,41 @@ bool PostProcessPipeline::initFXAAResources() {
     layoutInfo.pBindings = &binding;
     vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &fxaa_.descSetLayout);
 
+    constexpr uint32_t setCount = FXAAState::DESC_SET_COUNT;
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 1;
+    poolSize.descriptorCount = setCount;
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = 1;
+    poolInfo.maxSets = setCount;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
     vkCreateDescriptorPool(device, &poolInfo, nullptr, &fxaa_.descPool);
 
+    VkDescriptorSetLayout layouts[setCount];
+    for (uint32_t i = 0; i < setCount; i++) layouts[i] = fxaa_.descSetLayout;
     VkDescriptorSetAllocateInfo dsAllocInfo{};
     dsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     dsAllocInfo.descriptorPool = fxaa_.descPool;
-    dsAllocInfo.descriptorSetCount = 1;
-    dsAllocInfo.pSetLayouts = &fxaa_.descSetLayout;
-    vkAllocateDescriptorSets(device, &dsAllocInfo, &fxaa_.descSet);
+    dsAllocInfo.descriptorSetCount = setCount;
+    dsAllocInfo.pSetLayouts = layouts;
+    vkAllocateDescriptorSets(device, &dsAllocInfo, fxaa_.descSet);
 
-    // Bind the resolved 1x sceneColor
+    // Bind the resolved 1x sceneColor to all per-frame sets
     VkDescriptorImageInfo imgInfo{};
     imgInfo.sampler = fxaa_.sceneSampler;
     imgInfo.imageView = fxaa_.sceneColor.imageView;
     imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = fxaa_.descSet;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo = &imgInfo;
-    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    for (uint32_t i = 0; i < setCount; i++) {
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = fxaa_.descSet[i];
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &imgInfo;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
 
     // Pipeline layout — push constant holds vec4(rcpFrame.xy, sharpness, pad)
     VkPushConstantRange pc{};
@@ -1843,7 +1850,7 @@ void PostProcessPipeline::destroyFXAAResources() {
 
     if (fxaa_.pipeline)       { vkDestroyPipeline(device, fxaa_.pipeline, nullptr);             fxaa_.pipeline = VK_NULL_HANDLE; }
     if (fxaa_.pipelineLayout) { vkDestroyPipelineLayout(device, fxaa_.pipelineLayout, nullptr); fxaa_.pipelineLayout = VK_NULL_HANDLE; }
-    if (fxaa_.descPool)       { vkDestroyDescriptorPool(device, fxaa_.descPool, nullptr);       fxaa_.descPool = VK_NULL_HANDLE; fxaa_.descSet = VK_NULL_HANDLE; }
+    if (fxaa_.descPool)       { vkDestroyDescriptorPool(device, fxaa_.descPool, nullptr);       fxaa_.descPool = VK_NULL_HANDLE; for (auto& s : fxaa_.descSet) s = VK_NULL_HANDLE; }
     if (fxaa_.descSetLayout)  { vkDestroyDescriptorSetLayout(device, fxaa_.descSetLayout, nullptr); fxaa_.descSetLayout = VK_NULL_HANDLE; }
     if (fxaa_.sceneFramebuffer) { vkDestroyFramebuffer(device, fxaa_.sceneFramebuffer, nullptr); fxaa_.sceneFramebuffer = VK_NULL_HANDLE; }
     fxaa_.sceneSampler = VK_NULL_HANDLE; // Owned by VkContext sampler cache
@@ -1857,9 +1864,10 @@ void PostProcessPipeline::renderFXAAPass() {
     if (!fxaa_.pipeline || currentCmd_ == VK_NULL_HANDLE) return;
     VkExtent2D ext = vkCtx_->getSwapchainExtent();
 
+    uint32_t fi = vkCtx_->getCurrentFrame();
     vkCmdBindPipeline(currentCmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, fxaa_.pipeline);
     vkCmdBindDescriptorSets(currentCmd_, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            fxaa_.pipelineLayout, 0, 1, &fxaa_.descSet, 0, nullptr);
+                            fxaa_.pipelineLayout, 0, 1, &fxaa_.descSet[fi], 0, nullptr);
 
     // Pass rcpFrame + sharpness + effect flag (vec4, 16 bytes).
     // When FSR2/FSR3 is active alongside FXAA, forward FSR2's sharpness so the

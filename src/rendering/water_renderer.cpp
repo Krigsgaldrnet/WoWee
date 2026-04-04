@@ -1920,27 +1920,25 @@ void WaterRenderer::endReflectionPass(VkCommandBuffer cmd) {
     vkCmdEndRenderPass(cmd);
     reflectionColorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    // Update all per-frame scene descriptor sets with the freshly rendered reflection texture
-    if (reflectionColorView && reflectionSampler) {
-        VkDescriptorImageInfo reflInfo{};
-        reflInfo.sampler = reflectionSampler;
-        reflInfo.imageView = reflectionColorView;
-        reflInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    // Update only the current frame's scene descriptor set with the reflection texture.
+    // Updating all frames would race with in-flight command buffers that have the
+    // other frame's descriptor set bound.
+    if (reflectionColorView && reflectionSampler && vkCtx) {
+        uint32_t fi = vkCtx->getCurrentFrame() % SCENE_HISTORY_FRAMES;
+        if (sceneHistory[fi].sceneSet) {
+            VkDescriptorImageInfo reflInfo{};
+            reflInfo.sampler = reflectionSampler;
+            reflInfo.imageView = reflectionColorView;
+            reflInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        std::vector<VkWriteDescriptorSet> writes;
-        for (uint32_t f = 0; f < SCENE_HISTORY_FRAMES; f++) {
-            if (!sceneHistory[f].sceneSet) continue;
             VkWriteDescriptorSet write{};
             write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write.dstSet = sceneHistory[f].sceneSet;
+            write.dstSet = sceneHistory[fi].sceneSet;
             write.dstBinding = 2;
             write.descriptorCount = 1;
             write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             write.pImageInfo = &reflInfo;
-            writes.push_back(write);
-        }
-        if (!writes.empty()) {
-            vkUpdateDescriptorSets(vkCtx->getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            vkUpdateDescriptorSets(vkCtx->getDevice(), 1, &write, 0, nullptr);
         }
     }
 }
