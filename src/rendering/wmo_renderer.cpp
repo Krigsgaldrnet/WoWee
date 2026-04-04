@@ -827,9 +827,10 @@ void WMORenderer::unloadModel(uint32_t id) {
         return;
     }
 
-    // Free GPU resources
+    // Free GPU resources — defer because in-flight command buffers may
+    // still reference this model's vertex/index buffers and descriptors.
     for (auto& group : it->second.groups) {
-        destroyGroupGPU(group);
+        destroyGroupGPU(group, /*defer=*/true);
     }
 
     loadedModels.erase(it);
@@ -1925,33 +1926,64 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
 
 // renderGroup removed — draw calls are inlined in render()
 
-void WMORenderer::destroyGroupGPU(GroupResources& group) {
+void WMORenderer::destroyGroupGPU(GroupResources& group, bool defer) {
     if (!vkCtx_) return;
+    VkDevice device = vkCtx_->getDevice();
     VmaAllocator allocator = vkCtx_->getAllocator();
 
-    if (group.vertexBuffer) {
-        vmaDestroyBuffer(allocator, group.vertexBuffer, group.vertexAlloc);
+    if (!defer) {
+        // Immediate destruction (safe after vkDeviceWaitIdle)
+        if (group.vertexBuffer) {
+            vmaDestroyBuffer(allocator, group.vertexBuffer, group.vertexAlloc);
+            group.vertexBuffer = VK_NULL_HANDLE;
+        }
+        if (group.indexBuffer) {
+            vmaDestroyBuffer(allocator, group.indexBuffer, group.indexAlloc);
+            group.indexBuffer = VK_NULL_HANDLE;
+        }
+        for (auto& mb : group.mergedBatches) {
+            if (mb.materialSet) {
+                vkFreeDescriptorSets(device, materialDescPool_, 1, &mb.materialSet);
+                mb.materialSet = VK_NULL_HANDLE;
+            }
+            if (mb.materialUBO) {
+                vmaDestroyBuffer(allocator, mb.materialUBO, mb.materialUBOAlloc);
+                mb.materialUBO = VK_NULL_HANDLE;
+            }
+        }
+    } else {
+        // Deferred destruction — previous frame's command buffer may still
+        // reference these buffers and descriptor sets.
+        ::VkBuffer vb = group.vertexBuffer;
+        VmaAllocation vbAlloc = group.vertexAlloc;
+        ::VkBuffer ib = group.indexBuffer;
+        VmaAllocation ibAlloc = group.indexAlloc;
         group.vertexBuffer = VK_NULL_HANDLE;
-        group.vertexAlloc = VK_NULL_HANDLE;
-    }
-    if (group.indexBuffer) {
-        vmaDestroyBuffer(allocator, group.indexBuffer, group.indexAlloc);
         group.indexBuffer = VK_NULL_HANDLE;
-        group.indexAlloc = VK_NULL_HANDLE;
-    }
 
-    // Destroy material UBOs and free descriptor sets back to pool
-    VkDevice device = vkCtx_->getDevice();
-    for (auto& mb : group.mergedBatches) {
-        if (mb.materialSet) {
-            vkFreeDescriptorSets(device, materialDescPool_, 1, &mb.materialSet);
+        // Snapshot material handles (::VkBuffer = raw Vulkan handle, not RAII wrapper)
+        struct MatSnapshot { VkDescriptorSet set; ::VkBuffer ubo; VmaAllocation uboAlloc; };
+        std::vector<MatSnapshot> mats;
+        mats.reserve(group.mergedBatches.size());
+        for (auto& mb : group.mergedBatches) {
+            mats.push_back({mb.materialSet, mb.materialUBO, mb.materialUBOAlloc});
             mb.materialSet = VK_NULL_HANDLE;
-        }
-        if (mb.materialUBO) {
-            vmaDestroyBuffer(allocator, mb.materialUBO, mb.materialUBOAlloc);
             mb.materialUBO = VK_NULL_HANDLE;
-            mb.materialUBOAlloc = VK_NULL_HANDLE;
         }
+
+        VkDescriptorPool pool = materialDescPool_;
+        vkCtx_->deferAfterFrameFence([device, allocator, pool, vb, vbAlloc, ib, ibAlloc,
+                                      mats = std::move(mats)]() {
+            if (vb) vmaDestroyBuffer(allocator, vb, vbAlloc);
+            if (ib) vmaDestroyBuffer(allocator, ib, ibAlloc);
+            for (auto& m : mats) {
+                if (m.set) {
+                    VkDescriptorSet s = m.set;
+                    vkFreeDescriptorSets(device, pool, 1, &s);
+                }
+                if (m.ubo) vmaDestroyBuffer(allocator, m.ubo, m.uboAlloc);
+            }
+        });
     }
 }
 
@@ -2467,6 +2499,9 @@ void WMORenderer::backfillNormalMaps() {
 
     if (generated > 0) {
         VkDevice device = vkCtx_->getDevice();
+        // Wait for in-flight command buffers before updating descriptor sets —
+        // the previous frame may still reference them via binding 2.
+        vkDeviceWaitIdle(device);
         int rebound = 0;
         // Update merged batches: assign normal map pointer and rebind descriptor set
         for (auto& [modelId, model] : loadedModels) {

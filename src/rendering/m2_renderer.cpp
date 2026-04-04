@@ -844,23 +844,41 @@ void M2Renderer::destroyModelGPU(M2ModelGPU& model) {
     model.ribbonTexSets.clear();
 }
 
-void M2Renderer::destroyInstanceBones(M2Instance& inst) {
+void M2Renderer::destroyInstanceBones(M2Instance& inst, bool defer) {
     if (!vkCtx_) return;
     VkDevice device = vkCtx_->getDevice();
     VmaAllocator alloc = vkCtx_->getAllocator();
     for (int i = 0; i < 2; i++) {
-        // Free bone descriptor set so the pool slot is immediately reusable.
-        // Without this, the pool fills up over a play session as tiles stream
-        // in/out, eventually causing vkAllocateDescriptorSets to fail and
-        // making animated instances invisible (perceived as flickering).
-        if (inst.boneSet[i] != VK_NULL_HANDLE) {
-            vkFreeDescriptorSets(device, boneDescPool_, 1, &inst.boneSet[i]);
-            inst.boneSet[i] = VK_NULL_HANDLE;
-        }
-        if (inst.boneBuffer[i]) {
-            vmaDestroyBuffer(alloc, inst.boneBuffer[i], inst.boneAlloc[i]);
-            inst.boneBuffer[i] = VK_NULL_HANDLE;
-            inst.boneMapped[i] = nullptr;
+        // Snapshot handles before clearing the instance — needed for both
+        // immediate and deferred paths.
+        VkDescriptorSet boneSet = inst.boneSet[i];
+        ::VkBuffer boneBuf = inst.boneBuffer[i];
+        VmaAllocation boneAlloc = inst.boneAlloc[i];
+        inst.boneSet[i] = VK_NULL_HANDLE;
+        inst.boneBuffer[i] = VK_NULL_HANDLE;
+        inst.boneMapped[i] = nullptr;
+
+        if (!defer) {
+            // Immediate destruction (safe after vkDeviceWaitIdle)
+            if (boneSet != VK_NULL_HANDLE) {
+                vkFreeDescriptorSets(device, boneDescPool_, 1, &boneSet);
+            }
+            if (boneBuf) {
+                vmaDestroyBuffer(alloc, boneBuf, boneAlloc);
+            }
+        } else if (boneSet != VK_NULL_HANDLE || boneBuf) {
+            // Deferred destruction — previous frame's command buffer may still
+            // reference these descriptor sets and buffers.
+            VkDescriptorPool pool = boneDescPool_;
+            vkCtx_->deferAfterFrameFence([device, alloc, pool, boneSet, boneBuf, boneAlloc]() {
+                if (boneSet != VK_NULL_HANDLE) {
+                    VkDescriptorSet s = boneSet;
+                    vkFreeDescriptorSets(device, pool, 1, &s);
+                }
+                if (boneBuf) {
+                    vmaDestroyBuffer(alloc, boneBuf, boneAlloc);
+                }
+            });
         }
     }
 }
@@ -3901,7 +3919,7 @@ void M2Renderer::removeInstance(uint32_t instanceId) {
         instanceDedupMap_.erase(dk);
     }
 
-    destroyInstanceBones(inst);
+    destroyInstanceBones(inst, /*defer=*/true);
 
     // Swap-remove: move last element to the hole and pop_back to avoid O(n) shift
     instanceIndexById.erase(instanceId);
@@ -3951,7 +3969,7 @@ void M2Renderer::removeInstances(const std::vector<uint32_t>& instanceIds) {
     const size_t oldSize = instances.size();
     for (auto& inst : instances) {
         if (toRemove.count(inst.id)) {
-            destroyInstanceBones(inst);
+            destroyInstanceBones(inst, /*defer=*/true);
         }
     }
     instances.erase(std::remove_if(instances.begin(), instances.end(),

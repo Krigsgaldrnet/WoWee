@@ -641,8 +641,10 @@ private:
 
     // Helper to destroy model GPU resources
     void destroyModelGPU(M2ModelGPU& model);
-    // Helper to destroy instance bone buffers
-    void destroyInstanceBones(M2Instance& inst);
+    // Helper to destroy instance bone buffers.
+    // When defer=true, destruction is scheduled via deferAfterFrameFence so
+    // in-flight command buffers are not invalidated (use for streaming unload).
+    void destroyInstanceBones(M2Instance& inst, bool defer = false);
 };
 
 } // namespace rendering

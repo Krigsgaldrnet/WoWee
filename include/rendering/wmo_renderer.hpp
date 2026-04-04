@@ -599,9 +599,11 @@ private:
     VkDescriptorSet allocateMaterialSet();
 
     /**
-     * Destroy GPU resources for a single group
+     * Destroy GPU resources for a single group.
+     * When defer=true, destruction is scheduled via deferAfterFrameFence
+     * so in-flight command buffers are not invalidated.
      */
-    void destroyGroupGPU(GroupResources& group);
+    void destroyGroupGPU(GroupResources& group, bool defer = false);
 
     struct GridCell {
         int x;
