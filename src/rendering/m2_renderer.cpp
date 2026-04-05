@@ -2680,22 +2680,23 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         sortedVisible_.reserve(expectedVisible);
     }
 
-    // GPU frustum culling — build frustum only for CPU fallback path
+    // GPU frustum culling — build frustum for CPU fallback path and overflow instances
     Frustum frustum;
-    if (!gpuCullAvailable) {
+    {
         const glm::mat4 vp = camera.getProjectionMatrix() * camera.getViewMatrix();
         frustum.extractFromMatrix(vp);
     }
     const float maxPossibleDistSq = maxRenderDistanceSq * 4.0f;
 
-    for (uint32_t i = 0; i < numInstances; ++i) {
+    const uint32_t totalInstances = static_cast<uint32_t>(instances.size());
+    for (uint32_t i = 0; i < totalInstances; ++i) {
         const auto& instance = instances[i];
 
-        if (gpuCullAvailable) {
+        if (gpuCullAvailable && i < numInstances) {
             // GPU already tested flags + distance + frustum
             if (!visibility[i]) continue;
         } else {
-            // CPU fallback: same culling logic as before
+            // CPU fallback: for non-GPU path or instances beyond cull buffer
             if (!instance.cachedIsValid || instance.cachedIsSmoke || instance.cachedIsInvisibleTrap) continue;
 
             glm::vec3 toCam = instance.position - camPos;
