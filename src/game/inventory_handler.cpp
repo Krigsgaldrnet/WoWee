@@ -3219,8 +3219,8 @@ void InventoryHandler::emitAllOtherPlayerEquipment() {
 void InventoryHandler::handleTrainerBuySucceeded(network::Packet& packet) {
     /*uint64_t guid =*/ packet.readUInt64();
     uint32_t spellId = packet.readUInt32();
-    if (owner_.getSpellHandler() && !owner_.getSpellHandler()->knownSpells_.count(spellId)) {
-        owner_.getSpellHandler()->knownSpells_.insert(spellId);
+    if (owner_.getSpellHandler() && !owner_.getSpellHandler()->hasKnownSpell(spellId)) {
+        owner_.getSpellHandler()->addKnownSpell(spellId);
     }
     const std::string& name = owner_.getSpellName(spellId);
     if (!name.empty())

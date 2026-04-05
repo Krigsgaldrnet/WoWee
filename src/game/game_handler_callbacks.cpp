@@ -573,13 +573,12 @@ void GameHandler::handleLoginVerifyWorld(network::Packet& packet) {
     movementInfo.flags = 0;
     movementInfo.flags2 = 0;
     if (movementHandler_) {
-        movementHandler_->movementClockStart_ = std::chrono::steady_clock::now();
-        movementHandler_->lastMovementTimestampMs_ = 0;
+        movementHandler_->resetMovementClock();
     }
     movementInfo.time = nextMovementTimestampMs();
     if (movementHandler_) {
-        movementHandler_->isFalling_ = false;
-        movementHandler_->fallStartMs_ = 0;
+        movementHandler_->setFalling(false);
+        movementHandler_->setFallStartMs(0);
     }
     movementInfo.fallTime = 0;
     movementInfo.jumpVelocity = 0.0f;
@@ -1945,8 +1944,8 @@ void GameHandler::interactWithGameObject(uint64_t guid) {
     if (guid == 0) { LOG_WARNING("[GO-DIAG] BLOCKED: guid==0"); return; }
     if (!isInWorld()) { LOG_WARNING("[GO-DIAG] BLOCKED: not in world"); return; }
     // Do not overlap an actual spell cast.
-    if (spellHandler_ && spellHandler_->casting_ && spellHandler_->currentCastSpellId_ != 0) {
-        LOG_WARNING("[GO-DIAG] BLOCKED: already casting spellId=", spellHandler_->currentCastSpellId_);
+    if (spellHandler_ && spellHandler_->isCasting() && spellHandler_->getCurrentCastSpellId() != 0) {
+        LOG_WARNING("[GO-DIAG] BLOCKED: already casting spellId=", spellHandler_->getCurrentCastSpellId());
         return;
     }
     // Always clear melee intent before GO interactions.

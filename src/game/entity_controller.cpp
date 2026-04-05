@@ -449,15 +449,14 @@ void EntityController::syncClassicAurasFromFields(const std::shared_ptr<Entity>&
     }
     if (!hasAuraField) return;
 
-    owner_.getSpellHandler()->playerAuras_.clear();
-    owner_.getSpellHandler()->playerAuras_.resize(48);
+    owner_.getSpellHandler()->resetPlayerAuras(48);
     uint64_t nowMs = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
     for (int slot = 0; slot < 48; ++slot) {
         auto it = allFields.find(static_cast<uint16_t>(ufAuras + slot));
         if (it != allFields.end() && it->second != 0) {
-            AuraSlot& a = owner_.getSpellHandler()->playerAuras_[slot];
+            AuraSlot& a = owner_.getSpellHandler()->getPlayerAuraSlotRef(slot);
             a.spellId = it->second;
             // Read aura flag byte: packed 4-per-uint32 at ufAuraFlags
             uint8_t aFlag = 0;
@@ -492,7 +491,7 @@ void EntityController::detectPlayerMountChange(uint32_t newMountDisplayId,
     if (old == 0 && newMountDisplayId != 0) {
         // Just mounted — find the mount aura (indefinite duration, self-cast)
         owner_.mountAuraSpellIdRef() = 0;
-        if (owner_.getSpellHandler()) for (const auto& a : owner_.getSpellHandler()->playerAuras_) {
+        if (owner_.getSpellHandler()) for (const auto& a : owner_.getSpellHandler()->getPlayerAuras()) {
             if (!a.isEmpty() && a.maxDurationMs < 0 && a.casterGuid == owner_.getPlayerGuid()) {
                 owner_.mountAuraSpellIdRef() = a.spellId;
             }
@@ -518,7 +517,7 @@ void EntityController::detectPlayerMountChange(uint32_t newMountDisplayId,
         uint32_t mountSpell = owner_.mountAuraSpellIdRef();
         owner_.mountAuraSpellIdRef() = 0;
         if (mountSpell != 0 && owner_.getSpellHandler()) {
-            for (auto& a : owner_.getSpellHandler()->playerAuras_) {
+            for (auto& a : owner_.getSpellHandler()->getPlayerAurasMut()) {
                 if (!a.isEmpty() && a.spellId == mountSpell) {
                     a = AuraSlot{};
                     break;
@@ -1950,9 +1949,9 @@ void EntityController::handleDestroyObject(network::Packet& packet) {
     if (owner_.getCombatHandler()) owner_.getCombatHandler()->removeCombatTextForGuid(data.guid);
 
     // Clean up unit cast owner_.getState() (cast bar) for the destroyed unit
-    if (owner_.getSpellHandler()) owner_.getSpellHandler()->unitCastStates_.erase(data.guid);
+    if (owner_.getSpellHandler()) owner_.getSpellHandler()->removeUnitCastState(data.guid);
     // Clean up cached auras
-    if (owner_.getSpellHandler()) owner_.getSpellHandler()->unitAurasCache_.erase(data.guid);
+    if (owner_.getSpellHandler()) owner_.getSpellHandler()->removeUnitAuraCache(data.guid);
 
     owner_.tabCycleStaleRef() = true;
 }

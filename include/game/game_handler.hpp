@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/game_interfaces.hpp"
 #include "game/world_packets.hpp"
 #include "game/character.hpp"
 #include "game/opcode_table.hpp"
@@ -125,7 +126,11 @@ using WorldConnectFailureCallback = std::function<void(const std::string& reason
  * - World entry
  * - Game packets
  */
-class GameHandler {
+class GameHandler : public IConnectionState,
+                     public ITargetingState,
+                     public IEntityAccess,
+                     public ISocialState,
+                     public IPvpState {
 public:
     // Talent data structures (aliased from handler_types.hpp)
     using TalentEntry = game::TalentEntry;

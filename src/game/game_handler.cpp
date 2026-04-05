@@ -272,8 +272,8 @@ void GameHandler::disconnect() {
     otherPlayerVisibleItemEntries_.clear();
     otherPlayerVisibleDirty_.clear();
     otherPlayerMoveTimeMs_.clear();
-    if (spellHandler_) spellHandler_->unitCastStates_.clear();
-    if (spellHandler_) spellHandler_->unitAurasCache_.clear();
+    if (spellHandler_) spellHandler_->clearUnitCastStates();
+    if (spellHandler_) spellHandler_->clearUnitAurasCache();
     if (combatHandler_) combatHandler_->clearCombatText();
     entityController_->clearAll();
     setState(WorldState::DISCONNECTED);
@@ -315,8 +315,8 @@ bool GameHandler::isConnected() const {
 void GameHandler::updateNetworking(float deltaTime) {
     // Reset per-tick monster-move budget tracking (Classic/Turtle flood protection).
     if (movementHandler_) {
-        movementHandler_->monsterMovePacketsThisTick_ = 0;
-        movementHandler_->monsterMovePacketsDroppedThisTick_ = 0;
+        movementHandler_->monsterMovePacketsThisTickRef() = 0;
+        movementHandler_->monsterMovePacketsDroppedThisTickRef() = 0;
     }
 
     // Update socket (processes incoming data and triggers callbacks)
@@ -649,7 +649,7 @@ void GameHandler::updateTimers(float deltaTime) {
             if (isInWorld()) {
                 // Avoid sending CMSG_LOOT while a timed cast is active (e.g. gathering).
                 // handleSpellGo will trigger loot after the cast completes.
-                if (spellHandler_ && spellHandler_->casting_ && spellHandler_->currentCastSpellId_ != 0) {
+                if (spellHandler_ && spellHandler_->isCasting() && spellHandler_->getCurrentCastSpellId() != 0) {
                     it->timer = 0.20f;
                     ++it;
                     continue;
@@ -785,7 +785,7 @@ void GameHandler::update(float deltaTime) {
     // Send periodic heartbeat if in world
     if (state == WorldState::IN_WORLD) {
         timeSinceLastPing += deltaTime;
-        if (movementHandler_) movementHandler_->timeSinceLastMoveHeartbeat_ += deltaTime;
+        if (movementHandler_) movementHandler_->timeSinceLastMoveHeartbeatRef() += deltaTime;
 
         const float currentPingInterval =
             (isPreWotlk()) ? 10.0f : pingInterval;
@@ -823,9 +823,9 @@ void GameHandler::update(float deltaTime) {
                                       : (classicLikeStationaryCombatSync ? 0.75f
                                                                          : (classicLikeCombatSync ? 0.20f
                                                                                                   : moveHeartbeatInterval_));
-        if (movementHandler_ && movementHandler_->timeSinceLastMoveHeartbeat_ >= heartbeatInterval) {
+        if (movementHandler_ && movementHandler_->timeSinceLastMoveHeartbeatRef() >= heartbeatInterval) {
             sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
-            movementHandler_->timeSinceLastMoveHeartbeat_ = 0.0f;
+            movementHandler_->timeSinceLastMoveHeartbeatRef() = 0.0f;
         }
 
         // Check area triggers (instance portals, tavern rests, etc.)
@@ -845,7 +845,7 @@ void GameHandler::update(float deltaTime) {
         }
         // Check if client-side cast timer expired (tick-down is in SpellHandler::updateTimers).
         // Two paths depending on whether this is a GO interaction cast:
-        if (spellHandler_ && spellHandler_->casting_ && spellHandler_->castTimeRemaining_ <= 0.0f) {
+        if (spellHandler_ && spellHandler_->isCasting() && spellHandler_->getCastTimeRemaining() <= 0.0f) {
             if (pendingGameObjectInteractGuid_ != 0) {
                 // GO interaction cast: do NOT call resetCastState() here. The server
                 // sends SMSG_SPELL_GO when the cast completes server-side (~50-200ms

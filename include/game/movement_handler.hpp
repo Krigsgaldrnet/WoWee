@@ -148,6 +148,11 @@ public:
     uint32_t& monsterMovePacketsThisTickRef() { return monsterMovePacketsThisTick_; }
     uint32_t& monsterMovePacketsDroppedThisTickRef() { return monsterMovePacketsDroppedThisTick_; }
 
+    // Movement clock / fall state setters (formerly accessed via friend)
+    void resetMovementClock() { movementClockStart_ = std::chrono::steady_clock::now(); lastMovementTimestampMs_ = 0; }
+    void setFalling(bool falling) { isFalling_ = falling; }
+    void setFallStartMs(uint32_t ms) { fallStartMs_ = ms; }
+
     // Taxi state references for GameHandler update/processing
     bool& onTaxiFlightRef() { return onTaxiFlight_; }
     bool& taxiMountActiveRef() { return taxiMountActive_; }
@@ -196,8 +201,6 @@ private:
     // --- Private helpers ---
     void buildTaxiCostMap();
     void startClientTaxiPath(const std::vector<uint32_t>& pathNodes);
-
-    friend class GameHandler;
 
     GameHandler& owner_;
 
