@@ -149,6 +149,7 @@ public:
     void openMailCompose() { showMailCompose_ = true; clearMailAttachments(); }
     void closeMailCompose() { showMailCompose_ = false; clearMailAttachments(); }
     bool hasNewMail() const { return hasNewMail_; }
+    void openMailbox(uint64_t guid);
     void closeMailbox();
     void sendMail(const std::string& recipient, const std::string& subject,
                   const std::string& body, uint64_t money, uint64_t cod = 0);

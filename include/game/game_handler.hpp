@@ -1981,6 +1981,7 @@ public:
     void openMailCompose();
     void closeMailCompose();
     bool hasNewMail() const;
+    void openMailbox(uint64_t guid);
     void closeMailbox();
     void sendMail(const std::string& recipient, const std::string& subject,
                   const std::string& body, uint64_t money, uint64_t cod = 0);

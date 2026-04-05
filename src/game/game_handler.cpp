@@ -5762,8 +5762,7 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         // (using lastInteractedGoGuid_ set above). For instant-open chests
         // (no cast), the server sends SMSG_LOOT_RESPONSE directly after USE.
     } else if (isMailbox) {
-        // Server responds with SMSG_SHOW_MAILBOX → InventoryHandler::handleShowMailbox
-        // opens the UI and requests the mail list.
+        openMailbox(guid);
     }
 
     // CMSG_GAMEOBJ_REPORT_USE triggers GO AI scripts (SmartAI, ScriptAI) which
@@ -6531,6 +6530,10 @@ void GameHandler::updateAttachedTransportChildren(float deltaTime) {
 // ============================================================
 // Mail System
 // ============================================================
+
+void GameHandler::openMailbox(uint64_t guid) {
+    if (inventoryHandler_) inventoryHandler_->openMailbox(guid);
+}
 
 void GameHandler::closeMailbox() {
     if (inventoryHandler_) inventoryHandler_->closeMailbox();

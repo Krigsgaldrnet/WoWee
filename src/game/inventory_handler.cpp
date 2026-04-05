@@ -1536,6 +1536,17 @@ void InventoryHandler::categorizeTrainerSpells() {
 // Mail
 // ============================================================
 
+void InventoryHandler::openMailbox(uint64_t guid) {
+    mailboxGuid_ = guid;
+    mailboxOpen_ = true;
+    hasNewMail_ = false;
+    selectedMailIndex_ = -1;
+    showMailCompose_ = false;
+    clearMailAttachments();
+    if (owner_.addonEventCallback_) owner_.addonEventCallback_("MAIL_SHOW", {});
+    refreshMailList();
+}
+
 void InventoryHandler::closeMailbox() {
     mailboxOpen_ = false;
     mailboxGuid_ = 0;
