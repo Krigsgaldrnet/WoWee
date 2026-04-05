@@ -866,7 +866,7 @@ bool Extractor::run(const Options& opts) {
     // Merge with existing manifest so partial extractions don't nuke prior entries
     fs::path manifestPath = fs::path(effectiveOutputDir) / "manifest.json";
     if (fs::exists(manifestPath)) {
-        auto existing = loadManifestEntries(manifestPath);
+        auto existing = loadManifestEntries(manifestPath.string());
         if (!existing.empty()) {
             // New entries override existing ones with same key
             for (auto& entry : manifestEntries) {
@@ -889,7 +889,7 @@ bool Extractor::run(const Options& opts) {
               });
 
     // basePath is "." since manifest sits inside the output directory
-    if (!ManifestWriter::write(manifestPath, ".", manifestEntries)) {
+    if (!ManifestWriter::write(manifestPath.string(), ".", manifestEntries)) {
         std::cerr << "Failed to write manifest: " << manifestPath << "\n";
         return false;
     }
