@@ -7104,7 +7104,6 @@ void GameHandler::loadMapNameCache() const {
 }
 
 std::string GameHandler::getMapName(uint32_t mapId) const {
-    if (mapId == 0) return {};
     loadMapNameCache();
     auto it = mapNameCache_.find(mapId);
     return (it != mapNameCache_.end()) ? it->second : std::string{};

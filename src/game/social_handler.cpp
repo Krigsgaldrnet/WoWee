@@ -924,7 +924,9 @@ void SocialHandler::declineGuildInvite() {
 }
 
 void SocialHandler::queryGuildInfo(uint32_t guildId) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    // Allow guild queries at the character screen too — the socket is
+    // connected and the server accepts CMSG_GUILD_QUERY before login.
+    if (!owner_.socket) return;
     auto packet = GuildQueryPacket::build(guildId);
     owner_.socket->send(packet);
 }
