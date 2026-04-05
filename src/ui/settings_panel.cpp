@@ -10,6 +10,7 @@
 #include "core/application.hpp"
 #include "core/logger.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/post_process_pipeline.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
 #include "rendering/minimap.hpp"
@@ -739,7 +740,7 @@ void SettingsPanel::renderSettingsWindow(InventoryScreen& inventoryScreen, ChatP
                 }
                 {
                     const char* aaLabels[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };
-                    bool fsr2Active = renderer && renderer->isFSR2Enabled();
+                    bool fsr2Active = renderer && renderer->getPostProcessPipeline()->isFSR2Enabled();
                     if (fsr2Active) {
                         ImGui::BeginDisabled();
                         int disabled = 0;
@@ -757,7 +758,7 @@ void SettingsPanel::renderSettingsWindow(InventoryScreen& inventoryScreen, ChatP
                     // FXAA — post-process, combinable with MSAA or FSR3
                     {
                         if (ImGui::Checkbox("FXAA (post-process)", &pendingFXAA)) {
-                            if (renderer) renderer->setFXAAEnabled(pendingFXAA);
+                            if (renderer) renderer->getPostProcessPipeline()->setFXAAEnabled(pendingFXAA);
                             updateGraphicsPresetFromCurrentSettings();
                             saveCallback();
                         }
@@ -786,24 +787,24 @@ void SettingsPanel::renderSettingsWindow(InventoryScreen& inventoryScreen, ChatP
                     if (fsrMode > 0) {
                         if (fsrMode == 2 && renderer) {
                             ImGui::TextDisabled("FSR3 backend: %s",
-                                renderer->isAmdFsr2SdkAvailable() ? "AMD FidelityFX SDK" : "Internal fallback");
-                            if (renderer->isAmdFsr3FramegenSdkAvailable()) {
+                                renderer->getPostProcessPipeline()->isAmdFsr2SdkAvailable() ? "AMD FidelityFX SDK" : "Internal fallback");
+                            if (renderer->getPostProcessPipeline()->isAmdFsr3FramegenSdkAvailable()) {
                                 if (ImGui::Checkbox("AMD FSR3 Frame Generation (Experimental)", &pendingAMDFramegen)) {
-                                    renderer->setAmdFsr3FramegenEnabled(pendingAMDFramegen);
+                                    renderer->getPostProcessPipeline()->setAmdFsr3FramegenEnabled(pendingAMDFramegen);
                                     saveCallback();
                                 }
                                 const char* runtimeStatus = "Unavailable";
-                                if (renderer->isAmdFsr3FramegenRuntimeActive()) {
+                                if (renderer->getPostProcessPipeline()->isAmdFsr3FramegenRuntimeActive()) {
                                     runtimeStatus = "Active";
-                                } else if (renderer->isAmdFsr3FramegenRuntimeReady()) {
+                                } else if (renderer->getPostProcessPipeline()->isAmdFsr3FramegenRuntimeReady()) {
                                     runtimeStatus = "Ready";
                                 } else {
                                     runtimeStatus = "Unavailable";
                                 }
                                 ImGui::TextDisabled("Runtime: %s (%s)",
-                                    runtimeStatus, renderer->getAmdFsr3FramegenRuntimePath());
-                                if (!renderer->isAmdFsr3FramegenRuntimeReady()) {
-                                    const std::string& runtimeErr = renderer->getAmdFsr3FramegenRuntimeError();
+                                    runtimeStatus, renderer->getPostProcessPipeline()->getAmdFsr3FramegenRuntimePath());
+                                if (!renderer->getPostProcessPipeline()->isAmdFsr3FramegenRuntimeReady()) {
+                                    const std::string& runtimeErr = renderer->getPostProcessPipeline()->getAmdFsr3FramegenRuntimeError();
                                     if (!runtimeErr.empty()) {
                                         ImGui::TextDisabled("Reason: %s", runtimeErr.c_str());
                                     }
@@ -829,18 +830,18 @@ void SettingsPanel::renderSettingsWindow(InventoryScreen& inventoryScreen, ChatP
                         }
                         if (ImGui::Combo("FSR Quality", &fsrQualityDisplay, fsrQualityLabels, 4)) {
                             pendingFSRQuality = displayToInternal[fsrQualityDisplay];
-                            if (renderer) renderer->setFSRQuality(fsrScaleFactors[pendingFSRQuality]);
+                            if (renderer) renderer->getPostProcessPipeline()->setFSRQuality(fsrScaleFactors[pendingFSRQuality]);
                             saveCallback();
                         }
                         if (ImGui::SliderFloat("FSR Sharpness", &pendingFSRSharpness, 0.0f, 2.0f, "%.1f")) {
-                            if (renderer) renderer->setFSRSharpness(pendingFSRSharpness);
+                            if (renderer) renderer->getPostProcessPipeline()->setFSRSharpness(pendingFSRSharpness);
                             saveCallback();
                         }
                         if (fsrMode == 2) {
                             ImGui::SeparatorText("FSR3 Tuning");
                             if (ImGui::SliderFloat("Jitter Sign", &pendingFSR2JitterSign, -2.0f, 2.0f, "%.2f")) {
                                 if (renderer) {
-                                    renderer->setFSR2DebugTuning(
+                                    renderer->getPostProcessPipeline()->setFSR2DebugTuning(
                                         pendingFSR2JitterSign,
                                         pendingFSR2MotionVecScaleX,
                                         pendingFSR2MotionVecScaleY);
@@ -927,7 +928,7 @@ void SettingsPanel::renderSettingsWindow(InventoryScreen& inventoryScreen, ChatP
 
                 ImGui::SetNextItemWidth(200.0f);
                 if (ImGui::SliderInt("Brightness", &pendingBrightness, 0, 100, "%d%%")) {
-                    if (renderer) renderer->setBrightness(static_cast<float>(pendingBrightness) / 50.0f);
+                    if (renderer) renderer->getPostProcessPipeline()->setBrightness(static_cast<float>(pendingBrightness) / 50.0f);
                     saveCallback();
                 }
 
@@ -951,7 +952,7 @@ void SettingsPanel::renderSettingsWindow(InventoryScreen& inventoryScreen, ChatP
                     window->setFullscreen(pendingFullscreen);
                     window->setVsync(pendingVsync);
                     window->applyResolution(kResolutions[pendingResIndex][0], kResolutions[pendingResIndex][1]);
-                    if (renderer) renderer->setBrightness(1.0f);
+                    if (renderer) renderer->getPostProcessPipeline()->setBrightness(1.0f);
                     pendingWaterRefraction = false;
                     if (renderer) {
                         renderer->setShadowsEnabled(pendingShadows);
@@ -1150,7 +1151,7 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
                 renderer->setShadowsEnabled(true);
                 renderer->setShadowDistance(500.0f);
                 renderer->setMsaaSamples(VK_SAMPLE_COUNT_8_BIT);
-                renderer->setFXAAEnabled(true);
+                renderer->getPostProcessPipeline()->setFXAAEnabled(true);
                 if (auto* wr = renderer->getWMORenderer()) {
                     wr->setNormalMappingEnabled(true);
                     wr->setNormalMapStrength(1.2f);

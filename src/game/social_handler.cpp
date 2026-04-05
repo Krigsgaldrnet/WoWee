@@ -103,12 +103,12 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
         // Names are resolved via SMSG_NAME_QUERY_RESPONSE after the list arrives.
         if (!packet.hasRemaining(1)) return;
         uint8_t ignCount = packet.readUInt8();
-        owner_.ignoreListGuids_.clear();
+        owner_.ignoreListGuidsRef().clear();
         for (uint8_t i = 0; i < ignCount; ++i) {
             if (!packet.hasRemaining(8)) break;
             uint64_t ignGuid = packet.readUInt64();
             if (ignGuid != 0) {
-                owner_.ignoreListGuids_.insert(ignGuid);
+                owner_.ignoreListGuidsRef().insert(ignGuid);
                 // Query name so UI can display it later
                 owner_.queryPlayerName(ignGuid);
             }
@@ -137,9 +137,9 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
         partyData.leaderGuid = 0;
         owner_.addUIError("Your party has been disbanded.");
         owner_.addSystemChatMessage("Your party has been disbanded.");
-        if (owner_.addonEventCallback_) {
-            owner_.addonEventCallback_("GROUP_ROSTER_UPDATE", {});
-            owner_.addonEventCallback_("PARTY_MEMBERS_CHANGED", {});
+        if (owner_.addonEventCallbackRef()) {
+            owner_.addonEventCallbackRef()("GROUP_ROSTER_UPDATE", {});
+            owner_.addonEventCallbackRef()("PARTY_MEMBERS_CHANGED", {});
         }
     };
     table[Opcode::SMSG_GROUP_CANCEL] = [this](network::Packet& /*packet*/) {
@@ -171,8 +171,8 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
         owner_.addSystemChatMessage(readyCheckInitiator_.empty()
             ? "Ready check initiated!"
             : readyCheckInitiator_ + " initiated a ready check!");
-        if (owner_.addonEventCallback_)
-            owner_.addonEventCallback_("READY_CHECK", {readyCheckInitiator_});
+        if (owner_.addonEventCallbackRef())
+            owner_.addonEventCallbackRef()("READY_CHECK", {readyCheckInitiator_});
     };
     table[Opcode::MSG_RAID_READY_CHECK_CONFIRM] = [this](network::Packet& packet) {
         if (!packet.hasRemaining(9)) { packet.skipAll(); return; }
@@ -199,10 +199,10 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
             std::snprintf(rbuf, sizeof(rbuf), "%s is %s.", rname.c_str(), isReady ? "Ready" : "Not Ready");
             owner_.addSystemChatMessage(rbuf);
         }
-        if (owner_.addonEventCallback_) {
+        if (owner_.addonEventCallbackRef()) {
             char guidBuf[32];
             snprintf(guidBuf, sizeof(guidBuf), "0x%016llX", (unsigned long long)respGuid);
-            owner_.addonEventCallback_("READY_CHECK_CONFIRM", {guidBuf, isReady ? "1" : "0"});
+            owner_.addonEventCallbackRef()("READY_CHECK_CONFIRM", {guidBuf, isReady ? "1" : "0"});
         }
     };
     table[Opcode::MSG_RAID_READY_CHECK_FINISHED] = [this](network::Packet& /*packet*/) {
@@ -214,7 +214,7 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
         readyCheckReadyCount_ = 0;
         readyCheckNotReadyCount_ = 0;
         readyCheckResults_.clear();
-        if (owner_.addonEventCallback_) owner_.addonEventCallback_("READY_CHECK_FINISHED", {});
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("READY_CHECK_FINISHED", {});
     };
     table[Opcode::SMSG_RAID_INSTANCE_INFO] = [this](network::Packet& packet) { handleRaidInstanceInfo(packet); };
 
@@ -414,7 +414,7 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
         owner_.addSystemChatMessage("Cannot reset " + mapLabel + ": " + reasonMsg);
     };
     table[Opcode::SMSG_INSTANCE_LOCK_WARNING_QUERY] = [this](network::Packet& packet) {
-        if (!owner_.socket || !packet.hasRemaining(17)) return;
+        if (!owner_.getSocket() || !packet.hasRemaining(17)) return;
         uint32_t ilMapId    = packet.readUInt32();
         uint32_t ilDiff     = packet.readUInt32();
         uint32_t ilTimeLeft = packet.readUInt32();
@@ -432,7 +432,7 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
         owner_.addSystemChatMessage(ilMsg);
         network::Packet resp(wireOpcode(Opcode::CMSG_INSTANCE_LOCK_RESPONSE));
         resp.writeUInt8(1);
-        owner_.socket->send(resp);
+        owner_.getSocket()->send(resp);
     };
 
     // ---- LFG ----
@@ -475,7 +475,7 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
     }
     table[Opcode::SMSG_OPEN_LFG_DUNGEON_FINDER] = [this](network::Packet& packet) {
         packet.skipAll();
-        if (owner_.openLfgCallback_) owner_.openLfgCallback_();
+        if (owner_.openLfgCallbackRef()) owner_.openLfgCallbackRef()();
     };
 
     // ---- Arena ----
@@ -537,11 +537,11 @@ const std::string& SocialHandler::lookupGuildName(uint32_t guildId) {
 // ============================================================
 
 void SocialHandler::inspectTarget() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) {
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) {
         LOG_WARNING("Cannot inspect: not in world or not connected");
         return;
     }
-    if (owner_.targetGuid == 0) {
+    if (owner_.getTargetGuid() == 0) {
         owner_.addSystemChatMessage("You must target a player to inspect.");
         return;
     }
@@ -550,16 +550,16 @@ void SocialHandler::inspectTarget() {
         owner_.addSystemChatMessage("You can only inspect players.");
         return;
     }
-    auto packet = InspectPacket::build(owner_.targetGuid);
-    owner_.socket->send(packet);
+    auto packet = InspectPacket::build(owner_.getTargetGuid());
+    owner_.getSocket()->send(packet);
     if (isActiveExpansion("wotlk")) {
-        auto achPkt = QueryInspectAchievementsPacket::build(owner_.targetGuid);
-        owner_.socket->send(achPkt);
+        auto achPkt = QueryInspectAchievementsPacket::build(owner_.getTargetGuid());
+        owner_.getSocket()->send(achPkt);
     }
     auto player = std::static_pointer_cast<Player>(target);
     std::string name = player->getName().empty() ? "Target" : player->getName();
     owner_.addSystemChatMessage("Inspecting " + name + "...");
-    LOG_INFO("Sent inspect request for player: ", name, " (GUID: 0x", std::hex, owner_.targetGuid, std::dec, ")");
+    LOG_INFO("Sent inspect request for player: ", name, " (GUID: 0x", std::hex, owner_.getTargetGuid(), std::dec, ")");
 }
 
 void SocialHandler::handleInspectResults(network::Packet& packet) {
@@ -576,30 +576,30 @@ void SocialHandler::handleInspectResults(network::Packet& packet) {
         uint8_t  talentGroupCount  = packet.readUInt8();
         uint8_t  activeTalentGroup = packet.readUInt8();
         if (activeTalentGroup > 1) activeTalentGroup = 0;
-        owner_.activeTalentSpec_ = activeTalentGroup;
+        owner_.activeTalentSpecRef() = activeTalentGroup;
         for (uint8_t g = 0; g < talentGroupCount && g < 2; ++g) {
             if (!packet.hasRemaining(1)) break;
             uint8_t talentCount = packet.readUInt8();
-            owner_.learnedTalents_[g].clear();
+            owner_.learnedTalentsArr()[g].clear();
             for (uint8_t t = 0; t < talentCount; ++t) {
                 if (!packet.hasRemaining(5)) break;
                 uint32_t talentId = packet.readUInt32();
                 uint8_t  rank     = packet.readUInt8();
-                owner_.learnedTalents_[g][talentId] = rank + 1u;
+                owner_.learnedTalentsArr()[g][talentId] = rank + 1u;
             }
             if (!packet.hasRemaining(1)) break;
-            owner_.learnedGlyphs_[g].fill(0);
+            owner_.learnedGlyphsRef()[g].fill(0);
             uint8_t glyphCount = packet.readUInt8();
             for (uint8_t gl = 0; gl < glyphCount; ++gl) {
                 if (!packet.hasRemaining(2)) break;
                 uint16_t glyphId = packet.readUInt16();
-                if (gl < GameHandler::MAX_GLYPH_SLOTS) owner_.learnedGlyphs_[g][gl] = glyphId;
+                if (gl < GameHandler::MAX_GLYPH_SLOTS) owner_.learnedGlyphsRef()[g][gl] = glyphId;
             }
         }
-        owner_.unspentTalentPoints_[activeTalentGroup] = static_cast<uint8_t>(
+        owner_.unspentTalentPointsArr()[activeTalentGroup] = static_cast<uint8_t>(
             unspentTalents > 255 ? 255 : unspentTalents);
-        if (!owner_.talentsInitialized_) {
-            owner_.talentsInitialized_ = true;
+        if (!owner_.talentsInitializedRef()) {
+            owner_.talentsInitializedRef() = true;
             if (unspentTalents > 0) {
                 owner_.addSystemChatMessage("You have " + std::to_string(unspentTalents)
                     + " unspent talent point" + (unspentTalents != 1 ? "s" : "") + ".");
@@ -607,7 +607,7 @@ void SocialHandler::handleInspectResults(network::Packet& packet) {
         }
         LOG_INFO("SMSG_TALENTS_INFO type=0: unspent=", unspentTalents,
                  " groups=", (int)talentGroupCount, " active=", (int)activeTalentGroup,
-                 " learned=", owner_.learnedTalents_[activeTalentGroup].size());
+                 " learned=", owner_.learnedTalentsArr()[activeTalentGroup].size());
         return;
     }
 
@@ -685,8 +685,8 @@ void SocialHandler::handleInspectResults(network::Packet& packet) {
     inspectResult_.activeTalentGroup = activeTalentGroup;
     inspectResult_.enchantIds        = enchantIds;
 
-    auto gearIt = owner_.inspectedPlayerItemEntries_.find(guid);
-    if (gearIt != owner_.inspectedPlayerItemEntries_.end()) {
+    auto gearIt = owner_.inspectedPlayerItemEntriesRef().find(guid);
+    if (gearIt != owner_.inspectedPlayerItemEntriesRef().end()) {
         inspectResult_.itemEntries = gearIt->second;
     } else {
         inspectResult_.itemEntries = {};
@@ -694,10 +694,10 @@ void SocialHandler::handleInspectResults(network::Packet& packet) {
 
     LOG_INFO("Inspect results for ", playerName, ": ", totalTalents, " talents, ",
              unspentTalents, " unspent, ", (int)talentGroupCount, " specs");
-    if (owner_.addonEventCallback_) {
+    if (owner_.addonEventCallbackRef()) {
         char guidBuf[32];
         snprintf(guidBuf, sizeof(guidBuf), "0x%016llX", (unsigned long long)guid);
-        owner_.addonEventCallback_("INSPECT_READY", {guidBuf});
+        owner_.addonEventCallbackRef()("INSPECT_READY", {guidBuf});
     }
 }
 
@@ -706,97 +706,97 @@ void SocialHandler::handleInspectResults(network::Packet& packet) {
 // ============================================================
 
 void SocialHandler::queryServerTime() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = QueryTimePacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("Requested server time");
 }
 
 void SocialHandler::requestPlayedTime() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = RequestPlayedTimePacket::build(true);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("Requested played time");
 }
 
 void SocialHandler::queryWho(const std::string& playerName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = WhoPacket::build(0, 0, playerName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("Sent WHO query", playerName.empty() ? "" : " for: " + playerName);
 }
 
 void SocialHandler::addFriend(const std::string& playerName, const std::string& note) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (playerName.empty()) { owner_.addSystemChatMessage("You must specify a player name."); return; }
     auto packet = AddFriendPacket::build(playerName, note);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Sending friend request to " + playerName + "...");
     LOG_INFO("Sent friend request to: ", playerName);
 }
 
 void SocialHandler::removeFriend(const std::string& playerName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (playerName.empty()) { owner_.addSystemChatMessage("You must specify a player name."); return; }
-    auto it = owner_.friendsCache.find(playerName);
-    if (it == owner_.friendsCache.end()) {
+    auto it = owner_.friendsCacheRef().find(playerName);
+    if (it == owner_.friendsCacheRef().end()) {
         owner_.addSystemChatMessage(playerName + " is not in your friends list.");
         return;
     }
     auto packet = DelFriendPacket::build(it->second);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Removing " + playerName + " from friends list...");
     LOG_INFO("Sent remove friend request for: ", playerName);
 }
 
 void SocialHandler::setFriendNote(const std::string& playerName, const std::string& note) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (playerName.empty()) { owner_.addSystemChatMessage("You must specify a player name."); return; }
-    auto it = owner_.friendsCache.find(playerName);
-    if (it == owner_.friendsCache.end()) {
+    auto it = owner_.friendsCacheRef().find(playerName);
+    if (it == owner_.friendsCacheRef().end()) {
         owner_.addSystemChatMessage(playerName + " is not in your friends list.");
         return;
     }
     auto packet = SetContactNotesPacket::build(it->second, note);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Updated note for " + playerName);
     LOG_INFO("Set friend note for: ", playerName);
 }
 
 void SocialHandler::addIgnore(const std::string& playerName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (playerName.empty()) { owner_.addSystemChatMessage("You must specify a player name."); return; }
     auto packet = AddIgnorePacket::build(playerName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Adding " + playerName + " to ignore list...");
     LOG_INFO("Sent ignore request for: ", playerName);
 }
 
 void SocialHandler::removeIgnore(const std::string& playerName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (playerName.empty()) { owner_.addSystemChatMessage("You must specify a player name."); return; }
-    auto it = owner_.ignoreCache.find(playerName);
-    if (it == owner_.ignoreCache.end()) {
+    auto it = owner_.ignoreCacheRef().find(playerName);
+    if (it == owner_.ignoreCacheRef().end()) {
         owner_.addSystemChatMessage(playerName + " is not in your ignore list.");
         return;
     }
     auto packet = DelIgnorePacket::build(it->second);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Removing " + playerName + " from ignore list...");
     // Don't erase from ignoreCache here — wait for the server's SMSG_IGNORE_LIST
     // response to confirm. Erasing optimistically desyncs the cache if the server
     // rejects the request. (Compare with removeFriend which also waits for
     // SMSG_FRIEND_STATUS before updating its cache.)
-    owner_.ignoreListGuids_.erase(it->second);
+    owner_.ignoreListGuidsRef().erase(it->second);
     LOG_INFO("Sent remove ignore request for: ", playerName);
 }
 
 void SocialHandler::randomRoll(uint32_t minRoll, uint32_t maxRoll) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (minRoll > maxRoll) std::swap(minRoll, maxRoll);
     if (maxRoll > 10000) maxRoll = 10000;
     auto packet = RandomRollPacket::build(minRoll, maxRoll);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("Rolled ", minRoll, "-", maxRoll);
 }
 
@@ -805,19 +805,19 @@ void SocialHandler::randomRoll(uint32_t minRoll, uint32_t maxRoll) {
 // ============================================================
 
 void SocialHandler::requestLogout() {
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     if (loggingOut_) { owner_.addSystemChatMessage("Already logging out."); return; }
     auto packet = LogoutRequestPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     loggingOut_ = true;
     LOG_INFO("Sent logout request");
 }
 
 void SocialHandler::cancelLogout() {
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     if (!loggingOut_) { owner_.addSystemChatMessage("Not currently logging out."); return; }
     auto packet = LogoutCancelPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     loggingOut_ = false;
     logoutCountdown_ = 0.0f;
     owner_.addSystemChatMessage("Logout cancelled.");
@@ -829,153 +829,153 @@ void SocialHandler::cancelLogout() {
 // ============================================================
 
 void SocialHandler::requestGuildInfo() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildInfoPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::requestGuildRoster() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildRosterPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Requesting guild roster...");
 }
 
 void SocialHandler::setGuildMotd(const std::string& motd) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildMotdPacket::build(motd);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Guild MOTD updated.");
 }
 
 void SocialHandler::promoteGuildMember(const std::string& playerName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (playerName.empty()) { owner_.addSystemChatMessage("You must specify a player name."); return; }
     auto packet = GuildPromotePacket::build(playerName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Promoting " + playerName + "...");
 }
 
 void SocialHandler::demoteGuildMember(const std::string& playerName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (playerName.empty()) { owner_.addSystemChatMessage("You must specify a player name."); return; }
     auto packet = GuildDemotePacket::build(playerName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Demoting " + playerName + "...");
 }
 
 void SocialHandler::leaveGuild() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildLeavePacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Leaving guild...");
 }
 
 void SocialHandler::inviteToGuild(const std::string& playerName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (playerName.empty()) { owner_.addSystemChatMessage("You must specify a player name."); return; }
     auto packet = GuildInvitePacket::build(playerName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Inviting " + playerName + " to guild...");
 }
 
 void SocialHandler::kickGuildMember(const std::string& playerName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildRemovePacket::build(playerName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::disbandGuild() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildDisbandPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::setGuildLeader(const std::string& name) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildLeaderPacket::build(name);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::setGuildPublicNote(const std::string& name, const std::string& note) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildSetPublicNotePacket::build(name, note);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::setGuildOfficerNote(const std::string& name, const std::string& note) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildSetOfficerNotePacket::build(name, note);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::acceptGuildInvite() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     pendingGuildInvite_ = false;
     auto packet = GuildAcceptPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::declineGuildInvite() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     pendingGuildInvite_ = false;
     auto packet = GuildDeclineInvitationPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::queryGuildInfo(uint32_t guildId) {
     // Allow guild queries at the character screen too — the socket is
     // connected and the server accepts CMSG_GUILD_QUERY before login.
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     auto packet = GuildQueryPacket::build(guildId);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::createGuild(const std::string& guildName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildCreatePacket::build(guildName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::addGuildRank(const std::string& rankName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildAddRankPacket::build(rankName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     requestGuildRoster();
 }
 
 void SocialHandler::deleteGuildRank() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GuildDelRankPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     requestGuildRoster();
 }
 
 void SocialHandler::requestPetitionShowlist(uint64_t npcGuid) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = PetitionShowlistPacket::build(npcGuid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::buyPetition(uint64_t npcGuid, const std::string& guildName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = PetitionBuyPacket::build(npcGuid, guildName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::signPetition(uint64_t petitionGuid) {
-    if (!owner_.socket || owner_.getState() != WorldState::IN_WORLD) return;
+    if (!owner_.getSocket() || owner_.getState() != WorldState::IN_WORLD) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_PETITION_SIGN));
     pkt.writeUInt64(petitionGuid);
     pkt.writeUInt8(0);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 void SocialHandler::turnInPetition(uint64_t petitionGuid) {
-    if (!owner_.socket || owner_.getState() != WorldState::IN_WORLD) return;
+    if (!owner_.getSocket() || owner_.getState() != WorldState::IN_WORLD) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_TURN_IN_PETITION));
     pkt.writeUInt64(petitionGuid);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 // ============================================================
@@ -983,17 +983,17 @@ void SocialHandler::turnInPetition(uint64_t petitionGuid) {
 // ============================================================
 
 void SocialHandler::initiateReadyCheck() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (!isInGroup()) { owner_.addSystemChatMessage("You must be in a group to initiate a ready check."); return; }
     auto packet = ReadyCheckPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Ready check initiated.");
 }
 
 void SocialHandler::respondToReadyCheck(bool ready) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = ReadyCheckConfirmPacket::build(ready);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage(ready ? "You are ready." : "You are not ready.");
 }
 
@@ -1002,37 +1002,37 @@ void SocialHandler::respondToReadyCheck(bool ready) {
 // ============================================================
 
 void SocialHandler::acceptDuel() {
-    if (!pendingDuelRequest_ || owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (!pendingDuelRequest_ || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     pendingDuelRequest_ = false;
     auto pkt = DuelAcceptPacket::build();
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     owner_.addSystemChatMessage("You accept the duel.");
 }
 
 void SocialHandler::forfeitDuel() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     pendingDuelRequest_ = false;
     auto packet = DuelCancelPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("You have forfeited the duel.");
 }
 
 void SocialHandler::proposeDuel(uint64_t targetGuid) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (targetGuid == 0) { owner_.addSystemChatMessage("You must target a player to challenge to a duel."); return; }
     auto packet = DuelProposedPacket::build(targetGuid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("You have challenged your target to a duel.");
 }
 
 void SocialHandler::reportPlayer(uint64_t targetGuid, const std::string& reason) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (targetGuid == 0) {
         owner_.addSystemChatMessage("You must target a player to report.");
         return;
     }
     auto packet = ComplainPacket::build(targetGuid, reason);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Player report submitted.");
     LOG_INFO("Reported player: 0x", std::hex, targetGuid, std::dec, " reason=", reason);
 }
@@ -1058,7 +1058,7 @@ void SocialHandler::handleDuelRequested(network::Packet& packet) {
     owner_.addSystemChatMessage(duelChallengerName_ + " challenges you to a duel!");
     if (auto* ac = owner_.services().audioCoordinator)
         if (auto* sfx = ac->getUiSoundManager()) sfx->playTargetSelect();
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("DUEL_REQUESTED", {duelChallengerName_});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("DUEL_REQUESTED", {duelChallengerName_});
 }
 
 void SocialHandler::handleDuelComplete(network::Packet& packet) {
@@ -1067,7 +1067,7 @@ void SocialHandler::handleDuelComplete(network::Packet& packet) {
     pendingDuelRequest_ = false;
     duelCountdownMs_ = 0;
     if (!started) owner_.addSystemChatMessage("The duel was cancelled.");
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("DUEL_FINISHED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("DUEL_FINISHED", {});
 }
 
 void SocialHandler::handleDuelWinner(network::Packet& packet) {
@@ -1086,40 +1086,40 @@ void SocialHandler::handleDuelWinner(network::Packet& packet) {
 // ============================================================
 
 void SocialHandler::inviteToGroup(const std::string& playerName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     LOG_WARNING(">>> Sending CMSG_GROUP_INVITE to '", playerName, "'");
     auto packet = GroupInvitePacket::build(playerName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::acceptGroupInvite() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     LOG_WARNING(">>> Sending CMSG_GROUP_ACCEPT");
     pendingGroupInvite = false;
     auto packet = GroupAcceptPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::declineGroupInvite() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     pendingGroupInvite = false;
     auto packet = GroupDeclinePacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SocialHandler::leaveGroup() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GroupDisbandPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     partyData = GroupListData{};
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("GROUP_ROSTER_UPDATE", {});
-        owner_.addonEventCallback_("PARTY_MEMBERS_CHANGED", {});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("GROUP_ROSTER_UPDATE", {});
+        owner_.addonEventCallbackRef()("PARTY_MEMBERS_CHANGED", {});
     }
 }
 
 void SocialHandler::convertToRaid() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (!isInGroup()) {
         owner_.addSystemChatMessage("You are not in a group.");
         return;
@@ -1133,22 +1133,22 @@ void SocialHandler::convertToRaid() {
         return;
     }
     auto packet = GroupRaidConvertPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("Sent CMSG_GROUP_RAID_CONVERT");
 }
 
 void SocialHandler::sendSetLootMethod(uint32_t method, uint32_t threshold, uint64_t masterLooterGuid) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = SetLootMethodPacket::build(method, threshold, masterLooterGuid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("sendSetLootMethod: method=", method, " threshold=", threshold);
 }
 
 void SocialHandler::uninvitePlayer(const std::string& playerName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (playerName.empty()) { owner_.addSystemChatMessage("You must specify a player name to uninvite."); return; }
     auto packet = GroupUninvitePacket::build(playerName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Removed " + playerName + " from the group.");
 }
 
@@ -1161,55 +1161,55 @@ void SocialHandler::leaveParty() {
 }
 
 void SocialHandler::setMainTank(uint64_t targetGuid) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (targetGuid == 0) { owner_.addSystemChatMessage("You must have a target selected."); return; }
     auto packet = RaidTargetUpdatePacket::build(0, targetGuid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Main tank set.");
 }
 
 void SocialHandler::setMainAssist(uint64_t targetGuid) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (targetGuid == 0) { owner_.addSystemChatMessage("You must have a target selected."); return; }
     auto packet = RaidTargetUpdatePacket::build(1, targetGuid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Main assist set.");
 }
 
 void SocialHandler::clearMainTank() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = RaidTargetUpdatePacket::build(0, 0);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Main tank cleared.");
 }
 
 void SocialHandler::clearMainAssist() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = RaidTargetUpdatePacket::build(1, 0);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Main assist cleared.");
 }
 
 void SocialHandler::setRaidMark(uint64_t guid, uint8_t icon) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (icon == 0xFF) {
         for (int i = 0; i < 8; ++i) {
             if (raidTargetGuids_[i] == guid) {
                 auto packet = RaidTargetUpdatePacket::build(static_cast<uint8_t>(i), 0);
-                owner_.socket->send(packet);
+                owner_.getSocket()->send(packet);
                 break;
             }
         }
     } else if (icon < 8) {
         auto packet = RaidTargetUpdatePacket::build(icon, guid);
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     }
 }
 
 void SocialHandler::requestRaidInfo() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = RequestRaidInfoPacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Requesting raid lockout information...");
 }
 
@@ -1226,8 +1226,8 @@ void SocialHandler::handleGroupInvite(network::Packet& packet) {
         owner_.addSystemChatMessage(data.inviterName + " has invited you to a group.");
     if (auto* ac = owner_.services().audioCoordinator)
         if (auto* sfx = ac->getUiSoundManager()) sfx->playTargetSelect();
-    if (owner_.addonEventCallback_)
-        owner_.addonEventCallback_("PARTY_INVITE_REQUEST", {data.inviterName});
+    if (owner_.addonEventCallbackRef())
+        owner_.addonEventCallbackRef()("PARTY_INVITE_REQUEST", {data.inviterName});
 }
 
 void SocialHandler::handleGroupDecline(network::Packet& packet) {
@@ -1264,21 +1264,21 @@ void SocialHandler::handleGroupList(network::Packet& packet) {
         const char* methodName = (partyData.lootMethod < 5) ? kLootMethods[partyData.lootMethod] : "Unknown";
         owner_.addSystemChatMessage(std::string("Loot method changed to ") + methodName + ".");
     }
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("GROUP_ROSTER_UPDATE", {});
-        owner_.addonEventCallback_("PARTY_MEMBERS_CHANGED", {});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("GROUP_ROSTER_UPDATE", {});
+        owner_.addonEventCallbackRef()("PARTY_MEMBERS_CHANGED", {});
         if (partyData.groupType == 1)
-            owner_.addonEventCallback_("RAID_ROSTER_UPDATE", {});
+            owner_.addonEventCallbackRef()("RAID_ROSTER_UPDATE", {});
     }
 }
 
 void SocialHandler::handleGroupUninvite(network::Packet& packet) {
     (void)packet;
     partyData = GroupListData{};
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("GROUP_ROSTER_UPDATE", {});
-        owner_.addonEventCallback_("PARTY_MEMBERS_CHANGED", {});
-        owner_.addonEventCallback_("RAID_ROSTER_UPDATE", {});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("GROUP_ROSTER_UPDATE", {});
+        owner_.addonEventCallbackRef()("PARTY_MEMBERS_CHANGED", {});
+        owner_.addonEventCallbackRef()("RAID_ROSTER_UPDATE", {});
     }
     owner_.addUIError("You have been removed from the group.");
     owner_.addSystemChatMessage("You have been removed from the group.");
@@ -1375,8 +1375,8 @@ void SocialHandler::handlePartyMemberStats(network::Packet& packet, bool isFull)
                     if (a.spellId != 0) newAuras.push_back(a);
                 }
             }
-            if (memberGuid != 0 && memberGuid != owner_.playerGuid && memberGuid != owner_.targetGuid) {
-                owner_.unitAurasCache_[memberGuid] = std::move(newAuras);
+            if (memberGuid != 0 && memberGuid != owner_.getPlayerGuid() && memberGuid != owner_.getTargetGuid()) {
+                owner_.unitAurasCacheRef()[memberGuid] = std::move(newAuras);
             }
         }
     }
@@ -1404,7 +1404,7 @@ void SocialHandler::handlePartyMemberStats(network::Packet& packet, bool isFull)
 
     member->hasPartyStats = true;
 
-    if (owner_.addonEventCallback_) {
+    if (owner_.addonEventCallbackRef()) {
         std::string unitId;
         if (partyData.groupType == 1) {
             for (size_t i = 0; i < partyData.members.size(); ++i) {
@@ -1413,15 +1413,15 @@ void SocialHandler::handlePartyMemberStats(network::Packet& packet, bool isFull)
         } else {
             int found = 0;
             for (const auto& m : partyData.members) {
-                if (m.guid == owner_.playerGuid) continue;
+                if (m.guid == owner_.getPlayerGuid()) continue;
                 ++found;
                 if (m.guid == memberGuid) { unitId = "party" + std::to_string(found); break; }
             }
         }
         if (!unitId.empty()) {
-            if (updateFlags & (0x0002 | 0x0004)) owner_.addonEventCallback_("UNIT_HEALTH", {unitId});
-            if (updateFlags & (0x0010 | 0x0020)) owner_.addonEventCallback_("UNIT_POWER", {unitId});
-            if (updateFlags & 0x0200) owner_.addonEventCallback_("UNIT_AURA", {unitId});
+            if (updateFlags & (0x0002 | 0x0004)) owner_.addonEventCallbackRef()("UNIT_HEALTH", {unitId});
+            if (updateFlags & (0x0010 | 0x0020)) owner_.addonEventCallbackRef()("UNIT_POWER", {unitId});
+            if (updateFlags & 0x0200) owner_.addonEventCallbackRef()("UNIT_AURA", {unitId});
         }
     }
 }
@@ -1441,15 +1441,15 @@ void SocialHandler::handleGuildInfo(network::Packet& packet) {
 
 void SocialHandler::handleGuildRoster(network::Packet& packet) {
     GuildRosterData data;
-    if (!owner_.packetParsers_->parseGuildRoster(packet, data)) return;
+    if (!owner_.getPacketParsers()->parseGuildRoster(packet, data)) return;
     guildRoster_ = std::move(data);
     hasGuildRoster_ = true;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("GUILD_ROSTER_UPDATE", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GUILD_ROSTER_UPDATE", {});
 }
 
 void SocialHandler::handleGuildQueryResponse(network::Packet& packet) {
     GuildQueryResponseData data;
-    if (!owner_.packetParsers_->parseGuildQueryResponse(packet, data)) return;
+    if (!owner_.getPacketParsers()->parseGuildQueryResponse(packet, data)) return;
     if (data.guildId != 0 && !data.guildName.empty()) {
         guildNameCache_[data.guildId] = data.guildName;
         pendingGuildNameQueries_.erase(data.guildId);
@@ -1464,7 +1464,7 @@ void SocialHandler::handleGuildQueryResponse(network::Packet& packet) {
         for (uint32_t i = 0; i < 10; ++i) guildRankNames_.push_back(data.rankNames[i]);
         if (wasUnknown && !guildName_.empty()) {
             owner_.addSystemChatMessage("Guild: <" + guildName_ + ">");
-            if (owner_.addonEventCallback_) owner_.addonEventCallback_("PLAYER_GUILD_UPDATE", {});
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("PLAYER_GUILD_UPDATE", {});
         }
     }
 }
@@ -1507,7 +1507,7 @@ void SocialHandler::handleGuildEvent(network::Packet& packet) {
             guildRankNames_.clear();
             guildRoster_ = GuildRosterData{};
             hasGuildRoster_ = false;
-            if (owner_.addonEventCallback_) owner_.addonEventCallback_("PLAYER_GUILD_UPDATE", {});
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("PLAYER_GUILD_UPDATE", {});
             break;
         case GuildEvent::SIGNED_ON:
             if (data.numStrings >= 1) msg = "[Guild] " + data.strings[0] + " has come online.";
@@ -1530,17 +1530,17 @@ void SocialHandler::handleGuildEvent(network::Packet& packet) {
         owner_.addLocalChatMessage(chatMsg);
     }
 
-    if (owner_.addonEventCallback_) {
+    if (owner_.addonEventCallbackRef()) {
         switch (data.eventType) {
             case GuildEvent::MOTD:
-                owner_.addonEventCallback_("GUILD_MOTD", {data.numStrings >= 1 ? data.strings[0] : ""});
+                owner_.addonEventCallbackRef()("GUILD_MOTD", {data.numStrings >= 1 ? data.strings[0] : ""});
                 break;
             case GuildEvent::SIGNED_ON: case GuildEvent::SIGNED_OFF:
             case GuildEvent::PROMOTION: case GuildEvent::DEMOTION:
             case GuildEvent::JOINED: case GuildEvent::LEFT:
             case GuildEvent::REMOVED: case GuildEvent::LEADER_CHANGED:
             case GuildEvent::DISBANDED:
-                owner_.addonEventCallback_("GUILD_ROSTER_UPDATE", {});
+                owner_.addonEventCallbackRef()("GUILD_ROSTER_UPDATE", {});
                 break;
             default: break;
         }
@@ -1563,8 +1563,8 @@ void SocialHandler::handleGuildInvite(network::Packet& packet) {
     pendingGuildInviterName_ = data.inviterName;
     pendingGuildInviteGuildName_ = data.guildName;
     owner_.addSystemChatMessage(data.inviterName + " has invited you to join " + data.guildName + ".");
-    if (owner_.addonEventCallback_)
-        owner_.addonEventCallback_("GUILD_INVITE_REQUEST", {data.inviterName, data.guildName});
+    if (owner_.addonEventCallbackRef())
+        owner_.addonEventCallbackRef()("GUILD_INVITE_REQUEST", {data.inviterName, data.guildName});
 }
 
 void SocialHandler::handleGuildCommandResult(network::Packet& packet) {
@@ -1758,8 +1758,8 @@ void SocialHandler::handleFriendList(network::Packet& packet) {
     auto rem = [&]() { return packet.getRemainingSize(); };
     if (rem() < 1) return;
     uint8_t count = packet.readUInt8();
-    owner_.contacts_.erase(std::remove_if(owner_.contacts_.begin(), owner_.contacts_.end(),
-        [](const ContactEntry& e){ return e.isFriend(); }), owner_.contacts_.end());
+    owner_.contactsRef().erase(std::remove_if(owner_.contactsRef().begin(), owner_.contactsRef().end(),
+        [](const ContactEntry& e){ return e.isFriend(); }), owner_.contactsRef().end());
     for (uint8_t i = 0; i < count && rem() >= 9; ++i) {
         uint64_t guid   = packet.readUInt64();
         uint8_t  status = packet.readUInt8();
@@ -1769,30 +1769,30 @@ void SocialHandler::handleFriendList(network::Packet& packet) {
             level   = packet.readUInt32();
             classId = packet.readUInt32();
         }
-        owner_.friendGuids_.insert(guid);
+        owner_.friendGuidsRef().insert(guid);
         auto nit = owner_.getPlayerNameCache().find(guid);
         std::string name;
         if (nit != owner_.getPlayerNameCache().end()) {
             name = nit->second;
-            owner_.friendsCache[name] = guid;
+            owner_.friendsCacheRef()[name] = guid;
         } else {
             owner_.queryPlayerName(guid);
         }
         ContactEntry entry;
         entry.guid = guid; entry.name = name; entry.flags = 0x1;
         entry.status = status; entry.areaId = area; entry.level = level; entry.classId = classId;
-        owner_.contacts_.push_back(std::move(entry));
+        owner_.contactsRef().push_back(std::move(entry));
     }
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("FRIENDLIST_UPDATE", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("FRIENDLIST_UPDATE", {});
 }
 
 void SocialHandler::handleContactList(network::Packet& packet) {
     auto rem = [&]() { return packet.getRemainingSize(); };
     if (rem() < 8) { packet.skipAll(); return; }
-    owner_.lastContactListMask_  = packet.readUInt32();
-    owner_.lastContactListCount_ = packet.readUInt32();
-    owner_.contacts_.clear();
-    for (uint32_t i = 0; i < owner_.lastContactListCount_ && rem() >= 8; ++i) {
+    owner_.lastContactListMaskRef()  = packet.readUInt32();
+    owner_.lastContactListCountRef() = packet.readUInt32();
+    owner_.contactsRef().clear();
+    for (uint32_t i = 0; i < owner_.lastContactListCountRef() && rem() >= 8; ++i) {
         uint64_t guid  = packet.readUInt64();
         if (rem() < 4) break;
         uint32_t flags = packet.readUInt32();
@@ -1804,9 +1804,9 @@ void SocialHandler::handleContactList(network::Packet& packet) {
             if (status != 0 && rem() >= 12) {
                 areaId = packet.readUInt32(); level = packet.readUInt32(); classId = packet.readUInt32();
             }
-            owner_.friendGuids_.insert(guid);
+            owner_.friendGuidsRef().insert(guid);
             auto nit = owner_.getPlayerNameCache().find(guid);
-            if (nit != owner_.getPlayerNameCache().end()) owner_.friendsCache[nit->second] = guid;
+            if (nit != owner_.getPlayerNameCache().end()) owner_.friendsCacheRef()[nit->second] = guid;
             else owner_.queryPlayerName(guid);
         }
         ContactEntry entry;
@@ -1814,11 +1814,11 @@ void SocialHandler::handleContactList(network::Packet& packet) {
         entry.status = status; entry.areaId = areaId; entry.level = level; entry.classId = classId;
         auto nit = owner_.getPlayerNameCache().find(guid);
         if (nit != owner_.getPlayerNameCache().end()) entry.name = nit->second;
-        owner_.contacts_.push_back(std::move(entry));
+        owner_.contactsRef().push_back(std::move(entry));
     }
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("FRIENDLIST_UPDATE", {});
-        if (owner_.lastContactListMask_ & 0x2) owner_.addonEventCallback_("IGNORELIST_UPDATE", {});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("FRIENDLIST_UPDATE", {});
+        if (owner_.lastContactListMaskRef() & 0x2) owner_.addonEventCallbackRef()("IGNORELIST_UPDATE", {});
     }
 }
 
@@ -1827,12 +1827,12 @@ void SocialHandler::handleFriendStatus(network::Packet& packet) {
     if (!FriendStatusParser::parse(packet, data)) return;
 
     // Single lookup — reuse iterator for name resolution and update/erase below
-    auto cit = std::find_if(owner_.contacts_.begin(), owner_.contacts_.end(),
+    auto cit = std::find_if(owner_.contactsRef().begin(), owner_.contactsRef().end(),
         [&](const ContactEntry& e){ return e.guid == data.guid; });
 
     // Look up player name: contacts_ (populated by SMSG_FRIEND_LIST) > playerNameCache
     std::string playerName;
-    if (cit != owner_.contacts_.end() && !cit->name.empty()) {
+    if (cit != owner_.contactsRef().end() && !cit->name.empty()) {
         playerName = cit->name;
     } else {
         auto it = owner_.getPlayerNameCache().find(data.guid);
@@ -1842,22 +1842,22 @@ void SocialHandler::handleFriendStatus(network::Packet& packet) {
     // Only update friendsCache when we have a resolved name — inserting an empty
     // key creates a phantom entry that masks the real one when the name arrives.
     if (!playerName.empty()) {
-        if (data.status == 1 || data.status == 2) owner_.friendsCache[playerName] = data.guid;
-        else if (data.status == 0) owner_.friendsCache.erase(playerName);
+        if (data.status == 1 || data.status == 2) owner_.friendsCacheRef()[playerName] = data.guid;
+        else if (data.status == 0) owner_.friendsCacheRef().erase(playerName);
     }
 
     if (data.status == 0) {
-        if (cit != owner_.contacts_.end())
-            owner_.contacts_.erase(cit);
+        if (cit != owner_.contactsRef().end())
+            owner_.contactsRef().erase(cit);
     } else {
-        if (cit != owner_.contacts_.end()) {
+        if (cit != owner_.contactsRef().end()) {
             if (!playerName.empty() && playerName != "Unknown") cit->name = playerName;
             if (data.status == 2) cit->status = 1; else if (data.status == 3) cit->status = 0;
         } else {
             ContactEntry entry;
             entry.guid = data.guid; entry.name = playerName; entry.flags = 0x1;
             entry.status = (data.status == 2) ? 1 : 0;
-            owner_.contacts_.push_back(std::move(entry));
+            owner_.contactsRef().push_back(std::move(entry));
         }
     }
     switch (data.status) {
@@ -1871,18 +1871,18 @@ void SocialHandler::handleFriendStatus(network::Packet& packet) {
         case 7: owner_.addSystemChatMessage(playerName + " is ignoring you."); break;
         default: break;
     }
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("FRIENDLIST_UPDATE", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("FRIENDLIST_UPDATE", {});
 }
 
 void SocialHandler::handleRandomRoll(network::Packet& packet) {
     RandomRollData data;
     if (!RandomRollParser::parse(packet, data)) return;
-    std::string rollerName = (data.rollerGuid == owner_.playerGuid) ? "You" : "Someone";
-    if (data.rollerGuid != owner_.playerGuid) {
+    std::string rollerName = (data.rollerGuid == owner_.getPlayerGuid()) ? "You" : "Someone";
+    if (data.rollerGuid != owner_.getPlayerGuid()) {
         auto it = owner_.getPlayerNameCache().find(data.rollerGuid);
         if (it != owner_.getPlayerNameCache().end()) rollerName = it->second;
     }
-    std::string msg = rollerName + ((data.rollerGuid == owner_.playerGuid) ? " roll " : " rolls ");
+    std::string msg = rollerName + ((data.rollerGuid == owner_.getPlayerGuid()) ? " roll " : " rolls ");
     msg += std::to_string(data.result) + " (" + std::to_string(data.minRoll) + "-" + std::to_string(data.maxRoll) + ")";
     owner_.addSystemChatMessage(msg);
 }
@@ -1897,7 +1897,7 @@ void SocialHandler::handleLogoutResponse(network::Packet& packet) {
     if (data.result == 0) {
         if (data.instant) { owner_.addSystemChatMessage("Logging out..."); logoutCountdown_ = 0.0f; }
         else { owner_.addSystemChatMessage("Logging out in 20 seconds..."); logoutCountdown_ = 20.0f; }
-        if (owner_.addonEventCallback_) owner_.addonEventCallback_("PLAYER_LOGOUT", {});
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("PLAYER_LOGOUT", {});
     } else {
         owner_.addSystemChatMessage("Cannot logout right now.");
         loggingOut_ = false; logoutCountdown_ = 0.0f;
@@ -1978,7 +1978,7 @@ void SocialHandler::handleBattlefieldStatus(network::Packet& packet) {
         case 3: owner_.addSystemChatMessage("Entered " + bgName + "."); break;
         default: break;
     }
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("UPDATE_BATTLEFIELD_STATUS", {std::to_string(statusId)});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("UPDATE_BATTLEFIELD_STATUS", {std::to_string(statusId)});
 }
 
 void SocialHandler::handleBattlefieldList(network::Packet& packet) {
@@ -2008,7 +2008,7 @@ bool SocialHandler::hasPendingBgInvite() const {
 }
 
 void SocialHandler::acceptBattlefield(uint32_t queueSlot) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     const BgQueueSlot* slot = nullptr;
     if (queueSlot == 0xFFFFFFFF) { for (const auto& s : bgQueues_) { if (s.statusId == 2) { slot = &s; break; } } }
     else if (queueSlot < bgQueues_.size() && bgQueues_[queueSlot].statusId == 2) slot = &bgQueues_[queueSlot];
@@ -2016,14 +2016,14 @@ void SocialHandler::acceptBattlefield(uint32_t queueSlot) {
     network::Packet pkt(wireOpcode(Opcode::CMSG_BATTLEFIELD_PORT));
     pkt.writeUInt8(slot->arenaType); pkt.writeUInt8(0x00); pkt.writeUInt32(slot->bgTypeId);
     pkt.writeUInt16(0x0000); pkt.writeUInt8(1);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     uint32_t clearSlot = slot->queueSlot;
     if (clearSlot < bgQueues_.size()) bgQueues_[clearSlot].statusId = 3;
     owner_.addSystemChatMessage("Accepting battleground invitation...");
 }
 
 void SocialHandler::declineBattlefield(uint32_t queueSlot) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     const BgQueueSlot* slot = nullptr;
     if (queueSlot == 0xFFFFFFFF) { for (const auto& s : bgQueues_) { if (s.statusId == 2) { slot = &s; break; } } }
     else if (queueSlot < bgQueues_.size() && bgQueues_[queueSlot].statusId == 2) slot = &bgQueues_[queueSlot];
@@ -2031,16 +2031,16 @@ void SocialHandler::declineBattlefield(uint32_t queueSlot) {
     network::Packet pkt(wireOpcode(Opcode::CMSG_BATTLEFIELD_PORT));
     pkt.writeUInt8(slot->arenaType); pkt.writeUInt8(0x00); pkt.writeUInt32(slot->bgTypeId);
     pkt.writeUInt16(0x0000); pkt.writeUInt8(0);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     uint32_t clearSlot = slot->queueSlot;
     if (clearSlot < bgQueues_.size()) bgQueues_[clearSlot] = BgQueueSlot{};
     owner_.addSystemChatMessage("Battleground invitation declined.");
 }
 
 void SocialHandler::requestPvpLog() {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     network::Packet pkt(wireOpcode(Opcode::MSG_PVP_LOG_DATA));
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 // ============================================================
@@ -2247,51 +2247,51 @@ void SocialHandler::handleLfgTeleportDenied(network::Packet& packet) {
 // ============================================================
 
 void SocialHandler::lfgJoin(uint32_t dungeonId, uint8_t roles) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_JOIN));
     pkt.writeUInt8(roles); pkt.writeUInt8(0); pkt.writeUInt8(0);
     pkt.writeUInt8(1); pkt.writeUInt32(dungeonId); pkt.writeString("");
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 void SocialHandler::lfgLeave() {
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_LEAVE));
     pkt.writeUInt32(0); pkt.writeUInt32(0); pkt.writeUInt32(0);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     lfgState_ = LfgState::None;
 }
 
 void SocialHandler::lfgSetRoles(uint8_t roles) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     const uint32_t wire = wireOpcode(Opcode::CMSG_LFG_SET_ROLES);
     if (wire == 0xFFFF) return;
     network::Packet pkt(static_cast<uint16_t>(wire));
     pkt.writeUInt8(roles);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 void SocialHandler::lfgAcceptProposal(uint32_t proposalId, bool accept) {
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_PROPOSAL_RESULT));
     pkt.writeUInt32(proposalId); pkt.writeUInt8(accept ? 1 : 0);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 void SocialHandler::lfgTeleport(bool toLfgDungeon) {
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_LFG_TELEPORT));
     pkt.writeUInt8(toLfgDungeon ? 0 : 1);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 void SocialHandler::lfgSetBootVote(bool vote) {
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     uint16_t wireOp = wireOpcode(Opcode::CMSG_LFG_SET_BOOT_VOTE);
     if (wireOp == 0xFFFF) return;
     network::Packet pkt(wireOp);
     pkt.writeUInt8(vote ? 1 : 0);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 // ============================================================
@@ -2381,10 +2381,10 @@ void SocialHandler::handleArenaTeamStats(network::Packet& packet) {
 }
 
 void SocialHandler::requestArenaTeamRoster(uint32_t teamId) {
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_ARENA_TEAM_ROSTER));
     pkt.writeUInt32(teamId);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 void SocialHandler::handleArenaError(network::Packet& packet) {
@@ -2463,13 +2463,13 @@ void SocialHandler::handleInitializeFactions(network::Packet& packet) {
     uint32_t count = packet.readUInt32();
     size_t needed = static_cast<size_t>(count) * 5;
     if (!packet.hasRemaining(needed)) { packet.skipAll(); return; }
-    owner_.initialFactions_.clear();
-    owner_.initialFactions_.reserve(count);
+    owner_.initialFactionsRef().clear();
+    owner_.initialFactionsRef().reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
         GameHandler::FactionStandingInit fs{};
         fs.flags = packet.readUInt8();
         fs.standing = static_cast<int32_t>(packet.readUInt32());
-        owner_.initialFactions_.push_back(fs);
+        owner_.initialFactionsRef().push_back(fs);
     }
 }
 
@@ -2483,9 +2483,9 @@ void SocialHandler::handleSetFactionStanding(network::Packet& packet) {
         uint32_t factionId = packet.readUInt32();
         int32_t  standing  = static_cast<int32_t>(packet.readUInt32());
         int32_t  oldStanding = 0;
-        auto it = owner_.factionStandings_.find(factionId);
-        if (it != owner_.factionStandings_.end()) oldStanding = it->second;
-        owner_.factionStandings_[factionId] = standing;
+        auto it = owner_.factionStandingsRef().find(factionId);
+        if (it != owner_.factionStandingsRef().end()) oldStanding = it->second;
+        owner_.factionStandingsRef()[factionId] = standing;
         int32_t delta = standing - oldStanding;
         if (delta != 0) {
             std::string name = owner_.getFactionName(factionId);
@@ -2493,8 +2493,8 @@ void SocialHandler::handleSetFactionStanding(network::Packet& packet) {
             std::snprintf(buf, sizeof(buf), "Reputation with %s %s by %d.",
                           name.c_str(), delta > 0 ? "increased" : "decreased", std::abs(delta));
             owner_.addSystemChatMessage(buf);
-            owner_.watchedFactionId_ = factionId;
-            if (owner_.repChangeCallback_) owner_.repChangeCallback_(name, delta, standing);
+            owner_.watchedFactionIdRef() = factionId;
+            if (owner_.repChangeCallbackRef()) owner_.repChangeCallbackRef()(name, delta, standing);
             // These events fire unconditionally on any rep change (not gated by callback).
             owner_.fireAddonEvent("UPDATE_FACTION", {});
             owner_.fireAddonEvent("CHAT_MSG_COMBAT_FACTION_CHANGE", {std::string(buf)});
@@ -2506,11 +2506,11 @@ void SocialHandler::handleSetFactionAtWar(network::Packet& packet) {
     if (!packet.hasRemaining(5)) { packet.skipAll(); return; }
     uint32_t repListId = packet.readUInt32();
     uint8_t  setAtWar  = packet.readUInt8();
-    if (repListId < owner_.initialFactions_.size()) {
+    if (repListId < owner_.initialFactionsRef().size()) {
         if (setAtWar)
-            owner_.initialFactions_[repListId].flags |=  GameHandler::FACTION_FLAG_AT_WAR;
+            owner_.initialFactionsRef()[repListId].flags |=  GameHandler::FACTION_FLAG_AT_WAR;
         else
-            owner_.initialFactions_[repListId].flags &= ~GameHandler::FACTION_FLAG_AT_WAR;
+            owner_.initialFactionsRef()[repListId].flags &= ~GameHandler::FACTION_FLAG_AT_WAR;
     }
 }
 
@@ -2518,11 +2518,11 @@ void SocialHandler::handleSetFactionVisible(network::Packet& packet) {
     if (!packet.hasRemaining(5)) { packet.skipAll(); return; }
     uint32_t repListId = packet.readUInt32();
     uint8_t  visible   = packet.readUInt8();
-    if (repListId < owner_.initialFactions_.size()) {
+    if (repListId < owner_.initialFactionsRef().size()) {
         if (visible)
-            owner_.initialFactions_[repListId].flags |=  GameHandler::FACTION_FLAG_VISIBLE;
+            owner_.initialFactionsRef()[repListId].flags |=  GameHandler::FACTION_FLAG_VISIBLE;
         else
-            owner_.initialFactions_[repListId].flags &= ~GameHandler::FACTION_FLAG_VISIBLE;
+            owner_.initialFactionsRef()[repListId].flags &= ~GameHandler::FACTION_FLAG_VISIBLE;
     }
 }
 
@@ -2544,7 +2544,7 @@ void SocialHandler::handleGroupSetLeader(network::Packet& packet) {
 // ============================================================
 
 void SocialHandler::sendMinimapPing(float wowX, float wowY) {
-    if (owner_.state != WorldState::IN_WORLD) return;
+    if (owner_.getState() != WorldState::IN_WORLD) return;
 
     // MSG_MINIMAP_PING (CMSG direction): float posX + float posY
     // Server convention: posX = east/west axis = canonical Y (west)
@@ -2555,15 +2555,15 @@ void SocialHandler::sendMinimapPing(float wowX, float wowY) {
     network::Packet pkt(wireOpcode(Opcode::MSG_MINIMAP_PING));
     pkt.writeFloat(serverX);
     pkt.writeFloat(serverY);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 
     // Add ping locally so the sender sees their own ping immediately
     GameHandler::MinimapPing localPing;
-    localPing.senderGuid = owner_.activeCharacterGuid_;
+    localPing.senderGuid = owner_.activeCharacterGuidRef();
     localPing.wowX       = wowX;
     localPing.wowY       = wowY;
     localPing.age        = 0.0f;
-    owner_.minimapPings_.push_back(localPing);
+    owner_.minimapPingsRef().push_back(localPing);
 }
 
 // ============================================================
@@ -2573,53 +2573,53 @@ void SocialHandler::sendMinimapPing(float wowX, float wowY) {
 void SocialHandler::handleSummonRequest(network::Packet& packet) {
     if (!packet.hasRemaining(16)) return;
 
-    owner_.summonerGuid_        = packet.readUInt64();
+    owner_.summonerGuidRef()        = packet.readUInt64();
     uint32_t zoneId             = packet.readUInt32();
     uint32_t timeoutMs          = packet.readUInt32();
-    owner_.summonTimeoutSec_    = timeoutMs / 1000.0f;
-    owner_.pendingSummonRequest_= true;
+    owner_.summonTimeoutSecRef()    = timeoutMs / 1000.0f;
+    owner_.pendingSummonRequestRef()= true;
 
-    owner_.summonerName_.clear();
-    if (auto* unit = owner_.getUnitByGuid(owner_.summonerGuid_)) {
-        owner_.summonerName_ = unit->getName();
+    owner_.summonerNameRef().clear();
+    if (auto* unit = owner_.getUnitByGuid(owner_.summonerGuidRef())) {
+        owner_.summonerNameRef() = unit->getName();
     }
-    if (owner_.summonerName_.empty()) {
-        owner_.summonerName_ = owner_.lookupName(owner_.summonerGuid_);
+    if (owner_.summonerNameRef().empty()) {
+        owner_.summonerNameRef() = owner_.lookupName(owner_.summonerGuidRef());
     }
-    if (owner_.summonerName_.empty()) {
+    if (owner_.summonerNameRef().empty()) {
         char tmp[32];
         std::snprintf(tmp, sizeof(tmp), "0x%llX",
-                      static_cast<unsigned long long>(owner_.summonerGuid_));
-        owner_.summonerName_ = tmp;
+                      static_cast<unsigned long long>(owner_.summonerGuidRef()));
+        owner_.summonerNameRef() = tmp;
     }
 
-    std::string msg = owner_.summonerName_ + " is summoning you";
+    std::string msg = owner_.summonerNameRef() + " is summoning you";
     std::string zoneName = owner_.getAreaName(zoneId);
     if (!zoneName.empty())
         msg += " to " + zoneName;
     msg += '.';
     owner_.addSystemChatMessage(msg);
-    LOG_INFO("SMSG_SUMMON_REQUEST: summoner=", owner_.summonerName_,
-             " zoneId=", zoneId, " timeout=", owner_.summonTimeoutSec_, "s");
+    LOG_INFO("SMSG_SUMMON_REQUEST: summoner=", owner_.summonerNameRef(),
+             " zoneId=", zoneId, " timeout=", owner_.summonTimeoutSecRef(), "s");
     owner_.fireAddonEvent("CONFIRM_SUMMON", {});
 }
 
 void SocialHandler::acceptSummon() {
-    if (!owner_.pendingSummonRequest_ || !owner_.socket) return;
-    owner_.pendingSummonRequest_ = false;
+    if (!owner_.pendingSummonRequestRef() || !owner_.getSocket()) return;
+    owner_.pendingSummonRequestRef() = false;
     network::Packet pkt(wireOpcode(Opcode::CMSG_SUMMON_RESPONSE));
     pkt.writeUInt8(1);  // 1 = accept
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     owner_.addSystemChatMessage("Accepting summon...");
-    LOG_INFO("Accepted summon from ", owner_.summonerName_);
+    LOG_INFO("Accepted summon from ", owner_.summonerNameRef());
 }
 
 void SocialHandler::declineSummon() {
-    if (!owner_.socket) return;
-    owner_.pendingSummonRequest_ = false;
+    if (!owner_.getSocket()) return;
+    owner_.pendingSummonRequestRef() = false;
     network::Packet pkt(wireOpcode(Opcode::CMSG_SUMMON_RESPONSE));
     pkt.writeUInt8(0);  // 0 = decline
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     owner_.addSystemChatMessage("Summon declined.");
 }
 
@@ -2628,22 +2628,22 @@ void SocialHandler::declineSummon() {
 // ============================================================
 
 void SocialHandler::acceptBfMgrInvite() {
-    if (!owner_.bfMgrInvitePending_ || owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (!owner_.bfMgrInvitePendingRef() || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     // CMSG_BATTLEFIELD_MGR_ENTRY_INVITE_RESPONSE: uint8 accepted = 1
     network::Packet pkt(wireOpcode(Opcode::CMSG_BATTLEFIELD_MGR_ENTRY_INVITE_RESPONSE));
     pkt.writeUInt8(1);  // accepted
-    owner_.socket->send(pkt);
-    owner_.bfMgrInvitePending_ = false;
+    owner_.getSocket()->send(pkt);
+    owner_.bfMgrInvitePendingRef() = false;
     LOG_INFO("acceptBfMgrInvite: sent CMSG_BATTLEFIELD_MGR_ENTRY_INVITE_RESPONSE accepted=1");
 }
 
 void SocialHandler::declineBfMgrInvite() {
-    if (!owner_.bfMgrInvitePending_ || owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (!owner_.bfMgrInvitePendingRef() || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     // CMSG_BATTLEFIELD_MGR_ENTRY_INVITE_RESPONSE: uint8 accepted = 0
     network::Packet pkt(wireOpcode(Opcode::CMSG_BATTLEFIELD_MGR_ENTRY_INVITE_RESPONSE));
     pkt.writeUInt8(0);  // declined
-    owner_.socket->send(pkt);
-    owner_.bfMgrInvitePending_ = false;
+    owner_.getSocket()->send(pkt);
+    owner_.bfMgrInvitePendingRef() = false;
     LOG_INFO("declineBfMgrInvite: sent CMSG_BATTLEFIELD_MGR_ENTRY_INVITE_RESPONSE accepted=0");
 }
 
@@ -2655,11 +2655,11 @@ void SocialHandler::requestCalendar() {
     if (!owner_.isInWorld()) return;
     // CMSG_CALENDAR_GET_CALENDAR has no payload
     network::Packet pkt(wireOpcode(Opcode::CMSG_CALENDAR_GET_CALENDAR));
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     LOG_INFO("requestCalendar: sent CMSG_CALENDAR_GET_CALENDAR");
     // Also request pending invite count
     network::Packet numPkt(wireOpcode(Opcode::CMSG_CALENDAR_GET_NUM_PENDING));
-    owner_.socket->send(numPkt);
+    owner_.getSocket()->send(numPkt);
 }
 
 // ============================================================
@@ -2674,7 +2674,7 @@ void SocialHandler::sendSetDifficulty(uint32_t difficulty) {
 
     network::Packet packet(wireOpcode(Opcode::CMSG_CHANGEPLAYER_DIFFICULTY));
     packet.writeUInt32(difficulty);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("CMSG_CHANGEPLAYER_DIFFICULTY sent: difficulty=", difficulty);
 }
 
@@ -2684,11 +2684,11 @@ void SocialHandler::toggleHelm() {
         return;
     }
 
-    owner_.helmVisible_ = !owner_.helmVisible_;
-    auto packet = ShowingHelmPacket::build(owner_.helmVisible_);
-    owner_.socket->send(packet);
-    owner_.addSystemChatMessage(owner_.helmVisible_ ? "Helm is now visible." : "Helm is now hidden.");
-    LOG_INFO("Helm visibility toggled: ", owner_.helmVisible_);
+    owner_.helmVisibleRef() = !owner_.helmVisibleRef();
+    auto packet = ShowingHelmPacket::build(owner_.helmVisibleRef());
+    owner_.getSocket()->send(packet);
+    owner_.addSystemChatMessage(owner_.helmVisibleRef() ? "Helm is now visible." : "Helm is now hidden.");
+    LOG_INFO("Helm visibility toggled: ", owner_.helmVisibleRef());
 }
 
 void SocialHandler::toggleCloak() {
@@ -2697,11 +2697,11 @@ void SocialHandler::toggleCloak() {
         return;
     }
 
-    owner_.cloakVisible_ = !owner_.cloakVisible_;
-    auto packet = ShowingCloakPacket::build(owner_.cloakVisible_);
-    owner_.socket->send(packet);
-    owner_.addSystemChatMessage(owner_.cloakVisible_ ? "Cloak is now visible." : "Cloak is now hidden.");
-    LOG_INFO("Cloak visibility toggled: ", owner_.cloakVisible_);
+    owner_.cloakVisibleRef() = !owner_.cloakVisibleRef();
+    auto packet = ShowingCloakPacket::build(owner_.cloakVisibleRef());
+    owner_.getSocket()->send(packet);
+    owner_.addSystemChatMessage(owner_.cloakVisibleRef() ? "Cloak is now visible." : "Cloak is now hidden.");
+    LOG_INFO("Cloak visibility toggled: ", owner_.cloakVisibleRef());
 }
 
 void SocialHandler::setStandState(uint8_t standState) {
@@ -2711,23 +2711,23 @@ void SocialHandler::setStandState(uint8_t standState) {
     }
 
     auto packet = StandStateChangePacket::build(standState);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("Changed stand state to: ", static_cast<int>(standState));
 }
 
 void SocialHandler::sendAlterAppearance(uint32_t hairStyle, uint32_t hairColor, uint32_t facialHair) {
     if (!owner_.isInWorld()) return;
     auto pkt = AlterAppearancePacket::build(hairStyle, hairColor, facialHair);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     LOG_INFO("sendAlterAppearance: hair=", hairStyle, " color=", hairColor, " facial=", facialHair);
 }
 
 void SocialHandler::deleteGmTicket() {
     if (!owner_.isInWorld()) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_GMTICKET_DELETETICKET));
-    owner_.socket->send(pkt);
-    owner_.gmTicketActive_ = false;
-    owner_.gmTicketText_.clear();
+    owner_.getSocket()->send(pkt);
+    owner_.gmTicketActiveRef() = false;
+    owner_.gmTicketTextRef().clear();
     LOG_INFO("Deleting GM ticket");
 }
 
@@ -2735,7 +2735,7 @@ void SocialHandler::requestGmTicket() {
     if (!owner_.isInWorld()) return;
     // CMSG_GMTICKET_GETTICKET has no payload — server responds with SMSG_GMTICKET_GETTICKET
     network::Packet pkt(wireOpcode(Opcode::CMSG_GMTICKET_GETTICKET));
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     LOG_DEBUG("Sent CMSG_GMTICKET_GETTICKET — querying open ticket status");
 }
 

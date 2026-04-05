@@ -6,6 +6,7 @@
 #include "game/opcode_table.hpp"
 #include "network/world_socket.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/animation_controller.hpp"
 #include "core/logger.hpp"
 #include <algorithm>
 
@@ -54,8 +55,8 @@ void ChatHandler::registerOpcodes(DispatchTable& table) {
         if (!packet.hasRemaining(12)) return;
         uint32_t emoteAnim  = packet.readUInt32();
         uint64_t sourceGuid = packet.readUInt64();
-        if (owner_.emoteAnimCallback_ && sourceGuid != 0)
-            owner_.emoteAnimCallback_(sourceGuid, emoteAnim);
+        if (owner_.emoteAnimCallbackRef() && sourceGuid != 0)
+            owner_.emoteAnimCallbackRef()(sourceGuid, emoteAnim);
     };
     table[Opcode::SMSG_CHANNEL_NOTIFY] = [this](network::Packet& packet) {
         if (owner_.getState() == WorldState::IN_WORLD ||
@@ -125,7 +126,7 @@ void ChatHandler::registerOpcodes(DispatchTable& table) {
             if (!msg.empty()) {
                 owner_.addUIError(msg);
                 addSystemChatMessage(msg);
-                owner_.areaTriggerMsgs_.push_back(msg);
+                owner_.areaTriggerMsgsRef().push_back(msg);
             }
         }
     };
@@ -155,15 +156,15 @@ void ChatHandler::sendChatMessage(ChatType type, const std::string& message, con
     ChatLanguage language = isHorde ? ChatLanguage::ORCISH : ChatLanguage::COMMON;
 
     auto packet = MessageChatPacket::build(type, language, message, target);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 
     // Add local echo so the player sees their own message immediately
     MessageChatData echo;
-    echo.senderGuid = owner_.playerGuid;
+    echo.senderGuid = owner_.getPlayerGuid();
     echo.language = language;
     echo.message = message;
 
-    auto nameIt = owner_.getPlayerNameCache().find(owner_.playerGuid);
+    auto nameIt = owner_.getPlayerNameCache().find(owner_.getPlayerGuid());
     if (nameIt != owner_.getPlayerNameCache().end()) {
         echo.senderName = nameIt->second;
     }
@@ -186,7 +187,7 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
     LOG_DEBUG("Handling SMSG_MESSAGECHAT");
 
     MessageChatData data;
-    if (!owner_.packetParsers_->parseMessageChat(packet, data)) {
+    if (!owner_.getPacketParsers()->parseMessageChat(packet, data)) {
         LOG_WARNING("Failed to parse SMSG_MESSAGECHAT, size=", packet.getSize());
         return;
     }
@@ -195,9 +196,9 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
              " '", data.senderName, "' msg='", data.message.substr(0, 60), "'");
 
     // Skip server echo of our own messages (we already added a local echo)
-    if (data.senderGuid == owner_.playerGuid && data.senderGuid != 0) {
+    if (data.senderGuid == owner_.getPlayerGuid() && data.senderGuid != 0) {
         if (data.type == ChatType::WHISPER && !data.senderName.empty()) {
-            owner_.lastWhisperSender_ = data.senderName;
+            owner_.lastWhisperSenderRef() = data.senderName;
         }
         return;
     }
@@ -284,29 +285,29 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
         // Always store GUID so getLastWhisperSender() can resolve the name
         // from the player name cache even if name wasn't available yet
         if (data.senderGuid != 0)
-            owner_.lastWhisperSenderGuid_ = data.senderGuid;
+            owner_.lastWhisperSenderGuidRef() = data.senderGuid;
         if (!data.senderName.empty())
-            owner_.lastWhisperSender_ = data.senderName;
+            owner_.lastWhisperSenderRef() = data.senderName;
 
         if (!data.senderName.empty()) {
             // Only auto-reply once per sender per AFK/DND session to prevent loops
-            if (owner_.afkStatus_ && afkAutoRepliedSenders_.insert(data.senderName).second) {
-                std::string reply = owner_.afkMessage_.empty() ? "Away from Keyboard" : owner_.afkMessage_;
+            if (owner_.afkStatusRef() && afkAutoRepliedSenders_.insert(data.senderName).second) {
+                std::string reply = owner_.afkMessageRef().empty() ? "Away from Keyboard" : owner_.afkMessageRef();
                 sendChatMessage(ChatType::WHISPER, "<AFK> " + reply, data.senderName);
-            } else if (owner_.dndStatus_ && afkAutoRepliedSenders_.insert(data.senderName).second) {
-                std::string reply = owner_.dndMessage_.empty() ? "Do Not Disturb" : owner_.dndMessage_;
+            } else if (owner_.dndStatusRef() && afkAutoRepliedSenders_.insert(data.senderName).second) {
+                std::string reply = owner_.dndMessageRef().empty() ? "Do Not Disturb" : owner_.dndMessageRef();
                 sendChatMessage(ChatType::WHISPER, "<DND> " + reply, data.senderName);
             }
         }
     }
 
     // Trigger chat bubble for SAY/YELL messages from others
-    if (owner_.chatBubbleCallback_ && data.senderGuid != 0) {
+    if (owner_.chatBubbleCallbackRef() && data.senderGuid != 0) {
         if (data.type == ChatType::SAY || data.type == ChatType::YELL ||
             data.type == ChatType::MONSTER_SAY || data.type == ChatType::MONSTER_YELL ||
             data.type == ChatType::MONSTER_PARTY) {
             bool isYell = (data.type == ChatType::YELL || data.type == ChatType::MONSTER_YELL);
-            owner_.chatBubbleCallback_(data.senderGuid, data.message, isYell);
+            owner_.chatBubbleCallbackRef()(data.senderGuid, data.message, isYell);
         }
     }
 
@@ -328,7 +329,7 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
     LOG_DEBUG("[", getChatTypeString(data.type), "] ", channelInfo, senderInfo, ": ", data.message);
 
     // Detect addon messages
-    if (owner_.addonEventCallback_ &&
+    if (owner_.addonEventCallbackRef() &&
         data.type != ChatType::SAY && data.type != ChatType::YELL &&
         data.type != ChatType::EMOTE && data.type != ChatType::TEXT_EMOTE &&
         data.type != ChatType::MONSTER_SAY && data.type != ChatType::MONSTER_YELL) {
@@ -339,21 +340,21 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
             if (prefix.find(' ') == std::string::npos) {
                 std::string body = data.message.substr(tabPos + 1);
                 std::string channel = getChatTypeString(data.type);
-                owner_.addonEventCallback_("CHAT_MSG_ADDON", {prefix, body, channel, data.senderName});
+                owner_.addonEventCallbackRef()("CHAT_MSG_ADDON", {prefix, body, channel, data.senderName});
                 return;
             }
         }
     }
 
     // Fire CHAT_MSG_* addon events
-    if (owner_.addonChatCallback_) owner_.addonChatCallback_(data);
-    if (owner_.addonEventCallback_) {
+    if (owner_.addonChatCallbackRef()) owner_.addonChatCallbackRef()(data);
+    if (owner_.addonEventCallbackRef()) {
         std::string eventName = "CHAT_MSG_";
         eventName += getChatTypeString(data.type);
         std::string lang = std::to_string(static_cast<int>(data.language));
         char guidBuf[32];
         snprintf(guidBuf, sizeof(guidBuf), "0x%016llX", (unsigned long long)data.senderGuid);
-        owner_.addonEventCallback_(eventName, {
+        owner_.addonEventCallbackRef()(eventName, {
             data.message,
             data.senderName,
             lang,
@@ -371,9 +372,9 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
 }
 
 void ChatHandler::sendTextEmote(uint32_t textEmoteId, uint64_t targetGuid) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = TextEmotePacket::build(textEmoteId, targetGuid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void ChatHandler::handleTextEmote(network::Packet& packet) {
@@ -384,7 +385,7 @@ void ChatHandler::handleTextEmote(network::Packet& packet) {
         return;
     }
 
-    if (data.senderGuid == owner_.playerGuid && data.senderGuid != 0) {
+    if (data.senderGuid == owner_.getPlayerGuid() && data.senderGuid != 0) {
         return;
     }
 
@@ -405,7 +406,7 @@ void ChatHandler::handleTextEmote(network::Packet& packet) {
     }
 
     const std::string* targetPtr = data.targetName.empty() ? nullptr : &data.targetName;
-    std::string emoteText = rendering::Renderer::getEmoteTextByDbcId(data.textEmoteId, senderName, targetPtr);
+    std::string emoteText = rendering::AnimationController::getEmoteTextByDbcId(data.textEmoteId, senderName, targetPtr);
     if (emoteText.empty()) {
         emoteText = data.targetName.empty()
             ? senderName + " performs an emote."
@@ -421,29 +422,29 @@ void ChatHandler::handleTextEmote(network::Packet& packet) {
 
     addLocalChatMessage(chatMsg);
 
-    uint32_t animId = rendering::Renderer::getEmoteAnimByDbcId(data.textEmoteId);
-    if (animId != 0 && owner_.emoteAnimCallback_) {
-        owner_.emoteAnimCallback_(data.senderGuid, animId);
+    uint32_t animId = rendering::AnimationController::getEmoteAnimByDbcId(data.textEmoteId);
+    if (animId != 0 && owner_.emoteAnimCallbackRef()) {
+        owner_.emoteAnimCallbackRef()(data.senderGuid, animId);
     }
 
     LOG_INFO("TEXT_EMOTE from ", senderName, " (emoteId=", data.textEmoteId, ", anim=", animId, ")");
 }
 
 void ChatHandler::joinChannel(const std::string& channelName, const std::string& password) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
-    auto packet = owner_.packetParsers_
-        ? owner_.packetParsers_->buildJoinChannel(channelName, password)
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
+    auto packet = owner_.getPacketParsers()
+        ? owner_.getPacketParsers()->buildJoinChannel(channelName, password)
         : JoinChannelPacket::build(channelName, password);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("Requesting to join channel: ", channelName);
 }
 
 void ChatHandler::leaveChannel(const std::string& channelName) {
-    if (owner_.getState() != WorldState::IN_WORLD || !owner_.socket) return;
-    auto packet = owner_.packetParsers_
-        ? owner_.packetParsers_->buildLeaveChannel(channelName)
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
+    auto packet = owner_.getPacketParsers()
+        ? owner_.getPacketParsers()->buildLeaveChannel(channelName)
         : LeaveChannelPacket::build(channelName);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("Requesting to leave channel: ", channelName);
 }
 
@@ -601,9 +602,9 @@ void ChatHandler::addLocalChatMessage(const MessageChatData& msg) {
     if (chatHistory_.size() > maxChatHistory_) {
         chatHistory_.pop_front();
     }
-    if (owner_.addonChatCallback_) owner_.addonChatCallback_(msg);
+    if (owner_.addonChatCallbackRef()) owner_.addonChatCallbackRef()(msg);
 
-    if (owner_.addonEventCallback_) {
+    if (owner_.addonEventCallbackRef()) {
         std::string eventName = "CHAT_MSG_";
         eventName += getChatTypeString(msg.type);
         const Character* ac = owner_.getActiveCharacter();
@@ -611,8 +612,8 @@ void ChatHandler::addLocalChatMessage(const MessageChatData& msg) {
             ? (ac ? ac->name : std::string{}) : msg.senderName;
         char guidBuf[32];
         snprintf(guidBuf, sizeof(guidBuf), "0x%016llX",
-                 (unsigned long long)(msg.senderGuid != 0 ? msg.senderGuid : owner_.playerGuid));
-        owner_.addonEventCallback_(eventName, {
+                 (unsigned long long)(msg.senderGuid != 0 ? msg.senderGuid : owner_.getPlayerGuid()));
+        owner_.addonEventCallbackRef()(eventName, {
             msg.message, senderName,
             std::to_string(static_cast<int>(msg.language)),
             msg.channelName, senderName, "", "0", "0", "", "0", "0", guidBuf
@@ -630,51 +631,51 @@ void ChatHandler::addSystemChatMessage(const std::string& message) {
 }
 
 void ChatHandler::toggleAfk(const std::string& message) {
-    owner_.afkStatus_ = !owner_.afkStatus_;
-    owner_.afkMessage_ = message;
+    owner_.afkStatusRef() = !owner_.afkStatusRef();
+    owner_.afkMessageRef() = message;
 
-    if (owner_.afkStatus_) {
+    if (owner_.afkStatusRef()) {
         if (message.empty()) {
             addSystemChatMessage("You are now AFK.");
         } else {
             addSystemChatMessage("You are now AFK: " + message);
         }
         // If DND was active, turn it off
-        if (owner_.dndStatus_) {
-            owner_.dndStatus_ = false;
-            owner_.dndMessage_.clear();
+        if (owner_.dndStatusRef()) {
+            owner_.dndStatusRef() = false;
+            owner_.dndMessageRef().clear();
         }
     } else {
         addSystemChatMessage("You are no longer AFK.");
-        owner_.afkMessage_.clear();
+        owner_.afkMessageRef().clear();
         afkAutoRepliedSenders_.clear();
     }
 
-    LOG_INFO("AFK status: ", owner_.afkStatus_, ", message: ", message);
+    LOG_INFO("AFK status: ", owner_.afkStatusRef(), ", message: ", message);
 }
 
 void ChatHandler::toggleDnd(const std::string& message) {
-    owner_.dndStatus_ = !owner_.dndStatus_;
-    owner_.dndMessage_ = message;
+    owner_.dndStatusRef() = !owner_.dndStatusRef();
+    owner_.dndMessageRef() = message;
 
-    if (owner_.dndStatus_) {
+    if (owner_.dndStatusRef()) {
         if (message.empty()) {
             addSystemChatMessage("You are now DND (Do Not Disturb).");
         } else {
             addSystemChatMessage("You are now DND: " + message);
         }
         // If AFK was active, turn it off
-        if (owner_.afkStatus_) {
-            owner_.afkStatus_ = false;
-            owner_.afkMessage_.clear();
+        if (owner_.afkStatusRef()) {
+            owner_.afkStatusRef() = false;
+            owner_.afkMessageRef().clear();
         }
     } else {
         addSystemChatMessage("You are no longer DND.");
-        owner_.dndMessage_.clear();
+        owner_.dndMessageRef().clear();
         afkAutoRepliedSenders_.clear();
     }
 
-    LOG_INFO("DND status: ", owner_.dndStatus_, ", message: ", message);
+    LOG_INFO("DND status: ", owner_.dndStatusRef(), ", message: ", message);
 }
 
 void ChatHandler::replyToLastWhisper(const std::string& message) {
@@ -683,7 +684,7 @@ void ChatHandler::replyToLastWhisper(const std::string& message) {
         return;
     }
 
-    if (owner_.lastWhisperSender_.empty()) {
+    if (owner_.lastWhisperSenderRef().empty()) {
         addSystemChatMessage("No one has whispered you yet.");
         return;
     }
@@ -694,8 +695,8 @@ void ChatHandler::replyToLastWhisper(const std::string& message) {
     }
 
     // Send whisper using the standard message chat function
-    sendChatMessage(ChatType::WHISPER, message, owner_.lastWhisperSender_);
-    LOG_INFO("Replied to ", owner_.lastWhisperSender_, ": ", message);
+    sendChatMessage(ChatType::WHISPER, message, owner_.lastWhisperSenderRef());
+    LOG_INFO("Replied to ", owner_.lastWhisperSenderRef(), ": ", message);
 }
 
 // ============================================================
@@ -743,13 +744,13 @@ void ChatHandler::submitGmTicket(const std::string& text) {
     // uint8    need_response (1 = yes)
     network::Packet pkt(wireOpcode(Opcode::CMSG_GMTICKET_CREATE));
     pkt.writeString(text);
-    pkt.writeFloat(owner_.movementInfo.x);
-    pkt.writeFloat(owner_.movementInfo.y);
-    pkt.writeFloat(owner_.movementInfo.z);
-    pkt.writeFloat(owner_.movementInfo.orientation);
-    pkt.writeUInt32(owner_.currentMapId_);
+    pkt.writeFloat(owner_.movementInfoRef().x);
+    pkt.writeFloat(owner_.movementInfoRef().y);
+    pkt.writeFloat(owner_.movementInfoRef().z);
+    pkt.writeFloat(owner_.movementInfoRef().orientation);
+    pkt.writeUInt32(owner_.currentMapIdRef());
     pkt.writeUInt8(1);  // need_response = yes
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     LOG_INFO("Submitted GM ticket: '", text, "'");
 }
 

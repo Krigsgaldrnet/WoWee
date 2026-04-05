@@ -11,6 +11,7 @@
 #include "audio/spell_sound_manager.hpp"
 #include "audio/movement_sound_manager.hpp"
 #include "pipeline/asset_manager.hpp"
+#include "game/zone_manager.hpp"
 #include "core/logger.hpp"
 
 namespace wowee {
@@ -84,6 +85,163 @@ void AudioCoordinator::shutdown() {
     }
 
     LOG_INFO("AudioCoordinator shutdown complete");
+}
+
+void AudioCoordinator::playZoneMusic(const std::string& music) {
+    if (music.empty() || !musicManager_) return;
+    if (music.rfind("file:", 0) == 0) {
+        musicManager_->crossfadeToFile(music.substr(5));
+    } else {
+        musicManager_->crossfadeTo(music);
+    }
+}
+
+void AudioCoordinator::updateZoneAudio(const ZoneAudioContext& ctx) {
+    float deltaTime = ctx.deltaTime;
+    if (musicSwitchCooldown_ > 0.0f) {
+        musicSwitchCooldown_ = std::max(0.0f, musicSwitchCooldown_ - deltaTime);
+    }
+
+    // ── Ambient weather audio sync ──
+    if (ambientSoundManager_) {
+        bool isBlacksmith = (ctx.insideWmoId == 96048);
+
+        // Map visual weather type to ambient sound weather type
+        AmbientSoundManager::WeatherType audioWeatherType = AmbientSoundManager::WeatherType::NONE;
+        if (ctx.weatherType == 1) { // RAIN
+            if (ctx.weatherIntensity < 0.33f)      audioWeatherType = AmbientSoundManager::WeatherType::RAIN_LIGHT;
+            else if (ctx.weatherIntensity < 0.66f)  audioWeatherType = AmbientSoundManager::WeatherType::RAIN_MEDIUM;
+            else                                     audioWeatherType = AmbientSoundManager::WeatherType::RAIN_HEAVY;
+        } else if (ctx.weatherType == 2) { // SNOW
+            if (ctx.weatherIntensity < 0.33f)      audioWeatherType = AmbientSoundManager::WeatherType::SNOW_LIGHT;
+            else if (ctx.weatherIntensity < 0.66f)  audioWeatherType = AmbientSoundManager::WeatherType::SNOW_MEDIUM;
+            else                                     audioWeatherType = AmbientSoundManager::WeatherType::SNOW_HEAVY;
+        }
+        ambientSoundManager_->setWeather(audioWeatherType);
+        ambientSoundManager_->update(deltaTime, ctx.cameraPosition, ctx.insideWmo, ctx.isSwimming, isBlacksmith);
+    }
+
+    // ── Zone detection and music transitions ──
+    auto* zm = ctx.zoneManager;
+    if (!zm || !musicManager_ || !ctx.hasTile) return;
+
+    uint32_t zoneId = (ctx.serverZoneId != 0)
+        ? ctx.serverZoneId
+        : zm->getZoneId(ctx.tileX, ctx.tileY);
+
+    bool insideTavern = false;
+    bool insideBlacksmith = false;
+    std::string tavernMusic;
+
+    // WMO-based location overrides (taverns, blacksmiths, city zones)
+    if (ctx.insideWmo) {
+        uint32_t wmoModelId = ctx.insideWmoId;
+
+        // Stormwind WMO → force Stormwind City zone
+        if (wmoModelId == 10047) zoneId = 1519;
+
+        // Log WMO transitions
+        static uint32_t lastLoggedWmoId = 0;
+        if (wmoModelId != lastLoggedWmoId) {
+            LOG_INFO("Inside WMO model ID: ", wmoModelId);
+            lastLoggedWmoId = wmoModelId;
+        }
+
+        // Blacksmith detection (ambient forge sounds)
+        if (wmoModelId == 96048) {
+            insideBlacksmith = true;
+            LOG_INFO("Detected blacksmith WMO ", wmoModelId);
+        }
+
+        // Tavern / inn detection
+        if (wmoModelId == 191 || wmoModelId == 71414 || wmoModelId == 190 ||
+            wmoModelId == 220 || wmoModelId == 221 ||
+            wmoModelId == 5392 || wmoModelId == 5393) {
+            insideTavern = true;
+            static const std::vector<std::string> tavernTracks = {
+                "Sound\\Music\\ZoneMusic\\TavernAlliance\\TavernAlliance01.mp3",
+                "Sound\\Music\\ZoneMusic\\TavernAlliance\\TavernAlliance02.mp3",
+                "Sound\\Music\\ZoneMusic\\TavernHuman\\RA_HumanTavern1A.mp3",
+                "Sound\\Music\\ZoneMusic\\TavernHuman\\RA_HumanTavern2A.mp3",
+            };
+            static int tavernTrackIndex = 0;
+            tavernMusic = tavernTracks[tavernTrackIndex++ % tavernTracks.size()];
+            LOG_INFO("Detected tavern WMO ", wmoModelId, ", playing: ", tavernMusic);
+        }
+    }
+
+    // Tavern music transitions
+    if (insideTavern) {
+        if (!inTavern_ && !tavernMusic.empty()) {
+            inTavern_ = true;
+            LOG_INFO("Entered tavern");
+            musicManager_->playMusic(tavernMusic, true);
+            musicSwitchCooldown_ = 6.0f;
+        }
+    } else if (inTavern_) {
+        inTavern_ = false;
+        LOG_INFO("Exited tavern");
+        auto* info = zm->getZoneInfo(currentZoneId_);
+        if (info) {
+            std::string music = zm->getRandomMusic(currentZoneId_);
+            if (!music.empty()) {
+                playZoneMusic(music);
+                musicSwitchCooldown_ = 6.0f;
+            }
+        }
+    }
+
+    // Blacksmith transitions (stop music, let ambience play)
+    if (insideBlacksmith) {
+        if (!inBlacksmith_) {
+            inBlacksmith_ = true;
+            LOG_INFO("Entered blacksmith - stopping music");
+            musicManager_->stopMusic();
+        }
+    } else if (inBlacksmith_) {
+        inBlacksmith_ = false;
+        LOG_INFO("Exited blacksmith - restoring music");
+        auto* info = zm->getZoneInfo(currentZoneId_);
+        if (info) {
+            std::string music = zm->getRandomMusic(currentZoneId_);
+            if (!music.empty()) {
+                playZoneMusic(music);
+                musicSwitchCooldown_ = 6.0f;
+            }
+        }
+    }
+
+    // Normal zone transitions
+    if (!insideTavern && !insideBlacksmith && zoneId != currentZoneId_ && zoneId != 0) {
+        currentZoneId_ = zoneId;
+        auto* info = zm->getZoneInfo(zoneId);
+        if (info) {
+            currentZoneName_ = info->name;
+            LOG_INFO("Entered zone: ", info->name);
+            if (musicSwitchCooldown_ <= 0.0f) {
+                std::string music = zm->getRandomMusic(zoneId);
+                if (!music.empty()) {
+                    playZoneMusic(music);
+                    musicSwitchCooldown_ = 6.0f;
+                }
+            }
+        }
+        if (ambientSoundManager_) {
+            ambientSoundManager_->setZoneId(zoneId);
+        }
+    }
+
+    musicManager_->update(deltaTime);
+
+    // When a track finishes, pick a new random track from the current zone
+    if (!musicManager_->isPlaying() && !inTavern_ && !inBlacksmith_ &&
+        currentZoneId_ != 0 && musicSwitchCooldown_ <= 0.0f) {
+        std::string music = zm->getRandomMusic(currentZoneId_);
+        if (!music.empty()) {
+            playZoneMusic(music);
+            musicSwitchCooldown_ = 2.0f;
+        }
+    }
 }
 
 } // namespace audio

@@ -2,6 +2,8 @@
 #include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/animation_controller.hpp"
+#include "pipeline/asset_manager.hpp"
 #include "pipeline/dbc_loader.hpp"
 #include "game/game_handler.hpp"
 #include "audio/audio_coordinator.hpp"
@@ -50,7 +52,7 @@ void AudioCallbackHandler::setupCallbacks() {
             uiManager_->getGameScreen().toastManager().triggerDing(newLevel);
         }
         if (renderer_) {
-            renderer_->triggerLevelUpEffect(renderer_->getCharacterPosition());
+            if (auto* ac = renderer_->getAnimationController()) ac->triggerLevelUpEffect(renderer_->getCharacterPosition());
         }
     });
 
@@ -108,7 +110,7 @@ void AudioCallbackHandler::setupCallbacks() {
         if (entity) {
             glm::vec3 canonical(entity->getX(), entity->getY(), entity->getZ());
             glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
-            renderer_->triggerLevelUpEffect(renderPos);
+            if (auto* ac = renderer_->getAnimationController()) ac->triggerLevelUpEffect(renderPos);
         }
 
         // Show chat message if in group

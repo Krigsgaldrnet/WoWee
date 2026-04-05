@@ -53,11 +53,11 @@ class AmdFsr3Runtime;
 class SpellVisualSystem;
 class PostProcessPipeline;
 class AnimationController;
-enum class RangedWeaponType : uint8_t;
 class LevelUpEffect;
 class ChargeEffect;
 class SwimEffects;
 class RenderGraph;
+class OverlaySystem;
 
 class Renderer {
 public:
@@ -139,7 +139,8 @@ public:
     WorldMap* getWorldMap() const { return worldMap.get(); }
     QuestMarkerRenderer* getQuestMarkerRenderer() const { return questMarkerRenderer.get(); }
     SkySystem* getSkySystem() const { return skySystem.get(); }
-    const std::string& getCurrentZoneName() const { return currentZoneName; }
+    const std::string& getCurrentZoneName() const;
+    uint32_t getCurrentZoneId() const;
     bool isPlayerIndoors() const { return playerIndoors_; }
     VkContext* getVkContext() const { return vkCtx; }
     VkDescriptorSetLayout getPerFrameSetLayout() const { return perFrameSetLayout; }
@@ -152,52 +153,17 @@ public:
     float getCharacterYaw() const { return characterYaw; }
     void setCharacterYaw(float yawDeg) { characterYaw = yawDeg; }
 
-    // Emote support — delegates to AnimationController (§4.2)
-    void playEmote(const std::string& emoteName);
-    void triggerLevelUpEffect(const glm::vec3& position);
-    void cancelEmote();
-
     // Screenshot capture — copies swapchain image to PNG file
     bool captureScreenshot(const std::string& outputPath);
 
     // Spell visual effects (SMSG_PLAY_SPELL_VISUAL / SMSG_PLAY_SPELL_IMPACT)
     // Delegates to SpellVisualSystem (owned by Renderer)
-    void playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition,
-                         bool useImpactKit = false);
     SpellVisualSystem* getSpellVisualSystem() const { return spellVisualSystem_.get(); }
-    bool isEmoteActive() const;
-    static std::string getEmoteText(const std::string& emoteName, const std::string* targetName = nullptr);
-    static uint32_t getEmoteDbcId(const std::string& emoteName);
-    static std::string getEmoteTextByDbcId(uint32_t dbcId, const std::string& senderName, const std::string* targetName = nullptr);
-    static uint32_t getEmoteAnimByDbcId(uint32_t dbcId);
 
-    // Targeting support — delegates to AnimationController (§4.2)
-    void setTargetPosition(const glm::vec3* pos);
-    void setInCombat(bool combat);
+    // Combat visual state (compound: resets AnimationController + SpellVisualSystem)
     void resetCombatVisualState();
-    bool isMoving() const;
-    void triggerMeleeSwing();
-    void setEquippedWeaponType(uint32_t inventoryType, bool is2HLoose = false,
-                               bool isFist = false, bool isDagger = false,
-                               bool hasOffHand = false, bool hasShield = false);
-    void triggerSpecialAttack(uint32_t spellId);
-    void setEquippedRangedType(RangedWeaponType type);
-    void triggerRangedShot();
-    RangedWeaponType getEquippedRangedType() const;
-    void setCharging(bool charging);
-    bool isCharging() const;
-    void startChargeEffect(const glm::vec3& position, const glm::vec3& direction);
-    void emitChargeEffect(const glm::vec3& position, const glm::vec3& direction);
-    void stopChargeEffect();
 
-    // Mount rendering — delegates to AnimationController (§4.2)
-    void setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float heightOffset, const std::string& modelPath = "");
-    void setTaxiFlight(bool onTaxi);
-    void setMountPitchRoll(float pitch, float roll);
-    void clearMount();
-    bool isMounted() const;
-
-    // AnimationController access (§4.2)
+    // Sub-system accessors (§4.2)
     AnimationController* getAnimationController() const { return animationController_.get(); }
     LevelUpEffect* getLevelUpEffect() const { return levelUpEffect.get(); }
     ChargeEffect* getChargeEffect() const { return chargeEffect.get(); }
@@ -286,33 +252,8 @@ public:
 
     // Post-process pipeline API — delegates to PostProcessPipeline (§4.3)
     PostProcessPipeline* getPostProcessPipeline() const;
-    void setFXAAEnabled(bool enabled);
-    bool isFXAAEnabled() const;
     void setFSREnabled(bool enabled);
-    bool isFSREnabled() const;
-    void setFSRQuality(float scaleFactor);
-    void setFSRSharpness(float sharpness);
-    float getFSRScaleFactor() const;
-    float getFSRSharpness() const;
     void setFSR2Enabled(bool enabled);
-    bool isFSR2Enabled() const;
-    void setFSR2DebugTuning(float jitterSign, float motionVecScaleX, float motionVecScaleY);
-    void setAmdFsr3FramegenEnabled(bool enabled);
-    bool isAmdFsr3FramegenEnabled() const;
-    float getFSR2JitterSign() const;
-    float getFSR2MotionVecScaleX() const;
-    float getFSR2MotionVecScaleY() const;
-    bool isAmdFsr2SdkAvailable() const;
-    bool isAmdFsr3FramegenSdkAvailable() const;
-    bool isAmdFsr3FramegenRuntimeActive() const;
-    bool isAmdFsr3FramegenRuntimeReady() const;
-    const char* getAmdFsr3FramegenRuntimePath() const;
-    const std::string& getAmdFsr3FramegenRuntimeError() const;
-    size_t getAmdFsr3UpscaleDispatchCount() const;
-    size_t getAmdFsr3FramegenDispatchCount() const;
-    size_t getAmdFsr3FallbackCount() const;
-    void setBrightness(float b);
-    float getBrightness() const;
 
     void setWaterRefractionEnabled(bool enabled);
     bool isWaterRefractionEnabled() const;
@@ -332,12 +273,7 @@ private:
     // Post-process pipeline — owns all FSR/FXAA/FSR2 state (extracted §4.3)
     std::unique_ptr<PostProcessPipeline> postProcessPipeline_;
 
-    uint32_t currentZoneId = 0;
-    std::string currentZoneName;
-    bool inTavern_ = false;
-    bool inBlacksmith_ = false;
     bool playerIndoors_ = false;  // Cached WMO inside state for macro conditionals
-    float musicSwitchCooldown_ = 0.0f;
     bool deferredWorldInitEnabled_ = true;
     bool deferredWorldInitPending_ = false;
     uint8_t deferredWorldInitStage_ = 0;
@@ -350,26 +286,8 @@ private:
 
 
 
-    // Selection circle rendering (Vulkan)
-    VkPipeline selCirclePipeline = VK_NULL_HANDLE;
-    VkPipelineLayout selCirclePipelineLayout = VK_NULL_HANDLE;
-    ::VkBuffer selCircleVertBuf = VK_NULL_HANDLE;
-    VmaAllocation selCircleVertAlloc = VK_NULL_HANDLE;
-    ::VkBuffer selCircleIdxBuf = VK_NULL_HANDLE;
-    VmaAllocation selCircleIdxAlloc = VK_NULL_HANDLE;
-    int selCircleVertCount = 0;
-    void initSelectionCircle();
-    void renderSelectionCircle(const glm::mat4& view, const glm::mat4& projection, VkCommandBuffer overrideCmd = VK_NULL_HANDLE);
-    glm::vec3 selCirclePos{0.0f};
-    glm::vec3 selCircleColor{1.0f, 0.0f, 0.0f};
-    float selCircleRadius = 1.5f;
-    bool selCircleVisible = false;
-
-    // Fullscreen color overlay (underwater tint)
-    VkPipeline overlayPipeline = VK_NULL_HANDLE;
-    VkPipelineLayout overlayPipelineLayout = VK_NULL_HANDLE;
-    void initOverlayPipeline();
-    void renderOverlay(const glm::vec4& color, VkCommandBuffer overrideCmd = VK_NULL_HANDLE);
+    // Selection circle + overlay rendering (owned by OverlaySystem)
+    std::unique_ptr<OverlaySystem> overlaySystem_;
 
 
 

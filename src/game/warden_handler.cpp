@@ -193,8 +193,8 @@ void WardenHandler::update(float deltaTime) {
                 for (uint8_t byte : encrypted) {
                     response.writeUInt8(byte);
                 }
-                if (owner_.socket && owner_.socket->isConnected()) {
-                    owner_.socket->send(response);
+                if (owner_.getSocket() && owner_.getSocket()->isConnected()) {
+                    owner_.getSocket()->send(response);
                     LOG_WARNING("Warden: Sent async CHEAT_CHECKS_RESULT (", plaintext.size(), " bytes plaintext)");
                 }
             }
@@ -202,11 +202,11 @@ void WardenHandler::update(float deltaTime) {
     }
 
     // Post-gate visibility
-    if (wardenGateSeen_ && owner_.socket && owner_.socket->isConnected()) {
+    if (wardenGateSeen_ && owner_.getSocket() && owner_.getSocket()->isConnected()) {
         wardenGateElapsed_ += deltaTime;
         if (wardenGateElapsed_ >= wardenGateNextStatusLog_) {
             LOG_DEBUG("Warden gate status: elapsed=", wardenGateElapsed_,
-                     "s connected=", owner_.socket->isConnected() ? "yes" : "no",
+                     "s connected=", owner_.getSocket()->isConnected() ? "yes" : "no",
                      " packetsAfterGate=", wardenPacketsAfterGate_);
             wardenGateNextStatusLog_ += 30.0f;
         }
@@ -302,12 +302,12 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
     // Initialize Warden crypto from session key on first packet
     if (!wardenCrypto_) {
         wardenCrypto_ = std::make_unique<WardenCrypto>();
-        if (owner_.sessionKey.size() != 40) {
-            LOG_ERROR("Warden: No valid session key (size=", owner_.sessionKey.size(), "), cannot init crypto");
+        if (owner_.getSessionKey().size() != 40) {
+            LOG_ERROR("Warden: No valid session key (size=", owner_.getSessionKey().size(), "), cannot init crypto");
             wardenCrypto_.reset();
             return;
         }
-        if (!wardenCrypto_->initFromSessionKey(owner_.sessionKey)) {
+        if (!wardenCrypto_->initFromSessionKey(owner_.getSessionKey())) {
             LOG_ERROR("Warden: Failed to initialize crypto from session key");
             wardenCrypto_.reset();
             return;
@@ -348,8 +348,8 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
         for (uint8_t byte : encrypted) {
             response.writeUInt8(byte);
         }
-        if (owner_.socket && owner_.socket->isConnected()) {
-            owner_.socket->send(response);
+        if (owner_.getSocket() && owner_.getSocket()->isConnected()) {
+            owner_.getSocket()->send(response);
             LOG_DEBUG("Warden: Sent response (", plaintext.size(), " bytes plaintext)");
         }
     };
@@ -447,12 +447,12 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                 wardenLoadedModule_->setCallbackDependencies(
                     wardenCrypto_.get(),
                     [this](const uint8_t* data, size_t len) {
-                        if (!wardenCrypto_ || !owner_.socket) return;
+                        if (!wardenCrypto_ || !owner_.getSocket()) return;
                         std::vector<uint8_t> plaintext(data, data + len);
                         auto encrypted = wardenCrypto_->encrypt(plaintext);
                         network::Packet pkt(wireOpcode(Opcode::CMSG_WARDEN_DATA));
                         for (uint8_t b : encrypted) pkt.writeUInt8(b);
-                        owner_.socket->send(pkt);
+                        owner_.getSocket()->send(pkt);
                         LOG_DEBUG("Warden: Module sendPacket callback sent ", len, " bytes");
                     });
                 if (wardenLoadedModule_->load(wardenModuleData_, wardenModuleHash_, wardenModuleKey_)) { // codeql[cpp/weak-cryptographic-algorithm]
@@ -533,7 +533,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                 for (auto b : seed) { char s[4]; snprintf(s, 4, "%02x", b); seedHex += s; }
 
                 bool isTurtle = isActiveExpansion("turtle");
-                bool isClassic = (owner_.build <= 6005) && !isTurtle;
+                bool isClassic = (owner_.getBuild() <= 6005) && !isTurtle;
 
                 if (!isTurtle && !isClassic) {
                     // WotLK/TBC: don't respond to HASH_REQUEST without a valid CR match.
@@ -619,7 +619,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                     // Ensure wardenMemory_ is loaded on main thread before launching async task
                     if (!wardenMemory_) {
                         wardenMemory_ = std::make_unique<WardenMemory>();
-                        if (!wardenMemory_->load(static_cast<uint16_t>(owner_.build), isActiveExpansion("turtle"))) {
+                        if (!wardenMemory_->load(static_cast<uint16_t>(owner_.getBuild()), isActiveExpansion("turtle"))) {
                             LOG_WARNING("Warden: Could not load WoW.exe for MEM_CHECK");
                         }
                     }
@@ -1054,7 +1054,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                         // Lazy-load WoW.exe PE image on first MEM_CHECK
                         if (!wardenMemory_) {
                             wardenMemory_ = std::make_unique<WardenMemory>();
-                            if (!wardenMemory_->load(static_cast<uint16_t>(owner_.build), isActiveExpansion("turtle"))) {
+                            if (!wardenMemory_->load(static_cast<uint16_t>(owner_.getBuild()), isActiveExpansion("turtle"))) {
                                 LOG_WARNING("Warden: Could not load WoW.exe for MEM_CHECK");
                             }
                         }

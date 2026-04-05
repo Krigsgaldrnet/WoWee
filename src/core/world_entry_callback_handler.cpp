@@ -4,6 +4,7 @@
 #include "core/world_loader.hpp"
 #include "core/logger.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/animation_controller.hpp"
 #include "rendering/camera_controller.hpp"
 #include "rendering/terrain_manager.hpp"
 #include "rendering/wmo_renderer.hpp"

@@ -1,0 +1,1637 @@
+#include "rendering/m2_renderer.hpp"
+#include "rendering/m2_renderer_internal.h"
+#include "rendering/m2_model_classifier.hpp"
+#include "rendering/vk_context.hpp"
+#include "rendering/vk_buffer.hpp"
+#include "rendering/vk_texture.hpp"
+#include "rendering/vk_pipeline.hpp"
+#include "rendering/vk_shader.hpp"
+#include "rendering/vk_utils.hpp"
+#include "rendering/vk_frame_data.hpp"
+#include "rendering/camera.hpp"
+#include "rendering/frustum.hpp"
+#include "pipeline/asset_manager.hpp"
+#include "pipeline/blp_loader.hpp"
+#include "core/logger.hpp"
+#include "core/profiler.hpp"
+#include <chrono>
+#include <cctype>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <unordered_set>
+#include <functional>
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <random>
+#include <limits>
+#include <future>
+#include <thread>
+
+namespace wowee {
+namespace rendering {
+
+uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
+                                     const glm::vec3& rotation, float scale) {
+    auto modelIt = models.find(modelId);
+    if (modelIt == models.end()) {
+        LOG_WARNING("Cannot create instance: model ", modelId, " not loaded");
+        return 0;
+    }
+    const auto& mdlRef = modelIt->second;
+    modelUnusedSince_.erase(modelId);
+
+    // Deduplicate: skip if same model already at nearly the same position.
+    // Uses hash map for O(1) lookup instead of O(N) scan.
+    if (!mdlRef.isGroundDetail) {
+        DedupKey dk{modelId,
+                    static_cast<int32_t>(std::round(position.x * 10.0f)),
+                    static_cast<int32_t>(std::round(position.y * 10.0f)),
+                    static_cast<int32_t>(std::round(position.z * 10.0f))};
+        auto dit = instanceDedupMap_.find(dk);
+        if (dit != instanceDedupMap_.end()) {
+            return dit->second;
+        }
+    }
+
+    M2Instance instance;
+    instance.id = nextInstanceId++;
+    instance.modelId = modelId;
+    instance.position = position;
+    if (mdlRef.isGroundDetail) {
+        instance.position.z -= computeGroundDetailDownOffset(mdlRef, scale);
+    }
+    instance.rotation = rotation;
+    instance.scale = scale;
+    instance.updateModelMatrix();
+    glm::vec3 localMin, localMax;
+    getTightCollisionBounds(mdlRef, localMin, localMax);
+    transformAABB(instance.modelMatrix, localMin, localMax, instance.worldBoundsMin, instance.worldBoundsMax);
+
+    // Cache model flags on instance to avoid per-frame hash lookups
+    instance.cachedHasAnimation = mdlRef.hasAnimation;
+    instance.cachedDisableAnimation = mdlRef.disableAnimation;
+    instance.cachedIsSmoke = mdlRef.isSmoke;
+    instance.cachedHasParticleEmitters = !mdlRef.particleEmitters.empty();
+    instance.cachedBoundRadius = mdlRef.boundRadius;
+    instance.cachedIsGroundDetail = mdlRef.isGroundDetail;
+    instance.cachedIsInvisibleTrap = mdlRef.isInvisibleTrap;
+    instance.cachedIsInstancePortal = mdlRef.isInstancePortal;
+    instance.cachedIsValid = mdlRef.isValid();
+    instance.cachedModel = &mdlRef;
+
+    // Initialize animation: play first sequence (usually Stand/Idle)
+    const auto& mdl = mdlRef;
+    if (mdl.hasAnimation && !mdl.disableAnimation) {
+        if (!mdl.sequences.empty()) {
+            instance.currentSequenceIndex = 0;
+            instance.idleSequenceIndex = 0;
+            instance.animDuration = static_cast<float>(mdl.sequences[0].duration);
+            instance.animTime = static_cast<float>(randRange(std::max(1u, mdl.sequences[0].duration)));
+            instance.variationTimer = randFloat(3000.0f, 11000.0f);
+        }
+
+        // Seed bone matrices from an existing instance of the same model so the
+        // new instance renders immediately instead of being invisible until the
+        // next update() computes bones (prevents pop-in flash).
+        for (const auto& existing : instances) {
+            if (existing.modelId == modelId && !existing.boneMatrices.empty()) {
+                instance.boneMatrices = existing.boneMatrices;
+                instance.bonesDirty[0] = instance.bonesDirty[1] = true;
+                break;
+            }
+        }
+        // If no sibling exists yet, compute bones immediately
+        if (instance.boneMatrices.empty()) {
+            computeBoneMatrices(mdlRef, instance);
+        }
+    }
+
+    // Register in dedup map before pushing (uses original position, not ground-adjusted)
+    if (!mdlRef.isGroundDetail) {
+        DedupKey dk{modelId,
+                    static_cast<int32_t>(std::round(position.x * 10.0f)),
+                    static_cast<int32_t>(std::round(position.y * 10.0f)),
+                    static_cast<int32_t>(std::round(position.z * 10.0f))};
+        instanceDedupMap_[dk] = instance.id;
+    }
+
+    instances.push_back(instance);
+    size_t idx = instances.size() - 1;
+    // Track special instances for fast-path iteration
+    if (mdlRef.isSmoke) {
+        smokeInstanceIndices_.push_back(idx);
+    }
+    if (mdlRef.isInstancePortal) {
+        portalInstanceIndices_.push_back(idx);
+    }
+    if (!mdlRef.particleEmitters.empty()) {
+        particleInstanceIndices_.push_back(idx);
+    }
+    if (mdlRef.hasAnimation && !mdlRef.disableAnimation) {
+        animatedInstanceIndices_.push_back(idx);
+    } else if (!mdlRef.particleEmitters.empty()) {
+        particleOnlyInstanceIndices_.push_back(idx);
+    }
+    instanceIndexById[instance.id] = idx;
+    GridCell minCell = toCell(instance.worldBoundsMin);
+    GridCell maxCell = toCell(instance.worldBoundsMax);
+    for (int z = minCell.z; z <= maxCell.z; z++) {
+        for (int y = minCell.y; y <= maxCell.y; y++) {
+            for (int x = minCell.x; x <= maxCell.x; x++) {
+                spatialGrid[GridCell{x, y, z}].push_back(instance.id);
+            }
+        }
+    }
+
+    return instance.id;
+}
+
+uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4& modelMatrix,
+                                                const glm::vec3& position) {
+    if (models.find(modelId) == models.end()) {
+        LOG_WARNING("Cannot create instance: model ", modelId, " not loaded");
+        return 0;
+    }
+    modelUnusedSince_.erase(modelId);
+
+    // Deduplicate: O(1) hash lookup
+    {
+        DedupKey dk{modelId,
+                    static_cast<int32_t>(std::round(position.x * 10.0f)),
+                    static_cast<int32_t>(std::round(position.y * 10.0f)),
+                    static_cast<int32_t>(std::round(position.z * 10.0f))};
+        auto dit = instanceDedupMap_.find(dk);
+        if (dit != instanceDedupMap_.end()) {
+            return dit->second;
+        }
+    }
+
+    M2Instance instance;
+    instance.id = nextInstanceId++;
+    instance.modelId = modelId;
+    instance.position = position;  // Used for frustum culling
+    instance.rotation = glm::vec3(0.0f);
+    instance.scale = 1.0f;
+    instance.modelMatrix = modelMatrix;
+    instance.invModelMatrix = glm::inverse(modelMatrix);
+    glm::vec3 localMin, localMax;
+    getTightCollisionBounds(models[modelId], localMin, localMax);
+    transformAABB(instance.modelMatrix, localMin, localMax, instance.worldBoundsMin, instance.worldBoundsMax);
+    // Cache model flags on instance to avoid per-frame hash lookups
+    const auto& mdl2 = models[modelId];
+    instance.cachedHasAnimation = mdl2.hasAnimation;
+    instance.cachedDisableAnimation = mdl2.disableAnimation;
+    instance.cachedIsSmoke = mdl2.isSmoke;
+    instance.cachedHasParticleEmitters = !mdl2.particleEmitters.empty();
+    instance.cachedBoundRadius = mdl2.boundRadius;
+    instance.cachedIsGroundDetail = mdl2.isGroundDetail;
+    instance.cachedIsInvisibleTrap = mdl2.isInvisibleTrap;
+    instance.cachedIsValid = mdl2.isValid();
+    instance.cachedModel = &mdl2;
+
+    // Initialize animation
+    if (mdl2.hasAnimation && !mdl2.disableAnimation) {
+        if (!mdl2.sequences.empty()) {
+            instance.currentSequenceIndex = 0;
+            instance.idleSequenceIndex = 0;
+            instance.animDuration = static_cast<float>(mdl2.sequences[0].duration);
+            instance.animTime = static_cast<float>(randRange(std::max(1u, mdl2.sequences[0].duration)));
+            instance.variationTimer = randFloat(3000.0f, 11000.0f);
+        }
+
+        // Seed bone matrices from an existing sibling so the instance renders immediately
+        for (const auto& existing : instances) {
+            if (existing.modelId == modelId && !existing.boneMatrices.empty()) {
+                instance.boneMatrices = existing.boneMatrices;
+                instance.bonesDirty[0] = instance.bonesDirty[1] = true;
+                break;
+            }
+        }
+        if (instance.boneMatrices.empty()) {
+            computeBoneMatrices(mdl2, instance);
+        }
+    } else {
+        instance.animTime = randFloat(0.0f, 10000.0f);
+    }
+
+    // Register in dedup map
+    {
+        DedupKey dk{modelId,
+                    static_cast<int32_t>(std::round(position.x * 10.0f)),
+                    static_cast<int32_t>(std::round(position.y * 10.0f)),
+                    static_cast<int32_t>(std::round(position.z * 10.0f))};
+        instanceDedupMap_[dk] = instance.id;
+    }
+
+    instances.push_back(instance);
+    size_t idx = instances.size() - 1;
+    if (mdl2.isSmoke) {
+        smokeInstanceIndices_.push_back(idx);
+    }
+    if (!mdl2.particleEmitters.empty()) {
+        particleInstanceIndices_.push_back(idx);
+    }
+    if (mdl2.hasAnimation && !mdl2.disableAnimation) {
+        animatedInstanceIndices_.push_back(idx);
+    } else if (!mdl2.particleEmitters.empty()) {
+        particleOnlyInstanceIndices_.push_back(idx);
+    }
+    instanceIndexById[instance.id] = idx;
+    GridCell minCell = toCell(instance.worldBoundsMin);
+    GridCell maxCell = toCell(instance.worldBoundsMax);
+    for (int z = minCell.z; z <= maxCell.z; z++) {
+        for (int y = minCell.y; y <= maxCell.y; y++) {
+            for (int x = minCell.x; x <= maxCell.x; x++) {
+                spatialGrid[GridCell{x, y, z}].push_back(instance.id);
+            }
+        }
+    }
+
+    return instance.id;
+}
+
+void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::mat4& viewProjection) {
+    ZoneScopedN("M2Renderer::update");
+    if (spatialIndexDirty_) {
+        rebuildSpatialIndex();
+    }
+
+    float dtMs = deltaTime * 1000.0f;
+
+    // Cache camera state for frustum-culling bone computation
+    cachedCamPos_ = cameraPos;
+    const float maxRenderDistance = (instances.size() > 2000) ? 800.0f : 2800.0f;
+    cachedMaxRenderDistSq_ = maxRenderDistance * maxRenderDistance;
+
+    // Build frustum for culling bones
+    Frustum updateFrustum;
+    updateFrustum.extractFromMatrix(viewProjection);
+
+    // --- Smoke particle spawning (only iterate tracked smoke instances) ---
+    std::uniform_real_distribution<float> distXY(-0.4f, 0.4f);
+    std::uniform_real_distribution<float> distVelXY(-0.3f, 0.3f);
+    std::uniform_real_distribution<float> distVelZ(3.0f, 5.0f);
+    std::uniform_real_distribution<float> distLife(4.0f, 7.0f);
+    std::uniform_real_distribution<float> distDrift(-0.2f, 0.2f);
+
+    smokeEmitAccum += deltaTime;
+    constexpr float emitInterval = kSmokeEmitInterval;  // 48 particles per second per emitter
+
+    if (smokeEmitAccum >= emitInterval &&
+        static_cast<int>(smokeParticles.size()) < MAX_SMOKE_PARTICLES) {
+        for (size_t si : smokeInstanceIndices_) {
+            if (si >= instances.size()) continue;
+            auto& instance = instances[si];
+
+            glm::vec3 emitWorld = glm::vec3(instance.modelMatrix * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+            bool spark = (smokeRng() % 8 == 0);
+
+            SmokeParticle p;
+            p.position = emitWorld + glm::vec3(distXY(smokeRng), distXY(smokeRng), 0.0f);
+            if (spark) {
+                p.velocity = glm::vec3(distVelXY(smokeRng) * 2.0f, distVelXY(smokeRng) * 2.0f, distVelZ(smokeRng) * 1.5f);
+                p.maxLife = 0.8f + static_cast<float>(smokeRng() % 100) / 100.0f * 1.2f;
+                p.size = 0.5f;
+                p.isSpark = 1.0f;
+            } else {
+                p.velocity = glm::vec3(distVelXY(smokeRng), distVelXY(smokeRng), distVelZ(smokeRng));
+                p.maxLife = distLife(smokeRng);
+                p.size = 1.0f;
+                p.isSpark = 0.0f;
+            }
+            p.life = 0.0f;
+            p.instanceId = instance.id;
+            smokeParticles.push_back(p);
+            if (static_cast<int>(smokeParticles.size()) >= MAX_SMOKE_PARTICLES) break;
+        }
+        smokeEmitAccum = 0.0f;
+    }
+
+    // --- Update existing smoke particles (swap-and-pop for O(1) removal) ---
+    for (size_t i = 0; i < smokeParticles.size(); ) {
+        auto& p = smokeParticles[i];
+        p.life += deltaTime;
+        if (p.life >= p.maxLife) {
+            smokeParticles[i] = smokeParticles.back();
+            smokeParticles.pop_back();
+            continue;
+        }
+        p.position += p.velocity * deltaTime;
+        p.velocity.z *= 0.98f;  // Slight deceleration
+        p.velocity.x += distDrift(smokeRng) * deltaTime;
+        p.velocity.y += distDrift(smokeRng) * deltaTime;
+        // Grow from 1.0 to 3.5 over lifetime
+        float t = p.life / p.maxLife;
+        p.size = 1.0f + t * 2.5f;
+        ++i;
+    }
+
+    // --- Spin instance portals ---
+    static constexpr float PORTAL_SPIN_SPEED = 1.2f; // radians/sec
+    static constexpr float kTwoPi = 6.2831853f;
+    for (size_t idx : portalInstanceIndices_) {
+        if (idx >= instances.size()) continue;
+        auto& inst = instances[idx];
+        inst.portalSpinAngle += PORTAL_SPIN_SPEED * deltaTime;
+        if (inst.portalSpinAngle > kTwoPi)
+            inst.portalSpinAngle -= kTwoPi;
+        inst.rotation.z = inst.portalSpinAngle;
+        inst.updateModelMatrix();
+    }
+
+    // --- Normal M2 animation update ---
+    // Advance animTime for ALL instances (needed for texture UV animation on static doodads).
+    // This is a tight loop touching only one float per instance — no hash lookups.
+    for (auto& instance : instances) {
+        instance.animTime += dtMs;
+    }
+    // Wrap animTime for particle-only instances so emission rate tracks keep looping.
+    // 3333ms chosen as a safe wrap period: long enough to cover the longest known M2
+    // particle emission cycle (~3s for torch/campfire effects) while preventing float
+    // precision loss that accumulates over hours of runtime.
+    static constexpr float kParticleWrapMs = 3333.0f;
+    for (size_t idx : particleOnlyInstanceIndices_) {
+        if (idx >= instances.size()) continue;
+        auto& instance = instances[idx];
+        // Use iterative subtraction instead of fmod() to preserve precision
+        while (instance.animTime > kParticleWrapMs) {
+            instance.animTime -= kParticleWrapMs;
+        }
+    }
+
+    boneWorkIndices_.clear();
+    boneWorkIndices_.reserve(animatedInstanceIndices_.size());
+
+    // Update animated instances (full animation state + bone computation culling)
+    // Note: animTime was already advanced by dtMs in the global loop above.
+    // Here we apply the speed factor: subtract the base dtMs and add dtMs*speed.
+    for (size_t idx : animatedInstanceIndices_) {
+        if (idx >= instances.size()) continue;
+        auto& instance = instances[idx];
+
+        instance.animTime += dtMs * (instance.animSpeed - 1.0f);
+
+        // For animation looping/variation, we need the actual model data.
+        if (!instance.cachedModel) continue;
+        const M2ModelGPU& model = *instance.cachedModel;
+
+        // Validate sequence index
+        if (instance.currentSequenceIndex < 0 ||
+            instance.currentSequenceIndex >= static_cast<int>(model.sequences.size())) {
+            instance.currentSequenceIndex = 0;
+            if (!model.sequences.empty()) {
+                instance.animDuration = static_cast<float>(model.sequences[0].duration);
+            }
+        }
+
+        // Handle animation looping / variation transitions
+        if (instance.animDuration <= 0.0f && instance.cachedHasParticleEmitters) {
+            instance.animDuration = 3333.0f;
+        }
+        if (instance.animDuration > 0.0f && instance.animTime >= instance.animDuration) {
+            if (instance.playingVariation) {
+                instance.playingVariation = false;
+                instance.currentSequenceIndex = instance.idleSequenceIndex;
+                if (instance.idleSequenceIndex < static_cast<int>(model.sequences.size())) {
+                    instance.animDuration = static_cast<float>(model.sequences[instance.idleSequenceIndex].duration);
+                }
+                instance.animTime = 0.0f;
+                instance.variationTimer = randFloat(4000.0f, 10000.0f);
+            } else {
+                // Use iterative subtraction instead of fmod() to preserve precision
+                float duration = std::max(1.0f, instance.animDuration);
+                while (instance.animTime >= duration) {
+                    instance.animTime -= duration;
+                }
+            }
+        }
+
+        // Idle variation timer
+        if (!instance.playingVariation && model.idleVariationIndices.size() > 1) {
+            instance.variationTimer -= dtMs;
+            if (instance.variationTimer <= 0.0f) {
+                int pick = static_cast<int>(randRange(static_cast<uint32_t>(model.idleVariationIndices.size())));
+                int newSeq = model.idleVariationIndices[pick];
+                if (newSeq != instance.currentSequenceIndex && newSeq < static_cast<int>(model.sequences.size())) {
+                    instance.playingVariation = true;
+                    instance.currentSequenceIndex = newSeq;
+                    instance.animDuration = static_cast<float>(model.sequences[newSeq].duration);
+                    instance.animTime = 0.0f;
+                } else {
+                    instance.variationTimer = randFloat(2000.0f, 6000.0f);
+                }
+            }
+        }
+
+        // Frustum + distance cull: skip expensive bone computation for off-screen instances.
+        float worldRadius = instance.cachedBoundRadius * instance.scale;
+        float cullRadius = worldRadius;
+        glm::vec3 toCam = instance.position - cachedCamPos_;
+        float distSq = glm::dot(toCam, toCam);
+        float effectiveMaxDistSq = cachedMaxRenderDistSq_ * std::max(1.0f, cullRadius / 12.0f);
+        if (distSq > effectiveMaxDistSq) continue;
+        float paddedRadius = std::max(cullRadius * 1.5f, cullRadius + 3.0f);
+        if (cullRadius > 0.0f && !updateFrustum.intersectsSphere(instance.position, paddedRadius)) continue;
+
+        // LOD 3 skip: models beyond 150 units use the lowest LOD mesh which has
+        // no visible skeletal animation.  Keep their last-computed bone matrices
+        // (always valid — seeded on spawn) and avoid the expensive per-bone work.
+        constexpr float kLOD3DistSq = 150.0f * 150.0f;
+        if (distSq > kLOD3DistSq) continue;
+
+        // Distance-based frame skipping: update distant bones less frequently
+        uint32_t boneInterval = 1;
+        if (distSq > 100.0f * 100.0f) boneInterval = 4;
+        else if (distSq > 50.0f * 50.0f) boneInterval = 2;
+        instance.frameSkipCounter++;
+        if ((instance.frameSkipCounter % boneInterval) != 0) continue;
+
+        boneWorkIndices_.push_back(idx);
+    }
+
+    // Compute bone matrices (expensive, parallel if enough work)
+    const size_t animCount = boneWorkIndices_.size();
+    if (animCount > 0) {
+        static const size_t minParallelAnimInstances = std::max<size_t>(
+            8, envSizeOrDefault("WOWEE_M2_ANIM_MT_MIN", 96));
+        if (animCount < minParallelAnimInstances || numAnimThreads_ <= 1) {
+            // Sequential — not enough work to justify thread overhead
+            for (size_t i : boneWorkIndices_) {
+                if (i >= instances.size()) continue;
+                auto& inst = instances[i];
+                if (!inst.cachedModel) continue;
+                computeBoneMatrices(*inst.cachedModel, inst);
+            }
+        } else {
+            // Parallel — dispatch across worker threads
+            static const size_t minAnimWorkPerThread = std::max<size_t>(
+                16, envSizeOrDefault("WOWEE_M2_ANIM_WORK_PER_THREAD", 64));
+            const size_t maxUsefulThreads = std::max<size_t>(
+                1, (animCount + minAnimWorkPerThread - 1) / minAnimWorkPerThread);
+            const size_t numThreads = std::min(static_cast<size_t>(numAnimThreads_), maxUsefulThreads);
+            if (numThreads <= 1) {
+                for (size_t i : boneWorkIndices_) {
+                    if (i >= instances.size()) continue;
+                    auto& inst = instances[i];
+                    if (!inst.cachedModel) continue;
+                    computeBoneMatrices(*inst.cachedModel, inst);
+                }
+            } else {
+                const size_t chunkSize = animCount / numThreads;
+                const size_t remainder = animCount % numThreads;
+
+                // Reuse persistent futures vector to avoid allocation
+                animFutures_.clear();
+                if (animFutures_.capacity() < numThreads) {
+                    animFutures_.reserve(numThreads);
+                }
+
+                size_t start = 0;
+                for (size_t t = 0; t < numThreads; ++t) {
+                    size_t end = start + chunkSize + (t < remainder ? 1 : 0);
+                    animFutures_.push_back(std::async(std::launch::async,
+                        [this, start, end]() {
+                            for (size_t j = start; j < end; ++j) {
+                                size_t idx = boneWorkIndices_[j];
+                                if (idx >= instances.size()) continue;
+                                auto& inst = instances[idx];
+                                if (!inst.cachedModel) continue;
+                                computeBoneMatrices(*inst.cachedModel, inst);
+                            }
+                        }));
+                    start = end;
+                }
+
+                for (auto& f : animFutures_) {
+                    f.get();
+                }
+            }
+        }
+    }
+
+    // Particle update (sequential — uses RNG, not thread-safe)
+    // Only iterate instances that have particle emitters (pre-built list).
+    for (size_t idx : particleInstanceIndices_) {
+        if (idx >= instances.size()) continue;
+        auto& instance = instances[idx];
+        // Distance cull: only update particles within visible range
+        glm::vec3 toCam = instance.position - cachedCamPos_;
+        float distSq = glm::dot(toCam, toCam);
+        if (distSq > cachedMaxRenderDistSq_) continue;
+        if (!instance.cachedModel) continue;
+        emitParticles(instance, *instance.cachedModel, deltaTime);
+        updateParticles(instance, deltaTime);
+        if (!instance.cachedModel->ribbonEmitters.empty()) {
+            updateRibbons(instance, *instance.cachedModel, deltaTime);
+        }
+    }
+
+}
+
+void M2Renderer::prepareRender(uint32_t frameIndex, const Camera& camera) {
+    if (!initialized_ || instances.empty()) return;
+    (void)camera;  // reserved for future frustum-based culling
+
+    // --- Mega bone SSBO: assign slots and upload all animated instance bones ---
+    // Slot 0 = identity (non-animated), slots 1..N = animated instances.
+    uint32_t nextSlot = 1;
+    for (size_t idx : animatedInstanceIndices_) {
+        if (idx >= instances.size()) continue;
+        auto& instance = instances[idx];
+
+        if (instance.boneMatrices.empty()) {
+            instance.megaBoneOffset = 0;  // Use identity slot
+            continue;
+        }
+
+        if (nextSlot >= MEGA_BONE_MAX_INSTANCES) {
+            instance.megaBoneOffset = 0;  // Overflow — use identity
+            continue;
+        }
+
+        instance.megaBoneOffset = nextSlot * MAX_BONES_PER_INSTANCE;
+
+        // Upload bone matrices to mega buffer
+        if (megaBoneMapped_[frameIndex]) {
+            int numBones = std::min(static_cast<int>(instance.boneMatrices.size()),
+                                    static_cast<int>(MAX_BONES_PER_INSTANCE));
+            auto* dst = static_cast<glm::mat4*>(megaBoneMapped_[frameIndex]) + instance.megaBoneOffset;
+            memcpy(dst, instance.boneMatrices.data(), numBones * sizeof(glm::mat4));
+        }
+
+        nextSlot++;
+    }
+}
+
+// Dispatch GPU frustum culling compute shader.
+// Called on the primary command buffer BEFORE the render pass begins so that
+// compute dispatch and memory barrier complete before secondary command buffers
+// read the visibility output in render().
+void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, const Camera& camera) {
+    if (!cullPipeline_ || instances.empty()) return;
+
+    const uint32_t numInstances = std::min(static_cast<uint32_t>(instances.size()), MAX_CULL_INSTANCES);
+
+    // --- Compute per-instance adaptive distances (same formula as old CPU cull) ---
+    const float targetRenderDist = (instances.size() > 2000) ? 300.0f
+                                 : (instances.size() > 1000) ? 500.0f
+                                 : 1000.0f;
+    const float shrinkRate = 0.005f;
+    const float growRate   = 0.05f;
+    float blendRate = (targetRenderDist < smoothedRenderDist_) ? shrinkRate : growRate;
+    smoothedRenderDist_ = glm::mix(smoothedRenderDist_, targetRenderDist, blendRate);
+    const float maxRenderDistance = smoothedRenderDist_;
+    const float maxRenderDistanceSq = maxRenderDistance * maxRenderDistance;
+    const float maxPossibleDistSq = maxRenderDistanceSq * 4.0f; // 2x safety margin
+
+    // --- Upload frustum planes + camera (UBO, binding 0) ---
+    const glm::mat4 vp = camera.getProjectionMatrix() * camera.getViewMatrix();
+    Frustum frustum;
+    frustum.extractFromMatrix(vp);
+    const glm::vec3 camPos = camera.getPosition();
+
+    if (cullUniformMapped_[frameIndex]) {
+        auto* ubo = static_cast<CullUniformsGPU*>(cullUniformMapped_[frameIndex]);
+        for (int i = 0; i < 6; i++) {
+            const auto& p = frustum.getPlane(static_cast<Frustum::Side>(i));
+            ubo->frustumPlanes[i] = glm::vec4(p.normal, p.distance);
+        }
+        ubo->cameraPos = glm::vec4(camPos, maxPossibleDistSq);
+        ubo->instanceCount = numInstances;
+    }
+
+    // --- Upload per-instance cull data (SSBO, binding 1) ---
+    if (cullInputMapped_[frameIndex]) {
+        auto* input = static_cast<CullInstanceGPU*>(cullInputMapped_[frameIndex]);
+        for (uint32_t i = 0; i < numInstances; i++) {
+            const auto& inst = instances[i];
+            float worldRadius = inst.cachedBoundRadius * inst.scale;
+            float cullRadius = worldRadius;
+            if (inst.cachedDisableAnimation) {
+                cullRadius = std::max(cullRadius, 3.0f);
+            }
+            float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / 12.0f);
+            if (inst.cachedDisableAnimation)  effectiveMaxDistSq *= 2.6f;
+            if (inst.cachedIsGroundDetail)     effectiveMaxDistSq *= 0.9f;
+
+            float paddedRadius = std::max(cullRadius * 1.5f, cullRadius + 3.0f);
+
+            uint32_t flags = 0;
+            if (inst.cachedIsValid)          flags |= 1u;
+            if (inst.cachedIsSmoke)           flags |= 2u;
+            if (inst.cachedIsInvisibleTrap)   flags |= 4u;
+
+            input[i].sphere = glm::vec4(inst.position, paddedRadius);
+            input[i].effectiveMaxDistSq = effectiveMaxDistSq;
+            input[i].flags = flags;
+        }
+    }
+
+    // --- Dispatch compute shader ---
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullPipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                            cullPipelineLayout_, 0, 1, &cullSet_[frameIndex], 0, nullptr);
+
+    const uint32_t groupCount = (numInstances + 63) / 64;
+    vkCmdDispatch(cmd, groupCount, 1, 1);
+
+    // --- Memory barrier: compute writes → host reads ---
+    VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
+}
+
+void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera) {
+    if (instances.empty() || !opaquePipeline_) {
+        return;
+    }
+
+    // Debug: log once when we start rendering
+    static bool loggedOnce = false;
+    if (!loggedOnce) {
+        loggedOnce = true;
+        LOG_INFO("M2 render: ", instances.size(), " instances, ", models.size(), " models");
+    }
+
+    // Periodic diagnostic: report render pipeline stats every 10 seconds
+    static int diagCounter = 0;
+    if (++diagCounter == 600) { // ~10s at 60fps
+        diagCounter = 0;
+        uint32_t totalValid = 0, totalAnimated = 0, totalBonesReady = 0, totalMegaBoneOk = 0;
+        for (const auto& inst : instances) {
+            if (inst.cachedIsValid) totalValid++;
+            if (inst.cachedHasAnimation && !inst.cachedDisableAnimation) {
+                totalAnimated++;
+                if (!inst.boneMatrices.empty()) totalBonesReady++;
+                if (inst.megaBoneOffset != 0) totalMegaBoneOk++;
+            }
+        }
+        LOG_INFO("M2 diag: total=", instances.size(),
+                 " valid=", totalValid,
+                 " animated=", totalAnimated,
+                 " bonesReady=", totalBonesReady,
+                 " megaBoneOk=", totalMegaBoneOk,
+                 " visible=", sortedVisible_.size(),
+                 " draws=", lastDrawCallCount);
+    }
+
+    // Reuse persistent buffers (clear instead of reallocating)
+    glowSprites_.clear();
+
+    lastDrawCallCount = 0;
+
+    // GPU cull results — dispatchCullCompute() already updated smoothedRenderDist_.
+    // Use the cached value (set by dispatchCullCompute or fallback below).
+    const uint32_t frameIndex = vkCtx_->getCurrentFrame();
+    const uint32_t numInstances = std::min(static_cast<uint32_t>(instances.size()), MAX_CULL_INSTANCES);
+    const uint32_t* visibility = static_cast<const uint32_t*>(cullOutputMapped_[frameIndex]);
+    const bool gpuCullAvailable = (cullPipeline_ != VK_NULL_HANDLE && visibility != nullptr);
+
+    // If GPU culling was not dispatched, fallback: compute distances on CPU
+    float maxRenderDistanceSq;
+    if (!gpuCullAvailable) {
+        const float targetRenderDist = (instances.size() > 2000) ? 300.0f
+                                     : (instances.size() > 1000) ? 500.0f
+                                     : 1000.0f;
+        const float shrinkRate = 0.005f;
+        const float growRate = 0.05f;
+        float blendRate = (targetRenderDist < smoothedRenderDist_) ? shrinkRate : growRate;
+        smoothedRenderDist_ = glm::mix(smoothedRenderDist_, targetRenderDist, blendRate);
+        maxRenderDistanceSq = smoothedRenderDist_ * smoothedRenderDist_;
+    } else {
+        maxRenderDistanceSq = smoothedRenderDist_ * smoothedRenderDist_;
+    }
+
+    const float fadeStartFraction = 0.75f;
+    const glm::vec3 camPos = camera.getPosition();
+
+    // Build sorted visible instance list
+    sortedVisible_.clear();
+    const size_t expectedVisible = std::min(instances.size() / 3, size_t(600));
+    if (sortedVisible_.capacity() < expectedVisible) {
+        sortedVisible_.reserve(expectedVisible);
+    }
+
+    // GPU frustum culling — build frustum for CPU fallback path and overflow instances
+    Frustum frustum;
+    {
+        const glm::mat4 vp = camera.getProjectionMatrix() * camera.getViewMatrix();
+        frustum.extractFromMatrix(vp);
+    }
+    const float maxPossibleDistSq = maxRenderDistanceSq * 4.0f;
+
+    const uint32_t totalInstances = static_cast<uint32_t>(instances.size());
+    for (uint32_t i = 0; i < totalInstances; ++i) {
+        const auto& instance = instances[i];
+
+        if (gpuCullAvailable && i < numInstances) {
+            // GPU already tested flags + distance + frustum
+            if (!visibility[i]) continue;
+        } else {
+            // CPU fallback: for non-GPU path or instances beyond cull buffer
+            if (!instance.cachedIsValid || instance.cachedIsSmoke || instance.cachedIsInvisibleTrap) continue;
+
+            glm::vec3 toCam = instance.position - camPos;
+            float distSqTest = glm::dot(toCam, toCam);
+            if (distSqTest > maxPossibleDistSq) continue;
+
+            float worldRadius = instance.cachedBoundRadius * instance.scale;
+            float cullRadius = worldRadius;
+            if (instance.cachedDisableAnimation) cullRadius = std::max(cullRadius, 3.0f);
+            float effDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / 12.0f);
+            if (instance.cachedDisableAnimation) effDistSq *= 2.6f;
+            if (instance.cachedIsGroundDetail) effDistSq *= 0.9f;
+            if (distSqTest > effDistSq) continue;
+
+            float paddedRadius = std::max(cullRadius * 1.5f, cullRadius + 3.0f);
+            if (cullRadius > 0.0f && !frustum.intersectsSphere(instance.position, paddedRadius)) continue;
+        }
+
+        // Compute distSq + effectiveMaxDistSq for sorting and fade alpha (cheap for visible-only)
+        glm::vec3 toCam = instance.position - camPos;
+        float distSq = glm::dot(toCam, toCam);
+        float worldRadius = instance.cachedBoundRadius * instance.scale;
+        float cullRadius = worldRadius;
+        if (instance.cachedDisableAnimation) cullRadius = std::max(cullRadius, 3.0f);
+        float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / 12.0f);
+        if (instance.cachedDisableAnimation)  effectiveMaxDistSq *= 2.6f;
+        if (instance.cachedIsGroundDetail)     effectiveMaxDistSq *= 0.9f;
+
+        sortedVisible_.push_back({i, instance.modelId, distSq, effectiveMaxDistSq});
+    }
+
+    // Two-pass rendering: opaque/alpha-test first (depth write ON), then transparent/additive
+    // (depth write OFF, sorted back-to-front) so transparent geometry composites correctly
+    // against all opaque geometry rather than only against what was rendered before it.
+
+    // Pass 1: sort by modelId for minimum buffer rebinds (opaque batches)
+    std::sort(sortedVisible_.begin(), sortedVisible_.end(),
+              [](const VisibleEntry& a, const VisibleEntry& b) { return a.modelId < b.modelId; });
+
+    uint32_t currentModelId = UINT32_MAX;
+    const M2ModelGPU* currentModel = nullptr;
+    bool currentModelValid = false;
+
+    // State tracking
+    VkPipeline currentPipeline = VK_NULL_HANDLE;
+    VkDescriptorSet currentMaterialSet = VK_NULL_HANDLE;
+
+    // Push constants now carry per-batch data only; per-instance data is in instance SSBO.
+    struct M2PushConstants {
+        int32_t texCoordSet;        // UV set index (0 or 1)
+        int32_t isFoliage;          // Foliage wind animation flag
+        int32_t instanceDataOffset; // Base index into instance SSBO for this draw group
+    };
+
+    // Validate per-frame descriptor set before any Vulkan commands
+    if (!perFrameSet) {
+        LOG_ERROR("M2Renderer::render: perFrameSet is VK_NULL_HANDLE — skipping M2 render");
+        return;
+    }
+
+    // Bind per-frame descriptor set (set 0) — shared across all draws
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            pipelineLayout_, 0, 1, &perFrameSet, 0, nullptr);
+
+    // Start with opaque pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, opaquePipeline_);
+    currentPipeline = opaquePipeline_;
+
+    // Bind dummy bone set (set 2) so non-animated draws have a valid binding.
+    // Bind mega bone SSBO instead — all instances index into one buffer via boneBase.
+    if (megaBoneSet_[frameIndex]) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineLayout_, 2, 1, &megaBoneSet_[frameIndex], 0, nullptr);
+    } else if (dummyBoneSet_) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineLayout_, 2, 1, &dummyBoneSet_, 0, nullptr);
+    }
+
+    // Bind instance data SSBO (set 3) — per-instance transforms, fade, bones
+    if (instanceSet_[frameIndex]) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineLayout_, 3, 1, &instanceSet_[frameIndex], 0, nullptr);
+    }
+
+    // Reset instance SSBO write cursor for this frame
+    instanceDataCount_ = 0;
+    auto* instSSBO = static_cast<M2InstanceGPU*>(instanceMapped_[frameIndex]);
+
+    // =====================================================================
+    // Opaque pass — instanced draws grouped by (modelId, LOD)
+    // =====================================================================
+    // sortedVisible_ is already sorted by modelId so consecutive entries share
+    // the same vertex/index buffer.  Within each model group we sub-group by
+    // targetLOD to guarantee all instances in one vkCmdDrawIndexed use the
+    // same batch set.  Per-instance data (model matrix, fade, bones) is
+    // written to the instance SSBO; the shader reads it via gl_InstanceIndex.
+    {
+        struct PendingInstance {
+            uint32_t instanceIdx;
+            float fadeAlpha;
+            bool useBones;
+            uint16_t targetLOD;
+        };
+        std::vector<PendingInstance> pending;
+        pending.reserve(128);
+
+        size_t visStart = 0;
+        while (visStart < sortedVisible_.size()) {
+            // Find group of consecutive entries with same modelId
+            uint32_t groupModelId = sortedVisible_[visStart].modelId;
+            size_t groupEnd = visStart;
+            while (groupEnd < sortedVisible_.size() && sortedVisible_[groupEnd].modelId == groupModelId)
+                groupEnd++;
+
+            auto mdlIt = models.find(groupModelId);
+            if (mdlIt == models.end() || !mdlIt->second.vertexBuffer || !mdlIt->second.indexBuffer) {
+                visStart = groupEnd;
+                continue;
+            }
+            const M2ModelGPU& model = mdlIt->second;
+
+            bool modelNeedsAnimation = model.hasAnimation && !model.disableAnimation;
+            const bool foliageLikeModel = model.isFoliageLike;
+            const bool particleDominantEffect = model.isSpellEffect &&
+                !model.particleEmitters.empty() && model.batches.size() <= 2;
+
+            // Collect per-instance data for this model group
+            pending.clear();
+            for (size_t vi = visStart; vi < groupEnd; vi++) {
+                const auto& entry = sortedVisible_[vi];
+                if (entry.index >= instances.size()) continue;
+                auto& instance = instances[entry.index];
+
+                // Distance-based fade alpha
+                float fadeFrac = model.disableAnimation ? 0.55f : fadeStartFraction;
+                float fadeStartDistSq = entry.effectiveMaxDistSq * fadeFrac * fadeFrac;
+                float fadeAlpha = 1.0f;
+                if (entry.distSq > fadeStartDistSq) {
+                    fadeAlpha = std::clamp((entry.effectiveMaxDistSq - entry.distSq) /
+                                          (entry.effectiveMaxDistSq - fadeStartDistSq), 0.0f, 1.0f);
+                }
+                float instanceFadeAlpha = fadeAlpha;
+                if (model.isGroundDetail) instanceFadeAlpha *= 0.82f;
+                if (model.isInstancePortal) {
+                    instanceFadeAlpha *= 0.12f;
+                    if (entry.distSq < 400.0f * 400.0f) {
+                        glm::vec3 center = glm::vec3(instance.modelMatrix * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+                        GlowSprite gs;
+                        gs.worldPos = center;
+                        gs.color = glm::vec4(0.35f, 0.5f, 1.0f, 1.1f);
+                        gs.size = instance.scale * 5.0f;
+                        glowSprites_.push_back(gs);
+                        GlowSprite halo = gs;
+                        halo.color.a *= 0.3f;
+                        halo.size *= 2.2f;
+                        glowSprites_.push_back(halo);
+                    }
+                }
+
+                // Bone readiness check
+                if (modelNeedsAnimation && instance.boneMatrices.empty()) continue;
+                bool needsBones = modelNeedsAnimation && !instance.boneMatrices.empty();
+                if (needsBones && instance.megaBoneOffset == 0) continue;
+
+                // LOD selection
+                uint16_t desiredLOD = 0;
+                if (entry.distSq > 150.0f * 150.0f) desiredLOD = 3;
+                else if (entry.distSq > 80.0f * 80.0f) desiredLOD = 2;
+                else if (entry.distSq > 40.0f * 40.0f) desiredLOD = 1;
+                uint16_t targetLOD = desiredLOD;
+                if (desiredLOD > 0 && !(model.availableLODs & (1u << desiredLOD))) targetLOD = 0;
+
+                pending.push_back({entry.index, instanceFadeAlpha, needsBones, targetLOD});
+            }
+
+            if (pending.empty()) { visStart = groupEnd; continue; }
+
+            // Sort by targetLOD so each sub-group occupies a contiguous SSBO range
+            std::sort(pending.begin(), pending.end(),
+                      [](const PendingInstance& a, const PendingInstance& b) { return a.targetLOD < b.targetLOD; });
+
+            // Bind vertex/index buffers once per model group
+            VkDeviceSize vbOffset = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &model.vertexBuffer, &vbOffset);
+            vkCmdBindIndexBuffer(cmd, model.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+            // Write base instance data to SSBO (uvOffset=0 — overridden for tex-anim batches)
+            uint32_t baseSSBOOffset = instanceDataCount_;
+            for (const auto& p : pending) {
+                if (instanceDataCount_ >= MAX_INSTANCE_DATA) break;
+                auto& inst = instances[p.instanceIdx];
+                auto& e = instSSBO[instanceDataCount_];
+                e.model = inst.modelMatrix;
+                e.uvOffset = glm::vec2(0.0f);
+                e.fadeAlpha = p.fadeAlpha;
+                e.useBones = p.useBones ? 1 : 0;
+                e.boneBase = p.useBones ? static_cast<int32_t>(inst.megaBoneOffset) : 0;
+                std::memset(e._pad, 0, sizeof(e._pad));
+                instanceDataCount_++;
+            }
+
+            // Process LOD sub-groups within this model group
+            size_t lodIdx = 0;
+            while (lodIdx < pending.size()) {
+                uint16_t lod = pending[lodIdx].targetLOD;
+                size_t lodEnd = lodIdx + 1;
+                while (lodEnd < pending.size() && pending[lodEnd].targetLOD == lod) lodEnd++;
+                uint32_t groupSize = static_cast<uint32_t>(lodEnd - lodIdx);
+                uint32_t groupSSBOOffset = baseSSBOOffset + static_cast<uint32_t>(lodIdx);
+
+                for (size_t bi = 0; bi < model.batches.size(); bi++) {
+                    const auto& batch = model.batches[bi];
+                    if (batch.indexCount == 0) continue;
+                    if (!model.isGroundDetail && batch.submeshLevel != lod) continue;
+                    if (batch.batchOpacity < 0.01f) continue;
+
+                    // Opaque gate — skip transparent batches
+                    const bool rawTransparent = (batch.blendMode >= 2) || model.isSpellEffect;
+                    if (rawTransparent) continue;
+
+                    // Particle-dominant effects: emission geometry — skip opaque
+                    if (particleDominantEffect && batch.blendMode <= 1) continue;
+
+                    // Glow sprite check (per model+batch, sprites generated per instance)
+                    const bool koboldFlameCard = batch.colorKeyBlack && model.isKoboldFlame;
+                    const bool smallCardLikeBatch =
+                        (batch.glowSize <= 1.35f) ||
+                        (batch.lanternGlowHint && batch.glowSize <= 6.0f);
+                    const bool batchUnlit = (batch.materialFlags & 0x01) != 0;
+                    const bool shouldUseGlowSprite =
+                        !koboldFlameCard &&
+                        (model.isElvenLike || (model.isLanternLike && batch.lanternGlowHint)) &&
+                        !model.isSpellEffect &&
+                        smallCardLikeBatch &&
+                        (batch.lanternGlowHint ||
+                         (batch.blendMode >= 3) ||
+                         (batch.colorKeyBlack && batchUnlit && batch.blendMode >= 1));
+                    if (shouldUseGlowSprite) {
+                        // Generate glow sprites for each instance in the group
+                        for (size_t j = lodIdx; j < lodEnd; j++) {
+                            auto& inst = instances[pending[j].instanceIdx];
+                            float distSq = sortedVisible_[visStart].distSq; // approximate with group
+                            if (distSq < 180.0f * 180.0f) {
+                                glm::vec3 worldPos = glm::vec3(inst.modelMatrix * glm::vec4(batch.center, 1.0f));
+                                GlowSprite gs;
+                                gs.worldPos = worldPos;
+                                if (batch.glowTint == 1 || model.isElvenLike)
+                                    gs.color = glm::vec4(0.48f, 0.72f, 1.0f, 1.05f);
+                                else if (batch.glowTint == 2)
+                                    gs.color = glm::vec4(1.0f, 0.28f, 0.22f, 1.10f);
+                                else
+                                    gs.color = glm::vec4(1.0f, 0.82f, 0.46f, 1.15f);
+                                gs.size = batch.glowSize * inst.scale * 1.45f;
+                                glowSprites_.push_back(gs);
+                                GlowSprite halo = gs;
+                                halo.color.a *= 0.42f;
+                                halo.size *= 1.8f;
+                                glowSprites_.push_back(halo);
+                            }
+                        }
+                        const bool cardLikeSkipMesh =
+                            (batch.blendMode >= 3) || batch.colorKeyBlack || batchUnlit;
+                        const bool lanternGlowCardSkip =
+                            model.isLanternLike && batch.lanternGlowHint &&
+                            smallCardLikeBatch && cardLikeSkipMesh;
+                        if (lanternGlowCardSkip || (cardLikeSkipMesh && !model.isLanternLike))
+                            continue;
+                    }
+
+                    // Handle texture animation: if this batch has per-instance uvOffset,
+                    // write a separate SSBO range with the correct offsets.
+                    bool hasBatchTexAnim = (batch.textureAnimIndex != 0xFFFF && model.hasTextureAnimation)
+                                           || model.isLavaModel;
+                    uint32_t drawOffset = groupSSBOOffset;
+                    if (hasBatchTexAnim && instanceDataCount_ + groupSize <= MAX_INSTANCE_DATA) {
+                        drawOffset = instanceDataCount_;
+                        for (size_t j = lodIdx; j < lodEnd; j++) {
+                            auto& inst = instances[pending[j].instanceIdx];
+                            glm::vec2 uvOffset(0.0f);
+                            if (batch.textureAnimIndex != 0xFFFF && model.hasTextureAnimation) {
+                                uint16_t lookupIdx = batch.textureAnimIndex;
+                                if (lookupIdx < model.textureTransformLookup.size()) {
+                                    uint16_t transformIdx = model.textureTransformLookup[lookupIdx];
+                                    if (transformIdx < model.textureTransforms.size()) {
+                                        const auto& tt = model.textureTransforms[transformIdx];
+                                        glm::vec3 trans = interpVec3(tt.translation,
+                                            inst.currentSequenceIndex, inst.animTime,
+                                            glm::vec3(0.0f), model.globalSequenceDurations);
+                                        uvOffset = glm::vec2(trans.x, trans.y);
+                                    }
+                                }
+                            }
+                            if (model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
+                                float t = std::chrono::duration<float>(
+                                    std::chrono::steady_clock::now() - kLavaAnimStart).count();
+                                uvOffset = glm::vec2(t * 0.03f, -t * 0.08f);
+                            }
+                            // Copy base entry and override uvOffset
+                            instSSBO[instanceDataCount_] = instSSBO[groupSSBOOffset + (j - lodIdx)];
+                            instSSBO[instanceDataCount_].uvOffset = uvOffset;
+                            instanceDataCount_++;
+                        }
+                    }
+
+                    // Pipeline selection (per-model/batch, not per-instance)
+                    const bool foliageCutout = foliageLikeModel && !model.isSpellEffect && batch.blendMode <= 3;
+                    const bool forceCutout =
+                        !model.isSpellEffect &&
+                        (model.isGroundDetail || foliageCutout ||
+                         batch.blendMode == 1 ||
+                         (batch.blendMode >= 2 && !batch.hasAlpha) ||
+                         batch.colorKeyBlack);
+
+                    uint8_t effectiveBlendMode = batch.blendMode;
+                    if (model.isSpellEffect) {
+                        if (effectiveBlendMode <= 1) effectiveBlendMode = 3;
+                        else if (effectiveBlendMode == 4 || effectiveBlendMode == 5) effectiveBlendMode = 3;
+                    }
+                    if (forceCutout) effectiveBlendMode = 1;
+
+                    VkPipeline desiredPipeline;
+                    if (forceCutout) {
+                        desiredPipeline = opaquePipeline_;
+                    } else {
+                        switch (effectiveBlendMode) {
+                            case 0: desiredPipeline = opaquePipeline_; break;
+                            case 1: desiredPipeline = alphaTestPipeline_; break;
+                            case 2: desiredPipeline = alphaPipeline_; break;
+                            default: desiredPipeline = additivePipeline_; break;
+                        }
+                    }
+                    if (desiredPipeline != currentPipeline) {
+                        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
+                        currentPipeline = desiredPipeline;
+                    }
+
+                    // Update material UBO
+                    if (batch.materialUBOMapped) {
+                        auto* mat = static_cast<M2MaterialUBO*>(batch.materialUBOMapped);
+                        mat->interiorDarken = insideInterior ? 1.0f : 0.0f;
+                        if (batch.colorKeyBlack)
+                            mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
+                        if (forceCutout) {
+                            mat->alphaTest = model.isGroundDetail ? 3 : (foliageCutout ? 2 : 1);
+                            if (model.isGroundDetail) mat->unlit = 0;
+                        }
+                    }
+
+                    // Bind material descriptor set (set 1)
+                    if (!batch.materialSet) continue;
+                    if (batch.materialSet != currentMaterialSet) {
+                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                pipelineLayout_, 1, 1, &batch.materialSet, 0, nullptr);
+                        currentMaterialSet = batch.materialSet;
+                    }
+
+                    // Push constants + instanced draw
+                    M2PushConstants pc;
+                    pc.texCoordSet = static_cast<int32_t>(batch.textureUnit);
+                    pc.isFoliage = model.shadowWindFoliage ? 1 : 0;
+                    pc.instanceDataOffset = static_cast<int32_t>(drawOffset);
+                    vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
+                    vkCmdDrawIndexed(cmd, batch.indexCount, groupSize, batch.indexStart, 0, 0);
+                    lastDrawCallCount++;
+                }
+
+                lodIdx = lodEnd;
+            }
+
+            visStart = groupEnd;
+        }
+    }
+
+    // =====================================================================
+    // Pass 2: Transparent/additive batches — back-to-front per instance
+    // =====================================================================
+    // Transparent geometry must be drawn individually per instance in back-to-
+    // front order for correct alpha compositing.  Each draw writes one
+    // M2InstanceGPU entry and issues a single-instance indexed draw.
+    std::sort(sortedVisible_.begin(), sortedVisible_.end(),
+              [](const VisibleEntry& a, const VisibleEntry& b) { return a.distSq > b.distSq; });
+
+    currentModelId = UINT32_MAX;
+    currentModel = nullptr;
+    currentModelValid = false;
+    currentPipeline = opaquePipeline_;
+    currentMaterialSet = VK_NULL_HANDLE;
+
+    for (const auto& entry : sortedVisible_) {
+        if (entry.index >= instances.size()) continue;
+        auto& instance = instances[entry.index];
+
+        // Quick skip: if model has no transparent batches at all
+        if (entry.modelId != currentModelId) {
+            auto mdlIt = models.find(entry.modelId);
+            if (mdlIt == models.end()) continue;
+            if (!mdlIt->second.hasTransparentBatches && !mdlIt->second.isSpellEffect) continue;
+        }
+
+        if (entry.modelId != currentModelId) {
+            currentModelId = entry.modelId;
+            currentModelValid = false;
+            auto mdlIt = models.find(currentModelId);
+            if (mdlIt == models.end()) continue;
+            currentModel = &mdlIt->second;
+            if (!currentModel->vertexBuffer || !currentModel->indexBuffer) continue;
+            currentModelValid = true;
+            VkDeviceSize vbOff = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &currentModel->vertexBuffer, &vbOff);
+            vkCmdBindIndexBuffer(cmd, currentModel->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        }
+        if (!currentModelValid) continue;
+
+        const M2ModelGPU& model = *currentModel;
+
+        // Fade alpha
+        float fadeAlpha = 1.0f;
+        float fadeFrac = model.disableAnimation ? 0.55f : fadeStartFraction;
+        float fadeStartDistSq = entry.effectiveMaxDistSq * fadeFrac * fadeFrac;
+        if (entry.distSq > fadeStartDistSq) {
+            fadeAlpha = std::clamp((entry.effectiveMaxDistSq - entry.distSq) /
+                                  (entry.effectiveMaxDistSq - fadeStartDistSq), 0.0f, 1.0f);
+        }
+        float instanceFadeAlpha = fadeAlpha;
+        if (model.isGroundDetail) instanceFadeAlpha *= 0.82f;
+        if (model.isInstancePortal) instanceFadeAlpha *= 0.12f;
+
+        bool modelNeedsAnimation = model.hasAnimation && !model.disableAnimation;
+        if (modelNeedsAnimation && instance.boneMatrices.empty()) continue;
+        bool needsBones = modelNeedsAnimation && !instance.boneMatrices.empty();
+        if (needsBones && instance.megaBoneOffset == 0) continue;
+
+        uint16_t desiredLOD = 0;
+        if (entry.distSq > 150.0f * 150.0f) desiredLOD = 3;
+        else if (entry.distSq > 80.0f * 80.0f) desiredLOD = 2;
+        else if (entry.distSq > 40.0f * 40.0f) desiredLOD = 1;
+        uint16_t targetLOD = desiredLOD;
+        if (desiredLOD > 0 && !(model.availableLODs & (1u << desiredLOD))) targetLOD = 0;
+
+        const bool particleDominantEffect = model.isSpellEffect &&
+            !model.particleEmitters.empty() && model.batches.size() <= 2;
+
+        for (const auto& batch : model.batches) {
+            if (batch.indexCount == 0) continue;
+            if (!model.isGroundDetail && batch.submeshLevel != targetLOD) continue;
+            if (batch.batchOpacity < 0.01f) continue;
+
+            // Pass 2 gate: only transparent/additive batches
+            {
+                const bool rawTransparent = (batch.blendMode >= 2) || model.isSpellEffect;
+                if (!rawTransparent) continue;
+            }
+
+            // Skip glow sprites (handled in opaque pass)
+            const bool batchUnlit = (batch.materialFlags & 0x01) != 0;
+            const bool koboldFlameCard = batch.colorKeyBlack && model.isKoboldFlame;
+            const bool smallCardLikeBatch =
+                (batch.glowSize <= 1.35f) ||
+                (batch.lanternGlowHint && batch.glowSize <= 6.0f);
+            const bool shouldUseGlowSprite =
+                !koboldFlameCard &&
+                (model.isElvenLike || model.isLanternLike) &&
+                !model.isSpellEffect &&
+                smallCardLikeBatch &&
+                (batch.lanternGlowHint || (batch.blendMode >= 3) ||
+                 (batch.colorKeyBlack && batchUnlit && batch.blendMode >= 1));
+            if (shouldUseGlowSprite) {
+                const bool cardLikeSkipMesh = (batch.blendMode >= 3) || batch.colorKeyBlack || batchUnlit;
+                const bool lanternGlowCardSkip =
+                    model.isLanternLike &&
+                    batch.lanternGlowHint &&
+                    smallCardLikeBatch &&
+                    cardLikeSkipMesh;
+                if (lanternGlowCardSkip || (cardLikeSkipMesh && !model.isLanternLike))
+                    continue;
+            }
+
+            if (particleDominantEffect) continue; // emission-only mesh
+
+            // Compute UV offset for this instance + batch
+            glm::vec2 uvOffset(0.0f);
+            if (batch.textureAnimIndex != 0xFFFF && model.hasTextureAnimation) {
+                uint16_t lookupIdx = batch.textureAnimIndex;
+                if (lookupIdx < model.textureTransformLookup.size()) {
+                    uint16_t transformIdx = model.textureTransformLookup[lookupIdx];
+                    if (transformIdx < model.textureTransforms.size()) {
+                        const auto& tt = model.textureTransforms[transformIdx];
+                        glm::vec3 trans = interpVec3(tt.translation,
+                            instance.currentSequenceIndex, instance.animTime,
+                            glm::vec3(0.0f), model.globalSequenceDurations);
+                        uvOffset = glm::vec2(trans.x, trans.y);
+                    }
+                }
+            }
+            if (model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
+                float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - kLavaAnimStart).count();
+                uvOffset = glm::vec2(t * 0.03f, -t * 0.08f);
+            }
+
+            // Write single instance entry to SSBO
+            if (instanceDataCount_ >= MAX_INSTANCE_DATA) continue;
+            uint32_t drawOffset = instanceDataCount_;
+            auto& e = instSSBO[instanceDataCount_];
+            e.model = instance.modelMatrix;
+            e.uvOffset = uvOffset;
+            e.fadeAlpha = instanceFadeAlpha;
+            e.useBones = needsBones ? 1 : 0;
+            e.boneBase = needsBones ? static_cast<int32_t>(instance.megaBoneOffset) : 0;
+            std::memset(e._pad, 0, sizeof(e._pad));
+            instanceDataCount_++;
+
+            // Pipeline selection
+            uint8_t effectiveBlendMode = batch.blendMode;
+            if (model.isSpellEffect) {
+                if (effectiveBlendMode <= 1) effectiveBlendMode = 3;
+                else if (effectiveBlendMode == 4 || effectiveBlendMode == 5) effectiveBlendMode = 3;
+            }
+
+            VkPipeline desiredPipeline;
+            switch (effectiveBlendMode) {
+                case 2: desiredPipeline = alphaPipeline_; break;
+                default: desiredPipeline = additivePipeline_; break;
+            }
+            if (desiredPipeline != currentPipeline) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
+                currentPipeline = desiredPipeline;
+            }
+
+            if (batch.materialUBOMapped) {
+                auto* mat = static_cast<M2MaterialUBO*>(batch.materialUBOMapped);
+                mat->interiorDarken = insideInterior ? 1.0f : 0.0f;
+                if (batch.colorKeyBlack)
+                    mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
+            }
+
+            if (!batch.materialSet) continue;
+            if (batch.materialSet != currentMaterialSet) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        pipelineLayout_, 1, 1, &batch.materialSet, 0, nullptr);
+                currentMaterialSet = batch.materialSet;
+            }
+
+            // Push constants + single-instance draw
+            M2PushConstants pc;
+            pc.texCoordSet = static_cast<int32_t>(batch.textureUnit);
+            pc.isFoliage = model.shadowWindFoliage ? 1 : 0;
+            pc.instanceDataOffset = static_cast<int32_t>(drawOffset);
+            vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
+            vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
+            lastDrawCallCount++;
+        }
+    }
+
+    // Render glow sprites as billboarded additive point lights
+    if (!glowSprites_.empty() && particleAdditivePipeline_ && glowVB_ && glowTexDescSet_) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particleAdditivePipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                particlePipelineLayout_, 0, 1, &perFrameSet, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                particlePipelineLayout_, 1, 1, &glowTexDescSet_, 0, nullptr);
+
+        // Push constants for particle: tileCount(vec2) + alphaKey(int)
+        struct { float tileX, tileY; int alphaKey; } particlePush = {1.0f, 1.0f, 0};
+        vkCmdPushConstants(cmd, particlePipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(particlePush), &particlePush);
+
+        // Write glow vertex data directly to mapped buffer (no temp vector)
+        size_t uploadCount = std::min(glowSprites_.size(), MAX_GLOW_SPRITES);
+        float* dst = static_cast<float*>(glowVBMapped_);
+        for (size_t gi = 0; gi < uploadCount; gi++) {
+            const auto& gs = glowSprites_[gi];
+            *dst++ = gs.worldPos.x;
+            *dst++ = gs.worldPos.y;
+            *dst++ = gs.worldPos.z;
+            *dst++ = gs.color.r;
+            *dst++ = gs.color.g;
+            *dst++ = gs.color.b;
+            *dst++ = gs.color.a;
+            *dst++ = gs.size;
+            *dst++ = 0.0f;
+        }
+
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &glowVB_, &offset);
+        vkCmdDraw(cmd, static_cast<uint32_t>(uploadCount), 1, 0, 0);
+    }
+
+}
+
+bool M2Renderer::initializeShadow(VkRenderPass shadowRenderPass) {
+    if (!vkCtx_ || shadowRenderPass == VK_NULL_HANDLE) return false;
+    VkDevice device = vkCtx_->getDevice();
+
+    // Create ShadowParams UBO
+    VkBufferCreateInfo bufCI{};
+    bufCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufCI.size = sizeof(ShadowParamsUBO);
+    bufCI.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    VmaAllocationCreateInfo allocCI{};
+    allocCI.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    allocCI.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo allocInfo{};
+    if (vmaCreateBuffer(vkCtx_->getAllocator(), &bufCI, &allocCI,
+            &shadowParamsUBO_, &shadowParamsAlloc_, &allocInfo) != VK_SUCCESS) {
+        LOG_ERROR("M2Renderer: failed to create shadow params UBO");
+        return false;
+    }
+    ShadowParamsUBO defaultParams{};
+    std::memcpy(allocInfo.pMappedData, &defaultParams, sizeof(defaultParams));
+
+    // Create descriptor set layout: binding 0 = sampler2D, binding 1 = ShadowParams UBO
+    VkDescriptorSetLayoutBinding layoutBindings[2]{};
+    layoutBindings[0].binding = 0;
+    layoutBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    layoutBindings[0].descriptorCount = 1;
+    layoutBindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    layoutBindings[1].binding = 1;
+    layoutBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    layoutBindings[1].descriptorCount = 1;
+    layoutBindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo layoutCI{};
+    layoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutCI.bindingCount = 2;
+    layoutCI.pBindings = layoutBindings;
+    if (vkCreateDescriptorSetLayout(device, &layoutCI, nullptr, &shadowParamsLayout_) != VK_SUCCESS) {
+        LOG_ERROR("M2Renderer: failed to create shadow params layout");
+        return false;
+    }
+
+    // Create descriptor pool
+    VkDescriptorPoolSize poolSizes[2]{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[0].descriptorCount = 1;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[1].descriptorCount = 1;
+    VkDescriptorPoolCreateInfo poolCI{};
+    poolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolCI.maxSets = 1;
+    poolCI.poolSizeCount = 2;
+    poolCI.pPoolSizes = poolSizes;
+    if (vkCreateDescriptorPool(device, &poolCI, nullptr, &shadowParamsPool_) != VK_SUCCESS) {
+        LOG_ERROR("M2Renderer: failed to create shadow params pool");
+        return false;
+    }
+
+    // Allocate descriptor set
+    VkDescriptorSetAllocateInfo setAlloc{};
+    setAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    setAlloc.descriptorPool = shadowParamsPool_;
+    setAlloc.descriptorSetCount = 1;
+    setAlloc.pSetLayouts = &shadowParamsLayout_;
+    if (vkAllocateDescriptorSets(device, &setAlloc, &shadowParamsSet_) != VK_SUCCESS) {
+        LOG_ERROR("M2Renderer: failed to allocate shadow params set");
+        return false;
+    }
+
+    // Write descriptors (use white fallback for binding 0)
+    VkDescriptorBufferInfo bufInfo{};
+    bufInfo.buffer = shadowParamsUBO_;
+    bufInfo.offset = 0;
+    bufInfo.range = sizeof(ShadowParamsUBO);
+
+    VkDescriptorImageInfo imgInfo{};
+    imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imgInfo.imageView = whiteTexture_->getImageView();
+    imgInfo.sampler = whiteTexture_->getSampler();
+
+    VkWriteDescriptorSet writes[2]{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = shadowParamsSet_;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].pImageInfo = &imgInfo;
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = shadowParamsSet_;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[1].pBufferInfo = &bufInfo;
+    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+
+    // Per-frame pools for foliage shadow texture sets (one per frame-in-flight, reset each frame)
+    {
+        VkDescriptorPoolSize texPoolSizes[2]{};
+        texPoolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        texPoolSizes[0].descriptorCount = 256;
+        texPoolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        texPoolSizes[1].descriptorCount = 256;
+        VkDescriptorPoolCreateInfo texPoolCI{};
+        texPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        texPoolCI.maxSets = 256;
+        texPoolCI.poolSizeCount = 2;
+        texPoolCI.pPoolSizes = texPoolSizes;
+        for (uint32_t f = 0; f < kShadowTexPoolFrames; ++f) {
+            if (vkCreateDescriptorPool(device, &texPoolCI, nullptr, &shadowTexPool_[f]) != VK_SUCCESS) {
+                LOG_ERROR("M2Renderer: failed to create shadow texture pool ", f);
+                return false;
+            }
+        }
+    }
+
+    // Create shadow pipeline layout: set 1 = shadowParamsLayout_, push constants = 128 bytes
+    VkPushConstantRange pc{};
+    pc.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pc.offset = 0;
+    pc.size = 128;  // lightSpaceMatrix (64) + model (64)
+    shadowPipelineLayout_ = createPipelineLayout(device, {shadowParamsLayout_}, {pc});
+    if (!shadowPipelineLayout_) {
+        LOG_ERROR("M2Renderer: failed to create shadow pipeline layout");
+        return false;
+    }
+
+    // Load shadow shaders
+    VkShaderModule vertShader, fragShader;
+    if (!vertShader.loadFromFile(device, "assets/shaders/shadow.vert.spv")) {
+        LOG_ERROR("M2Renderer: failed to load shadow vertex shader");
+        return false;
+    }
+    if (!fragShader.loadFromFile(device, "assets/shaders/shadow.frag.spv")) {
+        LOG_ERROR("M2Renderer: failed to load shadow fragment shader");
+        return false;
+    }
+
+    // M2 vertex layout: 18 floats = 72 bytes stride
+    // loc0=pos(off0), loc1=normal(off12), loc2=texCoord0(off24), loc5=texCoord1(off32),
+    // loc3=boneWeights(off40), loc4=boneIndices(off56)
+    // Shadow shader locations: 0=aPos, 1=aTexCoord, 2=aBoneWeights, 3=aBoneIndicesF
+    // useBones=0 so locations 2,3 are never used
+    VkVertexInputBindingDescription vertBind{};
+    vertBind.binding = 0;
+    vertBind.stride = 18 * sizeof(float);
+    vertBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    std::vector<VkVertexInputAttributeDescription> vertAttrs = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT,    0},                     // aPos       -> position
+        {1, 0, VK_FORMAT_R32G32_SFLOAT,       6 * sizeof(float)},     // aTexCoord  -> texCoord0
+        {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 10 * sizeof(float)},    // aBoneWeights
+        {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 14 * sizeof(float)},    // aBoneIndicesF
+    };
+
+    shadowPipeline_ = PipelineBuilder()
+        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
+                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
+        .setVertexInput({vertBind}, vertAttrs)
+        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+        // Foliage/leaf cards are effectively two-sided; front-face culling can
+        // drop them from the shadow map depending on light/view orientation.
+        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+        .setDepthTest(true, true, VK_COMPARE_OP_LESS_OR_EQUAL)
+        .setDepthBias(0.05f, 0.20f)
+        .setNoColorAttachment()
+        .setLayout(shadowPipelineLayout_)
+        .setRenderPass(shadowRenderPass)
+        .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
+        .build(device, vkCtx_->getPipelineCache());
+
+    vertShader.destroy();
+    fragShader.destroy();
+
+    if (!shadowPipeline_) {
+        LOG_ERROR("M2Renderer: failed to create shadow pipeline");
+        return false;
+    }
+    LOG_INFO("M2Renderer shadow pipeline initialized");
+    return true;
+}
+
+void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMatrix, float globalTime,
+                              const glm::vec3& shadowCenter, float shadowRadius) {
+    if (!shadowPipeline_ || !shadowParamsSet_) return;
+    if (instances.empty() || models.empty()) return;
+
+    const float shadowRadiusSq = shadowRadius * shadowRadius;
+
+    // Reset this frame slot's texture descriptor pool (safe: fence was waited on in beginFrame)
+    const uint32_t frameIdx = vkCtx_->getCurrentFrame();
+    VkDescriptorPool curShadowTexPool = shadowTexPool_[frameIdx];
+    if (curShadowTexPool) {
+        vkResetDescriptorPool(vkCtx_->getDevice(), curShadowTexPool, 0);
+    }
+    // Cache: texture imageView -> allocated descriptor set (avoids duplicates within frame)
+    // Reuse persistent map — pool reset already invalidated the sets.
+    shadowTexSetCache_.clear();
+    auto& texSetCache = shadowTexSetCache_;
+
+    auto getTexDescSet = [&](VkTexture* tex) -> VkDescriptorSet {
+        VkImageView iv = tex->getImageView();
+        auto cacheIt = texSetCache.find(iv);
+        if (cacheIt != texSetCache.end()) return cacheIt->second;
+
+        VkDescriptorSet set = VK_NULL_HANDLE;
+        VkDescriptorSetAllocateInfo ai{};
+        ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        ai.descriptorPool = curShadowTexPool;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &shadowParamsLayout_;
+        if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &set) != VK_SUCCESS) {
+            return shadowParamsSet_; // fallback to white texture
+        }
+        VkDescriptorImageInfo imgInfo{};
+        imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imgInfo.imageView = iv;
+        imgInfo.sampler = tex->getSampler();
+        VkDescriptorBufferInfo bufInfo{};
+        bufInfo.buffer = shadowParamsUBO_;
+        bufInfo.offset = 0;
+        bufInfo.range = sizeof(ShadowParamsUBO);
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = set;
+        writes[0].dstBinding = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[0].pImageInfo = &imgInfo;
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = set;
+        writes[1].dstBinding = 1;
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[1].pBufferInfo = &bufInfo;
+        vkUpdateDescriptorSets(vkCtx_->getDevice(), 2, writes, 0, nullptr);
+        texSetCache[iv] = set;
+        return set;
+    };
+
+    // Helper lambda to draw instances with a given foliageSway setting
+    auto drawPass = [&](bool foliagePass) {
+        ShadowParamsUBO params{};
+        params.foliageSway = foliagePass ? 1 : 0;
+        params.windTime = globalTime;
+        params.foliageMotionDamp = 1.0f;
+        // For foliage pass: enable texture+alphaTest in UBO (per-batch textures bound below)
+        if (foliagePass) {
+            params.useTexture = 1;
+            params.alphaTest = 1;
+        }
+
+        VmaAllocationInfo allocInfo{};
+        vmaGetAllocationInfo(vkCtx_->getAllocator(), shadowParamsAlloc_, &allocInfo);
+        std::memcpy(allocInfo.pMappedData, &params, sizeof(params));
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
+            0, 1, &shadowParamsSet_, 0, nullptr);
+
+        uint32_t currentModelId = UINT32_MAX;
+        const M2ModelGPU* currentModel = nullptr;
+
+        for (const auto& instance : instances) {
+            // Use cached flags to skip early without hash lookup
+            if (!instance.cachedIsValid || instance.cachedIsSmoke || instance.cachedIsInvisibleTrap) continue;
+
+            // Distance cull against shadow frustum
+            glm::vec3 diff = instance.position - shadowCenter;
+            if (glm::dot(diff, diff) > shadowRadiusSq) continue;
+
+            if (!instance.cachedModel) continue;
+            const M2ModelGPU& model = *instance.cachedModel;
+
+            // Filter: only draw foliage models in foliage pass, non-foliage in non-foliage pass
+            if (model.shadowWindFoliage != foliagePass) continue;
+
+            // Bind vertex/index buffers when model changes
+            if (instance.modelId != currentModelId) {
+                currentModelId = instance.modelId;
+                currentModel = &model;
+                VkDeviceSize offset = 0;
+                vkCmdBindVertexBuffers(cmd, 0, 1, &currentModel->vertexBuffer, &offset);
+                vkCmdBindIndexBuffer(cmd, currentModel->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+            }
+
+            ShadowPush push{lightSpaceMatrix, instance.modelMatrix};
+            vkCmdPushConstants(cmd, shadowPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
+                               0, 128, &push);
+
+            for (const auto& batch : model.batches) {
+                if (batch.submeshLevel > 0) continue;
+                // For foliage: bind per-batch texture for alpha-tested shadows
+                if (foliagePass && batch.hasAlpha && batch.texture) {
+                    VkDescriptorSet texSet = getTexDescSet(batch.texture);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
+                        0, 1, &texSet, 0, nullptr);
+                } else if (foliagePass) {
+                    // Non-alpha batch: rebind default set (white texture, alpha test passes)
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_,
+                        0, 1, &shadowParamsSet_, 0, nullptr);
+                }
+                vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
+            }
+        }
+    };
+
+    // Pass 1: non-foliage (no wind displacement)
+    drawPass(false);
+    // Pass 2: foliage (wind displacement enabled, per-batch alpha-tested textures)
+    drawPass(true);
+}
+
+} // namespace rendering
+} // namespace wowee

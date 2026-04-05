@@ -62,6 +62,7 @@
 #include "rendering/post_process_pipeline.hpp"
 #include "rendering/animation_controller.hpp"
 #include "rendering/render_graph.hpp"
+#include "rendering/overlay_system.hpp"
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -574,6 +575,9 @@ bool Renderer::initialize(core::Window* win) {
 
     // Create render graph and register virtual resources
     renderGraph_ = std::make_unique<RenderGraph>();
+
+    // Create overlay system (selection circle + fullscreen overlay)
+    overlaySystem_ = std::make_unique<OverlaySystem>(vkCtx);
     renderGraph_->registerResource("shadow_depth");
     renderGraph_->registerResource("reflection_texture");
     renderGraph_->registerResource("cull_visibility");
@@ -676,15 +680,10 @@ void Renderer::shutdown() {
     // Audio shutdown is handled by AudioCoordinator (owned by Application).
     audioCoordinator_ = nullptr;
 
-    // Cleanup Vulkan selection circle resources
-    if (vkCtx) {
-        VkDevice device = vkCtx->getDevice();
-        if (selCirclePipeline) { vkDestroyPipeline(device, selCirclePipeline, nullptr); selCirclePipeline = VK_NULL_HANDLE; }
-        if (selCirclePipelineLayout) { vkDestroyPipelineLayout(device, selCirclePipelineLayout, nullptr); selCirclePipelineLayout = VK_NULL_HANDLE; }
-        if (selCircleVertBuf) { vmaDestroyBuffer(vkCtx->getAllocator(), selCircleVertBuf, selCircleVertAlloc); selCircleVertBuf = VK_NULL_HANDLE; selCircleVertAlloc = VK_NULL_HANDLE; }
-        if (selCircleIdxBuf) { vmaDestroyBuffer(vkCtx->getAllocator(), selCircleIdxBuf, selCircleIdxAlloc); selCircleIdxBuf = VK_NULL_HANDLE; selCircleIdxAlloc = VK_NULL_HANDLE; }
-        if (overlayPipeline) { vkDestroyPipeline(device, overlayPipeline, nullptr); overlayPipeline = VK_NULL_HANDLE; }
-        if (overlayPipelineLayout) { vkDestroyPipelineLayout(device, overlayPipelineLayout, nullptr); overlayPipelineLayout = VK_NULL_HANDLE; }
+    // Cleanup selection circle + overlay resources
+    if (overlaySystem_) {
+        overlaySystem_->cleanup();
+        overlaySystem_.reset();
     }
 
     // Shutdown post-process pipeline (FSR/FXAA/FSR2 resources) (§4.3)
@@ -800,9 +799,7 @@ void Renderer::applyMsaaChange() {
     if (minimap) minimap->recreatePipelines();
 
     // Selection circle + overlay + FSR use lazy init, just destroy them
-    VkDevice device = vkCtx->getDevice();
-    if (selCirclePipeline) { vkDestroyPipeline(device, selCirclePipeline, nullptr); selCirclePipeline = VK_NULL_HANDLE; }
-    if (overlayPipeline) { vkDestroyPipeline(device, overlayPipeline, nullptr); overlayPipeline = VK_NULL_HANDLE; }
+    if (overlaySystem_) overlaySystem_->recreatePipelines();
     if (postProcessPipeline_) postProcessPipeline_->destroyAllResources(); // Will be lazily recreated in beginFrame()
 
     // Reinitialize ImGui Vulkan backend with new MSAA sample count
@@ -998,74 +995,6 @@ void Renderer::setCharacterFollow(uint32_t instanceId) {
     if (animationController_) animationController_->onCharacterFollow(instanceId);
 }
 
-void Renderer::setMounted(uint32_t mountInstId, uint32_t mountDisplayId, float heightOffset, const std::string& modelPath) {
-    if (animationController_) animationController_->setMounted(mountInstId, mountDisplayId, heightOffset, modelPath);
-}
-
-void Renderer::clearMount() {
-    if (animationController_) animationController_->clearMount();
-}
-
-
-
-void Renderer::playEmote(const std::string& emoteName) {
-    if (animationController_) animationController_->playEmote(emoteName);
-}
-
-void Renderer::cancelEmote() {
-    if (animationController_) animationController_->cancelEmote();
-}
-
-bool Renderer::isEmoteActive() const {
-    return animationController_ && animationController_->isEmoteActive();
-}
-
-void Renderer::setInCombat(bool combat) {
-    if (animationController_) animationController_->setInCombat(combat);
-}
-
-void Renderer::setEquippedWeaponType(uint32_t inventoryType, bool is2HLoose, bool isFist,
-                                     bool isDagger, bool hasOffHand, bool hasShield) {
-    if (animationController_) animationController_->setEquippedWeaponType(inventoryType, is2HLoose, isFist, isDagger, hasOffHand, hasShield);
-}
-
-void Renderer::triggerSpecialAttack(uint32_t spellId) {
-    if (animationController_) animationController_->triggerSpecialAttack(spellId);
-}
-
-void Renderer::setEquippedRangedType(RangedWeaponType type) {
-    if (animationController_) animationController_->setEquippedRangedType(type);
-}
-
-void Renderer::triggerRangedShot() {
-    if (animationController_) animationController_->triggerRangedShot();
-}
-
-RangedWeaponType Renderer::getEquippedRangedType() const {
-    return animationController_ ? animationController_->getEquippedRangedType()
-                                : RangedWeaponType::NONE;
-}
-
-void Renderer::setCharging(bool c) {
-    if (animationController_) animationController_->setCharging(c);
-}
-
-bool Renderer::isCharging() const {
-    return animationController_ && animationController_->isCharging();
-}
-
-void Renderer::setTaxiFlight(bool taxi) {
-    if (animationController_) animationController_->setTaxiFlight(taxi);
-}
-
-void Renderer::setMountPitchRoll(float pitch, float roll) {
-    if (animationController_) animationController_->setMountPitchRoll(pitch, roll);
-}
-
-bool Renderer::isMounted() const {
-    return animationController_ && animationController_->isMounted();
-}
-
 bool Renderer::captureScreenshot(const std::string& outputPath) {
     if (!vkCtx) return false;
 
@@ -1161,69 +1090,23 @@ bool Renderer::captureScreenshot(const std::string& outputPath) {
     return ok != 0;
 }
 
-void Renderer::triggerLevelUpEffect(const glm::vec3& position) {
-    if (animationController_) animationController_->triggerLevelUpEffect(position);
-}
-
-void Renderer::startChargeEffect(const glm::vec3& position, const glm::vec3& direction) {
-    if (animationController_) animationController_->startChargeEffect(position, direction);
-}
-
-void Renderer::emitChargeEffect(const glm::vec3& position, const glm::vec3& direction) {
-    if (animationController_) animationController_->emitChargeEffect(position, direction);
-}
-
-void Renderer::stopChargeEffect() {
-    if (animationController_) animationController_->stopChargeEffect();
-}
-
-// ─── Spell Visual Effects — delegated to SpellVisualSystem (§4.4) ────────────
-
-void Renderer::playSpellVisual(uint32_t visualId, const glm::vec3& worldPosition,
-                                bool useImpactKit) {
-    if (spellVisualSystem_) spellVisualSystem_->playSpellVisual(visualId, worldPosition, useImpactKit);
-}
-
-void Renderer::triggerMeleeSwing() {
-    if (animationController_) animationController_->triggerMeleeSwing();
-}
-
-std::string Renderer::getEmoteText(const std::string& emoteName, const std::string* targetName) {
-    return AnimationController::getEmoteText(emoteName, targetName);
-}
-
-uint32_t Renderer::getEmoteDbcId(const std::string& emoteName) {
-    return AnimationController::getEmoteDbcId(emoteName);
-}
-
-std::string Renderer::getEmoteTextByDbcId(uint32_t dbcId, const std::string& senderName,
-                                           const std::string* targetName) {
-    return AnimationController::getEmoteTextByDbcId(dbcId, senderName, targetName);
-}
-
-uint32_t Renderer::getEmoteAnimByDbcId(uint32_t dbcId) {
-    return AnimationController::getEmoteAnimByDbcId(dbcId);
-}
-
-void Renderer::setTargetPosition(const glm::vec3* pos) {
-    if (animationController_) animationController_->setTargetPosition(pos);
-}
-
 void Renderer::resetCombatVisualState() {
     if (animationController_) animationController_->resetCombatVisualState();
     if (spellVisualSystem_) spellVisualSystem_->reset();
 }
 
-bool Renderer::isMoving() const {
-    return cameraController && cameraController->isMoving();
+const std::string& Renderer::getCurrentZoneName() const {
+    static const std::string empty;
+    return audioCoordinator_ ? audioCoordinator_->getCurrentZoneName() : empty;
+}
+
+uint32_t Renderer::getCurrentZoneId() const {
+    return audioCoordinator_ ? audioCoordinator_->getCurrentZoneId() : 0;
 }
 
 void Renderer::update(float deltaTime) {
     ZoneScopedN("Renderer::update");
     globalTime += deltaTime;
-    if (musicSwitchCooldown_ > 0.0f) {
-        musicSwitchCooldown_ = std::max(0.0f, musicSwitchCooldown_ - deltaTime);
-    }
     runDeferredWorldInitStep(deltaTime);
 
     auto updateStart = std::chrono::steady_clock::now();
@@ -1281,7 +1164,7 @@ void Renderer::update(float deltaTime) {
                 weather->setIntensity(wInt);
             } else {
                 // No server weather — use zone-based weather configuration
-                weather->updateZoneWeather(currentZoneId, deltaTime);
+                weather->updateZoneWeather(getCurrentZoneId(), deltaTime);
             }
             weather->setEnabled(true);
 
@@ -1291,7 +1174,7 @@ void Renderer::update(float deltaTime) {
             }
         } else if (weather) {
             // No game handler (single-player without network) — zone weather only
-            weather->updateZoneWeather(currentZoneId, deltaTime);
+            weather->updateZoneWeather(getCurrentZoneId(), deltaTime);
             weather->setEnabled(true);
         }
     }
@@ -1307,7 +1190,7 @@ void Renderer::update(float deltaTime) {
         } else if (cameraController->isMoving() || cameraController->isRightMouseHeld()) {
             characterYaw = cameraController->getFacingYaw();
         } else if (animationController_ && animationController_->isInCombat() &&
-                   animationController_->getTargetPosition() && !animationController_->isEmoteActive() && !isMounted()) {
+                   animationController_->getTargetPosition() && !animationController_->isEmoteActive() && !(animationController_ && animationController_->isMounted())) {
             glm::vec3 toTarget = *animationController_->getTargetPosition() - characterPosition;
             if (toTarget.x * toTarget.x + toTarget.y * toTarget.y > 0.01f) {
                 float targetYaw = glm::degrees(std::atan2(toTarget.y, toTarget.x));
@@ -1369,7 +1252,7 @@ void Renderer::update(float deltaTime) {
         mountDust->update(deltaTime);
 
         // Spawn dust when mounted and moving on ground
-        if (isMounted() && camera && cameraController && !(animationController_ && animationController_->isTaxiFlight())) {
+        if ((animationController_ && animationController_->isMounted()) && camera && cameraController && !(animationController_ && animationController_->isTaxiFlight())) {
             bool isMoving = cameraController->isMoving();
             bool onGround = cameraController->isGrounded();
 
@@ -1434,199 +1317,37 @@ void Renderer::update(float deltaTime) {
         wmoRenderer->isInsideWMO(camPos.x, camPos.y, camPos.z, &insideWmoId);
     playerIndoors_ = insideWmo;
 
-    // Ambient environmental sounds: fireplaces, water, birds, etc.
-    if (audioCoordinator_->getAmbientSoundManager() && camera && wmoRenderer && cameraController) {
-        bool isIndoor = insideWmo;
-        bool isSwimming = cameraController->isSwimming();
-
-        // Detect blacksmith buildings to play ambient forge/anvil sounds.
-        // 96048 is the WMO group ID for the Goldshire blacksmith interior.
-        // TODO: extend to other smithy WMO IDs (Ironforge, Orgrimmar, etc.)
-        bool isBlacksmith = (insideWmoId == 96048);
-
-        // Sync weather audio with visual weather system
+    // Ambient environmental sounds + zone/music transitions (delegated to AudioCoordinator)
+    if (audioCoordinator_) {
+        audio::ZoneAudioContext zctx;
+        zctx.deltaTime = deltaTime;
+        zctx.cameraPosition = camPos;
+        zctx.isSwimming = cameraController ? cameraController->isSwimming() : false;
+        zctx.insideWmo = insideWmo;
+        zctx.insideWmoId = insideWmoId;
         if (weather) {
-            auto weatherType = weather->getWeatherType();
-            float intensity = weather->getIntensity();
-
-            audio::AmbientSoundManager::WeatherType audioWeatherType = audio::AmbientSoundManager::WeatherType::NONE;
-
-            if (weatherType == Weather::Type::RAIN) {
-                if (intensity < 0.33f) {
-                    audioWeatherType = audio::AmbientSoundManager::WeatherType::RAIN_LIGHT;
-                } else if (intensity < 0.66f) {
-                    audioWeatherType = audio::AmbientSoundManager::WeatherType::RAIN_MEDIUM;
-                } else {
-                    audioWeatherType = audio::AmbientSoundManager::WeatherType::RAIN_HEAVY;
-                }
-            } else if (weatherType == Weather::Type::SNOW) {
-                if (intensity < 0.33f) {
-                    audioWeatherType = audio::AmbientSoundManager::WeatherType::SNOW_LIGHT;
-                } else if (intensity < 0.66f) {
-                    audioWeatherType = audio::AmbientSoundManager::WeatherType::SNOW_MEDIUM;
-                } else {
-                    audioWeatherType = audio::AmbientSoundManager::WeatherType::SNOW_HEAVY;
-                }
-            }
-
-            audioCoordinator_->getAmbientSoundManager()->setWeather(audioWeatherType);
+            auto wt = weather->getWeatherType();
+            if (wt == Weather::Type::RAIN)       zctx.weatherType = 1;
+            else if (wt == Weather::Type::SNOW)  zctx.weatherType = 2;
+            else if (wt == Weather::Type::STORM) zctx.weatherType = 3;
+            zctx.weatherIntensity = weather->getIntensity();
         }
-
-        audioCoordinator_->getAmbientSoundManager()->update(deltaTime, camPos, isIndoor, isSwimming, isBlacksmith);
+        if (terrainManager) {
+            auto tile = terrainManager->getCurrentTile();
+            zctx.tileX = tile.x;
+            zctx.tileY = tile.y;
+            zctx.hasTile = true;
+        }
+        const auto* gh2 = core::Application::getInstance().getGameHandler();
+        zctx.serverZoneId = gh2 ? gh2->getWorldStateZoneId() : 0;
+        zctx.zoneManager = zoneManager.get();
+        audioCoordinator_->updateZoneAudio(zctx);
     }
 
     // Wait for M2 doodad animation to finish (was launched earlier in parallel with character anim)
     if (m2AnimLaunched) {
         try { m2AnimFuture.get(); }
         catch (const std::exception& e) { LOG_ERROR("M2 animation worker: ", e.what()); }
-    }
-
-    // Helper: play zone music, dispatching local files (file: prefix) vs MPQ paths
-    auto playZoneMusic = [&](const std::string& music) {
-        if (music.empty()) return;
-        if (music.rfind("file:", 0) == 0) {
-            audioCoordinator_->getMusicManager()->crossfadeToFile(music.substr(5));
-        } else {
-            audioCoordinator_->getMusicManager()->crossfadeTo(music);
-        }
-    };
-
-    // Update zone detection and music
-    if (zoneManager && audioCoordinator_->getMusicManager() && terrainManager && camera) {
-        // Prefer server-authoritative zone ID (from SMSG_INIT_WORLD_STATES);
-        // fall back to tile-based lookup for single-player / offline mode.
-        const auto* gh = core::Application::getInstance().getGameHandler();
-        uint32_t serverZoneId = gh ? gh->getWorldStateZoneId() : 0;
-        auto tile = terrainManager->getCurrentTile();
-        uint32_t zoneId = (serverZoneId != 0) ? serverZoneId : zoneManager->getZoneId(tile.x, tile.y);
-
-        bool insideTavern = false;
-        bool insideBlacksmith = false;
-        std::string tavernMusic;
-
-        // Override with WMO-based detection (e.g., inside Stormwind, taverns, blacksmiths)
-        if (wmoRenderer) {
-            uint32_t wmoModelId = insideWmoId;
-            if (insideWmo) {
-                // Check if inside Stormwind WMO (model ID 10047)
-                if (wmoModelId == 10047) {
-                    zoneId = 1519;  // Stormwind City
-                }
-
-                // Detect taverns/inns/blacksmiths by WMO model ID
-                // Log WMO ID for debugging
-                static uint32_t lastLoggedWmoId = 0;
-                if (wmoModelId != lastLoggedWmoId) {
-                    LOG_INFO("Inside WMO model ID: ", wmoModelId);
-                    lastLoggedWmoId = wmoModelId;
-                }
-
-                // Detect blacksmith WMO for ambient forge sounds
-                if (wmoModelId == 96048) {  // Goldshire blacksmith interior
-                    insideBlacksmith = true;
-                    LOG_INFO("Detected blacksmith WMO ", wmoModelId);
-                }
-
-                // These IDs represent typical Alliance and Horde inn buildings
-                if (wmoModelId == 191 ||    // Goldshire inn (old ID)
-                    wmoModelId == 71414 ||  // Goldshire inn (actual)
-                    wmoModelId == 190 ||    // Small inn (common)
-                    wmoModelId == 220 ||    // Tavern building
-                    wmoModelId == 221 ||    // Large tavern
-                    wmoModelId == 5392 ||   // Horde inn
-                    wmoModelId == 5393) {   // Another inn variant
-                    insideTavern = true;
-                    // WoW tavern music (cozy ambient tracks) - FIXED PATHS
-                    static const std::vector<std::string> tavernTracks = {
-                        "Sound\\Music\\ZoneMusic\\TavernAlliance\\TavernAlliance01.mp3",
-                        "Sound\\Music\\ZoneMusic\\TavernAlliance\\TavernAlliance02.mp3",
-                        "Sound\\Music\\ZoneMusic\\TavernHuman\\RA_HumanTavern1A.mp3",
-                        "Sound\\Music\\ZoneMusic\\TavernHuman\\RA_HumanTavern2A.mp3",
-                    };
-                    // Rotate through tracks so the player doesn't always hear the same one.
-                    // Post-increment: first visit plays index 0, next plays 1, etc.
-                    static int tavernTrackIndex = 0;
-                    tavernMusic = tavernTracks[tavernTrackIndex++ % tavernTracks.size()];
-                    LOG_INFO("Detected tavern WMO ", wmoModelId, ", playing: ", tavernMusic);
-                }
-            }
-        }
-
-        // Handle tavern music transitions
-        if (insideTavern) {
-            if (!inTavern_ && !tavernMusic.empty()) {
-                inTavern_ = true;
-                LOG_INFO("Entered tavern");
-                audioCoordinator_->getMusicManager()->playMusic(tavernMusic, true);  // Immediate playback, looping
-                musicSwitchCooldown_ = 6.0f;
-            }
-        } else if (inTavern_) {
-            // Exited tavern - restore zone music with crossfade
-            inTavern_ = false;
-            LOG_INFO("Exited tavern");
-            auto* info = zoneManager->getZoneInfo(currentZoneId);
-            if (info) {
-                std::string music = zoneManager->getRandomMusic(currentZoneId);
-                if (!music.empty()) {
-                    playZoneMusic(music);
-                    musicSwitchCooldown_ = 6.0f;
-                }
-            }
-        }
-
-        // Handle blacksmith music (stop music when entering blacksmith, let ambience play)
-        if (insideBlacksmith) {
-            if (!inBlacksmith_) {
-                inBlacksmith_ = true;
-                LOG_INFO("Entered blacksmith - stopping music");
-                audioCoordinator_->getMusicManager()->stopMusic();
-            }
-        } else if (inBlacksmith_) {
-            // Exited blacksmith - restore zone music with crossfade
-            inBlacksmith_ = false;
-            LOG_INFO("Exited blacksmith - restoring music");
-            auto* info = zoneManager->getZoneInfo(currentZoneId);
-            if (info) {
-                std::string music = zoneManager->getRandomMusic(currentZoneId);
-                if (!music.empty()) {
-                    playZoneMusic(music);
-                    musicSwitchCooldown_ = 6.0f;
-                }
-            }
-        }
-
-        // Handle normal zone transitions (only if not in tavern or blacksmith)
-        if (!insideTavern && !insideBlacksmith && zoneId != currentZoneId && zoneId != 0) {
-            currentZoneId = zoneId;
-            auto* info = zoneManager->getZoneInfo(zoneId);
-            if (info) {
-                currentZoneName = info->name;
-                LOG_INFO("Entered zone: ", info->name);
-                if (musicSwitchCooldown_ <= 0.0f) {
-                    std::string music = zoneManager->getRandomMusic(zoneId);
-                    if (!music.empty()) {
-                        playZoneMusic(music);
-                        musicSwitchCooldown_ = 6.0f;
-                    }
-                }
-            }
-            // Update ambient sound manager zone type
-            if (audioCoordinator_->getAmbientSoundManager()) {
-                audioCoordinator_->getAmbientSoundManager()->setZoneId(zoneId);
-            }
-        }
-
-        audioCoordinator_->getMusicManager()->update(deltaTime);
-
-        // When a track finishes, pick a new random track from the current zone
-        if (!audioCoordinator_->getMusicManager()->isPlaying() && !inTavern_ && !inBlacksmith_ &&
-            currentZoneId != 0 && musicSwitchCooldown_ <= 0.0f) {
-            std::string music = zoneManager->getRandomMusic(currentZoneId);
-            if (!music.empty()) {
-                playZoneMusic(music);
-                musicSwitchCooldown_ = 2.0f;
-            }
-        }
     }
 
     // Update performance HUD
@@ -1691,228 +1412,18 @@ void Renderer::runDeferredWorldInitStep(float deltaTime) {
     deferredWorldInitCooldown_ = 0.12f;
 }
 
-// ============================================================
-// Selection Circle
-// ============================================================
-
-void Renderer::initSelectionCircle() {
-    if (selCirclePipeline != VK_NULL_HANDLE) return;
-    if (!vkCtx) return;
-    VkDevice device = vkCtx->getDevice();
-
-    // Load shaders
-    VkShaderModule vertShader, fragShader;
-    if (!vertShader.loadFromFile(device, "assets/shaders/selection_circle.vert.spv")) {
-        LOG_ERROR("initSelectionCircle: failed to load vertex shader");
-        return;
-    }
-    if (!fragShader.loadFromFile(device, "assets/shaders/selection_circle.frag.spv")) {
-        LOG_ERROR("initSelectionCircle: failed to load fragment shader");
-        vertShader.destroy();
-        return;
-    }
-
-    // Pipeline layout: push constants only (mat4 mvp=64 + vec4 color=16), VERTEX|FRAGMENT
-    VkPushConstantRange pcRange{};
-    pcRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    pcRange.offset = 0;
-    pcRange.size = 80;
-    selCirclePipelineLayout = createPipelineLayout(device, {}, {pcRange});
-
-    // Vertex input: binding 0, stride 12, vec3 at location 0
-    VkVertexInputBindingDescription vertBind{0, 12, VK_VERTEX_INPUT_RATE_VERTEX};
-    VkVertexInputAttributeDescription vertAttr{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
-
-    // Build disc geometry as TRIANGLE_LIST (replaces GL_TRIANGLE_FAN)
-    // N=48 segments: center at origin + ring verts
-    constexpr int SEGMENTS = 48;
-    std::vector<float> verts;
-    verts.reserve((SEGMENTS + 1) * 3);
-    // Center vertex
-    verts.insert(verts.end(), {0.0f, 0.0f, 0.0f});
-    // Ring vertices
-    for (int i = 0; i <= SEGMENTS; ++i) {
-        float angle = 2.0f * 3.14159265f * static_cast<float>(i) / static_cast<float>(SEGMENTS);
-        verts.push_back(std::cos(angle));
-        verts.push_back(std::sin(angle));
-        verts.push_back(0.0f);
-    }
-
-    // Build TRIANGLE_LIST indices: N triangles (center=0, ring[i]=i+1, ring[i+1]=i+2)
-    std::vector<uint16_t> indices;
-    indices.reserve(SEGMENTS * 3);
-    for (int i = 0; i < SEGMENTS; ++i) {
-        indices.push_back(0);
-        indices.push_back(static_cast<uint16_t>(i + 1));
-        indices.push_back(static_cast<uint16_t>(i + 2));
-    }
-    selCircleVertCount = SEGMENTS * 3; // index count for drawing
-
-    // Upload vertex buffer
-    AllocatedBuffer vbuf = uploadBuffer(*vkCtx, verts.data(),
-        verts.size() * sizeof(float), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    selCircleVertBuf = vbuf.buffer;
-    selCircleVertAlloc = vbuf.allocation;
-
-    // Upload index buffer
-    AllocatedBuffer ibuf = uploadBuffer(*vkCtx, indices.data(),
-        indices.size() * sizeof(uint16_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-    selCircleIdxBuf = ibuf.buffer;
-    selCircleIdxAlloc = ibuf.allocation;
-
-    // Build pipeline: alpha blend, no depth write/test, TRIANGLE_LIST, CULL_NONE
-    selCirclePipeline = PipelineBuilder()
-        .setShaders(vertShader.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
-                    fragShader.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
-        .setVertexInput({vertBind}, {vertAttr})
-        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
-        .setNoDepthTest()
-        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
-        .setMultisample(vkCtx->getMsaaSamples())
-        .setLayout(selCirclePipelineLayout)
-        .setRenderPass(vkCtx->getImGuiRenderPass())
-        .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
-        .build(device, vkCtx->getPipelineCache());
-
-    vertShader.destroy();
-    fragShader.destroy();
-
-    if (!selCirclePipeline) {
-        LOG_ERROR("initSelectionCircle: failed to build pipeline");
-    }
-}
-
 void Renderer::setSelectionCircle(const glm::vec3& pos, float radius, const glm::vec3& color) {
-    selCirclePos = pos;
-    selCircleRadius = radius;
-    selCircleColor = color;
-    selCircleVisible = true;
+    if (overlaySystem_) overlaySystem_->setSelectionCircle(pos, radius, color);
 }
 
 void Renderer::clearSelectionCircle() {
-    selCircleVisible = false;
-}
-
-void Renderer::renderSelectionCircle(const glm::mat4& view, const glm::mat4& projection, VkCommandBuffer overrideCmd) {
-    if (!selCircleVisible) return;
-    initSelectionCircle();
-    VkCommandBuffer cmd = (overrideCmd != VK_NULL_HANDLE) ? overrideCmd : currentCmd;
-    if (selCirclePipeline == VK_NULL_HANDLE || cmd == VK_NULL_HANDLE) return;
-
-    // Keep circle anchored near target foot Z. Accept nearby floor probes only,
-    // so distant upper/lower WMO planes don't yank the ring away from feet.
-    const float baseZ = selCirclePos.z;
-    float floorZ = baseZ;
-    auto considerFloor = [&](std::optional<float> sample) {
-        if (!sample) return;
-        const float h = *sample;
-        // Ignore unrelated floors/ceilings far from target feet.
-        if (h < baseZ - 1.25f || h > baseZ + 0.85f) return;
-        floorZ = std::max(floorZ, h);
-    };
-
-    if (terrainManager) {
-        considerFloor(terrainManager->getHeightAt(selCirclePos.x, selCirclePos.y));
-    }
-    if (wmoRenderer) {
-        considerFloor(wmoRenderer->getFloorHeight(selCirclePos.x, selCirclePos.y, selCirclePos.z + 3.0f));
-    }
-    if (m2Renderer) {
-        considerFloor(m2Renderer->getFloorHeight(selCirclePos.x, selCirclePos.y, selCirclePos.z + 2.0f));
-    }
-
-    glm::vec3 raisedPos = selCirclePos;
-    raisedPos.z = floorZ + 0.17f;
-    glm::mat4 model = glm::translate(glm::mat4(1.0f), raisedPos);
-    model = glm::scale(model, glm::vec3(selCircleRadius));
-
-    glm::mat4 mvp = projection * view * model;
-    glm::vec4 color4(selCircleColor, 1.0f);
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, selCirclePipeline);
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(cmd, 0, 1, &selCircleVertBuf, &offset);
-    vkCmdBindIndexBuffer(cmd, selCircleIdxBuf, 0, VK_INDEX_TYPE_UINT16);
-    // Push mvp (64 bytes) at offset 0
-    vkCmdPushConstants(cmd, selCirclePipelineLayout,
-        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-        0, 64, &mvp[0][0]);
-    // Push color (16 bytes) at offset 64
-    vkCmdPushConstants(cmd, selCirclePipelineLayout,
-        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-        64, 16, &color4[0]);
-    vkCmdDrawIndexed(cmd, static_cast<uint32_t>(selCircleVertCount), 1, 0, 0, 0);
-}
-
-// ──────────────────────────────────────────────────────────────
-// Fullscreen overlay pipeline (underwater tint, etc.)
-// ──────────────────────────────────────────────────────────────
-
-void Renderer::initOverlayPipeline() {
-    if (!vkCtx) return;
-    VkDevice device = vkCtx->getDevice();
-
-    // Push constant: vec4 color (16 bytes), visible to both stages
-    VkPushConstantRange pc{};
-    pc.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    pc.offset = 0;
-    pc.size = 16;
-
-    VkPipelineLayoutCreateInfo plCI{};
-    plCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    plCI.pushConstantRangeCount = 1;
-    plCI.pPushConstantRanges = &pc;
-    vkCreatePipelineLayout(device, &plCI, nullptr, &overlayPipelineLayout);
-
-    VkShaderModule vertMod, fragMod;
-    if (!vertMod.loadFromFile(device, "assets/shaders/postprocess.vert.spv") ||
-        !fragMod.loadFromFile(device, "assets/shaders/overlay.frag.spv")) {
-        LOG_ERROR("Renderer: failed to load overlay shaders");
-        vertMod.destroy(); fragMod.destroy();
-        return;
-    }
-
-    overlayPipeline = PipelineBuilder()
-        .setShaders(vertMod.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
-                    fragMod.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
-        .setVertexInput({}, {})                             // fullscreen triangle, no VBOs
-        .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-        .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
-        .setNoDepthTest()
-        .setColorBlendAttachment(PipelineBuilder::blendAlpha())
-        .setMultisample(vkCtx->getMsaaSamples())
-        .setLayout(overlayPipelineLayout)
-        .setRenderPass(vkCtx->getImGuiRenderPass())
-        .setDynamicStates({VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR})
-        .build(device, vkCtx->getPipelineCache());
-
-    vertMod.destroy(); fragMod.destroy();
-
-    if (overlayPipeline) LOG_INFO("Renderer: overlay pipeline initialized");
-}
-
-void Renderer::renderOverlay(const glm::vec4& color, VkCommandBuffer overrideCmd) {
-    if (!overlayPipeline) initOverlayPipeline();
-    VkCommandBuffer cmd = (overrideCmd != VK_NULL_HANDLE) ? overrideCmd : currentCmd;
-    if (!overlayPipeline || cmd == VK_NULL_HANDLE) return;
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline);
-    vkCmdPushConstants(cmd, overlayPipelineLayout,
-                       VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, &color[0]);
-    vkCmdDraw(cmd, 3, 1, 0, 0); // fullscreen triangle
+    if (overlaySystem_) overlaySystem_->clearSelectionCircle();
 }
 
 // ========================= PostProcessPipeline delegation stubs (§4.3) =========================
 
 PostProcessPipeline* Renderer::getPostProcessPipeline() const {
     return postProcessPipeline_.get();
-}
-
-void Renderer::setFXAAEnabled(bool enabled) {
-    if (postProcessPipeline_) postProcessPipeline_->setFXAAEnabled(enabled);
-}
-bool Renderer::isFXAAEnabled() const {
-    return postProcessPipeline_ && postProcessPipeline_->isFXAAEnabled();
 }
 
 void Renderer::setFSREnabled(bool enabled) {
@@ -1923,22 +1434,6 @@ void Renderer::setFSREnabled(bool enabled) {
         msaaChangePending_ = true;
     }
 }
-bool Renderer::isFSREnabled() const {
-    return postProcessPipeline_ && postProcessPipeline_->isFSREnabled();
-}
-void Renderer::setFSRQuality(float scaleFactor) {
-    if (postProcessPipeline_) postProcessPipeline_->setFSRQuality(scaleFactor);
-}
-void Renderer::setFSRSharpness(float sharpness) {
-    if (postProcessPipeline_) postProcessPipeline_->setFSRSharpness(sharpness);
-}
-float Renderer::getFSRScaleFactor() const {
-    return postProcessPipeline_ ? postProcessPipeline_->getFSRScaleFactor() : 1.0f;
-}
-float Renderer::getFSRSharpness() const {
-    return postProcessPipeline_ ? postProcessPipeline_->getFSRSharpness() : 0.0f;
-}
-
 void Renderer::setFSR2Enabled(bool enabled) {
     if (!postProcessPipeline_) return;
     auto req = postProcessPipeline_->setFSR2Enabled(enabled, camera.get());
@@ -1952,63 +1447,6 @@ void Renderer::setFSR2Enabled(bool enabled) {
         pendingMsaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
     }
 }
-bool Renderer::isFSR2Enabled() const {
-    return postProcessPipeline_ && postProcessPipeline_->isFSR2Enabled();
-}
-void Renderer::setFSR2DebugTuning(float jitterSign, float motionVecScaleX, float motionVecScaleY) {
-    if (postProcessPipeline_) postProcessPipeline_->setFSR2DebugTuning(jitterSign, motionVecScaleX, motionVecScaleY);
-}
-
-void Renderer::setAmdFsr3FramegenEnabled(bool enabled) {
-    if (postProcessPipeline_) postProcessPipeline_->setAmdFsr3FramegenEnabled(enabled);
-}
-bool Renderer::isAmdFsr3FramegenEnabled() const {
-    return postProcessPipeline_ && postProcessPipeline_->isAmdFsr3FramegenEnabled();
-}
-float Renderer::getFSR2JitterSign() const {
-    return postProcessPipeline_ ? postProcessPipeline_->getFSR2JitterSign() : 1.0f;
-}
-float Renderer::getFSR2MotionVecScaleX() const {
-    return postProcessPipeline_ ? postProcessPipeline_->getFSR2MotionVecScaleX() : 1.0f;
-}
-float Renderer::getFSR2MotionVecScaleY() const {
-    return postProcessPipeline_ ? postProcessPipeline_->getFSR2MotionVecScaleY() : 1.0f;
-}
-bool Renderer::isAmdFsr2SdkAvailable() const {
-    return postProcessPipeline_ && postProcessPipeline_->isAmdFsr2SdkAvailable();
-}
-bool Renderer::isAmdFsr3FramegenSdkAvailable() const {
-    return postProcessPipeline_ && postProcessPipeline_->isAmdFsr3FramegenSdkAvailable();
-}
-bool Renderer::isAmdFsr3FramegenRuntimeActive() const {
-    return postProcessPipeline_ && postProcessPipeline_->isAmdFsr3FramegenRuntimeActive();
-}
-bool Renderer::isAmdFsr3FramegenRuntimeReady() const {
-    return postProcessPipeline_ && postProcessPipeline_->isAmdFsr3FramegenRuntimeReady();
-}
-const char* Renderer::getAmdFsr3FramegenRuntimePath() const {
-    return postProcessPipeline_ ? postProcessPipeline_->getAmdFsr3FramegenRuntimePath() : "";
-}
-const std::string& Renderer::getAmdFsr3FramegenRuntimeError() const {
-    static const std::string empty;
-    return postProcessPipeline_ ? postProcessPipeline_->getAmdFsr3FramegenRuntimeError() : empty;
-}
-size_t Renderer::getAmdFsr3UpscaleDispatchCount() const {
-    return postProcessPipeline_ ? postProcessPipeline_->getAmdFsr3UpscaleDispatchCount() : 0;
-}
-size_t Renderer::getAmdFsr3FramegenDispatchCount() const {
-    return postProcessPipeline_ ? postProcessPipeline_->getAmdFsr3FramegenDispatchCount() : 0;
-}
-size_t Renderer::getAmdFsr3FallbackCount() const {
-    return postProcessPipeline_ ? postProcessPipeline_->getAmdFsr3FallbackCount() : 0;
-}
-void Renderer::setBrightness(float b) {
-    if (postProcessPipeline_) postProcessPipeline_->setBrightness(b);
-}
-float Renderer::getBrightness() const {
-    return postProcessPipeline_ ? postProcessPipeline_->getBrightness() : 1.0f;
-}
-
 void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     ZoneScopedN("Renderer::renderWorld");
     (void)world;
@@ -2132,7 +1570,12 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         {
             VkCommandBuffer cmd = beginSecondary(SEC_CHARS);
             setSecondaryViewportScissor(cmd);
-            renderSelectionCircle(view, projection, cmd);
+            if (overlaySystem_) {
+                overlaySystem_->renderSelectionCircle(view, projection, cmd,
+                    terrainManager ? OverlaySystem::HeightQuery2D([&](float x, float y) { return terrainManager->getHeightAt(x, y); }) : OverlaySystem::HeightQuery2D{},
+                    wmoRenderer ? OverlaySystem::HeightQuery3D([&](float x, float y, float z) { return wmoRenderer->getFloorHeight(x, y, z); }) : OverlaySystem::HeightQuery3D{},
+                    m2Renderer ? OverlaySystem::HeightQuery3D([&](float x, float y, float z) { return m2Renderer->getFloorHeight(x, y, z); }) : OverlaySystem::HeightQuery3D{});
+            }
             if (characterRenderer && camera && !skipChars) {
                 characterRenderer->render(cmd, perFrameSet, *camera);
             }
@@ -2164,7 +1607,7 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             if (questMarkerRenderer && camera) questMarkerRenderer->render(cmd, perFrameSet, *camera);
 
             // Underwater overlay + minimap
-            if (overlayPipeline && waterRenderer && camera) {
+            if (overlaySystem_ && waterRenderer && camera) {
                 glm::vec3 camPos = camera->getPosition();
                 auto waterH = waterRenderer->getNearestWaterHeightAt(camPos.x, camPos.y, camPos.z);
                 constexpr float MIN_SUBMERSION_OVERLAY = 1.5f;
@@ -2179,21 +1622,21 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                     glm::vec4 tint = canal
                         ? glm::vec4(0.01f, 0.04f, 0.10f, fogStrength)
                         : glm::vec4(0.03f, 0.09f, 0.18f, fogStrength);
-                    renderOverlay(tint, cmd);
+                    if (overlaySystem_) overlaySystem_->renderOverlay(tint, cmd);
                 }
             }
             // Ghost mode desaturation: cold blue-grey overlay when dead/ghost
-            if (ghostMode_) {
-                renderOverlay(glm::vec4(0.30f, 0.35f, 0.42f, 0.45f), cmd);
+            if (ghostMode_ && overlaySystem_) {
+                overlaySystem_->renderOverlay(glm::vec4(0.30f, 0.35f, 0.42f, 0.45f), cmd);
             }
             // Brightness overlay (applied before minimap so it doesn't affect UI)
-            {
+            if (overlaySystem_) {
                 float br = postProcessPipeline_ ? postProcessPipeline_->getBrightness() : 1.0f;
                 if (br < 0.99f) {
-                    renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - br), cmd);
+                    overlaySystem_->renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - br), cmd);
                 } else if (br > 1.01f) {
                     float alpha = (br - 1.0f) / 1.0f;
-                    renderOverlay(glm::vec4(1.0f, 1.0f, 1.0f, alpha), cmd);
+                    overlaySystem_->renderOverlay(glm::vec4(1.0f, 1.0f, 1.0f, alpha), cmd);
                 }
             }
             if (minimap && minimap->isEnabled() && camera && window) {
@@ -2277,7 +1720,12 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                 std::chrono::steady_clock::now() - wmoStart).count();
         }
 
-        renderSelectionCircle(view, projection);
+        if (overlaySystem_) {
+            overlaySystem_->renderSelectionCircle(view, projection, currentCmd,
+                terrainManager ? OverlaySystem::HeightQuery2D([&](float x, float y) { return terrainManager->getHeightAt(x, y); }) : OverlaySystem::HeightQuery2D{},
+                wmoRenderer ? OverlaySystem::HeightQuery3D([&](float x, float y, float z) { return wmoRenderer->getFloorHeight(x, y, z); }) : OverlaySystem::HeightQuery3D{},
+                m2Renderer ? OverlaySystem::HeightQuery3D([&](float x, float y, float z) { return m2Renderer->getFloorHeight(x, y, z); }) : OverlaySystem::HeightQuery3D{});
+        }
 
         if (characterRenderer && camera && !skipChars) {
             characterRenderer->prepareRender(frameIdx);
@@ -2312,7 +1760,7 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     // Underwater overlay and minimap — in the fallback path these run inline;
     // in the parallel path they were already recorded into SEC_POST above.
     if (!parallelRecordingEnabled_) {
-        if (overlayPipeline && waterRenderer && camera) {
+        if (overlaySystem_ && waterRenderer && camera) {
             glm::vec3 camPos = camera->getPosition();
             auto waterH = waterRenderer->getNearestWaterHeightAt(camPos.x, camPos.y, camPos.z);
             constexpr float MIN_SUBMERSION_OVERLAY = 1.5f;
@@ -2327,21 +1775,21 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                 glm::vec4 tint = canal
                     ? glm::vec4(0.01f, 0.04f, 0.10f, fogStrength)
                     : glm::vec4(0.03f, 0.09f, 0.18f, fogStrength);
-                renderOverlay(tint);
+                if (overlaySystem_) overlaySystem_->renderOverlay(tint, currentCmd);
             }
         }
         // Ghost mode desaturation: cold blue-grey overlay when dead/ghost
-        if (ghostMode_) {
-            renderOverlay(glm::vec4(0.30f, 0.35f, 0.42f, 0.45f));
+        if (ghostMode_ && overlaySystem_) {
+            overlaySystem_->renderOverlay(glm::vec4(0.30f, 0.35f, 0.42f, 0.45f), currentCmd);
         }
         // Brightness overlay (applied before minimap so it doesn't affect UI)
-        {
+        if (overlaySystem_) {
             float br = postProcessPipeline_ ? postProcessPipeline_->getBrightness() : 1.0f;
             if (br < 0.99f) {
-                renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - br));
+                overlaySystem_->renderOverlay(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f - br), currentCmd);
             } else if (br > 1.01f) {
                 float alpha = (br - 1.0f) / 1.0f;
-                renderOverlay(glm::vec4(1.0f, 1.0f, 1.0f, alpha));
+                overlaySystem_->renderOverlay(glm::vec4(1.0f, 1.0f, 1.0f, alpha), currentCmd);
             }
         }
         if (minimap && minimap->isEnabled() && camera && window) {

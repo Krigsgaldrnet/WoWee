@@ -11,6 +11,7 @@
 #include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/animation_controller.hpp"
 #include "rendering/vk_context.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
@@ -290,7 +291,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             if (auto* questMarkers = renderer_->getQuestMarkerRenderer()) {
                 questMarkers->clear();
             }
-            renderer_->clearMount();
+            if (auto* ac = renderer_->getAnimationController()) ac->clearMount();
         }
 
         // Clear application-level instance tracking (after renderer cleanup)
@@ -416,7 +417,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                     uint32_t oldInst = renderer_->getCharacterInstanceId();
                     if (oldInst > 0) {
                         renderer_->setCharacterFollow(0);
-                        renderer_->clearMount();
+                        if (auto* ac = renderer_->getAnimationController()) ac->clearMount();
                         renderer_->getCharacterRenderer()->removeInstance(oldInst);
                     }
                 }
