@@ -4,19 +4,31 @@
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
+#include "rendering/animation/footstep_driver.hpp"
+#include "rendering/animation/sfx_state_driver.hpp"
+#include "rendering/animation/weapon_type.hpp"
+#include "rendering/animation/anim_capability_set.hpp"
+#include "rendering/animation/character_animator.hpp"
 
 namespace wowee {
-namespace audio { enum class FootstepSurface : uint8_t; }
 namespace rendering {
 
 class Renderer;
 
 // ============================================================================
-// AnimationController — extracted from Renderer (§4.2)
+// AnimationController — thin adapter wrapping CharacterAnimator
 //
-// Owns the character locomotion state machine, mount animation state,
-// emote system, footstep triggering, surface detection, melee combat
-// animation, and activity SFX transition tracking.
+// Bridges the Renderer world (camera state, CharacterRenderer, audio)
+// and the pure-logic CharacterAnimator + sub-FSMs. Public API unchanged.
+//
+// Responsibilities:
+//   · Collect inputs from renderer/camera → CharacterAnimator::FrameInput
+//   · Forward state-changing calls → CharacterAnimator
+//   · Read AnimOutput from CharacterAnimator → apply via CharacterRenderer
+//   · Mount discovery (needs renderer for sequence queries)
+//   · Mount positioning (needs renderer for attachment queries)
+//   · Melee/ranged resolution (needs renderer for sequence queries)
+//   · Footstep and SFX drivers (already extracted)
 // ============================================================================
 class AnimationController {
 public:
@@ -24,6 +36,11 @@ public:
     ~AnimationController();
 
     void initialize(Renderer* renderer);
+
+    /// Probe (or re-probe) animation capabilities for the current character model.
+    /// Called once during initialize() / onCharacterFollow() and after model changes.
+    void probeCapabilities();
+    const AnimCapabilitySet& getCapabilities() const { return characterAnimator_.getCapabilities(); }
 
     // ── Per-frame update hooks (called from Renderer::update) ──────────────
     // Runs the character animation state machine (mounted + unmounted).
@@ -44,7 +61,7 @@ public:
     // ── Emote support ──────────────────────────────────────────────────────
     void playEmote(const std::string& emoteName);
     void cancelEmote();
-    bool isEmoteActive() const { return emoteActive_; }
+    bool isEmoteActive() const { return characterAnimator_.getActivity().isEmoteActive(); }
     static std::string getEmoteText(const std::string& emoteName,
                                     const std::string* targetName = nullptr);
     static uint32_t getEmoteDbcId(const std::string& emoteName);
@@ -55,7 +72,7 @@ public:
 
     // ── Targeting / combat ─────────────────────────────────────────────────
     void setTargetPosition(const glm::vec3* pos);
-    void setInCombat(bool combat) { inCombat_ = combat; }
+    void setInCombat(bool combat);
     bool isInCombat() const { return inCombat_; }
     const glm::vec3* getTargetPosition() const { return targetPosition_; }
     void resetCombatVisualState();
@@ -63,9 +80,70 @@ public:
 
     // ── Melee combat ───────────────────────────────────────────────────────
     void triggerMeleeSwing();
-    void setEquippedWeaponType(uint32_t inventoryType) { equippedWeaponInvType_ = inventoryType; meleeAnimId_ = 0; }
-    void setCharging(bool charging) { charging_ = charging; }
+    /// inventoryType: WoW inventory type (0=unarmed, 13=1H, 17=2H, 21=main-hand, …)
+    /// is2HLoose: true for polearms/staves (use ATTACK_2H_LOOSE instead of ATTACK_2H)
+    void setEquippedWeaponType(uint32_t inventoryType, bool is2HLoose = false,
+                               bool isFist = false, bool isDagger = false,
+                               bool hasOffHand = false, bool hasShield = false);
+    /// Play a special attack animation for a melee ability (spellId → SPECIAL_1H/2H/SHIELD_BASH/WHIRLWIND)
+    void triggerSpecialAttack(uint32_t spellId);
+
+    // ── Sprint aura animation ────────────────────────────────────────────
+    void setSprintAuraActive(bool active);
+
+    // ── Ranged combat ──────────────────────────────────────────────────────
+    void setEquippedRangedType(RangedWeaponType type);
+    /// Trigger a ranged shot animation (Auto Shot, Shoot, Throw)
+    void triggerRangedShot();
+    RangedWeaponType getEquippedRangedType() const { return weaponLoadout_.rangedType; }
+    void setCharging(bool charging);
     bool isCharging() const { return charging_; }
+
+    // ── Spell casting ──────────────────────────────────────────────────────
+    /// Enter spell cast animation sequence:
+    ///   precastAnimId (one-shot wind-up) → castAnimId (looping hold) → finalizeAnimId (one-shot release)
+    /// Any phase can be 0 to skip it.
+    void startSpellCast(uint32_t precastAnimId, uint32_t castAnimId, bool castLoop,
+                        uint32_t finalizeAnimId = 0);
+    /// Leave spell cast animation state → plays finalization anim then idle.
+    void stopSpellCast();
+
+    // ── Loot animation ─────────────────────────────────────────────────────
+    void startLooting();
+    void stopLooting();
+
+    // ── Hit reactions ──────────────────────────────────────────────────────
+    /// Play a one-shot hit reaction animation (wound, dodge, block, etc.)
+    /// on the player character.  The state machine returns to the previous
+    /// state once the reaction animation finishes.
+    void triggerHitReaction(uint32_t animId);
+
+    // ── Crowd control ──────────────────────────────────────────────────────
+    /// Enter/exit stunned state (loops STUN animation until cleared).
+    void setStunned(bool stunned);
+    bool isStunned() const { return stunned_; }
+
+    // ── Health-based idle ──────────────────────────────────────────────────
+    /// When true, idle/combat-idle will prefer STAND_WOUND if the model has it.
+    void setLowHealth(bool low);
+
+    // ── Stand state (sit/sleep/kneel transitions) ──────────────────────────
+    // WoW UnitStandStateType constants
+    static constexpr uint8_t STAND_STATE_STAND      = 0;
+    static constexpr uint8_t STAND_STATE_SIT         = 1;
+    static constexpr uint8_t STAND_STATE_SIT_CHAIR   = 2;
+    static constexpr uint8_t STAND_STATE_SLEEP       = 3;
+    static constexpr uint8_t STAND_STATE_SIT_LOW     = 4;
+    static constexpr uint8_t STAND_STATE_SIT_MED     = 5;
+    static constexpr uint8_t STAND_STATE_SIT_HIGH    = 6;
+    static constexpr uint8_t STAND_STATE_DEAD        = 7;
+    static constexpr uint8_t STAND_STATE_KNEEL       = 8;
+    static constexpr uint8_t STAND_STATE_SUBMERGED   = 9;
+    void setStandState(uint8_t state);
+
+    // ── Stealth ────────────────────────────────────────────────────────────
+    /// When true, idle/walk/run use stealth animation variants.
+    void setStealthed(bool stealth);
 
     // ── Effect triggers ────────────────────────────────────────────────────
     void triggerLevelUpEffect(const glm::vec3& position);
@@ -91,91 +169,55 @@ public:
 private:
     Renderer* renderer_ = nullptr;
 
-    // Character animation state machine
-    enum class CharAnimState {
-        IDLE, WALK, RUN, JUMP_START, JUMP_MID, JUMP_END, SIT_DOWN, SITTING,
-        EMOTE, SWIM_IDLE, SWIM, MELEE_SWING, MOUNT, CHARGE, COMBAT_IDLE
-    };
-    CharAnimState charAnimState_ = CharAnimState::IDLE;
-    float locomotionStopGraceTimer_ = 0.0f;
-    bool locomotionWasSprinting_ = false;
+    // ── CharacterAnimator: owns the complete character animation FSM ─────
+    CharacterAnimator characterAnimator_;
+    bool capabilitiesProbed_ = false;
+
+    // ── Animation change detection ───────────────────────────────────────
     uint32_t lastPlayerAnimRequest_ = UINT32_MAX;
     bool lastPlayerAnimLoopRequest_ = true;
+    float lastDeltaTime_ = 0.0f;
 
-    // Emote state
-    bool emoteActive_ = false;
-    uint32_t emoteAnimId_ = 0;
-    bool emoteLoop_ = false;
-
-    // Target facing
+    // ── Externally-queried state (mirrored to CharacterAnimator) ────────────
     const glm::vec3* targetPosition_ = nullptr;
     bool inCombat_ = false;
-
-    // Footstep event tracking (animation-driven)
-    uint32_t footstepLastAnimationId_ = 0;
-    float footstepLastNormTime_ = 0.0f;
-    bool footstepNormInitialized_ = false;
-
-    // Footstep surface cache (avoid expensive queries every step)
-    mutable audio::FootstepSurface cachedFootstepSurface_{};
-    mutable glm::vec3 cachedFootstepPosition_{0.0f, 0.0f, 0.0f};
-    mutable float cachedFootstepUpdateTimer_{999.0f};
-
-    // Mount footstep tracking (separate from player's)
-    uint32_t mountFootstepLastAnimId_ = 0;
-    float mountFootstepLastNormTime_ = 0.0f;
-    bool mountFootstepNormInitialized_ = false;
-
-    // SFX transition state
-    bool sfxStateInitialized_ = false;
-    bool sfxPrevGrounded_ = true;
-    bool sfxPrevJumping_ = false;
-    bool sfxPrevFalling_ = false;
-    bool sfxPrevSwimming_ = false;
-
-    // Melee combat
+    bool stunned_ = false;
     bool charging_ = false;
+
+    // ── Footstep event tracking (delegated to FootstepDriver) ────────────
+    FootstepDriver footstepDriver_;
+
+    // ── SFX transition state (delegated to SfxStateDriver) ───────────────
+    SfxStateDriver sfxStateDriver_;
+
+    // ── Melee combat (needs renderer for sequence queries) ───────────────
     float meleeSwingTimer_ = 0.0f;
     float meleeSwingCooldown_ = 0.0f;
     float meleeAnimDurationMs_ = 0.0f;
     uint32_t meleeAnimId_ = 0;
-    uint32_t equippedWeaponInvType_ = 0;
+    uint32_t specialAttackAnimId_ = 0;
+    WeaponLoadout weaponLoadout_;
+    bool meleeOffHandTurn_ = false;
 
-    // Mount animation capabilities (discovered at mount time, varies per model)
-    struct MountAnimSet {
-        uint32_t jumpStart = 0;  // Jump start animation
-        uint32_t jumpLoop = 0;   // Jump airborne loop
-        uint32_t jumpEnd = 0;    // Jump landing
-        uint32_t rearUp = 0;     // Rear-up / special flourish
-        uint32_t run = 0;        // Run animation (discovered, don't assume)
-        uint32_t stand = 0;      // Stand animation (discovered)
-        std::vector<uint32_t> fidgets;  // Idle fidget animations (head turn, tail swish, etc.)
-    };
+    // ── Ranged weapon state ──────────────────────────────────────────────
+    float rangedShootTimer_ = 0.0f;
+    uint32_t rangedAnimId_ = 0;
 
-    enum class MountAction { None, Jump, RearUp };
-
+    // ── Mount state (discovery + positioning need renderer) ──────────────
     uint32_t mountInstanceId_ = 0;
     float mountHeightOffset_ = 0.0f;
-    float mountPitch_ = 0.0f;  // Up/down tilt (radians)
-    float mountRoll_ = 0.0f;   // Left/right banking (radians)
-    int mountSeatAttachmentId_ = -1;  // -1 unknown, -2 unavailable
+    float mountPitch_ = 0.0f;
+    float mountRoll_ = 0.0f;       // External roll for taxi flights (lean roll computed by MountFSM)
+    int mountSeatAttachmentId_ = -1;
     glm::vec3 smoothedMountSeatPos_ = glm::vec3(0.0f);
     bool mountSeatSmoothingInit_ = false;
-    float prevMountYaw_ = 0.0f; // Previous yaw for turn rate calculation (procedural lean)
-    float lastDeltaTime_ = 0.0f; // Cached for use in updateCharacterAnimation()
-    MountAction mountAction_ = MountAction::None;  // Current mount action (jump/rear-up)
-    uint32_t mountActionPhase_ = 0;  // 0=start, 1=loop, 2=end (for jump chaining)
-    MountAnimSet mountAnims_;  // Cached animation IDs for current mount
-    float mountIdleFidgetTimer_ = 0.0f;  // Timer for random idle fidgets
-    float mountIdleSoundTimer_ = 0.0f;   // Timer for ambient idle sounds
-    uint32_t mountActiveFidget_ = 0;     // Currently playing fidget animation ID (0 = none)
     bool taxiFlight_ = false;
-    bool taxiAnimsLogged_ = false;
+    bool sprintAuraActive_ = false;
 
-    // Private animation helpers
-    bool shouldTriggerFootstepEvent(uint32_t animationId, float animationTimeMs, float animationDurationMs);
-    audio::FootstepSurface resolveFootstepSurface() const;
+    // ── Private helpers ──────────────────────────────────────────────────
     uint32_t resolveMeleeAnimId();
+    void updateMountedAnimation(float deltaTime);
+    void applyMountPositioning(float mountBob, float mountRoll, float characterYaw);
 };
 
 } // namespace rendering

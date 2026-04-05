@@ -31,6 +31,7 @@
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/dbc_loader.hpp"
 #include "core/logger.hpp"
+#include "rendering/animation/animation_ids.hpp"
 #include <glm/gtx/quaternion.hpp>
 #include <algorithm>
 #include <cmath>
@@ -1275,12 +1276,25 @@ void GameHandler::registerOpcodeHandlers() {
     };
     // Consume silently — opcodes we receive but don't need to act on
     for (auto op : {
-        Opcode::SMSG_GAMEOBJECT_DESPAWN_ANIM, Opcode::SMSG_GAMEOBJECT_RESET_STATE,
         Opcode::SMSG_FLIGHT_SPLINE_SYNC, Opcode::SMSG_FORCE_DISPLAY_UPDATE,
         Opcode::SMSG_FORCE_SEND_QUEUED_PACKETS, Opcode::SMSG_FORCE_SET_VEHICLE_REC_ID,
         Opcode::SMSG_CORPSE_MAP_POSITION_QUERY_RESPONSE, Opcode::SMSG_DAMAGE_CALC_LOG,
         Opcode::SMSG_DYNAMIC_DROP_ROLL_RESULT, Opcode::SMSG_DESTRUCTIBLE_BUILDING_DAMAGE,
     }) { registerSkipHandler(op); }
+
+    // Game object despawn animation — reset state to closed before actual despawn
+    dispatchTable_[Opcode::SMSG_GAMEOBJECT_DESPAWN_ANIM] = [this](network::Packet& packet) {
+        if (!packet.hasRemaining(8)) return;
+        uint64_t guid = packet.readUInt64();
+        // Trigger a CLOSE animation / freeze before the object is removed
+        if (gameObjectStateCallback_) gameObjectStateCallback_(guid, 0);
+    };
+    // Game object reset state — return to READY(closed) state
+    dispatchTable_[Opcode::SMSG_GAMEOBJECT_RESET_STATE] = [this](network::Packet& packet) {
+        if (!packet.hasRemaining(8)) return;
+        uint64_t guid = packet.readUInt64();
+        if (gameObjectStateCallback_) gameObjectStateCallback_(guid, 0);
+    };
     dispatchTable_[Opcode::SMSG_FORCED_DEATH_UPDATE] = [this](network::Packet& packet) {
         playerDead_ = true;
         if (ghostStateCallback_) ghostStateCallback_(false);
@@ -2124,10 +2138,15 @@ void GameHandler::registerOpcodeHandlers() {
         if (packet.hasRemaining(1)) {
             (void)packet.readPackedGuid(); // player guid (unused)
         }
+        uint32_t newVehicleId = 0;
         if (packet.hasRemaining(4)) {
-            vehicleId_ = packet.readUInt32();
-        } else {
-            vehicleId_ = 0;
+            newVehicleId = packet.readUInt32();
+        }
+        bool wasInVehicle = vehicleId_ != 0;
+        bool nowInVehicle = newVehicleId != 0;
+        vehicleId_ = newVehicleId;
+        if (wasInVehicle != nowInVehicle && vehicleStateCallback_) {
+            vehicleStateCallback_(nowInVehicle, newVehicleId);
         }
     };
     // guid(8) + status(1): status 1 = NPC has available/new routes for this player
@@ -2842,6 +2861,9 @@ void GameHandler::registerOpcodeHandlers() {
     };
     dispatchTable_[Opcode::SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA] = [this](network::Packet& packet) {
         vehicleId_ = 0;  // Vehicle ride cancelled; clear UI
+        if (vehicleStateCallback_) {
+            vehicleStateCallback_(false, 0);
+        }
         packet.skipAll();
     };
     // uint32 type (0=normal, 1=heavy, 2=tired/restricted) + uint32 minutes played
@@ -5123,7 +5145,7 @@ const std::vector<std::string>& GameHandler::getJoinedChannels() const {
 }
 
 // ============================================================
-// Phase 1: Name Queries (delegated to EntityController)
+// Name Queries (delegated to EntityController)
 // ============================================================
 
 void GameHandler::queryPlayerName(uint64_t guid) {
@@ -5195,7 +5217,7 @@ void GameHandler::emitAllOtherPlayerEquipment() {
 }
 
 // ============================================================
-// Phase 2: Combat (delegated to CombatHandler)
+// Combat (delegated to CombatHandler)
 // ============================================================
 
 void GameHandler::startAutoAttack(uint64_t targetGuid) {
@@ -5350,7 +5372,7 @@ void GameHandler::requestPvpLog() {
 }
 
 // ============================================================
-// Phase 3: Spells
+// Spells
 // ============================================================
 
 void GameHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
@@ -5467,7 +5489,7 @@ void GameHandler::sendAlterAppearance(uint32_t hairStyle, uint32_t hairColor, ui
 }
 
 // ============================================================
-// Phase 4: Group/Party
+// Group/Party
 // ============================================================
 
 void GameHandler::inviteToGroup(const std::string& playerName) {
@@ -5584,7 +5606,7 @@ void GameHandler::turnInPetition(uint64_t petitionGuid) {
 }
 
 // ============================================================
-// Phase 5: Loot, Gossip, Vendor
+// Loot, Gossip, Vendor
 // ============================================================
 
 void GameHandler::lootTarget(uint64_t guid) {
@@ -5740,13 +5762,7 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         // (using lastInteractedGoGuid_ set above). For instant-open chests
         // (no cast), the server sends SMSG_LOOT_RESPONSE directly after USE.
     } else if (isMailbox) {
-        LOG_INFO("Mailbox interaction: opening mail UI and requesting mail list");
-        mailboxGuid_ = guid;
-        mailboxOpen_ = true;
-        hasNewMail_ = false;
-        selectedMailIndex_ = -1;
-        showMailCompose_ = false;
-        refreshMailList();
+        openMailbox(guid);
     }
 
     // CMSG_GAMEOBJ_REPORT_USE triggers GO AI scripts (SmartAI, ScriptAI) which
@@ -5914,6 +5930,11 @@ void GameHandler::repairAll(uint64_t vendorGuid, bool useGuildBank) {
     if (inventoryHandler_) inventoryHandler_->repairAll(vendorGuid, useGuildBank);
 }
 
+uint32_t GameHandler::estimateRepairAllCost() const {
+    if (inventoryHandler_) return inventoryHandler_->estimateRepairAllCost();
+    return 0;
+}
+
 void GameHandler::sellItem(uint64_t vendorGuid, uint64_t itemGuid, uint32_t count) {
     if (inventoryHandler_) inventoryHandler_->sellItem(vendorGuid, itemGuid, count);
 }
@@ -6047,6 +6068,12 @@ void GameHandler::preloadDBCCaches() const {
     loadAreaNameCache();    // WorldMapArea.dbc
     loadMapNameCache();     // Map.dbc
     loadLfgDungeonDbc();    // LFGDungeons.dbc
+
+    // Validate animation constants against AnimationData.dbc
+    if (auto* am = services_.assetManager) {
+        auto animDbc = am->loadDBC("AnimationData.dbc");
+        rendering::anim::validateAgainstDBC(animDbc);
+    }
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - t0).count();
@@ -6503,6 +6530,10 @@ void GameHandler::updateAttachedTransportChildren(float deltaTime) {
 // ============================================================
 // Mail System
 // ============================================================
+
+void GameHandler::openMailbox(uint64_t guid) {
+    if (inventoryHandler_) inventoryHandler_->openMailbox(guid);
+}
 
 void GameHandler::closeMailbox() {
     if (inventoryHandler_) inventoryHandler_->closeMailbox();
@@ -7005,25 +7036,42 @@ void GameHandler::loadAreaNameCache() const {
     auto* am = services_.assetManager;
     if (!am || !am->isInitialized()) return;
 
-    auto dbc = am->loadDBC("WorldMapArea.dbc");
-    if (!dbc || !dbc->isLoaded()) return;
-
-    const auto* layout = pipeline::getActiveDBCLayout()
-        ? pipeline::getActiveDBCLayout()->getLayout("WorldMapArea") : nullptr;
-    const uint32_t areaIdField   = layout ? (*layout)["AreaID"]   : 2;
-    const uint32_t areaNameField = layout ? (*layout)["AreaName"] : 3;
-
-    if (dbc->getFieldCount() <= areaNameField) return;
-
-    for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
-        uint32_t areaId = dbc->getUInt32(i, areaIdField);
-        if (areaId == 0) continue;
-        std::string name = dbc->getString(i, areaNameField);
-        if (!name.empty() && !areaNameCache_.count(areaId)) {
-            areaNameCache_[areaId] = std::move(name);
+    // AreaTable.dbc has the canonical zone/area names keyed by AreaID.
+    // Field 0 = ID, field 11 = AreaName (enUS locale).
+    auto areaDbc = am->loadDBC("AreaTable.dbc");
+    if (areaDbc && areaDbc->isLoaded() && areaDbc->getFieldCount() > 11) {
+        for (uint32_t i = 0; i < areaDbc->getRecordCount(); ++i) {
+            uint32_t areaId = areaDbc->getUInt32(i, 0);
+            if (areaId == 0) continue;
+            std::string name = areaDbc->getString(i, 11);
+            if (!name.empty()) {
+                areaNameCache_[areaId] = std::move(name);
+            }
         }
     }
-    LOG_INFO("WorldMapArea.dbc: loaded ", areaNameCache_.size(), " area names");
+
+    // WorldMapArea.dbc supplements with map-UI area names (different ID space).
+    auto dbc = am->loadDBC("WorldMapArea.dbc");
+    if (dbc && dbc->isLoaded()) {
+        const auto* layout = pipeline::getActiveDBCLayout()
+            ? pipeline::getActiveDBCLayout()->getLayout("WorldMapArea") : nullptr;
+        const uint32_t areaIdField   = layout ? (*layout)["AreaID"]   : 2;
+        const uint32_t areaNameField = layout ? (*layout)["AreaName"] : 3;
+
+        if (dbc->getFieldCount() > areaNameField) {
+            for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
+                uint32_t areaId = dbc->getUInt32(i, areaIdField);
+                if (areaId == 0) continue;
+                std::string name = dbc->getString(i, areaNameField);
+                // Don't overwrite AreaTable names — those are authoritative
+                if (!name.empty() && !areaNameCache_.count(areaId)) {
+                    areaNameCache_[areaId] = std::move(name);
+                }
+            }
+        }
+    }
+
+    LOG_INFO("Area name cache: loaded ", areaNameCache_.size(), " entries");
 }
 
 std::string GameHandler::getAreaName(uint32_t areaId) const {
@@ -7043,11 +7091,12 @@ void GameHandler::loadMapNameCache() const {
     auto dbc = am->loadDBC("Map.dbc");
     if (!dbc || !dbc->isLoaded()) return;
 
+    // Map.dbc layout: 0=ID, 1=InternalName, 2=InstanceType, 3=Flags,
+    // 4=MapName_enUS (display name), fields 5+ = other locales
     for (uint32_t i = 0; i < dbc->getRecordCount(); ++i) {
         uint32_t id = dbc->getUInt32(i, 0);
-        // Field 2 = MapName_enUS (first localized); field 1 = InternalName fallback
-        std::string name = dbc->getString(i, 2);
-        if (name.empty()) name = dbc->getString(i, 1);
+        std::string name = dbc->getString(i, 4);
+        if (name.empty()) name = dbc->getString(i, 1); // internal name fallback
         if (!name.empty() && !mapNameCache_.count(id)) {
             mapNameCache_[id] = std::move(name);
         }
@@ -7056,7 +7105,6 @@ void GameHandler::loadMapNameCache() const {
 }
 
 std::string GameHandler::getMapName(uint32_t mapId) const {
-    if (mapId == 0) return {};
     loadMapNameCache();
     auto it = mapNameCache_.find(mapId);
     return (it != mapNameCache_.end()) ? it->second : std::string{};

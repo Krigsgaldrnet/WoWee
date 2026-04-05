@@ -20,7 +20,31 @@ void ChatHandler::registerOpcodes(DispatchTable& table) {
         if (owner_.getState() == WorldState::IN_WORLD) handleMessageChat(packet);
     };
     table[Opcode::SMSG_GM_MESSAGECHAT] = [this](network::Packet& packet) {
-        if (owner_.getState() == WorldState::IN_WORLD) handleMessageChat(packet);
+        if (owner_.getState() != WorldState::IN_WORLD) return;
+        // SMSG_GM_MESSAGECHAT has the same header as SMSG_MESSAGECHAT
+        // (type[1]+lang[4]+senderGuid[8]+unk[4] = 17 bytes) followed by an
+        // extra gmNameLen[4]+gmName[N] before the type-specific body.
+        // Strip the GM name field to produce standard SMSG_MESSAGECHAT format.
+        if (!packet.hasRemaining(21)) return; // 17 header + 4 gmNameLen min
+        uint8_t  type       = packet.readUInt8();
+        uint32_t lang       = packet.readUInt32();
+        uint64_t senderGuid = packet.readUInt64();
+        uint32_t unk        = packet.readUInt32();
+        uint32_t gmNameLen  = packet.readUInt32();
+        if (!packet.hasRemaining(gmNameLen)) return;
+        packet.setReadPos(packet.getReadPos() + gmNameLen); // skip gmName
+
+        // Rebuild as regular SMSG_MESSAGECHAT (header + remaining body)
+        network::Packet regular(0);
+        regular.writeUInt8(type);
+        regular.writeUInt32(lang);
+        regular.writeUInt64(senderGuid);
+        regular.writeUInt32(unk);
+        const auto& raw = packet.getData();
+        size_t pos = packet.getReadPos();
+        if (pos < raw.size())
+            regular.writeBytes(raw.data() + pos, raw.size() - pos);
+        handleMessageChat(regular);
     };
     table[Opcode::SMSG_TEXT_EMOTE] = [this](network::Packet& packet) {
         if (owner_.getState() == WorldState::IN_WORLD) handleTextEmote(packet);
@@ -120,7 +144,8 @@ void ChatHandler::sendChatMessage(ChatType type, const std::string& message, con
         return;
     }
 
-    LOG_DEBUG("OUTGOING CHAT: type=", static_cast<int>(type), " msg='", message.substr(0, 60), "'");
+    LOG_INFO("OUTGOING CHAT: type=", static_cast<int>(type),
+             " (", getChatTypeString(type), ") target='", target, "' msg='", message.substr(0, 60), "'");
 
     // Use the player's faction language. AzerothCore rejects wrong language.
     // Alliance races: Human(1), Dwarf(3), NightElf(4), Gnome(7), Draenei(11) → COMMON (7)
@@ -165,9 +190,9 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
         LOG_WARNING("Failed to parse SMSG_MESSAGECHAT, size=", packet.getSize());
         return;
     }
-    LOG_DEBUG("SMSG_MESSAGECHAT: type=", static_cast<int>(data.type),
-              " sender='", data.senderName, "' msg='",
-              data.message.substr(0, 60), "'");
+    LOG_INFO("INCOMING CHAT: type=", static_cast<int>(data.type),
+             " (", getChatTypeString(data.type), ") sender=0x", std::hex, data.senderGuid, std::dec,
+             " '", data.senderName, "' msg='", data.message.substr(0, 60), "'");
 
     // Skip server echo of our own messages (we already added a local echo)
     if (data.senderGuid == owner_.playerGuid && data.senderGuid != 0) {
@@ -264,10 +289,11 @@ void ChatHandler::handleMessageChat(network::Packet& packet) {
             owner_.lastWhisperSender_ = data.senderName;
 
         if (!data.senderName.empty()) {
-            if (owner_.afkStatus_) {
+            // Only auto-reply once per sender per AFK/DND session to prevent loops
+            if (owner_.afkStatus_ && afkAutoRepliedSenders_.insert(data.senderName).second) {
                 std::string reply = owner_.afkMessage_.empty() ? "Away from Keyboard" : owner_.afkMessage_;
                 sendChatMessage(ChatType::WHISPER, "<AFK> " + reply, data.senderName);
-            } else if (owner_.dndStatus_) {
+            } else if (owner_.dndStatus_ && afkAutoRepliedSenders_.insert(data.senderName).second) {
                 std::string reply = owner_.dndMessage_.empty() ? "Do Not Disturb" : owner_.dndMessage_;
                 sendChatMessage(ChatType::WHISPER, "<DND> " + reply, data.senderName);
             }
@@ -621,6 +647,7 @@ void ChatHandler::toggleAfk(const std::string& message) {
     } else {
         addSystemChatMessage("You are no longer AFK.");
         owner_.afkMessage_.clear();
+        afkAutoRepliedSenders_.clear();
     }
 
     LOG_INFO("AFK status: ", owner_.afkStatus_, ", message: ", message);
@@ -644,6 +671,7 @@ void ChatHandler::toggleDnd(const std::string& message) {
     } else {
         addSystemChatMessage("You are no longer DND.");
         owner_.dndMessage_.clear();
+        afkAutoRepliedSenders_.clear();
     }
 
     LOG_INFO("DND status: ", owner_.dndStatus_, ", message: ", message);

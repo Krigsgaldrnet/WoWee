@@ -61,6 +61,7 @@
 #include "rendering/spell_visual_system.hpp"
 #include "rendering/post_process_pipeline.hpp"
 #include "rendering/animation_controller.hpp"
+#include "rendering/render_graph.hpp"
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -249,13 +250,13 @@ bool Renderer::createPerFrameResources() {
     // --- Create descriptor pool for UBO + image sampler (normal frames + reflection) ---
     VkDescriptorPoolSize poolSizes[2]{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = MAX_FRAMES + 1; // +1 for reflection perFrame UBO
+    poolSizes[0].descriptorCount = MAX_FRAMES * 2; // normal frames + reflection frames
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = MAX_FRAMES + 1;
+    poolSizes[1].descriptorCount = MAX_FRAMES * 2;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = MAX_FRAMES + 1; // +1 for reflection descriptor set
+    poolInfo.maxSets = MAX_FRAMES * 2; // normal frames + reflection frames
     poolInfo.poolSizeCount = 2;
     poolInfo.pPoolSizes = poolSizes;
 
@@ -343,42 +344,48 @@ bool Renderer::createPerFrameResources() {
         }
         reflPerFrameUBOMapped = mapInfo.pMappedData;
 
+        VkDescriptorSetLayout layouts[MAX_FRAMES];
+        for (uint32_t i = 0; i < MAX_FRAMES; i++) layouts[i] = perFrameSetLayout;
+
         VkDescriptorSetAllocateInfo setAlloc{};
         setAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         setAlloc.descriptorPool = sceneDescriptorPool;
-        setAlloc.descriptorSetCount = 1;
-        setAlloc.pSetLayouts = &perFrameSetLayout;
+        setAlloc.descriptorSetCount = MAX_FRAMES;
+        setAlloc.pSetLayouts = layouts;
 
-        if (vkAllocateDescriptorSets(device, &setAlloc, &reflPerFrameDescSet) != VK_SUCCESS) {
-            LOG_ERROR("Failed to allocate reflection per-frame descriptor set");
+        if (vkAllocateDescriptorSets(device, &setAlloc, reflPerFrameDescSet) != VK_SUCCESS) {
+            LOG_ERROR("Failed to allocate reflection per-frame descriptor sets");
             return false;
         }
 
-        VkDescriptorBufferInfo descBuf{};
-        descBuf.buffer = reflPerFrameUBO;
-        descBuf.offset = 0;
-        descBuf.range = sizeof(GPUPerFrameData);
+        // Bind each reflection descriptor to the same UBO but its own frame's shadow view
+        for (uint32_t i = 0; i < MAX_FRAMES; i++) {
+            VkDescriptorBufferInfo descBuf{};
+            descBuf.buffer = reflPerFrameUBO;
+            descBuf.offset = 0;
+            descBuf.range = sizeof(GPUPerFrameData);
 
-        VkDescriptorImageInfo shadowImgInfo{};
-        shadowImgInfo.sampler = shadowSampler;
-        shadowImgInfo.imageView = shadowDepthView[0];  // reflection uses frame 0 shadow view
-        shadowImgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            VkDescriptorImageInfo shadowImgInfo{};
+            shadowImgInfo.sampler = shadowSampler;
+            shadowImgInfo.imageView = shadowDepthView[i];
+            shadowImgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        VkWriteDescriptorSet writes[2]{};
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = reflPerFrameDescSet;
-        writes[0].dstBinding = 0;
-        writes[0].descriptorCount = 1;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[0].pBufferInfo = &descBuf;
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = reflPerFrameDescSet;
-        writes[1].dstBinding = 1;
-        writes[1].descriptorCount = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].pImageInfo = &shadowImgInfo;
+            VkWriteDescriptorSet writes[2]{};
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = reflPerFrameDescSet[i];
+            writes[0].dstBinding = 0;
+            writes[0].descriptorCount = 1;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[0].pBufferInfo = &descBuf;
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = reflPerFrameDescSet[i];
+            writes[1].dstBinding = 1;
+            writes[1].descriptorCount = 1;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[1].pImageInfo = &shadowImgInfo;
 
-        vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+            vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+        }
     }
 
     LOG_INFO("Per-frame Vulkan resources created (shadow map ", SHADOW_MAP_SIZE, "x", SHADOW_MAP_SIZE, ")");
@@ -458,7 +465,9 @@ void Renderer::updatePerFrameUBO() {
     }
 
     currentFrameData.lightSpaceMatrix = lightSpaceMatrix;
-    currentFrameData.shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, 0.8f, 0.0f, 0.0f);
+    // Scale shadow bias proportionally to ortho extent to avoid acne at close range / gaps at far range
+    float shadowBias = glm::clamp(0.8f * (shadowDistance_ / 300.0f), 0.0f, 1.0f);
+    currentFrameData.shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, shadowBias, 0.0f, 0.0f);
 
     // Player water ripple data: pack player XY into shadowParams.zw, ripple strength into fogParams.w
     if (cameraController) {
@@ -562,6 +571,15 @@ bool Renderer::initialize(core::Window* win) {
     // Create PostProcessPipeline (§4.3 — owns FSR/FXAA/FSR2/FSR3/brightness)
     postProcessPipeline_ = std::make_unique<PostProcessPipeline>();
     postProcessPipeline_->initialize(vkCtx);
+
+    // Create render graph and register virtual resources
+    renderGraph_ = std::make_unique<RenderGraph>();
+    renderGraph_->registerResource("shadow_depth");
+    renderGraph_->registerResource("reflection_texture");
+    renderGraph_->registerResource("cull_visibility");
+    renderGraph_->registerResource("scene_color");
+    renderGraph_->registerResource("scene_depth");
+    renderGraph_->registerResource("final_image");
 
     LOG_INFO("Renderer initialized");
     return true;
@@ -674,6 +692,10 @@ void Renderer::shutdown() {
         postProcessPipeline_->shutdown();
         postProcessPipeline_.reset();
     }
+
+    // Destroy render graph
+    renderGraph_.reset();
+
     destroyPerFrameResources();
 
     zoneManager.reset();
@@ -839,36 +861,19 @@ void Renderer::beginFrame() {
     // FSR2 jitter pattern (§4.3 — delegates to PostProcessPipeline)
     if (postProcessPipeline_ && camera) postProcessPipeline_->applyJitter(camera.get());
 
+    // Compute fresh shadow matrix BEFORE UBO update so shaders get current-frame data.
+    lightSpaceMatrix = computeLightSpaceMatrix();
+
     // Update per-frame UBO with current camera/lighting state
     updatePerFrameUBO();
 
-    // --- Off-screen pre-passes (before main render pass) ---
-    // Minimap composite (renders 3x3 tile grid into 768x768 render target)
-    if (minimap && minimap->isEnabled() && camera) {
-        glm::vec3 minimapCenter = camera->getPosition();
-        if (cameraController && cameraController->isThirdPerson())
-            minimapCenter = characterPosition;
-        minimap->compositePass(currentCmd, minimapCenter);
+    // --- Off-screen pre-passes ---
+    // Build frame graph: registers pre-passes as graph nodes with dependencies.
+    // compile() topologically sorts; execute() runs them with auto barriers.
+    buildFrameGraph(nullptr);
+    if (renderGraph_) {
+        renderGraph_->execute(currentCmd);
     }
-    // World map composite (renders zone tiles into 1024x768 render target)
-    if (worldMap) {
-        worldMap->compositePass(currentCmd);
-    }
-
-    // Character preview composite passes
-    for (auto* preview : activePreviews_) {
-        if (preview && preview->isModelLoaded()) {
-            preview->compositePass(currentCmd, vkCtx->getCurrentFrame());
-        }
-    }
-
-    // Shadow pre-pass (before main render pass)
-    if (shadowsEnabled && shadowDepthImage[0] != VK_NULL_HANDLE) {
-        renderShadowPass();
-    }
-
-    // Water reflection pre-pass (renders scene from mirrored camera into 512x512 texture)
-    renderReflectionPass();
 
     // --- Begin render pass ---
     // Select framebuffer: PP off-screen target or swapchain (§4.3 — PostProcessPipeline)
@@ -1019,8 +1024,26 @@ void Renderer::setInCombat(bool combat) {
     if (animationController_) animationController_->setInCombat(combat);
 }
 
-void Renderer::setEquippedWeaponType(uint32_t inventoryType) {
-    if (animationController_) animationController_->setEquippedWeaponType(inventoryType);
+void Renderer::setEquippedWeaponType(uint32_t inventoryType, bool is2HLoose, bool isFist,
+                                     bool isDagger, bool hasOffHand, bool hasShield) {
+    if (animationController_) animationController_->setEquippedWeaponType(inventoryType, is2HLoose, isFist, isDagger, hasOffHand, hasShield);
+}
+
+void Renderer::triggerSpecialAttack(uint32_t spellId) {
+    if (animationController_) animationController_->triggerSpecialAttack(spellId);
+}
+
+void Renderer::setEquippedRangedType(RangedWeaponType type) {
+    if (animationController_) animationController_->setEquippedRangedType(type);
+}
+
+void Renderer::triggerRangedShot() {
+    if (animationController_) animationController_->triggerRangedShot();
+}
+
+RangedWeaponType Renderer::getEquippedRangedType() const {
+    return animationController_ ? animationController_->getEquippedRangedType()
+                                : RangedWeaponType::NONE;
 }
 
 void Renderer::setCharging(bool c) {
@@ -2798,8 +2821,8 @@ glm::mat4 Renderer::computeLightSpaceMatrix() {
         sunDir = -sunDir;
     }
     // Keep a minimum downward component so the frustum doesn't collapse at grazing angles.
-    if (sunDir.z > -0.08f) {
-        sunDir.z = -0.08f;
+    if (sunDir.z > -0.15f) {
+        sunDir.z = -0.15f;
         sunDir = glm::normalize(sunDir);
     }
 
@@ -2987,6 +3010,11 @@ void Renderer::renderReflectionPass() {
     if (!waterRenderer || !camera || !waterRenderer->hasReflectionPass() || !waterRenderer->hasSurfaces()) return;
     if (currentCmd == VK_NULL_HANDLE || !reflPerFrameUBOMapped) return;
 
+    // Select the current frame's pre-bound reflection descriptor set
+    // (each frame's set was bound to its own shadow depth view at init).
+    uint32_t frame = vkCtx->getCurrentFrame();
+    VkDescriptorSet reflDescSet = reflPerFrameDescSet[frame];
+
     // Reflection pass uses 1x MSAA. Scene pipelines must be render-pass-compatible,
     // which requires matching sample counts. Only render scene into reflection when MSAA is off.
     bool canRenderScene = (vkCtx->getMsaaSamples() == VK_SAMPLE_COUNT_1_BIT);
@@ -3041,13 +3069,13 @@ void Renderer::renderReflectionPass() {
                 skyParams.horizonGlow = lp.horizonGlow;
             }
             // weatherIntensity left at default 0 for reflection pass (no game handler in scope)
-            skySystem->render(currentCmd, reflPerFrameDescSet, *camera, skyParams);
+            skySystem->render(currentCmd, reflDescSet, *camera, skyParams);
         }
         if (terrainRenderer && terrainEnabled) {
-            terrainRenderer->render(currentCmd, reflPerFrameDescSet, *camera);
+            terrainRenderer->render(currentCmd, reflDescSet, *camera);
         }
         if (wmoRenderer) {
-            wmoRenderer->render(currentCmd, reflPerFrameDescSet, *camera);
+            wmoRenderer->render(currentCmd, reflDescSet, *camera);
         }
     }
 
@@ -3063,17 +3091,10 @@ void Renderer::renderShadowPass() {
 
     // Shadows render every frame — throttling causes visible flicker on player/NPCs
 
-    // Compute and store light space matrix; write to per-frame UBO
-    lightSpaceMatrix = computeLightSpaceMatrix();
+    // lightSpaceMatrix was already computed at frame start (before updatePerFrameUBO).
     // Zero matrix means character position isn't set yet — skip shadow pass entirely.
     if (lightSpaceMatrix == glm::mat4(0.0f)) return;
     uint32_t frame = vkCtx->getCurrentFrame();
-    auto* ubo = reinterpret_cast<GPUPerFrameData*>(perFrameUBOMapped[frame]);
-    if (ubo) {
-        ubo->lightSpaceMatrix = lightSpaceMatrix;
-        ubo->shadowParams.x = shadowsEnabled ? 1.0f : 0.0f;
-        ubo->shadowParams.y = 0.8f;
-    }
 
     // Barrier 1: transition this frame's shadow map into writable depth layout.
     VkImageMemoryBarrier b1{};
@@ -3145,6 +3166,70 @@ void Renderer::renderShadowPass() {
         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         0, 0, nullptr, 0, nullptr, 1, &b2);
     shadowDepthLayout_[frame] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
+// Build the per-frame render graph for off-screen pre-passes.
+// Declares passes as graph nodes with input/output dependencies.
+// compile() performs topological sort; execute() runs them with auto barriers.
+void Renderer::buildFrameGraph(game::GameHandler* gameHandler) {
+    (void)gameHandler;
+    if (!renderGraph_) return;
+
+    renderGraph_->reset();
+
+    auto shadowDepth = renderGraph_->findResource("shadow_depth");
+    auto reflTex = renderGraph_->findResource("reflection_texture");
+    auto cullVis = renderGraph_->findResource("cull_visibility");
+
+    // Minimap composites (no dependencies — standalone off-screen render target)
+    renderGraph_->addPass("minimap_composite", {}, {},
+        [this](VkCommandBuffer cmd) {
+            if (minimap && minimap->isEnabled() && camera) {
+                glm::vec3 minimapCenter = camera->getPosition();
+                if (cameraController && cameraController->isThirdPerson())
+                    minimapCenter = characterPosition;
+                minimap->compositePass(cmd, minimapCenter);
+            }
+        });
+
+    // World map composite (standalone)
+    renderGraph_->addPass("worldmap_composite", {}, {},
+        [this](VkCommandBuffer cmd) {
+            if (worldMap) worldMap->compositePass(cmd);
+        });
+
+    // Character preview composites (standalone)
+    renderGraph_->addPass("preview_composite", {}, {},
+        [this](VkCommandBuffer cmd) {
+            uint32_t frame = vkCtx->getCurrentFrame();
+            for (auto* preview : activePreviews_) {
+                if (preview && preview->isModelLoaded())
+                    preview->compositePass(cmd, frame);
+            }
+        });
+
+    // Shadow pre-pass → outputs shadow_depth
+    renderGraph_->addPass("shadow_pass", {}, {shadowDepth},
+        [this](VkCommandBuffer) {
+            if (shadowsEnabled && shadowDepthImage[0] != VK_NULL_HANDLE)
+                renderShadowPass();
+        });
+    renderGraph_->setPassEnabled("shadow_pass", shadowsEnabled && shadowDepthImage[0] != VK_NULL_HANDLE);
+
+    // Reflection pre-pass → outputs reflection_texture (reads scene, so after shadow)
+    renderGraph_->addPass("reflection_pass", {shadowDepth}, {reflTex},
+        [this](VkCommandBuffer) {
+            renderReflectionPass();
+        });
+
+    // GPU frustum cull compute → outputs cull_visibility
+    renderGraph_->addPass("compute_cull", {}, {cullVis},
+        [this](VkCommandBuffer cmd) {
+            if (m2Renderer && camera)
+                m2Renderer->dispatchCullCompute(cmd, vkCtx->getCurrentFrame(), *camera);
+        });
+
+    renderGraph_->compile();
 }
 
 } // namespace rendering

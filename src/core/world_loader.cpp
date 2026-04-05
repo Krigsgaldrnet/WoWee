@@ -3,6 +3,7 @@
 
 #include "core/world_loader.hpp"
 #include "core/application.hpp"
+#include "rendering/animation/animation_ids.hpp"
 #include "core/entity_spawner.hpp"
 #include "core/appearance_composer.hpp"
 #include "core/window.hpp"
@@ -734,9 +735,9 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             // Use a small radius for the initial load (just immediate tiles),
             // then restore the full radius after entering the game.
             // This matches WoW's behavior: load quickly, stream the rest in-game.
-            const int savedLoadRadius = 4;
-            terrainMgr->setLoadRadius(3);   // 7x7=49 tiles — prevents hitches on spawn
-            terrainMgr->setUnloadRadius(7);
+            const int savedLoadRadius = 6;
+            terrainMgr->setLoadRadius(4);   // 9x9=81 tiles — prevents hitches on spawn
+            terrainMgr->setUnloadRadius(9);
 
             // Trigger tile streaming for surrounding area
             terrainMgr->update(*camera, 1.0f);
@@ -876,7 +877,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             uint32_t instanceId = spawner->getCreatureInstanceId(guid);
             if (instanceId == 0) instanceId = spawner->getPlayerInstanceId(guid);
             if (instanceId != 0 && cr) {
-                cr->playAnimation(instanceId, 1, false); // animation ID 1 = Death
+                cr->playAnimation(instanceId, rendering::anim::DEATH, false);
             }
         });
 
@@ -885,15 +886,30 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             uint32_t instanceId = spawner->getCreatureInstanceId(guid);
             if (instanceId == 0) instanceId = spawner->getPlayerInstanceId(guid);
             if (instanceId != 0 && cr) {
-                cr->playAnimation(instanceId, 0, true); // animation ID 0 = Idle
+                cr->playAnimation(instanceId, rendering::anim::STAND, true);
             }
         });
 
+        // Probe the creature model for the best available attack animation
         gameHandler_->setNpcSwingCallback([cr, spawner](uint64_t guid) {
             uint32_t instanceId = spawner->getCreatureInstanceId(guid);
             if (instanceId == 0) instanceId = spawner->getPlayerInstanceId(guid);
             if (instanceId != 0 && cr) {
-                cr->playAnimation(instanceId, 16, false); // animation ID 16 = Attack1
+                static const uint32_t attackAnims[] = {
+                    rendering::anim::ATTACK_1H,
+                    rendering::anim::ATTACK_2H,
+                    rendering::anim::ATTACK_2H_LOOSE,
+                    rendering::anim::ATTACK_UNARMED
+                };
+                bool played = false;
+                for (uint32_t anim : attackAnims) {
+                    if (cr->hasAnimation(instanceId, anim)) {
+                        cr->playAnimation(instanceId, anim, false);
+                        played = true;
+                        break;
+                    }
+                }
+                if (!played) cr->playAnimation(instanceId, rendering::anim::ATTACK_UNARMED, false);
             }
         });
     }

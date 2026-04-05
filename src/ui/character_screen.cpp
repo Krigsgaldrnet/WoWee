@@ -338,20 +338,19 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
         ImGui::Text("%s", game::getGenderName(character.gender));
         ImGui::Spacing();
         {
-            std::string mapName  = gameHandler.getMapName(character.mapId);
             std::string zoneName = gameHandler.getWhoAreaName(character.zoneId);
-            if (!mapName.empty() && !zoneName.empty())
-                ImGui::Text("%s — %s", mapName.c_str(), zoneName.c_str());
-            else if (!mapName.empty())
-                ImGui::Text("%s (Zone %u)", mapName.c_str(), character.zoneId);
-            else if (!zoneName.empty())
-                ImGui::Text("Map %u — %s", character.mapId, zoneName.c_str());
+            if (!zoneName.empty())
+                ImGui::TextUnformatted(zoneName.c_str());
             else
-                ImGui::Text("Map %u, Zone %u", character.mapId, character.zoneId);
+                ImGui::Text("Zone %u", character.zoneId);
         }
 
         if (character.hasGuild()) {
-            ImGui::Text("Guild ID: %d", character.guildId);
+            const std::string& guildName = gameHandler.lookupGuildName(character.guildId);
+            if (!guildName.empty())
+                ImGui::Text("<%s>", guildName.c_str());
+            else
+                ImGui::TextDisabled("<Guild %u>", character.guildId);
         } else {
             ImGui::TextDisabled("No Guild");
         }
