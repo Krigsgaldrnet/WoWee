@@ -1,6 +1,7 @@
 #include "rendering/m2_renderer.hpp"
 #include "rendering/m2_renderer_internal.h"
 #include "rendering/m2_model_classifier.hpp"
+#include "rendering/hiz_system.hpp"
 #include "rendering/vk_context.hpp"
 #include "rendering/vk_buffer.hpp"
 #include "rendering/vk_texture.hpp"
@@ -600,6 +601,49 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
         }
         ubo->cameraPos = glm::vec4(camPos, maxPossibleDistSq);
         ubo->instanceCount = numInstances;
+
+        // HiZ occlusion culling fields
+        const bool hizReady = hizSystem_ && hizSystem_->isReady();
+
+        // Auto-disable HiZ when the camera has moved/rotated significantly.
+        // Large VP changes make the depth pyramid unreliable because the
+        // reprojected screen positions diverge from the actual pyramid data.
+        bool hizSafe = hizReady;
+        if (hizReady) {
+            // Compare current VP against previous VP — Frobenius-style max diff.
+            float maxDiff = 0.0f;
+            const float* curM  = &vp[0][0];
+            const float* prevM = &prevVP_[0][0];
+            for (int k = 0; k < 16; ++k)
+                maxDiff = std::max(maxDiff, std::abs(curM[k] - prevM[k]));
+            // Threshold: typical small camera motion produces diffs < 0.05.
+            // A fast rotation easily exceeds 0.3.  Skip HiZ when diff is large.
+            if (maxDiff > 0.15f) hizSafe = false;
+        }
+
+        ubo->hizEnabled = hizSafe ? 1u : 0u;
+        ubo->hizMipLevels = hizReady ? hizSystem_->getMipLevels() : 0u;
+        ubo->_pad2 = 0;
+        if (hizReady) {
+            ubo->hizParams = glm::vec4(
+                static_cast<float>(hizSystem_->getPyramidWidth()),
+                static_cast<float>(hizSystem_->getPyramidHeight()),
+                camera.getNearPlane(),
+                0.0f
+            );
+            ubo->viewProj = vp;
+            // Use previous frame's VP for HiZ reprojection — the HiZ pyramid
+            // was built from the previous frame's depth, so we must project
+            // into the same screen space to sample the correct depths.
+            ubo->prevViewProj = prevVP_;
+        } else {
+            ubo->hizParams = glm::vec4(0.0f);
+            ubo->viewProj = glm::mat4(1.0f);
+            ubo->prevViewProj = glm::mat4(1.0f);
+        }
+
+        // Save current VP for next frame's temporal reprojection
+        prevVP_ = vp;
     }
 
     // --- Upload per-instance cull data (SSBO, binding 1) ---
@@ -622,6 +666,10 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
             if (inst.cachedIsValid)          flags |= 1u;
             if (inst.cachedIsSmoke)           flags |= 2u;
             if (inst.cachedIsInvisibleTrap)   flags |= 4u;
+            // Bit 3: previouslyVisible — the shader skips HiZ for objects
+            // that were NOT rendered last frame (no reliable depth data).
+            if (i < prevFrameVisible_.size() && prevFrameVisible_[i])
+                flags |= 8u;
 
             input[i].sphere = glm::vec4(inst.position, paddedRadius);
             input[i].effectiveMaxDistSq = effectiveMaxDistSq;
@@ -630,9 +678,22 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
     }
 
     // --- Dispatch compute shader ---
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullPipeline_);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                            cullPipelineLayout_, 0, 1, &cullSet_[frameIndex], 0, nullptr);
+    const bool useHiZ = (cullHiZPipeline_ != VK_NULL_HANDLE)
+                     && hizSystem_ && hizSystem_->isReady();
+    if (useHiZ) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullHiZPipeline_);
+        // Set 0: cull UBO + input/output SSBOs
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                cullHiZPipelineLayout_, 0, 1, &cullSet_[frameIndex], 0, nullptr);
+        // Set 1: HiZ pyramid sampler
+        VkDescriptorSet hizSet = hizSystem_->getDescriptorSet(frameIndex);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                cullHiZPipelineLayout_, 1, 1, &hizSet, 0, nullptr);
+    } else {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                cullPipelineLayout_, 0, 1, &cullSet_[frameIndex], 0, nullptr);
+    }
 
     const uint32_t groupCount = (numInstances + 63) / 64;
     vkCmdDispatch(cmd, groupCount, 1, 1);
@@ -692,6 +753,19 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
     const uint32_t numInstances = std::min(static_cast<uint32_t>(instances.size()), MAX_CULL_INSTANCES);
     const uint32_t* visibility = static_cast<const uint32_t*>(cullOutputMapped_[frameIndex]);
     const bool gpuCullAvailable = (cullPipeline_ != VK_NULL_HANDLE && visibility != nullptr);
+
+    // Snapshot the GPU visibility results into prevFrameVisible_ so the NEXT
+    // frame's compute dispatch can set the per-instance `previouslyVisible`
+    // flag (bit 3).  Objects not visible this frame will skip HiZ next frame,
+    // avoiding false culls from stale depth data.
+    if (gpuCullAvailable) {
+        prevFrameVisible_.resize(numInstances);
+        for (uint32_t i = 0; i < numInstances; ++i)
+            prevFrameVisible_[i] = visibility[i] ? 1u : 0u;
+    } else {
+        // No GPU cull data — conservatively mark all as visible
+        prevFrameVisible_.assign(static_cast<size_t>(instances.size()), 1u);
+    }
 
     // If GPU culling was not dispatched, fallback: compute distances on CPU
     float maxRenderDistanceSq;
@@ -1074,7 +1148,10 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     // Update material UBO
                     if (batch.materialUBOMapped) {
                         auto* mat = static_cast<M2MaterialUBO*>(batch.materialUBOMapped);
-                        mat->interiorDarken = insideInterior ? 1.0f : 0.0f;
+                        // interiorDarken is a camera-based flag — it darkens ALL M2s (incl.
+                        // outdoor trees) when the camera is inside a WMO.  Disable it; indoor
+                        // M2s already look correct from the darker ambient/lighting.
+                        mat->interiorDarken = 0.0f;
                         if (batch.colorKeyBlack)
                             mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
                         if (forceCutout) {
@@ -1265,7 +1342,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
             if (batch.materialUBOMapped) {
                 auto* mat = static_cast<M2MaterialUBO*>(batch.materialUBOMapped);
-                mat->interiorDarken = insideInterior ? 1.0f : 0.0f;
+                mat->interiorDarken = 0.0f;
                 if (batch.colorKeyBlack)
                     mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
             }

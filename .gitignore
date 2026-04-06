@@ -19,6 +19,7 @@ Makefile
 *.obj
 *.slo
 *.lo
+*.spv
 
 # Compiled Dynamic libraries
 *.so
