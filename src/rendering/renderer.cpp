@@ -592,38 +592,38 @@ bool Renderer::initialize(core::Window* win) {
 void Renderer::shutdown() {
     destroySecondaryCommandResources();
 
-    LOG_WARNING("Renderer::shutdown - terrainManager stopWorkers...");
+    LOG_DEBUG("Renderer::shutdown - terrainManager stopWorkers...");
     if (terrainManager) {
         terrainManager->stopWorkers();
-        LOG_WARNING("Renderer::shutdown - terrainManager reset...");
+        LOG_DEBUG("Renderer::shutdown - terrainManager reset...");
         terrainManager.reset();
     }
 
-    LOG_WARNING("Renderer::shutdown - terrainRenderer...");
+    LOG_DEBUG("Renderer::shutdown - terrainRenderer...");
     if (terrainRenderer) {
         terrainRenderer->shutdown();
         terrainRenderer.reset();
     }
 
-    LOG_WARNING("Renderer::shutdown - waterRenderer...");
+    LOG_DEBUG("Renderer::shutdown - waterRenderer...");
     if (waterRenderer) {
         waterRenderer->shutdown();
         waterRenderer.reset();
     }
 
-    LOG_WARNING("Renderer::shutdown - minimap...");
+    LOG_DEBUG("Renderer::shutdown - minimap...");
     if (minimap) {
         minimap->shutdown();
         minimap.reset();
     }
 
-    LOG_WARNING("Renderer::shutdown - worldMap...");
+    LOG_DEBUG("Renderer::shutdown - worldMap...");
     if (worldMap) {
         worldMap->shutdown();
         worldMap.reset();
     }
 
-    LOG_WARNING("Renderer::shutdown - skySystem...");
+    LOG_DEBUG("Renderer::shutdown - skySystem...");
     if (skySystem) {
         skySystem->shutdown();
         skySystem.reset();
@@ -650,7 +650,7 @@ void Renderer::shutdown() {
         swimEffects.reset();
     }
 
-    LOG_WARNING("Renderer::shutdown - characterRenderer...");
+    LOG_DEBUG("Renderer::shutdown - characterRenderer...");
     if (characterRenderer) {
         characterRenderer->shutdown();
         characterRenderer.reset();
@@ -659,7 +659,7 @@ void Renderer::shutdown() {
     // Shutdown AnimationController before renderers it references (§4.2)
     animationController_.reset();
 
-    LOG_WARNING("Renderer::shutdown - wmoRenderer...");
+    LOG_DEBUG("Renderer::shutdown - wmoRenderer...");
     if (wmoRenderer) {
         wmoRenderer->shutdown();
         wmoRenderer.reset();
@@ -671,7 +671,7 @@ void Renderer::shutdown() {
         spellVisualSystem_.reset();
     }
 
-    LOG_WARNING("Renderer::shutdown - m2Renderer...");
+    LOG_DEBUG("Renderer::shutdown - m2Renderer...");
     if (m2Renderer) {
         m2Renderer->shutdown();
         m2Renderer.reset();

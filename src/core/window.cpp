@@ -103,25 +103,23 @@ bool Window::initialize() {
     return true;
 }
 
-// Shutdown progress uses LOG_WARNING so these messages are always visible even at
-// default log levels — useful for diagnosing hangs or crashes during teardown.
 void Window::shutdown() {
-    LOG_WARNING("Window::shutdown - vkContext...");
+    LOG_DEBUG("Window::shutdown - vkContext...");
     if (vkContext) {
         vkContext->shutdown();
         vkContext.reset();
     }
 
-    LOG_WARNING("Window::shutdown - SDL_DestroyWindow...");
+    LOG_DEBUG("Window::shutdown - SDL_DestroyWindow...");
     if (window) {
         SDL_DestroyWindow(window);
         window = nullptr;
     }
 
-    LOG_WARNING("Window::shutdown - SDL_Quit...");
+    LOG_DEBUG("Window::shutdown - SDL_Quit...");
     SDL_Vulkan_UnloadLibrary();
     SDL_Quit();
-    LOG_WARNING("Window shutdown complete");
+    LOG_DEBUG("Window shutdown complete");
 }
 
 void Window::pollEvents() {

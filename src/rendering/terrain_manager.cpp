@@ -1527,10 +1527,10 @@ void TerrainManager::unloadTile(int x, int y) {
 
 void TerrainManager::stopWorkers() {
     if (!workerRunning.load()) {
-        LOG_WARNING("stopWorkers: already stopped");
+        LOG_DEBUG("stopWorkers: already stopped");
         return;
     }
-    LOG_WARNING("stopWorkers: signaling ", workerThreads.size(), " workers to stop...");
+    LOG_DEBUG("stopWorkers: signaling ", workerThreads.size(), " workers to stop...");
     workerRunning.store(false);
     queueCV.notify_all();
 
@@ -1540,12 +1540,12 @@ void TerrainManager::stopWorkers() {
     // std::thread object thinking it's still joinable → std::terminate on dtor).
     for (size_t i = 0; i < workerThreads.size(); i++) {
         if (workerThreads[i].joinable()) {
-            LOG_WARNING("stopWorkers: joining worker ", i, "...");
+            LOG_DEBUG("stopWorkers: joining worker ", i, "...");
             workerThreads[i].join();
         }
     }
     workerThreads.clear();
-    LOG_WARNING("stopWorkers: done");
+    LOG_DEBUG("stopWorkers: done");
 }
 
 void TerrainManager::unloadAll() {

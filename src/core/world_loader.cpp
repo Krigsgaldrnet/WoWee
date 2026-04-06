@@ -866,7 +866,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         auto* tm = gameHandler_->getTransportManager();
         if (renderer_->getWMORenderer()) tm->setWMORenderer(renderer_->getWMORenderer());
         if (renderer_->getM2Renderer()) tm->setM2Renderer(renderer_->getM2Renderer());
-        LOG_WARNING("TransportManager connected: wmoR=", (renderer_->getWMORenderer() ? "yes" : "NULL"),
+        LOG_DEBUG("TransportManager connected: wmoR=", (renderer_->getWMORenderer() ? "yes" : "NULL"),
                    " m2R=", (renderer_->getM2Renderer() ? "yes" : "NULL"));
     }
 

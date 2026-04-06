@@ -834,7 +834,7 @@ void Application::run() {
 }
 
 void Application::shutdown() {
-    LOG_WARNING("Shutting down application...");
+    LOG_DEBUG("Shutting down application...");
 
     // Hide the window immediately so the OS doesn't think the app is frozen
     // during the (potentially slow) resource cleanup below.
@@ -851,20 +851,20 @@ void Application::shutdown() {
     if (renderer && renderer->getWMORenderer()) {
         size_t cacheSize = renderer->getWMORenderer()->getFloorCacheSize();
         if (cacheSize > 0) {
-            LOG_WARNING("Saving WMO floor cache (", cacheSize, " entries)...");
+            LOG_DEBUG("Saving WMO floor cache (", cacheSize, " entries)...");
             renderer->getWMORenderer()->saveFloorCache();
-            LOG_WARNING("Floor cache saved.");
+            LOG_DEBUG("Floor cache saved.");
         }
     }
 
     // Explicitly shut down the renderer before destroying it — this ensures
     // all sub-renderers free their VMA allocations in the correct order,
     // before VkContext::shutdown() calls vmaDestroyAllocator().
-    LOG_WARNING("Shutting down renderer...");
+    LOG_DEBUG("Shutting down renderer...");
     if (renderer) {
         renderer->shutdown();
     }
-    LOG_WARNING("Renderer shutdown complete, resetting...");
+    LOG_DEBUG("Renderer shutdown complete, resetting...");
     renderer.reset();
 
     // Shutdown audio coordinator after renderer (renderer may reference audio during shutdown)
@@ -873,22 +873,22 @@ void Application::shutdown() {
     }
     audioCoordinator_.reset();
 
-    LOG_WARNING("Resetting world...");
+    LOG_DEBUG("Resetting world...");
     world.reset();
-    LOG_WARNING("Resetting gameHandler...");
+    LOG_DEBUG("Resetting gameHandler...");
     gameHandler.reset();
     gameServices_ = {};
-    LOG_WARNING("Resetting authHandler...");
+    LOG_DEBUG("Resetting authHandler...");
     authHandler.reset();
-    LOG_WARNING("Resetting assetManager...");
+    LOG_DEBUG("Resetting assetManager...");
     assetManager.reset();
-    LOG_WARNING("Resetting uiManager...");
+    LOG_DEBUG("Resetting uiManager...");
     uiManager.reset();
-    LOG_WARNING("Resetting window...");
+    LOG_DEBUG("Resetting window...");
     window.reset();
 
     running = false;
-    LOG_WARNING("Application shutdown complete");
+    LOG_DEBUG("Application shutdown complete");
 }
 
 void Application::setState(AppState newState) {
