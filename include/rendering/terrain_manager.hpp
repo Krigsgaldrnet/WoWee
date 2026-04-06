@@ -366,6 +366,11 @@ private:
     std::condition_variable queueCV;
     std::deque<TileCoord> loadQueue;
     std::queue<std::shared_ptr<PendingTile>> readyQueue;
+    // Maximum number of prepared-but-not-finalized tiles in readyQueue.
+    // Each prepared tile can hold 100–500 MB of decoded textures in RAM.
+    // Workers sleep when this limit is reached, letting the main thread
+    // finalize (GPU-upload + free) before more tiles are prepared.
+    static constexpr size_t maxReadyQueueSize_ = 3;
 
     // In-RAM tile cache (LRU) to avoid re-reading from disk
     struct CachedTile {
