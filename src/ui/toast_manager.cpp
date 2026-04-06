@@ -2,6 +2,7 @@
 #include "game/game_handler.hpp"
 #include "core/application.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/animation_controller.hpp"
 #include "audio/audio_coordinator.hpp"
 #include "audio/ui_sound_manager.hpp"
 
@@ -469,7 +470,7 @@ void ToastManager::triggerDing(uint32_t newLevel, uint32_t hpDelta, uint32_t man
         }
     }
     if (auto* renderer = services_.renderer) {
-        renderer->playEmote("cheer");
+        if (auto* ac = renderer->getAnimationController()) ac->playEmote("cheer");
     }
 }
 

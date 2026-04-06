@@ -380,7 +380,7 @@ AnimOutput CombatFSM::resolve(const Input& in, const AnimCapabilitySet& caps,
                 }
             }
             if (animId == 0) {
-                LOG_WARNING("CombatFSM: MELEE_SWING resolved animId=0, falling back to STAND");
+                LOG_DEBUG("CombatFSM: MELEE_SWING resolved animId=0, falling back to STAND");
                 animId = anim::STAND;
             }
             loop = false;

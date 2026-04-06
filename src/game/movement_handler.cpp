@@ -23,7 +23,7 @@ namespace wowee {
 namespace game {
 
 MovementHandler::MovementHandler(GameHandler& owner)
-    : owner_(owner), movementInfo(owner.movementInfo) {}
+    : owner_(owner), movementInfo(owner.movementInfoRef()) {}
 
 void MovementHandler::registerOpcodes(DispatchTable& table) {
     // Creature movement
@@ -51,8 +51,8 @@ void MovementHandler::registerOpcodes(DispatchTable& table) {
             return [this, synthFlags](network::Packet& packet) {
                 if (!packet.hasRemaining(1)) return;
                 uint64_t guid = packet.readPackedGuid();
-                if (guid == 0 || guid == owner_.playerGuid || !owner_.unitMoveFlagsCallback_) return;
-                owner_.unitMoveFlagsCallback_(guid, synthFlags);
+                if (guid == 0 || guid == owner_.getPlayerGuid() || !owner_.unitMoveFlagsCallbackRef()) return;
+                owner_.unitMoveFlagsCallbackRef()(guid, synthFlags);
             };
         };
         table[Opcode::SMSG_SPLINE_MOVE_SET_WALK_MODE] = makeSynthHandler(0x00000100u);
@@ -70,7 +70,7 @@ void MovementHandler::registerOpcodes(DispatchTable& table) {
             uint64_t guid = packet.readPackedGuid();
             if (!packet.hasRemaining(4)) return;
             float speed = packet.readFloat();
-            if (guid == owner_.playerGuid && std::isfinite(speed) && speed > 0.01f && speed < 200.0f)
+            if (guid == owner_.getPlayerGuid() && std::isfinite(speed) && speed > 0.01f && speed < 200.0f)
                 this->*member = speed;
         };
     };
@@ -198,8 +198,8 @@ void MovementHandler::registerOpcodes(DispatchTable& table) {
         // PackedGuid + synthesised move-flags=0 → clears flying animation.
         if (!packet.hasRemaining(1)) return;
         uint64_t guid = packet.readPackedGuid();
-        if (guid == 0 || guid == owner_.playerGuid || !owner_.unitMoveFlagsCallback_) return;
-        owner_.unitMoveFlagsCallback_(guid, 0u); // clear flying/CAN_FLY
+        if (guid == 0 || guid == owner_.getPlayerGuid() || !owner_.unitMoveFlagsCallbackRef()) return;
+        owner_.unitMoveFlagsCallbackRef()(guid, 0u); // clear flying/CAN_FLY
     };
 
     // Remaining spline speed opcodes — same factory as above.
@@ -277,7 +277,7 @@ void MovementHandler::handleClientControlUpdate(network::Packet& packet) {
         }
     }
     bool allowMovement = (packet.readUInt8() != 0);
-    if (controlGuid == 0 || controlGuid == owner_.playerGuid) {
+    if (controlGuid == 0 || controlGuid == owner_.getPlayerGuid()) {
         bool changed = (serverMovementAllowed_ != allowMovement);
         serverMovementAllowed_ = allowMovement;
         if (changed && !allowMovement) {
@@ -332,8 +332,8 @@ uint32_t MovementHandler::nextMovementTimestampMs() {
 // ============================================================
 
 void MovementHandler::sendMovement(Opcode opcode) {
-    if (owner_.state != WorldState::IN_WORLD) {
-        LOG_WARNING("Cannot send movement in state: ", (int)owner_.state);
+    if (owner_.getState() != WorldState::IN_WORLD) {
+        LOG_WARNING("Cannot send movement in state: ", (int)owner_.getState());
         return;
     }
 
@@ -347,7 +347,7 @@ void MovementHandler::sendMovement(Opcode opcode) {
         (opcode == Opcode::MSG_MOVE_STOP_SWIM);
     if (!serverMovementAllowed_ && !taxiAllowed) return;
     if ((onTaxiFlight_ || taxiMountActive_) && !taxiAllowed) return;
-    if (owner_.resurrectPending_ && !taxiAllowed) return;
+    if (owner_.resurrectPendingRef() && !taxiAllowed) return;
 
     // Always send a strictly increasing non-zero client movement clock value.
     const uint32_t movementTime = nextMovementTimestampMs();
@@ -477,10 +477,10 @@ void MovementHandler::sendMovement(Opcode opcode) {
     // Fire PLAYER_STARTED/STOPPED_MOVING on movement state transitions
     {
         const bool isMoving = (movementInfo.flags & kMoveMask) != 0;
-        if (isMoving && !wasMoving && owner_.addonEventCallback_)
-            owner_.addonEventCallback_("PLAYER_STARTED_MOVING", {});
-        else if (!isMoving && wasMoving && owner_.addonEventCallback_)
-            owner_.addonEventCallback_("PLAYER_STOPPED_MOVING", {});
+        if (isMoving && !wasMoving && owner_.addonEventCallbackRef())
+            owner_.addonEventCallbackRef()("PLAYER_STARTED_MOVING", {});
+        else if (!isMoving && wasMoving && owner_.addonEventCallbackRef())
+            owner_.addonEventCallbackRef()("PLAYER_STOPPED_MOVING", {});
     }
 
     if (opcode == Opcode::MSG_MOVE_SET_FACING) {
@@ -507,8 +507,8 @@ void MovementHandler::sendMovement(Opcode opcode) {
     }
 
     bool includeTransportInWire = owner_.isOnTransport();
-    if (includeTransportInWire && owner_.transportManager_) {
-        if (auto* tr = owner_.transportManager_->getTransport(owner_.playerTransportGuid_); tr && tr->isM2) {
+    if (includeTransportInWire && owner_.getTransportManager()) {
+        if (auto* tr = owner_.getTransportManager()->getTransport(owner_.playerTransportGuidRef()); tr && tr->isM2) {
             includeTransportInWire = false;
         }
     }
@@ -516,11 +516,11 @@ void MovementHandler::sendMovement(Opcode opcode) {
     // Add transport data if player is on a server-recognized transport
     if (includeTransportInWire) {
         bool transportResolved = false;
-        if (owner_.transportManager_) {
-            auto* tr = owner_.transportManager_->getTransport(owner_.playerTransportGuid_);
+        if (owner_.getTransportManager()) {
+            auto* tr = owner_.getTransportManager()->getTransport(owner_.playerTransportGuidRef());
             if (tr) {
                 transportResolved = true;
-                glm::vec3 composed = owner_.transportManager_->getPlayerWorldPosition(owner_.playerTransportGuid_, owner_.playerTransportOffset_);
+                glm::vec3 composed = owner_.getTransportManager()->getPlayerWorldPosition(owner_.playerTransportGuidRef(), owner_.playerTransportOffsetRef());
                 movementInfo.x = composed.x;
                 movementInfo.y = composed.y;
                 movementInfo.z = composed.z;
@@ -530,7 +530,7 @@ void MovementHandler::sendMovement(Opcode opcode) {
             // Transport not tracked — don't send ONTRANSPORT to the server.
             // Sending stale transport GUID + local offset causes the server to
             // compute a bad world position and teleport us to map origin.
-            LOG_WARNING("sendMovement: transport 0x", std::hex, owner_.playerTransportGuid_,
+            LOG_WARNING("sendMovement: transport 0x", std::hex, owner_.playerTransportGuidRef(),
                         std::dec, " not found — clearing transport state");
             includeTransportInWire = false;
             owner_.clearPlayerTransport();
@@ -538,17 +538,17 @@ void MovementHandler::sendMovement(Opcode opcode) {
     }
     if (includeTransportInWire) {
         movementInfo.flags |= static_cast<uint32_t>(MovementFlags::ONTRANSPORT);
-        movementInfo.transportGuid = owner_.playerTransportGuid_;
-        movementInfo.transportX = owner_.playerTransportOffset_.x;
-        movementInfo.transportY = owner_.playerTransportOffset_.y;
-        movementInfo.transportZ = owner_.playerTransportOffset_.z;
+        movementInfo.transportGuid = owner_.playerTransportGuidRef();
+        movementInfo.transportX = owner_.playerTransportOffsetRef().x;
+        movementInfo.transportY = owner_.playerTransportOffsetRef().y;
+        movementInfo.transportZ = owner_.playerTransportOffsetRef().z;
         movementInfo.transportTime = movementInfo.time;
         movementInfo.transportSeat = -1;
         movementInfo.transportTime2 = movementInfo.time;
 
         float transportYawCanonical = 0.0f;
-        if (owner_.transportManager_) {
-            if (auto* tr = owner_.transportManager_->getTransport(owner_.playerTransportGuid_); tr) {
+        if (owner_.getTransportManager()) {
+            if (auto* tr = owner_.getTransportManager()->getTransport(owner_.playerTransportGuidRef()); tr) {
                 if (tr->hasServerYaw) {
                     transportYawCanonical = tr->serverYaw;
                 } else {
@@ -614,12 +614,12 @@ void MovementHandler::sendMovement(Opcode opcode) {
 
     // Detect near-origin position on Eastern Kingdoms (map 0) — this would place
     // the player near Alterac Mountains and is almost certainly a bug.
-    if (owner_.currentMapId_ == 0 &&
+    if (owner_.getCurrentMapId() == 0 &&
         std::abs(movementInfo.x) < 500.0f && std::abs(movementInfo.y) < 500.0f) {
         LOG_WARNING("sendMovement: position near map origin! canonical=(",
                     movementInfo.x, ", ", movementInfo.y, ", ", movementInfo.z,
                     ") onTransport=", owner_.isOnTransport(),
-                    " transportGuid=0x", std::hex, owner_.playerTransportGuid_, std::dec,
+                    " transportGuid=0x", std::hex, owner_.playerTransportGuidRef(), std::dec,
                     " flags=0x", std::hex, movementInfo.flags, std::dec);
     }
 
@@ -632,7 +632,7 @@ void MovementHandler::sendMovement(Opcode opcode) {
 
     // Periodic position audit — log every ~60 heartbeats (~30s) to trace position drift.
     if (opcode == Opcode::MSG_MOVE_HEARTBEAT && ++heartbeatLogCount_ % 60 == 0) {
-        LOG_WARNING("HEARTBEAT #", heartbeatLogCount_, " canonical=(",
+        LOG_DEBUG("HEARTBEAT #", heartbeatLogCount_, " canonical=(",
                     movementInfo.x, ",", movementInfo.y, ",", movementInfo.z,
                     ") server=(", wireInfo.x, ",", wireInfo.y, ",", wireInfo.z,
                     ") flags=0x", std::hex, movementInfo.flags, std::dec);
@@ -650,10 +650,10 @@ void MovementHandler::sendMovement(Opcode opcode) {
     }
 
     // Build and send movement packet (expansion-specific format)
-    auto packet = owner_.packetParsers_
-        ? owner_.packetParsers_->buildMovementPacket(opcode, wireInfo, owner_.playerGuid)
-        : MovementPacket::build(opcode, wireInfo, owner_.playerGuid);
-    owner_.socket->send(packet);
+    auto packet = owner_.getPacketParsers()
+        ? owner_.getPacketParsers()->buildMovementPacket(opcode, wireInfo, owner_.getPlayerGuid())
+        : MovementPacket::build(opcode, wireInfo, owner_.getPlayerGuid());
+    owner_.getSocket()->send(packet);
 
     if (opcode == Opcode::MSG_MOVE_HEARTBEAT) {
         lastHeartbeatSendTimeMs_ = movementInfo.time;
@@ -707,13 +707,13 @@ void MovementHandler::forceClearTaxiAndMovementState() {
     taxiStartGrace_ = 0.0f;
     onTaxiFlight_ = false;
 
-    if (taxiMountActive_ && owner_.mountCallback_) {
-        owner_.mountCallback_(0);
+    if (taxiMountActive_ && owner_.mountCallbackRef()) {
+        owner_.mountCallbackRef()(0);
     }
     taxiMountActive_ = false;
     taxiMountDisplayId_ = 0;
-    owner_.currentMountDisplayId_ = 0;
-    owner_.vehicleId_ = 0;
+    owner_.currentMountDisplayIdRef() = 0;
+    owner_.vehicleIdRef() = 0;
     // Death/resurrect state is intentionally NOT cleared here.
     // Previously this method reset 10 death-related fields despite being named
     // "forceClearTaxiAndMovementState", which could cancel pending resurrections
@@ -725,7 +725,7 @@ void MovementHandler::forceClearTaxiAndMovementState() {
     movementInfo.transportGuid = 0;
     owner_.clearPlayerTransport();
 
-    if (owner_.socket && owner_.state == WorldState::IN_WORLD) {
+    if (owner_.getSocket() && owner_.getState() == WorldState::IN_WORLD) {
         sendMovement(Opcode::MSG_MOVE_STOP);
         sendMovement(Opcode::MSG_MOVE_STOP_STRAFE);
         sendMovement(Opcode::MSG_MOVE_STOP_TURN);
@@ -755,32 +755,32 @@ void MovementHandler::setOrientation(float orientation) {
 // ============================================================
 
 void MovementHandler::dismount() {
-    if (!owner_.socket) return;
-    uint32_t savedMountAura = owner_.mountAuraSpellId_;
-    if (owner_.currentMountDisplayId_ != 0 || taxiMountActive_) {
-        if (owner_.mountCallback_) {
-            owner_.mountCallback_(0);
+    if (!owner_.getSocket()) return;
+    uint32_t savedMountAura = owner_.mountAuraSpellIdRef();
+    if (owner_.currentMountDisplayIdRef() != 0 || taxiMountActive_) {
+        if (owner_.mountCallbackRef()) {
+            owner_.mountCallbackRef()(0);
         }
-        owner_.currentMountDisplayId_ = 0;
+        owner_.currentMountDisplayIdRef() = 0;
         taxiMountActive_ = false;
         taxiMountDisplayId_ = 0;
-        owner_.mountAuraSpellId_ = 0;
+        owner_.mountAuraSpellIdRef() = 0;
         LOG_INFO("Dismount: cleared local mount state");
     }
     uint16_t cancelMountWire = wireOpcode(Opcode::CMSG_CANCEL_MOUNT_AURA);
     if (cancelMountWire != 0xFFFF) {
         network::Packet pkt(cancelMountWire);
-        owner_.socket->send(pkt);
+        owner_.getSocket()->send(pkt);
         LOG_INFO("Sent CMSG_CANCEL_MOUNT_AURA");
     } else if (savedMountAura != 0) {
         auto pkt = CancelAuraPacket::build(savedMountAura);
-        owner_.socket->send(pkt);
+        owner_.getSocket()->send(pkt);
         LOG_INFO("Sent CMSG_CANCEL_AURA (mount spell ", savedMountAura, ") — Classic fallback");
     } else {
         for (const auto& a : owner_.getPlayerAuras()) {
-            if (!a.isEmpty() && a.maxDurationMs < 0 && a.casterGuid == owner_.playerGuid) {
+            if (!a.isEmpty() && a.maxDurationMs < 0 && a.casterGuid == owner_.getPlayerGuid()) {
                 auto pkt = CancelAuraPacket::build(a.spellId);
-                owner_.socket->send(pkt);
+                owner_.getSocket()->send(pkt);
                 LOG_INFO("Sent CMSG_CANCEL_AURA (spell ", a.spellId, ") — brute force dismount");
             }
         }
@@ -800,9 +800,9 @@ network::Packet MovementHandler::buildForceAck(Opcode ackOpcode, uint32_t counte
     const bool legacyGuid =
         isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
     if (legacyGuid) {
-        ack.writeUInt64(owner_.playerGuid);
+        ack.writeUInt64(owner_.getPlayerGuid());
     } else {
-        ack.writePackedGuid(owner_.playerGuid);
+        ack.writePackedGuid(owner_.getPlayerGuid());
     }
     ack.writeUInt32(counter);
 
@@ -823,8 +823,8 @@ network::Packet MovementHandler::buildForceAck(Opcode ackOpcode, uint32_t counte
         wire.transportY = serverTransport.y;
         wire.transportZ = serverTransport.z;
     }
-    if (owner_.packetParsers_) {
-        owner_.packetParsers_->writeMovementPayload(ack, wire);
+    if (owner_.getPacketParsers()) {
+        owner_.getPacketParsers()->writeMovementPayload(ack, wire);
     } else {
         MovementPacket::writeMovementPayload(ack, wire);
     }
@@ -849,7 +849,7 @@ void MovementHandler::handleForceSpeedChange(network::Packet& packet, const char
     LOG_INFO("SMSG_FORCE_", name, "_CHANGE: guid=0x", std::hex, guid, std::dec,
              " counter=", counter, " speed=", newSpeed);
 
-    if (guid != owner_.playerGuid) return;
+    if (guid != owner_.getPlayerGuid()) return;
 
     // Validate BEFORE sending ACK — if we echo a bad speed back to the server
     // but don't apply it locally, the client and server desync on movement speed.
@@ -858,10 +858,10 @@ void MovementHandler::handleForceSpeedChange(network::Packet& packet, const char
         return;
     }
 
-    if (owner_.socket) {
+    if (owner_.getSocket()) {
         auto ack = buildForceAck(ackOpcode, counter);
         ack.writeFloat(newSpeed);
-        owner_.socket->send(ack);
+        owner_.getSocket()->send(ack);
     }
 
     if (speedStorage) *speedStorage = newSpeed;
@@ -870,12 +870,12 @@ void MovementHandler::handleForceSpeedChange(network::Packet& packet, const char
 void MovementHandler::handleForceRunSpeedChange(network::Packet& packet) {
     handleForceSpeedChange(packet, "RUN_SPEED", Opcode::CMSG_FORCE_RUN_SPEED_CHANGE_ACK, &serverRunSpeed_);
 
-    if (!onTaxiFlight_ && !taxiMountActive_ && owner_.currentMountDisplayId_ != 0 && serverRunSpeed_ <= 8.5f) {
+    if (!onTaxiFlight_ && !taxiMountActive_ && owner_.currentMountDisplayIdRef() != 0 && serverRunSpeed_ <= 8.5f) {
         LOG_INFO("Auto-clearing mount from speed change: speed=", serverRunSpeed_,
-                 " displayId=", owner_.currentMountDisplayId_);
-        owner_.currentMountDisplayId_ = 0;
-        if (owner_.mountCallback_) {
-            owner_.mountCallback_(0);
+                 " displayId=", owner_.currentMountDisplayIdRef());
+        owner_.currentMountDisplayIdRef() = 0;
+        if (owner_.mountCallbackRef()) {
+            owner_.mountCallbackRef()(0);
         }
     }
 }
@@ -891,7 +891,7 @@ void MovementHandler::handleForceMoveRootState(network::Packet& packet, bool roo
     LOG_INFO(rooted ? "SMSG_FORCE_MOVE_ROOT" : "SMSG_FORCE_MOVE_UNROOT",
              ": guid=0x", std::hex, guid, std::dec, " counter=", counter);
 
-    if (guid != owner_.playerGuid) return;
+    if (guid != owner_.getPlayerGuid()) return;
 
     if (rooted) {
         movementInfo.flags |= static_cast<uint32_t>(MovementFlags::ROOT);
@@ -899,10 +899,10 @@ void MovementHandler::handleForceMoveRootState(network::Packet& packet, bool roo
         movementInfo.flags &= ~static_cast<uint32_t>(MovementFlags::ROOT);
     }
 
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     Opcode ackOp = rooted ? Opcode::CMSG_FORCE_MOVE_ROOT_ACK : Opcode::CMSG_FORCE_MOVE_UNROOT_ACK;
     if (wireOpcode(ackOp) == 0xFFFF) return;
-    owner_.socket->send(buildForceAck(ackOp, counter));
+    owner_.getSocket()->send(buildForceAck(ackOp, counter));
 }
 
 void MovementHandler::handleForceMoveFlagChange(network::Packet& packet, const char* name,
@@ -916,7 +916,7 @@ void MovementHandler::handleForceMoveFlagChange(network::Packet& packet, const c
 
     LOG_INFO("SMSG_FORCE_", name, ": guid=0x", std::hex, guid, std::dec, " counter=", counter);
 
-    if (guid != owner_.playerGuid) return;
+    if (guid != owner_.getPlayerGuid()) return;
 
     if (flag != 0) {
         if (set) {
@@ -926,9 +926,9 @@ void MovementHandler::handleForceMoveFlagChange(network::Packet& packet, const c
         }
     }
 
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     if (wireOpcode(ackOpcode) == 0xFFFF) return;
-    owner_.socket->send(buildForceAck(ackOpcode, counter));
+    owner_.getSocket()->send(buildForceAck(ackOpcode, counter));
 }
 
 void MovementHandler::handleMoveSetCollisionHeight(network::Packet& packet) {
@@ -942,15 +942,15 @@ void MovementHandler::handleMoveSetCollisionHeight(network::Packet& packet) {
     LOG_INFO("SMSG_MOVE_SET_COLLISION_HGT: guid=0x", std::hex, guid, std::dec,
              " counter=", counter, " height=", height);
 
-    if (guid != owner_.playerGuid) return;
-    if (!owner_.socket) return;
+    if (guid != owner_.getPlayerGuid()) return;
+    if (!owner_.getSocket()) return;
 
     if (wireOpcode(Opcode::CMSG_MOVE_SET_COLLISION_HGT_ACK) == 0xFFFF) return;
     // buildForceAck now handles transport coordinate conversion, fixing the
     // previous omission that caused desync when riding boats/zeppelins.
     auto ack = buildForceAck(Opcode::CMSG_MOVE_SET_COLLISION_HGT_ACK, counter);
     ack.writeFloat(height);
-    owner_.socket->send(ack);
+    owner_.getSocket()->send(ack);
 }
 
 void MovementHandler::handleMoveKnockBack(network::Packet& packet) {
@@ -969,15 +969,15 @@ void MovementHandler::handleMoveKnockBack(network::Packet& packet) {
              " counter=", counter, " vcos=", vcos, " vsin=", vsin,
              " hspeed=", hspeed, " vspeed=", vspeed);
 
-    if (guid != owner_.playerGuid) return;
+    if (guid != owner_.getPlayerGuid()) return;
 
-    if (owner_.knockBackCallback_) {
-        owner_.knockBackCallback_(vcos, vsin, hspeed, vspeed);
+    if (owner_.knockBackCallbackRef()) {
+        owner_.knockBackCallbackRef()(vcos, vsin, hspeed, vspeed);
     }
 
-    if (!owner_.socket) return;
+    if (!owner_.getSocket()) return;
     if (wireOpcode(Opcode::CMSG_MOVE_KNOCK_BACK_ACK) == 0xFFFF) return;
-    owner_.socket->send(buildForceAck(Opcode::CMSG_MOVE_KNOCK_BACK_ACK, counter));
+    owner_.getSocket()->send(buildForceAck(Opcode::CMSG_MOVE_KNOCK_BACK_ACK, counter));
 }
 
 // ============================================================
@@ -998,7 +998,7 @@ void MovementHandler::handleMoveSetSpeed(network::Packet& packet) {
     float speed = packet.readFloat();
     if (!std::isfinite(speed) || speed <= 0.01f || speed > 200.0f) return;
 
-    if (moverGuid != owner_.playerGuid) return;
+    if (moverGuid != owner_.getPlayerGuid()) return;
     const uint16_t wireOp = packet.getOpcode();
     if      (wireOp == wireOpcode(Opcode::MSG_MOVE_SET_RUN_SPEED))        serverRunSpeed_      = speed;
     else if (wireOp == wireOpcode(Opcode::MSG_MOVE_SET_RUN_BACK_SPEED))   serverRunBackSpeed_  = speed;
@@ -1013,13 +1013,13 @@ void MovementHandler::handleOtherPlayerMovement(network::Packet& packet) {
     const bool otherMoveTbc = isClassicLikeExpansion() || isActiveExpansion("tbc");
     uint64_t moverGuid = otherMoveTbc
         ? packet.readUInt64() : packet.readPackedGuid();
-    if (moverGuid == owner_.playerGuid || moverGuid == 0) {
+    if (moverGuid == owner_.getPlayerGuid() || moverGuid == 0) {
         return;
     }
 
     MovementInfo info = {};
     info.flags = packet.readUInt32();
-    uint8_t flags2Size = owner_.packetParsers_ ? owner_.packetParsers_->movementFlags2Size() : 2;
+    uint8_t flags2Size = owner_.getPacketParsers() ? owner_.getPacketParsers()->movementFlags2Size() : 2;
     if (flags2Size == 2) info.flags2 = packet.readUInt16();
     else if (flags2Size == 1) info.flags2 = packet.readUInt8();
     info.time = packet.readUInt32();
@@ -1028,7 +1028,7 @@ void MovementHandler::handleOtherPlayerMovement(network::Packet& packet) {
     info.z = packet.readFloat();
     info.orientation = packet.readFloat();
 
-    const uint32_t wireTransportFlag = owner_.packetParsers_ ? owner_.packetParsers_->wireOnTransportFlag() : 0x00000200;
+    const uint32_t wireTransportFlag = owner_.getPacketParsers() ? owner_.getPacketParsers()->wireOnTransportFlag() : 0x00000200;
     const bool onTransport = (info.flags & wireTransportFlag) != 0;
     uint64_t transportGuid = 0;
     float tLocalX = 0, tLocalY = 0, tLocalZ = 0, tLocalO = 0;
@@ -1057,11 +1057,11 @@ void MovementHandler::handleOtherPlayerMovement(network::Packet& packet) {
     glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(info.x, info.y, info.z));
     float canYaw = core::coords::serverToCanonicalYaw(info.orientation);
 
-    if (onTransport && transportGuid != 0 && owner_.transportManager_) {
+    if (onTransport && transportGuid != 0 && owner_.getTransportManager()) {
         glm::vec3 localCanonical = core::coords::serverToCanonical(glm::vec3(tLocalX, tLocalY, tLocalZ));
         owner_.setTransportAttachment(moverGuid, entity->getType(), transportGuid, localCanonical, true,
                                core::coords::serverToCanonicalYaw(tLocalO));
-        glm::vec3 worldPos = owner_.transportManager_->getPlayerWorldPosition(transportGuid, localCanonical);
+        glm::vec3 worldPos = owner_.getTransportManager()->getPlayerWorldPosition(transportGuid, localCanonical);
         canonical = worldPos;
     } else if (!onTransport) {
         owner_.clearTransportAttachment(moverGuid);
@@ -1094,17 +1094,17 @@ void MovementHandler::handleOtherPlayerMovement(network::Packet& packet) {
     const float entityDuration = isStopOpcode ? 0.0f : (durationMs / 1000.0f);
     entity->startMoveTo(canonical.x, canonical.y, canonical.z, canYaw, entityDuration);
 
-    if (owner_.creatureMoveCallback_) {
+    if (owner_.creatureMoveCallbackRef()) {
         const uint32_t notifyDuration = isStopOpcode ? 0u : durationMs;
-        owner_.creatureMoveCallback_(moverGuid, canonical.x, canonical.y, canonical.z, notifyDuration);
+        owner_.creatureMoveCallbackRef()(moverGuid, canonical.x, canonical.y, canonical.z, notifyDuration);
     }
 
-    if (owner_.unitAnimHintCallback_ && isJumpOpcode) {
-        owner_.unitAnimHintCallback_(moverGuid, 38u);
+    if (owner_.unitAnimHintCallbackRef() && isJumpOpcode) {
+        owner_.unitAnimHintCallbackRef()(moverGuid, 38u);
     }
 
-    if (owner_.unitMoveFlagsCallback_) {
-        owner_.unitMoveFlagsCallback_(moverGuid, info.flags);
+    if (owner_.unitMoveFlagsCallbackRef()) {
+        owner_.unitMoveFlagsCallbackRef()(moverGuid, info.flags);
     }
 }
 
@@ -1279,7 +1279,7 @@ void MovementHandler::handleCompressedMoves(network::Packet& packet) {
             handleMonsterMove(subPacket);
         } else if (entry.opcode == monsterMoveTransportWire) {
             handleMonsterMoveTransport(subPacket);
-        } else if (owner_.state == WorldState::IN_WORLD &&
+        } else if (owner_.getState() == WorldState::IN_WORLD &&
                    std::find(kMoveOpcodes.begin(), kMoveOpcodes.end(), entry.opcode) != kMoveOpcodes.end()) {
             handleOtherPlayerMovement(subPacket);
         } else {
@@ -1370,13 +1370,13 @@ void MovementHandler::handleMonsterMove(network::Packet& packet) {
         bool parsed = false;
         if (hasWrappedForm) {
             network::Packet wrappedPacket(packet.getOpcode(), stripped);
-            if (owner_.packetParsers_->parseMonsterMove(wrappedPacket, data)) {
+            if (owner_.getPacketParsers()->parseMonsterMove(wrappedPacket, data)) {
                 parsed = true;
             }
         }
         if (!parsed) {
             network::Packet decompPacket(packet.getOpcode(), decompressed);
-            if (owner_.packetParsers_->parseMonsterMove(decompPacket, data)) {
+            if (owner_.getPacketParsers()->parseMonsterMove(decompPacket, data)) {
                 parsed = true;
             }
         }
@@ -1392,11 +1392,11 @@ void MovementHandler::handleMonsterMove(network::Packet& packet) {
             }
             return;
         }
-    } else if (!owner_.packetParsers_->parseMonsterMove(packet, data)) {
+    } else if (!owner_.getPacketParsers()->parseMonsterMove(packet, data)) {
         std::vector<uint8_t> stripped;
         if (stripWrappedSubpacket(rawData, stripped)) {
             network::Packet wrappedPacket(packet.getOpcode(), stripped);
-            if (owner_.packetParsers_->parseMonsterMove(wrappedPacket, data)) {
+            if (owner_.getPacketParsers()->parseMonsterMove(wrappedPacket, data)) {
                 logWrappedUncompressedFallbackUsed();
             } else {
                 logMonsterMoveParseFailure("Failed to parse SMSG_MONSTER_MOVE");
@@ -1457,8 +1457,8 @@ void MovementHandler::handleMonsterMove(network::Packet& packet) {
         entity->startMoveTo(destCanonical.x, destCanonical.y, destCanonical.z,
                             orientation, data.duration / 1000.0f);
 
-        if (owner_.creatureMoveCallback_) {
-            owner_.creatureMoveCallback_(data.guid,
+        if (owner_.creatureMoveCallbackRef()) {
+            owner_.creatureMoveCallbackRef()(data.guid,
                 destCanonical.x, destCanonical.y, destCanonical.z,
                 data.duration);
         }
@@ -1468,8 +1468,8 @@ void MovementHandler::handleMonsterMove(network::Packet& packet) {
         entity->setPosition(posCanonical.x, posCanonical.y, posCanonical.z,
                             entity->getOrientation());
 
-        if (owner_.creatureMoveCallback_) {
-            owner_.creatureMoveCallback_(data.guid,
+        if (owner_.creatureMoveCallbackRef()) {
+            owner_.creatureMoveCallbackRef()(data.guid,
                 posCanonical.x, posCanonical.y, posCanonical.z, 0);
         }
     } else if (data.moveType == 4) {
@@ -1477,8 +1477,8 @@ void MovementHandler::handleMonsterMove(network::Packet& packet) {
         glm::vec3 posCanonical = core::coords::serverToCanonical(
             glm::vec3(data.x, data.y, data.z));
         entity->setPosition(posCanonical.x, posCanonical.y, posCanonical.z, orientation);
-        if (owner_.creatureMoveCallback_) {
-            owner_.creatureMoveCallback_(data.guid,
+        if (owner_.creatureMoveCallbackRef()) {
+            owner_.creatureMoveCallbackRef()(data.guid,
                 posCanonical.x, posCanonical.y, posCanonical.z, 0);
         }
     } else if (data.moveType == 3 && data.facingTarget != 0) {
@@ -1508,13 +1508,13 @@ void MovementHandler::handleMonsterMoveTransport(network::Packet& packet) {
     if (!entity) return;
 
     if (packet.getReadPos() + 5 > packet.getSize()) {
-        if (owner_.transportManager_) {
+        if (owner_.getTransportManager()) {
             glm::vec3 localCanonical = core::coords::serverToCanonical(glm::vec3(localX, localY, localZ));
             owner_.setTransportAttachment(moverGuid, entity->getType(), transportGuid, localCanonical, false, 0.0f);
-            glm::vec3 worldPos = owner_.transportManager_->getPlayerWorldPosition(transportGuid, localCanonical);
+            glm::vec3 worldPos = owner_.getTransportManager()->getPlayerWorldPosition(transportGuid, localCanonical);
             entity->setPosition(worldPos.x, worldPos.y, worldPos.z, entity->getOrientation());
-            if (entity->getType() == ObjectType::UNIT && owner_.creatureMoveCallback_)
-                owner_.creatureMoveCallback_(moverGuid, worldPos.x, worldPos.y, worldPos.z, 0);
+            if (entity->getType() == ObjectType::UNIT && owner_.creatureMoveCallbackRef())
+                owner_.creatureMoveCallbackRef()(moverGuid, worldPos.x, worldPos.y, worldPos.z, 0);
         }
         return;
     }
@@ -1523,13 +1523,13 @@ void MovementHandler::handleMonsterMoveTransport(network::Packet& packet) {
     uint8_t moveType = packet.readUInt8();
 
     if (moveType == 1) {
-        if (owner_.transportManager_) {
+        if (owner_.getTransportManager()) {
             glm::vec3 localCanonical = core::coords::serverToCanonical(glm::vec3(localX, localY, localZ));
             owner_.setTransportAttachment(moverGuid, entity->getType(), transportGuid, localCanonical, false, 0.0f);
-            glm::vec3 worldPos = owner_.transportManager_->getPlayerWorldPosition(transportGuid, localCanonical);
+            glm::vec3 worldPos = owner_.getTransportManager()->getPlayerWorldPosition(transportGuid, localCanonical);
             entity->setPosition(worldPos.x, worldPos.y, worldPos.z, entity->getOrientation());
-            if (entity->getType() == ObjectType::UNIT && owner_.creatureMoveCallback_)
-                owner_.creatureMoveCallback_(moverGuid, worldPos.x, worldPos.y, worldPos.z, 0);
+            if (entity->getType() == ObjectType::UNIT && owner_.creatureMoveCallbackRef())
+                owner_.creatureMoveCallbackRef()(moverGuid, worldPos.x, worldPos.y, worldPos.z, 0);
         }
         return;
     }
@@ -1604,7 +1604,7 @@ void MovementHandler::handleMonsterMoveTransport(network::Packet& packet) {
         }
     }
 
-    if (!owner_.transportManager_) {
+    if (!owner_.getTransportManager()) {
         LOG_WARNING("SMSG_MONSTER_MOVE_TRANSPORT: TransportManager not available for mover 0x",
                     std::hex, moverGuid, std::dec);
         return;
@@ -1614,7 +1614,7 @@ void MovementHandler::handleMonsterMoveTransport(network::Packet& packet) {
 
     if (hasDest && duration > 0) {
         glm::vec3 destLocalCanonical = core::coords::serverToCanonical(glm::vec3(destLocalX, destLocalY, destLocalZ));
-        glm::vec3 destWorld  = owner_.transportManager_->getPlayerWorldPosition(transportGuid, destLocalCanonical);
+        glm::vec3 destWorld  = owner_.getTransportManager()->getPlayerWorldPosition(transportGuid, destLocalCanonical);
 
         if (moveType == 0) {
             float dx = destLocalCanonical.x - startLocalCanonical.x;
@@ -1626,18 +1626,18 @@ void MovementHandler::handleMonsterMoveTransport(network::Packet& packet) {
         owner_.setTransportAttachment(moverGuid, entity->getType(), transportGuid, destLocalCanonical, false, 0.0f);
         entity->startMoveTo(destWorld.x, destWorld.y, destWorld.z, facingAngle, duration / 1000.0f);
 
-        if (entity->getType() == ObjectType::UNIT && owner_.creatureMoveCallback_)
-            owner_.creatureMoveCallback_(moverGuid, destWorld.x, destWorld.y, destWorld.z, duration);
+        if (entity->getType() == ObjectType::UNIT && owner_.creatureMoveCallbackRef())
+            owner_.creatureMoveCallbackRef()(moverGuid, destWorld.x, destWorld.y, destWorld.z, duration);
 
         LOG_DEBUG("SMSG_MONSTER_MOVE_TRANSPORT: mover=0x", std::hex, moverGuid,
                   " transport=0x", transportGuid, std::dec,
                   " dur=", duration, "ms dest=(", destWorld.x, ",", destWorld.y, ",", destWorld.z, ")");
     } else {
-        glm::vec3 startWorld = owner_.transportManager_->getPlayerWorldPosition(transportGuid, startLocalCanonical);
+        glm::vec3 startWorld = owner_.getTransportManager()->getPlayerWorldPosition(transportGuid, startLocalCanonical);
         owner_.setTransportAttachment(moverGuid, entity->getType(), transportGuid, startLocalCanonical, false, 0.0f);
         entity->setPosition(startWorld.x, startWorld.y, startWorld.z, facingAngle);
-        if (entity->getType() == ObjectType::UNIT && owner_.creatureMoveCallback_)
-            owner_.creatureMoveCallback_(moverGuid, startWorld.x, startWorld.y, startWorld.z, 0);
+        if (entity->getType() == ObjectType::UNIT && owner_.creatureMoveCallbackRef())
+            owner_.creatureMoveCallbackRef()(moverGuid, startWorld.x, startWorld.y, startWorld.z, 0);
     }
 }
 
@@ -1686,25 +1686,25 @@ void MovementHandler::handleTeleportAck(network::Packet& packet) {
     movementInfo.flags = 0;
 
     // Clear cast bar on teleport — SpellHandler owns the casting_ flag
-    if (owner_.spellHandler_) owner_.spellHandler_->resetCastState();
+    if (owner_.getSpellHandler()) owner_.getSpellHandler()->resetCastState();
 
-    if (owner_.socket) {
+    if (owner_.getSocket()) {
         network::Packet ack(wireOpcode(Opcode::MSG_MOVE_TELEPORT_ACK));
         const bool legacyGuidAck =
             isActiveExpansion("classic") || isActiveExpansion("tbc") || isActiveExpansion("turtle");
         if (legacyGuidAck) {
-            ack.writeUInt64(owner_.playerGuid);
+            ack.writeUInt64(owner_.getPlayerGuid());
         } else {
-            ack.writePackedGuid(owner_.playerGuid);
+            ack.writePackedGuid(owner_.getPlayerGuid());
         }
         ack.writeUInt32(counter);
         ack.writeUInt32(moveTime);
-        owner_.socket->send(ack);
+        owner_.getSocket()->send(ack);
         LOG_INFO("Sent MSG_MOVE_TELEPORT_ACK response");
     }
 
-    if (owner_.worldEntryCallback_) {
-        owner_.worldEntryCallback_(owner_.currentMapId_, serverX, serverY, serverZ, false);
+    if (owner_.worldEntryCallbackRef()) {
+        owner_.worldEntryCallbackRef()(owner_.currentMapIdRef(), serverX, serverY, serverZ, false);
     }
 }
 
@@ -1724,8 +1724,8 @@ void MovementHandler::handleNewWorld(network::Packet& packet) {
              " pos=(", serverX, ", ", serverY, ", ", serverZ, ")",
              " orient=", orientation);
 
-    const bool isSameMap       = (mapId == owner_.currentMapId_);
-    const bool isResurrection  = owner_.resurrectPending_;
+    const bool isSameMap       = (mapId == owner_.currentMapIdRef());
+    const bool isResurrection  = owner_.resurrectPendingRef();
     if (isSameMap && isResurrection) {
         LOG_INFO("SMSG_NEW_WORLD same-map resurrection — skipping world reload");
 
@@ -1737,32 +1737,32 @@ void MovementHandler::handleNewWorld(network::Packet& packet) {
         movementInfo.flags  = 0;
         movementInfo.flags2 = 0;
 
-        owner_.resurrectPending_       = false;
-        owner_.resurrectRequestPending_ = false;
-        owner_.releasedSpirit_         = false;
-        owner_.playerDead_             = false;
-        owner_.repopPending_           = false;
-        owner_.pendingSpiritHealerGuid_ = 0;
-        owner_.resurrectCasterGuid_    = 0;
-        owner_.corpseMapId_            = 0;
-        owner_.corpseGuid_             = 0;
+        owner_.resurrectPendingRef()       = false;
+        owner_.resurrectRequestPendingRef() = false;
+        owner_.releasedSpiritRef()         = false;
+        owner_.playerDeadRef()             = false;
+        owner_.repopPendingRef()           = false;
+        owner_.pendingSpiritHealerGuidRef() = 0;
+        owner_.resurrectCasterGuidRef()    = 0;
+        owner_.corpseMapIdRef()            = 0;
+        owner_.corpseGuidRef()             = 0;
         owner_.clearHostileAttackers();
         owner_.stopAutoAttack();
-        owner_.tabCycleStale = true;
+        owner_.tabCycleStaleRef() = true;
         owner_.resetCastState();
 
-        if (owner_.socket) {
+        if (owner_.getSocket()) {
             network::Packet ack(wireOpcode(Opcode::MSG_MOVE_WORLDPORT_ACK));
-            owner_.socket->send(ack);
+            owner_.getSocket()->send(ack);
             LOG_INFO("Sent MSG_MOVE_WORLDPORT_ACK (resurrection)");
         }
         return;
     }
 
-    owner_.currentMapId_ = mapId;
-    owner_.inInstance_ = false;
-    if (owner_.socket) {
-        owner_.socket->tracePacketsFor(std::chrono::seconds(12), "new_world");
+    owner_.currentMapIdRef() = mapId;
+    owner_.inInstanceRef() = false;
+    if (owner_.getSocket()) {
+        owner_.getSocket()->tracePacketsFor(std::chrono::seconds(12), "new_world");
     }
 
     glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(serverX, serverY, serverZ));
@@ -1773,8 +1773,8 @@ void MovementHandler::handleNewWorld(network::Packet& packet) {
     movementInfo.flags = 0;
     movementInfo.flags2 = 0;
     serverMovementAllowed_ = true;
-    owner_.resurrectPending_ = false;
-    owner_.resurrectRequestPending_ = false;
+    owner_.resurrectPendingRef() = false;
+    owner_.resurrectRequestPendingRef() = false;
     onTaxiFlight_ = false;
     taxiMountActive_ = false;
     taxiActivatePending_ = false;
@@ -1782,59 +1782,59 @@ void MovementHandler::handleNewWorld(network::Packet& packet) {
     taxiClientPath_.clear();
     taxiRecoverPending_ = false;
     taxiStartGrace_ = 0.0f;
-    owner_.currentMountDisplayId_ = 0;
+    owner_.currentMountDisplayIdRef() = 0;
     taxiMountDisplayId_ = 0;
-    if (owner_.mountCallback_) {
-        owner_.mountCallback_(0);
+    if (owner_.mountCallbackRef()) {
+        owner_.mountCallbackRef()(0);
     }
 
     for (const auto& [guid, entity] : owner_.getEntityManager().getEntities()) {
-        if (guid == owner_.playerGuid) continue;
-        if (entity->getType() == ObjectType::UNIT && owner_.creatureDespawnCallback_) {
-            owner_.creatureDespawnCallback_(guid);
-        } else if (entity->getType() == ObjectType::PLAYER && owner_.playerDespawnCallback_) {
-            owner_.playerDespawnCallback_(guid);
-        } else if (entity->getType() == ObjectType::GAMEOBJECT && owner_.gameObjectDespawnCallback_) {
-            owner_.gameObjectDespawnCallback_(guid);
+        if (guid == owner_.getPlayerGuid()) continue;
+        if (entity->getType() == ObjectType::UNIT && owner_.creatureDespawnCallbackRef()) {
+            owner_.creatureDespawnCallbackRef()(guid);
+        } else if (entity->getType() == ObjectType::PLAYER && owner_.playerDespawnCallbackRef()) {
+            owner_.playerDespawnCallbackRef()(guid);
+        } else if (entity->getType() == ObjectType::GAMEOBJECT && owner_.gameObjectDespawnCallbackRef()) {
+            owner_.gameObjectDespawnCallbackRef()(guid);
         }
     }
-    owner_.otherPlayerVisibleItemEntries_.clear();
-    owner_.otherPlayerVisibleDirty_.clear();
+    owner_.otherPlayerVisibleItemEntriesRef().clear();
+    owner_.otherPlayerVisibleDirtyRef().clear();
     otherPlayerMoveTimeMs_.clear();
-    if (owner_.spellHandler_) owner_.spellHandler_->clearUnitCastStates();
-    owner_.unitAurasCache_.clear();
+    if (owner_.getSpellHandler()) owner_.getSpellHandler()->clearUnitCastStates();
+    owner_.unitAurasCacheRef().clear();
     owner_.clearCombatText();
     owner_.getEntityManager().clear();
     owner_.clearHostileAttackers();
-    owner_.worldStates_.clear();
-    owner_.gossipPois_.clear();
-    owner_.worldStateMapId_ = mapId;
-    owner_.worldStateZoneId_ = 0;
-    owner_.activeAreaTriggers_.clear();
-    owner_.areaTriggerCheckTimer_ = -5.0f;
-    owner_.areaTriggerSuppressFirst_ = true;
+    owner_.worldStatesRef().clear();
+    owner_.gossipPoisRef().clear();
+    owner_.worldStateMapIdRef() = mapId;
+    owner_.worldStateZoneIdRef() = 0;
+    owner_.activeAreaTriggersRef().clear();
+    owner_.areaTriggerCheckTimerRef() = -5.0f;
+    owner_.areaTriggerSuppressFirstRef() = true;
     owner_.stopAutoAttack();
     owner_.resetCastState();
 
-    if (owner_.socket) {
+    if (owner_.getSocket()) {
         network::Packet ack(wireOpcode(Opcode::MSG_MOVE_WORLDPORT_ACK));
-        owner_.socket->send(ack);
+        owner_.getSocket()->send(ack);
         LOG_INFO("Sent MSG_MOVE_WORLDPORT_ACK");
     }
 
-    owner_.timeSinceLastPing = 0.0f;
-    if (owner_.socket) {
+    owner_.timeSinceLastPingRef() = 0.0f;
+    if (owner_.getSocket()) {
         LOG_WARNING("World transfer keepalive: sending immediate ping after MSG_MOVE_WORLDPORT_ACK");
         owner_.sendPing();
     }
 
-    if (owner_.worldEntryCallback_) {
-        owner_.worldEntryCallback_(mapId, serverX, serverY, serverZ, isSameMap);
+    if (owner_.worldEntryCallbackRef()) {
+        owner_.worldEntryCallbackRef()(mapId, serverX, serverY, serverZ, isSameMap);
     }
 
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("PLAYER_ENTERING_WORLD", {"0"});
-        owner_.addonEventCallback_("ZONE_CHANGED_NEW_AREA", {});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("PLAYER_ENTERING_WORLD", {"0"});
+        owner_.addonEventCallbackRef()("ZONE_CHANGED_NEW_AREA", {});
     }
 }
 
@@ -1994,11 +1994,11 @@ void MovementHandler::handleShowTaxiNodes(network::Packet& packet) {
 }
 
 void MovementHandler::applyTaxiMountForCurrentNode() {
-    if (taxiMountActive_ || !owner_.mountCallback_) return;
+    if (taxiMountActive_ || !owner_.mountCallbackRef()) return;
     auto it = taxiNodes_.find(currentTaxiData_.nearestNode);
     if (it == taxiNodes_.end()) {
         bool isAlliance = true;
-        switch (owner_.playerRace_) {
+        switch (owner_.playerRaceRef()) {
             case Race::ORC: case Race::UNDEAD: case Race::TAUREN: case Race::TROLL:
             case Race::GOBLIN: case Race::BLOOD_ELF:
                 isAlliance = false; break;
@@ -2008,12 +2008,12 @@ void MovementHandler::applyTaxiMountForCurrentNode() {
         taxiMountDisplayId_ = mountId;
         taxiMountActive_ = true;
         LOG_INFO("Taxi mount fallback (node ", currentTaxiData_.nearestNode, " not in DBC): displayId=", mountId);
-        owner_.mountCallback_(mountId);
+        owner_.mountCallbackRef()(mountId);
         return;
     }
 
     bool isAlliance = true;
-    switch (owner_.playerRace_) {
+    switch (owner_.playerRaceRef()) {
         case Race::ORC:
         case Race::UNDEAD:
         case Race::TAUREN:
@@ -2059,7 +2059,7 @@ void MovementHandler::applyTaxiMountForCurrentNode() {
         taxiMountDisplayId_ = mountId;
         taxiMountActive_ = true;
         LOG_INFO("Taxi mount apply: displayId=", mountId);
-        owner_.mountCallback_(mountId);
+        owner_.mountCallbackRef()(mountId);
     }
 }
 
@@ -2139,13 +2139,13 @@ void MovementHandler::startClientTaxiPath(const std::vector<uint32_t>& pathNodes
     movementInfo.orientation = initialOrientation;
     sanitizeMovementForTaxi();
 
-    auto playerEntity = owner_.getEntityManager().getEntity(owner_.playerGuid);
+    auto playerEntity = owner_.getEntityManager().getEntity(owner_.getPlayerGuid());
     if (playerEntity) {
         playerEntity->setPosition(start.x, start.y, start.z, initialOrientation);
     }
 
-    if (owner_.taxiOrientationCallback_) {
-        owner_.taxiOrientationCallback_(initialRenderYaw, initialPitch, initialRoll);
+    if (owner_.taxiOrientationCallbackRef()) {
+        owner_.taxiOrientationCallbackRef()(initialRenderYaw, initialPitch, initialRoll);
     }
 
     LOG_INFO("Taxi flight started with ", taxiClientPath_.size(), " spline waypoints");
@@ -2154,7 +2154,7 @@ void MovementHandler::startClientTaxiPath(const std::vector<uint32_t>& pathNodes
 
 void MovementHandler::updateClientTaxi(float deltaTime) {
     if (!taxiClientActive_ || taxiClientPath_.size() < 2) return;
-    auto playerEntity = owner_.getEntityManager().getEntity(owner_.playerGuid);
+    auto playerEntity = owner_.getEntityManager().getEntity(owner_.getPlayerGuid());
 
     auto finishTaxiFlight = [&]() {
             if (!taxiClientPath_.empty()) {
@@ -2172,17 +2172,17 @@ void MovementHandler::updateClientTaxi(float deltaTime) {
             taxiClientActive_ = false;
             onTaxiFlight_ = false;
             taxiLandingCooldown_ = 2.0f;
-            if (taxiMountActive_ && owner_.mountCallback_) {
-                owner_.mountCallback_(0);
+            if (taxiMountActive_ && owner_.mountCallbackRef()) {
+                owner_.mountCallbackRef()(0);
             }
             taxiMountActive_ = false;
             taxiMountDisplayId_ = 0;
-            owner_.currentMountDisplayId_ = 0;
+            owner_.currentMountDisplayIdRef() = 0;
             taxiClientPath_.clear();
             taxiRecoverPending_ = false;
             movementInfo.flags = 0;
             movementInfo.flags2 = 0;
-            if (owner_.socket) {
+            if (owner_.getSocket()) {
                 sendMovement(Opcode::MSG_MOVE_STOP);
                 sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
             }
@@ -2282,10 +2282,10 @@ void MovementHandler::updateClientTaxi(float deltaTime) {
     movementInfo.z = nextPos.z;
     movementInfo.orientation = smoothOrientation;
 
-    if (owner_.taxiOrientationCallback_) {
+    if (owner_.taxiOrientationCallbackRef()) {
         glm::vec3 renderTangent = core::coords::canonicalToRender(tangent);
         float renderYaw = std::atan2(renderTangent.y, renderTangent.x);
-        owner_.taxiOrientationCallback_(renderYaw, pitch, roll);
+        owner_.taxiOrientationCallbackRef()(renderYaw, pitch, roll);
     }
 }
 
@@ -2312,7 +2312,7 @@ void MovementHandler::handleActivateTaxiReply(network::Packet& packet) {
         taxiActivatePending_ = false;
         taxiActivateTimer_ = 0.0f;
         applyTaxiMountForCurrentNode();
-        if (owner_.socket) {
+        if (owner_.getSocket()) {
             sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
         }
         LOG_INFO("Taxi flight started!");
@@ -2327,8 +2327,8 @@ void MovementHandler::handleActivateTaxiReply(network::Packet& packet) {
         owner_.addSystemChatMessage("Cannot take that flight path.");
         taxiActivatePending_ = false;
         taxiActivateTimer_ = 0.0f;
-        if (taxiMountActive_ && owner_.mountCallback_) {
-            owner_.mountCallback_(0);
+        if (taxiMountActive_ && owner_.mountCallbackRef()) {
+            owner_.mountCallbackRef()(0);
         }
         taxiMountActive_ = false;
         taxiMountDisplayId_ = 0;
@@ -2343,8 +2343,8 @@ void MovementHandler::closeTaxi() {
         return;
     }
 
-    if (taxiMountActive_ && owner_.mountCallback_) {
-        owner_.mountCallback_(0);
+    if (taxiMountActive_ && owner_.mountCallbackRef()) {
+        owner_.mountCallbackRef()(0);
     }
     taxiMountActive_ = false;
     taxiMountDisplayId_ = 0;
@@ -2388,7 +2388,7 @@ uint32_t MovementHandler::getTaxiCostTo(uint32_t destNodeId) const {
 }
 
 void MovementHandler::activateTaxi(uint32_t destNodeId) {
-    if (!owner_.socket || owner_.state != WorldState::IN_WORLD) return;
+    if (!owner_.getSocket() || owner_.getState() != WorldState::IN_WORLD) return;
 
     if (taxiActivatePending_ || onTaxiFlight_) {
         return;
@@ -2399,8 +2399,8 @@ void MovementHandler::activateTaxi(uint32_t destNodeId) {
 
     if (owner_.isMounted()) {
         LOG_INFO("Taxi activate: dismounting current mount");
-        if (owner_.mountCallback_) owner_.mountCallback_(0);
-        owner_.currentMountDisplayId_ = 0;
+        if (owner_.mountCallbackRef()) owner_.mountCallbackRef()(0);
+        owner_.currentMountDisplayIdRef() = 0;
         dismount();
     }
 
@@ -2469,7 +2469,7 @@ void MovementHandler::activateTaxi(uint32_t destNodeId) {
     LOG_INFO("Taxi activate: start=", startNode, " dest=", destNodeId, " cost=", totalCost);
 
     auto basicPkt = ActivateTaxiPacket::build(taxiNpcGuid_, startNode, destNodeId);
-    owner_.socket->send(basicPkt);
+    owner_.getSocket()->send(basicPkt);
 
     taxiWindowOpen_ = false;
     taxiActivatePending_ = true;
@@ -2480,11 +2480,11 @@ void MovementHandler::activateTaxi(uint32_t destNodeId) {
         sanitizeMovementForTaxi();
         applyTaxiMountForCurrentNode();
     }
-    if (owner_.socket) {
+    if (owner_.getSocket()) {
         sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
     }
 
-    if (owner_.taxiPrecacheCallback_) {
+    if (owner_.taxiPrecacheCallbackRef()) {
         std::vector<glm::vec3> previewPath;
         for (size_t i = 0; i + 1 < path.size(); i++) {
             uint32_t fromNode = path[i];
@@ -2507,12 +2507,12 @@ void MovementHandler::activateTaxi(uint32_t destNodeId) {
             }
         }
         if (previewPath.size() >= 2) {
-            owner_.taxiPrecacheCallback_(previewPath);
+            owner_.taxiPrecacheCallbackRef()(previewPath);
         }
     }
 
-    if (owner_.taxiFlightStartCallback_) {
-        owner_.taxiFlightStartCallback_();
+    if (owner_.taxiFlightStartCallbackRef()) {
+        owner_.taxiFlightStartCallbackRef()();
     }
     startClientTaxiPath(path);
 }
@@ -2522,8 +2522,8 @@ void MovementHandler::activateTaxi(uint32_t destNodeId) {
 // ============================================================
 
 void MovementHandler::loadAreaTriggerDbc() {
-    if (owner_.areaTriggerDbcLoaded_) return;
-    owner_.areaTriggerDbcLoaded_ = true;
+    if (owner_.areaTriggerDbcLoadedRef()) return;
+    owner_.areaTriggerDbcLoadedRef() = true;
 
     auto* am = owner_.services().assetManager;
     if (!am || !am->isInitialized()) return;
@@ -2534,7 +2534,7 @@ void MovementHandler::loadAreaTriggerDbc() {
         return;
     }
 
-    owner_.areaTriggers_.reserve(dbc->getRecordCount());
+    owner_.areaTriggersRef().reserve(dbc->getRecordCount());
     for (uint32_t i = 0; i < dbc->getRecordCount(); i++) {
         GameHandler::AreaTriggerEntry at;
         at.id     = dbc->getUInt32(i, 0);
@@ -2548,10 +2548,10 @@ void MovementHandler::loadAreaTriggerDbc() {
         at.boxWidth  = dbc->getFloat(i, 7);
         at.boxHeight = dbc->getFloat(i, 8);
         at.boxYaw    = dbc->getFloat(i, 9);
-        owner_.areaTriggers_.push_back(at);
+        owner_.areaTriggersRef().push_back(at);
     }
 
-    LOG_WARNING("Loaded ", owner_.areaTriggers_.size(), " area triggers from AreaTrigger.dbc");
+    LOG_DEBUG("Loaded ", owner_.areaTriggersRef().size(), " area triggers from AreaTrigger.dbc");
 }
 
 void MovementHandler::checkAreaTriggers() {
@@ -2559,7 +2559,7 @@ void MovementHandler::checkAreaTriggers() {
     if (onTaxiFlight_ || taxiClientActive_) return;
 
     loadAreaTriggerDbc();
-    if (owner_.areaTriggers_.empty()) return;
+    if (owner_.areaTriggersRef().empty()) return;
 
     const float px = movementInfo.x;
     const float py = movementInfo.y;
@@ -2568,23 +2568,23 @@ void MovementHandler::checkAreaTriggers() {
     // Sanity: if position is near map origin on Eastern Kingdoms (map 0),
     // something has corrupted movementInfo — skip area trigger check to
     // avoid firing Alterac/Hillsbrad triggers and causing a rogue teleport.
-    if (owner_.currentMapId_ == 0 && std::abs(px) < 500.0f && std::abs(py) < 500.0f) {
+    if (owner_.getCurrentMapId() == 0 && std::abs(px) < 500.0f && std::abs(py) < 500.0f) {
         LOG_WARNING("checkAreaTriggers: position near map origin (", px, ", ", py, ", ", pz,
                     ") on map 0 — skipping to avoid rogue teleport. onTransport=",
                     owner_.isOnTransport(), " transportGuid=0x", std::hex,
-                    owner_.playerTransportGuid_, std::dec);
+                    owner_.playerTransportGuidRef(), std::dec);
         return;
     }
 
     // On first check after map transfer, just mark which triggers we're inside
     // without firing them — prevents exit portal from immediately sending us back
-    bool suppressFirst = owner_.areaTriggerSuppressFirst_;
+    bool suppressFirst = owner_.areaTriggerSuppressFirstRef();
     if (suppressFirst) {
-        owner_.areaTriggerSuppressFirst_ = false;
+        owner_.areaTriggerSuppressFirstRef() = false;
     }
 
-    for (const auto& at : owner_.areaTriggers_) {
-        if (at.mapId != owner_.currentMapId_) continue;
+    for (const auto& at : owner_.areaTriggersRef()) {
+        if (at.mapId != owner_.currentMapIdRef()) continue;
 
         bool inside = false;
         if (at.radius > 0.0f) {
@@ -2616,8 +2616,8 @@ void MovementHandler::checkAreaTriggers() {
         }
 
         if (inside) {
-            if (owner_.activeAreaTriggers_.count(at.id) == 0) {
-                owner_.activeAreaTriggers_.insert(at.id);
+            if (owner_.activeAreaTriggersRef().count(at.id) == 0) {
+                owner_.activeAreaTriggersRef().insert(at.id);
 
                 if (suppressFirst) {
                     // After map transfer: mark triggers we're inside of, but don't fire them.
@@ -2630,13 +2630,13 @@ void MovementHandler::checkAreaTriggers() {
                     // server we're somewhere we're not and can cause rogue teleports.
                     network::Packet pkt(wireOpcode(Opcode::CMSG_AREATRIGGER));
                     pkt.writeUInt32(at.id);
-                    owner_.socket->send(pkt);
+                    owner_.getSocket()->send(pkt);
                     LOG_DEBUG("Fired CMSG_AREATRIGGER: id=", at.id);
                 }
             }
         } else {
             // Player left the trigger — allow re-fire on re-entry
-            owner_.activeAreaTriggers_.erase(at.id);
+            owner_.activeAreaTriggersRef().erase(at.id);
         }
     }
 }
@@ -2652,7 +2652,7 @@ void MovementHandler::setTransportAttachment(uint64_t childGuid, ObjectType type
         return;
     }
 
-    GameHandler::TransportAttachment& attachment = owner_.transportAttachments_[childGuid];
+    GameHandler::TransportAttachment& attachment = owner_.transportAttachmentsRef()[childGuid];
     attachment.type = type;
     attachment.transportGuid = transportGuid;
     attachment.localOffset = localOffset;
@@ -2664,11 +2664,11 @@ void MovementHandler::clearTransportAttachment(uint64_t childGuid) {
     if (childGuid == 0) {
         return;
     }
-    owner_.transportAttachments_.erase(childGuid);
+    owner_.transportAttachmentsRef().erase(childGuid);
 }
 
 void MovementHandler::updateAttachedTransportChildren(float /*deltaTime*/) {
-    if (!owner_.transportManager_ || owner_.transportAttachments_.empty()) {
+    if (!owner_.getTransportManager() || owner_.transportAttachmentsRef().empty()) {
         return;
     }
 
@@ -2677,19 +2677,19 @@ void MovementHandler::updateAttachedTransportChildren(float /*deltaTime*/) {
     std::vector<uint64_t> stale;
     stale.reserve(8);
 
-    for (const auto& [childGuid, attachment] : owner_.transportAttachments_) {
+    for (const auto& [childGuid, attachment] : owner_.transportAttachmentsRef()) {
         auto entity = owner_.getEntityManager().getEntity(childGuid);
         if (!entity) {
             stale.push_back(childGuid);
             continue;
         }
 
-        ActiveTransport* transport = owner_.transportManager_->getTransport(attachment.transportGuid);
+        ActiveTransport* transport = owner_.getTransportManager()->getTransport(attachment.transportGuid);
         if (!transport) {
             continue;
         }
 
-        glm::vec3 composed = owner_.transportManager_->getPlayerWorldPosition(
+        glm::vec3 composed = owner_.getTransportManager()->getPlayerWorldPosition(
             attachment.transportGuid, attachment.localOffset);
 
         float composedOrientation = entity->getOrientation();
@@ -2710,18 +2710,18 @@ void MovementHandler::updateAttachedTransportChildren(float /*deltaTime*/) {
         entity->setPosition(composed.x, composed.y, composed.z, composedOrientation);
 
         if (attachment.type == ObjectType::UNIT) {
-            if (owner_.creatureMoveCallback_) {
-                owner_.creatureMoveCallback_(childGuid, composed.x, composed.y, composed.z, 0);
+            if (owner_.creatureMoveCallbackRef()) {
+                owner_.creatureMoveCallbackRef()(childGuid, composed.x, composed.y, composed.z, 0);
             }
         } else if (attachment.type == ObjectType::GAMEOBJECT) {
-            if (owner_.gameObjectMoveCallback_) {
-                owner_.gameObjectMoveCallback_(childGuid, composed.x, composed.y, composed.z, composedOrientation);
+            if (owner_.gameObjectMoveCallbackRef()) {
+                owner_.gameObjectMoveCallbackRef()(childGuid, composed.x, composed.y, composed.z, composedOrientation);
             }
         }
     }
 
     for (uint64_t guid : stale) {
-        owner_.transportAttachments_.erase(guid);
+        owner_.transportAttachmentsRef().erase(guid);
     }
 }
 
@@ -2730,12 +2730,12 @@ void MovementHandler::updateAttachedTransportChildren(float /*deltaTime*/) {
 // ============================================================
 
 void MovementHandler::followTarget() {
-    if (owner_.state != WorldState::IN_WORLD) {
+    if (owner_.getState() != WorldState::IN_WORLD) {
         LOG_WARNING("Cannot follow: not in world");
         return;
     }
 
-    if (owner_.targetGuid == 0) {
+    if (owner_.getTargetGuid() == 0) {
         owner_.addSystemChatMessage("You must target someone to follow.");
         return;
     }
@@ -2747,14 +2747,14 @@ void MovementHandler::followTarget() {
     }
 
     // Set follow target
-    owner_.followTargetGuid_ = owner_.targetGuid;
+    owner_.followTargetGuidRef() = owner_.getTargetGuid();
 
     // Initialize render-space position from entity's canonical coords
-    owner_.followRenderPos_ = core::coords::canonicalToRender(glm::vec3(target->getX(), target->getY(), target->getZ()));
+    owner_.followRenderPosRef() = core::coords::canonicalToRender(glm::vec3(target->getX(), target->getY(), target->getZ()));
 
     // Tell camera controller to start auto-following
-    if (owner_.autoFollowCallback_) {
-        owner_.autoFollowCallback_(&owner_.followRenderPos_);
+    if (owner_.autoFollowCallbackRef()) {
+        owner_.autoFollowCallbackRef()(&owner_.followRenderPosRef());
     }
 
     // Get target name
@@ -2770,17 +2770,17 @@ void MovementHandler::followTarget() {
     }
 
     owner_.addSystemChatMessage("Now following " + targetName + ".");
-    LOG_INFO("Following target: ", targetName, " (GUID: 0x", std::hex, owner_.targetGuid, std::dec, ")");
+    LOG_INFO("Following target: ", targetName, " (GUID: 0x", std::hex, owner_.getTargetGuid(), std::dec, ")");
     owner_.fireAddonEvent("AUTOFOLLOW_BEGIN", {});
 }
 
 void MovementHandler::cancelFollow() {
-    if (owner_.followTargetGuid_ == 0) {
+    if (owner_.followTargetGuidRef() == 0) {
         return;
     }
-    owner_.followTargetGuid_ = 0;
-    if (owner_.autoFollowCallback_) {
-        owner_.autoFollowCallback_(nullptr);
+    owner_.followTargetGuidRef() = 0;
+    if (owner_.autoFollowCallbackRef()) {
+        owner_.autoFollowCallbackRef()(nullptr);
     }
     owner_.addSystemChatMessage("You stop following.");
     owner_.fireAddonEvent("AUTOFOLLOW_END", {});

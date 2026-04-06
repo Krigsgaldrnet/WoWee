@@ -80,6 +80,23 @@ public:
         return (it != unitCastStates_.end() && it->second.casting) ? &it->second : nullptr;
     }
     void clearUnitCastStates() { unitCastStates_.clear(); }
+    void removeUnitCastState(uint64_t guid) { unitCastStates_.erase(guid); }
+
+    // Aura cache mutation (formerly accessed via friend)
+    void clearUnitAurasCache() { unitAurasCache_.clear(); }
+    void removeUnitAuraCache(uint64_t guid) { unitAurasCache_.erase(guid); }
+
+    // Known spells mutation (formerly accessed via friend)
+    void addKnownSpell(uint32_t spellId) { knownSpells_.insert(spellId); }
+    bool hasKnownSpell(uint32_t spellId) const { return knownSpells_.count(spellId) > 0; }
+
+    // Target aura mutation (formerly accessed via friend)
+    void clearTargetAuras() { for (auto& slot : targetAuras_) slot = AuraSlot{}; }
+
+    // Player aura mutation (formerly accessed via friend)
+    void resetPlayerAuras(size_t capacity) { playerAuras_.clear(); playerAuras_.resize(capacity); }
+    AuraSlot& getPlayerAuraSlotRef(size_t slot) { return playerAuras_[slot]; }
+    std::vector<AuraSlot>& getPlayerAurasMut() { return playerAuras_; }
 
     // Target cast helpers
     bool isTargetCasting() const;
@@ -204,6 +221,20 @@ public:
     // Update per-frame timers (call from GameHandler::update)
     void updateTimers(float dt);
 
+    // Packet handlers dispatched from GameHandler's opcode table
+    void handlePetSpells(network::Packet& packet);
+    void handleListStabledPets(network::Packet& packet);
+
+    // Pet stable commands (called via GameHandler delegation)
+    void requestStabledPetList();
+    void stablePet(uint8_t slot);
+    void unstablePet(uint32_t petNumber);
+
+    // DBC cache loading (called from GameHandler during login)
+    void loadSpellNameCache() const;
+    void loadSkillLineAbilityDbc();
+    void categorizeTrainerSpells();
+
 private:
     // --- Packet handlers ---
     void handleInitialSpells(network::Packet& packet);
@@ -214,13 +245,6 @@ private:
     void handleCooldownEvent(network::Packet& packet);
     void handleAuraUpdate(network::Packet& packet, bool isAll);
     void handleLearnedSpell(network::Packet& packet);
-    void handlePetSpells(network::Packet& packet);
-    void handleListStabledPets(network::Packet& packet);
-
-    // Pet stable
-    void requestStabledPetList();
-    void stablePet(uint8_t slot);
-    void unstablePet(uint32_t petNumber);
 
     void handleCastResult(network::Packet& packet);
     void handleSpellFailedOther(network::Packet& packet);
@@ -252,19 +276,11 @@ private:
     // Find the on-use spell for an item (trigger=0 Use or trigger=5 NoDelay).
     // CMSG_USE_ITEM requires a valid spellId or the server silently ignores it.
     uint32_t findOnUseSpellId(uint32_t itemId) const;
-    void loadSpellNameCache() const;
-    void loadSkillLineAbilityDbc();
-    void categorizeTrainerSpells();
     void handleSupercededSpell(network::Packet& packet);
     void handleRemovedSpell(network::Packet& packet);
     void handleUnlearnSpells(network::Packet& packet);
     void handleTalentsInfo(network::Packet& packet);
     void handleAchievementEarned(network::Packet& packet);
-
-    friend class GameHandler;
-    friend class InventoryHandler;
-    friend class CombatHandler;
-    friend class EntityController;
 
     GameHandler& owner_;
 

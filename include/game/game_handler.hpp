@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/game_interfaces.hpp"
 #include "game/world_packets.hpp"
 #include "game/character.hpp"
 #include "game/opcode_table.hpp"
@@ -125,7 +126,11 @@ using WorldConnectFailureCallback = std::function<void(const std::string& reason
  * - World entry
  * - Game packets
  */
-class GameHandler {
+class GameHandler : public IConnectionState,
+                     public ITargetingState,
+                     public IEntityAccess,
+                     public ISocialState,
+                     public IPvpState {
 public:
     // Talent data structures (aliased from handler_types.hpp)
     using TalentEntry = game::TalentEntry;
@@ -1825,7 +1830,11 @@ public:
     }
     // Convenience: invoke a callback with a sound manager obtained from the renderer.
     template<typename ManagerGetter, typename Callback>
-    void withSoundManager(ManagerGetter getter, Callback cb);
+    void withSoundManager(ManagerGetter getter, Callback cb) {
+        if (auto* ac = services_.audioCoordinator) {
+            if (auto* mgr = (ac->*getter)()) cb(mgr);
+        }
+    }
 
     // Reputation change toast: factionName, delta, new standing
     using RepChangeCallback = std::function<void(const std::string& factionName, int32_t delta, int32_t standing)>;
@@ -2138,17 +2147,370 @@ public:
      */
     void resetDbcCaches();
 
-private:
-    friend class ChatHandler;
-    friend class MovementHandler;
-    friend class CombatHandler;
-    friend class SpellHandler;
-    friend class InventoryHandler;
-    friend class SocialHandler;
-    friend class QuestHandler;
-    friend class WardenHandler;
-    friend class EntityController;
+    // ═══════════════════════════════════════════════════════════════════
+    //  Domain handler access — public accessors for friend-class elimination
+    // ═══════════════════════════════════════════════════════════════════
 
+    // ── Handler & Subsystem Accessors (unique_ptr → raw pointer) ─────
+    network::WorldSocket* getSocket() { return socket.get(); }
+    const network::WorldSocket* getSocket() const { return socket.get(); }
+    ChatHandler* getChatHandler() { return chatHandler_.get(); }
+    CombatHandler* getCombatHandler() { return combatHandler_.get(); }
+    MovementHandler* getMovementHandler() { return movementHandler_.get(); }
+    SpellHandler* getSpellHandler() { return spellHandler_.get(); }
+
+    // ── Mutable Accessors for Members with Existing Const Getters ────
+    void setTargetGuidRaw(uint64_t g) { targetGuid = g; }
+    uint64_t& lastTargetGuidRef() { return lastTargetGuid; }
+    uint64_t& focusGuidRef() { return focusGuid; }
+    uint64_t& mouseoverGuidRef() { return mouseoverGuid_; }
+    MovementInfo& movementInfoRef() { return movementInfo; }
+    Inventory& inventoryRef() { return inventory; }
+
+    // ── Core / Session ───────────────────────────────────────────────
+    uint32_t getBuild() const { return build; }
+    const std::vector<uint8_t>& getSessionKey() const { return sessionKey; }
+    auto& charactersRef() { return characters; }
+    auto& updateFieldTableRef() { return updateFieldTable_; }
+    auto& lastPlayerFieldsRef() { return lastPlayerFields_; }
+    auto& timeSinceLastPingRef() { return timeSinceLastPing; }
+    auto& activeCharacterGuidRef() { return activeCharacterGuid_; }
+
+    // ── Character & Appearance ───────────────────────────────────────
+    auto& chosenTitleBitRef() { return chosenTitleBit_; }
+    auto& cloakVisibleRef() { return cloakVisible_; }
+    auto& helmVisibleRef() { return helmVisible_; }
+    auto& currentMountDisplayIdRef() { return currentMountDisplayId_; }
+    auto& mountAuraSpellIdRef() { return mountAuraSpellId_; }
+    auto& shapeshiftFormIdRef() { return shapeshiftFormId_; }
+    auto& playerRaceRef() { return playerRace_; }
+    auto& serverPlayerLevelRef() { return serverPlayerLevel_; }
+
+    // ── AFK / DND ────────────────────────────────────────────────────
+    auto& afkMessageRef() { return afkMessage_; }
+    auto& afkStatusRef() { return afkStatus_; }
+    auto& dndMessageRef() { return dndMessage_; }
+    auto& dndStatusRef() { return dndStatus_; }
+
+    // ── Movement & Transport ─────────────────────────────────────────
+    auto& followRenderPosRef() { return followRenderPos_; }
+    auto& followTargetGuidRef() { return followTargetGuid_; }
+    auto& serverRunSpeedRef() { return serverRunSpeed_; }
+    auto& onTaxiFlightRef() { return onTaxiFlight_; }
+    auto& taxiLandingCooldownRef() { return taxiLandingCooldown_; }
+    auto& taxiMountActiveRef() { return taxiMountActive_; }
+    auto& taxiStartGraceRef() { return taxiStartGrace_; }
+    auto& vehicleIdRef() { return vehicleId_; }
+    auto& playerTransportGuidRef() { return playerTransportGuid_; }
+    auto& playerTransportOffsetRef() { return playerTransportOffset_; }
+    auto& playerTransportStickyGuidRef() { return playerTransportStickyGuid_; }
+    auto& playerTransportStickyTimerRef() { return playerTransportStickyTimer_; }
+    auto& transportAttachmentsRef() { return transportAttachments_; }
+
+    // ── Inventory & Equipment ────────────────────────────────────────
+    auto& actionBarRef() { return actionBar; }
+    auto& backpackSlotGuidsRef() { return backpackSlotGuids_; }
+    auto& equipSlotGuidsRef() { return equipSlotGuids_; }
+    auto& keyringSlotGuidsRef() { return keyringSlotGuids_; }
+    auto& containerContentsRef() { return containerContents_; }
+    auto& invSlotBaseRef() { return invSlotBase_; }
+    auto& packSlotBaseRef() { return packSlotBase_; }
+    auto& visibleItemEntryBaseRef() { return visibleItemEntryBase_; }
+    auto& visibleItemLayoutVerifiedRef() { return visibleItemLayoutVerified_; }
+    auto& visibleItemStrideRef() { return visibleItemStride_; }
+    auto& itemInfoCacheRef() { return itemInfoCache_; }
+    auto& lastEquipDisplayIdsRef() { return lastEquipDisplayIds_; }
+    auto& onlineEquipDirtyRef() { return onlineEquipDirty_; }
+    auto& onlineItemsRef() { return onlineItems_; }
+    auto& inspectedPlayerItemEntriesRef() { return inspectedPlayerItemEntries_; }
+    auto& otherPlayerVisibleDirtyRef() { return otherPlayerVisibleDirty_; }
+    auto& otherPlayerVisibleItemEntriesRef() { return otherPlayerVisibleItemEntries_; }
+    auto& otherPlayerMoveTimeMsRef() { return otherPlayerMoveTimeMs_; }
+    auto& pendingItemPushNotifsRef() { return pendingItemPushNotifs_; }
+    auto& pendingItemQueriesRef() { return pendingItemQueries_; }
+    auto& pendingMoneyDeltaRef() { return pendingMoneyDelta_; }
+    auto& pendingMoneyDeltaTimerRef() { return pendingMoneyDeltaTimer_; }
+    auto& pendingAutoInspectRef() { return pendingAutoInspect_; }
+    auto& pendingGameObjectLootRetriesRef() { return pendingGameObjectLootRetries_; }
+    auto& tempEnchantTimersRef() { return tempEnchantTimers_; }
+    auto& localLootStateRef() { return localLootState_; }
+    static const auto& getTempEnchantSlotNames() { return kTempEnchantSlotNames; }
+
+    // ── Combat & Player Stats ────────────────────────────────────────
+    auto& comboPointsRef() { return comboPoints_; }
+    auto& comboTargetRef() { return comboTarget_; }
+    auto& isRestingRef() { return isResting_; }
+    auto& playerArenaPointsRef() { return playerArenaPoints_; }
+    auto& playerArmorRatingRef() { return playerArmorRating_; }
+    auto& playerBlockPctRef() { return playerBlockPct_; }
+    auto& playerCombatRatingsRef() { return playerCombatRatings_; }
+    auto& playerCritPctRef() { return playerCritPct_; }
+    auto& playerDodgePctRef() { return playerDodgePct_; }
+    auto& playerHealBonusRef() { return playerHealBonus_; }
+    auto& playerHonorPointsRef() { return playerHonorPoints_; }
+    auto& playerMeleeAPRef() { return playerMeleeAP_; }
+    auto& playerMoneyCopperRef() { return playerMoneyCopper_; }
+    auto& playerNextLevelXpRef() { return playerNextLevelXp_; }
+    auto& playerParryPctRef() { return playerParryPct_; }
+    auto& playerRangedAPRef() { return playerRangedAP_; }
+    auto& playerRangedCritPctRef() { return playerRangedCritPct_; }
+    auto* playerResistancesArr() { return playerResistances_; }
+    auto& playerRestedXpRef() { return playerRestedXp_; }
+    auto* playerSpellCritPctArr() { return playerSpellCritPct_; }
+    auto* playerSpellDmgBonusArr() { return playerSpellDmgBonus_; }
+    auto& playerStatsArr() { return playerStats_; }
+    auto& playerXpRef() { return playerXp_; }
+
+    // ── Skills ───────────────────────────────────────────────────────
+    auto& playerSkillsRef() { return playerSkills_; }
+    auto& skillLineAbilityLoadedRef() { return skillLineAbilityLoaded_; }
+    auto& skillLineCategoriesRef() { return skillLineCategories_; }
+    auto& skillLineDbcLoadedRef() { return skillLineDbcLoaded_; }
+    auto& skillLineNamesRef() { return skillLineNames_; }
+    auto& spellToSkillLineRef() { return spellToSkillLine_; }
+
+    // ── Spells & Talents ─────────────────────────────────────────────
+    auto& activeTalentSpecRef() { return activeTalentSpec_; }
+    auto* unspentTalentPointsArr() { return unspentTalentPoints_; }
+    auto* learnedTalentsArr() { return learnedTalents_; }
+    auto& learnedGlyphsRef() { return learnedGlyphs_; }
+    auto& talentsInitializedRef() { return talentsInitialized_; }
+    auto& spellFlatModsRef() { return spellFlatMods_; }
+    auto& spellPctModsRef() { return spellPctMods_; }
+    auto& spellNameCacheRef() { return spellNameCache_; }
+    auto& spellNameCacheLoadedRef() { return spellNameCacheLoaded_; }
+
+    // ── Quests & Achievements ────────────────────────────────────────
+    auto& completedQuestsRef() { return completedQuests_; }
+    auto& npcQuestStatusRef() { return npcQuestStatus_; }
+    auto& achievementDatesRef() { return achievementDates_; }
+    auto& achievementNameCacheRef() { return achievementNameCache_; }
+    auto& earnedAchievementsRef() { return earnedAchievements_; }
+
+    // ── Social, Chat & Contacts ──────────────────────────────────────
+    auto& contactsRef() { return contacts_; }
+    auto& friendGuidsRef() { return friendGuids_; }
+    auto& friendsCacheRef() { return friendsCache; }
+    auto& ignoreCacheRef() { return ignoreCache; }
+    auto& ignoreListGuidsRef() { return ignoreListGuids_; }
+    auto& lastContactListCountRef() { return lastContactListCount_; }
+    auto& lastContactListMaskRef() { return lastContactListMask_; }
+    auto& lastWhisperSenderRef() { return lastWhisperSender_; }
+    auto& lastWhisperSenderGuidRef() { return lastWhisperSenderGuid_; }
+    auto& mailInboxRef() { return mailInbox_; }
+
+    // ── World, Map & Zones ───────────────────────────────────────────
+    auto& currentMapIdRef() { return currentMapId_; }
+    auto& inInstanceRef() { return inInstance_; }
+    auto& worldStateMapIdRef() { return worldStateMapId_; }
+    auto& worldStatesRef() { return worldStates_; }
+    auto& worldStateZoneIdRef() { return worldStateZoneId_; }
+    auto& minimapPingsRef() { return minimapPings_; }
+    auto& gossipPoisRef() { return gossipPois_; }
+    auto& playerExploredZonesRef() { return playerExploredZones_; }
+    auto& hasPlayerExploredZonesRef() { return hasPlayerExploredZones_; }
+    auto& factionStandingsRef() { return factionStandings_; }
+    auto& initialFactionsRef() { return initialFactions_; }
+    auto& watchedFactionIdRef() { return watchedFactionId_; }
+
+    // ── Corpse & Home Bind ───────────────────────────────────────────
+    auto& corpseGuidRef() { return corpseGuid_; }
+    auto& corpseMapIdRef() { return corpseMapId_; }
+    auto& corpseReclaimAvailableMsRef() { return corpseReclaimAvailableMs_; }
+    auto& corpseXRef() { return corpseX_; }
+    auto& corpseYRef() { return corpseY_; }
+    auto& corpseZRef() { return corpseZ_; }
+    auto& hasHomeBindRef() { return hasHomeBind_; }
+    auto& homeBindMapIdRef() { return homeBindMapId_; }
+    auto& homeBindPosRef() { return homeBindPos_; }
+
+    // ── Area Triggers ────────────────────────────────────────────────
+    auto& activeAreaTriggersRef() { return activeAreaTriggers_; }
+    auto& areaTriggerCheckTimerRef() { return areaTriggerCheckTimer_; }
+    auto& areaTriggerDbcLoadedRef() { return areaTriggerDbcLoaded_; }
+    auto& areaTriggerMsgsRef() { return areaTriggerMsgs_; }
+    auto& areaTriggersRef() { return areaTriggers_; }
+    auto& areaTriggerSuppressFirstRef() { return areaTriggerSuppressFirst_; }
+
+    // ── Death & Resurrection ─────────────────────────────────────────
+    auto& playerDeadRef() { return playerDead_; }
+    auto& releasedSpiritRef() { return releasedSpirit_; }
+    auto& repopPendingRef() { return repopPending_; }
+    auto& lastRepopRequestMsRef() { return lastRepopRequestMs_; }
+    auto& pendingSpiritHealerGuidRef() { return pendingSpiritHealerGuid_; }
+    auto& resurrectCasterGuidRef() { return resurrectCasterGuid_; }
+    auto& resurrectIsSpiritHealerRef() { return resurrectIsSpiritHealer_; }
+    auto& resurrectPendingRef() { return resurrectPending_; }
+    auto& resurrectRequestPendingRef() { return resurrectRequestPending_; }
+    auto& selfResAvailableRef() { return selfResAvailable_; }
+
+    // ── Summon & Battlefield ─────────────────────────────────────────
+    auto& pendingSummonRequestRef() { return pendingSummonRequest_; }
+    auto& summonerGuidRef() { return summonerGuid_; }
+    auto& summonerNameRef() { return summonerName_; }
+    auto& summonTimeoutSecRef() { return summonTimeoutSec_; }
+    auto& bfMgrInvitePendingRef() { return bfMgrInvitePending_; }
+
+    // ── Pet & Stable ─────────────────────────────────────────────────
+    auto& petActionSlotsRef() { return petActionSlots_; }
+    auto& petAutocastSpellsRef() { return petAutocastSpells_; }
+    auto& petCommandRef() { return petCommand_; }
+    auto& petGuidRef() { return petGuid_; }
+    auto& petReactRef() { return petReact_; }
+    auto& petSpellListRef() { return petSpellList_; }
+    auto& stabledPetsRef() { return stabledPets_; }
+    auto& stableMasterGuidRef() { return stableMasterGuid_; }
+    auto& stableNumSlotsRef() { return stableNumSlots_; }
+    auto& stableWindowOpenRef() { return stableWindowOpen_; }
+
+    // ── Trainer, GM & Misc ───────────────────────────────────────────
+    auto& currentTrainerListRef() { return currentTrainerList_; }
+    auto& trainerTabsRef() { return trainerTabs_; }
+    auto& gmTicketActiveRef() { return gmTicketActive_; }
+    auto& gmTicketTextRef() { return gmTicketText_; }
+    auto& bookPagesRef() { return bookPages_; }
+    auto& activeTotemSlotsRef() { return activeTotemSlots_; }
+    auto& unitAurasCacheRef() { return unitAurasCache_; }
+    auto& lastInteractedGoGuidRef() { return lastInteractedGoGuid_; }
+    auto& pendingGameObjectInteractGuidRef() { return pendingGameObjectInteractGuid_; }
+
+    // ── Tab Cycling ──────────────────────────────────────────────────
+    auto& tabCycleIndexRef() { return tabCycleIndex; }
+    auto& tabCycleListRef() { return tabCycleList; }
+    auto& tabCycleStaleRef() { return tabCycleStale; }
+
+    // ── UI & Event Callbacks ─────────────────────────────────────────
+    auto& achievementEarnedCallbackRef() { return achievementEarnedCallback_; }
+    auto& addonChatCallbackRef() { return addonChatCallback_; }
+    auto& addonEventCallbackRef() { return addonEventCallback_; }
+    auto& appearanceChangedCallbackRef() { return appearanceChangedCallback_; }
+    auto& autoFollowCallbackRef() { return autoFollowCallback_; }
+    auto& chargeCallbackRef() { return chargeCallback_; }
+    auto& chatBubbleCallbackRef() { return chatBubbleCallback_; }
+    auto& creatureDespawnCallbackRef() { return creatureDespawnCallback_; }
+    auto& creatureMoveCallbackRef() { return creatureMoveCallback_; }
+    auto& creatureSpawnCallbackRef() { return creatureSpawnCallback_; }
+    auto& emoteAnimCallbackRef() { return emoteAnimCallback_; }
+    auto& gameObjectDespawnCallbackRef() { return gameObjectDespawnCallback_; }
+    auto& gameObjectMoveCallbackRef() { return gameObjectMoveCallback_; }
+    auto& gameObjectSpawnCallbackRef() { return gameObjectSpawnCallback_; }
+    auto& gameObjectStateCallbackRef() { return gameObjectStateCallback_; }
+    auto& ghostStateCallbackRef() { return ghostStateCallback_; }
+    auto& hearthstonePreloadCallbackRef() { return hearthstonePreloadCallback_; }
+    auto& hitReactionCallbackRef() { return hitReactionCallback_; }
+    auto& itemLootCallbackRef() { return itemLootCallback_; }
+    auto& knockBackCallbackRef() { return knockBackCallback_; }
+    auto& lootWindowCallbackRef() { return lootWindowCallback_; }
+    auto& meleeSwingCallbackRef() { return meleeSwingCallback_; }
+    auto& mountCallbackRef() { return mountCallback_; }
+    auto& npcAggroCallbackRef() { return npcAggroCallback_; }
+    auto& npcDeathCallbackRef() { return npcDeathCallback_; }
+    auto& npcFarewellCallbackRef() { return npcFarewellCallback_; }
+    auto& npcGreetingCallbackRef() { return npcGreetingCallback_; }
+    auto& npcRespawnCallbackRef() { return npcRespawnCallback_; }
+    auto& npcSwingCallbackRef() { return npcSwingCallback_; }
+    auto& npcVendorCallbackRef() { return npcVendorCallback_; }
+    auto& openLfgCallbackRef() { return openLfgCallback_; }
+    auto& otherPlayerLevelUpCallbackRef() { return otherPlayerLevelUpCallback_; }
+    auto& playerDespawnCallbackRef() { return playerDespawnCallback_; }
+    auto& playerEquipmentCallbackRef() { return playerEquipmentCallback_; }
+    auto& playerHealthCallbackRef() { return playerHealthCallback_; }
+    auto& playerSpawnCallbackRef() { return playerSpawnCallback_; }
+    auto& pvpHonorCallbackRef() { return pvpHonorCallback_; }
+    auto& questCompleteCallbackRef() { return questCompleteCallback_; }
+    auto& questProgressCallbackRef() { return questProgressCallback_; }
+    auto& repChangeCallbackRef() { return repChangeCallback_; }
+    auto& spellCastAnimCallbackRef() { return spellCastAnimCallback_; }
+    auto& spellCastFailedCallbackRef() { return spellCastFailedCallback_; }
+    auto& sprintAuraCallbackRef() { return sprintAuraCallback_; }
+    auto& stealthStateCallbackRef() { return stealthStateCallback_; }
+    auto& stunStateCallbackRef() { return stunStateCallback_; }
+    auto& taxiFlightStartCallbackRef() { return taxiFlightStartCallback_; }
+    auto& taxiOrientationCallbackRef() { return taxiOrientationCallback_; }
+    auto& taxiPrecacheCallbackRef() { return taxiPrecacheCallback_; }
+    auto& transportMoveCallbackRef() { return transportMoveCallback_; }
+    auto& unitAnimHintCallbackRef() { return unitAnimHintCallback_; }
+    auto& unitMoveFlagsCallbackRef() { return unitMoveFlagsCallback_; }
+    auto& worldEntryCallbackRef() { return worldEntryCallback_; }
+
+    // ── Methods moved from private (domain handler use) ──────────────
+    void addCombatText(CombatTextEntry::Type type, int32_t amount, uint32_t spellId,
+                       bool isPlayerSource, uint8_t powerType = 0,
+                       uint64_t srcGuid = 0, uint64_t dstGuid = 0);
+    bool shouldLogSpellstealAura(uint64_t casterGuid, uint64_t victimGuid, uint32_t spellId);
+    void addSystemChatMessage(const std::string& message);
+    void sendPing();
+    void setTransportAttachment(uint64_t childGuid, ObjectType type,
+                                uint64_t transportGuid, const glm::vec3& localOffset,
+                                bool hasLocalOrientation, float localOrientation);
+    void clearTransportAttachment(uint64_t childGuid);
+    std::string guidToUnitId(uint64_t guid) const;
+    Unit* getUnitByGuid(uint64_t guid);
+    uint64_t resolveOnlineItemGuid(uint32_t itemId) const;
+    void rebuildOnlineInventory();
+    void maybeDetectVisibleItemLayout();
+    void updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields);
+    void detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields);
+    bool applyInventoryFields(const std::map<uint16_t, uint32_t>& fields);
+    void extractContainerFields(uint64_t containerGuid, const std::map<uint16_t, uint32_t>& fields);
+    void extractSkillFields(const std::map<uint16_t, uint32_t>& fields);
+    void extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields);
+    void applyQuestStateFromFields(const std::map<uint16_t, uint32_t>& fields);
+    void sanitizeMovementForTaxi();
+    void loadSpellNameCache() const;
+    void loadFactionNameCache() const;
+    void loadAchievementNameCache();
+    void loadSkillLineDbc();
+    void loadSkillLineAbilityDbc();
+    std::string getFactionName(uint32_t factionId) const;
+    std::string getLfgDungeonName(uint32_t dungeonId) const;
+    void queryItemInfo(uint32_t entry, uint64_t guid);
+
+    // --- Inner types exposed for former friend classes ---
+    struct TransportAttachment {
+        ObjectType type = ObjectType::OBJECT;
+        uint64_t transportGuid = 0;
+        glm::vec3 localOffset{0.0f};
+        float localOrientation = 0.0f;
+        bool hasLocalOrientation = false;
+    };
+    struct AreaTriggerEntry {
+        uint32_t id = 0;
+        uint32_t mapId = 0;
+        float x = 0, y = 0, z = 0;
+        float radius = 0;
+        float boxLength = 0, boxWidth = 0, boxHeight = 0;
+        float boxYaw = 0;
+    };
+    struct PendingLootRetry {
+        uint64_t guid = 0;
+        float timer = 0.0f;
+        uint8_t remainingRetries = 0;
+        bool sendLoot = false;
+    };
+    struct SpellNameEntry {
+        std::string name; std::string rank; std::string description;
+        uint32_t schoolMask = 0; uint8_t dispelType = 0; uint32_t attrEx = 0;
+        int32_t effectBasePoints[3] = {0, 0, 0};
+        float durationSec = 0.0f;
+    };
+    static constexpr size_t PLAYER_EXPLORED_ZONES_COUNT = 128;
+    std::string getAreaName(uint32_t areaId) const;
+    struct OnlineItemInfo {
+        uint32_t entry = 0;
+        uint32_t stackCount = 1;
+        uint32_t curDurability = 0;
+        uint32_t maxDurability = 0;
+        uint32_t permanentEnchantId = 0;
+        uint32_t temporaryEnchantId = 0;
+        std::array<uint32_t, 3> socketEnchantIds{};
+    };
+    bool isHostileFaction(uint32_t factionTemplateId) const {
+        auto it = factionHostileMap_.find(factionTemplateId);
+        return it != factionHostileMap_.end() ? it->second : true;
+    }
+
+private:
     // Dead: autoTargetAttacker moved to CombatHandler
 
     /**
@@ -2223,16 +2585,8 @@ private:
     void handlePong(network::Packet& packet);
 
     void handleItemQueryResponse(network::Packet& packet);
-    void queryItemInfo(uint32_t entry, uint64_t guid);
-    void rebuildOnlineInventory();
-    void maybeDetectVisibleItemLayout();
-    void updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields);
     void emitOtherPlayerEquipment(uint64_t guid);
     void emitAllOtherPlayerEquipment();
-    void detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields);
-    bool applyInventoryFields(const std::map<uint16_t, uint32_t>& fields);
-    void extractContainerFields(uint64_t containerGuid, const std::map<uint16_t, uint32_t>& fields);
-    uint64_t resolveOnlineItemGuid(uint32_t itemId) const;
 
     // handleAttackStart, handleAttackStop, handleAttackerStateUpdate,
     // handleSpellDamageLog, handleSpellHealLog removed
@@ -2257,8 +2611,6 @@ private:
     void clearPendingQuestAccept(uint32_t questId);
     void triggerQuestAcceptResync(uint32_t questId, uint64_t npcGuid, const char* reason);
     bool hasQuestInLog(uint32_t questId) const;
-    std::string guidToUnitId(uint64_t guid) const;
-    Unit* getUnitByGuid(uint64_t guid);
     std::string getQuestTitle(uint32_t questId) const;
     const QuestLogEntry* findQuestLogEntry(uint32_t questId) const;
     int findQuestLogSlotIndexFromServer(uint32_t questId) const;
@@ -2302,15 +2654,7 @@ private:
 
     // ---- Logout handlers ----
 
-    void addCombatText(CombatTextEntry::Type type, int32_t amount, uint32_t spellId, bool isPlayerSource, uint8_t powerType = 0,
-                       uint64_t srcGuid = 0, uint64_t dstGuid = 0);
-    bool shouldLogSpellstealAura(uint64_t casterGuid, uint64_t victimGuid, uint32_t spellId);
-    void addSystemChatMessage(const std::string& message);
 
-    /**
-     * Send CMSG_PING to server (heartbeat)
-     */
-    void sendPing();
 
     /**
      * Send CMSG_AUTH_SESSION to server
@@ -2332,10 +2676,6 @@ private:
      */
     void fail(const std::string& reason);
     void updateAttachedTransportChildren(float deltaTime);
-    void setTransportAttachment(uint64_t childGuid, ObjectType type, uint64_t transportGuid,
-                                const glm::vec3& localOffset, bool hasLocalOrientation,
-                                float localOrientation);
-    void clearTransportAttachment(uint64_t childGuid);
 
     // Explicit service dependencies (owned by Application)
     GameServices& services_;
@@ -2487,15 +2827,6 @@ private:
     uint64_t lastWhisperSenderGuid_ = 0;
 
     // ---- Online item tracking ----
-    struct OnlineItemInfo {
-        uint32_t entry = 0;
-        uint32_t stackCount = 1;
-        uint32_t curDurability = 0;
-        uint32_t maxDurability = 0;
-        uint32_t permanentEnchantId = 0;  // ITEM_ENCHANTMENT_SLOT 0 (enchanting)
-        uint32_t temporaryEnchantId = 0;  // ITEM_ENCHANTMENT_SLOT 1 (sharpening stones, poisons)
-        std::array<uint32_t, 3> socketEnchantIds{};  // ITEM_ENCHANTMENT_SLOT 2-4 (gems)
-    };
     std::unordered_map<uint64_t, OnlineItemInfo> onlineItems_;
     std::unordered_map<uint32_t, ItemQueryResponseData> itemInfoCache_;
     std::unordered_set<uint32_t> pendingItemQueries_;
@@ -2576,13 +2907,6 @@ private:
     VehicleStateCallback vehicleStateCallback_;
 
     // Transport tracking
-    struct TransportAttachment {
-        ObjectType type = ObjectType::OBJECT;
-        uint64_t transportGuid = 0;
-        glm::vec3 localOffset{0.0f};
-        float localOrientation = 0.0f;
-        bool hasLocalOrientation = false;
-    };
     std::unordered_map<uint64_t, TransportAttachment> transportAttachments_;
     // Transport GUID tracking moved to EntityController
     uint64_t playerTransportGuid_ = 0;             // Transport the player is riding (0 = none)
@@ -2606,14 +2930,6 @@ private:
     bool talentsInitialized_ = false;                           // Reset on world entry; guards first-spec selection
 
     // ---- Area trigger detection ----
-    struct AreaTriggerEntry {
-        uint32_t id = 0;
-        uint32_t mapId = 0;
-        float x = 0, y = 0, z = 0;   // canonical WoW coords (converted from DBC)
-        float radius = 0;
-        float boxLength = 0, boxWidth = 0, boxHeight = 0;
-        float boxYaw = 0;
-    };
     bool areaTriggerDbcLoaded_ = false;
     std::vector<AreaTriggerEntry> areaTriggers_;
     std::unordered_set<uint32_t> activeAreaTriggers_;  // triggers player is currently inside
@@ -2709,8 +3025,6 @@ private:
     // factionId → repListId reverse mapping
     mutable std::unordered_map<uint32_t, uint32_t> factionIdToRepList_;
     mutable bool factionNameCacheLoaded_ = false;
-    void loadFactionNameCache() const;
-    std::string getFactionName(uint32_t factionId) const;
 
     // ---- Group ----
     GroupListData partyData;
@@ -2800,12 +3114,6 @@ private:
         bool itemAutoLootSent = false;
     };
     std::unordered_map<uint64_t, LocalLootState> localLootState_;
-    struct PendingLootRetry {
-        uint64_t guid = 0;
-        float timer = 0.0f;
-        uint8_t remainingRetries = 0;
-        bool sendLoot = false;
-    };
     std::vector<PendingLootRetry> pendingGameObjectLootRetries_;
     struct PendingLootOpen {
         uint64_t guid = 0;
@@ -2879,10 +3187,6 @@ private:
 
     // Faction hostility lookup (populated from FactionTemplate.dbc)
     std::unordered_map<uint32_t, bool> factionHostileMap_;
-    bool isHostileFaction(uint32_t factionTemplateId) const {
-        auto it = factionHostileMap_.find(factionTemplateId);
-        return it != factionHostileMap_.end() ? it->second : true; // default hostile if unknown
-    }
 
     // Vehicle (WotLK): non-zero when player is seated in a vehicle
     uint32_t vehicleId_ = 0;
@@ -2916,7 +3220,6 @@ private:
     bool taxiMaskInitialized_ = false; // First SMSG_SHOWTAXINODES seeds mask without alerts
     std::unordered_map<uint32_t, uint32_t> taxiCostMap_; // destNodeId -> total cost in copper
     uint32_t nextMovementTimestampMs();
-    void sanitizeMovementForTaxi();
     void updateClientTaxi(float deltaTime);
 
     // Mail
@@ -2980,12 +3283,6 @@ private:
     // Trainer
     bool trainerWindowOpen_ = false;
     TrainerListData currentTrainerList_;
-    struct SpellNameEntry {
-        std::string name; std::string rank; std::string description;
-        uint32_t schoolMask = 0; uint8_t dispelType = 0; uint32_t attrEx = 0;
-        int32_t effectBasePoints[3] = {0, 0, 0};
-        float durationSec = 0.0f; // resolved from DurationIndex → SpellDuration.dbc
-    };
     mutable std::unordered_map<uint32_t, SpellNameEntry> spellNameCache_;
     mutable bool spellNameCacheLoaded_ = false;
 
@@ -3004,7 +3301,6 @@ private:
     std::unordered_map<uint32_t, std::string> achievementDescCache_;
     std::unordered_map<uint32_t, uint32_t>    achievementPointsCache_;
     bool achievementNameCacheLoaded_ = false;
-    void loadAchievementNameCache();
     // Set of achievement IDs earned by the player (populated from SMSG_ALL_ACHIEVEMENT_DATA)
     std::unordered_set<uint32_t> earnedAchievements_;
     // Earn dates: achievementId → WoW PackedTime (from SMSG_ACHIEVEMENT_EARNED / SMSG_ALL_ACHIEVEMENT_DATA)
@@ -3021,7 +3317,6 @@ private:
     mutable std::unordered_map<uint32_t, std::string> areaNameCache_;
     mutable bool areaNameCacheLoaded_ = false;
     void loadAreaNameCache() const;
-    std::string getAreaName(uint32_t areaId) const;
 
     // Map name cache (lazy-loaded from Map.dbc; maps mapId → localized display name)
     mutable std::unordered_map<uint32_t, std::string> mapNameCache_;
@@ -3032,9 +3327,7 @@ private:
     mutable std::unordered_map<uint32_t, std::string> lfgDungeonNameCache_;
     mutable bool lfgDungeonNameCacheLoaded_ = false;
     void loadLfgDungeonDbc() const;
-    std::string getLfgDungeonName(uint32_t dungeonId) const;
     std::vector<TrainerTab> trainerTabs_;
-    void loadSpellNameCache() const;
     void preloadDBCCaches() const;
     void categorizeTrainerSpells();
 
@@ -3127,15 +3420,9 @@ private:
     bool spellBookTabsDirty_ = true;
     bool skillLineDbcLoaded_ = false;
     bool skillLineAbilityLoaded_ = false;
-    static constexpr size_t PLAYER_EXPLORED_ZONES_COUNT = 128;
     std::vector<uint32_t> playerExploredZones_ =
         std::vector<uint32_t>(PLAYER_EXPLORED_ZONES_COUNT, 0u);
     bool hasPlayerExploredZones_ = false;
-    void loadSkillLineDbc();
-    void loadSkillLineAbilityDbc();
-    void extractSkillFields(const std::map<uint16_t, uint32_t>& fields);
-    void extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields);
-    void applyQuestStateFromFields(const std::map<uint16_t, uint32_t>& fields);
     // Apply packed kill counts from player update fields to a quest entry that has
     // already had its killObjectives populated from SMSG_QUEST_QUERY_RESPONSE.
     void applyPackedKillCountsFromFields(QuestLogEntry& quest);

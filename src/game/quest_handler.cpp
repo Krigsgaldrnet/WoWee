@@ -338,7 +338,7 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
     table[Opcode::SMSG_QUESTGIVER_STATUS] = [this](network::Packet& packet) {
         if (packet.hasRemaining(9)) {
             uint64_t npcGuid = packet.readUInt64();
-            uint8_t status = owner_.packetParsers_->readQuestGiverStatus(packet);
+            uint8_t status = owner_.getPacketParsers()->readQuestGiverStatus(packet);
             npcQuestStatus_[npcGuid] = static_cast<QuestGiverStatus>(status);
         }
     };
@@ -350,7 +350,7 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
         for (uint32_t i = 0; i < count; ++i) {
             if (!packet.hasRemaining(9)) break;
             uint64_t npcGuid = packet.readUInt64();
-            uint8_t status = owner_.packetParsers_->readQuestGiverStatus(packet);
+            uint8_t status = owner_.getPacketParsers()->readQuestGiverStatus(packet);
             npcQuestStatus_[npcGuid] = static_cast<QuestGiverStatus>(status);
         }
     };
@@ -466,8 +466,8 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
             for (auto it = questLog_.begin(); it != questLog_.end(); ++it) {
                 if (it->questId == questId) {
                     // Fire toast callback before erasing
-                    if (owner_.questCompleteCallback_) {
-                        owner_.questCompleteCallback_(questId, it->title);
+                    if (owner_.questCompleteCallbackRef()) {
+                        owner_.questCompleteCallbackRef()(questId, it->title);
                     }
                     // Play quest-complete sound
                     if (auto* ac = owner_.services().audioCoordinator) {
@@ -476,25 +476,25 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
                     }
                     questLog_.erase(it);
                     LOG_INFO("  Removed quest ", questId, " from quest log");
-                    if (owner_.addonEventCallback_)
-                        owner_.addonEventCallback_("QUEST_TURNED_IN", {std::to_string(questId)});
+                    if (owner_.addonEventCallbackRef())
+                        owner_.addonEventCallbackRef()("QUEST_TURNED_IN", {std::to_string(questId)});
                     break;
                 }
             }
         }
-        if (owner_.addonEventCallback_) {
-            owner_.addonEventCallback_("QUEST_LOG_UPDATE", {});
-            owner_.addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+        if (owner_.addonEventCallbackRef()) {
+            owner_.addonEventCallbackRef()("QUEST_LOG_UPDATE", {});
+            owner_.addonEventCallbackRef()("UNIT_QUEST_LOG_CHANGED", {"player"});
         }
         // Re-query all nearby quest giver NPCs so markers refresh
-        if (owner_.socket) {
+        if (owner_.getSocket()) {
             for (const auto& [guid, entity] : owner_.getEntityManager().getEntities()) {
                 if (entity->getType() != ObjectType::UNIT) continue;
                 auto unit = std::static_pointer_cast<Unit>(entity);
                 if (unit->getNpcFlags() & 0x02) {
                     network::Packet qsPkt(wireOpcode(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
                     qsPkt.writeUInt64(guid);
-                    owner_.socket->send(qsPkt);
+                    owner_.getSocket()->send(qsPkt);
                 }
             }
         }
@@ -548,13 +548,13 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
                     progressMsg += std::to_string(count) + "/" + std::to_string(reqCount);
                     owner_.addSystemChatMessage(progressMsg);
 
-                    if (owner_.questProgressCallback_) {
-                        owner_.questProgressCallback_(quest.title, creatureName, count, reqCount);
+                    if (owner_.questProgressCallbackRef()) {
+                        owner_.questProgressCallbackRef()(quest.title, creatureName, count, reqCount);
                     }
-                    if (owner_.addonEventCallback_) {
-                        owner_.addonEventCallback_("QUEST_WATCH_UPDATE", {std::to_string(questId)});
-                        owner_.addonEventCallback_("QUEST_LOG_UPDATE", {});
-                        owner_.addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+                    if (owner_.addonEventCallbackRef()) {
+                        owner_.addonEventCallbackRef()("QUEST_WATCH_UPDATE", {std::to_string(questId)});
+                        owner_.addonEventCallbackRef()("QUEST_LOG_UPDATE", {});
+                        owner_.addonEventCallbackRef()("UNIT_QUEST_LOG_CHANGED", {"player"});
                     }
 
                     LOG_INFO("Updated kill count for quest ", questId, ": ",
@@ -614,7 +614,7 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
             }
             owner_.addSystemChatMessage("Quest item: " + buildItemLink(itemId, questItemQuality, itemLabel) + " (" + std::to_string(count) + ")");
 
-            if (owner_.questProgressCallback_ && updatedAny) {
+            if (owner_.questProgressCallbackRef() && updatedAny) {
                 for (const auto& quest : questLog_) {
                     if (quest.complete) continue;
                     if (quest.itemCounts.count(itemId) == 0) continue;
@@ -627,15 +627,15 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
                         }
                     }
                     if (required == 0) required = count;
-                    owner_.questProgressCallback_(quest.title, itemLabel, count, required);
+                    owner_.questProgressCallbackRef()(quest.title, itemLabel, count, required);
                     break;
                 }
             }
 
-            if (owner_.addonEventCallback_ && updatedAny) {
-                owner_.addonEventCallback_("QUEST_WATCH_UPDATE", {});
-                owner_.addonEventCallback_("QUEST_LOG_UPDATE", {});
-                owner_.addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+            if (owner_.addonEventCallbackRef() && updatedAny) {
+                owner_.addonEventCallbackRef()("QUEST_WATCH_UPDATE", {});
+                owner_.addonEventCallbackRef()("QUEST_LOG_UPDATE", {});
+                owner_.addonEventCallbackRef()("UNIT_QUEST_LOG_CHANGED", {"player"});
             }
             LOG_INFO("Quest item update: itemId=", itemId, " count=", count,
                      " trackedQuestsUpdated=", updatedAny);
@@ -690,12 +690,12 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
         // WotLK uses this opcode as SMSG_SET_REST_START
         if (!isClassicLikeExpansion() && !isActiveExpansion("tbc")) {
             bool nowResting = (value != 0);
-            if (nowResting != owner_.isResting_) {
-                owner_.isResting_ = nowResting;
-                owner_.addSystemChatMessage(owner_.isResting_ ? "You are now resting."
+            if (nowResting != owner_.isRestingRef()) {
+                owner_.isRestingRef() = nowResting;
+                owner_.addSystemChatMessage(owner_.isRestingRef() ? "You are now resting."
                                                               : "You are no longer resting.");
-                if (owner_.addonEventCallback_)
-                    owner_.addonEventCallback_("PLAYER_UPDATE_RESTING", {});
+                if (owner_.addonEventCallbackRef())
+                    owner_.addonEventCallbackRef()("PLAYER_UPDATE_RESTING", {});
             }
             return;
         }
@@ -740,10 +740,10 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
             } else {
                 owner_.addSystemChatMessage("Quest removed (ID " + std::to_string(questId) + ").");
             }
-            if (owner_.addonEventCallback_) {
-                owner_.addonEventCallback_("QUEST_LOG_UPDATE", {});
-                owner_.addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
-                owner_.addonEventCallback_("QUEST_REMOVED", {std::to_string(questId)});
+            if (owner_.addonEventCallbackRef()) {
+                owner_.addonEventCallbackRef()("QUEST_LOG_UPDATE", {});
+                owner_.addonEventCallbackRef()("UNIT_QUEST_LOG_CHANGED", {"player"});
+                owner_.addonEventCallbackRef()("QUEST_REMOVED", {std::to_string(questId)});
             }
         }
     };
@@ -758,7 +758,7 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
         uint32_t questId = packet.readUInt32();
         packet.readUInt32(); // questMethod
 
-        const bool isClassicLayout = owner_.packetParsers_ && owner_.packetParsers_->questLogStride() <= 4;
+        const bool isClassicLayout = owner_.getPacketParsers() && owner_.getPacketParsers()->questLogStride() <= 4;
         const QuestQueryTextCandidate parsed = pickBestQuestQueryTexts(packet.getData(), isClassicLayout);
         const QuestQueryObjectives objs = extractQuestQueryObjectives(packet.getData(), isClassicLayout);
         const QuestQueryRewards rwds = tryParseQuestRewards(packet.getData(), isClassicLayout);
@@ -880,7 +880,7 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
                 for (uint32_t i = 0; i < count; ++i) {
                     if (!packet.hasRemaining(4)) break;
                     uint32_t questId = packet.readUInt32();
-                    owner_.completedQuests_.insert(questId);
+                    owner_.completedQuestsRef().insert(questId);
                 }
                 LOG_DEBUG("SMSG_QUERY_QUESTS_COMPLETED_RESPONSE: ", count, " completed quests");
             }
@@ -894,13 +894,13 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
 // ---------------------------------------------------------------------------
 
 void QuestHandler::selectGossipOption(uint32_t optionId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || !gossipWindowOpen_) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || !gossipWindowOpen_) return;
     LOG_INFO("selectGossipOption: optionId=", optionId,
              " npcGuid=0x", std::hex, currentGossip_.npcGuid, std::dec,
              " menuId=", currentGossip_.menuId,
              " numOptions=", currentGossip_.options.size());
     auto packet = GossipSelectOptionPacket::build(currentGossip_.npcGuid, currentGossip_.menuId, optionId);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 
     for (const auto& opt : currentGossip_.options) {
         if (opt.id != optionId) continue;
@@ -919,21 +919,21 @@ void QuestHandler::selectGossipOption(uint32_t optionId) {
 
         if (opt.icon == 6) {
             auto pkt = BankerActivatePacket::build(currentGossip_.npcGuid);
-            owner_.socket->send(pkt);
+            owner_.getSocket()->send(pkt);
             sentBanker = true;
             LOG_INFO("Sent CMSG_BANKER_ACTIVATE (icon) for npc=0x", std::hex, currentGossip_.npcGuid, std::dec);
         }
 
         if (!sentAuction && (text == "GOSSIP_OPTION_AUCTIONEER" || textLower.find("auction") != std::string::npos)) {
             auto pkt = AuctionHelloPacket::build(currentGossip_.npcGuid);
-            owner_.socket->send(pkt);
+            owner_.getSocket()->send(pkt);
             sentAuction = true;
             LOG_INFO("Sent MSG_AUCTION_HELLO for npc=0x", std::hex, currentGossip_.npcGuid, std::dec);
         }
 
         if (!sentBanker && (text == "GOSSIP_OPTION_BANKER" || textLower.find("deposit box") != std::string::npos)) {
             auto pkt = BankerActivatePacket::build(currentGossip_.npcGuid);
-            owner_.socket->send(pkt);
+            owner_.getSocket()->send(pkt);
             sentBanker = true;
             LOG_INFO("Sent CMSG_BANKER_ACTIVATE (text) for npc=0x", std::hex, currentGossip_.npcGuid, std::dec);
         }
@@ -947,14 +947,14 @@ void QuestHandler::selectGossipOption(uint32_t optionId) {
                 owner_.setVendorCanRepair(true);
             }
             auto pkt = ListInventoryPacket::build(currentGossip_.npcGuid);
-            owner_.socket->send(pkt);
+            owner_.getSocket()->send(pkt);
             LOG_DEBUG("Sent CMSG_LIST_INVENTORY (gossip) to npc=0x", std::hex, currentGossip_.npcGuid, std::dec);
         }
 
         if (textLower.find("make this inn your home") != std::string::npos ||
             textLower.find("set your home") != std::string::npos) {
             auto bindPkt = BinderActivatePacket::build(currentGossip_.npcGuid);
-            owner_.socket->send(bindPkt);
+            owner_.getSocket()->send(bindPkt);
             LOG_INFO("Sent CMSG_BINDER_ACTIVATE for npc=0x", std::hex, currentGossip_.npcGuid, std::dec);
         }
 
@@ -962,10 +962,10 @@ void QuestHandler::selectGossipOption(uint32_t optionId) {
         if (text == "GOSSIP_OPTION_STABLE" ||
             textLower.find("stable") != std::string::npos ||
             textLower.find("my pet") != std::string::npos) {
-            owner_.stableMasterGuid_ = currentGossip_.npcGuid;
-            owner_.stableWindowOpen_ = false;
+            owner_.stableMasterGuidRef() = currentGossip_.npcGuid;
+            owner_.stableWindowOpenRef() = false;
             auto listPkt = ListStabledPetsPacket::build(currentGossip_.npcGuid);
-            owner_.socket->send(listPkt);
+            owner_.getSocket()->send(listPkt);
             LOG_INFO("Sent MSG_LIST_STABLED_PETS (gossip) to npc=0x",
                      std::hex, currentGossip_.npcGuid, std::dec);
         }
@@ -974,7 +974,7 @@ void QuestHandler::selectGossipOption(uint32_t optionId) {
 }
 
 void QuestHandler::selectGossipQuest(uint32_t questId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || !gossipWindowOpen_) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || !gossipWindowOpen_) return;
 
     const QuestLogEntry* activeQuest = nullptr;
     for (const auto& q : questLog_) {
@@ -986,11 +986,11 @@ void QuestHandler::selectGossipQuest(uint32_t questId) {
 
     // Validate against server-auth quest slot fields
     auto questInServerLogSlots = [&](uint32_t qid) -> bool {
-        if (qid == 0 || owner_.lastPlayerFields_.empty()) return false;
+        if (qid == 0 || owner_.lastPlayerFieldsRef().empty()) return false;
         const uint16_t ufQuestStart = fieldIndex(UF::PLAYER_QUEST_LOG_START);
-        const uint8_t qStride = owner_.packetParsers_ ? owner_.packetParsers_->questLogStride() : 5;
+        const uint8_t qStride = owner_.getPacketParsers() ? owner_.getPacketParsers()->questLogStride() : 5;
         const uint16_t ufQuestEnd = ufQuestStart + 25 * qStride;
-        for (const auto& [key, val] : owner_.lastPlayerFields_) {
+        for (const auto& [key, val] : owner_.lastPlayerFieldsRef()) {
             if (key < ufQuestStart || key >= ufQuestEnd) continue;
             if ((key - ufQuestStart) % qStride != 0) continue;
             if (val == qid) return true;
@@ -1015,37 +1015,37 @@ void QuestHandler::selectGossipQuest(uint32_t questId) {
         pendingTurnInNpcGuid_ = currentGossip_.npcGuid;
         pendingTurnInRewardRequest_ = activeQuest ? activeQuest->complete : false;
         auto packet = QuestgiverCompleteQuestPacket::build(currentGossip_.npcGuid, questId);
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     } else {
         pendingTurnInQuestId_ = 0;
         pendingTurnInNpcGuid_ = 0;
         pendingTurnInRewardRequest_ = false;
-        auto packet = owner_.packetParsers_
-            ? owner_.packetParsers_->buildQueryQuestPacket(currentGossip_.npcGuid, questId)
+        auto packet = owner_.getPacketParsers()
+            ? owner_.getPacketParsers()->buildQueryQuestPacket(currentGossip_.npcGuid, questId)
             : QuestgiverQueryQuestPacket::build(currentGossip_.npcGuid, questId);
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     }
 
     gossipWindowOpen_ = false;
 }
 
 bool QuestHandler::requestQuestQuery(uint32_t questId, bool force) {
-    if (questId == 0 || owner_.state != WorldState::IN_WORLD || !owner_.socket) return false;
+    if (questId == 0 || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return false;
     if (!force && pendingQuestQueryIds_.count(questId)) return false;
 
     network::Packet pkt(wireOpcode(Opcode::CMSG_QUEST_QUERY));
     pkt.writeUInt32(questId);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     pendingQuestQueryIds_.insert(questId);
 
     // WotLK supports CMSG_QUEST_POI_QUERY to get objective map locations.
-    if (owner_.packetParsers_ && owner_.packetParsers_->questLogStride() == 5) {
+    if (owner_.getPacketParsers() && owner_.getPacketParsers()->questLogStride() == 5) {
         const uint32_t wirePoiQuery = wireOpcode(Opcode::CMSG_QUEST_POI_QUERY);
         if (wirePoiQuery != 0xFFFF) {
             network::Packet poiPkt(static_cast<uint16_t>(wirePoiQuery));
             poiPkt.writeUInt32(1);          // count = 1
             poiPkt.writeUInt32(questId);
-            owner_.socket->send(poiPkt);
+            owner_.getSocket()->send(poiPkt);
         }
     }
     return true;
@@ -1060,7 +1060,7 @@ void QuestHandler::setQuestTracked(uint32_t questId, bool tracked) {
 }
 
 void QuestHandler::acceptQuest() {
-    if (!questDetailsOpen_ || owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (!questDetailsOpen_ || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     const uint32_t questId = currentQuestDetails_.questId;
     if (questId == 0) return;
     uint64_t npcGuid = currentQuestDetails_.npcGuid;
@@ -1087,10 +1087,10 @@ void QuestHandler::acceptQuest() {
         std::erase_if(questLog_, [&](const QuestLogEntry& q) { return q.questId == questId; });
     }
 
-    network::Packet packet = owner_.packetParsers_
-        ? owner_.packetParsers_->buildAcceptQuestPacket(npcGuid, questId)
+    network::Packet packet = owner_.getPacketParsers()
+        ? owner_.getPacketParsers()->buildAcceptQuestPacket(npcGuid, questId)
         : QuestgiverAcceptQuestPacket::build(npcGuid, questId);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     pendingQuestAcceptTimeouts_[questId] = 5.0f;
     pendingQuestAcceptNpcGuids_[questId] = npcGuid;
 
@@ -1108,7 +1108,7 @@ void QuestHandler::acceptQuest() {
     if (npcGuid) {
         network::Packet qsPkt(wireOpcode(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
         qsPkt.writeUInt64(npcGuid);
-        owner_.socket->send(qsPkt);
+        owner_.getSocket()->send(qsPkt);
     }
 }
 
@@ -1120,12 +1120,12 @@ void QuestHandler::declineQuest() {
 
 void QuestHandler::closeGossip() {
     gossipWindowOpen_ = false;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("GOSSIP_CLOSED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GOSSIP_CLOSED", {});
     currentGossip_ = GossipMessageData{};
 }
 
 void QuestHandler::offerQuestFromItem(uint64_t itemGuid, uint32_t questId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (itemGuid == 0 || questId == 0) {
         owner_.addSystemChatMessage("Cannot start quest right now.");
         return;
@@ -1133,23 +1133,23 @@ void QuestHandler::offerQuestFromItem(uint64_t itemGuid, uint32_t questId) {
     // Send CMSG_QUESTGIVER_QUERY_QUEST with the item GUID as the "questgiver."
     // The server responds with SMSG_QUESTGIVER_QUEST_DETAILS which handleQuestDetails()
     // picks up and opens the Accept/Decline dialog.
-    auto queryPkt = owner_.packetParsers_
-        ? owner_.packetParsers_->buildQueryQuestPacket(itemGuid, questId)
+    auto queryPkt = owner_.getPacketParsers()
+        ? owner_.getPacketParsers()->buildQueryQuestPacket(itemGuid, questId)
         : QuestgiverQueryQuestPacket::build(itemGuid, questId);
-    owner_.socket->send(queryPkt);
+    owner_.getSocket()->send(queryPkt);
     LOG_INFO("offerQuestFromItem: itemGuid=0x", std::hex, itemGuid, std::dec,
              " questId=", questId);
 }
 
 void QuestHandler::completeQuest() {
-    if (!questRequestItemsOpen_ || owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (!questRequestItemsOpen_ || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     pendingTurnInQuestId_ = currentQuestRequestItems_.questId;
     pendingTurnInNpcGuid_ = currentQuestRequestItems_.npcGuid;
     pendingTurnInRewardRequest_ = currentQuestRequestItems_.isCompletable();
 
     auto packet = QuestgiverCompleteQuestPacket::build(
         currentQuestRequestItems_.npcGuid, currentQuestRequestItems_.questId);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     questRequestItemsOpen_ = false;
     currentQuestRequestItems_ = QuestRequestItemsData{};
 }
@@ -1161,13 +1161,13 @@ void QuestHandler::closeQuestRequestItems() {
 }
 
 void QuestHandler::chooseQuestReward(uint32_t rewardIndex) {
-    if (!questOfferRewardOpen_ || owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (!questOfferRewardOpen_ || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     uint64_t npcGuid = currentQuestOfferReward_.npcGuid;
     LOG_INFO("Completing quest: questId=", currentQuestOfferReward_.questId,
              " npcGuid=", npcGuid, " rewardIndex=", rewardIndex);
     auto packet = QuestgiverChooseRewardPacket::build(
         npcGuid, currentQuestOfferReward_.questId, rewardIndex);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     pendingTurnInQuestId_ = 0;
     pendingTurnInNpcGuid_ = 0;
     pendingTurnInRewardRequest_ = false;
@@ -1178,7 +1178,7 @@ void QuestHandler::chooseQuestReward(uint32_t rewardIndex) {
     if (npcGuid) {
         network::Packet qsPkt(wireOpcode(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
         qsPkt.writeUInt64(npcGuid);
-        owner_.socket->send(qsPkt);
+        owner_.getSocket()->send(qsPkt);
     }
 }
 
@@ -1205,10 +1205,10 @@ void QuestHandler::abandonQuest(uint32_t questId) {
     }
 
     if (slotIndex >= 0 && slotIndex < 25) {
-        if (owner_.state == WorldState::IN_WORLD && owner_.socket) {
+        if (owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
             network::Packet pkt(wireOpcode(Opcode::CMSG_QUESTLOG_REMOVE_QUEST));
             pkt.writeUInt8(static_cast<uint8_t>(slotIndex));
-            owner_.socket->send(pkt);
+            owner_.getSocket()->send(pkt);
         }
     } else {
         LOG_WARNING("Abandon quest failed: no quest-log slot found for questId=", questId);
@@ -1216,10 +1216,10 @@ void QuestHandler::abandonQuest(uint32_t questId) {
 
     if (localIndex >= 0) {
         questLog_.erase(questLog_.begin() + static_cast<ptrdiff_t>(localIndex));
-        if (owner_.addonEventCallback_) {
-            owner_.addonEventCallback_("QUEST_LOG_UPDATE", {});
-            owner_.addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
-            owner_.addonEventCallback_("QUEST_REMOVED", {std::to_string(questId)});
+        if (owner_.addonEventCallbackRef()) {
+            owner_.addonEventCallbackRef()("QUEST_LOG_UPDATE", {});
+            owner_.addonEventCallbackRef()("UNIT_QUEST_LOG_CHANGED", {"player"});
+            owner_.addonEventCallbackRef()("QUEST_REMOVED", {std::to_string(questId)});
         }
     }
 
@@ -1231,7 +1231,7 @@ void QuestHandler::abandonQuest(uint32_t questId) {
 }
 
 void QuestHandler::shareQuestWithParty(uint32_t questId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) {
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) {
         owner_.addSystemChatMessage("Cannot share quest: not in world.");
         return;
     }
@@ -1241,7 +1241,7 @@ void QuestHandler::shareQuestWithParty(uint32_t questId) {
     }
     network::Packet pkt(wireOpcode(Opcode::CMSG_PUSHQUESTTOPARTY));
     pkt.writeUInt32(questId);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     // Local feedback: find quest title
     for (const auto& q : questLog_) {
         if (q.questId == questId && !q.title.empty()) {
@@ -1253,11 +1253,11 @@ void QuestHandler::shareQuestWithParty(uint32_t questId) {
 }
 
 void QuestHandler::acceptSharedQuest() {
-    if (!pendingSharedQuest_ || !owner_.socket) return;
+    if (!pendingSharedQuest_ || !owner_.getSocket()) return;
     pendingSharedQuest_ = false;
     network::Packet pkt(wireOpcode(Opcode::CMSG_QUEST_CONFIRM_ACCEPT));
     pkt.writeUInt32(sharedQuestId_);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     owner_.addSystemChatMessage("Accepted: " + sharedQuestTitle_);
 }
 
@@ -1278,13 +1278,13 @@ bool QuestHandler::hasQuestInLog(uint32_t questId) const {
 }
 
 int QuestHandler::findQuestLogSlotIndexFromServer(uint32_t questId) const {
-    if (questId == 0 || owner_.lastPlayerFields_.empty()) return -1;
+    if (questId == 0 || owner_.lastPlayerFieldsRef().empty()) return -1;
     const uint16_t ufQuestStart = fieldIndex(UF::PLAYER_QUEST_LOG_START);
-    const uint8_t qStride = owner_.packetParsers_ ? owner_.packetParsers_->questLogStride() : 5;
+    const uint8_t qStride = owner_.getPacketParsers() ? owner_.getPacketParsers()->questLogStride() : 5;
     for (uint16_t slot = 0; slot < 25; ++slot) {
         const uint16_t idField = ufQuestStart + slot * qStride;
-        auto it = owner_.lastPlayerFields_.find(idField);
-        if (it != owner_.lastPlayerFields_.end() && it->second == questId) {
+        auto it = owner_.lastPlayerFieldsRef().find(idField);
+        if (it != owner_.lastPlayerFieldsRef().end() && it->second == questId) {
             return static_cast<int>(slot);
         }
     }
@@ -1298,18 +1298,18 @@ void QuestHandler::addQuestToLocalLogIfMissing(uint32_t questId, const std::stri
     entry.title = title.empty() ? ("Quest #" + std::to_string(questId)) : title;
     entry.objectives = objectives;
     questLog_.push_back(std::move(entry));
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("QUEST_ACCEPTED", {std::to_string(questId)});
-        owner_.addonEventCallback_("QUEST_LOG_UPDATE", {});
-        owner_.addonEventCallback_("UNIT_QUEST_LOG_CHANGED", {"player"});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("QUEST_ACCEPTED", {std::to_string(questId)});
+        owner_.addonEventCallbackRef()("QUEST_LOG_UPDATE", {});
+        owner_.addonEventCallbackRef()("UNIT_QUEST_LOG_CHANGED", {"player"});
     }
 }
 
 bool QuestHandler::resyncQuestLogFromServerSlots(bool forceQueryMetadata) {
-    if (owner_.lastPlayerFields_.empty()) return false;
+    if (owner_.lastPlayerFieldsRef().empty()) return false;
 
     const uint16_t ufQuestStart = fieldIndex(UF::PLAYER_QUEST_LOG_START);
-    const uint8_t qStride = owner_.packetParsers_ ? owner_.packetParsers_->questLogStride() : 5;
+    const uint8_t qStride = owner_.getPacketParsers() ? owner_.getPacketParsers()->questLogStride() : 5;
 
     static constexpr uint32_t kQuestStatusComplete = 1;
 
@@ -1318,15 +1318,15 @@ bool QuestHandler::resyncQuestLogFromServerSlots(bool forceQueryMetadata) {
     for (uint16_t slot = 0; slot < 25; ++slot) {
         const uint16_t idField    = ufQuestStart + slot * qStride;
         const uint16_t stateField = ufQuestStart + slot * qStride + 1;
-        auto it = owner_.lastPlayerFields_.find(idField);
-        if (it == owner_.lastPlayerFields_.end()) continue;
+        auto it = owner_.lastPlayerFieldsRef().find(idField);
+        if (it == owner_.lastPlayerFieldsRef().end()) continue;
         uint32_t questId = it->second;
         if (questId == 0) continue;
 
         bool complete = false;
         if (qStride >= 2) {
-            auto stateIt = owner_.lastPlayerFields_.find(stateField);
-            if (stateIt != owner_.lastPlayerFields_.end()) {
+            auto stateIt = owner_.lastPlayerFieldsRef().find(stateField);
+            if (stateIt != owner_.lastPlayerFieldsRef().end()) {
                 uint32_t state = stateIt->second & 0xFF;
                 complete = (state == kQuestStatusComplete);
             }
@@ -1378,7 +1378,7 @@ void QuestHandler::applyQuestStateFromFields(const std::map<uint16_t, uint32_t>&
     const uint16_t ufQuestStart = fieldIndex(UF::PLAYER_QUEST_LOG_START);
     if (ufQuestStart == 0xFFFF || questLog_.empty()) return;
 
-    const uint8_t qStride = owner_.packetParsers_ ? owner_.packetParsers_->questLogStride() : 5;
+    const uint8_t qStride = owner_.getPacketParsers() ? owner_.getPacketParsers()->questLogStride() : 5;
     if (qStride < 2) return;
 
     static constexpr uint32_t kQuestStatusComplete = 1;
@@ -1407,12 +1407,12 @@ void QuestHandler::applyQuestStateFromFields(const std::map<uint16_t, uint32_t>&
 }
 
 void QuestHandler::applyPackedKillCountsFromFields(QuestLogEntry& quest) {
-    if (owner_.lastPlayerFields_.empty()) return;
+    if (owner_.lastPlayerFieldsRef().empty()) return;
 
     const uint16_t ufQuestStart = fieldIndex(UF::PLAYER_QUEST_LOG_START);
     if (ufQuestStart == 0xFFFF) return;
 
-    const uint8_t qStride = owner_.packetParsers_ ? owner_.packetParsers_->questLogStride() : 5;
+    const uint8_t qStride = owner_.getPacketParsers() ? owner_.getPacketParsers()->questLogStride() : 5;
     if (qStride < 3) return;
 
     int slot = findQuestLogSlotIndexFromServer(quest.questId);
@@ -1423,14 +1423,14 @@ void QuestHandler::applyPackedKillCountsFromFields(QuestLogEntry& quest) {
                                      ? static_cast<uint16_t>(countField1 + 1)
                                      : static_cast<uint16_t>(0xFFFF);
 
-    auto f1It = owner_.lastPlayerFields_.find(countField1);
-    if (f1It == owner_.lastPlayerFields_.end()) return;
+    auto f1It = owner_.lastPlayerFieldsRef().find(countField1);
+    if (f1It == owner_.lastPlayerFieldsRef().end()) return;
     const uint32_t packed1 = f1It->second;
 
     uint32_t packed2 = 0;
     if (countField2 != 0xFFFF) {
-        auto f2It = owner_.lastPlayerFields_.find(countField2);
-        if (f2It != owner_.lastPlayerFields_.end()) packed2 = f2It->second;
+        auto f2It = owner_.lastPlayerFieldsRef().find(countField2);
+        if (f2It != owner_.lastPlayerFieldsRef().end()) packed2 = f2It->second;
     }
 
     auto unpack6 = [](uint32_t word, int idx) -> uint8_t {
@@ -1474,7 +1474,7 @@ void QuestHandler::clearPendingQuestAccept(uint32_t questId) {
 }
 
 void QuestHandler::triggerQuestAcceptResync(uint32_t questId, uint64_t npcGuid, const char* reason) {
-    if (questId == 0 || !owner_.socket || owner_.state != WorldState::IN_WORLD) return;
+    if (questId == 0 || !owner_.getSocket() || owner_.getState() != WorldState::IN_WORLD) return;
 
     LOG_INFO("Quest accept resync: questId=", questId, " reason=", reason ? reason : "unknown");
     requestQuestQuery(questId, true);
@@ -1482,12 +1482,12 @@ void QuestHandler::triggerQuestAcceptResync(uint32_t questId, uint64_t npcGuid, 
     if (npcGuid != 0) {
         network::Packet qsPkt(wireOpcode(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
         qsPkt.writeUInt64(npcGuid);
-        owner_.socket->send(qsPkt);
+        owner_.getSocket()->send(qsPkt);
 
-        auto queryPkt = owner_.packetParsers_
-            ? owner_.packetParsers_->buildQueryQuestPacket(npcGuid, questId)
+        auto queryPkt = owner_.getPacketParsers()
+            ? owner_.getPacketParsers()->buildQueryQuestPacket(npcGuid, questId)
             : QuestgiverQueryQuestPacket::build(npcGuid, questId);
-        owner_.socket->send(queryPkt);
+        owner_.getSocket()->send(queryPkt);
     }
 }
 
@@ -1496,23 +1496,23 @@ void QuestHandler::triggerQuestAcceptResync(uint32_t questId, uint64_t npcGuid, 
 // ---------------------------------------------------------------------------
 
 void QuestHandler::handleGossipMessage(network::Packet& packet) {
-    bool ok = owner_.packetParsers_ ? owner_.packetParsers_->parseGossipMessage(packet, currentGossip_)
+    bool ok = owner_.getPacketParsers() ? owner_.getPacketParsers()->parseGossipMessage(packet, currentGossip_)
                                     : GossipMessageParser::parse(packet, currentGossip_);
     if (!ok) return;
     if (questDetailsOpen_) return; // Don't reopen gossip while viewing quest
     gossipWindowOpen_ = true;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("GOSSIP_SHOW", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GOSSIP_SHOW", {});
     owner_.closeVendor(); // Close vendor if gossip opens
 
     // Classify gossip quests and update quest log + overhead NPC markers.
     classifyGossipQuests(true);
 
     // Play NPC greeting voice
-    if (owner_.npcGreetingCallback_ && currentGossip_.npcGuid != 0) {
+    if (owner_.npcGreetingCallbackRef() && currentGossip_.npcGuid != 0) {
         auto entity = owner_.getEntityManager().getEntity(currentGossip_.npcGuid);
         if (entity) {
             glm::vec3 npcPos(entity->getX(), entity->getY(), entity->getZ());
-            owner_.npcGreetingCallback_(currentGossip_.npcGuid, npcPos);
+            owner_.npcGreetingCallbackRef()(currentGossip_.npcGuid, npcPos);
         }
     }
 }
@@ -1563,7 +1563,7 @@ void QuestHandler::handleQuestgiverQuestList(network::Packet& packet) {
 
     currentGossip_ = std::move(data);
     gossipWindowOpen_ = true;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("GOSSIP_SHOW", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GOSSIP_SHOW", {});
     owner_.closeVendor();
 
     classifyGossipQuests(false);
@@ -1617,16 +1617,16 @@ void QuestHandler::handleGossipComplete(network::Packet& packet) {
     (void)packet;
 
     // Play farewell sound before closing
-    if (owner_.npcFarewellCallback_ && currentGossip_.npcGuid != 0) {
+    if (owner_.npcFarewellCallbackRef() && currentGossip_.npcGuid != 0) {
         auto entity = owner_.getEntityManager().getEntity(currentGossip_.npcGuid);
         if (entity && entity->getType() == ObjectType::UNIT) {
             glm::vec3 pos(entity->getX(), entity->getY(), entity->getZ());
-            owner_.npcFarewellCallback_(currentGossip_.npcGuid, pos);
+            owner_.npcFarewellCallbackRef()(currentGossip_.npcGuid, pos);
         }
     }
 
     gossipWindowOpen_ = false;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("GOSSIP_CLOSED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GOSSIP_CLOSED", {});
     currentGossip_ = GossipMessageData{};
 }
 
@@ -1687,7 +1687,7 @@ void QuestHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
                 sumY += static_cast<float>(py);
             }
             // Skip POIs for maps other than the player's current map.
-            if (mapId != owner_.currentMapId_) continue;
+            if (mapId != owner_.currentMapIdRef()) continue;
             GossipPoi poi;
             poi.x    = sumX / static_cast<float>(pointCount);
             poi.y    = sumY / static_cast<float>(pointCount);
@@ -1704,7 +1704,7 @@ void QuestHandler::handleQuestPoiQueryResponse(network::Packet& packet) {
 
 void QuestHandler::handleQuestDetails(network::Packet& packet) {
     QuestDetailsData data;
-    bool ok = owner_.packetParsers_ ? owner_.packetParsers_->parseQuestDetails(packet, data)
+    bool ok = owner_.getPacketParsers() ? owner_.getPacketParsers()->parseQuestDetails(packet, data)
                                     : QuestDetailsParser::parse(packet, data);
     if (!ok) {
         LOG_WARNING("Failed to parse SMSG_QUESTGIVER_QUEST_DETAILS");
@@ -1727,7 +1727,7 @@ void QuestHandler::handleQuestDetails(network::Packet& packet) {
     // Delay opening the window slightly to allow item queries to complete
     questDetailsOpenTime_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
     gossipWindowOpen_ = false;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("QUEST_DETAIL", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("QUEST_DETAIL", {});
 }
 
 void QuestHandler::handleQuestRequestItems(network::Packet& packet) {
@@ -1742,9 +1742,9 @@ void QuestHandler::handleQuestRequestItems(network::Packet& packet) {
         data.questId == pendingTurnInQuestId_ &&
         data.npcGuid == pendingTurnInNpcGuid_ &&
         data.isCompletable() &&
-        owner_.socket) {
+        owner_.getSocket()) {
         auto rewardReq = QuestgiverRequestRewardPacket::build(data.npcGuid, data.questId);
-        owner_.socket->send(rewardReq);
+        owner_.getSocket()->send(rewardReq);
         pendingTurnInRewardRequest_ = false;
     }
 
@@ -1809,7 +1809,7 @@ void QuestHandler::handleQuestOfferReward(network::Packet& packet) {
     gossipWindowOpen_ = false;
     questDetailsOpen_ = false;
     questDetailsOpenTime_ = std::chrono::steady_clock::time_point{};
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("QUEST_COMPLETE", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("QUEST_COMPLETE", {});
 
     // Query item names for reward items
     for (const auto& item : data.choiceRewards)

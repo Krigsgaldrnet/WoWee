@@ -58,9 +58,9 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
         uint32_t amount = packet.readUInt32();
         if (packet.hasRemaining(1))
             /*uint8_t soleLooter =*/ packet.readUInt8();
-        owner_.playerMoneyCopper_ += amount;
-        owner_.pendingMoneyDelta_ = amount;
-        owner_.pendingMoneyDeltaTimer_ = 2.0f;
+        owner_.playerMoneyCopperRef() += amount;
+        owner_.pendingMoneyDeltaRef() = amount;
+        owner_.pendingMoneyDeltaTimerRef() = 2.0f;
         uint64_t notifyGuid = pendingLootMoneyGuid_ != 0 ? pendingLootMoneyGuid_ : currentLoot_.lootGuid;
         pendingLootMoneyGuid_ = 0;
         pendingLootMoneyAmount_ = 0;
@@ -83,13 +83,13 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
             if (notifyGuid != 0)
                 recentLootMoneyAnnounceCooldowns_[notifyGuid] = 1.5f;
         }
-        if (owner_.addonEventCallback_) owner_.addonEventCallback_("PLAYER_MONEY", {});
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("PLAYER_MONEY", {});
     };
     table[Opcode::SMSG_LOOT_CLEAR_MONEY] = [](network::Packet& /*packet*/) {};
 
     // ---- Read item (books) (moved from GameHandler) ----
     table[Opcode::SMSG_READ_ITEM_OK] = [this](network::Packet& packet) {
-        owner_.bookPages_.clear();  // fresh book for this item read
+        owner_.bookPagesRef().clear();  // fresh book for this item read
         packet.skipAll();
     };
     table[Opcode::SMSG_READ_ITEM_FAILED] = [this](network::Packet& packet) {
@@ -133,7 +133,7 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
         pendingLootRoll_.playerRolls.clear();
         std::string link = buildItemLink(itemId, quality, itemName);
         owner_.addSystemChatMessage("Loot roll started for " + link + ".");
-        if (owner_.addonEventCallback_) owner_.addonEventCallback_("START_LOOT_ROLL", {});
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("START_LOOT_ROLL", {});
     };
 
     table[Opcode::SMSG_LOOT_ALL_PASSED] = [this](network::Packet& packet) {
@@ -197,7 +197,7 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
         //   +slot(4)+itemId(4)+suffixFactor(4)+randomPropertyId(4)+count(4)+countInInventory(4)
         if (!packet.hasRemaining(45)) return;
         uint64_t guid = packet.readUInt64();
-        if (guid != owner_.playerGuid) { packet.skipAll(); return; }
+        if (guid != owner_.getPlayerGuid()) { packet.skipAll(); return; }
         /*uint32_t received      =*/ packet.readUInt32();
         /*uint32_t created       =*/ packet.readUInt32();
         /*uint32_t displayInChat =*/ packet.readUInt32();
@@ -211,7 +211,7 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
         auto* info = owner_.getItemInfo(itemId);
         if (!info || info->name.empty()) {
             // Item info not yet cached — defer notification
-            owner_.pendingItemPushNotifs_.push_back({itemId, count});
+            owner_.pendingItemPushNotifsRef().push_back({itemId, count});
             owner_.ensureItemInfo(itemId);
             return;
         }
@@ -229,12 +229,12 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
             if (auto* sfx = ac->getUiSoundManager())
                 sfx->playLootItem();
         }
-        if (owner_.addonEventCallback_) {
-            owner_.addonEventCallback_("BAG_UPDATE", {});
-            owner_.addonEventCallback_("ITEM_PUSH", {std::to_string(itemId), std::to_string(count)});
+        if (owner_.addonEventCallbackRef()) {
+            owner_.addonEventCallbackRef()("BAG_UPDATE", {});
+            owner_.addonEventCallbackRef()("ITEM_PUSH", {std::to_string(itemId), std::to_string(count)});
         }
-        if (owner_.itemLootCallback_)
-            owner_.itemLootCallback_(itemId, count, quality, itemName);
+        if (owner_.itemLootCallbackRef())
+            owner_.itemLootCallbackRef()(itemId, count, quality, itemName);
     };
 
     // ---- Open container ----
@@ -260,9 +260,9 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
                     if (auto* sfx = ac->getUiSoundManager())
                         sfx->playDropOnGround();
                 }
-                if (owner_.addonEventCallback_) {
-                    owner_.addonEventCallback_("BAG_UPDATE", {});
-                    owner_.addonEventCallback_("PLAYER_MONEY", {});
+                if (owner_.addonEventCallbackRef()) {
+                    owner_.addonEventCallbackRef()("BAG_UPDATE", {});
+                    owner_.addonEventCallbackRef()("PLAYER_MONEY", {});
                 }
             } else {
                 bool removedPending = false;
@@ -419,12 +419,12 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
                 if (errCode == 0) {
                     constexpr uint32_t kBuybackSlotEnd = 85;
                     if (pendingBuybackWireSlot_ >= 74 && pendingBuybackWireSlot_ < kBuybackSlotEnd &&
-                        owner_.socket && owner_.state == WorldState::IN_WORLD && currentVendorItems_.vendorGuid != 0) {
+                        owner_.getSocket() && owner_.getState() == WorldState::IN_WORLD && currentVendorItems_.vendorGuid != 0) {
                         ++pendingBuybackWireSlot_;
                         LOG_INFO("Buyback retry: vendorGuid=0x", std::hex, currentVendorItems_.vendorGuid,
                                  std::dec, " uiSlot=", pendingBuybackSlot_,
                                  " wireSlot=", pendingBuybackWireSlot_);
-                        owner_.socket->send(BuybackItemPacket::build(
+                        owner_.getSocket()->send(BuybackItemPacket::build(
                             currentVendorItems_.vendorGuid, pendingBuybackWireSlot_));
                         return;
                     }
@@ -433,9 +433,9 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
                     }
                     pendingBuybackSlot_ = -1;
                     pendingBuybackWireSlot_ = 0;
-                    if (currentVendorItems_.vendorGuid != 0 && owner_.socket && owner_.state == WorldState::IN_WORLD) {
+                    if (currentVendorItems_.vendorGuid != 0 && owner_.getSocket() && owner_.getState() == WorldState::IN_WORLD) {
                         auto pkt = ListInventoryPacket::build(currentVendorItems_.vendorGuid);
-                        owner_.socket->send(pkt);
+                        owner_.getSocket()->send(pkt);
                     }
                     return;
                 }
@@ -484,9 +484,9 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
             }
             pendingBuyItemId_   = 0;
             pendingBuyItemSlot_ = 0;
-            if (owner_.addonEventCallback_) {
-                owner_.addonEventCallback_("MERCHANT_UPDATE", {});
-                owner_.addonEventCallback_("BAG_UPDATE", {});
+            if (owner_.addonEventCallbackRef()) {
+                owner_.addonEventCallbackRef()("MERCHANT_UPDATE", {});
+                owner_.addonEventCallbackRef()("BAG_UPDATE", {});
             }
         }
     };
@@ -661,38 +661,38 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
 // ============================================================
 
 void InventoryHandler::lootTarget(uint64_t targetGuid) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     currentLoot_.items.clear();
     LOG_INFO("Looting target 0x", std::hex, targetGuid, std::dec);
     auto packet = LootPacket::build(targetGuid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::lootItem(uint8_t slotIndex) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = AutostoreLootItemPacket::build(slotIndex);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::closeLoot() {
     if (!lootWindowOpen_) return;
-    if (owner_.state == WorldState::IN_WORLD && owner_.socket) {
+    if (owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         auto packet = LootReleasePacket::build(currentLoot_.lootGuid);
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     }
     lootWindowOpen_ = false;
-    if (owner_.lootWindowCallback_) owner_.lootWindowCallback_(false);
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("LOOT_CLOSED", {});
+    if (owner_.lootWindowCallbackRef()) owner_.lootWindowCallbackRef()(false);
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("LOOT_CLOSED", {});
     currentLoot_ = LootResponseData{};
 }
 
 void InventoryHandler::lootMasterGive(uint8_t lootSlot, uint64_t targetGuid) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_LOOT_MASTER_GIVE));
     pkt.writeUInt64(currentLoot_.lootGuid);
     pkt.writeUInt8(lootSlot);
     pkt.writeUInt64(targetGuid);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 void InventoryHandler::handleLootResponse(network::Packet& packet) {
@@ -706,10 +706,10 @@ void InventoryHandler::handleLootResponse(network::Packet& packet) {
         return;
     }
     lootWindowOpen_ = true;
-    if (owner_.lootWindowCallback_) owner_.lootWindowCallback_(true);
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("LOOT_OPENED", {});
-        owner_.addonEventCallback_("LOOT_READY", {});
+    if (owner_.lootWindowCallbackRef()) owner_.lootWindowCallbackRef()(true);
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("LOOT_OPENED", {});
+        owner_.addonEventCallbackRef()("LOOT_READY", {});
     }
     lastInteractedGoGuid_ = 0;
     pendingGameObjectLootOpens_.erase(
@@ -724,7 +724,7 @@ void InventoryHandler::handleLootResponse(network::Packet& packet) {
     }
 
     if (currentLoot_.gold > 0) {
-        if (owner_.state == WorldState::IN_WORLD && owner_.socket) {
+        if (owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
             bool suppressFallback = false;
             auto cooldownIt = recentLootMoneyAnnounceCooldowns_.find(currentLoot_.lootGuid);
             if (cooldownIt != recentLootMoneyAnnounceCooldowns_.end() && cooldownIt->second > 0.0f) {
@@ -734,15 +734,15 @@ void InventoryHandler::handleLootResponse(network::Packet& packet) {
             pendingLootMoneyAmount_ = suppressFallback ? 0 : currentLoot_.gold;
             pendingLootMoneyNotifyTimer_ = suppressFallback ? 0.0f : 0.4f;
             auto pkt = LootMoneyPacket::build();
-            owner_.socket->send(pkt);
+            owner_.getSocket()->send(pkt);
             currentLoot_.gold = 0;
         }
     }
 
-    if (autoLoot_ && owner_.state == WorldState::IN_WORLD && owner_.socket && !localLoot.itemAutoLootSent) {
+    if (autoLoot_ && owner_.getState() == WorldState::IN_WORLD && owner_.getSocket() && !localLoot.itemAutoLootSent) {
         for (const auto& item : currentLoot_.items) {
             auto pkt = AutostoreLootItemPacket::build(item.slotIndex);
-            owner_.socket->send(pkt);
+            owner_.getSocket()->send(pkt);
         }
         localLoot.itemAutoLootSent = true;
     }
@@ -752,8 +752,8 @@ void InventoryHandler::handleLootReleaseResponse(network::Packet& packet) {
     (void)packet;
     localLootState_.erase(currentLoot_.lootGuid);
     lootWindowOpen_ = false;
-    if (owner_.lootWindowCallback_) owner_.lootWindowCallback_(false);
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("LOOT_CLOSED", {});
+    if (owner_.lootWindowCallbackRef()) owner_.lootWindowCallbackRef()(false);
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("LOOT_CLOSED", {});
     currentLoot_ = LootResponseData{};
 }
 
@@ -776,8 +776,8 @@ void InventoryHandler::handleLootRemoved(network::Packet& packet) {
                     sfx->playLootItem();
             }
             currentLoot_.items.erase(it);
-            if (owner_.addonEventCallback_)
-                owner_.addonEventCallback_("LOOT_SLOT_CLEARED", {std::to_string(slotIndex + 1)});
+            if (owner_.addonEventCallbackRef())
+                owner_.addonEventCallbackRef()("LOOT_SLOT_CLEARED", {std::to_string(slotIndex + 1)});
             break;
         }
     }
@@ -788,12 +788,12 @@ void InventoryHandler::handleLootRemoved(network::Packet& packet) {
 // ============================================================
 
 void InventoryHandler::sendLootRoll(uint64_t objectGuid, uint32_t slot, uint8_t rollType) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_LOOT_ROLL));
     pkt.writeUInt64(objectGuid);
     pkt.writeUInt32(slot);
     pkt.writeUInt8(rollType);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     if (rollType == 128) { // pass
         pendingLootRollActive_ = false;
     }
@@ -880,10 +880,10 @@ void InventoryHandler::handleLootRollWon(network::Packet& packet) {
 // ============================================================
 
 void InventoryHandler::openVendor(uint64_t npcGuid) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     buybackItems_.clear();
     auto packet = ListInventoryPacket::build(npcGuid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::closeVendor() {
@@ -896,11 +896,11 @@ void InventoryHandler::closeVendor() {
     pendingBuybackWireSlot_ = 0;
     pendingBuyItemId_ = 0;
     pendingBuyItemSlot_ = 0;
-    if (wasOpen && owner_.addonEventCallback_) owner_.addonEventCallback_("MERCHANT_CLOSED", {});
+    if (wasOpen && owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("MERCHANT_CLOSED", {});
 }
 
 void InventoryHandler::buyItem(uint64_t vendorGuid, uint32_t itemId, uint32_t slot, uint32_t count) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     LOG_INFO("Buy request: vendorGuid=0x", std::hex, vendorGuid, std::dec,
              " itemId=", itemId, " slot=", slot, " count=", count,
              " wire=0x", std::hex, wireOpcode(Opcode::CMSG_BUY_ITEM), std::dec);
@@ -915,21 +915,21 @@ void InventoryHandler::buyItem(uint64_t vendorGuid, uint32_t itemId, uint32_t sl
     if (isWotLk) {
         packet.writeUInt8(0);
     }
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::sellItem(uint64_t vendorGuid, uint64_t itemGuid, uint32_t count) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     LOG_INFO("Sell request: vendorGuid=0x", std::hex, vendorGuid,
              " itemGuid=0x", itemGuid, std::dec,
              " count=", count, " wire=0x", std::hex, wireOpcode(Opcode::CMSG_SELL_ITEM), std::dec);
     auto packet = SellItemPacket::build(vendorGuid, itemGuid, count);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::sellItemBySlot(int backpackIndex) {
-    if (backpackIndex < 0 || backpackIndex >= owner_.inventory.getBackpackSize()) return;
-    const auto& slot = owner_.inventory.getBackpackSlot(backpackIndex);
+    if (backpackIndex < 0 || backpackIndex >= owner_.inventoryRef().getBackpackSize()) return;
+    const auto& slot = owner_.inventoryRef().getBackpackSlot(backpackIndex);
     if (slot.empty()) return;
 
     uint32_t sellPrice = slot.item.sellPrice;
@@ -943,7 +943,7 @@ void InventoryHandler::sellItemBySlot(int backpackIndex) {
         return;
     }
 
-    uint64_t itemGuid = owner_.backpackSlotGuids_[backpackIndex];
+    uint64_t itemGuid = owner_.backpackSlotGuidsRef()[backpackIndex];
     if (itemGuid == 0) {
         itemGuid = owner_.resolveOnlineItemGuid(slot.item.itemId);
     }
@@ -969,9 +969,9 @@ void InventoryHandler::sellItemBySlot(int backpackIndex) {
 }
 
 void InventoryHandler::sellItemInBag(int bagIndex, int slotIndex) {
-    if (bagIndex < 0 || bagIndex >= owner_.inventory.NUM_BAG_SLOTS) return;
-    if (slotIndex < 0 || slotIndex >= owner_.inventory.getBagSize(bagIndex)) return;
-    const auto& slot = owner_.inventory.getBagSlot(bagIndex, slotIndex);
+    if (bagIndex < 0 || bagIndex >= owner_.inventoryRef().NUM_BAG_SLOTS) return;
+    if (slotIndex < 0 || slotIndex >= owner_.inventoryRef().getBagSize(bagIndex)) return;
+    const auto& slot = owner_.inventoryRef().getBagSlot(bagIndex, slotIndex);
     if (slot.empty()) return;
 
     uint32_t sellPrice = slot.item.sellPrice;
@@ -986,10 +986,10 @@ void InventoryHandler::sellItemInBag(int bagIndex, int slotIndex) {
     }
 
     uint64_t itemGuid = 0;
-    uint64_t bagGuid = owner_.equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
+    uint64_t bagGuid = owner_.equipSlotGuidsRef()[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
     if (bagGuid != 0) {
-        auto it = owner_.containerContents_.find(bagGuid);
-        if (it != owner_.containerContents_.end() && slotIndex < static_cast<int>(it->second.numSlots)) {
+        auto it = owner_.containerContentsRef().find(bagGuid);
+        if (it != owner_.containerContentsRef().end() && slotIndex < static_cast<int>(it->second.numSlots)) {
             itemGuid = it->second.slotGuids[slotIndex];
         }
     }
@@ -1014,7 +1014,7 @@ void InventoryHandler::sellItemInBag(int bagIndex, int slotIndex) {
 }
 
 void InventoryHandler::buyBackItem(uint32_t buybackSlot) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || currentVendorItems_.vendorGuid == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || currentVendorItems_.vendorGuid == 0) return;
     constexpr uint32_t kBuybackSlotStart = 74;
     uint32_t wireSlot = kBuybackSlotStart + buybackSlot;
     pendingBuyItemId_ = 0;
@@ -1025,11 +1025,11 @@ void InventoryHandler::buyBackItem(uint32_t buybackSlot) {
     pendingBuybackWireSlot_ = wireSlot;
     // Use the expansion-agnostic packet builder so the opcode resolves from
     // the active expansion's JSON mapping rather than a hardcoded WotLK value.
-    owner_.socket->send(BuybackItemPacket::build(currentVendorItems_.vendorGuid, wireSlot));
+    owner_.getSocket()->send(BuybackItemPacket::build(currentVendorItems_.vendorGuid, wireSlot));
 }
 
 void InventoryHandler::repairItem(uint64_t vendorGuid, uint64_t itemGuid) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
 
     uint32_t cost = estimateItemRepairCost(itemGuid);
     if (cost > 0 && owner_.getMoneyCopper() < cost) {
@@ -1041,13 +1041,13 @@ void InventoryHandler::repairItem(uint64_t vendorGuid, uint64_t itemGuid) {
     packet.writeUInt64(vendorGuid);
     packet.writeUInt64(itemGuid);
     if (!isClassicLikeExpansion()) packet.writeUInt8(0);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 
     // Only do optimistic update if we verified the player can afford it
     if (cost > 0) {
-        owner_.playerMoneyCopper_ -= cost;
-        auto it = owner_.onlineItems_.find(itemGuid);
-        if (it != owner_.onlineItems_.end()) {
+        owner_.playerMoneyCopperRef() -= cost;
+        auto it = owner_.onlineItemsRef().find(itemGuid);
+        if (it != owner_.onlineItemsRef().end()) {
             it->second.curDurability = it->second.maxDurability;
             rebuildOnlineInventory();
         }
@@ -1055,7 +1055,7 @@ void InventoryHandler::repairItem(uint64_t vendorGuid, uint64_t itemGuid) {
 }
 
 void InventoryHandler::repairAll(uint64_t vendorGuid, bool useGuildBank) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
 
     uint32_t totalCost = estimateRepairAllCost();
 
@@ -1068,14 +1068,14 @@ void InventoryHandler::repairAll(uint64_t vendorGuid, bool useGuildBank) {
     packet.writeUInt64(vendorGuid);
     packet.writeUInt64(0);
     if (!isClassicLikeExpansion()) packet.writeUInt8(useGuildBank ? 1 : 0);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 
     // Only do optimistic update if we verified the player can afford it
     if (totalCost > 0) {
         if (!useGuildBank) {
-            owner_.playerMoneyCopper_ -= totalCost;
+            owner_.playerMoneyCopperRef() -= totalCost;
         }
-        for (auto& [guid, info] : owner_.onlineItems_) {
+        for (auto& [guid, info] : owner_.onlineItemsRef()) {
             if (info.maxDurability > 0 && info.curDurability < info.maxDurability) {
                 info.curDurability = info.maxDurability;
             }
@@ -1085,38 +1085,38 @@ void InventoryHandler::repairAll(uint64_t vendorGuid, bool useGuildBank) {
 }
 
 void InventoryHandler::autoEquipItemBySlot(int backpackIndex) {
-    if (backpackIndex < 0 || backpackIndex >= owner_.inventory.getBackpackSize()) return;
-    const auto& slot = owner_.inventory.getBackpackSlot(backpackIndex);
+    if (backpackIndex < 0 || backpackIndex >= owner_.inventoryRef().getBackpackSize()) return;
+    const auto& slot = owner_.inventoryRef().getBackpackSlot(backpackIndex);
     if (slot.empty()) return;
 
-    if (owner_.state == WorldState::IN_WORLD && owner_.socket) {
+    if (owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         auto packet = AutoEquipItemPacket::build(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex));
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     }
 }
 
 void InventoryHandler::autoEquipItemInBag(int bagIndex, int slotIndex) {
-    if (bagIndex < 0 || bagIndex >= owner_.inventory.NUM_BAG_SLOTS) return;
-    if (slotIndex < 0 || slotIndex >= owner_.inventory.getBagSize(bagIndex)) return;
+    if (bagIndex < 0 || bagIndex >= owner_.inventoryRef().NUM_BAG_SLOTS) return;
+    if (slotIndex < 0 || slotIndex >= owner_.inventoryRef().getBagSize(bagIndex)) return;
 
-    if (owner_.state == WorldState::IN_WORLD && owner_.socket) {
+    if (owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         auto packet = AutoEquipItemPacket::build(
             static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex), static_cast<uint8_t>(slotIndex));
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     }
 }
 
 void InventoryHandler::useItemBySlot(int backpackIndex) {
-    if (backpackIndex < 0 || backpackIndex >= owner_.inventory.getBackpackSize()) return;
-    const auto& slot = owner_.inventory.getBackpackSlot(backpackIndex);
+    if (backpackIndex < 0 || backpackIndex >= owner_.inventoryRef().getBackpackSize()) return;
+    const auto& slot = owner_.inventoryRef().getBackpackSlot(backpackIndex);
     if (slot.empty()) return;
 
-    uint64_t itemGuid = owner_.backpackSlotGuids_[backpackIndex];
+    uint64_t itemGuid = owner_.backpackSlotGuidsRef()[backpackIndex];
     if (itemGuid == 0) {
         itemGuid = owner_.resolveOnlineItemGuid(slot.item.itemId);
     }
 
-    if (itemGuid != 0 && owner_.state == WorldState::IN_WORLD && owner_.socket) {
+    if (itemGuid != 0 && owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         uint32_t useSpellId = 0;
         if (auto* info = owner_.getItemInfo(slot.item.itemId)) {
             for (const auto& sp : info->spells) {
@@ -1128,10 +1128,10 @@ void InventoryHandler::useItemBySlot(int backpackIndex) {
             LOG_DEBUG("useItemBySlot: entry=", slot.item.itemId,
                       " spellId=", useSpellId);
         }
-        auto packet = owner_.packetParsers_
-            ? owner_.packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex), itemGuid, useSpellId)
+        auto packet = owner_.getPacketParsers()
+            ? owner_.getPacketParsers()->buildUseItem(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex), itemGuid, useSpellId)
             : UseItemPacket::build(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex), itemGuid, useSpellId);
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     } else if (itemGuid == 0) {
         LOG_WARNING("useItemBySlot: itemGuid=0 for item='", slot.item.name,
                     "' entry=", slot.item.itemId, " — cannot use");
@@ -1140,16 +1140,16 @@ void InventoryHandler::useItemBySlot(int backpackIndex) {
 }
 
 void InventoryHandler::useItemInBag(int bagIndex, int slotIndex) {
-    if (bagIndex < 0 || bagIndex >= owner_.inventory.NUM_BAG_SLOTS) return;
-    if (slotIndex < 0 || slotIndex >= owner_.inventory.getBagSize(bagIndex)) return;
-    const auto& slot = owner_.inventory.getBagSlot(bagIndex, slotIndex);
+    if (bagIndex < 0 || bagIndex >= owner_.inventoryRef().NUM_BAG_SLOTS) return;
+    if (slotIndex < 0 || slotIndex >= owner_.inventoryRef().getBagSize(bagIndex)) return;
+    const auto& slot = owner_.inventoryRef().getBagSlot(bagIndex, slotIndex);
     if (slot.empty()) return;
 
     uint64_t itemGuid = 0;
-    uint64_t bagGuid = owner_.equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
+    uint64_t bagGuid = owner_.equipSlotGuidsRef()[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
     if (bagGuid != 0) {
-        auto it = owner_.containerContents_.find(bagGuid);
-        if (it != owner_.containerContents_.end() && slotIndex < static_cast<int>(it->second.numSlots)) {
+        auto it = owner_.containerContentsRef().find(bagGuid);
+        if (it != owner_.containerContentsRef().end() && slotIndex < static_cast<int>(it->second.numSlots)) {
             itemGuid = it->second.slotGuids[slotIndex];
         }
     }
@@ -1160,7 +1160,7 @@ void InventoryHandler::useItemInBag(int bagIndex, int slotIndex) {
     LOG_INFO("useItemInBag: bag=", bagIndex, " slot=", slotIndex, " itemId=", slot.item.itemId,
              " itemGuid=0x", std::hex, itemGuid, std::dec);
 
-    if (itemGuid != 0 && owner_.state == WorldState::IN_WORLD && owner_.socket) {
+    if (itemGuid != 0 && owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         uint32_t useSpellId = 0;
         if (auto* info = owner_.getItemInfo(slot.item.itemId)) {
             for (const auto& sp : info->spells) {
@@ -1171,12 +1171,12 @@ void InventoryHandler::useItemInBag(int bagIndex, int slotIndex) {
             }
         }
         uint8_t wowBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex);
-        auto packet = owner_.packetParsers_
-            ? owner_.packetParsers_->buildUseItem(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId)
+        auto packet = owner_.getPacketParsers()
+            ? owner_.getPacketParsers()->buildUseItem(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId)
             : UseItemPacket::build(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId);
         LOG_INFO("useItemInBag: sending CMSG_USE_ITEM, bag=", (int)wowBag, " slot=", slotIndex,
                  " packetSize=", packet.getSize());
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     } else if (itemGuid == 0) {
         LOG_WARNING("Use item in bag failed: missing item GUID for bag ", bagIndex, " slot ", slotIndex);
         owner_.addSystemChatMessage("Cannot use that item right now.");
@@ -1184,27 +1184,27 @@ void InventoryHandler::useItemInBag(int bagIndex, int slotIndex) {
 }
 
 void InventoryHandler::openItemBySlot(int backpackIndex) {
-    if (backpackIndex < 0 || backpackIndex >= owner_.inventory.getBackpackSize()) return;
-    if (owner_.inventory.getBackpackSlot(backpackIndex).empty()) return;
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (backpackIndex < 0 || backpackIndex >= owner_.inventoryRef().getBackpackSize()) return;
+    if (owner_.inventoryRef().getBackpackSlot(backpackIndex).empty()) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = OpenItemPacket::build(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex));
     LOG_INFO("openItemBySlot: CMSG_OPEN_ITEM bag=0xFF slot=", (Inventory::NUM_EQUIP_SLOTS + backpackIndex));
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::openItemInBag(int bagIndex, int slotIndex) {
-    if (bagIndex < 0 || bagIndex >= owner_.inventory.NUM_BAG_SLOTS) return;
-    if (slotIndex < 0 || slotIndex >= owner_.inventory.getBagSize(bagIndex)) return;
-    if (owner_.inventory.getBagSlot(bagIndex, slotIndex).empty()) return;
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (bagIndex < 0 || bagIndex >= owner_.inventoryRef().NUM_BAG_SLOTS) return;
+    if (slotIndex < 0 || slotIndex >= owner_.inventoryRef().getBagSize(bagIndex)) return;
+    if (owner_.inventoryRef().getBagSlot(bagIndex, slotIndex).empty()) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     uint8_t wowBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex);
     auto packet = OpenItemPacket::build(wowBag, static_cast<uint8_t>(slotIndex));
     LOG_INFO("openItemInBag: CMSG_OPEN_ITEM bag=", (int)wowBag, " slot=", slotIndex);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::destroyItem(uint8_t bag, uint8_t slot, uint8_t count) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (count == 0) count = 1;
     constexpr uint16_t kCmsgDestroyItem = 0x111;
     network::Packet packet(kCmsgDestroyItem);
@@ -1213,34 +1213,34 @@ void InventoryHandler::destroyItem(uint8_t bag, uint8_t slot, uint8_t count) {
     packet.writeUInt32(static_cast<uint32_t>(count));
     LOG_DEBUG("Destroy item request: bag=", (int)bag, " slot=", (int)slot,
               " count=", (int)count, " wire=0x", std::hex, kCmsgDestroyItem, std::dec);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::splitItem(uint8_t srcBag, uint8_t srcSlot, uint8_t count) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (count == 0) return;
 
-    int freeBp = owner_.inventory.findFreeBackpackSlot();
+    int freeBp = owner_.inventoryRef().findFreeBackpackSlot();
     if (freeBp >= 0) {
         uint8_t dstBag = 0xFF;
         uint8_t dstSlot = static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + freeBp);
         LOG_INFO("splitItem: src(bag=", (int)srcBag, " slot=", (int)srcSlot,
                  ") count=", (int)count, " -> dst(bag=0xFF slot=", (int)dstSlot, ")");
         auto packet = SplitItemPacket::build(srcBag, srcSlot, dstBag, dstSlot, count);
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
         return;
     }
-    for (int b = 0; b < owner_.inventory.NUM_BAG_SLOTS; b++) {
-        int bagSize = owner_.inventory.getBagSize(b);
+    for (int b = 0; b < owner_.inventoryRef().NUM_BAG_SLOTS; b++) {
+        int bagSize = owner_.inventoryRef().getBagSize(b);
         for (int s = 0; s < bagSize; s++) {
-            if (owner_.inventory.getBagSlot(b, s).empty()) {
+            if (owner_.inventoryRef().getBagSlot(b, s).empty()) {
                 uint8_t dstBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + b);
                 uint8_t dstSlot = static_cast<uint8_t>(s);
                 LOG_INFO("splitItem: src(bag=", (int)srcBag, " slot=", (int)srcSlot,
                          ") count=", (int)count, " -> dst(bag=", (int)dstBag,
                          " slot=", (int)dstSlot, ")");
                 auto packet = SplitItemPacket::build(srcBag, srcSlot, dstBag, dstSlot, count);
-                owner_.socket->send(packet);
+                owner_.getSocket()->send(packet);
                 return;
             }
         }
@@ -1249,11 +1249,11 @@ void InventoryHandler::splitItem(uint8_t srcBag, uint8_t srcSlot, uint8_t count)
 }
 
 void InventoryHandler::swapContainerItems(uint8_t srcBag, uint8_t srcSlot, uint8_t dstBag, uint8_t dstSlot) {
-    if (!owner_.socket || !owner_.socket->isConnected()) return;
+    if (!owner_.getSocket() || !owner_.getSocket()->isConnected()) return;
     LOG_INFO("swapContainerItems: src(bag=", (int)srcBag, " slot=", (int)srcSlot,
              ") -> dst(bag=", (int)dstBag, " slot=", (int)dstSlot, ")");
     auto packet = SwapItemPacket::build(dstBag, dstSlot, srcBag, srcSlot);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::swapBagSlots(int srcBagIndex, int dstBagIndex) {
@@ -1262,26 +1262,26 @@ void InventoryHandler::swapBagSlots(int srcBagIndex, int dstBagIndex) {
 
     auto srcEquip = static_cast<game::EquipSlot>(static_cast<int>(game::EquipSlot::BAG1) + srcBagIndex);
     auto dstEquip = static_cast<game::EquipSlot>(static_cast<int>(game::EquipSlot::BAG1) + dstBagIndex);
-    auto srcItem = owner_.inventory.getEquipSlot(srcEquip).item;
-    auto dstItem = owner_.inventory.getEquipSlot(dstEquip).item;
-    owner_.inventory.setEquipSlot(srcEquip, dstItem);
-    owner_.inventory.setEquipSlot(dstEquip, srcItem);
-    owner_.inventory.swapBagContents(srcBagIndex, dstBagIndex);
+    auto srcItem = owner_.inventoryRef().getEquipSlot(srcEquip).item;
+    auto dstItem = owner_.inventoryRef().getEquipSlot(dstEquip).item;
+    owner_.inventoryRef().setEquipSlot(srcEquip, dstItem);
+    owner_.inventoryRef().setEquipSlot(dstEquip, srcItem);
+    owner_.inventoryRef().swapBagContents(srcBagIndex, dstBagIndex);
 
-    if (owner_.socket && owner_.socket->isConnected()) {
+    if (owner_.getSocket() && owner_.getSocket()->isConnected()) {
         uint8_t srcSlot = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + srcBagIndex);
         uint8_t dstSlot = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + dstBagIndex);
         LOG_INFO("swapBagSlots: bag ", srcBagIndex, " (slot ", (int)srcSlot,
                  ") <-> bag ", dstBagIndex, " (slot ", (int)dstSlot, ")");
         auto packet = SwapItemPacket::build(255, dstSlot, 255, srcSlot);
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     }
 }
 
 void InventoryHandler::unequipToBackpack(EquipSlot equipSlot) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
 
-    int freeSlot = owner_.inventory.findFreeBackpackSlot();
+    int freeSlot = owner_.inventoryRef().findFreeBackpackSlot();
     if (freeSlot < 0) {
         owner_.addSystemChatMessage("Cannot unequip: no free backpack slots.");
         return;
@@ -1296,24 +1296,24 @@ void InventoryHandler::unequipToBackpack(EquipSlot equipSlot) {
              " -> backpackIndex=", freeSlot, " (dstSlot=", (int)dstSlot, ")");
 
     auto packet = SwapItemPacket::build(dstBag, dstSlot, srcBag, srcSlot);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::useItemById(uint32_t itemId) {
     if (itemId == 0) return;
     LOG_DEBUG("useItemById: searching for itemId=", itemId);
-    for (int i = 0; i < owner_.inventory.getBackpackSize(); i++) {
-        const auto& slot = owner_.inventory.getBackpackSlot(i);
+    for (int i = 0; i < owner_.inventoryRef().getBackpackSize(); i++) {
+        const auto& slot = owner_.inventoryRef().getBackpackSlot(i);
         if (!slot.empty() && slot.item.itemId == itemId) {
             LOG_DEBUG("useItemById: found itemId=", itemId, " at backpack slot ", i);
             useItemBySlot(i);
             return;
         }
     }
-    for (int bag = 0; bag < owner_.inventory.NUM_BAG_SLOTS; bag++) {
-        int bagSize = owner_.inventory.getBagSize(bag);
+    for (int bag = 0; bag < owner_.inventoryRef().NUM_BAG_SLOTS; bag++) {
+        int bagSize = owner_.inventoryRef().getBagSize(bag);
         for (int slot = 0; slot < bagSize; slot++) {
-            const auto& bagSlot = owner_.inventory.getBagSlot(bag, slot);
+            const auto& bagSlot = owner_.inventoryRef().getBagSlot(bag, slot);
             if (!bagSlot.empty() && bagSlot.item.itemId == itemId) {
                 LOG_DEBUG("useItemById: found itemId=", itemId, " in bag ", bag, " slot ", slot);
                 useItemInBag(bag, slot);
@@ -1338,14 +1338,14 @@ void InventoryHandler::handleListInventory(network::Packet& packet) {
     }
     vendorWindowOpen_ = true;
     owner_.closeGossip();
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("MERCHANT_SHOW", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("MERCHANT_SHOW", {});
 
     // Auto-sell grey items
-    if (autoSellGrey_ && currentVendorItems_.vendorGuid != 0 && owner_.state == WorldState::IN_WORLD && owner_.socket) {
+    if (autoSellGrey_ && currentVendorItems_.vendorGuid != 0 && owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         int itemsSold = 0;
         uint32_t totalSellPrice = 0;
-        for (int i = 0; i < owner_.inventory.getBackpackSize(); ++i) {
-            const auto& slot = owner_.inventory.getBackpackSlot(i);
+        for (int i = 0; i < owner_.inventoryRef().getBackpackSize(); ++i) {
+            const auto& slot = owner_.inventoryRef().getBackpackSlot(i);
             if (slot.empty()) continue;
             uint32_t quality = 0;
             uint32_t sellPrice = slot.item.sellPrice;
@@ -1354,7 +1354,7 @@ void InventoryHandler::handleListInventory(network::Packet& packet) {
                 if (sellPrice == 0) sellPrice = info->sellPrice;
             }
             if (quality == 0 && sellPrice > 0) {
-                uint64_t itemGuid = owner_.backpackSlotGuids_[i];
+                uint64_t itemGuid = owner_.backpackSlotGuidsRef()[i];
                 if (itemGuid == 0) itemGuid = owner_.resolveOnlineItemGuid(slot.item.itemId);
                 if (itemGuid != 0) {
                     sellItem(currentVendorItems_.vendorGuid, itemGuid, 1);
@@ -1363,10 +1363,10 @@ void InventoryHandler::handleListInventory(network::Packet& packet) {
                 }
             }
         }
-        for (int b = 0; b < owner_.inventory.NUM_BAG_SLOTS; ++b) {
-            int bagSize = owner_.inventory.getBagSize(b);
+        for (int b = 0; b < owner_.inventoryRef().NUM_BAG_SLOTS; ++b) {
+            int bagSize = owner_.inventoryRef().getBagSize(b);
             for (int s = 0; s < bagSize; ++s) {
-                const auto& slot = owner_.inventory.getBagSlot(b, s);
+                const auto& slot = owner_.inventoryRef().getBagSlot(b, s);
                 if (slot.empty()) continue;
                 uint32_t quality = 0;
                 uint32_t sellPrice = slot.item.sellPrice;
@@ -1376,10 +1376,10 @@ void InventoryHandler::handleListInventory(network::Packet& packet) {
                 }
                 if (quality == 0 && sellPrice > 0) {
                     uint64_t itemGuid = 0;
-                    uint64_t bagGuid = owner_.equipSlotGuids_[19 + b];
+                    uint64_t bagGuid = owner_.equipSlotGuidsRef()[19 + b];
                     if (bagGuid != 0) {
-                        auto cit = owner_.containerContents_.find(bagGuid);
-                        if (cit != owner_.containerContents_.end() && s < static_cast<int>(cit->second.numSlots))
+                        auto cit = owner_.containerContentsRef().find(bagGuid);
+                        if (cit != owner_.containerContentsRef().end() && s < static_cast<int>(cit->second.numSlots))
                             itemGuid = cit->second.slotGuids[s];
                     }
                     if (itemGuid == 0) itemGuid = owner_.resolveOnlineItemGuid(slot.item.itemId);
@@ -1407,7 +1407,7 @@ void InventoryHandler::handleListInventory(network::Packet& packet) {
     if (autoRepair_ && currentVendorItems_.canRepair && currentVendorItems_.vendorGuid != 0) {
         bool anyDamaged = false;
         for (int i = 0; i < Inventory::NUM_EQUIP_SLOTS; ++i) {
-            const auto& slot = owner_.inventory.getEquipSlot(static_cast<EquipSlot>(i));
+            const auto& slot = owner_.inventoryRef().getEquipSlot(static_cast<EquipSlot>(i));
             if (!slot.empty() && slot.item.maxDurability > 0
                     && slot.item.curDurability < slot.item.maxDurability) {
                 anyDamaged = true;
@@ -1421,11 +1421,11 @@ void InventoryHandler::handleListInventory(network::Packet& packet) {
     }
 
     // Play vendor sound
-    if (owner_.npcVendorCallback_ && currentVendorItems_.vendorGuid != 0) {
+    if (owner_.npcVendorCallbackRef() && currentVendorItems_.vendorGuid != 0) {
         auto entity = owner_.getEntityManager().getEntity(currentVendorItems_.vendorGuid);
         if (entity && entity->getType() == ObjectType::UNIT) {
             glm::vec3 pos(entity->getX(), entity->getY(), entity->getZ());
-            owner_.npcVendorCallback_(currentVendorItems_.vendorGuid, pos);
+            owner_.npcVendorCallbackRef()(currentVendorItems_.vendorGuid, pos);
         }
     }
 
@@ -1443,7 +1443,7 @@ void InventoryHandler::handleTrainerList(network::Packet& packet) {
     if (!TrainerListParser::parse(packet, currentTrainerList_, isClassic)) return;
     trainerWindowOpen_ = true;
     owner_.closeGossip();
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("TRAINER_SHOW", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("TRAINER_SHOW", {});
 
     LOG_INFO("Trainer list: ", currentTrainerList_.spells.size(), " spells");
 
@@ -1454,8 +1454,8 @@ void InventoryHandler::handleTrainerList(network::Packet& packet) {
 }
 
 void InventoryHandler::trainSpell(uint32_t spellId) {
-    LOG_INFO("trainSpell called: spellId=", spellId, " state=", (int)owner_.state, " socket=", (owner_.socket ? "yes" : "no"));
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) {
+    LOG_INFO("trainSpell called: spellId=", spellId, " state=", (int)owner_.getState(), " socket=", (owner_.getSocket() ? "yes" : "no"));
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) {
         LOG_WARNING("trainSpell: Not in world or no socket connection");
         return;
     }
@@ -1467,20 +1467,20 @@ void InventoryHandler::trainSpell(uint32_t spellId) {
             break;
         }
     }
-    LOG_INFO("Player money: ", owner_.playerMoneyCopper_, " copper, spell cost: ", spellCost, " copper");
+    LOG_INFO("Player money: ", owner_.playerMoneyCopperRef(), " copper, spell cost: ", spellCost, " copper");
 
     LOG_INFO("Sending CMSG_TRAINER_BUY_SPELL: guid=", currentTrainerList_.trainerGuid,
              " spellId=", spellId);
     auto packet = TrainerBuySpellPacket::build(
         currentTrainerList_.trainerGuid,
         spellId);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("CMSG_TRAINER_BUY_SPELL sent");
 }
 
 void InventoryHandler::closeTrainer() {
     trainerWindowOpen_ = false;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("TRAINER_CLOSED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("TRAINER_CLOSED", {});
     currentTrainerList_ = TrainerListData{};
     trainerTabs_.clear();
 }
@@ -1494,11 +1494,11 @@ void InventoryHandler::categorizeTrainerSpells() {
     std::vector<const TrainerSpell*> generalSpells;
 
     for (const auto& spell : currentTrainerList_.spells) {
-        auto slIt = owner_.spellToSkillLine_.find(spell.spellId);
-        if (slIt != owner_.spellToSkillLine_.end()) {
+        auto slIt = owner_.spellToSkillLineRef().find(spell.spellId);
+        if (slIt != owner_.spellToSkillLineRef().end()) {
             uint32_t skillLineId = slIt->second;
-            auto catIt = owner_.skillLineCategories_.find(skillLineId);
-            if (catIt != owner_.skillLineCategories_.end() && catIt->second == SKILLLINE_CATEGORY_CLASS) {
+            auto catIt = owner_.skillLineCategoriesRef().find(skillLineId);
+            if (catIt != owner_.skillLineCategoriesRef().end() && catIt->second == SKILLLINE_CATEGORY_CLASS) {
                 specialtySpells[skillLineId].push_back(&spell);
                 continue;
             }
@@ -1512,8 +1512,8 @@ void InventoryHandler::categorizeTrainerSpells() {
 
     std::vector<std::pair<std::string, std::vector<const TrainerSpell*>>> named;
     for (auto& [skillLineId, spells] : specialtySpells) {
-        auto nameIt = owner_.skillLineNames_.find(skillLineId);
-        std::string tabName = (nameIt != owner_.skillLineNames_.end()) ? nameIt->second : "Specialty";
+        auto nameIt = owner_.skillLineNamesRef().find(skillLineId);
+        std::string tabName = (nameIt != owner_.skillLineNamesRef().end()) ? nameIt->second : "Specialty";
         std::sort(spells.begin(), spells.end(), byName);
         named.push_back({std::move(tabName), std::move(spells)});
     }
@@ -1543,7 +1543,7 @@ void InventoryHandler::openMailbox(uint64_t guid) {
     selectedMailIndex_ = -1;
     showMailCompose_ = false;
     clearMailAttachments();
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("MAIL_SHOW", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("MAIL_SHOW", {});
     refreshMailList();
 }
 
@@ -1552,23 +1552,23 @@ void InventoryHandler::closeMailbox() {
     mailboxGuid_ = 0;
     showMailCompose_ = false;
     clearMailAttachments();
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("MAIL_CLOSED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("MAIL_CLOSED", {});
 }
 
 void InventoryHandler::refreshMailList() {
     if (!mailboxOpen_ || mailboxGuid_ == 0) return;
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = GetMailListPacket::build(mailboxGuid_);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::sendMail(const std::string& recipient, const std::string& subject,
                                 const std::string& body, uint64_t money, uint64_t cod) {
-    if (owner_.state != WorldState::IN_WORLD) {
+    if (owner_.getState() != WorldState::IN_WORLD) {
         LOG_WARNING("sendMail: not in world");
         return;
     }
-    if (!owner_.socket) {
+    if (!owner_.getSocket()) {
         LOG_WARNING("sendMail: no socket");
         return;
     }
@@ -1583,18 +1583,18 @@ void InventoryHandler::sendMail(const std::string& recipient, const std::string&
             itemGuids.push_back(att.itemGuid);
         }
     }
-    auto packet = owner_.packetParsers_->buildSendMail(mailboxGuid_, recipient, subject, body, money, cod, itemGuids);
+    auto packet = owner_.getPacketParsers()->buildSendMail(mailboxGuid_, recipient, subject, body, money, cod, itemGuids);
     LOG_INFO("sendMail: to='", recipient, "' subject='", subject, "' money=", money,
              " attachments=", itemGuids.size(), " mailboxGuid=", mailboxGuid_);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     clearMailAttachments();
 }
 
 bool InventoryHandler::attachItemFromBackpack(int backpackIndex) {
-    if (backpackIndex < 0 || backpackIndex >= owner_.inventory.getBackpackSize()) return false;
-    const auto& slot = owner_.inventory.getBackpackSlot(backpackIndex);
+    if (backpackIndex < 0 || backpackIndex >= owner_.inventoryRef().getBackpackSize()) return false;
+    const auto& slot = owner_.inventoryRef().getBackpackSlot(backpackIndex);
     if (slot.empty()) return false;
-    uint64_t itemGuid = owner_.backpackSlotGuids_[backpackIndex];
+    uint64_t itemGuid = owner_.backpackSlotGuidsRef()[backpackIndex];
     if (itemGuid == 0) return false;
     for (int i = 0; i < MAIL_MAX_ATTACHMENTS; ++i) {
         if (!mailAttachments_[i].occupied()) {
@@ -1609,14 +1609,14 @@ bool InventoryHandler::attachItemFromBackpack(int backpackIndex) {
 }
 
 bool InventoryHandler::attachItemFromBag(int bagIndex, int slotIndex) {
-    if (bagIndex < 0 || bagIndex >= owner_.inventory.NUM_BAG_SLOTS) return false;
-    if (slotIndex < 0 || slotIndex >= owner_.inventory.getBagSize(bagIndex)) return false;
-    const auto& slot = owner_.inventory.getBagSlot(bagIndex, slotIndex);
+    if (bagIndex < 0 || bagIndex >= owner_.inventoryRef().NUM_BAG_SLOTS) return false;
+    if (slotIndex < 0 || slotIndex >= owner_.inventoryRef().getBagSize(bagIndex)) return false;
+    const auto& slot = owner_.inventoryRef().getBagSlot(bagIndex, slotIndex);
     if (slot.empty()) return false;
-    uint64_t bagGuid = owner_.equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
+    uint64_t bagGuid = owner_.equipSlotGuidsRef()[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
     if (bagGuid == 0) return false;
-    auto it = owner_.containerContents_.find(bagGuid);
-    if (it == owner_.containerContents_.end()) return false;
+    auto it = owner_.containerContentsRef().find(bagGuid);
+    if (it == owner_.containerContentsRef().end()) return false;
     if (slotIndex >= static_cast<int>(it->second.numSlots)) return false;
     uint64_t itemGuid = it->second.slotGuids[slotIndex];
     if (itemGuid == 0) return false;
@@ -1650,27 +1650,27 @@ int InventoryHandler::getMailAttachmentCount() const {
 }
 
 void InventoryHandler::mailTakeMoney(uint32_t mailId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || mailboxGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || mailboxGuid_ == 0) return;
     auto packet = MailTakeMoneyPacket::build(mailboxGuid_, mailId);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::mailTakeItem(uint32_t mailId, uint32_t itemGuidLow) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || mailboxGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || mailboxGuid_ == 0) return;
     auto packet = MailTakeItemPacket::build(mailboxGuid_, mailId, itemGuidLow);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::mailDelete(uint32_t mailId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || mailboxGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || mailboxGuid_ == 0) return;
     auto packet = MailDeletePacket::build(mailboxGuid_, mailId, 0);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::mailMarkAsRead(uint32_t mailId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || mailboxGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || mailboxGuid_ == 0) return;
     auto packet = MailMarkAsReadPacket::build(mailboxGuid_, mailId);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::handleShowMailbox(network::Packet& packet) {
@@ -1678,13 +1678,13 @@ void InventoryHandler::handleShowMailbox(network::Packet& packet) {
     mailboxGuid_ = packet.readUInt64();
     mailboxOpen_ = true;
     selectedMailIndex_ = -1;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("MAIL_SHOW", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("MAIL_SHOW", {});
     refreshMailList();
 }
 
 void InventoryHandler::handleMailListResult(network::Packet& packet) {
-    if (!owner_.packetParsers_->parseMailList(packet, mailInbox_)) return;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("MAIL_INBOX_UPDATE", {});
+    if (!owner_.getPacketParsers()->parseMailList(packet, mailInbox_)) return;
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("MAIL_INBOX_UPDATE", {});
     for (const auto& mail : mailInbox_) {
         for (const auto& att : mail.attachments) {
             if (att.itemId != 0) owner_.ensureItemInfo(att.itemId);
@@ -1709,14 +1709,14 @@ void InventoryHandler::handleSendMailResult(network::Packet& packet) {
     } else if (action == 4) { // TAKE_ITEM
         if (error == 0) {
             owner_.addSystemChatMessage("Item taken from mail.");
-            if (owner_.addonEventCallback_) owner_.addonEventCallback_("BAG_UPDATE", {});
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("BAG_UPDATE", {});
         } else {
             owner_.addSystemChatMessage("Failed to take item (error " + std::to_string(error) + ").");
         }
     } else if (action == 5) { // TAKE_MONEY
         if (error == 0) {
             owner_.addSystemChatMessage("Money taken from mail.");
-            if (owner_.addonEventCallback_) owner_.addonEventCallback_("PLAYER_MONEY", {});
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("PLAYER_MONEY", {});
         }
     } else if (action == 2) { // DELETE
         if (error == 0) {
@@ -1729,7 +1729,7 @@ void InventoryHandler::handleSendMailResult(network::Packet& packet) {
 void InventoryHandler::handleReceivedMail(network::Packet& packet) {
     (void)packet;
     hasNewMail_ = true;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("UPDATE_PENDING_MAIL", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("UPDATE_PENDING_MAIL", {});
 }
 
 void InventoryHandler::handleQueryNextMailTime(network::Packet& packet) {
@@ -1756,23 +1756,23 @@ void InventoryHandler::openBank(uint64_t guid) {
         effectiveBankSlots_ = 28;
         effectiveBankBagSlots_ = 7;
     }
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("BANKFRAME_OPENED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("BANKFRAME_OPENED", {});
 }
 
 void InventoryHandler::closeBank() {
     bankOpen_ = false;
     bankerGuid_ = 0;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("BANKFRAME_CLOSED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("BANKFRAME_CLOSED", {});
 }
 
 void InventoryHandler::buyBankSlot() {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || bankerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || bankerGuid_ == 0) return;
     auto packet = BuyBankSlotPacket::build(bankerGuid_);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::depositItem(uint8_t srcBag, uint8_t srcSlot) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     int freeBankSlot = -1;
     for (int i = 0; i < effectiveBankSlots_; ++i) {
         if (bankSlotGuids_[i] == 0) { freeBankSlot = i; break; }
@@ -1783,19 +1783,19 @@ void InventoryHandler::depositItem(uint8_t srcBag, uint8_t srcSlot) {
     }
     uint8_t dstSlot = static_cast<uint8_t>(39 + freeBankSlot);
     auto packet = SwapItemPacket::build(0xFF, dstSlot, srcBag, srcSlot);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::withdrawItem(uint8_t srcBag, uint8_t srcSlot) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
-    int freeSlot = owner_.inventory.findFreeBackpackSlot();
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
+    int freeSlot = owner_.inventoryRef().findFreeBackpackSlot();
     if (freeSlot < 0) {
         owner_.addSystemChatMessage("Inventory is full.");
         return;
     }
     uint8_t dstSlot = static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + freeSlot);
     auto packet = SwapItemPacket::build(0xFF, dstSlot, srcBag, srcSlot);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::handleShowBank(network::Packet& packet) {
@@ -1809,7 +1809,7 @@ void InventoryHandler::handleBuyBankSlotResult(network::Packet& packet) {
     uint32_t result = packet.readUInt32();
     if (result == 0) {
         owner_.addSystemChatMessage("Bank slot purchased.");
-        if (owner_.addonEventCallback_) owner_.addonEventCallback_("PLAYERBANKBAGSLOTS_CHANGED", {});
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("PLAYERBANKBAGSLOTS_CHANGED", {});
     } else {
         owner_.addSystemChatMessage("Failed to purchase bank slot.");
     }
@@ -1823,56 +1823,56 @@ void InventoryHandler::openGuildBank(uint64_t guid) {
     guildBankerGuid_ = guid;
     guildBankOpen_ = true;
     guildBankActiveTab_ = 0;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("GUILDBANKFRAME_OPENED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GUILDBANKFRAME_OPENED", {});
     queryGuildBankTab(0);
 }
 
 void InventoryHandler::closeGuildBank() {
     guildBankOpen_ = false;
     guildBankerGuid_ = 0;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("GUILDBANKFRAME_CLOSED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GUILDBANKFRAME_CLOSED", {});
 }
 
 void InventoryHandler::queryGuildBankTab(uint8_t tabId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || guildBankerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || guildBankerGuid_ == 0) return;
     auto packet = GuildBankQueryTabPacket::build(guildBankerGuid_, tabId, false);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::buyGuildBankTab() {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || guildBankerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || guildBankerGuid_ == 0) return;
     uint8_t nextTab = static_cast<uint8_t>(guildBankData_.tabs.size());
     auto packet = GuildBankBuyTabPacket::build(guildBankerGuid_, nextTab);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::depositGuildBankMoney(uint32_t amount) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || guildBankerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || guildBankerGuid_ == 0) return;
     auto packet = GuildBankDepositMoneyPacket::build(guildBankerGuid_, amount);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::withdrawGuildBankMoney(uint32_t amount) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || guildBankerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || guildBankerGuid_ == 0) return;
     auto packet = GuildBankWithdrawMoneyPacket::build(guildBankerGuid_, amount);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::guildBankWithdrawItem(uint8_t tabId, uint8_t bankSlot, uint8_t destBag, uint8_t destSlot) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || guildBankerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || guildBankerGuid_ == 0) return;
     auto packet = GuildBankSwapItemsPacket::buildBankToInventory(guildBankerGuid_, tabId, bankSlot, destBag, destSlot);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::guildBankDepositItem(uint8_t tabId, uint8_t bankSlot, uint8_t srcBag, uint8_t srcSlot) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || guildBankerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || guildBankerGuid_ == 0) return;
     auto packet = GuildBankSwapItemsPacket::buildInventoryToBank(guildBankerGuid_, tabId, bankSlot, srcBag, srcSlot);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::handleGuildBankList(network::Packet& packet) {
     if (!GuildBankListParser::parse(packet, guildBankData_)) return;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("GUILDBANKBAGSLOTS_CHANGED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("GUILDBANKBAGSLOTS_CHANGED", {});
     for (const auto& tab : guildBankData_.tabs) {
         for (const auto& item : tab.items) {
             if (item.itemEntry != 0) owner_.ensureItemInfo(item.itemEntry);
@@ -1888,37 +1888,37 @@ void InventoryHandler::openAuctionHouse(uint64_t guid) {
     auctioneerGuid_ = guid;
     auctionOpen_ = true;
     auctionActiveTab_ = 0;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("AUCTION_HOUSE_SHOW", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("AUCTION_HOUSE_SHOW", {});
 }
 
 void InventoryHandler::closeAuctionHouse() {
     auctionOpen_ = false;
     auctioneerGuid_ = 0;
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("AUCTION_HOUSE_CLOSED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("AUCTION_HOUSE_CLOSED", {});
 }
 
 void InventoryHandler::auctionSearch(const std::string& name, uint8_t levelMin, uint8_t levelMax,
                                       uint32_t quality, uint32_t itemClass, uint32_t itemSubClass,
                                       uint32_t invTypeMask, uint8_t usableOnly, uint32_t offset) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || auctioneerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || auctioneerGuid_ == 0) return;
     lastAuctionSearch_ = {name, levelMin, levelMax, quality, itemClass, itemSubClass, invTypeMask, usableOnly, offset};
     hasAuctionSearch_ = true;
     pendingAuctionTarget_ = AuctionResultTarget::BROWSE;
     auto packet = AuctionListItemsPacket::build(auctioneerGuid_, offset, name,
                                                   levelMin, levelMax, invTypeMask,
                                                   itemClass, itemSubClass, quality, usableOnly, 0);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     auctionSearchDelayTimer_ = 5.0f;
 }
 
 void InventoryHandler::auctionSellItem(int backpackIndex, uint32_t bid,
                                         uint32_t buyout, uint32_t duration) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || auctioneerGuid_ == 0) return;
-    if (backpackIndex < 0 || backpackIndex >= owner_.inventory.getBackpackSize()) return;
-    const auto& slot = owner_.inventory.getBackpackSlot(backpackIndex);
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || auctioneerGuid_ == 0) return;
+    if (backpackIndex < 0 || backpackIndex >= owner_.inventoryRef().getBackpackSize()) return;
+    const auto& slot = owner_.inventoryRef().getBackpackSlot(backpackIndex);
     if (slot.empty()) return;
 
-    uint64_t itemGuid = owner_.backpackSlotGuids_[backpackIndex];
+    uint64_t itemGuid = owner_.backpackSlotGuidsRef()[backpackIndex];
     if (itemGuid == 0) {
         itemGuid = owner_.resolveOnlineItemGuid(slot.item.itemId);
     }
@@ -1930,39 +1930,39 @@ void InventoryHandler::auctionSellItem(int backpackIndex, uint32_t bid,
     uint32_t stackCount = slot.item.stackCount;
     auto packet = AuctionSellItemPacket::build(auctioneerGuid_, itemGuid, stackCount, bid, buyout, duration,
                                                 isPreWotlk());
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::auctionPlaceBid(uint32_t auctionId, uint32_t amount) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || auctioneerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || auctioneerGuid_ == 0) return;
     auto packet = AuctionPlaceBidPacket::build(auctioneerGuid_, auctionId, amount);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::auctionBuyout(uint32_t auctionId, uint32_t buyoutPrice) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || auctioneerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || auctioneerGuid_ == 0) return;
     auto packet = AuctionPlaceBidPacket::build(auctioneerGuid_, auctionId, buyoutPrice);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::auctionCancelItem(uint32_t auctionId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || auctioneerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || auctioneerGuid_ == 0) return;
     auto packet = AuctionRemoveItemPacket::build(auctioneerGuid_, auctionId);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::auctionListOwnerItems(uint32_t offset) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || auctioneerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || auctioneerGuid_ == 0) return;
     pendingAuctionTarget_ = AuctionResultTarget::OWNER;
     auto packet = AuctionListOwnerItemsPacket::build(auctioneerGuid_, offset);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::auctionListBidderItems(uint32_t offset) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || auctioneerGuid_ == 0) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || auctioneerGuid_ == 0) return;
     pendingAuctionTarget_ = AuctionResultTarget::BIDDER;
     auto packet = AuctionListBidderItemsPacket::build(auctioneerGuid_, offset);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::handleAuctionHello(network::Packet& packet) {
@@ -1974,7 +1974,7 @@ void InventoryHandler::handleAuctionHello(network::Packet& packet) {
     auctionOpen_ = true;
     auctionActiveTab_ = 0;
     owner_.closeGossip();
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("AUCTION_HOUSE_SHOW", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("AUCTION_HOUSE_SHOW", {});
 }
 
 void InventoryHandler::handleAuctionListResult(network::Packet& packet) {
@@ -1983,13 +1983,13 @@ void InventoryHandler::handleAuctionListResult(network::Packet& packet) {
 
     if (pendingAuctionTarget_ == AuctionResultTarget::OWNER) {
         auctionOwnerResults_ = std::move(result);
-        if (owner_.addonEventCallback_) owner_.addonEventCallback_("AUCTION_OWNED_LIST_UPDATE", {});
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("AUCTION_OWNED_LIST_UPDATE", {});
     } else if (pendingAuctionTarget_ == AuctionResultTarget::BIDDER) {
         auctionBidderResults_ = std::move(result);
-        if (owner_.addonEventCallback_) owner_.addonEventCallback_("AUCTION_BIDDER_LIST_UPDATE", {});
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("AUCTION_BIDDER_LIST_UPDATE", {});
     } else {
         auctionBrowseResults_ = std::move(result);
-        if (owner_.addonEventCallback_) owner_.addonEventCallback_("AUCTION_ITEM_LIST_UPDATE", {});
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("AUCTION_ITEM_LIST_UPDATE", {});
     }
 
     // Ensure item info for all entries
@@ -2026,9 +2026,9 @@ void InventoryHandler::handleAuctionCommandResult(network::Packet& packet) {
     if (error == 0) {
         std::string msg = std::string("Auction ") + actionStr + " successful.";
         owner_.addSystemChatMessage(msg);
-        if (owner_.addonEventCallback_) {
-            owner_.addonEventCallback_("PLAYER_MONEY", {});
-            owner_.addonEventCallback_("BAG_UPDATE", {});
+        if (owner_.addonEventCallbackRef()) {
+            owner_.addonEventCallbackRef()("PLAYER_MONEY", {});
+            owner_.addonEventCallbackRef()("BAG_UPDATE", {});
         }
         // Re-query after successful buy/bid so the list reflects the change.
         // Previously gated on name.length()>0 which skipped browse-all (empty name).
@@ -2058,10 +2058,10 @@ void InventoryHandler::handleAuctionCommandResult(network::Packet& packet) {
 // ============================================================
 
 void InventoryHandler::queryItemText(uint64_t itemGuid) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     network::Packet pkt(wireOpcode(Opcode::CMSG_ITEM_TEXT_QUERY));
     pkt.writeUInt64(itemGuid);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 void InventoryHandler::handleItemTextQueryResponse(network::Packet& packet) {
@@ -2079,54 +2079,54 @@ void InventoryHandler::handleItemTextQueryResponse(network::Packet& packet) {
 
 void InventoryHandler::acceptTradeRequest() {
     if (tradeStatus_ != TradeStatus::PendingIncoming) return;
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = BeginTradePacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::declineTradeRequest() {
     if (tradeStatus_ != TradeStatus::PendingIncoming) return;
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = CancelTradePacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     resetTradeState();
 }
 
 void InventoryHandler::acceptTrade() {
     if (tradeStatus_ != TradeStatus::Open) return;
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = AcceptTradePacket::build();
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::cancelTrade() {
     if (tradeStatus_ == TradeStatus::None) return;
-    if (owner_.state == WorldState::IN_WORLD && owner_.socket) {
+    if (owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         auto packet = CancelTradePacket::build();
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     }
     resetTradeState();
 }
 
 void InventoryHandler::setTradeItem(uint8_t tradeSlot, uint8_t srcBag, uint8_t srcSlot) {
     if (tradeStatus_ != TradeStatus::Open) return;
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = SetTradeItemPacket::build(tradeSlot, srcBag, srcSlot);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::clearTradeItem(uint8_t tradeSlot) {
     if (tradeStatus_ != TradeStatus::Open) return;
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = ClearTradeItemPacket::build(tradeSlot);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::setTradeGold(uint64_t amount) {
     if (tradeStatus_ != TradeStatus::Open) return;
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = SetTradeGoldPacket::build(static_cast<uint32_t>(amount));
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void InventoryHandler::resetTradeState() {
@@ -2157,23 +2157,23 @@ void InventoryHandler::handleTradeStatus(network::Packet& packet) {
             if (nit != owner_.getPlayerNameCache().end()) tradePeerName_ = nit->second;
             else tradePeerName_ = "Unknown";
             owner_.addSystemChatMessage(tradePeerName_ + " wants to trade with you.");
-            if (owner_.addonEventCallback_) owner_.addonEventCallback_("TRADE_REQUEST", {tradePeerName_});
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("TRADE_REQUEST", {tradePeerName_});
             break;
         }
         case 2: // TRADE_STATUS_INITIATED
             tradeStatus_ = TradeStatus::Open;
             owner_.addSystemChatMessage("Trade opened.");
-            if (owner_.addonEventCallback_) owner_.addonEventCallback_("TRADE_SHOW", {});
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("TRADE_SHOW", {});
             break;
         case 3: // TRADE_STATUS_CANCELLED
             resetTradeState();
             owner_.addSystemChatMessage("Trade cancelled.");
-            if (owner_.addonEventCallback_) owner_.addonEventCallback_("TRADE_CLOSED", {});
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("TRADE_CLOSED", {});
             break;
         case 4: // TRADE_STATUS_ACCEPTED
             tradeStatus_ = TradeStatus::Accepted;
             owner_.addSystemChatMessage("Trade partner accepted.");
-            if (owner_.addonEventCallback_) owner_.addonEventCallback_("TRADE_ACCEPT_UPDATE", {});
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("TRADE_ACCEPT_UPDATE", {});
             break;
         case 5: // TRADE_STATUS_ALREADY_TRADING
             owner_.addSystemChatMessage("You are already trading.");
@@ -2183,10 +2183,10 @@ void InventoryHandler::handleTradeStatus(network::Packet& packet) {
             // packet batch and needs the trade state to store final item/gold data.
             tradeStatus_ = TradeStatus::None;
             owner_.addSystemChatMessage("Trade complete.");
-            if (owner_.addonEventCallback_) {
-                owner_.addonEventCallback_("TRADE_CLOSED", {});
-                owner_.addonEventCallback_("BAG_UPDATE", {});
-                owner_.addonEventCallback_("PLAYER_MONEY", {});
+            if (owner_.addonEventCallbackRef()) {
+                owner_.addonEventCallbackRef()("TRADE_CLOSED", {});
+                owner_.addonEventCallbackRef()("BAG_UPDATE", {});
+                owner_.addonEventCallbackRef()("PLAYER_MONEY", {});
             }
             break;
         case 9: // TRADE_STATUS_TARGET_TO_FAR
@@ -2196,11 +2196,11 @@ void InventoryHandler::handleTradeStatus(network::Packet& packet) {
         case 13: // TRADE_STATUS_FAILED
             resetTradeState();
             owner_.addSystemChatMessage("Trade failed.");
-            if (owner_.addonEventCallback_) owner_.addonEventCallback_("TRADE_CLOSED", {});
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("TRADE_CLOSED", {});
             break;
         case 8: // TRADE_STATUS_UNACCEPT
             tradeStatus_ = TradeStatus::Open;
-            if (owner_.addonEventCallback_) owner_.addonEventCallback_("TRADE_ACCEPT_UPDATE", {});
+            if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("TRADE_ACCEPT_UPDATE", {});
             break;
         case 17: // TRADE_STATUS_PETITION
             owner_.addSystemChatMessage("You cannot trade while petition is active.");
@@ -2262,7 +2262,7 @@ void InventoryHandler::handleTradeStatusExtended(network::Packet& packet) {
         else peerTradeGold_ = gold;
     }
 
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("TRADE_UPDATE", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("TRADE_UPDATE", {});
 }
 
 // ============================================================
@@ -2274,7 +2274,7 @@ bool InventoryHandler::supportsEquipmentSets() const {
 }
 
 void InventoryHandler::useEquipmentSet(uint32_t setId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     uint16_t wire = wireOpcode(Opcode::CMSG_EQUIPMENT_SET_USE);
     if (wire == 0xFFFF) { owner_.addUIError("Equipment sets not supported."); return; }
     const EquipmentSet* es = nullptr;
@@ -2308,7 +2308,7 @@ void InventoryHandler::useEquipmentSet(uint32_t setId) {
                 }
             }
             for (int bag = 0; bag < 4 && !found; ++bag) {
-                int bagSize = owner_.inventory.getBagSize(bag);
+                int bagSize = owner_.inventoryRef().getBagSize(bag);
                 for (int s = 0; s < bagSize && !found; ++s) {
                     if (owner_.getBagItemGuid(bag, s) == itemGuid) {
                         srcBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bag);
@@ -2321,12 +2321,12 @@ void InventoryHandler::useEquipmentSet(uint32_t setId) {
         pkt.writeUInt8(srcBag);
         pkt.writeUInt8(srcSlot);
     }
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 void InventoryHandler::saveEquipmentSet(const std::string& name, const std::string& iconName,
                                          uint64_t existingGuid, uint32_t setIndex) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     uint16_t wire = wireOpcode(Opcode::CMSG_EQUIPMENT_SET_SAVE);
     if (wire == 0xFFFF) { owner_.addUIError("Equipment sets not supported."); return; }
     pendingSaveSetName_ = name;
@@ -2345,16 +2345,16 @@ void InventoryHandler::saveEquipmentSet(const std::string& name, const std::stri
     for (int i = 0; i < 19; ++i) {
         pkt.writePackedGuid(owner_.getEquipSlotGuid(i));
     }
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 }
 
 void InventoryHandler::deleteEquipmentSet(uint64_t setGuid) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     uint16_t wire = wireOpcode(Opcode::CMSG_DELETEEQUIPMENT_SET);
     if (wire == 0xFFFF) { owner_.addUIError("Equipment sets not supported."); return; }
     network::Packet pkt(wire);
     pkt.writeUInt64(setGuid);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     equipmentSets_.erase(
         std::remove_if(equipmentSets_.begin(), equipmentSets_.end(),
                         [setGuid](const EquipmentSet& es) { return es.setGuid == setGuid; }),
@@ -2407,26 +2407,26 @@ void InventoryHandler::handleEquipmentSetList(network::Packet& packet) {
 // ============================================================
 
 void InventoryHandler::queryItemInfo(uint32_t entry, uint64_t guid) {
-    if (owner_.itemInfoCache_.count(entry) || owner_.pendingItemQueries_.count(entry)) return;
+    if (owner_.itemInfoCacheRef().count(entry) || owner_.pendingItemQueriesRef().count(entry)) return;
     if (!owner_.isInWorld()) return;
 
-    owner_.pendingItemQueries_.insert(entry);
+    owner_.pendingItemQueriesRef().insert(entry);
     // Some cores reject CMSG_ITEM_QUERY_SINGLE when the GUID is 0.
     // If we don't have the item object's GUID (e.g. visible equipment decoding),
     // fall back to the player's GUID to keep the request non-zero.
-    uint64_t queryGuid = (guid != 0) ? guid : owner_.playerGuid;
-    auto packet = owner_.packetParsers_
-        ? owner_.packetParsers_->buildItemQuery(entry, queryGuid)
+    uint64_t queryGuid = (guid != 0) ? guid : owner_.getPlayerGuid();
+    auto packet = owner_.getPacketParsers()
+        ? owner_.getPacketParsers()->buildItemQuery(entry, queryGuid)
         : ItemQueryPacket::build(entry, queryGuid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_DEBUG("queryItemInfo: entry=", entry, " guid=0x", std::hex, queryGuid, std::dec,
-              " pending=", owner_.pendingItemQueries_.size());
+              " pending=", owner_.pendingItemQueriesRef().size());
 }
 
 void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
     ItemQueryResponseData data;
-    bool parsed = owner_.packetParsers_
-        ? owner_.packetParsers_->parseItemQueryResponse(packet, data)
+    bool parsed = owner_.getPacketParsers()
+        ? owner_.getPacketParsers()->parseItemQueryResponse(packet, data)
         : ItemQueryResponseParser::parse(packet, data);
     if (!parsed) {
         // Extract entry from raw packet so we can clear the pending query even on parse failure.
@@ -2436,24 +2436,24 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
             // High bit indicates a negative (invalid/missing) item entry response;
             // mask it off so we can still clear the pending query by entry ID.
             uint32_t rawEntry = packet.readUInt32() & ~0x80000000u;
-            owner_.pendingItemQueries_.erase(rawEntry);
+            owner_.pendingItemQueriesRef().erase(rawEntry);
         }
         LOG_WARNING("handleItemQueryResponse: parse failed, size=", packet.getSize());
         return;
     }
 
-    owner_.pendingItemQueries_.erase(data.entry);
+    owner_.pendingItemQueriesRef().erase(data.entry);
     LOG_DEBUG("handleItemQueryResponse: entry=", data.entry, " name='", data.name,
              "' class=", data.itemClass, " subClass=", data.subClass,
              " invType=", data.inventoryType, " valid=", data.valid);
 
     if (data.valid) {
-        owner_.itemInfoCache_[data.entry] = data;
+        owner_.itemInfoCacheRef()[data.entry] = data;
         rebuildOnlineInventory();
         maybeDetectVisibleItemLayout();
 
         // Flush any deferred loot notifications waiting on this item's name/quality.
-        for (auto it = owner_.pendingItemPushNotifs_.begin(); it != owner_.pendingItemPushNotifs_.end(); ) {
+        for (auto it = owner_.pendingItemPushNotifsRef().begin(); it != owner_.pendingItemPushNotifsRef().end(); ) {
             if (it->itemId == data.entry) {
                 std::string itemName = data.name.empty() ? ("item #" + std::to_string(data.entry)) : data.name;
                 std::string link = buildItemLink(data.entry, data.quality, itemName);
@@ -2463,8 +2463,8 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
                 if (auto* ac = owner_.services().audioCoordinator) {
                     if (auto* sfx = ac->getUiSoundManager()) sfx->playLootItem();
                 }
-                if (owner_.itemLootCallback_) owner_.itemLootCallback_(data.entry, it->count, data.quality, itemName);
-                it = owner_.pendingItemPushNotifs_.erase(it);
+                if (owner_.itemLootCallbackRef()) owner_.itemLootCallbackRef()(data.entry, it->count, data.quality, itemName);
+                it = owner_.pendingItemPushNotifsRef().erase(it);
             } else {
                 ++it;
             }
@@ -2473,7 +2473,7 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
         // Selectively re-emit only players whose equipment references this item entry
         const uint32_t resolvedEntry = data.entry;
         int reemitCount = 0;
-        for (const auto& [guid, entries] : owner_.otherPlayerVisibleItemEntries_) {
+        for (const auto& [guid, entries] : owner_.otherPlayerVisibleItemEntriesRef()) {
             for (uint32_t e : entries) {
                 if (e == resolvedEntry) {
                     emitOtherPlayerEquipment(guid);
@@ -2483,11 +2483,11 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
             }
         }
         if (reemitCount > 0) {
-            LOG_WARNING("Re-emitted equipment for ", reemitCount, " players after resolving entry=", resolvedEntry);
+            LOG_DEBUG("Re-emitted equipment for ", reemitCount, " players after resolving entry=", resolvedEntry);
         }
         // Same for inspect-based entries
-        if (owner_.playerEquipmentCallback_) {
-            for (const auto& [guid, entries] : owner_.inspectedPlayerItemEntries_) {
+        if (owner_.playerEquipmentCallbackRef()) {
+            for (const auto& [guid, entries] : owner_.inspectedPlayerItemEntriesRef()) {
                 bool relevant = false;
                 for (uint32_t e : entries) {
                     if (e == resolvedEntry) { relevant = true; break; }
@@ -2498,12 +2498,12 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
                 for (int s = 0; s < 19; s++) {
                     uint32_t entry = entries[s];
                     if (entry == 0) continue;
-                    auto infoIt = owner_.itemInfoCache_.find(entry);
-                    if (infoIt == owner_.itemInfoCache_.end()) continue;
+                    auto infoIt = owner_.itemInfoCacheRef().find(entry);
+                    if (infoIt == owner_.itemInfoCacheRef().end()) continue;
                     displayIds[s] = infoIt->second.displayInfoId;
                     invTypes[s] = static_cast<uint8_t>(infoIt->second.inventoryType);
                 }
-                owner_.playerEquipmentCallback_(guid, displayIds, invTypes);
+                owner_.playerEquipmentCallbackRef()(guid, displayIds, invTypes);
             }
         }
     }
@@ -2511,14 +2511,14 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
 
 uint64_t InventoryHandler::resolveOnlineItemGuid(uint32_t itemId) const {
     if (itemId == 0) return 0;
-    for (const auto& [guid, info] : owner_.onlineItems_) {
+    for (const auto& [guid, info] : owner_.onlineItemsRef()) {
         if (info.entry == itemId) return guid;
     }
     return 0;
 }
 
 void InventoryHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_t>& fields) {
-    if (owner_.invSlotBase_ >= 0 && owner_.packSlotBase_ >= 0) return;
+    if (owner_.invSlotBaseRef() >= 0 && owner_.packSlotBaseRef() >= 0) return;
     if (fields.empty()) return;
 
     std::vector<uint16_t> matchingPairs;
@@ -2531,7 +2531,7 @@ void InventoryHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_
         uint64_t guid = (uint64_t(itHigh->second) << 32) | low;
         if (guid == 0) continue;
         // Primary signal: GUID pairs that match spawned ITEM objects.
-        if (!owner_.onlineItems_.empty() && owner_.onlineItems_.count(guid)) {
+        if (!owner_.onlineItemsRef().empty() && owner_.onlineItemsRef().count(guid)) {
             matchingPairs.push_back(idx);
         }
     }
@@ -2554,7 +2554,7 @@ void InventoryHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_
     if (matchingPairs.empty()) return;
     std::sort(matchingPairs.begin(), matchingPairs.end());
 
-    if (owner_.invSlotBase_ < 0) {
+    if (owner_.invSlotBaseRef() < 0) {
         // The lowest matching field is the first EQUIPPED slot (not necessarily HEAD).
         // With 2+ matches we can derive the true base: all matches must be at
         // even offsets from the base, spaced 2 fields per slot.
@@ -2568,7 +2568,7 @@ void InventoryHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_
             }
         }
         if (allAlign) {
-            owner_.invSlotBase_ = knownBase;
+            owner_.invSlotBaseRef() = knownBase;
         } else {
             // Fallback: if we have 2+ matches, derive base from their spacing
             if (matchingPairs.size() >= 2) {
@@ -2587,25 +2587,25 @@ void InventoryHandler::detectInventorySlotBases(const std::map<uint16_t, uint32_
                         }
                     }
                     if (ok) {
-                        owner_.invSlotBase_ = candidate;
+                        owner_.invSlotBaseRef() = candidate;
                         break;
                     }
                 }
-                if (owner_.invSlotBase_ < 0) owner_.invSlotBase_ = knownBase;
+                if (owner_.invSlotBaseRef() < 0) owner_.invSlotBaseRef() = knownBase;
             } else {
-                owner_.invSlotBase_ = knownBase;
+                owner_.invSlotBaseRef() = knownBase;
             }
         }
-        owner_.packSlotBase_ = owner_.invSlotBase_ + (game::Inventory::NUM_EQUIP_SLOTS * 2);
-        LOG_INFO("Detected inventory field base: equip=", owner_.invSlotBase_,
-                 " pack=", owner_.packSlotBase_);
+        owner_.packSlotBaseRef() = owner_.invSlotBaseRef() + (game::Inventory::NUM_EQUIP_SLOTS * 2);
+        LOG_INFO("Detected inventory field base: equip=", owner_.invSlotBaseRef(),
+                 " pack=", owner_.packSlotBaseRef());
     }
 }
 
 bool InventoryHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& fields) {
     bool slotsChanged = false;
-    int equipBase = (owner_.invSlotBase_ >= 0) ? owner_.invSlotBase_ : static_cast<int>(fieldIndex(UF::PLAYER_FIELD_INV_SLOT_HEAD));
-    int packBase = (owner_.packSlotBase_ >= 0) ? owner_.packSlotBase_ : static_cast<int>(fieldIndex(UF::PLAYER_FIELD_PACK_SLOT_1));
+    int equipBase = (owner_.invSlotBaseRef() >= 0) ? owner_.invSlotBaseRef() : static_cast<int>(fieldIndex(UF::PLAYER_FIELD_INV_SLOT_HEAD));
+    int packBase = (owner_.packSlotBaseRef() >= 0) ? owner_.packSlotBaseRef() : static_cast<int>(fieldIndex(UF::PLAYER_FIELD_PACK_SLOT_1));
     int bankBase = static_cast<int>(fieldIndex(UF::PLAYER_FIELD_BANK_SLOT_1));
     int bankBagBase = static_cast<int>(fieldIndex(UF::PLAYER_FIELD_BANKBAG_SLOT_1));
 
@@ -2626,8 +2626,8 @@ bool InventoryHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& 
         if (key >= equipBase && key <= equipBase + (game::Inventory::NUM_EQUIP_SLOTS * 2 - 1)) {
             int slotIndex = (key - equipBase) / 2;
             bool isLow = ((key - equipBase) % 2 == 0);
-            if (slotIndex < static_cast<int>(owner_.equipSlotGuids_.size())) {
-                uint64_t& guid = owner_.equipSlotGuids_[slotIndex];
+            if (slotIndex < static_cast<int>(owner_.equipSlotGuidsRef().size())) {
+                uint64_t& guid = owner_.equipSlotGuidsRef()[slotIndex];
                 if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
                 else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
                 slotsChanged = true;
@@ -2635,8 +2635,8 @@ bool InventoryHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& 
         } else if (key >= packBase && key <= packBase + (game::Inventory::BACKPACK_SLOTS * 2 - 1)) {
             int slotIndex = (key - packBase) / 2;
             bool isLow = ((key - packBase) % 2 == 0);
-            if (slotIndex < static_cast<int>(owner_.backpackSlotGuids_.size())) {
-                uint64_t& guid = owner_.backpackSlotGuids_[slotIndex];
+            if (slotIndex < static_cast<int>(owner_.backpackSlotGuidsRef().size())) {
+                uint64_t& guid = owner_.backpackSlotGuidsRef()[slotIndex];
                 if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
                 else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
                 slotsChanged = true;
@@ -2646,8 +2646,8 @@ bool InventoryHandler::applyInventoryFields(const std::map<uint16_t, uint32_t>& 
                    key <= keyringBase + (game::Inventory::KEYRING_SLOTS * 2 - 1)) {
             int slotIndex = (key - keyringBase) / 2;
             bool isLow = ((key - keyringBase) % 2 == 0);
-            if (slotIndex < static_cast<int>(owner_.keyringSlotGuids_.size())) {
-                uint64_t& guid = owner_.keyringSlotGuids_[slotIndex];
+            if (slotIndex < static_cast<int>(owner_.keyringSlotGuidsRef().size())) {
+                uint64_t& guid = owner_.keyringSlotGuidsRef()[slotIndex];
                 if (isLow) guid = (guid & 0xFFFFFFFF00000000ULL) | val;
                 else guid = (guid & 0x00000000FFFFFFFFULL) | (uint64_t(val) << 32);
                 slotsChanged = true;
@@ -2687,7 +2687,7 @@ void InventoryHandler::extractContainerFields(uint64_t containerGuid, const std:
     const uint16_t slot1Idx = fieldIndex(UF::CONTAINER_FIELD_SLOT_1);
     if (numSlotsIdx == 0xFFFF || slot1Idx == 0xFFFF) return;
 
-    auto& info = owner_.containerContents_[containerGuid];
+    auto& info = owner_.containerContentsRef()[containerGuid];
 
     // Read number of slots
     auto numIt = fields.find(numSlotsIdx);
@@ -2721,8 +2721,8 @@ ItemDef InventoryHandler::buildItemDef(uint32_t entry, uint32_t stackCount,
     def.maxDurability = maxDur;
     def.maxStack = 1;
 
-    auto infoIt = owner_.itemInfoCache_.find(entry);
-    if (infoIt != owner_.itemInfoCache_.end()) {
+    auto infoIt = owner_.itemInfoCacheRef().find(entry);
+    if (infoIt != owner_.itemInfoCacheRef().end()) {
         const auto& info = infoIt->second;
         def.name = info.name;
         def.quality = static_cast<ItemQuality>(info.quality);
@@ -2757,53 +2757,53 @@ ItemDef InventoryHandler::buildItemDef(uint32_t entry, uint32_t stackCount,
 
 void InventoryHandler::rebuildOnlineInventory() {
 
-    uint8_t savedBankBagSlots = owner_.inventory.getPurchasedBankBagSlots();
-    owner_.inventory = Inventory();
-    owner_.inventory.setPurchasedBankBagSlots(savedBankBagSlots);
+    uint8_t savedBankBagSlots = owner_.inventoryRef().getPurchasedBankBagSlots();
+    owner_.inventoryRef() = Inventory();
+    owner_.inventoryRef().setPurchasedBankBagSlots(savedBankBagSlots);
 
     // Equipment slots
     for (int i = 0; i < 23; i++) {
-        uint64_t guid = owner_.equipSlotGuids_[i];
+        uint64_t guid = owner_.equipSlotGuidsRef()[i];
         if (guid == 0) continue;
-        auto itemIt = owner_.onlineItems_.find(guid);
-        if (itemIt == owner_.onlineItems_.end()) continue;
-        owner_.inventory.setEquipSlot(static_cast<EquipSlot>(i), buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
+        auto itemIt = owner_.onlineItemsRef().find(guid);
+        if (itemIt == owner_.onlineItemsRef().end()) continue;
+        owner_.inventoryRef().setEquipSlot(static_cast<EquipSlot>(i), buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
     }
 
     // Backpack slots
     for (int i = 0; i < 16; i++) {
-        uint64_t guid = owner_.backpackSlotGuids_[i];
+        uint64_t guid = owner_.backpackSlotGuidsRef()[i];
         if (guid == 0) continue;
-        auto itemIt = owner_.onlineItems_.find(guid);
-        if (itemIt == owner_.onlineItems_.end()) continue;
-        owner_.inventory.setBackpackSlot(i, buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
+        auto itemIt = owner_.onlineItemsRef().find(guid);
+        if (itemIt == owner_.onlineItemsRef().end()) continue;
+        owner_.inventoryRef().setBackpackSlot(i, buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
     }
 
     // Keyring slots
     for (int i = 0; i < game::Inventory::KEYRING_SLOTS; i++) {
-        uint64_t guid = owner_.keyringSlotGuids_[i];
+        uint64_t guid = owner_.keyringSlotGuidsRef()[i];
         if (guid == 0) continue;
-        auto itemIt = owner_.onlineItems_.find(guid);
-        if (itemIt == owner_.onlineItems_.end()) continue;
-        owner_.inventory.setKeyringSlot(i, buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
+        auto itemIt = owner_.onlineItemsRef().find(guid);
+        if (itemIt == owner_.onlineItemsRef().end()) continue;
+        owner_.inventoryRef().setKeyringSlot(i, buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, guid));
     }
 
     // Bag contents (BAG1-BAG4 are equip slots 19-22)
     for (int bagIdx = 0; bagIdx < 4; bagIdx++) {
-        uint64_t bagGuid = owner_.equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIdx];
+        uint64_t bagGuid = owner_.equipSlotGuidsRef()[Inventory::FIRST_BAG_EQUIP_SLOT + bagIdx];
         if (bagGuid == 0) continue;
 
         // Determine bag size from container fields or item template
         int numSlots = 0;
-        auto contIt = owner_.containerContents_.find(bagGuid);
-        if (contIt != owner_.containerContents_.end()) {
+        auto contIt = owner_.containerContentsRef().find(bagGuid);
+        if (contIt != owner_.containerContentsRef().end()) {
             numSlots = static_cast<int>(contIt->second.numSlots);
         }
         if (numSlots <= 0) {
-            auto bagItemIt = owner_.onlineItems_.find(bagGuid);
-            if (bagItemIt != owner_.onlineItems_.end()) {
-                auto bagInfoIt = owner_.itemInfoCache_.find(bagItemIt->second.entry);
-                if (bagInfoIt != owner_.itemInfoCache_.end()) {
+            auto bagItemIt = owner_.onlineItemsRef().find(bagGuid);
+            if (bagItemIt != owner_.onlineItemsRef().end()) {
+                auto bagInfoIt = owner_.itemInfoCacheRef().find(bagItemIt->second.entry);
+                if (bagInfoIt != owner_.itemInfoCacheRef().end()) {
                     numSlots = bagInfoIt->second.containerSlots;
                 }
             }
@@ -2811,41 +2811,41 @@ void InventoryHandler::rebuildOnlineInventory() {
         if (numSlots <= 0) continue;
 
         // Set the bag size in the inventory bag data
-        owner_.inventory.setBagSize(bagIdx, numSlots);
+        owner_.inventoryRef().setBagSize(bagIdx, numSlots);
 
         // Also set bagSlots on the equipped bag item (for UI display)
-        auto& bagEquipSlot = owner_.inventory.getEquipSlot(static_cast<EquipSlot>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIdx));
+        auto& bagEquipSlot = owner_.inventoryRef().getEquipSlot(static_cast<EquipSlot>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIdx));
         if (!bagEquipSlot.empty()) {
             ItemDef bagDef = bagEquipSlot.item;
             bagDef.bagSlots = numSlots;
-            owner_.inventory.setEquipSlot(static_cast<EquipSlot>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIdx), bagDef);
+            owner_.inventoryRef().setEquipSlot(static_cast<EquipSlot>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIdx), bagDef);
         }
 
         // Populate bag slot items
-        if (contIt == owner_.containerContents_.end()) continue;
+        if (contIt == owner_.containerContentsRef().end()) continue;
         const auto& container = contIt->second;
         for (int s = 0; s < numSlots && s < 36; s++) {
             uint64_t itemGuid = container.slotGuids[s];
             if (itemGuid == 0) continue;
 
-            auto itemIt = owner_.onlineItems_.find(itemGuid);
-            if (itemIt == owner_.onlineItems_.end()) continue;
+            auto itemIt = owner_.onlineItemsRef().find(itemGuid);
+            if (itemIt == owner_.onlineItemsRef().end()) continue;
             ItemDef def = buildItemDef(itemIt->second.entry, itemIt->second.stackCount, itemIt->second.curDurability, itemIt->second.maxDurability, itemGuid);
             // Bags inside bags need containerSlots for the UI slot-count display.
-            auto bagInfoIt = owner_.itemInfoCache_.find(itemIt->second.entry);
-            if (bagInfoIt != owner_.itemInfoCache_.end())
+            auto bagInfoIt = owner_.itemInfoCacheRef().find(itemIt->second.entry);
+            if (bagInfoIt != owner_.itemInfoCacheRef().end())
                 def.bagSlots = bagInfoIt->second.containerSlots;
-            owner_.inventory.setBagSlot(bagIdx, s, def);
+            owner_.inventoryRef().setBagSlot(bagIdx, s, def);
         }
     }
 
     // Bank slots (24 for Classic, 28 for TBC/WotLK)
     for (int i = 0; i < effectiveBankSlots_; i++) {
         uint64_t guid = bankSlotGuids_[i];
-        if (guid == 0) { owner_.inventory.clearBankSlot(i); continue; }
+        if (guid == 0) { owner_.inventoryRef().clearBankSlot(i); continue; }
 
-        auto itemIt = owner_.onlineItems_.find(guid);
-        if (itemIt == owner_.onlineItems_.end()) { owner_.inventory.clearBankSlot(i); continue; }
+        auto itemIt = owner_.onlineItemsRef().find(guid);
+        if (itemIt == owner_.onlineItemsRef().end()) { owner_.inventoryRef().clearBankSlot(i); continue; }
 
         ItemDef def;
         def.itemId = itemIt->second.entry;
@@ -2854,8 +2854,8 @@ void InventoryHandler::rebuildOnlineInventory() {
         def.maxDurability = itemIt->second.maxDurability;
         def.maxStack = 1;
 
-        auto infoIt = owner_.itemInfoCache_.find(itemIt->second.entry);
-        if (infoIt != owner_.itemInfoCache_.end()) {
+        auto infoIt = owner_.itemInfoCacheRef().find(itemIt->second.entry);
+        if (infoIt != owner_.itemInfoCacheRef().end()) {
             def.name = infoIt->second.name;
             def.quality = static_cast<ItemQuality>(infoIt->second.quality);
             def.inventoryType = infoIt->second.inventoryType;
@@ -2886,26 +2886,26 @@ void InventoryHandler::rebuildOnlineInventory() {
             queryItemInfo(def.itemId, guid);
         }
 
-        owner_.inventory.setBankSlot(i, def);
+        owner_.inventoryRef().setBankSlot(i, def);
     }
 
     // Bank bag contents (6 for Classic, 7 for TBC/WotLK)
     for (int bagIdx = 0; bagIdx < effectiveBankBagSlots_; bagIdx++) {
         uint64_t bagGuid = bankBagSlotGuids_[bagIdx];
-        if (bagGuid == 0) { owner_.inventory.setBankBagSize(bagIdx, 0); continue; }
+        if (bagGuid == 0) { owner_.inventoryRef().setBankBagSize(bagIdx, 0); continue; }
 
         int numSlots = 0;
-        auto contIt = owner_.containerContents_.find(bagGuid);
-        if (contIt != owner_.containerContents_.end()) {
+        auto contIt = owner_.containerContentsRef().find(bagGuid);
+        if (contIt != owner_.containerContentsRef().end()) {
             numSlots = static_cast<int>(contIt->second.numSlots);
         }
 
         // Populate the bag item itself (for icon/name in the bank bag equip slot)
-        auto bagItemIt = owner_.onlineItems_.find(bagGuid);
-        if (bagItemIt != owner_.onlineItems_.end()) {
+        auto bagItemIt = owner_.onlineItemsRef().find(bagGuid);
+        if (bagItemIt != owner_.onlineItemsRef().end()) {
             if (numSlots <= 0) {
-                auto bagInfoIt = owner_.itemInfoCache_.find(bagItemIt->second.entry);
-                if (bagInfoIt != owner_.itemInfoCache_.end()) {
+                auto bagInfoIt = owner_.itemInfoCacheRef().find(bagItemIt->second.entry);
+                if (bagInfoIt != owner_.itemInfoCacheRef().end()) {
                     numSlots = bagInfoIt->second.containerSlots;
                 }
             }
@@ -2913,8 +2913,8 @@ void InventoryHandler::rebuildOnlineInventory() {
             bagDef.itemId = bagItemIt->second.entry;
             bagDef.stackCount = 1;
             bagDef.inventoryType = 18; // bag
-            auto bagInfoIt = owner_.itemInfoCache_.find(bagItemIt->second.entry);
-            if (bagInfoIt != owner_.itemInfoCache_.end()) {
+            auto bagInfoIt = owner_.itemInfoCacheRef().find(bagItemIt->second.entry);
+            if (bagInfoIt != owner_.itemInfoCacheRef().end()) {
                 bagDef.name = bagInfoIt->second.name;
                 bagDef.quality = static_cast<ItemQuality>(bagInfoIt->second.quality);
                 bagDef.displayInfoId = bagInfoIt->second.displayInfoId;
@@ -2923,20 +2923,20 @@ void InventoryHandler::rebuildOnlineInventory() {
                 bagDef.name = "Bag";
                 queryItemInfo(bagDef.itemId, bagGuid);
             }
-            owner_.inventory.setBankBagItem(bagIdx, bagDef);
+            owner_.inventoryRef().setBankBagItem(bagIdx, bagDef);
         }
         if (numSlots <= 0) continue;
 
-        owner_.inventory.setBankBagSize(bagIdx, numSlots);
+        owner_.inventoryRef().setBankBagSize(bagIdx, numSlots);
 
-        if (contIt == owner_.containerContents_.end()) continue;
+        if (contIt == owner_.containerContentsRef().end()) continue;
         const auto& container = contIt->second;
         for (int s = 0; s < numSlots && s < 36; s++) {
             uint64_t itemGuid = container.slotGuids[s];
             if (itemGuid == 0) continue;
 
-            auto itemIt = owner_.onlineItems_.find(itemGuid);
-            if (itemIt == owner_.onlineItems_.end()) continue;
+            auto itemIt = owner_.onlineItemsRef().find(itemGuid);
+            if (itemIt == owner_.onlineItemsRef().end()) continue;
 
             ItemDef def;
             def.itemId = itemIt->second.entry;
@@ -2945,8 +2945,8 @@ void InventoryHandler::rebuildOnlineInventory() {
         def.maxDurability = itemIt->second.maxDurability;
             def.maxStack = 1;
 
-            auto infoIt = owner_.itemInfoCache_.find(itemIt->second.entry);
-            if (infoIt != owner_.itemInfoCache_.end()) {
+            auto infoIt = owner_.itemInfoCacheRef().find(itemIt->second.entry);
+            if (infoIt != owner_.itemInfoCacheRef().end()) {
                 def.name = infoIt->second.name;
                 def.quality = static_cast<ItemQuality>(infoIt->second.quality);
                 def.inventoryType = infoIt->second.inventoryType;
@@ -2977,55 +2977,55 @@ void InventoryHandler::rebuildOnlineInventory() {
                 queryItemInfo(def.itemId, itemGuid);
             }
 
-            owner_.inventory.setBankBagSlot(bagIdx, s, def);
+            owner_.inventoryRef().setBankBagSlot(bagIdx, s, def);
         }
     }
 
     // Only mark equipment dirty if equipped item displayInfoIds actually changed
     std::array<uint32_t, 19> currentEquipDisplayIds{};
     for (int i = 0; i < 19; i++) {
-        const auto& slot = owner_.inventory.getEquipSlot(static_cast<EquipSlot>(i));
+        const auto& slot = owner_.inventoryRef().getEquipSlot(static_cast<EquipSlot>(i));
         if (!slot.empty()) currentEquipDisplayIds[i] = slot.item.displayInfoId;
     }
-    if (currentEquipDisplayIds != owner_.lastEquipDisplayIds_) {
-        owner_.lastEquipDisplayIds_ = currentEquipDisplayIds;
-        owner_.onlineEquipDirty_ = true;
+    if (currentEquipDisplayIds != owner_.lastEquipDisplayIdsRef()) {
+        owner_.lastEquipDisplayIdsRef() = currentEquipDisplayIds;
+        owner_.onlineEquipDirtyRef() = true;
     }
 
     LOG_DEBUG("Rebuilt online inventory: equip=", [&](){
-        int c = 0; for (auto g : owner_.equipSlotGuids_) if (g) c++; return c;
+        int c = 0; for (auto g : owner_.equipSlotGuidsRef()) if (g) c++; return c;
     }(), " backpack=", [&](){
-        int c = 0; for (auto g : owner_.backpackSlotGuids_) if (g) c++; return c;
+        int c = 0; for (auto g : owner_.backpackSlotGuidsRef()) if (g) c++; return c;
     }(), " keyring=", [&](){
-        int c = 0; for (auto g : owner_.keyringSlotGuids_) if (g) c++; return c;
+        int c = 0; for (auto g : owner_.keyringSlotGuidsRef()) if (g) c++; return c;
     }());
 }
 
 void InventoryHandler::maybeDetectVisibleItemLayout() {
-    if (owner_.visibleItemLayoutVerified_) return;
-    if (owner_.lastPlayerFields_.empty()) return;
+    if (owner_.visibleItemLayoutVerifiedRef()) return;
+    if (owner_.lastPlayerFieldsRef().empty()) return;
 
     std::array<uint32_t, 19> equipEntries{};
     int nonZero = 0;
     // Prefer authoritative equipped item entry IDs derived from item objects (onlineItems_),
     // because Inventory::ItemDef may not be populated yet if templates haven't been queried.
     for (int i = 0; i < 19; i++) {
-        uint64_t itemGuid = owner_.equipSlotGuids_[i];
+        uint64_t itemGuid = owner_.equipSlotGuidsRef()[i];
         if (itemGuid != 0) {
-            auto it = owner_.onlineItems_.find(itemGuid);
-            if (it != owner_.onlineItems_.end() && it->second.entry != 0) {
+            auto it = owner_.onlineItemsRef().find(itemGuid);
+            if (it != owner_.onlineItemsRef().end() && it->second.entry != 0) {
                 equipEntries[i] = it->second.entry;
             }
         }
         if (equipEntries[i] == 0) {
-            const auto& slot = owner_.inventory.getEquipSlot(static_cast<EquipSlot>(i));
+            const auto& slot = owner_.inventoryRef().getEquipSlot(static_cast<EquipSlot>(i));
             equipEntries[i] = slot.empty() ? 0u : slot.item.itemId;
         }
         if (equipEntries[i] != 0) nonZero++;
     }
     if (nonZero < 2) return;
 
-    const uint16_t maxKey = owner_.lastPlayerFields_.rbegin()->first;
+    const uint16_t maxKey = owner_.lastPlayerFieldsRef().rbegin()->first;
     int bestBase = -1;
     int bestStride = 0;
     int bestMatches = 0;
@@ -3034,7 +3034,7 @@ void InventoryHandler::maybeDetectVisibleItemLayout() {
 
     const int strides[] = {2, 3, 4, 1};
     for (int stride : strides) {
-        for (const auto& [baseIdxU16, _v] : owner_.lastPlayerFields_) {
+        for (const auto& [baseIdxU16, _v] : owner_.lastPlayerFieldsRef()) {
             const int base = static_cast<int>(baseIdxU16);
             if (base + 18 * stride > static_cast<int>(maxKey)) continue;
 
@@ -3044,8 +3044,8 @@ void InventoryHandler::maybeDetectVisibleItemLayout() {
                 uint32_t want = equipEntries[s];
                 if (want == 0) continue;
                 const uint16_t idx = static_cast<uint16_t>(base + s * stride);
-                auto it = owner_.lastPlayerFields_.find(idx);
-                if (it == owner_.lastPlayerFields_.end()) continue;
+                auto it = owner_.lastPlayerFieldsRef().find(idx);
+                if (it == owner_.lastPlayerFieldsRef().end()) continue;
                 if (it->second == want) {
                     matches++;
                 } else if (it->second != 0) {
@@ -3068,17 +3068,17 @@ void InventoryHandler::maybeDetectVisibleItemLayout() {
     }
 
     if (bestMatches >= 2 && bestBase >= 0 && bestStride > 0 && bestMismatches <= 1) {
-        owner_.visibleItemEntryBase_ = bestBase;
-        owner_.visibleItemStride_ = bestStride;
-        owner_.visibleItemLayoutVerified_ = true;
-        LOG_INFO("Detected PLAYER_VISIBLE_ITEM entry layout: base=", owner_.visibleItemEntryBase_,
-                 " stride=", owner_.visibleItemStride_, " (matches=", bestMatches,
+        owner_.visibleItemEntryBaseRef() = bestBase;
+        owner_.visibleItemStrideRef() = bestStride;
+        owner_.visibleItemLayoutVerifiedRef() = true;
+        LOG_INFO("Detected PLAYER_VISIBLE_ITEM entry layout: base=", owner_.visibleItemEntryBaseRef(),
+                 " stride=", owner_.visibleItemStrideRef(), " (matches=", bestMatches,
                  " mismatches=", bestMismatches, " score=", bestScore, ")");
 
         // Backfill existing player entities already in view.
         for (const auto& [guid, ent] : owner_.getEntityManager().getEntities()) {
             if (!ent || ent->getType() != ObjectType::PLAYER) continue;
-            if (guid == owner_.playerGuid) continue;
+            if (guid == owner_.getPlayerGuid()) continue;
             updateOtherPlayerVisibleItems(guid, ent->getFields());
         }
     }
@@ -3086,13 +3086,13 @@ void InventoryHandler::maybeDetectVisibleItemLayout() {
 }
 
 void InventoryHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::map<uint16_t, uint32_t>& fields) {
-    if (guid == 0 || guid == owner_.playerGuid) return;
+    if (guid == 0 || guid == owner_.getPlayerGuid()) return;
 
     // Use the current base/stride (defaults are correct for WotLK 3.3.5a: base=284, stride=2).
     // The heuristic may refine these later, but we proceed immediately with whatever values
     // are set rather than waiting for verification.
-    const int base = owner_.visibleItemEntryBase_;
-    const int stride = owner_.visibleItemStride_;
+    const int base = owner_.visibleItemEntryBaseRef();
+    const int stride = owner_.visibleItemStrideRef();
     if (base < 0 || stride <= 0) return; // Defensive: should never happen with defaults.
 
     std::array<uint32_t, 19> newEntries{};
@@ -3117,11 +3117,11 @@ void InventoryHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::m
                 dump += buf;
             }
         }
-        LOG_WARNING("RAW FIELDS 270-340:", dump);
+        LOG_DEBUG("RAW FIELDS 270-340:", dump);
     }
 
     if (nonZero > 0) {
-        LOG_WARNING("updateOtherPlayerVisibleItems: guid=0x", std::hex, guid, std::dec,
+        LOG_DEBUG("updateOtherPlayerVisibleItems: guid=0x", std::hex, guid, std::dec,
                  " nonZero=", nonZero, " base=", base, " stride=", stride,
                  " head=", newEntries[0], " shoulders=", newEntries[2],
                  " chest=", newEntries[4], " legs=", newEntries[6],
@@ -3129,7 +3129,7 @@ void InventoryHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::m
     }
 
     bool changed = false;
-    auto& old = owner_.otherPlayerVisibleItemEntries_[guid];
+    auto& old = owner_.otherPlayerVisibleItemEntriesRef()[guid];
     if (old != newEntries) {
         old = newEntries;
         changed = true;
@@ -3138,7 +3138,7 @@ void InventoryHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::m
     // Request item templates for any new visible entries.
     for (uint32_t entry : newEntries) {
         if (entry == 0) continue;
-        if (!owner_.itemInfoCache_.count(entry) && !owner_.pendingItemQueries_.count(entry)) {
+        if (!owner_.itemInfoCacheRef().count(entry) && !owner_.pendingItemQueriesRef().count(entry)) {
             queryItemInfo(entry, 0);
         }
     }
@@ -3150,21 +3150,21 @@ void InventoryHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::m
         LOG_DEBUG("updateOtherPlayerVisibleItems: guid=0x", std::hex, guid, std::dec,
                   " all entries zero (base=", base, " stride=", stride,
                   " fieldCount=", fields.size(), ") — queuing auto-inspect");
-        if (owner_.socket && owner_.state == WorldState::IN_WORLD) {
-            owner_.pendingAutoInspect_.insert(guid);
+        if (owner_.getSocket() && owner_.getState() == WorldState::IN_WORLD) {
+            owner_.pendingAutoInspectRef().insert(guid);
         }
     }
 
     if (changed) {
-        owner_.otherPlayerVisibleDirty_.insert(guid);
+        owner_.otherPlayerVisibleDirtyRef().insert(guid);
         emitOtherPlayerEquipment(guid);
     }
 }
 
 void InventoryHandler::emitOtherPlayerEquipment(uint64_t guid) {
-    if (!owner_.playerEquipmentCallback_) return;
-    auto it = owner_.otherPlayerVisibleItemEntries_.find(guid);
-    if (it == owner_.otherPlayerVisibleItemEntries_.end()) return;
+    if (!owner_.playerEquipmentCallbackRef()) return;
+    auto it = owner_.otherPlayerVisibleItemEntriesRef().find(guid);
+    if (it == owner_.otherPlayerVisibleItemEntriesRef().end()) return;
 
     std::array<uint32_t, 19> displayIds{};
     std::array<uint8_t, 19> invTypes{};
@@ -3175,14 +3175,14 @@ void InventoryHandler::emitOtherPlayerEquipment(uint64_t guid) {
         uint32_t entry = it->second[s];
         if (entry == 0) continue;
         anyEntry = true;
-        auto infoIt = owner_.itemInfoCache_.find(entry);
-        if (infoIt == owner_.itemInfoCache_.end()) { unresolved++; continue; }
+        auto infoIt = owner_.itemInfoCacheRef().find(entry);
+        if (infoIt == owner_.itemInfoCacheRef().end()) { unresolved++; continue; }
         displayIds[s] = infoIt->second.displayInfoId;
         invTypes[s] = static_cast<uint8_t>(infoIt->second.inventoryType);
         resolved++;
     }
 
-    LOG_WARNING("emitOtherPlayerEquipment: guid=0x", std::hex, guid, std::dec,
+    LOG_DEBUG("emitOtherPlayerEquipment: guid=0x", std::hex, guid, std::dec,
              " entries=", (anyEntry ? "yes" : "none"),
              " resolved=", resolved, " unresolved=", unresolved,
              " head=", displayIds[0], " shoulders=", displayIds[2],
@@ -3192,22 +3192,22 @@ void InventoryHandler::emitOtherPlayerEquipment(uint64_t guid) {
     // Don't emit all-zero displayIds — that strips existing equipment for no reason.
     // Wait until at least one item resolves before applying.
     if (anyEntry && resolved == 0) {
-        LOG_WARNING("emitOtherPlayerEquipment: skipping all-zero emit (waiting for item queries)");
+        LOG_DEBUG("emitOtherPlayerEquipment: skipping all-zero emit (waiting for item queries)");
         return;
     }
 
-    owner_.playerEquipmentCallback_(guid, displayIds, invTypes);
-    owner_.otherPlayerVisibleDirty_.erase(guid);
+    owner_.playerEquipmentCallbackRef()(guid, displayIds, invTypes);
+    owner_.otherPlayerVisibleDirtyRef().erase(guid);
 
     // If we had entries but couldn't resolve any templates, also try inspect as a fallback.
     if (anyEntry && !resolved) {
-        owner_.pendingAutoInspect_.insert(guid);
+        owner_.pendingAutoInspectRef().insert(guid);
     }
 }
 
 void InventoryHandler::emitAllOtherPlayerEquipment() {
-    if (!owner_.playerEquipmentCallback_) return;
-    for (const auto& [guid, _] : owner_.otherPlayerVisibleItemEntries_) {
+    if (!owner_.playerEquipmentCallbackRef()) return;
+    for (const auto& [guid, _] : owner_.otherPlayerVisibleItemEntriesRef()) {
         emitOtherPlayerEquipment(guid);
     }
 }
@@ -3219,8 +3219,8 @@ void InventoryHandler::emitAllOtherPlayerEquipment() {
 void InventoryHandler::handleTrainerBuySucceeded(network::Packet& packet) {
     /*uint64_t guid =*/ packet.readUInt64();
     uint32_t spellId = packet.readUInt32();
-    if (owner_.spellHandler_ && !owner_.spellHandler_->knownSpells_.count(spellId)) {
-        owner_.spellHandler_->knownSpells_.insert(spellId);
+    if (owner_.getSpellHandler() && !owner_.getSpellHandler()->hasKnownSpell(spellId)) {
+        owner_.getSpellHandler()->addKnownSpell(spellId);
     }
     const std::string& name = owner_.getSpellName(spellId);
     if (!name.empty())
@@ -3269,7 +3269,7 @@ void InventoryHandler::initiateTrade(uint64_t targetGuid) {
     }
 
     auto packet = InitiateTradePacket::build(targetGuid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     owner_.addSystemChatMessage("Requesting trade with target.");
     LOG_INFO("Initiated trade with target: 0x", std::hex, targetGuid, std::dec);
 }
@@ -3278,7 +3278,7 @@ uint32_t InventoryHandler::getTempEnchantRemainingMs(uint32_t slot) const {
     uint64_t nowMs = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
-    for (const auto& t : owner_.tempEnchantTimers_) {
+    for (const auto& t : owner_.tempEnchantTimersRef()) {
         if (t.slot == slot) {
             return (t.expireMs > nowMs)
                 ? static_cast<uint32_t>(t.expireMs - nowMs) : 0u;
@@ -3289,7 +3289,7 @@ uint32_t InventoryHandler::getTempEnchantRemainingMs(uint32_t slot) const {
 
 void InventoryHandler::addMoneyCopper(uint32_t amount) {
     if (amount == 0) return;
-    owner_.playerMoneyCopper_ += amount;
+    owner_.playerMoneyCopperRef() += amount;
     uint32_t gold = amount / 10000;
     uint32_t silver = (amount / 100) % 100;
     uint32_t copper = amount % 100;
@@ -3339,15 +3339,15 @@ void InventoryHandler::loadRepairDbc() const {
 }
 
 uint32_t InventoryHandler::estimateItemRepairCost(uint64_t itemGuid) const {
-    auto itemIt = owner_.onlineItems_.find(itemGuid);
-    if (itemIt == owner_.onlineItems_.end()) return 0;
+    auto itemIt = owner_.onlineItemsRef().find(itemGuid);
+    if (itemIt == owner_.onlineItemsRef().end()) return 0;
     const auto& item = itemIt->second;
 
     if (item.maxDurability == 0 || item.curDurability >= item.maxDurability) return 0;
     uint32_t lostDur = item.maxDurability - item.curDurability;
 
-    auto infoIt = owner_.itemInfoCache_.find(item.entry);
-    if (infoIt == owner_.itemInfoCache_.end()) return 0;
+    auto infoIt = owner_.itemInfoCacheRef().find(item.entry);
+    if (infoIt == owner_.itemInfoCacheRef().end()) return 0;
     const auto& info = infoIt->second;
 
     loadRepairDbc();
@@ -3384,7 +3384,7 @@ uint32_t InventoryHandler::estimateItemRepairCost(uint64_t itemGuid) const {
 
 uint32_t InventoryHandler::estimateRepairAllCost() const {
     uint32_t total = 0;
-    for (const auto& [guid, info] : owner_.onlineItems_) {
+    for (const auto& [guid, info] : owner_.onlineItemsRef()) {
         total += estimateItemRepairCost(guid);
     }
     return total;

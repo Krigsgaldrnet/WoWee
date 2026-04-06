@@ -11,6 +11,7 @@
 #include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/animation_controller.hpp"
 #include "rendering/vk_context.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/camera_controller.hpp"
@@ -173,7 +174,7 @@ void WorldLoader::processPendingEntry() {
     if (!pendingWorldEntry_ || loadingWorld_) return;
     auto entry = *pendingWorldEntry_;
     pendingWorldEntry_.reset();
-    LOG_WARNING("Processing deferred world entry: map ", entry.mapId);
+    LOG_DEBUG("Processing deferred world entry: map ", entry.mapId);
     if (app_.worldEntryCallbacks_) {
         app_.worldEntryCallbacks_->setWorldEntryMovementGraceTimer(2.0f);
         app_.worldEntryCallbacks_->setTaxiLandingClampTimer(0.0f);
@@ -249,7 +250,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
 
     // --- Clean up previous map's state on map change ---
     // (Same cleanup as logout, but preserves player identity and renderer objects.)
-    LOG_WARNING("loadOnlineWorldTerrain: mapId=", mapId, " loadedMapId_=", loadedMapId_);
+    LOG_DEBUG("loadOnlineWorldTerrain: mapId=", mapId, " loadedMapId_=", loadedMapId_);
     bool hasRendererData = renderer_ && (renderer_->getWMORenderer() || renderer_->getM2Renderer());
     if (loadedMapId_ != 0xFFFFFFFF || hasRendererData) {
         LOG_WARNING("Map change: cleaning up old map ", loadedMapId_, " before loading map ", mapId);
@@ -290,7 +291,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             if (auto* questMarkers = renderer_->getQuestMarkerRenderer()) {
                 questMarkers->clear();
             }
-            renderer_->clearMount();
+            if (auto* ac = renderer_->getAnimationController()) ac->clearMount();
         }
 
         // Clear application-level instance tracking (after renderer cleanup)
@@ -416,7 +417,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                     uint32_t oldInst = renderer_->getCharacterInstanceId();
                     if (oldInst > 0) {
                         renderer_->setCharacterFollow(0);
-                        renderer_->clearMount();
+                        if (auto* ac = renderer_->getAnimationController()) ac->clearMount();
                         renderer_->getCharacterRenderer()->removeInstance(oldInst);
                     }
                 }
@@ -447,12 +448,12 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
     pipeline::WDTInfo wdtInfo;
     {
         std::string wdtPath = "World\\Maps\\" + mapName + "\\" + mapName + ".wdt";
-        LOG_WARNING("Reading WDT: ", wdtPath);
+        LOG_DEBUG("Reading WDT: ", wdtPath);
         std::vector<uint8_t> wdtData = assetManager_->readFile(wdtPath);
         if (!wdtData.empty()) {
             wdtInfo = pipeline::parseWDT(wdtData);
             isWMOOnlyMap = wdtInfo.isWMOOnly() && !wdtInfo.rootWMOPath.empty();
-            LOG_WARNING("WDT result: isWMOOnly=", isWMOOnlyMap, " rootWMO='", wdtInfo.rootWMOPath, "'");
+            LOG_DEBUG("WDT result: isWMOOnly=", isWMOOnlyMap, " rootWMO='", wdtInfo.rootWMOPath, "'");
         } else {
             LOG_WARNING("No WDT file found at ", wdtPath);
         }
@@ -865,7 +866,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
         auto* tm = gameHandler_->getTransportManager();
         if (renderer_->getWMORenderer()) tm->setWMORenderer(renderer_->getWMORenderer());
         if (renderer_->getM2Renderer()) tm->setM2Renderer(renderer_->getM2Renderer());
-        LOG_WARNING("TransportManager connected: wmoR=", (renderer_->getWMORenderer() ? "yes" : "NULL"),
+        LOG_DEBUG("TransportManager connected: wmoR=", (renderer_->getWMORenderer() ? "yes" : "NULL"),
                    " m2R=", (renderer_->getM2Renderer() ? "yes" : "NULL"));
     }
 
@@ -953,7 +954,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
             // If a new world entry was deferred during packet processing,
             // stop warming up this map — we'll load the new one after cleanup.
             if (pendingWorldEntry_) {
-                LOG_WARNING("loadOnlineWorldTerrain(map ", mapId,
+                LOG_DEBUG("loadOnlineWorldTerrain(map ", mapId,
                             ") — deferred world entry pending, stopping warmup");
                 break;
             }
@@ -1020,7 +1021,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
                     if (auto* tm = renderer_->getTerrainManager()) {
                         if (tm->getLoadedTileCount() >= 4) {
                             groundReady = true;
-                            LOG_WARNING("Warmup: using tile-count fallback (", tm->getLoadedTileCount(), " tiles) after ", elapsed, "s");
+                            LOG_DEBUG("Warmup: using tile-count fallback (", tm->getLoadedTileCount(), " tiles) after ", elapsed, "s");
                         }
                     }
                 }
@@ -1077,7 +1078,7 @@ void WorldLoader::loadOnlineWorldTerrain(uint32_t mapId, float x, float y, float
     if (pendingWorldEntry_) {
         auto entry = *pendingWorldEntry_;
         pendingWorldEntry_.reset();
-        LOG_WARNING("Processing deferred world entry: map ", entry.mapId);
+        LOG_DEBUG("Processing deferred world entry: map ", entry.mapId);
         if (app_.worldEntryCallbacks_) {
             app_.worldEntryCallbacks_->setWorldEntryMovementGraceTimer(2.0f);
             app_.worldEntryCallbacks_->setTaxiLandingClampTimer(0.0f);

@@ -108,7 +108,7 @@ bool VkContext::initialize(SDL_Window* window) {
 void VkContext::shutdown() {
     if (!device && !instance) return;  // Already shut down or never initialized
 
-    LOG_WARNING("VkContext::shutdown - vkDeviceWaitIdle...");
+    LOG_DEBUG("VkContext::shutdown - vkDeviceWaitIdle...");
     if (device) {
         vkDeviceWaitIdle(device);
     }
@@ -122,7 +122,7 @@ void VkContext::shutdown() {
         deferredCleanup_[fi].clear();
     }
 
-    LOG_WARNING("VkContext::shutdown - destroyImGuiResources...");
+    LOG_DEBUG("VkContext::shutdown - destroyImGuiResources...");
     destroyImGuiResources();
 
     // Destroy sync objects
@@ -165,7 +165,7 @@ void VkContext::shutdown() {
 
     sInstance_ = nullptr;
 
-    LOG_WARNING("VkContext::shutdown - destroySwapchain...");
+    LOG_DEBUG("VkContext::shutdown - destroySwapchain...");
     destroySwapchain();
 
     // Skip vmaDestroyAllocator — it walks every allocation to free it, which
@@ -174,7 +174,7 @@ void VkContext::shutdown() {
     // everything on process exit.  Skipping this makes shutdown instant.
     allocator = VK_NULL_HANDLE;
 
-    LOG_WARNING("VkContext::shutdown - vkDestroyDevice...");
+    LOG_DEBUG("VkContext::shutdown - vkDestroyDevice...");
     if (device) { vkDestroyDevice(device, nullptr); device = VK_NULL_HANDLE; }
     if (surface) { vkDestroySurfaceKHR(instance, surface, nullptr); surface = VK_NULL_HANDLE; }
 
@@ -187,7 +187,7 @@ void VkContext::shutdown() {
 
     if (instance) { vkDestroyInstance(instance, nullptr); instance = VK_NULL_HANDLE; }
 
-    LOG_WARNING("Vulkan context shutdown complete");
+    LOG_DEBUG("Vulkan context shutdown complete");
 }
 
 void VkContext::deferAfterFrameFence(std::function<void()>&& fn) {

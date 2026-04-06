@@ -4,6 +4,7 @@
 #include "game/packet_parsers.hpp"
 #include "game/entity.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/spell_visual_system.hpp"
 #include "audio/audio_coordinator.hpp"
 #include "audio/spell_sound_manager.hpp"
 #include "audio/combat_sound_manager.hpp"
@@ -159,31 +160,31 @@ void SpellHandler::registerOpcodes(DispatchTable& table) {
 // ============================================================
 
 bool SpellHandler::isGameObjectInteractionCasting() const {
-    return casting_ && currentCastSpellId_ == 0 && owner_.pendingGameObjectInteractGuid_ != 0;
+    return casting_ && currentCastSpellId_ == 0 && owner_.pendingGameObjectInteractGuidRef() != 0;
 }
 
 bool SpellHandler::isTargetCasting() const {
-    return getUnitCastState(owner_.targetGuid) != nullptr;
+    return getUnitCastState(owner_.getTargetGuid()) != nullptr;
 }
 
 uint32_t SpellHandler::getTargetCastSpellId() const {
-    auto* s = getUnitCastState(owner_.targetGuid);
+    auto* s = getUnitCastState(owner_.getTargetGuid());
     return s ? s->spellId : 0;
 }
 
 float SpellHandler::getTargetCastProgress() const {
-    auto* s = getUnitCastState(owner_.targetGuid);
+    auto* s = getUnitCastState(owner_.getTargetGuid());
     return (s && s->timeTotal > 0.0f)
         ? (s->timeTotal - s->timeRemaining) / s->timeTotal : 0.0f;
 }
 
 float SpellHandler::getTargetCastTimeRemaining() const {
-    auto* s = getUnitCastState(owner_.targetGuid);
+    auto* s = getUnitCastState(owner_.getTargetGuid());
     return s ? s->timeRemaining : 0.0f;
 }
 
 bool SpellHandler::isTargetCastInterruptible() const {
-    auto* s = getUnitCastState(owner_.targetGuid);
+    auto* s = getUnitCastState(owner_.getTargetGuid());
     return s ? s->interruptible : true;
 }
 
@@ -191,7 +192,7 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     LOG_DEBUG("castSpell: spellId=", spellId, " target=0x", std::hex, targetGuid, std::dec);
     // Attack (6603) routes to auto-attack instead of cast
     if (spellId == 6603) {
-        uint64_t target = targetGuid != 0 ? targetGuid : owner_.targetGuid;
+        uint64_t target = targetGuid != 0 ? targetGuid : owner_.getTargetGuid();
         if (target != 0) {
             if (owner_.isAutoAttacking()) {
                 owner_.stopAutoAttack();
@@ -202,7 +203,7 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
         return;
     }
 
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
 
     // Casting any spell while mounted → dismount instead
     if (owner_.isMounted()) {
@@ -215,7 +216,7 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
         // store the spell so it fires automatically when the cast finishes.
         if (!castIsChannel_ && castTimeRemaining_ > 0.0f && castTimeRemaining_ <= 0.4f) {
             queuedSpellId_     = spellId;
-            queuedSpellTarget_ = targetGuid != 0 ? targetGuid : owner_.targetGuid;
+            queuedSpellTarget_ = targetGuid != 0 ? targetGuid : owner_.getTargetGuid();
             LOG_INFO("Spell queue: queued spellId=", spellId, " (", castTimeRemaining_ * 1000.0f,
                      "ms remaining)");
         }
@@ -223,14 +224,14 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     }
 
     // Stop movement before casting — servers reject cast-time spells while moving
-    const uint32_t moveFlags = owner_.movementInfo.flags;
+    const uint32_t moveFlags = owner_.movementInfoRef().flags;
     const bool isMoving = (moveFlags & 0x0Fu) != 0; // FORWARD|BACKWARD|STRAFE_LEFT|STRAFE_RIGHT
     if (isMoving) {
-        owner_.movementInfo.flags &= ~0x0Fu;
+        owner_.movementInfoRef().flags &= ~0x0Fu;
         owner_.sendMovement(Opcode::MSG_MOVE_STOP);
     }
 
-    uint64_t target = targetGuid != 0 ? targetGuid : owner_.targetGuid;
+    uint64_t target = targetGuid != 0 ? targetGuid : owner_.getTargetGuid();
     // Self-targeted spells like hearthstone should not send a target
     if (spellId == 8690) target = 0;
 
@@ -250,9 +251,9 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
             return;
         }
         float tx = entity->getX(), ty = entity->getY(), tz = entity->getZ();
-        float dx = tx - owner_.movementInfo.x;
-        float dy = ty - owner_.movementInfo.y;
-        float dz = tz - owner_.movementInfo.z;
+        float dx = tx - owner_.movementInfoRef().x;
+        float dy = ty - owner_.movementInfoRef().y;
+        float dz = tz - owner_.movementInfoRef().z;
         float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
         if (dist < 8.0f) {
             owner_.addSystemChatMessage("Target is too close.");
@@ -263,10 +264,10 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
             return;
         }
         float yaw = std::atan2(-dy, dx);
-        owner_.movementInfo.orientation = yaw;
+        owner_.movementInfoRef().orientation = yaw;
         owner_.sendMovement(Opcode::MSG_MOVE_SET_FACING);
-        if (owner_.chargeCallback_) {
-            owner_.chargeCallback_(target, tx, ty, tz);
+        if (owner_.chargeCallbackRef()) {
+            owner_.chargeCallbackRef()(target, tx, ty, tz);
         }
         facingHandled = true;
     }
@@ -274,21 +275,21 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     // Instant melee abilities: client-side range + facing check
     if (!facingHandled) {
         owner_.loadSpellNameCache();
-        auto cacheIt = owner_.spellNameCache_.find(spellId);
-        bool isMeleeAbility = (cacheIt != owner_.spellNameCache_.end() && cacheIt->second.schoolMask == 1);
+        auto cacheIt = owner_.spellNameCacheRef().find(spellId);
+        bool isMeleeAbility = (cacheIt != owner_.spellNameCacheRef().end() && cacheIt->second.schoolMask == 1);
         if (isMeleeAbility && target != 0) {
             auto entity = owner_.getEntityManager().getEntity(target);
             if (entity) {
-                float dx = entity->getX() - owner_.movementInfo.x;
-                float dy = entity->getY() - owner_.movementInfo.y;
-                float dz = entity->getZ() - owner_.movementInfo.z;
+                float dx = entity->getX() - owner_.movementInfoRef().x;
+                float dy = entity->getY() - owner_.movementInfoRef().y;
+                float dz = entity->getZ() - owner_.movementInfoRef().z;
                 float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
                 if (dist > 8.0f) {
                     owner_.addSystemChatMessage("Out of range.");
                     return;
                 }
                 float yaw = std::atan2(-dy, dx);
-                owner_.movementInfo.orientation = yaw;
+                owner_.movementInfoRef().orientation = yaw;
                 owner_.sendMovement(Opcode::MSG_MOVE_SET_FACING);
                 facingHandled = true;
             }
@@ -301,12 +302,12 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
     if (!facingHandled && target != 0) {
         auto entity = owner_.getEntityManager().getEntity(target);
         if (entity) {
-            float dx = entity->getX() - owner_.movementInfo.x;
-            float dy = entity->getY() - owner_.movementInfo.y;
+            float dx = entity->getX() - owner_.movementInfoRef().x;
+            float dy = entity->getY() - owner_.movementInfoRef().y;
             float lenSq = dx * dx + dy * dy;
             if (lenSq > 0.01f) {
                 float canonYaw = std::atan2(-dy, dx);
-                owner_.movementInfo.orientation = canonYaw;
+                owner_.movementInfoRef().orientation = canonYaw;
                 owner_.sendMovement(Opcode::MSG_MOVE_SET_FACING);
             }
         }
@@ -316,19 +317,19 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
         owner_.sendMovement(Opcode::MSG_MOVE_HEARTBEAT);
     }
 
-    auto packet = owner_.packetParsers_
-        ? owner_.packetParsers_->buildCastSpell(spellId, target, ++castCount_)
+    auto packet = owner_.getPacketParsers()
+        ? owner_.getPacketParsers()->buildCastSpell(spellId, target, ++castCount_)
         : CastSpellPacket::build(spellId, target, ++castCount_);
     LOG_DEBUG("CMSG_CAST_SPELL: spellId=", spellId, " target=0x", std::hex, target, std::dec,
               " castCount=", static_cast<int>(castCount_), " packetSize=", packet.getSize());
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
     LOG_INFO("Casting spell: ", spellId, " on 0x", std::hex, target, std::dec);
 
     // Fire UNIT_SPELLCAST_SENT for cast bar addons
-    if (owner_.addonEventCallback_) {
+    if (owner_.addonEventCallbackRef()) {
         std::string targetName;
         if (target != 0) targetName = owner_.lookupName(target);
-        owner_.addonEventCallback_("UNIT_SPELLCAST_SENT", {"player", targetName, std::to_string(spellId)});
+        owner_.addonEventCallbackRef()("UNIT_SPELLCAST_SENT", {"player", targetName, std::to_string(spellId)});
     }
 
     // Optimistically start GCD immediately on cast
@@ -341,14 +342,14 @@ void SpellHandler::castSpell(uint32_t spellId, uint64_t targetGuid) {
 void SpellHandler::cancelCast() {
     if (!casting_) return;
     // GameObject interaction cast is client-side timing only.
-    if (owner_.pendingGameObjectInteractGuid_ == 0 &&
-        owner_.state == WorldState::IN_WORLD && owner_.socket &&
+    if (owner_.pendingGameObjectInteractGuidRef() == 0 &&
+        owner_.getState() == WorldState::IN_WORLD && owner_.getSocket() &&
         currentCastSpellId_ != 0) {
         auto packet = CancelCastPacket::build(currentCastSpellId_);
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     }
-    owner_.pendingGameObjectInteractGuid_ = 0;
-    owner_.lastInteractedGoGuid_ = 0;
+    owner_.pendingGameObjectInteractGuidRef() = 0;
+    owner_.lastInteractedGoGuidRef() = 0;
     casting_ = false;
     castIsChannel_ = false;
     currentCastSpellId_ = 0;
@@ -357,8 +358,8 @@ void SpellHandler::cancelCast() {
     craftQueueRemaining_ = 0;
     queuedSpellId_ = 0;
     queuedSpellTarget_ = 0;
-    if (owner_.addonEventCallback_)
-        owner_.addonEventCallback_("UNIT_SPELLCAST_STOP", {"player"});
+    if (owner_.addonEventCallbackRef())
+        owner_.addonEventCallbackRef()("UNIT_SPELLCAST_STOP", {"player"});
 }
 
 void SpellHandler::startCraftQueue(uint32_t spellId, int count) {
@@ -373,9 +374,9 @@ void SpellHandler::cancelCraftQueue() {
 }
 
 void SpellHandler::cancelAura(uint32_t spellId) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     auto packet = CancelAuraPacket::build(spellId);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 float SpellHandler::getSpellCooldown(uint32_t spellId) const {
@@ -384,7 +385,7 @@ float SpellHandler::getSpellCooldown(uint32_t spellId) const {
 }
 
 void SpellHandler::learnTalent(uint32_t talentId, uint32_t requestedRank) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) {
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) {
         LOG_WARNING("learnTalent: Not in world or no socket connection");
         return;
     }
@@ -392,7 +393,7 @@ void SpellHandler::learnTalent(uint32_t talentId, uint32_t requestedRank) {
     LOG_INFO("Requesting to learn talent: id=", talentId, " rank=", requestedRank);
 
     auto packet = LearnTalentPacket::build(talentId, requestedRank);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void SpellHandler::switchTalentSpec(uint8_t newSpec) {
@@ -406,9 +407,9 @@ void SpellHandler::switchTalentSpec(uint8_t newSpec) {
         return;
     }
 
-    if (owner_.state == WorldState::IN_WORLD && owner_.socket) {
+    if (owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         auto pkt = ActivateTalentGroupPacket::build(static_cast<uint32_t>(newSpec));
-        owner_.socket->send(pkt);
+        owner_.getSocket()->send(pkt);
         LOG_INFO("Sent CMSG_SET_ACTIVE_TALENT_GROUP_OBSOLETE: group=", (int)newSpec);
     }
     activeTalentSpec_ = newSpec;
@@ -430,11 +431,11 @@ void SpellHandler::confirmTalentWipe() {
     if (!talentWipePending_) return;
     talentWipePending_ = false;
 
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
 
     network::Packet pkt(wireOpcode(Opcode::MSG_TALENT_WIPE_CONFIRM));
     pkt.writeUInt64(talentWipeNpcGuid_);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
 
     LOG_INFO("confirmTalentWipe: sent confirm for npc=0x", std::hex, talentWipeNpcGuid_, std::dec);
     owner_.addSystemChatMessage("Talent reset confirmed. The server will update your talents.");
@@ -445,10 +446,10 @@ void SpellHandler::confirmTalentWipe() {
 void SpellHandler::confirmPetUnlearn() {
     if (!petUnlearnPending_) return;
     petUnlearnPending_ = false;
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
 
     network::Packet pkt(wireOpcode(Opcode::CMSG_PET_UNLEARN_TALENTS));
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     LOG_INFO("confirmPetUnlearn: sent CMSG_PET_UNLEARN_TALENTS");
     owner_.addSystemChatMessage("Pet talent reset confirmed.");
     petUnlearnGuid_ = 0;
@@ -468,37 +469,37 @@ uint32_t SpellHandler::findOnUseSpellId(uint32_t itemId) const {
 }
 
 void SpellHandler::useItemBySlot(int backpackIndex) {
-    if (backpackIndex < 0 || backpackIndex >= owner_.inventory.getBackpackSize()) return;
-    const auto& slot = owner_.inventory.getBackpackSlot(backpackIndex);
+    if (backpackIndex < 0 || backpackIndex >= owner_.inventoryRef().getBackpackSize()) return;
+    const auto& slot = owner_.inventoryRef().getBackpackSlot(backpackIndex);
     if (slot.empty()) return;
 
-    uint64_t itemGuid = owner_.backpackSlotGuids_[backpackIndex];
+    uint64_t itemGuid = owner_.backpackSlotGuidsRef()[backpackIndex];
     if (itemGuid == 0) {
         itemGuid = owner_.resolveOnlineItemGuid(slot.item.itemId);
     }
 
-    if (itemGuid != 0 && owner_.state == WorldState::IN_WORLD && owner_.socket) {
+    if (itemGuid != 0 && owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         uint32_t useSpellId = findOnUseSpellId(slot.item.itemId);
-        auto packet = owner_.packetParsers_
-            ? owner_.packetParsers_->buildUseItem(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex), itemGuid, useSpellId)
+        auto packet = owner_.getPacketParsers()
+            ? owner_.getPacketParsers()->buildUseItem(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex), itemGuid, useSpellId)
             : UseItemPacket::build(0xFF, static_cast<uint8_t>(Inventory::NUM_EQUIP_SLOTS + backpackIndex), itemGuid, useSpellId);
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     } else if (itemGuid == 0) {
         owner_.addSystemChatMessage("Cannot use that item right now.");
     }
 }
 
 void SpellHandler::useItemInBag(int bagIndex, int slotIndex) {
-    if (bagIndex < 0 || bagIndex >= owner_.inventory.NUM_BAG_SLOTS) return;
-    if (slotIndex < 0 || slotIndex >= owner_.inventory.getBagSize(bagIndex)) return;
-    const auto& slot = owner_.inventory.getBagSlot(bagIndex, slotIndex);
+    if (bagIndex < 0 || bagIndex >= owner_.inventoryRef().NUM_BAG_SLOTS) return;
+    if (slotIndex < 0 || slotIndex >= owner_.inventoryRef().getBagSize(bagIndex)) return;
+    const auto& slot = owner_.inventoryRef().getBagSlot(bagIndex, slotIndex);
     if (slot.empty()) return;
 
     uint64_t itemGuid = 0;
-    uint64_t bagGuid = owner_.equipSlotGuids_[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
+    uint64_t bagGuid = owner_.equipSlotGuidsRef()[Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex];
     if (bagGuid != 0) {
-        auto it = owner_.containerContents_.find(bagGuid);
-        if (it != owner_.containerContents_.end() && slotIndex < static_cast<int>(it->second.numSlots)) {
+        auto it = owner_.containerContentsRef().find(bagGuid);
+        if (it != owner_.containerContentsRef().end() && slotIndex < static_cast<int>(it->second.numSlots)) {
             itemGuid = it->second.slotGuids[slotIndex];
         }
     }
@@ -509,15 +510,15 @@ void SpellHandler::useItemInBag(int bagIndex, int slotIndex) {
     LOG_INFO("useItemInBag: bag=", bagIndex, " slot=", slotIndex, " itemId=", slot.item.itemId,
              " itemGuid=0x", std::hex, itemGuid, std::dec);
 
-    if (itemGuid != 0 && owner_.state == WorldState::IN_WORLD && owner_.socket) {
+    if (itemGuid != 0 && owner_.getState() == WorldState::IN_WORLD && owner_.getSocket()) {
         uint32_t useSpellId = findOnUseSpellId(slot.item.itemId);
         uint8_t wowBag = static_cast<uint8_t>(Inventory::FIRST_BAG_EQUIP_SLOT + bagIndex);
-        auto packet = owner_.packetParsers_
-            ? owner_.packetParsers_->buildUseItem(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId)
+        auto packet = owner_.getPacketParsers()
+            ? owner_.getPacketParsers()->buildUseItem(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId)
             : UseItemPacket::build(wowBag, static_cast<uint8_t>(slotIndex), itemGuid, useSpellId);
         LOG_INFO("useItemInBag: sending CMSG_USE_ITEM, bag=", (int)wowBag, " slot=", slotIndex,
                  " packetSize=", packet.getSize());
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     } else if (itemGuid == 0) {
         LOG_WARNING("Use item in bag failed: missing item GUID for bag ", bagIndex, " slot ", slotIndex);
         owner_.addSystemChatMessage("Cannot use that item right now.");
@@ -527,18 +528,18 @@ void SpellHandler::useItemInBag(int bagIndex, int slotIndex) {
 void SpellHandler::useItemById(uint32_t itemId) {
     if (itemId == 0) return;
     LOG_DEBUG("useItemById: searching for itemId=", itemId);
-    for (int i = 0; i < owner_.inventory.getBackpackSize(); i++) {
-        const auto& slot = owner_.inventory.getBackpackSlot(i);
+    for (int i = 0; i < owner_.inventoryRef().getBackpackSize(); i++) {
+        const auto& slot = owner_.inventoryRef().getBackpackSlot(i);
         if (!slot.empty() && slot.item.itemId == itemId) {
             LOG_DEBUG("useItemById: found itemId=", itemId, " at backpack slot ", i);
             useItemBySlot(i);
             return;
         }
     }
-    for (int bag = 0; bag < owner_.inventory.NUM_BAG_SLOTS; bag++) {
-        int bagSize = owner_.inventory.getBagSize(bag);
+    for (int bag = 0; bag < owner_.inventoryRef().NUM_BAG_SLOTS; bag++) {
+        int bagSize = owner_.inventoryRef().getBagSize(bag);
         for (int slot = 0; slot < bagSize; slot++) {
-            const auto& bagSlot = owner_.inventory.getBagSlot(bag, slot);
+            const auto& bagSlot = owner_.inventoryRef().getBagSlot(bag, slot);
             if (!bagSlot.empty() && bagSlot.item.itemId == itemId) {
                 LOG_DEBUG("useItemById: found itemId=", itemId, " in bag ", bag, " slot ", slot);
                 useItemInBag(bag, slot);
@@ -565,11 +566,11 @@ const std::vector<SpellHandler::SpellBookTab>& SpellHandler::getSpellBookTabs() 
     std::vector<uint32_t> general;
 
     for (uint32_t spellId : knownSpells_) {
-        auto slIt = owner_.spellToSkillLine_.find(spellId);
-        if (slIt != owner_.spellToSkillLine_.end()) {
+        auto slIt = owner_.spellToSkillLineRef().find(spellId);
+        if (slIt != owner_.spellToSkillLineRef().end()) {
             uint32_t skillLineId = slIt->second;
-            auto catIt = owner_.skillLineCategories_.find(skillLineId);
-            if (catIt != owner_.skillLineCategories_.end() && catIt->second == SKILLLINE_CATEGORY_CLASS) {
+            auto catIt = owner_.skillLineCategoriesRef().find(skillLineId);
+            if (catIt != owner_.skillLineCategoriesRef().end() && catIt->second == SKILLLINE_CATEGORY_CLASS) {
                 bySkillLine[skillLineId].push_back(spellId);
                 continue;
             }
@@ -588,8 +589,8 @@ const std::vector<SpellHandler::SpellBookTab>& SpellHandler::getSpellBookTabs() 
 
     std::vector<std::pair<std::string, std::vector<uint32_t>>> named;
     for (auto& [skillLineId, spells] : bySkillLine) {
-        auto nameIt = owner_.skillLineNames_.find(skillLineId);
-        std::string tabName = (nameIt != owner_.skillLineNames_.end()) ? nameIt->second : "Unknown";
+        auto nameIt = owner_.skillLineNamesRef().find(skillLineId);
+        std::string tabName = (nameIt != owner_.skillLineNamesRef().end()) ? nameIt->second : "Unknown";
         std::sort(spells.begin(), spells.end(), byName);
         named.emplace_back(std::move(tabName), std::move(spells));
     }
@@ -724,7 +725,7 @@ void SpellHandler::updateTimers(float dt) {
 
 void SpellHandler::handleInitialSpells(network::Packet& packet) {
     InitialSpellsData data;
-    if (!owner_.packetParsers_->parseInitialSpells(packet, data)) return;
+    if (!owner_.getPacketParsers()->parseInitialSpells(packet, data)) return;
 
     knownSpells_ = {data.spellIds.begin(), data.spellIds.end()};
 
@@ -744,14 +745,14 @@ void SpellHandler::handleInitialSpells(network::Packet& packet) {
     }
 
     // Load saved action bar or use defaults
-    owner_.actionBar[0].type = ActionBarSlot::SPELL;
-    owner_.actionBar[0].id = 6603;  // Attack
-    owner_.actionBar[11].type = ActionBarSlot::SPELL;
-    owner_.actionBar[11].id = 8690;  // Hearthstone
+    owner_.actionBarRef()[0].type = ActionBarSlot::SPELL;
+    owner_.actionBarRef()[0].id = 6603;  // Attack
+    owner_.actionBarRef()[11].type = ActionBarSlot::SPELL;
+    owner_.actionBarRef()[11].id = 8690;  // Hearthstone
     owner_.loadCharacterConfig();
 
     // Sync login-time cooldowns into action bar slot overlays
-    for (auto& slot : owner_.actionBar) {
+    for (auto& slot : owner_.actionBarRef()) {
         if (slot.type == ActionBarSlot::SPELL && slot.id != 0) {
             auto it = spellCooldowns_.find(slot.id);
             if (it != spellCooldowns_.end() && it->second > 0.0f) {
@@ -780,15 +781,15 @@ void SpellHandler::handleInitialSpells(network::Packet& packet) {
 
     LOG_INFO("Learned ", knownSpells_.size(), " spells");
 
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("SPELLS_CHANGED", {});
-        owner_.addonEventCallback_("LEARNED_SPELL_IN_TAB", {});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("SPELLS_CHANGED", {});
+        owner_.addonEventCallbackRef()("LEARNED_SPELL_IN_TAB", {});
     }
 }
 
 void SpellHandler::handleCastFailed(network::Packet& packet) {
     CastFailedData data;
-    bool ok = owner_.packetParsers_ ? owner_.packetParsers_->parseCastFailed(packet, data)
+    bool ok = owner_.getPacketParsers() ? owner_.getPacketParsers()->parseCastFailed(packet, data)
                                     : CastFailedParser::parse(packet, data);
     if (!ok) return;
 
@@ -796,8 +797,8 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
     castIsChannel_ = false;
     currentCastSpellId_ = 0;
     castTimeRemaining_ = 0.0f;
-    owner_.lastInteractedGoGuid_ = 0;
-    owner_.pendingGameObjectInteractGuid_ = 0;
+    owner_.lastInteractedGoGuidRef() = 0;
+    owner_.pendingGameObjectInteractGuidRef() = 0;
     craftQueueSpellId_ = 0;
     craftQueueRemaining_ = 0;
     queuedSpellId_ = 0;
@@ -812,7 +813,7 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
 
     // Show failure reason
     int powerType = -1;
-    auto playerEntity = owner_.getEntityManager().getEntity(owner_.playerGuid);
+    auto playerEntity = owner_.getEntityManager().getEntity(owner_.getPlayerGuid());
     if (auto playerUnit = std::dynamic_pointer_cast<Unit>(playerEntity)) {
         powerType = playerUnit->getPowerType();
     }
@@ -831,16 +832,16 @@ void SpellHandler::handleCastFailed(network::Packet& packet) {
             sfx->playError();
     }
 
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("UNIT_SPELLCAST_FAILED", {"player", std::to_string(data.spellId)});
-        owner_.addonEventCallback_("UNIT_SPELLCAST_STOP", {"player", std::to_string(data.spellId)});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("UNIT_SPELLCAST_FAILED", {"player", std::to_string(data.spellId)});
+        owner_.addonEventCallbackRef()("UNIT_SPELLCAST_STOP", {"player", std::to_string(data.spellId)});
     }
-    if (owner_.spellCastFailedCallback_) owner_.spellCastFailedCallback_(data.spellId);
+    if (owner_.spellCastFailedCallbackRef()) owner_.spellCastFailedCallbackRef()(data.spellId);
 }
 
 void SpellHandler::handleSpellStart(network::Packet& packet) {
     SpellStartData data;
-    if (!owner_.packetParsers_->parseSpellStart(packet, data)) {
+    if (!owner_.getPacketParsers()->parseSpellStart(packet, data)) {
         LOG_WARNING("Failed to parse SMSG_SPELL_START, size=", packet.getSize());
         return;
     }
@@ -860,7 +861,7 @@ void SpellHandler::handleSpellStart(network::Packet& packet) {
     const SpellCastType castType = classifyCast(data.targetGuid, data.casterUnit);
 
     // Track cast bar for any non-player caster
-    if (data.casterUnit != owner_.playerGuid && data.castTime > 0) {
+    if (data.casterUnit != owner_.getPlayerGuid() && data.castTime > 0) {
         auto& s = unitCastStates_[data.casterUnit];
         s.casting        = true;
         s.isChannel      = false;
@@ -869,33 +870,33 @@ void SpellHandler::handleSpellStart(network::Packet& packet) {
         s.timeRemaining  = s.timeTotal;
         s.interruptible  = owner_.isSpellInterruptible(data.spellId);
         s.castType       = castType;
-        if (owner_.spellCastAnimCallback_) {
-            owner_.spellCastAnimCallback_(data.casterUnit, true, false, castType);
+        if (owner_.spellCastAnimCallbackRef()) {
+            owner_.spellCastAnimCallbackRef()(data.casterUnit, true, false, castType);
         }
     }
 
     // Player's own cast
-    if (data.casterUnit == owner_.playerGuid && data.castTime > 0) {
+    if (data.casterUnit == owner_.getPlayerGuid() && data.castTime > 0) {
         // Cancel pending GO retries
-        owner_.pendingGameObjectLootRetries_.erase(
-            std::remove_if(owner_.pendingGameObjectLootRetries_.begin(), owner_.pendingGameObjectLootRetries_.end(),
+        owner_.pendingGameObjectLootRetriesRef().erase(
+            std::remove_if(owner_.pendingGameObjectLootRetriesRef().begin(), owner_.pendingGameObjectLootRetriesRef().end(),
                 [](const GameHandler::PendingLootRetry&) { return true; }),
-            owner_.pendingGameObjectLootRetries_.end());
+            owner_.pendingGameObjectLootRetriesRef().end());
 
         casting_ = true;
         castIsChannel_ = false;
         currentCastSpellId_ = data.spellId;
         castTimeTotal_ = data.castTime / 1000.0f;
         castTimeRemaining_ = castTimeTotal_;
-        if (owner_.addonEventCallback_) owner_.addonEventCallback_("CURRENT_SPELL_CAST_CHANGED", {});
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("CURRENT_SPELL_CAST_CHANGED", {});
 
         // Play precast sound — skip profession/tradeskill spells
         if (!owner_.isProfessionSpell(data.spellId)) {
             if (auto* ac = owner_.services().audioCoordinator) {
                 if (auto* ssm = ac->getSpellSoundManager()) {
                     owner_.loadSpellNameCache();
-                    auto it = owner_.spellNameCache_.find(data.spellId);
-                    auto school = (it != owner_.spellNameCache_.end() && it->second.schoolMask)
+                    auto it = owner_.spellNameCacheRef().find(data.spellId);
+                    auto school = (it != owner_.spellNameCacheRef().end() && it->second.schoolMask)
                         ? schoolMaskToMagicSchool(it->second.schoolMask)
                         : audio::SpellSoundManager::MagicSchool::ARCANE;
                     ssm->playPrecast(school, audio::SpellSoundManager::SpellPower::MEDIUM);
@@ -903,37 +904,37 @@ void SpellHandler::handleSpellStart(network::Packet& packet) {
             }
         }
 
-        if (owner_.spellCastAnimCallback_) {
-            owner_.spellCastAnimCallback_(owner_.playerGuid, true, false, castType);
+        if (owner_.spellCastAnimCallbackRef()) {
+            owner_.spellCastAnimCallbackRef()(owner_.getPlayerGuid(), true, false, castType);
         }
 
         // Hearthstone: pre-load terrain at bind point
         const bool isHearthstone = (data.spellId == 6948 || data.spellId == 8690);
-        if (isHearthstone && owner_.hasHomeBind_ && owner_.hearthstonePreloadCallback_) {
-            owner_.hearthstonePreloadCallback_(owner_.homeBindMapId_, owner_.homeBindPos_.x, owner_.homeBindPos_.y, owner_.homeBindPos_.z);
+        if (isHearthstone && owner_.hasHomeBindRef() && owner_.hearthstonePreloadCallbackRef()) {
+            owner_.hearthstonePreloadCallbackRef()(owner_.homeBindMapIdRef(), owner_.homeBindPosRef().x, owner_.homeBindPosRef().y, owner_.homeBindPosRef().z);
         }
     }
 
     // Fire UNIT_SPELLCAST_START
-    if (owner_.addonEventCallback_) {
+    if (owner_.addonEventCallbackRef()) {
         std::string unitId = owner_.guidToUnitId(data.casterUnit);
         if (!unitId.empty())
-            owner_.addonEventCallback_("UNIT_SPELLCAST_START", {unitId, std::to_string(data.spellId)});
+            owner_.addonEventCallbackRef()("UNIT_SPELLCAST_START", {unitId, std::to_string(data.spellId)});
     }
 }
 
 void SpellHandler::handleSpellGo(network::Packet& packet) {
     SpellGoData data;
-    if (!owner_.packetParsers_->parseSpellGo(packet, data)) return;
+    if (!owner_.getPacketParsers()->parseSpellGo(packet, data)) return;
 
-    if (data.casterUnit == owner_.playerGuid) {
+    if (data.casterUnit == owner_.getPlayerGuid()) {
         // Play cast-complete sound
         if (!owner_.isProfessionSpell(data.spellId)) {
             if (auto* ac = owner_.services().audioCoordinator) {
                 if (auto* ssm = ac->getSpellSoundManager()) {
                     owner_.loadSpellNameCache();
-                    auto it = owner_.spellNameCache_.find(data.spellId);
-                    auto school = (it != owner_.spellNameCache_.end() && it->second.schoolMask)
+                    auto it = owner_.spellNameCacheRef().find(data.spellId);
+                    auto school = (it != owner_.spellNameCacheRef().end() && it->second.schoolMask)
                         ? schoolMaskToMagicSchool(it->second.schoolMask)
                         : audio::SpellSoundManager::MagicSchool::ARCANE;
                     ssm->playCast(school);
@@ -946,13 +947,13 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
         bool isMeleeAbility = false;
         if (!owner_.isProfessionSpell(sid)) {
             owner_.loadSpellNameCache();
-            auto cacheIt = owner_.spellNameCache_.find(sid);
-            if (cacheIt != owner_.spellNameCache_.end() && cacheIt->second.schoolMask == 1) {
+            auto cacheIt = owner_.spellNameCacheRef().find(sid);
+            if (cacheIt != owner_.spellNameCacheRef().end() && cacheIt->second.schoolMask == 1) {
                 isMeleeAbility = (currentCastSpellId_ != sid);
             }
         }
         if (isMeleeAbility) {
-            if (owner_.meleeSwingCallback_) owner_.meleeSwingCallback_(sid);
+            if (owner_.meleeSwingCallbackRef()) owner_.meleeSwingCallbackRef()(sid);
             if (auto* ac = owner_.services().audioCoordinator) {
                 if (auto* csm = ac->getCombatSoundManager()) {
                     csm->playWeaponSwing(audio::CombatSoundManager::WeaponSize::MEDIUM, false);
@@ -973,16 +974,16 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
                 goType = SpellCastType::DIRECTED;
             else if (data.targetGuid == 0 && data.hitCount > 1)
                 goType = SpellCastType::AREA;
-            if (owner_.spellCastAnimCallback_) {
-                owner_.spellCastAnimCallback_(owner_.playerGuid, true, false, goType);
+            if (owner_.spellCastAnimCallbackRef()) {
+                owner_.spellCastAnimCallbackRef()(owner_.getPlayerGuid(), true, false, goType);
             }
         }
 
-        LOG_WARNING("[GO-DIAG] SPELL_GO: spellId=", data.spellId,
+        LOG_DEBUG("[GO-DIAG] SPELL_GO: spellId=", data.spellId,
                     " casting=", casting_, " currentCast=", currentCastSpellId_,
                     " wasInTimedCast=", wasInTimedCast,
-                    " lastGoGuid=0x", std::hex, owner_.lastInteractedGoGuid_,
-                    " pendingGoGuid=0x", owner_.pendingGameObjectInteractGuid_, std::dec);
+                    " lastGoGuid=0x", std::hex, owner_.lastInteractedGoGuidRef(),
+                    " pendingGoGuid=0x", owner_.pendingGameObjectInteractGuidRef(), std::dec);
 
         casting_ = false;
         castIsChannel_ = false;
@@ -990,23 +991,23 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
         castTimeRemaining_ = 0.0f;
 
         // Gather node looting: re-send CMSG_LOOT now that the cast completed.
-        if (wasInTimedCast && owner_.lastInteractedGoGuid_ != 0) {
-            LOG_WARNING("[GO-DIAG] Sending CMSG_LOOT for GO 0x", std::hex,
-                        owner_.lastInteractedGoGuid_, std::dec);
-            owner_.lootTarget(owner_.lastInteractedGoGuid_);
-            owner_.lastInteractedGoGuid_ = 0;
+        if (wasInTimedCast && owner_.lastInteractedGoGuidRef() != 0) {
+            LOG_DEBUG("[GO-DIAG] Sending CMSG_LOOT for GO 0x", std::hex,
+                        owner_.lastInteractedGoGuidRef(), std::dec);
+            owner_.lootTarget(owner_.lastInteractedGoGuidRef());
+            owner_.lastInteractedGoGuidRef() = 0;
         }
         // Clear the GO interaction guard so future cancelCast() calls work
         // normally. Without this, pendingGameObjectInteractGuid_ stays stale
         // and suppresses CMSG_CANCEL_CAST for ALL subsequent spell casts.
-        owner_.pendingGameObjectInteractGuid_ = 0;
+        owner_.pendingGameObjectInteractGuidRef() = 0;
 
-        if (owner_.spellCastAnimCallback_) {
-            owner_.spellCastAnimCallback_(owner_.playerGuid, false, false, SpellCastType::OMNI);
+        if (owner_.spellCastAnimCallbackRef()) {
+            owner_.spellCastAnimCallbackRef()(owner_.getPlayerGuid(), false, false, SpellCastType::OMNI);
         }
 
-        if (owner_.addonEventCallback_)
-            owner_.addonEventCallback_("UNIT_SPELLCAST_STOP", {"player", std::to_string(data.spellId)});
+        if (owner_.addonEventCallbackRef())
+            owner_.addonEventCallbackRef()("UNIT_SPELLCAST_STOP", {"player", std::to_string(data.spellId)});
 
         // Spell queue: fire the next queued spell
         if (queuedSpellId_ != 0) {
@@ -1028,22 +1029,22 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
             npcGoType = SpellCastType::DIRECTED;
         else if (data.targetGuid == 0 && data.hitCount > 1)
             npcGoType = SpellCastType::AREA;
-        if (!wasTrackedCast && owner_.spellCastAnimCallback_) {
-            owner_.spellCastAnimCallback_(data.casterUnit, true, false, npcGoType);
+        if (!wasTrackedCast && owner_.spellCastAnimCallbackRef()) {
+            owner_.spellCastAnimCallbackRef()(data.casterUnit, true, false, npcGoType);
         }
-        if (owner_.spellCastAnimCallback_) {
-            owner_.spellCastAnimCallback_(data.casterUnit, false, false, SpellCastType::OMNI);
+        if (owner_.spellCastAnimCallbackRef()) {
+            owner_.spellCastAnimCallbackRef()(data.casterUnit, false, false, SpellCastType::OMNI);
         }
         bool targetsPlayer = false;
         for (const auto& tgt : data.hitTargets) {
-            if (tgt == owner_.playerGuid) { targetsPlayer = true; break; }
+            if (tgt == owner_.getPlayerGuid()) { targetsPlayer = true; break; }
         }
         if (targetsPlayer) {
             if (auto* ac = owner_.services().audioCoordinator) {
                 if (auto* ssm = ac->getSpellSoundManager()) {
                     owner_.loadSpellNameCache();
-                    auto it = owner_.spellNameCache_.find(data.spellId);
-                    auto school = (it != owner_.spellNameCache_.end() && it->second.schoolMask)
+                    auto it = owner_.spellNameCacheRef().find(data.spellId);
+                    auto school = (it != owner_.spellNameCacheRef().end() && it->second.schoolMask)
                         ? schoolMaskToMagicSchool(it->second.schoolMask)
                         : audio::SpellSoundManager::MagicSchool::ARCANE;
                     ssm->playCast(school);
@@ -1058,10 +1059,10 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
     // Miss combat text
     if (!data.missTargets.empty()) {
         const uint64_t spellCasterGuid = data.casterUnit != 0 ? data.casterUnit : data.casterGuid;
-        const bool playerIsCaster = (spellCasterGuid == owner_.playerGuid);
+        const bool playerIsCaster = (spellCasterGuid == owner_.getPlayerGuid());
 
         for (const auto& m : data.missTargets) {
-            if (!playerIsCaster && m.targetGuid != owner_.playerGuid) {
+            if (!playerIsCaster && m.targetGuid != owner_.getPlayerGuid()) {
                 continue;
             }
             CombatTextEntry::Type ct = combatTextTypeFromSpellMissInfo(m.missType);
@@ -1073,23 +1074,23 @@ void SpellHandler::handleSpellGo(network::Packet& packet) {
     bool playerIsHit = false;
     bool playerHitEnemy = false;
     for (const auto& tgt : data.hitTargets) {
-        if (tgt == owner_.playerGuid) { playerIsHit = true; }
-        if (data.casterUnit == owner_.playerGuid && tgt != owner_.playerGuid && tgt != 0) { playerHitEnemy = true; }
+        if (tgt == owner_.getPlayerGuid()) { playerIsHit = true; }
+        if (data.casterUnit == owner_.getPlayerGuid() && tgt != owner_.getPlayerGuid() && tgt != 0) { playerHitEnemy = true; }
     }
 
     // Fire UNIT_SPELLCAST_SUCCEEDED
-    if (owner_.addonEventCallback_) {
+    if (owner_.addonEventCallbackRef()) {
         std::string unitId = owner_.guidToUnitId(data.casterUnit);
         if (!unitId.empty())
-            owner_.addonEventCallback_("UNIT_SPELLCAST_SUCCEEDED", {unitId, std::to_string(data.spellId)});
+            owner_.addonEventCallbackRef()("UNIT_SPELLCAST_SUCCEEDED", {unitId, std::to_string(data.spellId)});
     }
 
     if (playerIsHit || playerHitEnemy) {
         if (auto* ac = owner_.services().audioCoordinator) {
             if (auto* ssm = ac->getSpellSoundManager()) {
                 owner_.loadSpellNameCache();
-                auto it = owner_.spellNameCache_.find(data.spellId);
-                auto school = (it != owner_.spellNameCache_.end() && it->second.schoolMask)
+                auto it = owner_.spellNameCacheRef().find(data.spellId);
+                auto school = (it != owner_.spellNameCacheRef().end() && it->second.schoolMask)
                     ? schoolMaskToMagicSchool(it->second.schoolMask)
                     : audio::SpellSoundManager::MagicSchool::ARCANE;
                 ssm->playImpact(school, audio::SpellSoundManager::SpellPower::MEDIUM);
@@ -1131,7 +1132,7 @@ void SpellHandler::handleSpellCooldown(network::Packet& packet) {
         } else {
             it->second = mergeCooldownSeconds(it->second, seconds);
         }
-        for (auto& slot : owner_.actionBar) {
+        for (auto& slot : owner_.actionBarRef()) {
             bool match = (slot.type == ActionBarSlot::SPELL && slot.id == spellId)
                       || (cdItemId != 0 && slot.type == ActionBarSlot::ITEM && slot.id == cdItemId);
             if (match) {
@@ -1148,9 +1149,9 @@ void SpellHandler::handleSpellCooldown(network::Packet& packet) {
     }
     LOG_DEBUG("handleSpellCooldown: parsed for ",
               isClassicFormat ? "Classic" : "TBC/WotLK", " format");
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("SPELL_UPDATE_COOLDOWN", {});
-        owner_.addonEventCallback_("ACTIONBAR_UPDATE_COOLDOWN", {});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("SPELL_UPDATE_COOLDOWN", {});
+        owner_.addonEventCallbackRef()("ACTIONBAR_UPDATE_COOLDOWN", {});
     }
 }
 
@@ -1160,28 +1161,28 @@ void SpellHandler::handleCooldownEvent(network::Packet& packet) {
     if (packet.hasRemaining(8))
         packet.readUInt64();
     spellCooldowns_.erase(spellId);
-    for (auto& slot : owner_.actionBar) {
+    for (auto& slot : owner_.actionBarRef()) {
         if (slot.type == ActionBarSlot::SPELL && slot.id == spellId) {
             slot.cooldownRemaining = 0.0f;
         }
     }
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("SPELL_UPDATE_COOLDOWN", {});
-        owner_.addonEventCallback_("ACTIONBAR_UPDATE_COOLDOWN", {});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("SPELL_UPDATE_COOLDOWN", {});
+        owner_.addonEventCallbackRef()("ACTIONBAR_UPDATE_COOLDOWN", {});
     }
 }
 
 void SpellHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
     AuraUpdateData data;
-    if (!owner_.packetParsers_->parseAuraUpdate(packet, data, isAll)) return;
+    if (!owner_.getPacketParsers()->parseAuraUpdate(packet, data, isAll)) return;
 
     std::vector<AuraSlot>* auraList = nullptr;
-    if (data.guid == owner_.playerGuid) {
+    if (data.guid == owner_.getPlayerGuid()) {
         auraList = &playerAuras_;
-    } else if (data.guid == owner_.targetGuid) {
+    } else if (data.guid == owner_.getTargetGuid()) {
         auraList = &targetAuras_;
     }
-    if (data.guid != 0 && data.guid != owner_.playerGuid && data.guid != owner_.targetGuid) {
+    if (data.guid != 0 && data.guid != owner_.getPlayerGuid() && data.guid != owner_.getTargetGuid()) {
         auraList = &unitAurasCache_[data.guid];
     }
 
@@ -1202,28 +1203,28 @@ void SpellHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
             (*auraList)[slot] = aura;
         }
 
-        if (owner_.addonEventCallback_) {
+        if (owner_.addonEventCallbackRef()) {
             std::string unitId;
-            if (data.guid == owner_.playerGuid) unitId = "player";
-            else if (data.guid == owner_.targetGuid) unitId = "target";
-            else if (data.guid == owner_.focusGuid) unitId = "focus";
-            else if (data.guid == owner_.petGuid_) unitId = "pet";
+            if (data.guid == owner_.getPlayerGuid()) unitId = "player";
+            else if (data.guid == owner_.getTargetGuid()) unitId = "target";
+            else if (data.guid == owner_.focusGuidRef()) unitId = "focus";
+            else if (data.guid == owner_.petGuidRef()) unitId = "pet";
             if (!unitId.empty())
-                owner_.addonEventCallback_("UNIT_AURA", {unitId});
+                owner_.addonEventCallbackRef()("UNIT_AURA", {unitId});
         }
 
         // Mount aura detection
-        if (data.guid == owner_.playerGuid && owner_.currentMountDisplayId_ != 0 && owner_.mountAuraSpellId_ == 0) {
+        if (data.guid == owner_.getPlayerGuid() && owner_.currentMountDisplayIdRef() != 0 && owner_.mountAuraSpellIdRef() == 0) {
             for (const auto& [slot, aura] : data.updates) {
-                if (!aura.isEmpty() && aura.maxDurationMs < 0 && aura.casterGuid == owner_.playerGuid) {
-                    owner_.mountAuraSpellId_ = aura.spellId;
+                if (!aura.isEmpty() && aura.maxDurationMs < 0 && aura.casterGuid == owner_.getPlayerGuid()) {
+                    owner_.mountAuraSpellIdRef() = aura.spellId;
                     LOG_INFO("Mount aura detected from aura update: spellId=", aura.spellId);
                 }
             }
         }
 
         // Sprint aura detection — check if any sprint/dash speed buff is active
-        if (data.guid == owner_.playerGuid && owner_.sprintAuraCallback_) {
+        if (data.guid == owner_.getPlayerGuid() && owner_.sprintAuraCallbackRef()) {
             static const uint32_t sprintSpells[] = {
                 2983, 8696, 11305,   // Rogue Sprint (ranks 1-3)
                 1850, 9821, 33357,   // Druid Dash (ranks 1-3)
@@ -1239,7 +1240,7 @@ void SpellHandler::handleAuraUpdate(network::Packet& packet, bool isAll) {
                 }
                 if (hasSprint) break;
             }
-            owner_.sprintAuraCallback_(hasSprint);
+            owner_.sprintAuraCallbackRef()(hasSprint);
         }
     }
 }
@@ -1264,9 +1265,9 @@ void SpellHandler::handleLearnedSpell(network::Packet& packet) {
                 LOG_INFO("Talent learned: id=", talentId, " rank=", (int)newRank,
                          " (spell ", spellId, ") in spec ", (int)activeTalentSpec_);
                 isTalentSpell = true;
-                if (owner_.addonEventCallback_) {
-                    owner_.addonEventCallback_("CHARACTER_POINTS_CHANGED", {});
-                    owner_.addonEventCallback_("PLAYER_TALENT_UPDATE", {});
+                if (owner_.addonEventCallbackRef()) {
+                    owner_.addonEventCallbackRef()("CHARACTER_POINTS_CHANGED", {});
+                    owner_.addonEventCallbackRef()("PLAYER_TALENT_UPDATE", {});
                 }
                 break;
             }
@@ -1274,9 +1275,9 @@ void SpellHandler::handleLearnedSpell(network::Packet& packet) {
         if (isTalentSpell) break;
     }
 
-    if (!alreadyKnown && owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("LEARNED_SPELL_IN_TAB", {std::to_string(spellId)});
-        owner_.addonEventCallback_("SPELLS_CHANGED", {});
+    if (!alreadyKnown && owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("LEARNED_SPELL_IN_TAB", {std::to_string(spellId)});
+        owner_.addonEventCallbackRef()("SPELLS_CHANGED", {});
     }
 
     if (isTalentSpell) return;
@@ -1298,7 +1299,7 @@ void SpellHandler::handleRemovedSpell(network::Packet& packet) {
     uint32_t spellId = classicSpellId ? packet.readUInt16() : packet.readUInt32();
     knownSpells_.erase(spellId);
     LOG_INFO("Removed spell: ", spellId);
-    if (owner_.addonEventCallback_) owner_.addonEventCallback_("SPELLS_CHANGED", {});
+    if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("SPELLS_CHANGED", {});
 
     const std::string& name = owner_.getSpellName(spellId);
     if (!name.empty())
@@ -1307,7 +1308,7 @@ void SpellHandler::handleRemovedSpell(network::Packet& packet) {
         owner_.addSystemChatMessage("A spell has been removed.");
 
     bool barChanged = false;
-    for (auto& slot : owner_.actionBar) {
+    for (auto& slot : owner_.actionBarRef()) {
         if (slot.type == ActionBarSlot::SPELL && slot.id == spellId) {
             slot = ActionBarSlot{};
             barChanged = true;
@@ -1332,7 +1333,7 @@ void SpellHandler::handleSupercededSpell(network::Packet& packet) {
     LOG_INFO("Spell superceded: ", oldSpellId, " -> ", newSpellId);
 
     bool barChanged = false;
-    for (auto& slot : owner_.actionBar) {
+    for (auto& slot : owner_.actionBarRef()) {
         if (slot.type == ActionBarSlot::SPELL && slot.id == oldSpellId) {
             slot.id = newSpellId;
             slot.cooldownRemaining = 0.0f;
@@ -1343,7 +1344,7 @@ void SpellHandler::handleSupercededSpell(network::Packet& packet) {
     }
     if (barChanged) {
         owner_.saveCharacterConfig();
-        if (owner_.addonEventCallback_) owner_.addonEventCallback_("ACTIONBAR_SLOT_CHANGED", {});
+        if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("ACTIONBAR_SLOT_CHANGED", {});
     }
 
     if (!newSpellAlreadyAnnounced) {
@@ -1364,7 +1365,7 @@ void SpellHandler::handleUnlearnSpells(network::Packet& packet) {
         uint32_t spellId = packet.readUInt32();
         knownSpells_.erase(spellId);
         LOG_INFO("  Unlearned spell: ", spellId);
-        for (auto& slot : owner_.actionBar) {
+        for (auto& slot : owner_.actionBarRef()) {
             if (slot.type == ActionBarSlot::SPELL && slot.id == spellId) {
                 slot = ActionBarSlot{};
                 barChanged = true;
@@ -1425,10 +1426,10 @@ void SpellHandler::handleTalentsInfo(network::Packet& packet) {
              " groups=", (int)talentGroupCount, " active=", (int)activeTalentGroup,
              " learned=", learnedTalents_[activeTalentGroup].size());
 
-    if (owner_.addonEventCallback_) {
-        owner_.addonEventCallback_("CHARACTER_POINTS_CHANGED", {});
-        owner_.addonEventCallback_("ACTIVE_TALENT_GROUP_CHANGED", {});
-        owner_.addonEventCallback_("PLAYER_TALENT_UPDATE", {});
+    if (owner_.addonEventCallbackRef()) {
+        owner_.addonEventCallbackRef()("CHARACTER_POINTS_CHANGED", {});
+        owner_.addonEventCallbackRef()("ACTIVE_TALENT_GROUP_CHANGED", {});
+        owner_.addonEventCallbackRef()("PLAYER_TALENT_UPDATE", {});
     }
 
     if (!talentsInitialized_) {
@@ -1449,11 +1450,11 @@ void SpellHandler::handleAchievementEarned(network::Packet& packet) {
     uint32_t earnDate      = packet.readUInt32();
 
     owner_.loadAchievementNameCache();
-    auto nameIt = owner_.achievementNameCache_.find(achievementId);
-    const std::string& achName = (nameIt != owner_.achievementNameCache_.end())
+    auto nameIt = owner_.achievementNameCacheRef().find(achievementId);
+    const std::string& achName = (nameIt != owner_.achievementNameCacheRef().end())
         ? nameIt->second : std::string();
 
-    bool isSelf = (guid == owner_.playerGuid);
+    bool isSelf = (guid == owner_.getPlayerGuid());
     if (isSelf) {
         char buf[256];
         if (!achName.empty()) {
@@ -1463,14 +1464,14 @@ void SpellHandler::handleAchievementEarned(network::Packet& packet) {
         }
         owner_.addSystemChatMessage(buf);
 
-        owner_.earnedAchievements_.insert(achievementId);
-        owner_.achievementDates_[achievementId] = earnDate;
+        owner_.earnedAchievementsRef().insert(achievementId);
+        owner_.achievementDatesRef()[achievementId] = earnDate;
         if (auto* ac = owner_.services().audioCoordinator) {
             if (auto* sfx = ac->getUiSoundManager())
                 sfx->playAchievementAlert();
         }
-        if (owner_.achievementEarnedCallback_) {
-            owner_.achievementEarnedCallback_(achievementId, achName);
+        if (owner_.achievementEarnedCallbackRef()) {
+            owner_.achievementEarnedCallbackRef()(achievementId, achName);
         }
     } else {
         std::string senderName;
@@ -1500,8 +1501,8 @@ void SpellHandler::handleAchievementEarned(network::Packet& packet) {
     LOG_INFO("SMSG_ACHIEVEMENT_EARNED: guid=0x", std::hex, guid, std::dec,
              " achievementId=", achievementId, " self=", isSelf,
              achName.empty() ? "" : " name=", achName);
-    if (owner_.addonEventCallback_)
-        owner_.addonEventCallback_("ACHIEVEMENT_EARNED", {std::to_string(achievementId)});
+    if (owner_.addonEventCallbackRef())
+        owner_.addonEventCallbackRef()("ACHIEVEMENT_EARNED", {std::to_string(achievementId)});
 }
 
 // SMSG_EQUIPMENT_SET_LIST — moved to InventoryHandler
@@ -1513,20 +1514,20 @@ void SpellHandler::handleAchievementEarned(network::Packet& packet) {
 void SpellHandler::handlePetSpells(network::Packet& packet) {
     const size_t remaining = packet.getRemainingSize();
     if (remaining < 8) {
-        owner_.petGuid_ = 0;
-        owner_.petSpellList_.clear();
-        owner_.petAutocastSpells_.clear();
-        memset(owner_.petActionSlots_, 0, sizeof(owner_.petActionSlots_));
+        owner_.petGuidRef() = 0;
+        owner_.petSpellListRef().clear();
+        owner_.petAutocastSpellsRef().clear();
+        memset(owner_.petActionSlotsRef(), 0, sizeof(owner_.petActionSlotsRef()));
         LOG_INFO("SMSG_PET_SPELLS: pet cleared");
         owner_.fireAddonEvent("UNIT_PET", {"player"});
         return;
     }
 
-    owner_.petGuid_ = packet.readUInt64();
-    if (owner_.petGuid_ == 0) {
-        owner_.petSpellList_.clear();
-        owner_.petAutocastSpells_.clear();
-        memset(owner_.petActionSlots_, 0, sizeof(owner_.petActionSlots_));
+    owner_.petGuidRef() = packet.readUInt64();
+    if (owner_.petGuidRef() == 0) {
+        owner_.petSpellListRef().clear();
+        owner_.petAutocastSpellsRef().clear();
+        memset(owner_.petActionSlotsRef(), 0, sizeof(owner_.petActionSlotsRef()));
         LOG_INFO("SMSG_PET_SPELLS: pet cleared (guid=0)");
         owner_.fireAddonEvent("UNIT_PET", {"player"});
         return;
@@ -1539,72 +1540,72 @@ void SpellHandler::handlePetSpells(network::Packet& packet) {
         /*uint16_t timer =*/ packet.readUInt16();
 
         if (!packet.hasRemaining(2)) break;
-        owner_.petReact_   = packet.readUInt8();
-        owner_.petCommand_ = packet.readUInt8();
+        owner_.petReactRef()   = packet.readUInt8();
+        owner_.petCommandRef() = packet.readUInt8();
 
         if (!packet.hasRemaining(GameHandler::PET_ACTION_BAR_SLOTS * 4u)) break;
         for (int i = 0; i < GameHandler::PET_ACTION_BAR_SLOTS; ++i) {
-            owner_.petActionSlots_[i] = packet.readUInt32();
+            owner_.petActionSlotsRef()[i] = packet.readUInt32();
         }
 
         if (!packet.hasRemaining(1)) break;
         uint8_t spellCount = packet.readUInt8();
-        owner_.petSpellList_.clear();
-        owner_.petAutocastSpells_.clear();
+        owner_.petSpellListRef().clear();
+        owner_.petAutocastSpellsRef().clear();
         for (uint8_t i = 0; i < spellCount; ++i) {
             if (!packet.hasRemaining(6)) break;
             uint32_t spellId = packet.readUInt32();
             uint16_t activeFlags = packet.readUInt16();
-            owner_.petSpellList_.push_back(spellId);
+            owner_.petSpellListRef().push_back(spellId);
             if (activeFlags & 0x0001) {
-                owner_.petAutocastSpells_.insert(spellId);
+                owner_.petAutocastSpellsRef().insert(spellId);
             }
         }
     } while (false);
 
-    LOG_INFO("SMSG_PET_SPELLS: petGuid=0x", std::hex, owner_.petGuid_, std::dec,
-             " react=", static_cast<int>(owner_.petReact_), " command=", static_cast<int>(owner_.petCommand_),
-             " spells=", owner_.petSpellList_.size());
+    LOG_INFO("SMSG_PET_SPELLS: petGuid=0x", std::hex, owner_.petGuidRef(), std::dec,
+             " react=", static_cast<int>(owner_.petReactRef()), " command=", static_cast<int>(owner_.petCommandRef()),
+             " spells=", owner_.petSpellListRef().size());
     owner_.fireAddonEvent("UNIT_PET", {"player"});
     owner_.fireAddonEvent("PET_BAR_UPDATE", {});
 }
 
 void SpellHandler::sendPetAction(uint32_t action, uint64_t targetGuid) {
-    if (!owner_.hasPet() || owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
-    auto pkt = PetActionPacket::build(owner_.petGuid_, action, targetGuid);
-    owner_.socket->send(pkt);
-    LOG_DEBUG("sendPetAction: petGuid=0x", std::hex, owner_.petGuid_,
+    if (!owner_.hasPet() || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
+    auto pkt = PetActionPacket::build(owner_.petGuidRef(), action, targetGuid);
+    owner_.getSocket()->send(pkt);
+    LOG_DEBUG("sendPetAction: petGuid=0x", std::hex, owner_.petGuidRef(),
               " action=0x", action, " target=0x", targetGuid, std::dec);
 }
 
 void SpellHandler::dismissPet() {
-    if (owner_.petGuid_ == 0 || owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
-    auto packet = PetActionPacket::build(owner_.petGuid_, 0x07000000);
-    owner_.socket->send(packet);
+    if (owner_.petGuidRef() == 0 || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
+    auto packet = PetActionPacket::build(owner_.petGuidRef(), 0x07000000);
+    owner_.getSocket()->send(packet);
 }
 
 void SpellHandler::togglePetSpellAutocast(uint32_t spellId) {
-    if (owner_.petGuid_ == 0 || spellId == 0 || owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
-    bool currentlyOn = owner_.petAutocastSpells_.count(spellId) != 0;
+    if (owner_.petGuidRef() == 0 || spellId == 0 || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
+    bool currentlyOn = owner_.petAutocastSpellsRef().count(spellId) != 0;
     uint8_t newState = currentlyOn ? 0 : 1;
     network::Packet pkt(wireOpcode(Opcode::CMSG_PET_SPELL_AUTOCAST));
-    pkt.writeUInt64(owner_.petGuid_);
+    pkt.writeUInt64(owner_.petGuidRef());
     pkt.writeUInt32(spellId);
     pkt.writeUInt8(newState);
-    owner_.socket->send(pkt);
+    owner_.getSocket()->send(pkt);
     if (newState)
-        owner_.petAutocastSpells_.insert(spellId);
+        owner_.petAutocastSpellsRef().insert(spellId);
     else
-        owner_.petAutocastSpells_.erase(spellId);
+        owner_.petAutocastSpellsRef().erase(spellId);
     LOG_DEBUG("togglePetSpellAutocast: spellId=", spellId, " autocast=", static_cast<int>(newState));
 }
 
 void SpellHandler::renamePet(const std::string& newName) {
-    if (owner_.petGuid_ == 0 || owner_.state != WorldState::IN_WORLD || !owner_.socket) return;
+    if (owner_.petGuidRef() == 0 || owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket()) return;
     if (newName.empty() || newName.size() > 12) return;
-    auto packet = PetRenamePacket::build(owner_.petGuid_, newName, 0);
-    owner_.socket->send(packet);
-    LOG_INFO("Sent CMSG_PET_RENAME: petGuid=0x", std::hex, owner_.petGuid_, std::dec, " name='", newName, "'");
+    auto packet = PetRenamePacket::build(owner_.petGuidRef(), newName, 0);
+    owner_.getSocket()->send(packet);
+    LOG_INFO("Sent CMSG_PET_RENAME: petGuid=0x", std::hex, owner_.petGuidRef(), std::dec, " name='", newName, "'");
 }
 
 void SpellHandler::handleListStabledPets(network::Packet& packet) {
@@ -1613,12 +1614,12 @@ void SpellHandler::handleListStabledPets(network::Packet& packet) {
         LOG_WARNING("MSG_LIST_STABLED_PETS: packet too short (", packet.getSize(), ")");
         return;
     }
-    owner_.stableMasterGuid_ = packet.readUInt64();
+    owner_.stableMasterGuidRef() = packet.readUInt64();
     uint8_t petCount  = packet.readUInt8();
-    owner_.stableNumSlots_   = packet.readUInt8();
+    owner_.stableNumSlotsRef()   = packet.readUInt8();
 
-    owner_.stabledPets_.clear();
-    owner_.stabledPets_.reserve(petCount);
+    owner_.stabledPetsRef().clear();
+    owner_.stabledPetsRef().reserve(petCount);
 
     for (uint8_t i = 0; i < petCount; ++i) {
         // petNumber(4) + entry(4) + level(4) = 12 bytes before the name string
@@ -1632,13 +1633,13 @@ void SpellHandler::handleListStabledPets(network::Packet& packet) {
         if (!packet.hasRemaining(5)) break;
         pet.displayId = packet.readUInt32();
         pet.isActive  = (packet.readUInt8() != 0);
-        owner_.stabledPets_.push_back(std::move(pet));
+        owner_.stabledPetsRef().push_back(std::move(pet));
     }
 
-    owner_.stableWindowOpen_ = true;
-    LOG_INFO("MSG_LIST_STABLED_PETS: stableMasterGuid=0x", std::hex, owner_.stableMasterGuid_, std::dec,
-             " petCount=", static_cast<int>(petCount), " numSlots=", static_cast<int>(owner_.stableNumSlots_));
-    for (const auto& p : owner_.stabledPets_) {
+    owner_.stableWindowOpenRef() = true;
+    LOG_INFO("MSG_LIST_STABLED_PETS: stableMasterGuid=0x", std::hex, owner_.stableMasterGuidRef(), std::dec,
+             " petCount=", static_cast<int>(petCount), " numSlots=", static_cast<int>(owner_.stableNumSlotsRef()));
+    for (const auto& p : owner_.stabledPetsRef()) {
         LOG_DEBUG("  Pet: number=", p.petNumber, " entry=", p.entry,
                   " level=", p.level, " name='", p.name, "' displayId=", p.displayId,
                   " active=", p.isActive);
@@ -1659,9 +1660,9 @@ void SpellHandler::stopCasting() {
         return;
     }
 
-    if (owner_.pendingGameObjectInteractGuid_ == 0 && currentCastSpellId_ != 0) {
+    if (owner_.pendingGameObjectInteractGuidRef() == 0 && currentCastSpellId_ != 0) {
         auto packet = CancelCastPacket::build(currentCastSpellId_);
-        owner_.socket->send(packet);
+        owner_.getSocket()->send(packet);
     }
 
     casting_ = false;
@@ -1669,8 +1670,8 @@ void SpellHandler::stopCasting() {
     currentCastSpellId_ = 0;
     castTimeRemaining_ = 0.0f;
     castTimeTotal_ = 0.0f;
-    owner_.pendingGameObjectInteractGuid_ = 0;
-    owner_.lastInteractedGoGuid_ = 0;
+    owner_.pendingGameObjectInteractGuidRef() = 0;
+    owner_.lastInteractedGoGuidRef() = 0;
     craftQueueSpellId_ = 0;
     craftQueueRemaining_ = 0;
     queuedSpellId_ = 0;
@@ -1689,7 +1690,7 @@ void SpellHandler::resetCastState() {
     craftQueueRemaining_ = 0;
     queuedSpellId_ = 0;
     queuedSpellTarget_ = 0;
-    owner_.pendingGameObjectInteractGuid_ = 0;
+    owner_.pendingGameObjectInteractGuidRef() = 0;
     // lastInteractedGoGuid_ is intentionally NOT cleared here — it must survive
     // until handleSpellGo sends CMSG_LOOT after the server-side cast completes.
     // handleSpellGo clears it after use (line 958). Previously this was cleared
@@ -1744,8 +1745,8 @@ void SpellHandler::handleUpdateAuraDuration(uint8_t slot, uint32_t durationMs) {
 static const std::string SPELL_EMPTY_STRING;
 
 void SpellHandler::loadSpellNameCache() const {
-    if (owner_.spellNameCacheLoaded_) return;
-    owner_.spellNameCacheLoaded_ = true;
+    if (owner_.spellNameCacheLoadedRef()) return;
+    owner_.spellNameCacheLoadedRef() = true;
 
     auto* am = owner_.services().assetManager;
     if (!am || !am->isInitialized()) return;
@@ -1832,7 +1833,7 @@ void SpellHandler::loadSpellNameCache() const {
             // Duration: read DurationIndex and resolve via SpellDuration.dbc later
             if (durIdxField != 0xFFFFFFFF)
                 entry.durationSec = static_cast<float>(dbc->getUInt32(i, durIdxField)); // store index temporarily
-            owner_.spellNameCache_[id] = std::move(entry);
+            owner_.spellNameCacheRef()[id] = std::move(entry);
         }
     }
     auto durDbc = am->loadDBC("SpellDuration.dbc");
@@ -1844,7 +1845,7 @@ void SpellHandler::loadSpellNameCache() const {
             if (baseMs > 0 && baseMs < 100000000)
                 durMap[durId] = baseMs / 1000.0f;
         }
-        for (auto& [sid, entry] : owner_.spellNameCache_) {
+        for (auto& [sid, entry] : owner_.spellNameCacheRef()) {
             uint32_t durIdx = static_cast<uint32_t>(entry.durationSec);
             if (durIdx > 0) {
                 auto it = durMap.find(durIdx);
@@ -1852,12 +1853,12 @@ void SpellHandler::loadSpellNameCache() const {
             }
         }
     }
-    LOG_INFO("Trainer: Loaded ", owner_.spellNameCache_.size(), " spell names from Spell.dbc");
+    LOG_INFO("Trainer: Loaded ", owner_.spellNameCacheRef().size(), " spell names from Spell.dbc");
 }
 
 void SpellHandler::loadSkillLineAbilityDbc() {
-    if (owner_.skillLineAbilityLoaded_) return;
-    owner_.skillLineAbilityLoaded_ = true;
+    if (owner_.skillLineAbilityLoadedRef()) return;
+    owner_.skillLineAbilityLoadedRef() = true;
 
     auto* am = owner_.services().assetManager;
     if (!am || !am->isInitialized()) return;
@@ -1871,27 +1872,27 @@ void SpellHandler::loadSkillLineAbilityDbc() {
             uint32_t skillLineId = slaDbc->getUInt32(i, slaSkillField);
             uint32_t spellId = slaDbc->getUInt32(i, slaSpellField);
             if (spellId > 0 && skillLineId > 0) {
-                owner_.spellToSkillLine_[spellId] = skillLineId;
+                owner_.spellToSkillLineRef()[spellId] = skillLineId;
             }
         }
-        LOG_INFO("Trainer: Loaded ", owner_.spellToSkillLine_.size(), " skill line abilities");
+        LOG_INFO("Trainer: Loaded ", owner_.spellToSkillLineRef().size(), " skill line abilities");
     }
 }
 
 void SpellHandler::categorizeTrainerSpells() {
-    owner_.trainerTabs_.clear();
+    owner_.trainerTabsRef().clear();
 
     static constexpr uint32_t SKILLLINE_CATEGORY_CLASS = 7;
 
     std::map<uint32_t, std::vector<const TrainerSpell*>> specialtySpells;
     std::vector<const TrainerSpell*> generalSpells;
 
-    for (const auto& spell : owner_.currentTrainerList_.spells) {
-        auto slIt = owner_.spellToSkillLine_.find(spell.spellId);
-        if (slIt != owner_.spellToSkillLine_.end()) {
+    for (const auto& spell : owner_.currentTrainerListRef().spells) {
+        auto slIt = owner_.spellToSkillLineRef().find(spell.spellId);
+        if (slIt != owner_.spellToSkillLineRef().end()) {
             uint32_t skillLineId = slIt->second;
-            auto catIt = owner_.skillLineCategories_.find(skillLineId);
-            if (catIt != owner_.skillLineCategories_.end() && catIt->second == SKILLLINE_CATEGORY_CLASS) {
+            auto catIt = owner_.skillLineCategoriesRef().find(skillLineId);
+            if (catIt != owner_.skillLineCategoriesRef().end() && catIt->second == SKILLLINE_CATEGORY_CLASS) {
                 specialtySpells[skillLineId].push_back(&spell);
                 continue;
             }
@@ -1905,8 +1906,8 @@ void SpellHandler::categorizeTrainerSpells() {
 
     std::vector<std::pair<std::string, std::vector<const TrainerSpell*>>> named;
     for (auto& [skillLineId, spells] : specialtySpells) {
-        auto nameIt = owner_.skillLineNames_.find(skillLineId);
-        std::string tabName = (nameIt != owner_.skillLineNames_.end()) ? nameIt->second : "Specialty";
+        auto nameIt = owner_.skillLineNamesRef().find(skillLineId);
+        std::string tabName = (nameIt != owner_.skillLineNamesRef().end()) ? nameIt->second : "Specialty";
         std::sort(spells.begin(), spells.end(), byName);
         named.push_back({std::move(tabName), std::move(spells)});
     }
@@ -1914,27 +1915,27 @@ void SpellHandler::categorizeTrainerSpells() {
         [](const auto& a, const auto& b) { return a.first < b.first; });
 
     for (auto& [name, spells] : named) {
-        owner_.trainerTabs_.push_back({std::move(name), std::move(spells)});
+        owner_.trainerTabsRef().push_back({std::move(name), std::move(spells)});
     }
 
     if (!generalSpells.empty()) {
         std::sort(generalSpells.begin(), generalSpells.end(), byName);
-        owner_.trainerTabs_.push_back({"General", std::move(generalSpells)});
+        owner_.trainerTabsRef().push_back({"General", std::move(generalSpells)});
     }
 
-    LOG_INFO("Trainer: Categorized into ", owner_.trainerTabs_.size(), " tabs");
+    LOG_INFO("Trainer: Categorized into ", owner_.trainerTabsRef().size(), " tabs");
 }
 
 const int32_t* SpellHandler::getSpellEffectBasePoints(uint32_t spellId) const {
     loadSpellNameCache();
-    auto it = owner_.spellNameCache_.find(spellId);
-    return (it != owner_.spellNameCache_.end()) ? it->second.effectBasePoints : nullptr;
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    return (it != owner_.spellNameCacheRef().end()) ? it->second.effectBasePoints : nullptr;
 }
 
 float SpellHandler::getSpellDuration(uint32_t spellId) const {
     loadSpellNameCache();
-    auto it = owner_.spellNameCache_.find(spellId);
-    return (it != owner_.spellNameCache_.end()) ? it->second.durationSec : 0.0f;
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    return (it != owner_.spellNameCacheRef().end()) ? it->second.durationSec : 0.0f;
 }
 
 const std::string& SpellHandler::getSpellName(uint32_t spellId) const {
@@ -1942,20 +1943,20 @@ const std::string& SpellHandler::getSpellName(uint32_t spellId) const {
     // Every other DBC-backed getter (getSpellDescription, getSpellSchoolMask, etc.)
     // already does this; these two were missed.
     loadSpellNameCache();
-    auto it = owner_.spellNameCache_.find(spellId);
-    return (it != owner_.spellNameCache_.end()) ? it->second.name : SPELL_EMPTY_STRING;
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    return (it != owner_.spellNameCacheRef().end()) ? it->second.name : SPELL_EMPTY_STRING;
 }
 
 const std::string& SpellHandler::getSpellRank(uint32_t spellId) const {
     loadSpellNameCache();
-    auto it = owner_.spellNameCache_.find(spellId);
-    return (it != owner_.spellNameCache_.end()) ? it->second.rank : SPELL_EMPTY_STRING;
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    return (it != owner_.spellNameCacheRef().end()) ? it->second.rank : SPELL_EMPTY_STRING;
 }
 
 const std::string& SpellHandler::getSpellDescription(uint32_t spellId) const {
     loadSpellNameCache();
-    auto it = owner_.spellNameCache_.find(spellId);
-    return (it != owner_.spellNameCache_.end()) ? it->second.description : SPELL_EMPTY_STRING;
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    return (it != owner_.spellNameCacheRef().end()) ? it->second.description : SPELL_EMPTY_STRING;
 }
 
 std::string SpellHandler::getEnchantName(uint32_t enchantId) const {
@@ -1974,30 +1975,30 @@ std::string SpellHandler::getEnchantName(uint32_t enchantId) const {
 
 uint8_t SpellHandler::getSpellDispelType(uint32_t spellId) const {
     loadSpellNameCache();
-    auto it = owner_.spellNameCache_.find(spellId);
-    return (it != owner_.spellNameCache_.end()) ? it->second.dispelType : 0;
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    return (it != owner_.spellNameCacheRef().end()) ? it->second.dispelType : 0;
 }
 
 bool SpellHandler::isSpellInterruptible(uint32_t spellId) const {
     if (spellId == 0) return true;
     loadSpellNameCache();
-    auto it = owner_.spellNameCache_.find(spellId);
-    if (it == owner_.spellNameCache_.end()) return true;
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    if (it == owner_.spellNameCacheRef().end()) return true;
     return (it->second.attrEx & 0x00000010u) == 0;
 }
 
 uint32_t SpellHandler::getSpellSchoolMask(uint32_t spellId) const {
     if (spellId == 0) return 0;
     loadSpellNameCache();
-    auto it = owner_.spellNameCache_.find(spellId);
-    return (it != owner_.spellNameCache_.end()) ? it->second.schoolMask : 0;
+    auto it = owner_.spellNameCacheRef().find(spellId);
+    return (it != owner_.spellNameCacheRef().end()) ? it->second.schoolMask : 0;
 }
 
 const std::string& SpellHandler::getSkillLineName(uint32_t spellId) const {
-    auto slIt = owner_.spellToSkillLine_.find(spellId);
-    if (slIt == owner_.spellToSkillLine_.end()) return SPELL_EMPTY_STRING;
-    auto nameIt = owner_.skillLineNames_.find(slIt->second);
-    return (nameIt != owner_.skillLineNames_.end()) ? nameIt->second : SPELL_EMPTY_STRING;
+    auto slIt = owner_.spellToSkillLineRef().find(spellId);
+    if (slIt == owner_.spellToSkillLineRef().end()) return SPELL_EMPTY_STRING;
+    auto nameIt = owner_.skillLineNamesRef().find(slIt->second);
+    return (nameIt != owner_.skillLineNamesRef().end()) ? nameIt->second : SPELL_EMPTY_STRING;
 }
 
 // ============================================================
@@ -2005,8 +2006,8 @@ const std::string& SpellHandler::getSkillLineName(uint32_t spellId) const {
 // ============================================================
 
 void SpellHandler::loadSkillLineDbc() {
-    if (owner_.skillLineDbcLoaded_) return;
-    owner_.skillLineDbcLoaded_ = true;
+    if (owner_.skillLineDbcLoadedRef()) return;
+    owner_.skillLineDbcLoadedRef() = true;
 
     auto* am = owner_.services().assetManager;
     if (!am || !am->isInitialized()) return;
@@ -2026,11 +2027,11 @@ void SpellHandler::loadSkillLineDbc() {
         uint32_t category = dbc->getUInt32(i, slCatField);
         std::string name = dbc->getString(i, slNameField);
         if (id > 0 && !name.empty()) {
-            owner_.skillLineNames_[id] = name;
-            owner_.skillLineCategories_[id] = category;
+            owner_.skillLineNamesRef()[id] = name;
+            owner_.skillLineCategoriesRef()[id] = category;
         }
     }
-    LOG_INFO("GameHandler: Loaded ", owner_.skillLineNames_.size(), " skill line names");
+    LOG_INFO("GameHandler: Loaded ", owner_.skillLineNamesRef().size(), " skill line names");
 }
 
 void SpellHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields) {
@@ -2077,10 +2078,10 @@ void SpellHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields
 
     for (const auto& [skillId, skill] : newSkills) {
         if (skill.value == 0) continue;
-        auto oldIt = owner_.playerSkills_.find(skillId);
-        if (oldIt != owner_.playerSkills_.end() && skill.value > oldIt->second.value) {
-            auto catIt = owner_.skillLineCategories_.find(skillId);
-            if (catIt != owner_.skillLineCategories_.end()) {
+        auto oldIt = owner_.playerSkillsRef().find(skillId);
+        if (oldIt != owner_.playerSkillsRef().end() && skill.value > oldIt->second.value) {
+            auto catIt = owner_.skillLineCategoriesRef().find(skillId);
+            if (catIt != owner_.skillLineCategoriesRef().end()) {
                 uint32_t category = catIt->second;
                 if (category == 5 || category == 10 || category == 12) {
                     continue;
@@ -2093,28 +2094,28 @@ void SpellHandler::extractSkillFields(const std::map<uint16_t, uint32_t>& fields
         }
     }
 
-    bool skillsChanged = (newSkills.size() != owner_.playerSkills_.size());
+    bool skillsChanged = (newSkills.size() != owner_.playerSkillsRef().size());
     if (!skillsChanged) {
         for (const auto& [id, sk] : newSkills) {
-            auto it = owner_.playerSkills_.find(id);
-            if (it == owner_.playerSkills_.end() || it->second.value != sk.value) {
+            auto it = owner_.playerSkillsRef().find(id);
+            if (it == owner_.playerSkillsRef().end() || it->second.value != sk.value) {
                 skillsChanged = true;
                 break;
             }
         }
     }
-    owner_.playerSkills_ = std::move(newSkills);
+    owner_.playerSkillsRef() = std::move(newSkills);
     if (skillsChanged)
         owner_.fireAddonEvent("SKILL_LINES_CHANGED", {});
 }
 
 void SpellHandler::extractExploredZoneFields(const std::map<uint16_t, uint32_t>& fields) {
-    const size_t zoneCount = owner_.packetParsers_
-        ? static_cast<size_t>(owner_.packetParsers_->exploredZonesCount())
+    const size_t zoneCount = owner_.getPacketParsers()
+        ? static_cast<size_t>(owner_.getPacketParsers()->exploredZonesCount())
         : GameHandler::PLAYER_EXPLORED_ZONES_COUNT;
 
-    if (owner_.playerExploredZones_.size() != GameHandler::PLAYER_EXPLORED_ZONES_COUNT) {
-        owner_.playerExploredZones_.assign(GameHandler::PLAYER_EXPLORED_ZONES_COUNT, 0u);
+    if (owner_.playerExploredZonesRef().size() != GameHandler::PLAYER_EXPLORED_ZONES_COUNT) {
+        owner_.playerExploredZonesRef().assign(GameHandler::PLAYER_EXPLORED_ZONES_COUNT, 0u);
     }
 
     bool foundAny = false;
@@ -2122,15 +2123,15 @@ void SpellHandler::extractExploredZoneFields(const std::map<uint16_t, uint32_t>&
         const uint16_t fieldIdx = static_cast<uint16_t>(fieldIndex(UF::PLAYER_EXPLORED_ZONES_START) + i);
         auto it = fields.find(fieldIdx);
         if (it == fields.end()) continue;
-        owner_.playerExploredZones_[i] = it->second;
+        owner_.playerExploredZonesRef()[i] = it->second;
         foundAny = true;
     }
     for (size_t i = zoneCount; i < GameHandler::PLAYER_EXPLORED_ZONES_COUNT; i++) {
-        owner_.playerExploredZones_[i] = 0u;
+        owner_.playerExploredZonesRef()[i] = 0u;
     }
 
     if (foundAny) {
-        owner_.hasPlayerExploredZones_ = true;
+        owner_.hasPlayerExploredZonesRef() = true;
     }
 }
 
@@ -2141,15 +2142,15 @@ void SpellHandler::extractExploredZoneFields(const std::map<uint16_t, uint32_t>&
 void SpellHandler::handleCastResult(network::Packet& packet) {
     uint32_t castResultSpellId = 0;
     uint8_t  castResult        = 0;
-    if (owner_.packetParsers_->parseCastResult(packet, castResultSpellId, castResult)) {
+    if (owner_.getPacketParsers()->parseCastResult(packet, castResultSpellId, castResult)) {
         LOG_DEBUG("SMSG_CAST_RESULT: spellId=", castResultSpellId, " result=", static_cast<int>(castResult));
         if (castResult != 0) {
             casting_ = false; castIsChannel_ = false; currentCastSpellId_ = 0; castTimeRemaining_ = 0.0f;
-            owner_.lastInteractedGoGuid_ = 0;
+            owner_.lastInteractedGoGuidRef() = 0;
             craftQueueSpellId_ = 0; craftQueueRemaining_ = 0;
             queuedSpellId_ = 0; queuedSpellTarget_ = 0;
             int playerPowerType = -1;
-            if (auto pe = owner_.getEntityManager().getEntity(owner_.playerGuid)) {
+            if (auto pe = owner_.getEntityManager().getEntity(owner_.getPlayerGuid())) {
                 if (auto pu = std::dynamic_pointer_cast<Unit>(pe))
                     playerPowerType = static_cast<int>(pu->getPowerType());
             }
@@ -2157,7 +2158,7 @@ void SpellHandler::handleCastResult(network::Packet& packet) {
             std::string errMsg = reason ? reason
                                         : ("Spell cast failed (error " + std::to_string(castResult) + ")");
             owner_.addUIError(errMsg);
-            if (owner_.spellCastFailedCallback_) owner_.spellCastFailedCallback_(castResultSpellId);
+            if (owner_.spellCastFailedCallbackRef()) owner_.spellCastFailedCallbackRef()(castResultSpellId);
                 owner_.fireAddonEvent("UNIT_SPELLCAST_FAILED", {"player", std::to_string(castResultSpellId)});
                 owner_.fireAddonEvent("UNIT_SPELLCAST_STOP",   {"player", std::to_string(castResultSpellId)});
             MessageChatData msg;
@@ -2174,12 +2175,12 @@ void SpellHandler::handleSpellFailedOther(network::Packet& packet) {
     uint64_t failOtherGuid = tbcLike2
         ? (packet.hasRemaining(8) ? packet.readUInt64() : 0)
         : packet.readPackedGuid();
-    if (failOtherGuid != 0 && failOtherGuid != owner_.playerGuid) {
+    if (failOtherGuid != 0 && failOtherGuid != owner_.getPlayerGuid()) {
         unitCastStates_.erase(failOtherGuid);
-        if (owner_.addonEventCallback_) {
+        if (owner_.addonEventCallbackRef()) {
             std::string unitId;
-            if (failOtherGuid == owner_.targetGuid)     unitId = "target";
-            else if (failOtherGuid == owner_.focusGuid) unitId = "focus";
+            if (failOtherGuid == owner_.getTargetGuid())     unitId = "target";
+            else if (failOtherGuid == owner_.focusGuidRef()) unitId = "focus";
             if (!unitId.empty()) {
                 owner_.fireAddonEvent("UNIT_SPELLCAST_FAILED", {unitId});
                 owner_.fireAddonEvent("UNIT_SPELLCAST_STOP",   {unitId});
@@ -2193,7 +2194,7 @@ void SpellHandler::handleClearCooldown(network::Packet& packet) {
     if (packet.hasRemaining(4)) {
         uint32_t spellId = packet.readUInt32();
         spellCooldowns_.erase(spellId);
-        for (auto& slot : owner_.actionBar) {
+        for (auto& slot : owner_.actionBarRef()) {
             if (slot.type == ActionBarSlot::SPELL && slot.id == spellId)
                 slot.cooldownRemaining = 0.0f;
         }
@@ -2208,7 +2209,7 @@ void SpellHandler::handleModifyCooldown(network::Packet& packet) {
         auto it = spellCooldowns_.find(spellId);
         if (it != spellCooldowns_.end()) {
             it->second = std::max(0.0f, it->second + diffSec);
-            for (auto& slot : owner_.actionBar) {
+            for (auto& slot : owner_.actionBarRef()) {
                 if (slot.type == ActionBarSlot::SPELL && slot.id == spellId)
                     slot.cooldownRemaining = std::max(0.0f, slot.cooldownRemaining + diffSec);
             }
@@ -2224,7 +2225,7 @@ void SpellHandler::handlePlaySpellVisual(network::Packet& packet) {
     auto* renderer = owner_.services().renderer;
     if (!renderer) return;
     glm::vec3 spawnPos;
-    if (casterGuid == owner_.playerGuid) {
+    if (casterGuid == owner_.getPlayerGuid()) {
         spawnPos = renderer->getCharacterPosition();
     } else {
         auto entity = owner_.getEntityManager().getEntity(casterGuid);
@@ -2232,11 +2233,11 @@ void SpellHandler::handlePlaySpellVisual(network::Packet& packet) {
         glm::vec3 canonical(entity->getLatestX(), entity->getLatestY(), entity->getLatestZ());
         spawnPos = core::coords::canonicalToRender(canonical);
     }
-    renderer->playSpellVisual(visualId, spawnPos);
+    if (auto* sv = renderer->getSpellVisualSystem()) sv->playSpellVisual(visualId, spawnPos);
 }
 
 void SpellHandler::handleSpellModifier(network::Packet& packet, bool isFlat) {
-    auto& modMap = isFlat ? owner_.spellFlatMods_ : owner_.spellPctMods_;
+    auto& modMap = isFlat ? owner_.spellFlatModsRef() : owner_.spellPctModsRef();
     while (packet.hasRemaining(6)) {
         uint8_t groupIndex = packet.readUInt8();
         uint8_t modOpRaw   = packet.readUInt8();
@@ -2257,7 +2258,7 @@ void SpellHandler::handleSpellDelayed(network::Packet& packet) {
     uint32_t delayMs = packet.readUInt32();
     if (delayMs == 0) return;
     float delaySec = delayMs / 1000.0f;
-    if (caster == owner_.playerGuid) {
+    if (caster == owner_.getPlayerGuid()) {
         if (casting_) {
             castTimeRemaining_ += delaySec;
             castTimeTotal_     += delaySec;
@@ -2354,10 +2355,10 @@ void SpellHandler::handleSpellLogMiss(network::Packet& packet) {
         // For REFLECT, use the reflected spell ID so combat text shows the spell name
         uint32_t combatSpellId = (ct == CombatTextEntry::REFLECT && miss.reflectSpellId != 0)
                                  ? miss.reflectSpellId : spellId;
-        if (casterGuid == owner_.playerGuid) {
+        if (casterGuid == owner_.getPlayerGuid()) {
             // We cast a spell and it missed the target
             owner_.addCombatText(ct, 0, combatSpellId, true, 0, casterGuid, victimGuid);
-        } else if (victimGuid == owner_.playerGuid) {
+        } else if (victimGuid == owner_.getPlayerGuid()) {
             // Enemy spell missed us (we dodged/parried/blocked/resisted/etc.)
             owner_.addCombatText(ct, 0, combatSpellId, false, 0, casterGuid, victimGuid);
         }
@@ -2381,10 +2382,10 @@ void SpellHandler::handleSpellFailure(network::Packet& packet) {
         uint8_t rawFailReason = packet.readUInt8();
         // Classic result enum starts at 0=AFFECTING_COMBAT; shift +1 for WotLK table
         uint8_t failReason = isClassic ? static_cast<uint8_t>(rawFailReason + 1) : rawFailReason;
-        if (failGuid == owner_.playerGuid && failReason != 0) {
+        if (failGuid == owner_.getPlayerGuid() && failReason != 0) {
             // Show interruption/failure reason in chat and error overlay for player
             int pt = -1;
-            if (auto pe = owner_.getEntityManager().getEntity(owner_.playerGuid))
+            if (auto pe = owner_.getEntityManager().getEntity(owner_.getPlayerGuid()))
                 if (auto pu = std::dynamic_pointer_cast<Unit>(pe))
                     pt = static_cast<int>(pu->getPowerType());
             const char* reason = getSpellCastResultString(failReason, pt);
@@ -2403,18 +2404,18 @@ void SpellHandler::handleSpellFailure(network::Packet& packet) {
         }
     }
     // Fire UNIT_SPELLCAST_INTERRUPTED for Lua addons
-    if (owner_.addonEventCallback_) {
+    if (owner_.addonEventCallbackRef()) {
         auto unitId = (failGuid == 0) ? std::string("player") : owner_.guidToUnitId(failGuid);
         if (!unitId.empty()) {
             owner_.fireAddonEvent("UNIT_SPELLCAST_INTERRUPTED", {unitId});
             owner_.fireAddonEvent("UNIT_SPELLCAST_STOP", {unitId});
         }
     }
-    if (failGuid == owner_.playerGuid || failGuid == 0) {
+    if (failGuid == owner_.getPlayerGuid() || failGuid == 0) {
         // Player's own cast failed — clear gather-node loot target so the
         // next timed cast doesn't try to loot a stale interrupted gather node.
         casting_ = false; castIsChannel_ = false; currentCastSpellId_ = 0;
-        owner_.lastInteractedGoGuid_ = 0;
+        owner_.lastInteractedGoGuidRef() = 0;
         craftQueueSpellId_ = 0;
         craftQueueRemaining_ = 0;
         queuedSpellId_ = 0;
@@ -2424,14 +2425,14 @@ void SpellHandler::handleSpellFailure(network::Packet& packet) {
                 ssm->stopPrecast();
             }
         }
-        if (owner_.spellCastAnimCallback_) {
-            owner_.spellCastAnimCallback_(owner_.playerGuid, false, false, SpellCastType::OMNI);
+        if (owner_.spellCastAnimCallbackRef()) {
+            owner_.spellCastAnimCallbackRef()(owner_.getPlayerGuid(), false, false, SpellCastType::OMNI);
         }
     } else {
         // Another unit's cast failed — clear their tracked cast bar
         unitCastStates_.erase(failGuid);
-        if (owner_.spellCastAnimCallback_) {
-            owner_.spellCastAnimCallback_(failGuid, false, false, SpellCastType::OMNI);
+        if (owner_.spellCastAnimCallbackRef()) {
+            owner_.spellCastAnimCallbackRef()(failGuid, false, false, SpellCastType::OMNI);
         }
     }
 }
@@ -2455,9 +2456,9 @@ void SpellHandler::handleItemCooldown(network::Packet& packet) {
             }
             // Resolve itemId from the GUID so item-type slots are also updated
             uint32_t itemId = 0;
-            auto iit = owner_.onlineItems_.find(itemGuid);
-            if (iit != owner_.onlineItems_.end()) itemId = iit->second.entry;
-            for (auto& slot : owner_.actionBar) {
+            auto iit = owner_.onlineItemsRef().find(itemGuid);
+            if (iit != owner_.onlineItemsRef().end()) itemId = iit->second.entry;
+            for (auto& slot : owner_.actionBarRef()) {
                 bool match = (spellId != 0 && slot.type == ActionBarSlot::SPELL && slot.id == spellId)
                           || (itemId  != 0 && slot.type == ActionBarSlot::ITEM  && slot.id == itemId);
                 if (match) {
@@ -2505,7 +2506,7 @@ void SpellHandler::handleDispelFailed(network::Packet& packet) {
         /*uint64_t victim =*/ packet.readPackedGuid();
     }
     // Only show failure to the player who attempted the dispel
-    if (dispelCasterGuid == owner_.playerGuid) {
+    if (dispelCasterGuid == owner_.getPlayerGuid()) {
         const auto& name = owner_.getSpellName(dispelSpellId);
         char buf[128];
         if (!name.empty())
@@ -2532,9 +2533,9 @@ void SpellHandler::handleTotemCreated(network::Packet& packet) {
     LOG_DEBUG("SMSG_TOTEM_CREATED: slot=", static_cast<int>(slot),
               " spellId=", spellId, " duration=", duration, "ms");
     if (slot < GameHandler::NUM_TOTEM_SLOTS) {
-        owner_.activeTotemSlots_[slot].spellId    = spellId;
-        owner_.activeTotemSlots_[slot].durationMs = duration;
-        owner_.activeTotemSlots_[slot].placedAt   = std::chrono::steady_clock::now();
+        owner_.activeTotemSlotsRef()[slot].spellId    = spellId;
+        owner_.activeTotemSlotsRef()[slot].durationMs = duration;
+        owner_.activeTotemSlotsRef()[slot].placedAt   = std::chrono::steady_clock::now();
     }
 }
 
@@ -2553,8 +2554,8 @@ void SpellHandler::handlePeriodicAuraLog(network::Packet& packet) {
     if (!packet.hasRemaining(8)) return;
     uint32_t spellId = packet.readUInt32();
     uint32_t count   = packet.readUInt32();
-    bool isPlayerVictim = (victimGuid == owner_.playerGuid);
-    bool isPlayerCaster = (casterGuid == owner_.playerGuid);
+    bool isPlayerVictim = (victimGuid == owner_.getPlayerGuid());
+    bool isPlayerCaster = (casterGuid == owner_.getPlayerGuid());
     if (!isPlayerVictim && !isPlayerCaster) {
         packet.skipAll();
         return;
@@ -2666,8 +2667,8 @@ void SpellHandler::handleSpellEnergizeLog(network::Packet& packet) {
     uint32_t spellId       = packet.readUInt32();
     uint8_t  energizePowerType = packet.readUInt8();
     int32_t  amount        = static_cast<int32_t>(packet.readUInt32());
-    bool isPlayerVictim = (victimGuid == owner_.playerGuid);
-    bool isPlayerCaster = (casterGuid == owner_.playerGuid);
+    bool isPlayerVictim = (victimGuid == owner_.getPlayerGuid());
+    bool isPlayerCaster = (casterGuid == owner_.getPlayerGuid());
     if ((isPlayerVictim || isPlayerCaster) && amount > 0)
         owner_.addCombatText(CombatTextEntry::ENERGIZE, amount, spellId, isPlayerCaster, energizePowerType, casterGuid, victimGuid);
     packet.skipAll();
@@ -2683,8 +2684,8 @@ void SpellHandler::handleExtraAuraInfo(network::Packet& packet, bool isInit) {
     uint8_t count = packet.readUInt8();
 
     std::vector<AuraSlot>* auraList = nullptr;
-    if (auraTargetGuid == owner_.playerGuid)       auraList = &playerAuras_;
-    else if (auraTargetGuid == owner_.targetGuid)   auraList = &targetAuras_;
+    if (auraTargetGuid == owner_.getPlayerGuid())       auraList = &playerAuras_;
+    else if (auraTargetGuid == owner_.getTargetGuid())   auraList = &targetAuras_;
     else if (auraTargetGuid != 0)                   auraList = &unitAurasCache_[auraTargetGuid];
 
     if (auraList && isInit) auraList->clear();
@@ -2754,7 +2755,7 @@ void SpellHandler::handleSpellDispelLog(network::Packet& packet) {
         }
     }
     // Show system message if player was victim or caster
-    if (victimGuid == owner_.playerGuid || casterGuid == owner_.playerGuid) {
+    if (victimGuid == owner_.getPlayerGuid() || casterGuid == owner_.getPlayerGuid()) {
         std::vector<uint32_t> loggedIds;
         if (isStolen) {
             loggedIds.reserve(dispelledIds.size());
@@ -2771,19 +2772,19 @@ void SpellHandler::handleSpellDispelLog(network::Packet& packet) {
             char buf[256];
             const char* passiveVerb = loggedIds.size() == 1 ? "was" : "were";
             if (isStolen) {
-                if (victimGuid == owner_.playerGuid && casterGuid != owner_.playerGuid)
+                if (victimGuid == owner_.getPlayerGuid() && casterGuid != owner_.getPlayerGuid())
                     std::snprintf(buf, sizeof(buf), "%s %s stolen.",
                                   displaySpellNames.c_str(), passiveVerb);
-                else if (casterGuid == owner_.playerGuid)
+                else if (casterGuid == owner_.getPlayerGuid())
                     std::snprintf(buf, sizeof(buf), "You steal %s.", displaySpellNames.c_str());
                 else
                     std::snprintf(buf, sizeof(buf), "%s %s stolen.",
                                   displaySpellNames.c_str(), passiveVerb);
             } else {
-                if (victimGuid == owner_.playerGuid && casterGuid != owner_.playerGuid)
+                if (victimGuid == owner_.getPlayerGuid() && casterGuid != owner_.getPlayerGuid())
                     std::snprintf(buf, sizeof(buf), "%s %s dispelled.",
                                   displaySpellNames.c_str(), passiveVerb);
-                else if (casterGuid == owner_.playerGuid)
+                else if (casterGuid == owner_.getPlayerGuid())
                     std::snprintf(buf, sizeof(buf), "You dispel %s.", displaySpellNames.c_str());
                 else
                     std::snprintf(buf, sizeof(buf), "%s %s dispelled.",
@@ -2793,7 +2794,7 @@ void SpellHandler::handleSpellDispelLog(network::Packet& packet) {
         }
         // Preserve stolen auras as spellsteal events so the log wording stays accurate.
         if (!loggedIds.empty()) {
-            bool isPlayerCaster = (casterGuid == owner_.playerGuid);
+            bool isPlayerCaster = (casterGuid == owner_.getPlayerGuid());
             for (uint32_t dispelledId : loggedIds) {
                 owner_.addCombatText(isStolen ? CombatTextEntry::STEAL : CombatTextEntry::DISPEL,
                               0, dispelledId, isPlayerCaster, 0,
@@ -2844,7 +2845,7 @@ void SpellHandler::handleSpellStealLog(network::Packet& packet) {
             stolenIds.push_back(stolenId);
         }
     }
-    if (stealCaster == owner_.playerGuid || stealVictim == owner_.playerGuid) {
+    if (stealCaster == owner_.getPlayerGuid() || stealVictim == owner_.getPlayerGuid()) {
         std::vector<uint32_t> loggedIds;
         loggedIds.reserve(stolenIds.size());
         for (uint32_t stolenId : stolenIds) {
@@ -2855,7 +2856,7 @@ void SpellHandler::handleSpellStealLog(network::Packet& packet) {
         const std::string stealDisplayNames = formatSpellNameList(owner_, loggedIds);
         if (!stealDisplayNames.empty()) {
             char buf[256];
-            if (stealCaster == owner_.playerGuid)
+            if (stealCaster == owner_.getPlayerGuid())
                 std::snprintf(buf, sizeof(buf), "You stole %s.", stealDisplayNames.c_str());
             else
                 std::snprintf(buf, sizeof(buf), "%s %s stolen.", stealDisplayNames.c_str(),
@@ -2865,7 +2866,7 @@ void SpellHandler::handleSpellStealLog(network::Packet& packet) {
         // Some servers emit both SPELLDISPELLOG(isStolen=1) and SPELLSTEALLOG
         // for the same aura. Keep the first event and suppress the duplicate.
         if (!loggedIds.empty()) {
-            bool isPlayerCaster = (stealCaster == owner_.playerGuid);
+            bool isPlayerCaster = (stealCaster == owner_.getPlayerGuid());
             for (uint32_t stolenId : loggedIds) {
                 owner_.addCombatText(CombatTextEntry::STEAL, 0, stolenId, isPlayerCaster, 0,
                               stealCaster, stealVictim);
@@ -2899,7 +2900,7 @@ void SpellHandler::handleSpellChanceProcLog(network::Packet& packet) {
     }
     uint32_t procSpellId = packet.readUInt32();
     // Show a "PROC!" floating text when the player triggers the proc
-    if (procCasterGuid == owner_.playerGuid && procSpellId > 0)
+    if (procCasterGuid == owner_.getPlayerGuid() && procSpellId > 0)
         owner_.addCombatText(CombatTextEntry::PROC_TRIGGER, 0, procSpellId, true, 0,
                       procCasterGuid, procTargetGuid);
     packet.skipAll();
@@ -2928,9 +2929,9 @@ void SpellHandler::handleSpellInstaKillLog(network::Packet& packet) {
     }
     uint32_t ikSpell = packet.readUInt32();
     // Show kill/death feedback for the local player
-    if (ikCaster == owner_.playerGuid) {
+    if (ikCaster == owner_.getPlayerGuid()) {
         owner_.addCombatText(CombatTextEntry::INSTAKILL, 0, ikSpell, true, 0, ikCaster, ikVictim);
-    } else if (ikVictim == owner_.playerGuid) {
+    } else if (ikVictim == owner_.getPlayerGuid()) {
         owner_.addCombatText(CombatTextEntry::INSTAKILL, 0, ikSpell, false, 0, ikCaster, ikVictim);
         owner_.addUIError("You were killed by an instant-kill effect.");
         owner_.addSystemChatMessage("You were killed by an instant-kill effect.");
@@ -2966,7 +2967,7 @@ void SpellHandler::handleSpellLogExecute(network::Packet& packet) {
     uint32_t exeEffectCount = packet.readUInt32();
     exeEffectCount = std::min(exeEffectCount, 32u); // sanity
 
-    const bool isPlayerCaster = (exeCaster == owner_.playerGuid);
+    const bool isPlayerCaster = (exeCaster == owner_.getPlayerGuid());
     for (uint32_t ei = 0; ei < exeEffectCount; ++ei) {
         if (!packet.hasRemaining(5)) break;
         uint8_t  effectType     = packet.readUInt8();
@@ -2987,12 +2988,12 @@ void SpellHandler::handleSpellLogExecute(network::Packet& packet) {
                 uint32_t drainPower  = packet.readUInt32(); // 0=mana,1=rage,3=energy,6=runic
                 float drainMult = packet.readFloat();
                 if (drainAmount > 0) {
-                    if (drainTarget == owner_.playerGuid)
+                    if (drainTarget == owner_.getPlayerGuid())
                         owner_.addCombatText(CombatTextEntry::POWER_DRAIN, static_cast<int32_t>(drainAmount), exeSpellId, false,
                                       static_cast<uint8_t>(drainPower),
                                       exeCaster, drainTarget);
                     if (isPlayerCaster) {
-                        if (drainTarget != owner_.playerGuid) {
+                        if (drainTarget != owner_.getPlayerGuid()) {
                             owner_.addCombatText(CombatTextEntry::POWER_DRAIN, static_cast<int32_t>(drainAmount), exeSpellId, true,
                                           static_cast<uint8_t>(drainPower), exeCaster, drainTarget);
                         }
@@ -3024,7 +3025,7 @@ void SpellHandler::handleSpellLogExecute(network::Packet& packet) {
                 uint32_t leechAmount = packet.readUInt32();
                 float leechMult = packet.readFloat();
                 if (leechAmount > 0) {
-                    if (leechTarget == owner_.playerGuid) {
+                    if (leechTarget == owner_.getPlayerGuid()) {
                         owner_.addCombatText(CombatTextEntry::SPELL_DAMAGE, static_cast<int32_t>(leechAmount), exeSpellId, false, 0,
                                       exeCaster, leechTarget);
                     } else if (isPlayerCaster) {
@@ -3087,7 +3088,7 @@ void SpellHandler::handleSpellLogExecute(network::Packet& packet) {
                 // Clear the interrupted unit's cast bar immediately
                 unitCastStates_.erase(icTarget);
                 // Record interrupt in combat log when player is involved
-                if (isPlayerCaster || icTarget == owner_.playerGuid)
+                if (isPlayerCaster || icTarget == owner_.getPlayerGuid())
                     owner_.addCombatText(CombatTextEntry::INTERRUPT, 0, icSpellId, isPlayerCaster, 0,
                                   exeCaster, icTarget);
                 LOG_DEBUG("SMSG_SPELLLOGEXECUTE INTERRUPT_CAST: spell=", exeSpellId,
@@ -3124,8 +3125,8 @@ void SpellHandler::handleClearExtraAuraInfo(network::Packet& packet) {
         uint64_t clearGuid  = packet.readUInt64();
         uint8_t  slot       = packet.readUInt8();
         std::vector<AuraSlot>* auraList = nullptr;
-        if (clearGuid == owner_.playerGuid)       auraList = &playerAuras_;
-        else if (clearGuid == owner_.targetGuid)   auraList = &targetAuras_;
+        if (clearGuid == owner_.getPlayerGuid())       auraList = &playerAuras_;
+        else if (clearGuid == owner_.getTargetGuid())   auraList = &targetAuras_;
         if (auraList && slot < auraList->size()) {
             (*auraList)[slot] = AuraSlot{};
         }
@@ -3153,17 +3154,17 @@ void SpellHandler::handleItemEnchantTimeUpdate(network::Packet& packet) {
 
     if (durationSec == 0) {
         // Enchant expired / removed — erase the slot entry
-        owner_.tempEnchantTimers_.erase(
-            std::remove_if(owner_.tempEnchantTimers_.begin(), owner_.tempEnchantTimers_.end(),
+        owner_.tempEnchantTimersRef().erase(
+            std::remove_if(owner_.tempEnchantTimersRef().begin(), owner_.tempEnchantTimersRef().end(),
                            [enchSlot](const GameHandler::TempEnchantTimer& t) { return t.slot == enchSlot; }),
-            owner_.tempEnchantTimers_.end());
+            owner_.tempEnchantTimersRef().end());
     } else {
         uint64_t expireMs = nowMs + static_cast<uint64_t>(durationSec) * 1000u;
         bool found = false;
-        for (auto& t : owner_.tempEnchantTimers_) {
+        for (auto& t : owner_.tempEnchantTimersRef()) {
             if (t.slot == enchSlot) { t.expireMs = expireMs; found = true; break; }
         }
-        if (!found) owner_.tempEnchantTimers_.push_back({enchSlot, expireMs});
+        if (!found) owner_.tempEnchantTimersRef().push_back({enchSlot, expireMs});
 
         // Warn at important thresholds
         if (durationSec <= 60 && durationSec > 55) {
@@ -3197,7 +3198,7 @@ void SpellHandler::handleResumeCastBar(network::Packet& packet) {
     uint32_t remainMs  = packet.readUInt32();
     uint32_t totalMs   = packet.readUInt32();
     if (totalMs > 0) {
-        if (caster == owner_.playerGuid) {
+        if (caster == owner_.getPlayerGuid()) {
             casting_            = true;
             castIsChannel_      = false;
             currentCastSpellId_ = spellId;
@@ -3225,7 +3226,7 @@ void SpellHandler::handleChannelStart(network::Packet& packet) {
     uint32_t chanSpellId = packet.readUInt32();
     uint32_t chanTotalMs = packet.readUInt32();
     if (chanTotalMs > 0 && chanCaster != 0) {
-        if (chanCaster == owner_.playerGuid) {
+        if (chanCaster == owner_.getPlayerGuid()) {
             casting_            = true;
             castIsChannel_      = true;
             currentCastSpellId_ = chanSpellId;
@@ -3246,14 +3247,14 @@ void SpellHandler::handleChannelStart(network::Packet& packet) {
         // Play channeling animation (looping)
         // Channel packets don't carry targetGuid — use player's current target as hint
         SpellCastType chanType = SpellCastType::OMNI;
-        if (chanCaster == owner_.playerGuid && owner_.targetGuid != 0)
+        if (chanCaster == owner_.getPlayerGuid() && owner_.getTargetGuid() != 0)
             chanType = SpellCastType::DIRECTED;
-        if (owner_.spellCastAnimCallback_) {
-            owner_.spellCastAnimCallback_(chanCaster, true, true, chanType);
+        if (owner_.spellCastAnimCallbackRef()) {
+            owner_.spellCastAnimCallbackRef()(chanCaster, true, true, chanType);
         }
 
         // Fire UNIT_SPELLCAST_CHANNEL_START for Lua addons
-        if (owner_.addonEventCallback_) {
+        if (owner_.addonEventCallbackRef()) {
             auto unitId = owner_.guidToUnitId(chanCaster);
             if (!unitId.empty())
                 owner_.fireAddonEvent("UNIT_SPELLCAST_CHANNEL_START", {unitId, std::to_string(chanSpellId)});
@@ -3269,7 +3270,7 @@ void SpellHandler::handleChannelUpdate(network::Packet& packet) {
         : packet.readPackedGuid();
     if (!packet.hasRemaining(4)) return;
     uint32_t chanRemainMs = packet.readUInt32();
-    if (chanCaster2 == owner_.playerGuid) {
+    if (chanCaster2 == owner_.getPlayerGuid()) {
         castTimeRemaining_ = chanRemainMs / 1000.0f;
         if (chanRemainMs == 0) {
             casting_ = false;
@@ -3288,8 +3289,8 @@ void SpellHandler::handleChannelUpdate(network::Packet& packet) {
     // Fire UNIT_SPELLCAST_CHANNEL_STOP when channel ends
     if (chanRemainMs == 0) {
         // Stop channeling animation — return to idle
-        if (owner_.spellCastAnimCallback_) {
-            owner_.spellCastAnimCallback_(chanCaster2, false, true, SpellCastType::OMNI);
+        if (owner_.spellCastAnimCallbackRef()) {
+            owner_.spellCastAnimCallbackRef()(chanCaster2, false, true, SpellCastType::OMNI);
         }
         auto unitId = owner_.guidToUnitId(chanCaster2);
         if (!unitId.empty())
@@ -3302,27 +3303,27 @@ void SpellHandler::handleChannelUpdate(network::Packet& packet) {
 // ============================================================
 
 void SpellHandler::requestStabledPetList() {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || owner_.stableMasterGuid_ == 0) return;
-    auto pkt = ListStabledPetsPacket::build(owner_.stableMasterGuid_);
-    owner_.socket->send(pkt);
-    LOG_INFO("Sent MSG_LIST_STABLED_PETS to npc=0x", std::hex, owner_.stableMasterGuid_, std::dec);
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || owner_.stableMasterGuidRef() == 0) return;
+    auto pkt = ListStabledPetsPacket::build(owner_.stableMasterGuidRef());
+    owner_.getSocket()->send(pkt);
+    LOG_INFO("Sent MSG_LIST_STABLED_PETS to npc=0x", std::hex, owner_.stableMasterGuidRef(), std::dec);
 }
 
 void SpellHandler::stablePet(uint8_t slot) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || owner_.stableMasterGuid_ == 0) return;
-    if (owner_.petGuid_ == 0) {
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || owner_.stableMasterGuidRef() == 0) return;
+    if (owner_.petGuidRef() == 0) {
         owner_.addSystemChatMessage("You do not have an active pet to stable.");
         return;
     }
-    auto pkt = StablePetPacket::build(owner_.stableMasterGuid_, slot);
-    owner_.socket->send(pkt);
+    auto pkt = StablePetPacket::build(owner_.stableMasterGuidRef(), slot);
+    owner_.getSocket()->send(pkt);
     LOG_INFO("Sent CMSG_STABLE_PET: slot=", static_cast<int>(slot));
 }
 
 void SpellHandler::unstablePet(uint32_t petNumber) {
-    if (owner_.state != WorldState::IN_WORLD || !owner_.socket || owner_.stableMasterGuid_ == 0 || petNumber == 0) return;
-    auto pkt = UnstablePetPacket::build(owner_.stableMasterGuid_, petNumber);
-    owner_.socket->send(pkt);
+    if (owner_.getState() != WorldState::IN_WORLD || !owner_.getSocket() || owner_.stableMasterGuidRef() == 0 || petNumber == 0) return;
+    auto pkt = UnstablePetPacket::build(owner_.stableMasterGuidRef(), petNumber);
+    owner_.getSocket()->send(pkt);
     LOG_INFO("Sent CMSG_UNSTABLE_PET: petNumber=", petNumber);
 }
 

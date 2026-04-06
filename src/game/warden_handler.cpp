@@ -193,8 +193,8 @@ void WardenHandler::update(float deltaTime) {
                 for (uint8_t byte : encrypted) {
                     response.writeUInt8(byte);
                 }
-                if (owner_.socket && owner_.socket->isConnected()) {
-                    owner_.socket->send(response);
+                if (owner_.getSocket() && owner_.getSocket()->isConnected()) {
+                    owner_.getSocket()->send(response);
                     LOG_WARNING("Warden: Sent async CHEAT_CHECKS_RESULT (", plaintext.size(), " bytes plaintext)");
                 }
             }
@@ -202,11 +202,11 @@ void WardenHandler::update(float deltaTime) {
     }
 
     // Post-gate visibility
-    if (wardenGateSeen_ && owner_.socket && owner_.socket->isConnected()) {
+    if (wardenGateSeen_ && owner_.getSocket() && owner_.getSocket()->isConnected()) {
         wardenGateElapsed_ += deltaTime;
         if (wardenGateElapsed_ >= wardenGateNextStatusLog_) {
             LOG_DEBUG("Warden gate status: elapsed=", wardenGateElapsed_,
-                     "s connected=", owner_.socket->isConnected() ? "yes" : "no",
+                     "s connected=", owner_.getSocket()->isConnected() ? "yes" : "no",
                      " packetsAfterGate=", wardenPacketsAfterGate_);
             wardenGateNextStatusLog_ += 30.0f;
         }
@@ -264,7 +264,7 @@ bool WardenHandler::loadWardenCRFile(const std::string& moduleHashHex) {
         for (int i = 0; i < 9; i++) {
             char s[16]; snprintf(s, sizeof(s), "%s=0x%02X ", names[i], wardenCheckOpcodes_[i]); opcHex += s;
         }
-        LOG_WARNING("Warden: Check opcodes: ", opcHex);
+        LOG_DEBUG("Warden: Check opcodes: ", opcHex);
     }
 
     size_t entryCount = (static_cast<size_t>(fileSize) - CR_HEADER_SIZE) / CR_ENTRY_SIZE;
@@ -302,12 +302,12 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
     // Initialize Warden crypto from session key on first packet
     if (!wardenCrypto_) {
         wardenCrypto_ = std::make_unique<WardenCrypto>();
-        if (owner_.sessionKey.size() != 40) {
-            LOG_ERROR("Warden: No valid session key (size=", owner_.sessionKey.size(), "), cannot init crypto");
+        if (owner_.getSessionKey().size() != 40) {
+            LOG_ERROR("Warden: No valid session key (size=", owner_.getSessionKey().size(), "), cannot init crypto");
             wardenCrypto_.reset();
             return;
         }
-        if (!wardenCrypto_->initFromSessionKey(owner_.sessionKey)) {
+        if (!wardenCrypto_->initFromSessionKey(owner_.getSessionKey())) {
             LOG_ERROR("Warden: Failed to initialize crypto from session key");
             wardenCrypto_.reset();
             return;
@@ -348,8 +348,8 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
         for (uint8_t byte : encrypted) {
             response.writeUInt8(byte);
         }
-        if (owner_.socket && owner_.socket->isConnected()) {
-            owner_.socket->send(response);
+        if (owner_.getSocket() && owner_.getSocket()->isConnected()) {
+            owner_.getSocket()->send(response);
             LOG_DEBUG("Warden: Sent response (", plaintext.size(), " bytes plaintext)");
         }
     };
@@ -383,7 +383,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
             std::vector<uint8_t> resp = { 0x00 }; // WARDEN_CMSG_MODULE_MISSING
             sendWardenResponse(resp);
             wardenState_ = WardenState::WAIT_MODULE_CACHE;
-            LOG_WARNING("Warden: Sent MODULE_MISSING for module size=", wardenModuleSize_, ", waiting for data chunks");
+            LOG_DEBUG("Warden: Sent MODULE_MISSING for module size=", wardenModuleSize_, ", waiting for data chunks");
             break;
         }
 
@@ -407,7 +407,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                                      decrypted.begin() + 3,
                                      decrypted.begin() + 3 + chunkSize);
 
-            LOG_WARNING("Warden: MODULE_CACHE chunk ", chunkSize, " bytes, total ",
+            LOG_DEBUG("Warden: MODULE_CACHE chunk ", chunkSize, " bytes, total ",
                      wardenModuleData_.size(), "/", wardenModuleSize_);
 
             // Check if module download is complete
@@ -447,12 +447,12 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                 wardenLoadedModule_->setCallbackDependencies(
                     wardenCrypto_.get(),
                     [this](const uint8_t* data, size_t len) {
-                        if (!wardenCrypto_ || !owner_.socket) return;
+                        if (!wardenCrypto_ || !owner_.getSocket()) return;
                         std::vector<uint8_t> plaintext(data, data + len);
                         auto encrypted = wardenCrypto_->encrypt(plaintext);
                         network::Packet pkt(wireOpcode(Opcode::CMSG_WARDEN_DATA));
                         for (uint8_t b : encrypted) pkt.writeUInt8(b);
-                        owner_.socket->send(pkt);
+                        owner_.getSocket()->send(pkt);
                         LOG_DEBUG("Warden: Module sendPacket callback sent ", len, " bytes");
                     });
                 if (wardenLoadedModule_->load(wardenModuleData_, wardenModuleHash_, wardenModuleKey_)) { // codeql[cpp/weak-cryptographic-algorithm]
@@ -504,7 +504,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                 }
 
                 if (match) {
-                    LOG_WARNING("Warden: HASH_REQUEST — CR entry MATCHED, sending pre-computed reply");
+                    LOG_DEBUG("Warden: HASH_REQUEST — CR entry MATCHED, sending pre-computed reply");
 
                     // Send HASH_RESULT (opcode 0x04 + 20-byte reply)
                     std::vector<uint8_t> resp;
@@ -518,12 +518,12 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                     std::vector<uint8_t> newDecryptKey(match->serverKey, match->serverKey + 16);
                     wardenCrypto_->replaceKeys(newEncryptKey, newDecryptKey);
 
-                    LOG_WARNING("Warden: Switched to CR key set");
+                    LOG_DEBUG("Warden: Switched to CR key set");
 
                     wardenState_ = WardenState::WAIT_CHECKS;
                     break;
                 } else {
-                    LOG_WARNING("Warden: Seed not found in ", wardenCREntries_.size(), " CR entries");
+                    LOG_DEBUG("Warden: Seed not found in ", wardenCREntries_.size(), " CR entries");
                 }
             }
 
@@ -533,14 +533,14 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                 for (auto b : seed) { char s[4]; snprintf(s, 4, "%02x", b); seedHex += s; }
 
                 bool isTurtle = isActiveExpansion("turtle");
-                bool isClassic = (owner_.build <= 6005) && !isTurtle;
+                bool isClassic = (owner_.getBuild() <= 6005) && !isTurtle;
 
                 if (!isTurtle && !isClassic) {
                     // WotLK/TBC: don't respond to HASH_REQUEST without a valid CR match.
                     // ChromieCraft/AzerothCore tolerates the silence (no ban, no kick),
                     // but REJECTS a wrong hash and closes the connection immediately.
                     // Staying silent lets the server continue the session without Warden checks.
-                    LOG_WARNING("Warden: HASH_REQUEST seed=", seedHex,
+                    LOG_DEBUG("Warden: HASH_REQUEST seed=", seedHex,
                                 " — no CR match, skipping response (server tolerates silence)");
                     wardenState_ = WardenState::WAIT_CHECKS;
                     break;
@@ -619,7 +619,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                     // Ensure wardenMemory_ is loaded on main thread before launching async task
                     if (!wardenMemory_) {
                         wardenMemory_ = std::make_unique<WardenMemory>();
-                        if (!wardenMemory_->load(static_cast<uint16_t>(owner_.build), isActiveExpansion("turtle"))) {
+                        if (!wardenMemory_->load(static_cast<uint16_t>(owner_.getBuild()), isActiveExpansion("turtle"))) {
                             LOG_WARNING("Warden: Could not load WoW.exe for MEM_CHECK");
                         }
                     }
@@ -1054,7 +1054,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                         // Lazy-load WoW.exe PE image on first MEM_CHECK
                         if (!wardenMemory_) {
                             wardenMemory_ = std::make_unique<WardenMemory>();
-                            if (!wardenMemory_->load(static_cast<uint16_t>(owner_.build), isActiveExpansion("turtle"))) {
+                            if (!wardenMemory_->load(static_cast<uint16_t>(owner_.getBuild()), isActiveExpansion("turtle"))) {
                                 LOG_WARNING("Warden: Could not load WoW.exe for MEM_CHECK");
                             }
                         }

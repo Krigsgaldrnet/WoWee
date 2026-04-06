@@ -488,6 +488,8 @@ set(WOWEE_SOURCES
     # Core
     src/core/application.cpp
     src/core/entity_spawner.cpp
+    src/core/entity_spawner_player.cpp
+    src/core/entity_spawner_processing.cpp
     src/core/appearance_composer.cpp
     src/core/world_loader.cpp
     src/core/npc_interaction_callback_handler.cpp
@@ -525,6 +527,8 @@ set(WOWEE_SOURCES
     src/game/opcode_table.cpp
     src/game/update_field_table.cpp
     src/game/game_handler.cpp
+    src/game/game_handler_packets.cpp
+    src/game/game_handler_callbacks.cpp
     src/game/chat_handler.cpp
     src/game/movement_handler.cpp
     src/game/combat_handler.cpp
@@ -544,6 +548,10 @@ set(WOWEE_SOURCES
     src/game/entity.cpp
     src/game/opcodes.cpp
     src/game/world_packets.cpp
+    src/game/world_packets_social.cpp
+    src/game/world_packets_entity.cpp
+    src/game/world_packets_world.cpp
+    src/game/world_packets_economy.cpp
     src/game/packet_parsers_tbc.cpp
     src/game/packet_parsers_classic.cpp
     src/game/character.cpp
@@ -611,6 +619,9 @@ set(WOWEE_SOURCES
     src/rendering/character_preview.cpp
     src/rendering/wmo_renderer.cpp
     src/rendering/m2_renderer.cpp
+    src/rendering/m2_renderer_render.cpp
+    src/rendering/m2_renderer_particles.cpp
+    src/rendering/m2_renderer_instance.cpp
     src/rendering/m2_model_classifier.cpp
     src/rendering/render_graph.cpp
     src/rendering/quest_marker_renderer.cpp
@@ -622,6 +633,7 @@ set(WOWEE_SOURCES
     src/rendering/charge_effect.cpp
     src/rendering/spell_visual_system.cpp
     src/rendering/post_process_pipeline.cpp
+    src/rendering/overlay_system.cpp
     src/rendering/animation_controller.cpp
     src/rendering/animation/animation_ids.cpp
     src/rendering/animation/emote_registry.cpp
@@ -643,7 +655,12 @@ set(WOWEE_SOURCES
     src/ui/character_create_screen.cpp
     src/ui/character_screen.cpp
     src/ui/game_screen.cpp
+    src/ui/game_screen_frames.cpp
+    src/ui/game_screen_hud.cpp
+    src/ui/game_screen_minimap.cpp
     src/ui/chat_panel.cpp
+    src/ui/chat_panel_commands.cpp
+    src/ui/chat_panel_utils.cpp
     src/ui/toast_manager.cpp
     src/ui/dialog_manager.cpp
     src/ui/settings_panel.cpp

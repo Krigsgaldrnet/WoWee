@@ -887,7 +887,7 @@ bool TransportManager::loadTransportAnimationDBC(pipeline::AssetManager* assetMg
         if (transportEntry >= 176080 && transportEntry <= 176085) {
             size_t mid = sortedWaypoints.size() / 4;  // ~quarter through
             size_t mid2 = sortedWaypoints.size() / 2; // ~halfway
-            LOG_WARNING("DBC path entry=", transportEntry, " nPts=", sortedWaypoints.size(),
+            LOG_DEBUG("DBC path entry=", transportEntry, " nPts=", sortedWaypoints.size(),
                        " [0] t=", sortedWaypoints[0].first, " raw=(", sortedWaypoints[0].second.x, ",", sortedWaypoints[0].second.y, ",", sortedWaypoints[0].second.z, ")",
                        " [", mid, "] t=", sortedWaypoints[mid].first, " raw=(", sortedWaypoints[mid].second.x, ",", sortedWaypoints[mid].second.y, ",", sortedWaypoints[mid].second.z, ")",
                        " [", mid2, "] t=", sortedWaypoints[mid2].first, " raw=(", sortedWaypoints[mid2].second.x, ",", sortedWaypoints[mid2].second.y, ",", sortedWaypoints[mid2].second.z, ")");

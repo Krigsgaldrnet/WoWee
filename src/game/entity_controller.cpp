@@ -75,15 +75,15 @@ EntityController::EntityController(GameHandler& owner)
 void EntityController::registerOpcodes(DispatchTable& table) {
     // World object updates
     table[Opcode::SMSG_UPDATE_OBJECT] = [this](network::Packet& packet) {
-        LOG_DEBUG("Received SMSG_UPDATE_OBJECT, state=", static_cast<int>(owner_.state), " size=", packet.getSize());
-        if (owner_.state == WorldState::IN_WORLD) handleUpdateObject(packet);
+        LOG_DEBUG("Received SMSG_UPDATE_OBJECT, state=", static_cast<int>(owner_.getState()), " size=", packet.getSize());
+        if (owner_.getState() == WorldState::IN_WORLD) handleUpdateObject(packet);
     };
     table[Opcode::SMSG_COMPRESSED_UPDATE_OBJECT] = [this](network::Packet& packet) {
-        LOG_DEBUG("Received SMSG_COMPRESSED_UPDATE_OBJECT, state=", static_cast<int>(owner_.state), " size=", packet.getSize());
-        if (owner_.state == WorldState::IN_WORLD) handleCompressedUpdateObject(packet);
+        LOG_DEBUG("Received SMSG_COMPRESSED_UPDATE_OBJECT, state=", static_cast<int>(owner_.getState()), " size=", packet.getSize());
+        if (owner_.getState() == WorldState::IN_WORLD) handleCompressedUpdateObject(packet);
     };
     table[Opcode::SMSG_DESTROY_OBJECT] = [this](network::Packet& packet) {
-        if (owner_.state == WorldState::IN_WORLD) handleDestroyObject(packet);
+        if (owner_.getState() == WorldState::IN_WORLD) handleDestroyObject(packet);
     };
 
     // Entity queries
@@ -131,7 +131,7 @@ void EntityController::processPendingUpdateObjectWork(const std::chrono::steady_
         return;
     }
 
-    const int maxBlocksThisUpdate = updateObjectBlocksBudgetPerUpdate(owner_.state);
+    const int maxBlocksThisUpdate = updateObjectBlocksBudgetPerUpdate(owner_.getState());
     int processedBlocks = 0;
 
     while (!pendingUpdateObjectWork_.empty() && processedBlocks < maxBlocksThisUpdate) {
@@ -191,12 +191,12 @@ void EntityController::processPendingUpdateObjectWork(const std::chrono::steady_
         const auto& work = pendingUpdateObjectWork_.front();
         LOG_DEBUG("GameHandler update-object budget reached (remainingBatches=",
                   pendingUpdateObjectWork_.size(), ", nextBlockIndex=", work.nextBlockIndex,
-                  "/", work.data.blocks.size(), ", owner_.state=", worldStateName(owner_.state), ")");
+                  "/", work.data.blocks.size(), ", owner_.getState()=", worldStateName(owner_.getState()), ")");
     }
 }
 void EntityController::handleUpdateObject(network::Packet& packet) {
     UpdateObjectData data;
-    if (!owner_.packetParsers_->parseUpdateObject(packet, data)) {
+    if (!owner_.getPacketParsers()->parseUpdateObject(packet, data)) {
         static int updateObjErrors = 0;
         if (++updateObjErrors <= 5)
             LOG_WARNING("Failed to parse SMSG_UPDATE_OBJECT");
@@ -218,9 +218,9 @@ void EntityController::processOutOfRangeObjects(const std::vector<uint64_t>& gui
             // Keep transports alive across out-of-range flapping.
             // Boats/zeppelins are global movers and removing them here can make
             // them disappear until a later movement snapshot happens to recreate them.
-            const bool playerAboardNow = (owner_.playerTransportGuid_ == guid);
-            const bool stickyAboard = (owner_.playerTransportStickyGuid_ == guid && owner_.playerTransportStickyTimer_ > 0.0f);
-            const bool movementSaysAboard = (owner_.movementInfo.transportGuid == guid);
+            const bool playerAboardNow = (owner_.playerTransportGuidRef() == guid);
+            const bool stickyAboard = (owner_.playerTransportStickyGuidRef() == guid && owner_.playerTransportStickyTimerRef() > 0.0f);
+            const bool movementSaysAboard = (owner_.movementInfoRef().transportGuid == guid);
             LOG_INFO("Preserving transport on out-of-range: 0x",
                      std::hex, guid, std::dec,
                      " now=", playerAboardNow,
@@ -231,25 +231,25 @@ void EntityController::processOutOfRangeObjects(const std::vector<uint64_t>& gui
 
         LOG_DEBUG("Entity went out of range: 0x", std::hex, guid, std::dec);
         // Trigger despawn callbacks before removing entity
-        if (entity->getType() == ObjectType::UNIT && owner_.creatureDespawnCallback_) {
-            owner_.creatureDespawnCallback_(guid);
-        } else if (entity->getType() == ObjectType::PLAYER && owner_.playerDespawnCallback_) {
-            owner_.playerDespawnCallback_(guid);
-            owner_.otherPlayerVisibleItemEntries_.erase(guid);
-            owner_.otherPlayerVisibleDirty_.erase(guid);
-            owner_.otherPlayerMoveTimeMs_.erase(guid);
-            owner_.inspectedPlayerItemEntries_.erase(guid);
-            owner_.pendingAutoInspect_.erase(guid);
+        if (entity->getType() == ObjectType::UNIT && owner_.creatureDespawnCallbackRef()) {
+            owner_.creatureDespawnCallbackRef()(guid);
+        } else if (entity->getType() == ObjectType::PLAYER && owner_.playerDespawnCallbackRef()) {
+            owner_.playerDespawnCallbackRef()(guid);
+            owner_.otherPlayerVisibleItemEntriesRef().erase(guid);
+            owner_.otherPlayerVisibleDirtyRef().erase(guid);
+            owner_.otherPlayerMoveTimeMsRef().erase(guid);
+            owner_.inspectedPlayerItemEntriesRef().erase(guid);
+            owner_.pendingAutoInspectRef().erase(guid);
             // Clear pending name query so the query is re-sent when this player
             // comes back into range (entity is recreated as a new object).
             pendingNameQueries.erase(guid);
-        } else if (entity->getType() == ObjectType::GAMEOBJECT && owner_.gameObjectDespawnCallback_) {
-            owner_.gameObjectDespawnCallback_(guid);
+        } else if (entity->getType() == ObjectType::GAMEOBJECT && owner_.gameObjectDespawnCallbackRef()) {
+            owner_.gameObjectDespawnCallbackRef()(guid);
         }
         transportGuids_.erase(guid);
         serverUpdatedTransportGuids_.erase(guid);
         owner_.clearTransportAttachment(guid);
-        if (owner_.playerTransportGuid_ == guid) {
+        if (owner_.playerTransportGuidRef() == guid) {
             owner_.clearPlayerTransport();
         }
         entityManager.removeEntity(guid);
@@ -344,7 +344,7 @@ bool EntityController::extractPlayerAppearance(const std::map<uint16_t, uint32_t
 
 void EntityController::maybeDetectCoinageIndex(const std::map<uint16_t, uint32_t>& oldFields,
                                                const std::map<uint16_t, uint32_t>& newFields) {
-    if (owner_.pendingMoneyDelta_ == 0 || owner_.pendingMoneyDeltaTimer_ <= 0.0f) return;
+    if (owner_.pendingMoneyDeltaRef() == 0 || owner_.pendingMoneyDeltaTimerRef() <= 0.0f) return;
     if (oldFields.empty() || newFields.empty()) return;
 
     constexpr uint32_t kMaxPlausibleCoinage = 2147483647u;
@@ -357,7 +357,7 @@ void EntityController::maybeDetectCoinageIndex(const std::map<uint16_t, uint32_t
         uint32_t oldVal = itOld->second;
         if (newVal < oldVal) continue;
         uint32_t delta = newVal - oldVal;
-        if (delta != owner_.pendingMoneyDelta_) continue;
+        if (delta != owner_.pendingMoneyDeltaRef()) continue;
         if (newVal > kMaxPlausibleCoinage) continue;
         candidates.push_back(idx);
     }
@@ -374,12 +374,12 @@ void EntityController::maybeDetectCoinageIndex(const std::map<uint16_t, uint32_t
     }
 
     if (chosen != current && current != 0xFFFF) {
-        owner_.updateFieldTable_.setIndex(UF::PLAYER_FIELD_COINAGE, chosen);
+        owner_.updateFieldTableRef().setIndex(UF::PLAYER_FIELD_COINAGE, chosen);
         LOG_WARNING("Auto-detected PLAYER_FIELD_COINAGE index: ", chosen, " (was ", current, ")");
     }
 
-    owner_.pendingMoneyDelta_ = 0;
-    owner_.pendingMoneyDeltaTimer_ = 0.0f;
+    owner_.pendingMoneyDeltaRef() = 0;
+    owner_.pendingMoneyDeltaTimerRef() = 0.0f;
 }
 
 // ============================================================
@@ -411,7 +411,7 @@ void EntityController::applyUpdateObjectBlock(const UpdateBlock& block, bool& ne
 void EntityController::updateNonPlayerTransportAttachment(const UpdateBlock& block,
                                                            const std::shared_ptr<Entity>& entity,
                                                            ObjectType entityType) {
-    if (block.guid == owner_.playerGuid) return;
+    if (block.guid == owner_.getPlayerGuid()) return;
     if (entityType != ObjectType::UNIT && entityType != ObjectType::GAMEOBJECT) return;
 
     if (block.onTransport && block.transportGuid != 0) {
@@ -421,8 +421,8 @@ void EntityController::updateNonPlayerTransportAttachment(const UpdateBlock& blo
         float localOriCanonical = core::coords::normalizeAngleRad(-block.transportO);
         owner_.setTransportAttachment(block.guid, entityType, block.transportGuid,
                                localOffset, hasLocalOrientation, localOriCanonical);
-        if (owner_.transportManager_ && owner_.transportManager_->getTransport(block.transportGuid)) {
-            glm::vec3 composed = owner_.transportManager_->getPlayerWorldPosition(block.transportGuid, localOffset);
+        if (owner_.getTransportManager() && owner_.getTransportManager()->getTransport(block.transportGuid)) {
+            glm::vec3 composed = owner_.getTransportManager()->getPlayerWorldPosition(block.transportGuid, localOffset);
             entity->setPosition(composed.x, composed.y, composed.z, entity->getOrientation());
         }
     } else {
@@ -436,7 +436,7 @@ void EntityController::updateNonPlayerTransportAttachment(const UpdateBlock& blo
 //     Normalises Classic harmful bit (0x02) to WotLK debuff bit (0x80) so
 //     downstream code checking for 0x80 works consistently across expansions.
 void EntityController::syncClassicAurasFromFields(const std::shared_ptr<Entity>& entity) {
-    if (!isClassicLikeExpansion() || !owner_.spellHandler_) return;
+    if (!isClassicLikeExpansion() || !owner_.getSpellHandler()) return;
 
     const uint16_t ufAuras     = fieldIndex(UF::UNIT_FIELD_AURAS);
     const uint16_t ufAuraFlags = fieldIndex(UF::UNIT_FIELD_AURAFLAGS);
@@ -449,15 +449,14 @@ void EntityController::syncClassicAurasFromFields(const std::shared_ptr<Entity>&
     }
     if (!hasAuraField) return;
 
-    owner_.spellHandler_->playerAuras_.clear();
-    owner_.spellHandler_->playerAuras_.resize(48);
+    owner_.getSpellHandler()->resetPlayerAuras(48);
     uint64_t nowMs = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
     for (int slot = 0; slot < 48; ++slot) {
         auto it = allFields.find(static_cast<uint16_t>(ufAuras + slot));
         if (it != allFields.end() && it->second != 0) {
-            AuraSlot& a = owner_.spellHandler_->playerAuras_[slot];
+            AuraSlot& a = owner_.getSpellHandler()->getPlayerAuraSlotRef(slot);
             a.spellId = it->second;
             // Read aura flag byte: packed 4-per-uint32 at ufAuraFlags
             uint8_t aFlag = 0;
@@ -473,7 +472,7 @@ void EntityController::syncClassicAurasFromFields(const std::shared_ptr<Entity>&
             a.flags = aFlag;
             a.durationMs = -1;
             a.maxDurationMs = -1;
-            a.casterGuid = owner_.playerGuid;
+            a.casterGuid = owner_.getPlayerGuid();
             a.receivedAtMs = nowMs;
         }
     }
@@ -484,41 +483,41 @@ void EntityController::syncClassicAurasFromFields(const std::shared_ptr<Entity>&
 // Detect player mount/dismount from UNIT_FIELD_MOUNTDISPLAYID changes
 void EntityController::detectPlayerMountChange(uint32_t newMountDisplayId,
                                                 const std::map<uint16_t, uint32_t>& blockFields) {
-    uint32_t old = owner_.currentMountDisplayId_;
-    owner_.currentMountDisplayId_ = newMountDisplayId;
-    if (newMountDisplayId != old && owner_.mountCallback_) owner_.mountCallback_(newMountDisplayId);
+    uint32_t old = owner_.currentMountDisplayIdRef();
+    owner_.currentMountDisplayIdRef() = newMountDisplayId;
+    if (newMountDisplayId != old && owner_.mountCallbackRef()) owner_.mountCallbackRef()(newMountDisplayId);
     if (newMountDisplayId != old)
         pendingEvents_.emit("UNIT_MODEL_CHANGED", {"player"});
     if (old == 0 && newMountDisplayId != 0) {
         // Just mounted — find the mount aura (indefinite duration, self-cast)
-        owner_.mountAuraSpellId_ = 0;
-        if (owner_.spellHandler_) for (const auto& a : owner_.spellHandler_->playerAuras_) {
-            if (!a.isEmpty() && a.maxDurationMs < 0 && a.casterGuid == owner_.playerGuid) {
-                owner_.mountAuraSpellId_ = a.spellId;
+        owner_.mountAuraSpellIdRef() = 0;
+        if (owner_.getSpellHandler()) for (const auto& a : owner_.getSpellHandler()->getPlayerAuras()) {
+            if (!a.isEmpty() && a.maxDurationMs < 0 && a.casterGuid == owner_.getPlayerGuid()) {
+                owner_.mountAuraSpellIdRef() = a.spellId;
             }
         }
         // Classic/vanilla fallback: scan UNIT_FIELD_AURAS from same update block
-        if (owner_.mountAuraSpellId_ == 0) {
+        if (owner_.mountAuraSpellIdRef() == 0) {
             const uint16_t ufAuras = fieldIndex(UF::UNIT_FIELD_AURAS);
             if (ufAuras != 0xFFFF) {
                 for (const auto& [fk, fv] : blockFields) {
                     if (fk >= ufAuras && fk < ufAuras + 48 && fv != 0) {
-                        owner_.mountAuraSpellId_ = fv;
+                        owner_.mountAuraSpellIdRef() = fv;
                         break;
                     }
                 }
             }
         }
-        LOG_INFO("Mount detected: displayId=", newMountDisplayId, " auraSpellId=", owner_.mountAuraSpellId_);
+        LOG_INFO("Mount detected: displayId=", newMountDisplayId, " auraSpellId=", owner_.mountAuraSpellIdRef());
     }
     if (old != 0 && newMountDisplayId == 0) {
         // Only clear the specific mount aura, not all indefinite auras.
         // Previously this cleared every aura with maxDurationMs < 0, which
         // would strip racial passives, tracking, and zone buffs on dismount.
-        uint32_t mountSpell = owner_.mountAuraSpellId_;
-        owner_.mountAuraSpellId_ = 0;
-        if (mountSpell != 0 && owner_.spellHandler_) {
-            for (auto& a : owner_.spellHandler_->playerAuras_) {
+        uint32_t mountSpell = owner_.mountAuraSpellIdRef();
+        owner_.mountAuraSpellIdRef() = 0;
+        if (mountSpell != 0 && owner_.getSpellHandler()) {
+            for (auto& a : owner_.getSpellHandler()->getPlayerAurasMut()) {
                 if (!a.isEmpty() && a.spellId == mountSpell) {
                     a = AuraSlot{};
                     break;
@@ -610,34 +609,34 @@ void EntityController::applyPlayerTransportState(const UpdateBlock& block,
         glm::vec3 serverOffset(block.transportX, block.transportY, block.transportZ);
         glm::vec3 canonicalOffset = core::coords::serverToCanonical(serverOffset);
         owner_.setPlayerOnTransport(block.transportGuid, canonicalOffset);
-        if (owner_.transportManager_ && owner_.transportManager_->getTransport(owner_.playerTransportGuid_)) {
-            glm::vec3 composed = owner_.transportManager_->getPlayerWorldPosition(owner_.playerTransportGuid_, owner_.playerTransportOffset_);
+        if (owner_.getTransportManager() && owner_.getTransportManager()->getTransport(owner_.playerTransportGuidRef())) {
+            glm::vec3 composed = owner_.getTransportManager()->getPlayerWorldPosition(owner_.playerTransportGuidRef(), owner_.playerTransportOffsetRef());
             entity->setPosition(composed.x, composed.y, composed.z, oCanonical);
-            owner_.movementInfo.x = composed.x;
-            owner_.movementInfo.y = composed.y;
-            owner_.movementInfo.z = composed.z;
+            owner_.movementInfoRef().x = composed.x;
+            owner_.movementInfoRef().y = composed.y;
+            owner_.movementInfoRef().z = composed.z;
         } else if (updateMovementInfoPos) {
-            owner_.movementInfo.x = canonicalPos.x;
-            owner_.movementInfo.y = canonicalPos.y;
-            owner_.movementInfo.z = canonicalPos.z;
+            owner_.movementInfoRef().x = canonicalPos.x;
+            owner_.movementInfoRef().y = canonicalPos.y;
+            owner_.movementInfoRef().z = canonicalPos.z;
         }
-        LOG_INFO("Player on transport: 0x", std::hex, owner_.playerTransportGuid_, std::dec,
-                " offset=(", owner_.playerTransportOffset_.x, ", ", owner_.playerTransportOffset_.y,
-                ", ", owner_.playerTransportOffset_.z, ")");
+        LOG_INFO("Player on transport: 0x", std::hex, owner_.playerTransportGuidRef(), std::dec,
+                " offset=(", owner_.playerTransportOffsetRef().x, ", ", owner_.playerTransportOffsetRef().y,
+                ", ", owner_.playerTransportOffsetRef().z, ")");
     } else {
         if (updateMovementInfoPos) {
-            owner_.movementInfo.x = canonicalPos.x;
-            owner_.movementInfo.y = canonicalPos.y;
-            owner_.movementInfo.z = canonicalPos.z;
+            owner_.movementInfoRef().x = canonicalPos.x;
+            owner_.movementInfoRef().y = canonicalPos.y;
+            owner_.movementInfoRef().z = canonicalPos.z;
         }
         // Don't clear client-side M2 transport boarding (trams) —
         // the server doesn't know about client-detected transport attachment.
         bool isClientM2Transport = false;
-        if (owner_.playerTransportGuid_ != 0 && owner_.transportManager_) {
-            auto* tr = owner_.transportManager_->getTransport(owner_.playerTransportGuid_);
+        if (owner_.playerTransportGuidRef() != 0 && owner_.getTransportManager()) {
+            auto* tr = owner_.getTransportManager()->getTransport(owner_.playerTransportGuidRef());
             isClientM2Transport = (tr && tr->isM2);
         }
-        if (owner_.playerTransportGuid_ != 0 && !isClientM2Transport) {
+        if (owner_.playerTransportGuidRef() != 0 && !isClientM2Transport) {
             LOG_INFO("Player left transport");
             owner_.clearPlayerTransport();
         }
@@ -664,8 +663,8 @@ bool EntityController::applyUnitFieldsOnCreate(const UpdateBlock& block,
             if (block.objectType == ObjectType::UNIT && val == 0) {
                 unitInitiallyDead = true;
             }
-            if (block.guid == owner_.playerGuid && val == 0) {
-                owner_.playerDead_ = true;
+            if (block.guid == owner_.getPlayerGuid() && val == 0) {
+                owner_.playerDeadRef() = true;
                 LOG_INFO("Player logged in dead");
             }
         } else if (key == ufi.maxHealth) { unit->setMaxHealth(val); }
@@ -673,7 +672,7 @@ bool EntityController::applyUnitFieldsOnCreate(const UpdateBlock& block,
             unit->setLevel(val);
         } else if (key == ufi.faction) {
             unit->setFactionTemplate(val);
-            if (owner_.addonEventCallback_) {
+            if (owner_.addonEventCallbackRef()) {
                 auto uid = owner_.guidToUnitId(block.guid);
                 if (!uid.empty())
                     pendingEvents_.emit("UNIT_FACTION", {uid});
@@ -681,7 +680,7 @@ bool EntityController::applyUnitFieldsOnCreate(const UpdateBlock& block,
         }
         else if (key == ufi.flags) {
             unit->setUnitFlags(val);
-            if (owner_.addonEventCallback_) {
+            if (owner_.addonEventCallbackRef()) {
                 auto uid = owner_.guidToUnitId(block.guid);
                 if (!uid.empty())
                     pendingEvents_.emit("UNIT_FLAGS", {uid});
@@ -691,7 +690,7 @@ bool EntityController::applyUnitFieldsOnCreate(const UpdateBlock& block,
             unit->setPowerType(static_cast<uint8_t>((val >> 24) & 0xFF));
         } else if (key == ufi.displayId) {
             unit->setDisplayId(val);
-            if (owner_.addonEventCallback_) {
+            if (owner_.addonEventCallbackRef()) {
                 auto uid = owner_.guidToUnitId(block.guid);
                 if (!uid.empty())
                     pendingEvents_.emit("UNIT_MODEL_CHANGED", {uid});
@@ -713,7 +712,7 @@ bool EntityController::applyUnitFieldsOnCreate(const UpdateBlock& block,
             unit->setMaxPowerByType(static_cast<uint8_t>(key - ufi.maxPowerBase), val);
         }
         else if (key == ufi.mountDisplayId) {
-            if (block.guid == owner_.playerGuid) {
+            if (block.guid == owner_.getPlayerGuid()) {
                 detectPlayerMountChange(val, block.fields);
             }
             unit->setMountDisplayId(val);
@@ -727,17 +726,17 @@ bool EntityController::applyUnitFieldsOnCreate(const UpdateBlock& block,
 // Classic WoW does not send SMSG_DEATH_RELEASE_LOC, so this cached position
 // is the primary source for canReclaimCorpse().
 void EntityController::markPlayerDead(const char* source) {
-    owner_.playerDead_ = true;
-    owner_.releasedSpirit_ = false;
-    // owner_.movementInfo is canonical (x=north, y=west); corpseX_/Y_ are
+    owner_.playerDeadRef() = true;
+    owner_.releasedSpiritRef() = false;
+    // owner_.movementInfoRef() is canonical (x=north, y=west); corpseX_/Y_ are
     // raw server coords (x=west, y=north) — swap axes.
-    owner_.corpseX_     = owner_.movementInfo.y;
-    owner_.corpseY_     = owner_.movementInfo.x;
-    owner_.corpseZ_     = owner_.movementInfo.z;
-    owner_.corpseMapId_ = owner_.currentMapId_;
+    owner_.corpseXRef()     = owner_.movementInfoRef().y;
+    owner_.corpseYRef()     = owner_.movementInfoRef().x;
+    owner_.corpseZRef()     = owner_.movementInfoRef().z;
+    owner_.corpseMapIdRef() = owner_.currentMapIdRef();
     LOG_INFO("Player died (", source, "). Corpse cached at server=(",
-             owner_.corpseX_, ",", owner_.corpseY_, ",", owner_.corpseZ_,
-             ") map=", owner_.corpseMapId_);
+             owner_.corpseXRef(), ",", owner_.corpseYRef(), ",", owner_.corpseZRef(),
+             ") map=", owner_.corpseMapIdRef());
 }
 
 // 3c: Apply unit fields during VALUES update — tracks health/power/display changes
@@ -755,34 +754,34 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
             unit->setHealth(val);
             result.healthChanged = true;
             if (val == 0) {
-                if (owner_.combatHandler_ && block.guid == owner_.combatHandler_->getAutoAttackTargetGuid()) {
+                if (owner_.getCombatHandler() && block.guid == owner_.getCombatHandler()->getAutoAttackTargetGuid()) {
                     owner_.stopAutoAttack();
                 }
-                if (owner_.combatHandler_) owner_.combatHandler_->removeHostileAttacker(block.guid);
-                if (block.guid == owner_.playerGuid) {
+                if (owner_.getCombatHandler()) owner_.getCombatHandler()->removeHostileAttacker(block.guid);
+                if (block.guid == owner_.getPlayerGuid()) {
                     markPlayerDead("health=0");
                     owner_.stopAutoAttack();
                     pendingEvents_.emit("PLAYER_DEAD", {});
                 }
-                if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && owner_.npcDeathCallback_) {
-                    owner_.npcDeathCallback_(block.guid);
+                if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && owner_.npcDeathCallbackRef()) {
+                    owner_.npcDeathCallbackRef()(block.guid);
                     result.npcDeathNotified = true;
                 }
             } else if (oldHealth == 0 && val > 0) {
-                if (block.guid == owner_.playerGuid) {
-                    bool wasGhost = owner_.releasedSpirit_;
-                    owner_.playerDead_ = false;
+                if (block.guid == owner_.getPlayerGuid()) {
+                    bool wasGhost = owner_.releasedSpiritRef();
+                    owner_.playerDeadRef() = false;
                     if (!wasGhost) {
                         LOG_INFO("Player resurrected!");
                         pendingEvents_.emit("PLAYER_ALIVE", {});
                     } else {
                         LOG_INFO("Player entered ghost form");
-                        owner_.releasedSpirit_ = false;
+                        owner_.releasedSpiritRef() = false;
                         pendingEvents_.emit("PLAYER_UNGHOST", {});
                     }
                 }
-                if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && owner_.npcRespawnCallback_) {
-                    owner_.npcRespawnCallback_(block.guid);
+                if ((entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) && owner_.npcRespawnCallbackRef()) {
+                    owner_.npcRespawnCallbackRef()(block.guid);
                     result.npcRespawnNotified = true;
                 }
             }
@@ -802,27 +801,27 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
             unit->setUnitFlags(val);
             // Detect stun state change on local player
             constexpr uint32_t UNIT_FLAG_STUNNED = 0x00040000;
-            if (block.guid == owner_.playerGuid && owner_.stunStateCallback_) {
+            if (block.guid == owner_.getPlayerGuid() && owner_.stunStateCallbackRef()) {
                 bool wasStunned = (oldFlags & UNIT_FLAG_STUNNED) != 0;
                 bool nowStunned = (val & UNIT_FLAG_STUNNED) != 0;
                 if (wasStunned != nowStunned) {
-                    owner_.stunStateCallback_(nowStunned);
+                    owner_.stunStateCallbackRef()(nowStunned);
                 }
             }
             // Detect stealth state change on local player
             constexpr uint32_t UNIT_FLAG_SNEAKING = 0x02000000;
-            if (block.guid == owner_.playerGuid && owner_.stealthStateCallback_) {
+            if (block.guid == owner_.getPlayerGuid() && owner_.stealthStateCallbackRef()) {
                 bool wasStealth = (oldFlags & UNIT_FLAG_SNEAKING) != 0;
                 bool nowStealth = (val & UNIT_FLAG_SNEAKING) != 0;
                 if (wasStealth != nowStealth) {
-                    owner_.stealthStateCallback_(nowStealth);
+                    owner_.stealthStateCallbackRef()(nowStealth);
                 }
             }
         }
-        else if (ufi.bytes1 != 0xFFFF && key == ufi.bytes1 && block.guid == owner_.playerGuid) {
+        else if (ufi.bytes1 != 0xFFFF && key == ufi.bytes1 && block.guid == owner_.getPlayerGuid()) {
             uint8_t newForm = static_cast<uint8_t>((val >> 24) & 0xFF);
-            if (newForm != owner_.shapeshiftFormId_) {
-                owner_.shapeshiftFormId_ = newForm;
+            if (newForm != owner_.shapeshiftFormIdRef()) {
+                owner_.shapeshiftFormIdRef() = newForm;
                 LOG_INFO("Shapeshift form changed: ", static_cast<int>(newForm));
                     pendingEvents_.emit("UPDATE_SHAPESHIFT_FORM", {});
                     pendingEvents_.emit("UPDATE_SHAPESHIFT_FORMS", {});
@@ -831,28 +830,28 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
         else if (key == ufi.dynFlags) {
             uint32_t oldDyn = unit->getDynamicFlags();
             unit->setDynamicFlags(val);
-            if (block.guid == owner_.playerGuid) {
+            if (block.guid == owner_.getPlayerGuid()) {
                 bool wasDead = (oldDyn & UNIT_DYNFLAG_DEAD) != 0;
                 bool nowDead = (val & UNIT_DYNFLAG_DEAD) != 0;
                 if (!wasDead && nowDead) {
                     markPlayerDead("dynFlags");
                 } else if (wasDead && !nowDead) {
-                    owner_.playerDead_ = false;
-                    owner_.releasedSpirit_ = false;
-                    owner_.selfResAvailable_ = false;
+                    owner_.playerDeadRef() = false;
+                    owner_.releasedSpiritRef() = false;
+                    owner_.selfResAvailableRef() = false;
                     LOG_INFO("Player resurrected (dynamic flags)");
                 }
             } else if (entity->getType() == ObjectType::UNIT || entity->getType() == ObjectType::PLAYER) {
                 bool wasDead = (oldDyn & UNIT_DYNFLAG_DEAD) != 0;
                 bool nowDead = (val & UNIT_DYNFLAG_DEAD) != 0;
                 if (!wasDead && nowDead) {
-                    if (!result.npcDeathNotified && owner_.npcDeathCallback_) {
-                        owner_.npcDeathCallback_(block.guid);
+                    if (!result.npcDeathNotified && owner_.npcDeathCallbackRef()) {
+                        owner_.npcDeathCallbackRef()(block.guid);
                         result.npcDeathNotified = true;
                     }
                 } else if (wasDead && !nowDead) {
-                    if (!result.npcRespawnNotified && owner_.npcRespawnCallback_) {
-                        owner_.npcRespawnCallback_(block.guid);
+                    if (!result.npcRespawnNotified && owner_.npcRespawnCallbackRef()) {
+                        owner_.npcRespawnCallbackRef()(block.guid);
                         result.npcRespawnNotified = true;
                     }
                 }
@@ -865,11 +864,11 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
                 if (!uid.empty())
                     pendingEvents_.emit("UNIT_LEVEL", {uid});
             }
-            if (block.guid != owner_.playerGuid &&
+            if (block.guid != owner_.getPlayerGuid() &&
                 entity->getType() == ObjectType::PLAYER &&
                 val > oldLvl && oldLvl > 0 &&
-                owner_.otherPlayerLevelUpCallback_) {
-                owner_.otherPlayerLevelUpCallback_(block.guid, val);
+                owner_.otherPlayerLevelUpCallbackRef()) {
+                owner_.otherPlayerLevelUpCallbackRef()(block.guid, val);
             }
         }
         else if (key == ufi.faction) {
@@ -881,7 +880,7 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
                 result.displayIdChanged = true;
             }
         } else if (key == ufi.mountDisplayId) {
-            if (block.guid == owner_.playerGuid) {
+            if (block.guid == owner_.getPlayerGuid()) {
                 detectPlayerMountChange(val, block.fields);
             }
             unit->setMountDisplayId(val);
@@ -890,8 +889,8 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
             uint32_t oldEmote = unit->getNpcEmoteState();
             unit->setNpcEmoteState(val);
             // Fire emote animation callback so entity_spawner can update the NPC's idle anim
-            if (val != oldEmote && owner_.emoteAnimCallback_) {
-                owner_.emoteAnimCallback_(block.guid, val);
+            if (val != oldEmote && owner_.emoteAnimCallbackRef()) {
+                owner_.emoteAnimCallbackRef()(block.guid, val);
             }
         }
         // Power/maxpower range checks AFTER all specific fields
@@ -912,7 +911,7 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
             if (result.powerChanged) {
                 pendingEvents_.emit("UNIT_POWER", {unitId});
                 // When player power changes, action bar usability may change
-                if (block.guid == owner_.playerGuid) {
+                if (block.guid == owner_.getPlayerGuid()) {
                     pendingEvents_.emit("ACTIONBAR_UPDATE_USABLE", {});
                     pendingEvents_.emit("SPELL_UPDATE_USABLE", {});
                 }
@@ -921,8 +920,8 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
     }
 
     // Fire player health callback for wounded-idle animation
-    if (result.healthChanged && block.guid == owner_.playerGuid && owner_.playerHealthCallback_) {
-        owner_.playerHealthCallback_(unit->getHealth(), unit->getMaxHealth());
+    if (result.healthChanged && block.guid == owner_.getPlayerGuid() && owner_.playerHealthCallbackRef()) {
+        owner_.playerHealthCallbackRef()(unit->getHealth(), unit->getMaxHealth());
     }
 
     return result;
@@ -936,139 +935,139 @@ bool EntityController::applyPlayerStatFields(const std::map<uint16_t, uint32_t>&
     bool slotsChanged = false;
     for (const auto& [key, val] : fields) {
         if (key == pfi.xp) {
-            owner_.playerXp_ = val;
+            owner_.playerXpRef() = val;
             if (!isCreate) {
                 LOG_DEBUG("XP updated: ", val);
                 pendingEvents_.emit("PLAYER_XP_UPDATE", {std::to_string(val)});
             }
         }
         else if (key == pfi.nextXp) {
-            owner_.playerNextLevelXp_ = val;
+            owner_.playerNextLevelXpRef() = val;
             if (!isCreate) LOG_DEBUG("Next level XP updated: ", val);
         }
         else if (pfi.restedXp != 0xFFFF && key == pfi.restedXp) {
-            owner_.playerRestedXp_ = val;
+            owner_.playerRestedXpRef() = val;
             if (!isCreate) pendingEvents_.emit("UPDATE_EXHAUSTION", {});
         }
         else if (key == pfi.level) {
-            owner_.serverPlayerLevel_ = val;
+            owner_.serverPlayerLevelRef() = val;
             if (!isCreate) LOG_DEBUG("Level updated: ", val);
-            for (auto& ch : owner_.characters) {
-                if (ch.guid == owner_.playerGuid) { ch.level = val; break; }
+            for (auto& ch : owner_.charactersRef()) {
+                if (ch.guid == owner_.getPlayerGuid()) { ch.level = val; break; }
             }
         }
         else if (key == pfi.coinage) {
-            uint64_t oldMoney = owner_.playerMoneyCopper_;
-            owner_.playerMoneyCopper_ = val;
+            uint64_t oldMoney = owner_.playerMoneyCopperRef();
+            owner_.playerMoneyCopperRef() = val;
             LOG_DEBUG("Money ", isCreate ? "set from update fields: " : "updated via VALUES: ", val, " copper");
             if (val != oldMoney)
                 pendingEvents_.emit("PLAYER_MONEY", {});
         }
         else if (pfi.honor != 0xFFFF && key == pfi.honor) {
-            owner_.playerHonorPoints_ = val;
+            owner_.playerHonorPointsRef() = val;
             LOG_DEBUG("Honor points ", isCreate ? "from update fields: " : "updated: ", val);
         }
         else if (pfi.arena != 0xFFFF && key == pfi.arena) {
-            owner_.playerArenaPoints_ = val;
+            owner_.playerArenaPointsRef() = val;
             LOG_DEBUG("Arena points ", isCreate ? "from update fields: " : "updated: ", val);
         }
         else if (pfi.armor != 0xFFFF && key == pfi.armor) {
-            owner_.playerArmorRating_ = static_cast<int32_t>(val);
-            if (isCreate) LOG_DEBUG("Armor rating from update fields: ", owner_.playerArmorRating_);
+            owner_.playerArmorRatingRef() = static_cast<int32_t>(val);
+            if (isCreate) LOG_DEBUG("Armor rating from update fields: ", owner_.playerArmorRatingRef());
         }
         else if (pfi.armor != 0xFFFF && key > pfi.armor && key <= pfi.armor + 6) {
-            owner_.playerResistances_[key - pfi.armor - 1] = static_cast<int32_t>(val);
+            owner_.playerResistancesArr()[key - pfi.armor - 1] = static_cast<int32_t>(val);
         }
         else if (pfi.pBytes2 != 0xFFFF && key == pfi.pBytes2) {
             uint8_t bankBagSlots = static_cast<uint8_t>((val >> 16) & 0xFF);
-            owner_.inventory.setPurchasedBankBagSlots(bankBagSlots);
+            owner_.inventoryRef().setPurchasedBankBagSlots(bankBagSlots);
             // Byte 3 (bits 24-31): REST_STATE
             // 0 = not resting, 1 = REST_TYPE_IN_TAVERN, 2 = REST_TYPE_IN_CITY
             uint8_t restStateByte = static_cast<uint8_t>((val >> 24) & 0xFF);
             if (isCreate) {
-                LOG_WARNING("PLAYER_BYTES_2 (CREATE): raw=0x", std::hex, val, std::dec,
+                LOG_DEBUG("PLAYER_BYTES_2 (CREATE): raw=0x", std::hex, val, std::dec,
                            " bankBagSlots=", static_cast<int>(bankBagSlots));
-                bool wasResting = owner_.isResting_;
-                owner_.isResting_ = (restStateByte != 0);
-                if (owner_.isResting_ != wasResting) {
+                bool wasResting = owner_.isRestingRef();
+                owner_.isRestingRef() = (restStateByte != 0);
+                if (owner_.isRestingRef() != wasResting) {
                     pendingEvents_.emit("UPDATE_EXHAUSTION", {});
                     pendingEvents_.emit("PLAYER_UPDATE_RESTING", {});
                 }
             } else {
                 // Byte 0 (bits 0-7): facial hair / piercings
                 uint8_t facialHair = static_cast<uint8_t>(val & 0xFF);
-                for (auto& ch : owner_.characters) {
-                    if (ch.guid == owner_.playerGuid) { ch.facialFeatures = facialHair; break; }
+                for (auto& ch : owner_.charactersRef()) {
+                    if (ch.guid == owner_.getPlayerGuid()) { ch.facialFeatures = facialHair; break; }
                 }
                 LOG_DEBUG("PLAYER_BYTES_2 (VALUES): raw=0x", std::hex, val, std::dec,
                            " bankBagSlots=", static_cast<int>(bankBagSlots),
                            " facial=", static_cast<int>(facialHair));
-                owner_.isResting_ = (restStateByte != 0);
-                if (owner_.appearanceChangedCallback_)
-                    owner_.appearanceChangedCallback_();
+                owner_.isRestingRef() = (restStateByte != 0);
+                if (owner_.appearanceChangedCallbackRef())
+                    owner_.appearanceChangedCallbackRef()();
             }
         }
         else if (pfi.chosenTitle != 0xFFFF && key == pfi.chosenTitle) {
-            owner_.chosenTitleBit_ = static_cast<int32_t>(val);
+            owner_.chosenTitleBitRef() = static_cast<int32_t>(val);
             LOG_DEBUG("PLAYER_CHOSEN_TITLE ", isCreate ? "from update fields: " : "updated: ",
-                      owner_.chosenTitleBit_);
+                      owner_.chosenTitleBitRef());
         }
         // VALUES-only fields: PLAYER_BYTES (appearance) and PLAYER_FLAGS (ghost state)
         else if (!isCreate && pfi.pBytes != 0xFFFF && key == pfi.pBytes) {
             // PLAYER_BYTES changed (barber shop, polymorph, etc.)
-            for (auto& ch : owner_.characters) {
-                if (ch.guid == owner_.playerGuid) { ch.appearanceBytes = val; break; }
+            for (auto& ch : owner_.charactersRef()) {
+                if (ch.guid == owner_.getPlayerGuid()) { ch.appearanceBytes = val; break; }
             }
-            if (owner_.appearanceChangedCallback_)
-                owner_.appearanceChangedCallback_();
+            if (owner_.appearanceChangedCallbackRef())
+                owner_.appearanceChangedCallbackRef()();
         }
         else if (!isCreate && key == pfi.playerFlags) {
             constexpr uint32_t PLAYER_FLAGS_GHOST = 0x00000010;
-            bool wasGhost = owner_.releasedSpirit_;
+            bool wasGhost = owner_.releasedSpiritRef();
             bool nowGhost = (val & PLAYER_FLAGS_GHOST) != 0;
             if (!wasGhost && nowGhost) {
-                owner_.releasedSpirit_ = true;
+                owner_.releasedSpiritRef() = true;
                 LOG_INFO("Player entered ghost form (PLAYER_FLAGS)");
-                if (owner_.ghostStateCallback_) owner_.ghostStateCallback_(true);
+                if (owner_.ghostStateCallbackRef()) owner_.ghostStateCallbackRef()(true);
             } else if (wasGhost && !nowGhost) {
-                owner_.releasedSpirit_ = false;
-                owner_.playerDead_ = false;
-                owner_.repopPending_ = false;
-                owner_.resurrectPending_ = false;
-                owner_.selfResAvailable_ = false;
-                owner_.corpseMapId_ = 0;  // corpse reclaimed
-                owner_.corpseGuid_ = 0;
-                owner_.corpseReclaimAvailableMs_ = 0;
+                owner_.releasedSpiritRef() = false;
+                owner_.playerDeadRef() = false;
+                owner_.repopPendingRef() = false;
+                owner_.resurrectPendingRef() = false;
+                owner_.selfResAvailableRef() = false;
+                owner_.corpseMapIdRef() = 0;  // corpse reclaimed
+                owner_.corpseGuidRef() = 0;
+                owner_.corpseReclaimAvailableMsRef() = 0;
                 LOG_INFO("Player resurrected (PLAYER_FLAGS ghost cleared)");
                 pendingEvents_.emit("PLAYER_ALIVE", {});
-                if (owner_.ghostStateCallback_) owner_.ghostStateCallback_(false);
+                if (owner_.ghostStateCallbackRef()) owner_.ghostStateCallbackRef()(false);
             }
             pendingEvents_.emit("PLAYER_FLAGS_CHANGED", {});
         }
-        else if (pfi.meleeAP  != 0xFFFF && key == pfi.meleeAP)  { owner_.playerMeleeAP_  = static_cast<int32_t>(val); }
-        else if (pfi.rangedAP != 0xFFFF && key == pfi.rangedAP) { owner_.playerRangedAP_ = static_cast<int32_t>(val); }
+        else if (pfi.meleeAP  != 0xFFFF && key == pfi.meleeAP)  { owner_.playerMeleeAPRef()  = static_cast<int32_t>(val); }
+        else if (pfi.rangedAP != 0xFFFF && key == pfi.rangedAP) { owner_.playerRangedAPRef() = static_cast<int32_t>(val); }
         else if (pfi.spDmg1   != 0xFFFF && key >= pfi.spDmg1 && key < pfi.spDmg1 + 7) {
-            owner_.playerSpellDmgBonus_[key - pfi.spDmg1] = static_cast<int32_t>(val);
+            owner_.playerSpellDmgBonusArr()[key - pfi.spDmg1] = static_cast<int32_t>(val);
         }
-        else if (pfi.healBonus != 0xFFFF && key == pfi.healBonus) { owner_.playerHealBonus_ = static_cast<int32_t>(val); }
+        else if (pfi.healBonus != 0xFFFF && key == pfi.healBonus) { owner_.playerHealBonusRef() = static_cast<int32_t>(val); }
         // Percentage stats are stored as IEEE 754 floats packed into uint32 update fields.
         // memcpy reinterprets the bits; clamp to [0..100] to guard against NaN/Inf from
         // corrupted packets reaching the UI (display-only, no gameplay logic depends on these).
-        else if (pfi.blockPct != 0xFFFF && key == pfi.blockPct) { std::memcpy(&owner_.playerBlockPct_, &val, 4); owner_.playerBlockPct_ = std::clamp(owner_.playerBlockPct_, 0.0f, 100.0f); }
-        else if (pfi.dodgePct != 0xFFFF && key == pfi.dodgePct) { std::memcpy(&owner_.playerDodgePct_, &val, 4); owner_.playerDodgePct_ = std::clamp(owner_.playerDodgePct_, 0.0f, 100.0f); }
-        else if (pfi.parryPct != 0xFFFF && key == pfi.parryPct) { std::memcpy(&owner_.playerParryPct_, &val, 4); owner_.playerParryPct_ = std::clamp(owner_.playerParryPct_, 0.0f, 100.0f); }
-        else if (pfi.critPct  != 0xFFFF && key == pfi.critPct)  { std::memcpy(&owner_.playerCritPct_,  &val, 4); owner_.playerCritPct_  = std::clamp(owner_.playerCritPct_,  0.0f, 100.0f); }
-        else if (pfi.rangedCritPct != 0xFFFF && key == pfi.rangedCritPct) { std::memcpy(&owner_.playerRangedCritPct_, &val, 4); owner_.playerRangedCritPct_ = std::clamp(owner_.playerRangedCritPct_, 0.0f, 100.0f); }
+        else if (pfi.blockPct != 0xFFFF && key == pfi.blockPct) { std::memcpy(&owner_.playerBlockPctRef(), &val, 4); owner_.playerBlockPctRef() = std::clamp(owner_.playerBlockPctRef(), 0.0f, 100.0f); }
+        else if (pfi.dodgePct != 0xFFFF && key == pfi.dodgePct) { std::memcpy(&owner_.playerDodgePctRef(), &val, 4); owner_.playerDodgePctRef() = std::clamp(owner_.playerDodgePctRef(), 0.0f, 100.0f); }
+        else if (pfi.parryPct != 0xFFFF && key == pfi.parryPct) { std::memcpy(&owner_.playerParryPctRef(), &val, 4); owner_.playerParryPctRef() = std::clamp(owner_.playerParryPctRef(), 0.0f, 100.0f); }
+        else if (pfi.critPct  != 0xFFFF && key == pfi.critPct)  { std::memcpy(&owner_.playerCritPctRef(),  &val, 4); owner_.playerCritPctRef()  = std::clamp(owner_.playerCritPctRef(),  0.0f, 100.0f); }
+        else if (pfi.rangedCritPct != 0xFFFF && key == pfi.rangedCritPct) { std::memcpy(&owner_.playerRangedCritPctRef(), &val, 4); owner_.playerRangedCritPctRef() = std::clamp(owner_.playerRangedCritPctRef(), 0.0f, 100.0f); }
         else if (pfi.sCrit1   != 0xFFFF && key >= pfi.sCrit1 && key < pfi.sCrit1 + 7) {
-            std::memcpy(&owner_.playerSpellCritPct_[key - pfi.sCrit1], &val, 4);
+            std::memcpy(&owner_.playerSpellCritPctArr()[key - pfi.sCrit1], &val, 4);
         }
         else if (pfi.rating1  != 0xFFFF && key >= pfi.rating1 && key < pfi.rating1 + 25) {
-            owner_.playerCombatRatings_[key - pfi.rating1] = static_cast<int32_t>(val);
+            owner_.playerCombatRatingsRef()[key - pfi.rating1] = static_cast<int32_t>(val);
         }
         else {
             for (int si = 0; si < 5; ++si) {
                 if (pfi.stats[si] != 0xFFFF && key == pfi.stats[si]) {
-                    owner_.playerStats_[si] = static_cast<int32_t>(val);
+                    owner_.playerStatsArr()[si] = static_cast<int32_t>(val);
                     break;
                 }
             }
@@ -1088,15 +1087,15 @@ void EntityController::dispatchEntitySpawn(uint64_t guid, ObjectType objectType,
                                             const std::shared_ptr<Entity>& entity,
                                             const std::shared_ptr<Unit>& unit,
                                             bool isDead) {
-    if (objectType == ObjectType::PLAYER && guid == owner_.playerGuid) {
+    if (objectType == ObjectType::PLAYER && guid == owner_.getPlayerGuid()) {
         return;  // Skip local player — spawned separately via spawnPlayerCharacter()
     }
     if (objectType == ObjectType::PLAYER) {
-        if (owner_.playerSpawnCallback_) {
+        if (owner_.playerSpawnCallbackRef()) {
             uint8_t race = 0, gender = 0, facial = 0;
             uint32_t appearanceBytes = 0;
             if (extractPlayerAppearance(entity->getFields(), race, gender, appearanceBytes, facial)) {
-                owner_.playerSpawnCallback_(guid, unit->getDisplayId(), race, gender,
+                owner_.playerSpawnCallbackRef()(guid, unit->getDisplayId(), race, gender,
                                     appearanceBytes, facial,
                                     unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation());
             } else {
@@ -1104,7 +1103,7 @@ void EntityController::dispatchEntitySpawn(uint64_t guid, ObjectType objectType,
                           " displayId=", unit->getDisplayId(), " appearance extraction failed — model will not render");
             }
         }
-    } else if (owner_.creatureSpawnCallback_) {
+    } else if (owner_.creatureSpawnCallbackRef()) {
         LOG_DEBUG("[Spawn] UNIT guid=0x", std::hex, guid, std::dec,
                   " displayId=", unit->getDisplayId(), " at (",
                   unit->getX(), ",", unit->getY(), ",", unit->getZ(), ")");
@@ -1119,17 +1118,17 @@ void EntityController::dispatchEntitySpawn(uint64_t guid, ObjectType objectType,
                 if (unitScale <= 0.01f || unitScale > 100.0f) unitScale = 1.0f;
             }
         }
-        owner_.creatureSpawnCallback_(guid, unit->getDisplayId(),
+        owner_.creatureSpawnCallbackRef()(guid, unit->getDisplayId(),
             unit->getX(), unit->getY(), unit->getZ(), unit->getOrientation(), unitScale);
     }
-    if (isDead && owner_.npcDeathCallback_) {
-        owner_.npcDeathCallback_(guid);
+    if (isDead && owner_.npcDeathCallbackRef()) {
+        owner_.npcDeathCallbackRef()(guid);
     }
     // Query quest giver status for NPCs with questgiver flag (0x02)
-    if (objectType == ObjectType::UNIT && (unit->getNpcFlags() & 0x02) && owner_.socket) {
+    if (objectType == ObjectType::UNIT && (unit->getNpcFlags() & 0x02) && owner_.getSocket()) {
         network::Packet qsPkt(wireOpcode(Opcode::CMSG_QUESTGIVER_STATUS_QUERY));
         qsPkt.writeUInt64(guid);
-        owner_.socket->send(qsPkt);
+        owner_.getSocket()->send(qsPkt);
     }
 }
 
@@ -1148,8 +1147,8 @@ void EntityController::trackItemOnCreate(const UpdateBlock& block, bool& newItem
     auto sock3EnchIt = (enchBase != 0xFFFF) ? block.fields.find(enchBase + 12u) : block.fields.end();
     if (entryIt != block.fields.end() && entryIt->second != 0) {
         // Preserve existing info when doing partial updates
-        GameHandler::OnlineItemInfo info = owner_.onlineItems_.count(block.guid)
-            ? owner_.onlineItems_[block.guid] : GameHandler::OnlineItemInfo{};
+        GameHandler::OnlineItemInfo info = owner_.onlineItemsRef().count(block.guid)
+            ? owner_.onlineItemsRef()[block.guid] : GameHandler::OnlineItemInfo{};
         info.entry = entryIt->second;
         if (stackIt    != block.fields.end()) info.stackCount            = stackIt->second;
         if (durIt      != block.fields.end()) info.curDurability         = durIt->second;
@@ -1159,7 +1158,7 @@ void EntityController::trackItemOnCreate(const UpdateBlock& block, bool& newItem
         if (sock1EnchIt != block.fields.end()) info.socketEnchantIds[0]  = sock1EnchIt->second;
         if (sock2EnchIt != block.fields.end()) info.socketEnchantIds[1]  = sock2EnchIt->second;
         if (sock3EnchIt != block.fields.end()) info.socketEnchantIds[2]  = sock3EnchIt->second;
-        auto [itemIt, isNew] = owner_.onlineItems_.insert_or_assign(block.guid, info);
+        auto [itemIt, isNew] = owner_.onlineItemsRef().insert_or_assign(block.guid, info);
         if (isNew) newItemCreated = true;
         owner_.queryItemInfo(info.entry, block.guid);
     }
@@ -1188,8 +1187,8 @@ void EntityController::updateItemOnValuesUpdate(const UpdateBlock& block,
     const uint16_t itemSock2EnchField= (itemEnchBase != 0xFFFF) ? (itemEnchBase + 9u)  : 0xFFFF;
     const uint16_t itemSock3EnchField= (itemEnchBase != 0xFFFF) ? (itemEnchBase + 12u) : 0xFFFF;
 
-    auto it = owner_.onlineItems_.find(block.guid);
-    bool isItemInInventory = (it != owner_.onlineItems_.end());
+    auto it = owner_.onlineItemsRef().find(block.guid);
+    bool isItemInInventory = (it != owner_.onlineItemsRef().end());
 
     for (const auto& [key, val] : block.fields) {
         if (key == itemStackField && isItemInInventory) {
@@ -1209,7 +1208,7 @@ void EntityController::updateItemOnValuesUpdate(const UpdateBlock& block,
                 if (maxDur > 0 && val < maxDur / 5u && prevDur >= maxDur / 5u) {
                     // Check if this item is in an equip slot (not bag inventory).
                     bool isEquipped = false;
-                    for (uint64_t slotGuid : owner_.equipSlotGuids_) {
+                    for (uint64_t slotGuid : owner_.equipSlotGuidsRef()) {
                         if (slotGuid == block.guid) { isEquipped = true; break; }
                     }
                     if (isEquipped) {
@@ -1376,9 +1375,9 @@ void EntityController::onCreateUnit(const UpdateBlock& block, std::shared_ptr<En
     }
     if (unit->getDisplayId() != 0) {
         dispatchEntitySpawn(block.guid, block.objectType, entity, unit, unitInitiallyDead);
-        if (block.hasMovement && block.moveFlags != 0 && owner_.unitMoveFlagsCallback_ &&
-            block.guid != owner_.playerGuid) {
-            owner_.unitMoveFlagsCallback_(block.guid, block.moveFlags);
+        if (block.hasMovement && block.moveFlags != 0 && owner_.unitMoveFlagsCallbackRef() &&
+            block.guid != owner_.getPlayerGuid()) {
+            owner_.unitMoveFlagsCallbackRef()(block.guid, block.moveFlags);
         }
     }
 }
@@ -1387,14 +1386,14 @@ void EntityController::onCreatePlayer(const UpdateBlock& block, std::shared_ptr<
     static const bool kVerboseUpdateObject = envFlagEnabled("WOWEE_LOG_UPDATE_OBJECT_VERBOSE", false);
 
     // For the local player, capture the full initial field state
-    if (block.guid == owner_.playerGuid) {
-        owner_.lastPlayerFields_ = entity->getFields();
+    if (block.guid == owner_.getPlayerGuid()) {
+        owner_.lastPlayerFieldsRef() = entity->getFields();
         owner_.maybeDetectVisibleItemLayout();
     }
 
     // Name query + visible items
     queryPlayerName(block.guid);
-    if (block.guid != owner_.playerGuid) {
+    if (block.guid != owner_.getPlayerGuid()) {
         owner_.updateOtherPlayerVisibleItems(block.guid, entity->getFields());
     }
 
@@ -1404,38 +1403,38 @@ void EntityController::onCreatePlayer(const UpdateBlock& block, std::shared_ptr<
     bool unitInitiallyDead = applyUnitFieldsOnCreate(block, unit, ufi);
 
     // Self-player post-unit-field handling
-    if (block.guid == owner_.playerGuid) {
+    if (block.guid == owner_.getPlayerGuid()) {
         constexpr uint32_t UNIT_FLAG_TAXI_FLIGHT = 0x00000100;
-        if ((unit->getUnitFlags() & UNIT_FLAG_TAXI_FLIGHT) != 0 && !owner_.onTaxiFlight_ && owner_.taxiLandingCooldown_ <= 0.0f) {
-            owner_.onTaxiFlight_ = true;
-            owner_.taxiStartGrace_ = std::max(owner_.taxiStartGrace_, 2.0f);
+        if ((unit->getUnitFlags() & UNIT_FLAG_TAXI_FLIGHT) != 0 && !owner_.onTaxiFlightRef() && owner_.taxiLandingCooldownRef() <= 0.0f) {
+            owner_.onTaxiFlightRef() = true;
+            owner_.taxiStartGraceRef() = std::max(owner_.taxiStartGraceRef(), 2.0f);
             owner_.sanitizeMovementForTaxi();
-            if (owner_.movementHandler_) owner_.movementHandler_->applyTaxiMountForCurrentNode();
+            if (owner_.getMovementHandler()) owner_.getMovementHandler()->applyTaxiMountForCurrentNode();
         }
     }
-    if (block.guid == owner_.playerGuid &&
+    if (block.guid == owner_.getPlayerGuid() &&
         (unit->getDynamicFlags() & 0x0008 /*UNIT_DYNFLAG_DEAD*/) != 0) {
-        owner_.playerDead_ = true;
+        owner_.playerDeadRef() = true;
         LOG_INFO("Player logged in dead (dynamic flags)");
     }
     // Detect ghost state on login via PLAYER_FLAGS
-    if (block.guid == owner_.playerGuid) {
+    if (block.guid == owner_.getPlayerGuid()) {
         constexpr uint32_t PLAYER_FLAGS_GHOST = 0x00000010;
         auto pfIt = block.fields.find(fieldIndex(UF::PLAYER_FLAGS));
         if (pfIt != block.fields.end() && (pfIt->second & PLAYER_FLAGS_GHOST) != 0) {
-            owner_.releasedSpirit_ = true;
-            owner_.playerDead_ = true;
+            owner_.releasedSpiritRef() = true;
+            owner_.playerDeadRef() = true;
             LOG_INFO("Player logged in as ghost (PLAYER_FLAGS)");
-            if (owner_.ghostStateCallback_) owner_.ghostStateCallback_(true);
+            if (owner_.ghostStateCallbackRef()) owner_.ghostStateCallbackRef()(true);
             // Query corpse position so minimap marker is accurate on reconnect
-            if (owner_.socket) {
+            if (owner_.getSocket()) {
                 network::Packet cq(wireOpcode(Opcode::MSG_CORPSE_QUERY));
-                owner_.socket->send(cq);
+                owner_.getSocket()->send(cq);
             }
         }
     }
     // Classic aura sync on initial object create
-    if (block.guid == owner_.playerGuid) {
+    if (block.guid == owner_.getPlayerGuid()) {
         syncClassicAurasFromFields(entity);
     }
 
@@ -1445,18 +1444,18 @@ void EntityController::onCreatePlayer(const UpdateBlock& block, std::shared_ptr<
     // Spawn dispatch
     if (unit->getDisplayId() != 0) {
         dispatchEntitySpawn(block.guid, block.objectType, entity, unit, unitInitiallyDead);
-        if (block.hasMovement && block.moveFlags != 0 && owner_.unitMoveFlagsCallback_ &&
-            block.guid != owner_.playerGuid) {
-            owner_.unitMoveFlagsCallback_(block.guid, block.moveFlags);
+        if (block.hasMovement && block.moveFlags != 0 && owner_.unitMoveFlagsCallbackRef() &&
+            block.guid != owner_.getPlayerGuid()) {
+            owner_.unitMoveFlagsCallbackRef()(block.guid, block.moveFlags);
         }
     }
 
     // Player stat fields (self only)
-    if (block.guid == owner_.playerGuid) {
+    if (block.guid == owner_.getPlayerGuid()) {
         // Auto-detect coinage index using the previous snapshot vs this full snapshot.
-        maybeDetectCoinageIndex(owner_.lastPlayerFields_, block.fields);
+        maybeDetectCoinageIndex(owner_.lastPlayerFieldsRef(), block.fields);
 
-        owner_.lastPlayerFields_ = block.fields;
+        owner_.lastPlayerFieldsRef() = block.fields;
         owner_.detectInventorySlotBases(block.fields);
 
         if (kVerboseUpdateObject) {
@@ -1472,9 +1471,9 @@ void EntityController::onCreatePlayer(const UpdateBlock& block, std::shared_ptr<
         bool slotsChanged = applyPlayerStatFields(block.fields, pfi, true);
         if (slotsChanged) owner_.rebuildOnlineInventory();
         owner_.maybeDetectVisibleItemLayout();
-        owner_.extractSkillFields(owner_.lastPlayerFields_);
-        owner_.extractExploredZoneFields(owner_.lastPlayerFields_);
-        owner_.applyQuestStateFromFields(owner_.lastPlayerFields_);
+        owner_.extractSkillFields(owner_.lastPlayerFieldsRef());
+        owner_.extractExploredZoneFields(owner_.lastPlayerFieldsRef());
+        owner_.applyQuestStateFromFields(owner_.lastPlayerFieldsRef());
     }
 }
 
@@ -1506,7 +1505,7 @@ void EntityController::onCreateGameObject(const UpdateBlock& block, std::shared_
                  " pos=(", go->getX(), ", ", go->getY(), ", ", go->getZ(), ")");
         // Note: TransportSpawnCallback will be invoked from Application after WMO instance is created
     }
-    if (go->getDisplayId() != 0 && owner_.gameObjectSpawnCallback_) {
+    if (go->getDisplayId() != 0 && owner_.gameObjectSpawnCallbackRef()) {
         float goScale = 1.0f;
         {
             uint16_t scaleIdx = fieldIndex(UF::OBJECT_FIELD_SCALE_X);
@@ -1518,13 +1517,13 @@ void EntityController::onCreateGameObject(const UpdateBlock& block, std::shared_
                 }
             }
         }
-        owner_.gameObjectSpawnCallback_(block.guid, go->getEntry(), go->getDisplayId(),
+        owner_.gameObjectSpawnCallbackRef()(block.guid, go->getEntry(), go->getDisplayId(),
             go->getX(), go->getY(), go->getZ(), go->getOrientation(), goScale);
     }
     // Fire transport move callback for transports (position update on re-creation)
-    if (transportGuids_.count(block.guid) && owner_.transportMoveCallback_) {
+    if (transportGuids_.count(block.guid) && owner_.transportMoveCallbackRef()) {
         serverUpdatedTransportGuids_.insert(block.guid);
-        owner_.transportMoveCallback_(block.guid,
+        owner_.transportMoveCallbackRef()(block.guid,
             go->getX(), go->getY(), go->getZ(), go->getOrientation());
     }
 }
@@ -1544,16 +1543,16 @@ void EntityController::onCreateCorpse(const UpdateBlock& block) {
         auto ownerHighIt = block.fields.find(ownerLowIdx + 1);
         uint32_t ownerHigh = (ownerHighIt != block.fields.end()) ? ownerHighIt->second : 0;
         uint64_t ownerGuid = (static_cast<uint64_t>(ownerHigh) << 32) | ownerLow;
-        if (ownerGuid == owner_.playerGuid || ownerLow == static_cast<uint32_t>(owner_.playerGuid)) {
+        if (ownerGuid == owner_.getPlayerGuid() || ownerLow == static_cast<uint32_t>(owner_.getPlayerGuid())) {
             // Server coords from movement block
-            owner_.corpseGuid_  = block.guid;
-            owner_.corpseX_     = block.x;
-            owner_.corpseY_     = block.y;
-            owner_.corpseZ_     = block.z;
-            owner_.corpseMapId_ = owner_.currentMapId_;
-            LOG_INFO("Corpse object detected: guid=0x", std::hex, owner_.corpseGuid_, std::dec,
+            owner_.corpseGuidRef()  = block.guid;
+            owner_.corpseXRef()     = block.x;
+            owner_.corpseYRef()     = block.y;
+            owner_.corpseZRef()     = block.z;
+            owner_.corpseMapIdRef() = owner_.currentMapIdRef();
+            LOG_INFO("Corpse object detected: guid=0x", std::hex, owner_.corpseGuidRef(), std::dec,
                      " server=(", block.x, ", ", block.y, ", ", block.z,
-                     ") map=", owner_.corpseMapId_);
+                     ") map=", owner_.corpseMapIdRef());
         }
     }
 }
@@ -1576,11 +1575,11 @@ void EntityController::handleDisplayIdChange(const UpdateBlock& block,
         ((unit->getDynamicFlags() & (UNIT_DYNFLAG_DEAD | UNIT_DYNFLAG_LOOTABLE)) != 0);
     dispatchEntitySpawn(block.guid, entity->getType(), entity, unit,
                         isDeadNow && !result.npcDeathNotified);
-    if (owner_.addonEventCallback_) {
+    if (owner_.addonEventCallbackRef()) {
         std::string uid;
-        if (block.guid == owner_.targetGuid) uid = "target";
-        else if (block.guid == owner_.focusGuid) uid = "focus";
-        else if (block.guid == owner_.petGuid_) uid = "pet";
+        if (block.guid == owner_.getTargetGuid()) uid = "target";
+        else if (block.guid == owner_.focusGuidRef()) uid = "focus";
+        else if (block.guid == owner_.petGuidRef()) uid = "pet";
         if (!uid.empty())
             pendingEvents_.emit("UNIT_MODEL_CHANGED", {uid});
     }
@@ -1595,7 +1594,7 @@ void EntityController::onValuesUpdateUnit(const UpdateBlock& block, std::shared_
 
 void EntityController::onValuesUpdatePlayer(const UpdateBlock& block, std::shared_ptr<Entity>& entity) {
     // Other player visible items
-    if (block.guid != owner_.playerGuid) {
+    if (block.guid != owner_.getPlayerGuid()) {
         owner_.updateOtherPlayerVisibleItems(block.guid, entity->getFields());
     }
 
@@ -1605,7 +1604,7 @@ void EntityController::onValuesUpdatePlayer(const UpdateBlock& block, std::share
     UnitFieldUpdateResult result = applyUnitFieldsOnUpdate(block, entity, unit, ufi);
 
     // Classic aura sync from UNIT_FIELD_AURAS when those fields are updated
-    if (block.guid == owner_.playerGuid) {
+    if (block.guid == owner_.getPlayerGuid()) {
         syncClassicAurasFromFields(entity);
     }
 
@@ -1613,32 +1612,32 @@ void EntityController::onValuesUpdatePlayer(const UpdateBlock& block, std::share
     handleDisplayIdChange(block, entity, unit, result);
 
     // Self-player stat/inventory/quest field updates
-    if (block.guid == owner_.playerGuid) {
+    if (block.guid == owner_.getPlayerGuid()) {
         const bool needCoinageDetectSnapshot =
-            (owner_.pendingMoneyDelta_ != 0 && owner_.pendingMoneyDeltaTimer_ > 0.0f);
+            (owner_.pendingMoneyDeltaRef() != 0 && owner_.pendingMoneyDeltaTimerRef() > 0.0f);
         std::map<uint16_t, uint32_t> oldFieldsSnapshot;
         if (needCoinageDetectSnapshot) {
-            oldFieldsSnapshot = owner_.lastPlayerFields_;
+            oldFieldsSnapshot = owner_.lastPlayerFieldsRef();
         }
         if (block.hasMovement && block.runSpeed > 0.1f && block.runSpeed < 100.0f) {
-            owner_.serverRunSpeed_ = block.runSpeed;
+            owner_.serverRunSpeedRef() = block.runSpeed;
             // Some server dismount paths update run speed without updating mount display field.
-            if (!owner_.onTaxiFlight_ && !owner_.taxiMountActive_ &&
-                owner_.currentMountDisplayId_ != 0 && block.runSpeed <= 8.5f) {
+            if (!owner_.onTaxiFlightRef() && !owner_.taxiMountActiveRef() &&
+                owner_.currentMountDisplayIdRef() != 0 && block.runSpeed <= 8.5f) {
                 LOG_INFO("Auto-clearing mount from movement speed update: speed=", block.runSpeed,
-                         " displayId=", owner_.currentMountDisplayId_);
-                owner_.currentMountDisplayId_ = 0;
-                if (owner_.mountCallback_) {
-                    owner_.mountCallback_(0);
+                         " displayId=", owner_.currentMountDisplayIdRef());
+                owner_.currentMountDisplayIdRef() = 0;
+                if (owner_.mountCallbackRef()) {
+                    owner_.mountCallbackRef()(0);
                 }
             }
         }
-        auto mergeHint = owner_.lastPlayerFields_.end();
+        auto mergeHint = owner_.lastPlayerFieldsRef().end();
         for (const auto& [key, val] : block.fields) {
-            mergeHint = owner_.lastPlayerFields_.insert_or_assign(mergeHint, key, val);
+            mergeHint = owner_.lastPlayerFieldsRef().insert_or_assign(mergeHint, key, val);
         }
         if (needCoinageDetectSnapshot) {
-            maybeDetectCoinageIndex(oldFieldsSnapshot, owner_.lastPlayerFields_);
+            maybeDetectCoinageIndex(oldFieldsSnapshot, owner_.lastPlayerFieldsRef());
         }
         owner_.maybeDetectVisibleItemLayout();
         owner_.detectInventorySlotBases(block.fields);
@@ -1649,9 +1648,9 @@ void EntityController::onValuesUpdatePlayer(const UpdateBlock& block, std::share
             owner_.rebuildOnlineInventory();
             pendingEvents_.emit("PLAYER_EQUIPMENT_CHANGED", {});
         }
-        owner_.extractSkillFields(owner_.lastPlayerFields_);
-        owner_.extractExploredZoneFields(owner_.lastPlayerFields_);
-        owner_.applyQuestStateFromFields(owner_.lastPlayerFields_);
+        owner_.extractSkillFields(owner_.lastPlayerFieldsRef());
+        owner_.extractExploredZoneFields(owner_.lastPlayerFieldsRef());
+        owner_.applyQuestStateFromFields(owner_.lastPlayerFieldsRef());
     }
 }
 
@@ -1661,12 +1660,12 @@ void EntityController::onValuesUpdateItem(const UpdateBlock& block, std::shared_
 
 void EntityController::onValuesUpdateGameObject(const UpdateBlock& block, std::shared_ptr<Entity>& entity) {
     if (block.hasMovement) {
-        if (transportGuids_.count(block.guid) && owner_.transportMoveCallback_) {
+        if (transportGuids_.count(block.guid) && owner_.transportMoveCallbackRef()) {
             serverUpdatedTransportGuids_.insert(block.guid);
-            owner_.transportMoveCallback_(block.guid, entity->getX(), entity->getY(),
+            owner_.transportMoveCallbackRef()(block.guid, entity->getX(), entity->getY(),
                                    entity->getZ(), entity->getOrientation());
-        } else if (owner_.gameObjectMoveCallback_) {
-            owner_.gameObjectMoveCallback_(block.guid, entity->getX(), entity->getY(),
+        } else if (owner_.gameObjectMoveCallbackRef()) {
+            owner_.gameObjectMoveCallbackRef()(block.guid, entity->getX(), entity->getY(),
                                     entity->getZ(), entity->getOrientation());
         }
     }
@@ -1677,8 +1676,8 @@ void EntityController::onValuesUpdateGameObject(const UpdateBlock& block, std::s
         auto itB = block.fields.find(ufGoBytes1);
         if (itB != block.fields.end()) {
             uint8_t goState = static_cast<uint8_t>(itB->second & 0xFF);
-            if (owner_.gameObjectStateCallback_)
-                owner_.gameObjectStateCallback_(block.guid, goState);
+            if (owner_.gameObjectStateCallbackRef())
+                owner_.gameObjectStateCallbackRef()(block.guid, goState);
         }
     }
 }
@@ -1699,11 +1698,11 @@ void EntityController::handleCreateObject(const UpdateBlock& block, bool& newIte
         float oCanonical = core::coords::serverToCanonicalYaw(block.orientation);
         entity->setPosition(pos.x, pos.y, pos.z, oCanonical);
         LOG_DEBUG("  Position: (", pos.x, ", ", pos.y, ", ", pos.z, ")");
-        if (block.guid == owner_.playerGuid && block.runSpeed > 0.1f && block.runSpeed < 100.0f) {
-            owner_.serverRunSpeed_ = block.runSpeed;
+        if (block.guid == owner_.getPlayerGuid() && block.runSpeed > 0.1f && block.runSpeed < 100.0f) {
+            owner_.serverRunSpeedRef() = block.runSpeed;
         }
         // 3b: Track player-on-transport state
-        if (block.guid == owner_.playerGuid) {
+        if (block.guid == owner_.getPlayerGuid()) {
             applyPlayerTransportState(block, entity, pos, oCanonical, false);
         }
         // 3i: Track transport-relative children so they follow parent transport motion.
@@ -1731,7 +1730,7 @@ void EntityController::handleValuesUpdate(const UpdateBlock& block) {
         // Item/container entities may be absent from entityManager (e.g. server
         // only sent a partial update) but we still track them in onlineItems_.
         // Process field updates so durability/stack changes from repair aren't lost.
-        if (owner_.onlineItems_.count(block.guid)) {
+        if (owner_.onlineItemsRef().count(block.guid)) {
             pendingEvents_.clear();
             updateItemOnValuesUpdate(block, entity);
             flushPendingEvents();
@@ -1780,32 +1779,32 @@ void EntityController::handleMovementUpdate(const UpdateBlock& block) {
                 updateNonPlayerTransportAttachment(block, entity, entity->getType());
 
                 // 3b: Track player-on-transport state from MOVEMENT updates
-                if (block.guid == owner_.playerGuid) {
-                    owner_.movementInfo.orientation = oCanonical;
+                if (block.guid == owner_.getPlayerGuid()) {
+                    owner_.movementInfoRef().orientation = oCanonical;
                     applyPlayerTransportState(block, entity, pos, oCanonical, true);
                 }
 
                 // Fire transport move callback if this is a known transport
-                if (transportGuids_.count(block.guid) && owner_.transportMoveCallback_) {
+                if (transportGuids_.count(block.guid) && owner_.transportMoveCallbackRef()) {
                     serverUpdatedTransportGuids_.insert(block.guid);
-                    owner_.transportMoveCallback_(block.guid, pos.x, pos.y, pos.z, oCanonical);
+                    owner_.transportMoveCallbackRef()(block.guid, pos.x, pos.y, pos.z, oCanonical);
                 }
                 // Fire move callback for non-transport gameobjects.
                 if (entity->getType() == ObjectType::GAMEOBJECT &&
                     transportGuids_.count(block.guid) == 0 &&
-                    owner_.gameObjectMoveCallback_) {
-                    owner_.gameObjectMoveCallback_(block.guid, entity->getX(), entity->getY(),
+                    owner_.gameObjectMoveCallbackRef()) {
+                    owner_.gameObjectMoveCallbackRef()(block.guid, entity->getX(), entity->getY(),
                                             entity->getZ(), entity->getOrientation());
                 }
                 // Fire move callback for non-player units (creatures).
                 // SMSG_MONSTER_MOVE handles smooth interpolated movement, but many
                 // servers (especially vanilla/Turtle WoW) communicate NPC positions
                 // via MOVEMENT blocks instead. Use duration=0 for an instant snap.
-                if (block.guid != owner_.playerGuid &&
+                if (block.guid != owner_.getPlayerGuid() &&
                     entity->getType() == ObjectType::UNIT &&
                     transportGuids_.count(block.guid) == 0 &&
-                    owner_.creatureMoveCallback_) {
-                    owner_.creatureMoveCallback_(block.guid, pos.x, pos.y, pos.z, 0);
+                    owner_.creatureMoveCallbackRef()) {
+                    owner_.creatureMoveCallbackRef()(block.guid, pos.x, pos.y, pos.z, 0);
                 }
             } else {
                 LOG_WARNING("MOVEMENT update for unknown entity: 0x", std::hex, block.guid, std::dec);
@@ -1813,20 +1812,20 @@ void EntityController::handleMovementUpdate(const UpdateBlock& block) {
 }
 
 void EntityController::finalizeUpdateObjectBatch(bool newItemCreated) {
-    owner_.tabCycleStale = true;
+    owner_.tabCycleStaleRef() = true;
     // Entity count logging disabled
 
     // Deferred rebuild: if new item objects were created in this packet, rebuild
-    // owner_.inventory so that slot GUIDs updated earlier in the same packet can resolve.
+    // owner_.inventoryRef() so that slot GUIDs updated earlier in the same packet can resolve.
     if (newItemCreated) {
         owner_.rebuildOnlineInventory();
     }
 
-    // Late owner_.inventory base detection once items are known
-    if (owner_.playerGuid != 0 && owner_.invSlotBase_ < 0 && !owner_.lastPlayerFields_.empty() && !owner_.onlineItems_.empty()) {
-        owner_.detectInventorySlotBases(owner_.lastPlayerFields_);
-        if (owner_.invSlotBase_ >= 0) {
-            if (owner_.applyInventoryFields(owner_.lastPlayerFields_)) {
+    // Late owner_.inventoryRef() base detection once items are known
+    if (owner_.getPlayerGuid() != 0 && owner_.invSlotBaseRef() < 0 && !owner_.lastPlayerFieldsRef().empty() && !owner_.onlineItemsRef().empty()) {
+        owner_.detectInventorySlotBases(owner_.lastPlayerFieldsRef());
+        if (owner_.invSlotBaseRef() >= 0) {
+            if (owner_.applyInventoryFields(owner_.lastPlayerFieldsRef())) {
                 owner_.rebuildOnlineInventory();
             }
         }
@@ -1882,9 +1881,9 @@ void EntityController::handleDestroyObject(network::Packet& packet) {
     // Remove entity
     if (entityManager.hasEntity(data.guid)) {
         if (transportGuids_.count(data.guid) > 0) {
-            const bool playerAboardNow = (owner_.playerTransportGuid_ == data.guid);
-            const bool stickyAboard = (owner_.playerTransportStickyGuid_ == data.guid && owner_.playerTransportStickyTimer_ > 0.0f);
-            const bool movementSaysAboard = (owner_.movementInfo.transportGuid == data.guid);
+            const bool playerAboardNow = (owner_.playerTransportGuidRef() == data.guid);
+            const bool stickyAboard = (owner_.playerTransportStickyGuidRef() == data.guid && owner_.playerTransportStickyTimerRef() > 0.0f);
+            const bool movementSaysAboard = (owner_.movementInfoRef().transportGuid == data.guid);
             if (playerAboardNow || stickyAboard || movementSaysAboard) {
                 serverUpdatedTransportGuids_.erase(data.guid);
                 LOG_INFO("Preserving in-use transport on destroy: 0x", std::hex, data.guid, std::dec,
@@ -1897,25 +1896,25 @@ void EntityController::handleDestroyObject(network::Packet& packet) {
         // Mirror out-of-range handling: invoke render-layer despawn callbacks before entity removal.
         auto entity = entityManager.getEntity(data.guid);
         if (entity) {
-            if (entity->getType() == ObjectType::UNIT && owner_.creatureDespawnCallback_) {
-                owner_.creatureDespawnCallback_(data.guid);
-            } else if (entity->getType() == ObjectType::PLAYER && owner_.playerDespawnCallback_) {
+            if (entity->getType() == ObjectType::UNIT && owner_.creatureDespawnCallbackRef()) {
+                owner_.creatureDespawnCallbackRef()(data.guid);
+            } else if (entity->getType() == ObjectType::PLAYER && owner_.playerDespawnCallbackRef()) {
                 // Player entities also need renderer cleanup on DESTROY_OBJECT, not just out-of-range.
-                owner_.playerDespawnCallback_(data.guid);
-                owner_.otherPlayerVisibleItemEntries_.erase(data.guid);
-                owner_.otherPlayerVisibleDirty_.erase(data.guid);
-                owner_.otherPlayerMoveTimeMs_.erase(data.guid);
-                owner_.inspectedPlayerItemEntries_.erase(data.guid);
-                owner_.pendingAutoInspect_.erase(data.guid);
+                owner_.playerDespawnCallbackRef()(data.guid);
+                owner_.otherPlayerVisibleItemEntriesRef().erase(data.guid);
+                owner_.otherPlayerVisibleDirtyRef().erase(data.guid);
+                owner_.otherPlayerMoveTimeMsRef().erase(data.guid);
+                owner_.inspectedPlayerItemEntriesRef().erase(data.guid);
+                owner_.pendingAutoInspectRef().erase(data.guid);
                 pendingNameQueries.erase(data.guid);
-            } else if (entity->getType() == ObjectType::GAMEOBJECT && owner_.gameObjectDespawnCallback_) {
-                owner_.gameObjectDespawnCallback_(data.guid);
+            } else if (entity->getType() == ObjectType::GAMEOBJECT && owner_.gameObjectDespawnCallbackRef()) {
+                owner_.gameObjectDespawnCallbackRef()(data.guid);
             }
         }
         if (transportGuids_.count(data.guid) > 0) {
             transportGuids_.erase(data.guid);
             serverUpdatedTransportGuids_.erase(data.guid);
-            if (owner_.playerTransportGuid_ == data.guid) {
+            if (owner_.playerTransportGuidRef() == data.guid) {
                 owner_.clearPlayerTransport();
             }
         }
@@ -1928,33 +1927,33 @@ void EntityController::handleDestroyObject(network::Packet& packet) {
     }
 
     // Clean up auto-attack and target if destroyed entity was our target
-    if (owner_.combatHandler_ && data.guid == owner_.combatHandler_->getAutoAttackTargetGuid()) {
+    if (owner_.getCombatHandler() && data.guid == owner_.getCombatHandler()->getAutoAttackTargetGuid()) {
         owner_.stopAutoAttack();
     }
-    if (data.guid == owner_.targetGuid) {
-        owner_.targetGuid = 0;
+    if (data.guid == owner_.getTargetGuid()) {
+        owner_.setTargetGuidRaw(0);
     }
-    if (owner_.combatHandler_) owner_.combatHandler_->removeHostileAttacker(data.guid);
+    if (owner_.getCombatHandler()) owner_.getCombatHandler()->removeHostileAttacker(data.guid);
 
     // Remove online item/container tracking
-    owner_.containerContents_.erase(data.guid);
-    if (owner_.onlineItems_.erase(data.guid)) {
+    owner_.containerContentsRef().erase(data.guid);
+    if (owner_.onlineItemsRef().erase(data.guid)) {
         owner_.rebuildOnlineInventory();
     }
 
     // Clean up quest giver status
-    owner_.npcQuestStatus_.erase(data.guid);
+    owner_.npcQuestStatusRef().erase(data.guid);
 
     // Remove combat text entries referencing the destroyed entity so floating
     // damage numbers don't linger after the source/target despawns.
-    if (owner_.combatHandler_) owner_.combatHandler_->removeCombatTextForGuid(data.guid);
+    if (owner_.getCombatHandler()) owner_.getCombatHandler()->removeCombatTextForGuid(data.guid);
 
-    // Clean up unit cast owner_.state (cast bar) for the destroyed unit
-    if (owner_.spellHandler_) owner_.spellHandler_->unitCastStates_.erase(data.guid);
+    // Clean up unit cast owner_.getState() (cast bar) for the destroyed unit
+    if (owner_.getSpellHandler()) owner_.getSpellHandler()->removeUnitCastState(data.guid);
     // Clean up cached auras
-    if (owner_.spellHandler_) owner_.spellHandler_->unitAurasCache_.erase(data.guid);
+    if (owner_.getSpellHandler()) owner_.getSpellHandler()->removeUnitAuraCache(data.guid);
 
-    owner_.tabCycleStale = true;
+    owner_.tabCycleStaleRef() = true;
 }
 
 // Name Queries
@@ -1977,14 +1976,14 @@ void EntityController::queryPlayerName(uint64_t guid) {
     if (pendingNameQueries.count(guid)) return;
     if (!owner_.isInWorld()) {
         LOG_INFO("queryPlayerName: skipped guid=0x", std::hex, guid, std::dec,
-                 " owner_.state=", worldStateName(owner_.state), " owner_.socket=", (owner_.socket ? "yes" : "no"));
+                 " owner_.getState()=", worldStateName(owner_.getState()), " owner_.getSocket()=", (owner_.getSocket() ? "yes" : "no"));
         return;
     }
 
     LOG_INFO("queryPlayerName: sending CMSG_NAME_QUERY for guid=0x", std::hex, guid, std::dec);
     pendingNameQueries.insert(guid);
     auto packet = NameQueryPacket::build(guid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void EntityController::queryCreatureInfo(uint32_t entry, uint64_t guid) {
@@ -1993,7 +1992,7 @@ void EntityController::queryCreatureInfo(uint32_t entry, uint64_t guid) {
 
     pendingCreatureQueries.insert(entry);
     auto packet = CreatureQueryPacket::build(entry, guid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 void EntityController::queryGameObjectInfo(uint32_t entry, uint64_t guid) {
@@ -2002,7 +2001,7 @@ void EntityController::queryGameObjectInfo(uint32_t entry, uint64_t guid) {
 
     pendingGameObjectQueries_.insert(entry);
     auto packet = GameObjectQueryPacket::build(entry, guid);
-    owner_.socket->send(packet);
+    owner_.getSocket()->send(packet);
 }
 
 std::string EntityController::getCachedPlayerName(uint64_t guid) const {
@@ -2015,7 +2014,7 @@ std::string EntityController::getCachedCreatureName(uint32_t entry) const {
 }
 void EntityController::handleNameQueryResponse(network::Packet& packet) {
     NameQueryResponseData data;
-    if (!owner_.packetParsers_ || !owner_.packetParsers_->parseNameQueryResponse(packet, data)) {
+    if (!owner_.getPacketParsers() || !owner_.getPacketParsers()->parseNameQueryResponse(packet, data)) {
         LOG_WARNING("Failed to parse SMSG_NAME_QUERY_RESPONSE (size=", packet.getSize(), ")");
         return;
     }
@@ -2040,8 +2039,8 @@ void EntityController::handleNameQueryResponse(network::Packet& packet) {
         }
 
         // Backfill chat history entries that arrived before we knew the name.
-        if (owner_.chatHandler_) {
-            for (auto& msg : owner_.chatHandler_->getChatHistory()) {
+        if (owner_.getChatHandler()) {
+            for (auto& msg : owner_.getChatHandler()->getChatHistory()) {
                 if (msg.senderGuid == data.guid && msg.senderName.empty()) {
                     msg.senderName = data.name;
                 }
@@ -2049,35 +2048,35 @@ void EntityController::handleNameQueryResponse(network::Packet& packet) {
         }
 
         // Backfill whisper reply target if the name arrived after the whisper.
-        if (owner_.lastWhisperSenderGuid_ == data.guid && owner_.lastWhisperSender_.empty()) {
-            owner_.lastWhisperSender_ = data.name;
+        if (owner_.lastWhisperSenderGuidRef() == data.guid && owner_.lastWhisperSenderRef().empty()) {
+            owner_.lastWhisperSenderRef() = data.name;
         }
 
         // Backfill mail inbox sender names
-        for (auto& mail : owner_.mailInbox_) {
+        for (auto& mail : owner_.mailInboxRef()) {
             if (mail.messageType == 0 && mail.senderGuid == data.guid) {
                 mail.senderName = data.name;
             }
         }
 
         // Backfill friend list: if this GUID came from a friend list packet,
-        // register the name in owner_.friendsCache now that we know it.
-        if (owner_.friendGuids_.count(data.guid)) {
-            owner_.friendsCache[data.name] = data.guid;
+        // register the name in owner_.friendsCacheRef() now that we know it.
+        if (owner_.friendGuidsRef().count(data.guid)) {
+            owner_.friendsCacheRef()[data.name] = data.guid;
         }
 
         // Backfill ignore list: SMSG_IGNORE_LIST only contains GUIDs, so
         // ignoreCache (name→guid for UI) is populated here once names resolve.
-        if (owner_.ignoreListGuids_.count(data.guid)) {
-            owner_.ignoreCache[data.name] = data.guid;
+        if (owner_.ignoreListGuidsRef().count(data.guid)) {
+            owner_.ignoreCacheRef()[data.name] = data.guid;
         }
 
         // Fire UNIT_NAME_UPDATE so nameplate/unit frame addons know the name is available
-        if (owner_.addonEventCallback_) {
+        if (owner_.addonEventCallbackRef()) {
             std::string unitId;
-            if (data.guid == owner_.targetGuid) unitId = "target";
-            else if (data.guid == owner_.focusGuid) unitId = "focus";
-            else if (data.guid == owner_.playerGuid) unitId = "player";
+            if (data.guid == owner_.getTargetGuid()) unitId = "target";
+            else if (data.guid == owner_.focusGuidRef()) unitId = "focus";
+            else if (data.guid == owner_.getPlayerGuid()) unitId = "player";
             if (!unitId.empty())
                 owner_.fireAddonEvent("UNIT_NAME_UPDATE", {unitId});
         }
@@ -2086,7 +2085,7 @@ void EntityController::handleNameQueryResponse(network::Packet& packet) {
 
 void EntityController::handleCreatureQueryResponse(network::Packet& packet) {
     CreatureQueryResponseData data;
-    if (!owner_.packetParsers_->parseCreatureQueryResponse(packet, data)) return;
+    if (!owner_.getPacketParsers()->parseCreatureQueryResponse(packet, data)) return;
 
     pendingCreatureQueries.erase(data.entry);
 
@@ -2110,7 +2109,7 @@ void EntityController::handleCreatureQueryResponse(network::Packet& packet) {
 
 void EntityController::handleGameObjectQueryResponse(network::Packet& packet) {
     GameObjectQueryResponseData data;
-    bool ok = owner_.packetParsers_ ? owner_.packetParsers_->parseGameObjectQueryResponse(packet, data)
+    bool ok = owner_.getPacketParsers() ? owner_.getPacketParsers()->parseGameObjectQueryResponse(packet, data)
                              : GameObjectQueryResponseParser::parse(packet, data);
     if (!ok) return;
 
@@ -2129,10 +2128,10 @@ void EntityController::handleGameObjectQueryResponse(network::Packet& packet) {
         }
 
         // MO_TRANSPORT (type 15): assign TaxiPathNode path if available
-        if (data.type == 15 && data.hasData && data.data[0] != 0 && owner_.transportManager_) {
+        if (data.type == 15 && data.hasData && data.data[0] != 0 && owner_.getTransportManager()) {
             uint32_t taxiPathId = data.data[0];
-            if (owner_.transportManager_->hasTaxiPath(taxiPathId)) {
-                if (owner_.transportManager_->assignTaxiPathToTransport(data.entry, taxiPathId)) {
+            if (owner_.getTransportManager()->hasTaxiPath(taxiPathId)) {
+                if (owner_.getTransportManager()->assignTaxiPathToTransport(data.entry, taxiPathId)) {
                     LOG_DEBUG("MO_TRANSPORT entry=", data.entry, " assigned TaxiPathNode path ", taxiPathId);
                 }
             } else {
@@ -2167,10 +2166,10 @@ void EntityController::handleGameObjectPageText(network::Packet& packet) {
     if (info.type == 9) pageId = info.data[0];
     else if (info.type == 10) pageId = info.data[7];
 
-    if (pageId != 0 && owner_.socket && owner_.state == WorldState::IN_WORLD) {
-        owner_.bookPages_.clear();  // start a fresh book for this interaction
+    if (pageId != 0 && owner_.getSocket() && owner_.getState() == WorldState::IN_WORLD) {
+        owner_.bookPagesRef().clear();  // start a fresh book for this interaction
         auto req = PageTextQueryPacket::build(pageId, guid);
-        owner_.socket->send(req);
+        owner_.getSocket()->send(req);
         return;
     }
 
@@ -2187,27 +2186,27 @@ void EntityController::handlePageTextQueryResponse(network::Packet& packet) {
 
     // Append page if not already collected
     bool alreadyHave = false;
-    for (const auto& bp : owner_.bookPages_) {
+    for (const auto& bp : owner_.bookPagesRef()) {
         if (bp.pageId == data.pageId) { alreadyHave = true; break; }
     }
     if (!alreadyHave) {
-        owner_.bookPages_.push_back({data.pageId, data.text});
+        owner_.bookPagesRef().push_back({data.pageId, data.text});
     }
 
     // Follow the chain: if there's a next page we haven't fetched yet, request it
     if (data.nextPageId != 0) {
         bool nextHave = false;
-        for (const auto& bp : owner_.bookPages_) {
+        for (const auto& bp : owner_.bookPagesRef()) {
             if (bp.pageId == data.nextPageId) { nextHave = true; break; }
         }
-        if (!nextHave && owner_.socket && owner_.state == WorldState::IN_WORLD) {
-            auto req = PageTextQueryPacket::build(data.nextPageId, owner_.playerGuid);
-            owner_.socket->send(req);
+        if (!nextHave && owner_.getSocket() && owner_.getState() == WorldState::IN_WORLD) {
+            auto req = PageTextQueryPacket::build(data.nextPageId, owner_.getPlayerGuid());
+            owner_.getSocket()->send(req);
         }
     }
     LOG_DEBUG("handlePageTextQueryResponse: pageId=", data.pageId,
               " nextPage=", data.nextPageId,
-              " totalPages=", owner_.bookPages_.size());
+              " totalPages=", owner_.bookPagesRef().size());
 }
 
 

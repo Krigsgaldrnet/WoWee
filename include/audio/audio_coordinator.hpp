@@ -1,9 +1,13 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <glm/vec3.hpp>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
+namespace game { class ZoneManager; }
 namespace audio {
 
 class MusicManager;
@@ -16,6 +20,26 @@ class UiSoundManager;
 class CombatSoundManager;
 class SpellSoundManager;
 class MovementSoundManager;
+
+/// Flat context passed from Renderer into updateZoneAudio() each frame.
+/// All values are pre-queried so AudioCoordinator needs no rendering pointers.
+struct ZoneAudioContext {
+    float deltaTime = 0.0f;
+    glm::vec3 cameraPosition{0.0f};
+    bool isSwimming = false;
+    bool insideWmo = false;
+    uint32_t insideWmoId = 0;
+    // Visual weather state for ambient audio sync
+    int weatherType = 0;      // 0=none, 1=rain, 2=snow, 3=storm
+    float weatherIntensity = 0.0f;
+    // Terrain tile for offline zone lookup
+    int tileX = 0, tileY = 0;
+    bool hasTile = false;
+    // Server-authoritative zone (from SMSG_INIT_WORLD_STATES); 0 = offline
+    uint32_t serverZoneId = 0;
+    // Zone manager pointer (for zone info and music queries)
+    game::ZoneManager* zoneManager = nullptr;
+};
 
 /// Coordinates all audio subsystems.
 /// Extracted from Renderer to separate audio lifecycle from rendering.
@@ -35,6 +59,13 @@ public:
     /// Shutdown all audio managers and engine.
     void shutdown();
 
+    /// Per-frame zone detection, music transitions, and ambient weather sync.
+    /// Called from Renderer::update() with a pre-filled context.
+    void updateZoneAudio(const ZoneAudioContext& ctx);
+
+    const std::string& getCurrentZoneName() const { return currentZoneName_; }
+    uint32_t getCurrentZoneId() const { return currentZoneId_; }
+
     // Accessors for all audio managers (same interface as Renderer had)
     MusicManager* getMusicManager() { return musicManager_.get(); }
     FootstepManager* getFootstepManager() { return footstepManager_.get(); }
@@ -48,6 +79,8 @@ public:
     MovementSoundManager* getMovementSoundManager() { return movementSoundManager_.get(); }
 
 private:
+    void playZoneMusic(const std::string& music);
+
     std::unique_ptr<MusicManager> musicManager_;
     std::unique_ptr<FootstepManager> footstepManager_;
     std::unique_ptr<ActivitySoundManager> activitySoundManager_;
@@ -60,6 +93,13 @@ private:
     std::unique_ptr<MovementSoundManager> movementSoundManager_;
 
     bool audioAvailable_ = false;
+
+    // Zone/music state — moved from Renderer
+    uint32_t currentZoneId_ = 0;
+    std::string currentZoneName_;
+    bool inTavern_ = false;
+    bool inBlacksmith_ = false;
+    float musicSwitchCooldown_ = 0.0f;
 };
 
 } // namespace audio

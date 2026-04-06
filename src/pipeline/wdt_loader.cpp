@@ -101,7 +101,7 @@ WDTInfo parseWDT(const std::vector<uint8_t>& data) {
         offset += 8 + chunkSize;
     }
 
-    LOG_WARNING("WDT parse result: mphdFlags=0x", std::hex, info.mphdFlags, std::dec,
+    LOG_DEBUG("WDT parse result: mphdFlags=0x", std::hex, info.mphdFlags, std::dec,
              " isWMOOnly=", info.isWMOOnly(),
              " rootWMO='", info.rootWMOPath, "'");
 

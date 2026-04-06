@@ -4,6 +4,7 @@
 #include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/animation_controller.hpp"
 #include "rendering/character_renderer.hpp"
 #include "rendering/camera_controller.hpp"
 #include "rendering/terrain_manager.hpp"
@@ -37,7 +38,7 @@ void TransportCallbackHandler::setupCallbacks() {
                 entitySpawner_.clearMountState();
             }
             entitySpawner_.setMountDisplayId(0);
-            renderer_.clearMount();
+            if (auto* ac = renderer_.getAnimationController()) ac->clearMount();
             LOG_INFO("Dismounted");
             return;
         }
@@ -106,7 +107,7 @@ void TransportCallbackHandler::setupCallbacks() {
             renderer_.getCameraController()->setFacingYaw(yawDegrees);
             renderer_.setCharacterYaw(yawDegrees);
             // Set mount pitch and roll for realistic flight animation
-            renderer_.setMountPitchRoll(pitch, roll);
+            if (auto* ac = renderer_.getAnimationController()) ac->setMountPitchRoll(pitch, roll);
         }
     });
 

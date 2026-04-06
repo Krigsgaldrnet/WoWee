@@ -1,5 +1,6 @@
 #include "rendering/performance_hud.hpp"
 #include "rendering/renderer.hpp"
+#include "rendering/post_process_pipeline.hpp"
 #include "rendering/vk_context.hpp"
 #include "rendering/terrain_renderer.hpp"
 #include "rendering/terrain_manager.hpp"
@@ -198,38 +199,38 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
         }
 
         // FSR info
-        if (renderer->isFSREnabled()) {
+        if (renderer->getPostProcessPipeline()->isFSREnabled()) {
             ImGui::TextColored(colors::kGreen, "FSR 1.0: ON");
             auto* ctx = renderer->getVkContext();
             if (ctx) {
                 auto ext = ctx->getSwapchainExtent();
-                float sf = renderer->getFSRScaleFactor();
+                float sf = renderer->getPostProcessPipeline()->getFSRScaleFactor();
                 uint32_t iw = static_cast<uint32_t>(ext.width * sf) & ~1u;
                 uint32_t ih = static_cast<uint32_t>(ext.height * sf) & ~1u;
                 ImGui::Text("  %ux%u -> %ux%u (%.0f%%)", iw, ih, ext.width, ext.height, sf * 100.0f);
             }
         }
-        if (renderer->isFSR2Enabled()) {
+        if (renderer->getPostProcessPipeline()->isFSR2Enabled()) {
             ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "FSR 3 Upscale: ON");
-            ImGui::Text("  JitterSign=%.2f", renderer->getFSR2JitterSign());
-            const bool fgEnabled = renderer->isAmdFsr3FramegenEnabled();
-            const bool fgReady = renderer->isAmdFsr3FramegenRuntimeReady();
-            const bool fgActive = renderer->isAmdFsr3FramegenRuntimeActive();
+            ImGui::Text("  JitterSign=%.2f", renderer->getPostProcessPipeline()->getFSR2JitterSign());
+            const bool fgEnabled = renderer->getPostProcessPipeline()->isAmdFsr3FramegenEnabled();
+            const bool fgReady = renderer->getPostProcessPipeline()->isAmdFsr3FramegenRuntimeReady();
+            const bool fgActive = renderer->getPostProcessPipeline()->isAmdFsr3FramegenRuntimeActive();
             const char* fgStatus = "Disabled";
             if (fgEnabled) {
                 fgStatus = fgActive ? "Active" : (fgReady ? "Ready (waiting/fallback)" : "Unavailable");
             }
-            ImGui::Text("  FSR3 FG: %s (%s)", fgStatus, renderer->getAmdFsr3FramegenRuntimePath());
-            const std::string& fgErr = renderer->getAmdFsr3FramegenRuntimeError();
+            ImGui::Text("  FSR3 FG: %s (%s)", fgStatus, renderer->getPostProcessPipeline()->getAmdFsr3FramegenRuntimePath());
+            const std::string& fgErr = renderer->getPostProcessPipeline()->getAmdFsr3FramegenRuntimeError();
             if (!fgErr.empty()) {
                 ImGui::TextWrapped("  FG Last Error: %s", fgErr.c_str());
             }
-            ImGui::Text("  FG Dispatches: %zu", renderer->getAmdFsr3FramegenDispatchCount());
-            ImGui::Text("  Upscale Dispatches: %zu", renderer->getAmdFsr3UpscaleDispatchCount());
-            ImGui::Text("  FG Fallbacks: %zu", renderer->getAmdFsr3FallbackCount());
+            ImGui::Text("  FG Dispatches: %zu", renderer->getPostProcessPipeline()->getAmdFsr3FramegenDispatchCount());
+            ImGui::Text("  Upscale Dispatches: %zu", renderer->getPostProcessPipeline()->getAmdFsr3UpscaleDispatchCount());
+            ImGui::Text("  FG Fallbacks: %zu", renderer->getPostProcessPipeline()->getAmdFsr3FallbackCount());
         }
-        if (renderer->isFXAAEnabled()) {
-            if (renderer->isFSR2Enabled()) {
+        if (renderer->getPostProcessPipeline()->isFXAAEnabled()) {
+            if (renderer->getPostProcessPipeline()->isFSR2Enabled()) {
                 ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "FXAA: ON (FSR3+FXAA combined)");
             } else {
                 ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.6f, 1.0f), "FXAA: ON");

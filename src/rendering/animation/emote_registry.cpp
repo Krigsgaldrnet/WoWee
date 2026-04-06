@@ -117,7 +117,7 @@ void EmoteRegistry::loadFromDbc() {
             uint32_t animId = emotesDbc->getUInt32(r, emL ? (*emL)["AnimID"] : 2);
             if (animId != 0) emoteIdToAnim[emoteId] = animId;
         }
-        LOG_WARNING("Emotes: loaded ", emoteIdToAnim.size(), " anim mappings from Emotes.dbc");
+        LOG_DEBUG("Emotes: loaded ", emoteIdToAnim.size(), " anim mappings from Emotes.dbc");
     } else {
         LOG_WARNING("Emotes: Emotes.dbc failed to load — all emotes will use fallback animations");
     }
@@ -182,17 +182,17 @@ void EmoteRegistry::loadFromDbc() {
         if (info.animId == 0) {
             auto ov = kAnimOverrides.find(cmd);
             if (ov != kAnimOverrides.end()) {
-                LOG_WARNING("Emotes: override /", cmd, " → animId=", ov->second);
+                LOG_DEBUG("Emotes: override /", cmd, " → animId=", ov->second);
                 info.animId = ov->second;
             }
         }
     }
 
     if (emoteTable_.empty()) {
-        LOG_WARNING("Emotes: DBC loaded but no commands parsed, using fallback list");
+        LOG_DEBUG("Emotes: DBC loaded but no commands parsed, using fallback list");
         loadFallbackEmotes();
     } else {
-        LOG_WARNING("Emotes: loaded ", emoteTable_.size(), " commands from DBC");
+        LOG_DEBUG("Emotes: loaded ", emoteTable_.size(), " commands from DBC");
     }
 
     buildDbcIdIndex();

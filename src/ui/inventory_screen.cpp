@@ -2470,7 +2470,7 @@ void InventoryScreen::renderItemSlot(game::Inventory& inventory, const game::Ite
         // Right-click: bank deposit (if bank open), vendor sell (if vendor mode), or auto-equip/use
         // Note: InvisibleButton only tracks left-click by default, so use IsItemHovered+IsMouseClicked
         if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !holdingItem && !ImGui::GetIO().KeyShift && gameHandler_) {
-            LOG_WARNING("Right-click slot: kind=", static_cast<int>(kind),
+            LOG_DEBUG("Right-click slot: kind=", static_cast<int>(kind),
                      " backpackIndex=", backpackIndex,
                      " bagIndex=", bagIndex, " bagSlotIndex=", bagSlotIndex,
                      " vendorMode=", vendorMode_,

@@ -51,7 +51,7 @@ bool AnimationCallbackHandler::updateCharge(float deltaTime) {
         dir *= glm::inversesqrt(dirLenSq);
         float yawDeg = glm::degrees(std::atan2(dir.x, dir.y));
         renderer_.setCharacterYaw(yawDeg);
-        renderer_.emitChargeEffect(renderPos, dir);
+        if (auto* ac = renderer_.getAnimationController()) ac->emitChargeEffect(renderPos, dir);
     }
 
     // Sync to game handler
@@ -69,8 +69,8 @@ bool AnimationCallbackHandler::updateCharge(float deltaTime) {
     // Charge complete
     if (t >= 1.0f) {
         chargeActive_ = false;
-        renderer_.setCharging(false);
-        renderer_.stopChargeEffect();
+        if (auto* ac = renderer_.getAnimationController()) ac->setCharging(false);
+        if (auto* ac = renderer_.getAnimationController()) ac->stopChargeEffect();
         renderer_.getCameraController()->setExternalFollow(false);
         renderer_.getCameraController()->setExternalMoving(false);
 
@@ -95,7 +95,7 @@ bool AnimationCallbackHandler::updateCharge(float deltaTime) {
                 }
             }
             gameHandler_.startAutoAttack(chargeTargetGuid_);
-            renderer_.triggerMeleeSwing();
+            if (auto* ac = renderer_.getAnimationController()) ac->triggerMeleeSwing();
         }
 
         // Send movement heartbeat so server knows our new position
@@ -157,11 +157,11 @@ void AnimationCallbackHandler::setupCallbacks() {
         // Disable player input, play charge animation
         renderer_.getCameraController()->setExternalFollow(true);
         renderer_.getCameraController()->clearMovementInputs();
-        renderer_.setCharging(true);
+        if (auto* ac = renderer_.getAnimationController()) ac->setCharging(true);
 
         // Start charge visual effect (red haze + dust)
         glm::vec3 chargeDir = glm::normalize(endRender - startRender);
-        renderer_.startChargeEffect(startRender, chargeDir);
+        if (auto* ac = renderer_.getAnimationController()) ac->startChargeEffect(startRender, chargeDir);
 
         // Play charge whoosh sound (try multiple paths)
         auto& audio = audio::AudioEngine::instance();
