@@ -175,8 +175,8 @@ void EmoteRegistry::loadFromDbc() {
         {"sleep",   anim::EMOTE_SLEEP},     // 71 — stand-state emote
         {"laugh",   anim::EMOTE_LAUGH},     // 70 — backup
         {"flirt",   anim::EMOTE_SHY},       // 83 — DBC calls it SHY; it's the flirt animation
-        {"fart",    anim::EMOTE_FLEX},       // 82 — straining/tensing gesture
-        {"stink",   anim::EMOTE_RUDE},       // 73 — dismissive/disgusted gesture
+        {"fart",    anim::EMOTE_TALK},       // 60 — generic gesture (WoW has no dedicated anim)
+        {"stink",   anim::EMOTE_TALK},       // 60 — generic gesture (WoW has no dedicated anim)
     };
     for (auto& [cmd, info] : emoteTable_) {
         if (info.animId == 0) {
