@@ -433,19 +433,10 @@ void CombatHandler::handleAttackStop(network::Packet& packet) {
 
 void CombatHandler::handleAttackerStateUpdate(network::Packet& packet) {
     AttackerStateUpdateData data;
-    if (!owner_.packetParsers_->parseAttackerStateUpdate(packet, data)) {
-        LOG_WARNING("ATTACKER_STATE_UPDATE: parse failed, remaining=", packet.getRemainingSize());
-        return;
-    }
+    if (!owner_.packetParsers_->parseAttackerStateUpdate(packet, data)) return;
 
     bool isPlayerAttacker = (data.attackerGuid == owner_.playerGuid);
     bool isPlayerTarget = (data.targetGuid == owner_.playerGuid);
-
-    LOG_WARNING("ATTACKER_STATE_UPDATE: attacker=0x", std::hex, data.attackerGuid,
-                " target=0x", data.targetGuid, " player=0x", owner_.playerGuid, std::dec,
-                " isPlayerAttacker=", isPlayerAttacker, " isPlayerTarget=", isPlayerTarget,
-                " dmg=", data.totalDamage, " hasCallback=", (owner_.meleeSwingCallback_ ? 1 : 0));
-
     if (!isPlayerAttacker && !isPlayerTarget) return;  // Not our combat
 
     if (isPlayerAttacker) {
