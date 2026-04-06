@@ -754,6 +754,9 @@ EntityController::UnitFieldUpdateResult EntityController::applyUnitFieldsOnUpdat
             unit->setHealth(val);
             result.healthChanged = true;
             if (val == 0) {
+                LOG_WARNING("NPC death: guid=0x", std::hex, block.guid, std::dec,
+                            " type=", static_cast<int>(entity->getType()),
+                            " hasDeathCb=", (owner_.npcDeathCallbackRef() ? 1 : 0));
                 if (owner_.getCombatHandler() && block.guid == owner_.getCombatHandler()->getAutoAttackTargetGuid()) {
                     owner_.stopAutoAttack();
                 }
