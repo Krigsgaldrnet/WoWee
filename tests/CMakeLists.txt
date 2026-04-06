@@ -197,6 +197,19 @@ target_link_libraries(test_anim_capability PRIVATE catch2_main)
 add_test(NAME anim_capability COMMAND test_anim_capability)
 register_test_target(test_anim_capability)
 
+# ── test_indoor_shadows ──────────────────────────────────────
+add_executable(test_indoor_shadows
+    test_indoor_shadows.cpp
+)
+target_include_directories(test_indoor_shadows PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_indoor_shadows SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_indoor_shadows PRIVATE catch2_main)
+if(TARGET glm::glm)
+    target_link_libraries(test_indoor_shadows PRIVATE glm::glm)
+endif()
+add_test(NAME indoor_shadows COMMAND test_indoor_shadows)
+register_test_target(test_indoor_shadows)
+
 # ── ASAN / UBSan for test targets ────────────────────────────
 if(WOWEE_ENABLE_ASAN AND NOT MSVC)
     foreach(_t IN LISTS ALL_TEST_TARGETS)

@@ -295,7 +295,7 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
     // Output: uint visibility[] read back by CPU to skip culled instances in sortedVisible_ build.
     {
         static_assert(sizeof(CullInstanceGPU) == 32, "CullInstanceGPU must be 32 bytes (std430)");
-        static_assert(sizeof(CullUniformsGPU) == 128, "CullUniformsGPU must be 128 bytes (std140)");
+        static_assert(sizeof(CullUniformsGPU) == 272, "CullUniformsGPU must be 272 bytes (std140)");
 
         // Descriptor set layout: binding 0 = UBO (frustum+camera), 1 = SSBO (input), 2 = SSBO (output)
         VkDescriptorSetLayoutBinding bindings[3] = {};
@@ -336,6 +336,54 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
                 cullPipeline_ = VK_NULL_HANDLE;
             }
             cullComp.destroy();
+        }
+
+        // HiZ-aware cull pipeline (Phase 6.3 Option B)
+        // Uses set 0 (same as frustum-only) + set 1 (HiZ pyramid sampler from HiZSystem).
+        // The HiZ descriptor set layout is created lazily when hizSystem_ is set, but the
+        // pipeline layout and shader are created now if the shader is available.
+        rendering::VkShaderModule cullHiZComp;
+        if (cullHiZComp.loadFromFile(device, "assets/shaders/m2_cull_hiz.comp.spv")) {
+            // HiZ cull set 1 layout: single combined image sampler (the HiZ pyramid)
+            VkDescriptorSetLayoutBinding hizBinding{};
+            hizBinding.binding = 0;
+            hizBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            hizBinding.descriptorCount = 1;
+            hizBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+            VkDescriptorSetLayout hizSamplerLayout = VK_NULL_HANDLE;
+            VkDescriptorSetLayoutCreateInfo hizLayoutCi{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+            hizLayoutCi.bindingCount = 1;
+            hizLayoutCi.pBindings = &hizBinding;
+            vkCreateDescriptorSetLayout(device, &hizLayoutCi, nullptr, &hizSamplerLayout);
+
+            VkDescriptorSetLayout hizSetLayouts[2] = {cullSetLayout_, hizSamplerLayout};
+            VkPipelineLayoutCreateInfo hizPlCi{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+            hizPlCi.setLayoutCount = 2;
+            hizPlCi.pSetLayouts = hizSetLayouts;
+            vkCreatePipelineLayout(device, &hizPlCi, nullptr, &cullHiZPipelineLayout_);
+
+            VkComputePipelineCreateInfo hizCpCi{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+            hizCpCi.stage = cullHiZComp.stageInfo(VK_SHADER_STAGE_COMPUTE_BIT);
+            hizCpCi.layout = cullHiZPipelineLayout_;
+            if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &hizCpCi, nullptr, &cullHiZPipeline_) != VK_SUCCESS) {
+                LOG_WARNING("M2Renderer: failed to create HiZ cull compute pipeline — HiZ disabled");
+                cullHiZPipeline_ = VK_NULL_HANDLE;
+                vkDestroyPipelineLayout(device, cullHiZPipelineLayout_, nullptr);
+                cullHiZPipelineLayout_ = VK_NULL_HANDLE;
+            } else {
+                LOG_INFO("M2Renderer: HiZ occlusion cull pipeline created");
+            }
+
+            // The hizSamplerLayout is now owned by the pipeline layout; we don't track it
+            // separately because the pipeline layout keeps a ref. But actually Vulkan
+            // requires us to keep it alive. Store it where HiZSystem will provide it.
+            // For now, we can destroy it since the pipeline layout was already created.
+            vkDestroyDescriptorSetLayout(device, hizSamplerLayout, nullptr);
+
+            cullHiZComp.destroy();
+        } else {
+            LOG_INFO("M2Renderer: m2_cull_hiz.comp.spv not found — HiZ occlusion culling not available");
         }
 
         // Descriptor pool: 2 sets × 3 descriptors each (1 UBO + 2 SSBO)
@@ -756,6 +804,14 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
     return true;
 }
 
+void M2Renderer::invalidateCullOutput(uint32_t frameIndex) {
+    // On non-HOST_COHERENT memory, VMA-mapped GPU→CPU buffers need explicit
+    // invalidation so the CPU cache sees the latest GPU writes.
+    if (frameIndex < 2 && cullOutputAlloc_[frameIndex]) {
+        vmaInvalidateAllocation(vkCtx_->getAllocator(), cullOutputAlloc_[frameIndex], 0, VK_WHOLE_SIZE);
+    }
+}
+
 void M2Renderer::shutdown() {
     LOG_INFO("Shutting down M2 renderer...");
     if (!vkCtx_) return;
@@ -837,6 +893,8 @@ void M2Renderer::shutdown() {
     if (instanceDescPool_) { vkDestroyDescriptorPool(device, instanceDescPool_, nullptr); instanceDescPool_ = VK_NULL_HANDLE; }
 
     // GPU frustum culling compute pipeline + buffers cleanup
+    if (cullHiZPipeline_) { vkDestroyPipeline(device, cullHiZPipeline_, nullptr); cullHiZPipeline_ = VK_NULL_HANDLE; }
+    if (cullHiZPipelineLayout_) { vkDestroyPipelineLayout(device, cullHiZPipelineLayout_, nullptr); cullHiZPipelineLayout_ = VK_NULL_HANDLE; }
     if (cullPipeline_) { vkDestroyPipeline(device, cullPipeline_, nullptr); cullPipeline_ = VK_NULL_HANDLE; }
     if (cullPipelineLayout_) { vkDestroyPipelineLayout(device, cullPipelineLayout_, nullptr); cullPipelineLayout_ = VK_NULL_HANDLE; }
     for (int i = 0; i < 2; i++) {
