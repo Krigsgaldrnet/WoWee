@@ -722,7 +722,7 @@ void EntitySpawner::processDeferredEquipmentQueue() {
         setOnlinePlayerEquipment(guid, equipData.first, equipData.second);
         return;
     }
-    LOG_WARNING("Equipment async pre-decode for guid=0x", std::hex, guid, std::dec,
+    LOG_DEBUG("Equipment async pre-decode for guid=0x", std::hex, guid, std::dec,
                 " textures=", texturePaths.size());
 
     // Launch background BLP pre-decode
@@ -991,7 +991,7 @@ void EntitySpawner::processPendingTransportRegistrations() {
         }
 
         const uint32_t wmoInstanceId = goIt->second.instanceId;
-        LOG_WARNING("Registering server transport: GUID=0x", std::hex, pending.guid, std::dec,
+        LOG_DEBUG("Registering server transport: GUID=0x", std::hex, pending.guid, std::dec,
                  " entry=", pending.entry, " displayId=", pending.displayId, " wmoInstance=", wmoInstanceId,
                  " pos=(", pending.x, ", ", pending.y, ", ", pending.z, ")");
 
@@ -1015,17 +1015,17 @@ void EntitySpawner::processPendingTransportRegistrations() {
             hasUsablePath = transportManager->hasUsableMovingPathForEntry(pending.entry, 25.0f);
         }
 
-        LOG_WARNING("Transport path check: entry=", pending.entry, " hasUsablePath=", hasUsablePath,
+        LOG_DEBUG("Transport path check: entry=", pending.entry, " hasUsablePath=", hasUsablePath,
                  " preferServerData=", preferServerData, " shipOrZepDisplay=", shipOrZeppelinDisplay);
 
         if (preferServerData) {
             if (!hasUsablePath) {
                 std::vector<glm::vec3> path = { canonicalSpawnPos };
                 transportManager->loadPathFromNodes(pathId, path, false, 0.0f);
-                LOG_WARNING("Server-first strict registration: stationary fallback for GUID 0x",
+                LOG_DEBUG("Server-first strict registration: stationary fallback for GUID 0x",
                          std::hex, pending.guid, std::dec, " entry=", pending.entry);
             } else {
-                LOG_WARNING("Server-first transport registration: using entry DBC path for entry ", pending.entry);
+                LOG_DEBUG("Server-first transport registration: using entry DBC path for entry ", pending.entry);
             }
         } else if (!hasUsablePath) {
             bool allowZOnly = (pending.displayId == 455 || pending.displayId == 462);
@@ -1087,7 +1087,7 @@ void EntitySpawner::processPendingTransportRegistrations() {
         }
 
         if (auto* tr = transportManager->getTransport(pending.guid); tr) {
-            LOG_WARNING("Transport registered: guid=0x", std::hex, pending.guid, std::dec,
+            LOG_DEBUG("Transport registered: guid=0x", std::hex, pending.guid, std::dec,
                      " entry=", pending.entry, " displayId=", pending.displayId,
                      " pathId=", tr->pathId,
                      " mode=", (tr->useClientAnimation ? "client" : "server"),

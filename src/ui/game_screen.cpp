@@ -1243,7 +1243,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
         if (gameHandler.hasTarget()) {
             auto target = gameHandler.getTarget();
             if (target && target->getType() == game::ObjectType::GAMEOBJECT) {
-                LOG_WARNING("[GO-DIAG] Right-click: re-interacting with targeted GO 0x",
+                LOG_DEBUG("[GO-DIAG] Right-click: re-interacting with targeted GO 0x",
                             std::hex, target->getGuid(), std::dec);
                 gameHandler.setTarget(target->getGuid());
                 gameHandler.interactWithGameObject(target->getGuid());
@@ -1322,7 +1322,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                             static std::unordered_set<uint64_t> goPickLog;
                             if (goPickLog.insert(guid).second) {
                                 auto go = std::static_pointer_cast<game::GameObject>(entity);
-                                LOG_WARNING("[GO-DIAG] Raypick GO: guid=0x", std::hex, guid, std::dec,
+                                LOG_DEBUG("[GO-DIAG] Raypick GO: guid=0x", std::hex, guid, std::dec,
                                             " entry=", go->getEntry(), " name='", go->getName(),
                                             "' pos=(", entity->getX(), ",", entity->getY(), ",", entity->getZ(),
                                             ") center=(", hitCenter.x, ",", hitCenter.y, ",", hitCenter.z,
@@ -1389,7 +1389,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
 
                 if (closestGuid != 0) {
                     if (closestType == game::ObjectType::GAMEOBJECT) {
-                        LOG_WARNING("[GO-DIAG] Right-click: raypick hit GO 0x",
+                        LOG_DEBUG("[GO-DIAG] Right-click: raypick hit GO 0x",
                                     std::hex, closestGuid, std::dec);
                         gameHandler.setTarget(closestGuid);
                         gameHandler.interactWithGameObject(closestGuid);

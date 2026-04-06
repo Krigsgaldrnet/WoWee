@@ -340,14 +340,14 @@ void EntitySpawner::setOnlinePlayerEquipment(uint64_t guid,
     if (st.instanceId == 0 || st.modelId == 0) return;
 
     if (st.bodySkinPath.empty()) {
-        LOG_WARNING("setOnlinePlayerEquipment: bodySkinPath empty for guid=0x", std::hex, guid, std::dec,
+        LOG_DEBUG("setOnlinePlayerEquipment: bodySkinPath empty for guid=0x", std::hex, guid, std::dec,
                     " instanceId=", st.instanceId, " — skipping equipment");
         return;
     }
 
     int nonZeroDisplay = 0;
     for (uint32_t d : displayInfoIds) if (d != 0) nonZeroDisplay++;
-    LOG_WARNING("setOnlinePlayerEquipment: guid=0x", std::hex, guid, std::dec,
+    LOG_DEBUG("setOnlinePlayerEquipment: guid=0x", std::hex, guid, std::dec,
                 " instanceId=", st.instanceId, " nonZeroDisplayIds=", nonZeroDisplay,
                 " head=", displayInfoIds[0], " chest=", displayInfoIds[4],
                 " legs=", displayInfoIds[6], " mainhand=", displayInfoIds[15]);
@@ -1099,7 +1099,7 @@ void EntitySpawner::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_
             // (e.g. elevators/lifts). If the server marks it as a transport, always
             // notify so TransportManager can animate/carry passengers.
             bool isTG = gameHandler_ && gameHandler_->isTransportGuid(guid);
-            LOG_WARNING("WMO GO spawned: guid=0x", std::hex, guid, std::dec,
+            LOG_DEBUG("WMO GO spawned: guid=0x", std::hex, guid, std::dec,
                        " entry=", entry, " displayId=", displayId,
                        " isTransport=", isTG,
                        " pos=(", x, ", ", y, ", ", z, ")");
@@ -1215,7 +1215,7 @@ void EntitySpawner::spawnOnlineGameObject(uint64_t guid, uint32_t entry, uint32_
 
         // Notify transport system for M2 transports (e.g. Deeprun Tram cars)
         if (gameHandler_ && gameHandler_->isTransportGuid(guid)) {
-            LOG_WARNING("M2 transport spawned: guid=0x", std::hex, guid, std::dec,
+            LOG_DEBUG("M2 transport spawned: guid=0x", std::hex, guid, std::dec,
                        " entry=", entry, " displayId=", displayId,
                        " instanceId=", instanceId);
             gameHandler_->notifyTransportSpawned(guid, entry, displayId, x, y, z, orientation);

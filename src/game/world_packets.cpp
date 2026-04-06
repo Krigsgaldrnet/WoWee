@@ -1201,6 +1201,9 @@ bool UpdateObjectParser::parseUpdateFields(network::Packet& packet, UpdateBlock&
                     " updateFlags=0x", std::hex, block.updateFlags, std::dec,
                     " moveFlags=0x", std::hex, block.moveFlags, std::dec,
                     " readPos=", packet.getReadPos(), " size=", packet.getSize());
+        // Movement data likely consumed wrong number of bytes, causing blockCount
+        // to be read from a misaligned position. Bail out rather than reading garbage.
+        if (isCreateBlock) return false;
     }
 
     uint32_t fieldsCapacity = blockCount * 32;

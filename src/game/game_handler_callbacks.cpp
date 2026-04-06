@@ -133,7 +133,7 @@ void GameHandler::sendAuthSession() {
 }
 
 void GameHandler::handleAuthResponse(network::Packet& packet) {
-    LOG_WARNING("Handling SMSG_AUTH_RESPONSE, size=", packet.getSize());
+    LOG_DEBUG("Handling SMSG_AUTH_RESPONSE, size=", packet.getSize());
 
     AuthResponseData response;
     if (!AuthResponseParser::parse(packet, response)) {
@@ -1940,12 +1940,12 @@ void GameHandler::interactWithNpc(uint64_t guid) {
 }
 
 void GameHandler::interactWithGameObject(uint64_t guid) {
-    LOG_WARNING("[GO-DIAG] interactWithGameObject called: guid=0x", std::hex, guid, std::dec);
-    if (guid == 0) { LOG_WARNING("[GO-DIAG] BLOCKED: guid==0"); return; }
-    if (!isInWorld()) { LOG_WARNING("[GO-DIAG] BLOCKED: not in world"); return; }
+    LOG_DEBUG("[GO-DIAG] interactWithGameObject called: guid=0x", std::hex, guid, std::dec);
+    if (guid == 0) { LOG_DEBUG("[GO-DIAG] BLOCKED: guid==0"); return; }
+    if (!isInWorld()) { LOG_DEBUG("[GO-DIAG] BLOCKED: not in world"); return; }
     // Do not overlap an actual spell cast.
     if (spellHandler_ && spellHandler_->isCasting() && spellHandler_->getCurrentCastSpellId() != 0) {
-        LOG_WARNING("[GO-DIAG] BLOCKED: already casting spellId=", spellHandler_->getCurrentCastSpellId());
+        LOG_DEBUG("[GO-DIAG] BLOCKED: already casting spellId=", spellHandler_->getCurrentCastSpellId());
         return;
     }
     // Always clear melee intent before GO interactions.

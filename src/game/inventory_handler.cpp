@@ -2483,7 +2483,7 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
             }
         }
         if (reemitCount > 0) {
-            LOG_WARNING("Re-emitted equipment for ", reemitCount, " players after resolving entry=", resolvedEntry);
+            LOG_DEBUG("Re-emitted equipment for ", reemitCount, " players after resolving entry=", resolvedEntry);
         }
         // Same for inspect-based entries
         if (owner_.playerEquipmentCallbackRef()) {
@@ -3117,11 +3117,11 @@ void InventoryHandler::updateOtherPlayerVisibleItems(uint64_t guid, const std::m
                 dump += buf;
             }
         }
-        LOG_WARNING("RAW FIELDS 270-340:", dump);
+        LOG_DEBUG("RAW FIELDS 270-340:", dump);
     }
 
     if (nonZero > 0) {
-        LOG_WARNING("updateOtherPlayerVisibleItems: guid=0x", std::hex, guid, std::dec,
+        LOG_DEBUG("updateOtherPlayerVisibleItems: guid=0x", std::hex, guid, std::dec,
                  " nonZero=", nonZero, " base=", base, " stride=", stride,
                  " head=", newEntries[0], " shoulders=", newEntries[2],
                  " chest=", newEntries[4], " legs=", newEntries[6],
@@ -3182,7 +3182,7 @@ void InventoryHandler::emitOtherPlayerEquipment(uint64_t guid) {
         resolved++;
     }
 
-    LOG_WARNING("emitOtherPlayerEquipment: guid=0x", std::hex, guid, std::dec,
+    LOG_DEBUG("emitOtherPlayerEquipment: guid=0x", std::hex, guid, std::dec,
              " entries=", (anyEntry ? "yes" : "none"),
              " resolved=", resolved, " unresolved=", unresolved,
              " head=", displayIds[0], " shoulders=", displayIds[2],
@@ -3192,7 +3192,7 @@ void InventoryHandler::emitOtherPlayerEquipment(uint64_t guid) {
     // Don't emit all-zero displayIds — that strips existing equipment for no reason.
     // Wait until at least one item resolves before applying.
     if (anyEntry && resolved == 0) {
-        LOG_WARNING("emitOtherPlayerEquipment: skipping all-zero emit (waiting for item queries)");
+        LOG_DEBUG("emitOtherPlayerEquipment: skipping all-zero emit (waiting for item queries)");
         return;
     }
 

@@ -985,7 +985,7 @@ bool EntityController::applyPlayerStatFields(const std::map<uint16_t, uint32_t>&
             // 0 = not resting, 1 = REST_TYPE_IN_TAVERN, 2 = REST_TYPE_IN_CITY
             uint8_t restStateByte = static_cast<uint8_t>((val >> 24) & 0xFF);
             if (isCreate) {
-                LOG_WARNING("PLAYER_BYTES_2 (CREATE): raw=0x", std::hex, val, std::dec,
+                LOG_DEBUG("PLAYER_BYTES_2 (CREATE): raw=0x", std::hex, val, std::dec,
                            " bankBagSlots=", static_cast<int>(bankBagSlots));
                 bool wasResting = owner_.isRestingRef();
                 owner_.isRestingRef() = (restStateByte != 0);

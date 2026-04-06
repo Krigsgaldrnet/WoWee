@@ -2368,7 +2368,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                     uint16_t bg = static_cast<uint16_t>(b.submeshId / 100);
                     bool active = instance.activeGeosets.empty() ||
                                   instance.activeGeosets.count(b.submeshId);
-                    LOG_WARNING("BATCH DIAG: submesh=", b.submeshId, " group=", bg,
+                    LOG_DEBUG("BATCH DIAG: submesh=", b.submeshId, " group=", bg,
                                 " blend=", bm, " matFlags=0x", std::hex, mf, std::dec,
                                 " texIdx=", b.textureIndex, " matIdx=", b.materialIndex,
                                 " active=", active);

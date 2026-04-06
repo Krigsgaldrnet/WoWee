@@ -228,7 +228,7 @@ void WorldEntryCallbackHandler::setupCallbacks() {
         // drives `gameHandler->update()` during warmup. Queue the load here so
         // it runs after the current packet handler returns instead of recursing
         // from `SMSG_LOGIN_VERIFY_WORLD` / `SMSG_NEW_WORLD`.
-        LOG_WARNING("Queued world entry: map ", mapId, " pos=(", x, ", ", y, ", ", z, ")");
+        LOG_DEBUG("Queued world entry: map ", mapId, " pos=(", x, ", ", y, ", ", z, ")");
         if (worldLoader_) worldLoader_->setPendingEntry(mapId, x, y, z);
     });
 

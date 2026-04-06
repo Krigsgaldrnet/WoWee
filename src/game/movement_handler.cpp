@@ -632,7 +632,7 @@ void MovementHandler::sendMovement(Opcode opcode) {
 
     // Periodic position audit — log every ~60 heartbeats (~30s) to trace position drift.
     if (opcode == Opcode::MSG_MOVE_HEARTBEAT && ++heartbeatLogCount_ % 60 == 0) {
-        LOG_WARNING("HEARTBEAT #", heartbeatLogCount_, " canonical=(",
+        LOG_DEBUG("HEARTBEAT #", heartbeatLogCount_, " canonical=(",
                     movementInfo.x, ",", movementInfo.y, ",", movementInfo.z,
                     ") server=(", wireInfo.x, ",", wireInfo.y, ",", wireInfo.z,
                     ") flags=0x", std::hex, movementInfo.flags, std::dec);
@@ -2551,7 +2551,7 @@ void MovementHandler::loadAreaTriggerDbc() {
         owner_.areaTriggersRef().push_back(at);
     }
 
-    LOG_WARNING("Loaded ", owner_.areaTriggersRef().size(), " area triggers from AreaTrigger.dbc");
+    LOG_DEBUG("Loaded ", owner_.areaTriggersRef().size(), " area triggers from AreaTrigger.dbc");
 }
 
 void MovementHandler::checkAreaTriggers() {

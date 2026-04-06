@@ -544,7 +544,7 @@ void EntitySpawner::buildCreatureDisplayLookups() {
             if (!extra.bakeName.empty()) withBakeName++;
             humanoidExtraMap_[cdie->getUInt32(i, cdieL ? (*cdieL)["ID"] : 0)] = extra;
         }
-        LOG_WARNING("Loaded ", humanoidExtraMap_.size(), " humanoid display extra entries (",
+        LOG_DEBUG("Loaded ", humanoidExtraMap_.size(), " humanoid display extra entries (",
                  withBakeName, " with baked textures, ", numEquipSlots, " equip slots, ",
                  dbcFieldCount, " DBC fields, bakeField=", bakeField, ")");
     }

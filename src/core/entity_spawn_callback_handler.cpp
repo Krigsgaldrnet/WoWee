@@ -41,7 +41,7 @@ void EntitySpawnCallbackHandler::setupCallbacks() {
                                               uint32_t appearanceBytes,
                                               uint8_t facialFeatures,
                                               float x, float y, float z, float orientation) {
-        LOG_WARNING("playerSpawnCallback: guid=0x", std::hex, guid, std::dec,
+        LOG_DEBUG("playerSpawnCallback: guid=0x", std::hex, guid, std::dec,
                     " race=", static_cast<int>(raceId), " gender=", static_cast<int>(genderId),
                     " pos=(", x, ",", y, ",", z, ")");
         // Skip local player — already spawned as the main character
