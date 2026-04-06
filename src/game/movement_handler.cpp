@@ -630,10 +630,12 @@ void MovementHandler::sendMovement(Opcode opcode) {
     wireInfo.y = serverPos.y;
     wireInfo.z = serverPos.z;
 
-    // Periodic position audit — DEBUG to avoid flooding production logs.
-    if (opcode == Opcode::MSG_MOVE_HEARTBEAT && ++heartbeatLogCount_ % 30 == 0) {
-        LOG_DEBUG("HEARTBEAT pos canonical=(", movementInfo.x, ",", movementInfo.y, ",", movementInfo.z,
-                  ") wire=(", wireInfo.x, ",", wireInfo.y, ",", wireInfo.z, ")");
+    // Periodic position audit — log every ~60 heartbeats (~30s) to trace position drift.
+    if (opcode == Opcode::MSG_MOVE_HEARTBEAT && ++heartbeatLogCount_ % 60 == 0) {
+        LOG_WARNING("HEARTBEAT #", heartbeatLogCount_, " canonical=(",
+                    movementInfo.x, ",", movementInfo.y, ",", movementInfo.z,
+                    ") server=(", wireInfo.x, ",", wireInfo.y, ",", wireInfo.z,
+                    ") flags=0x", std::hex, movementInfo.flags, std::dec);
     }
 
     wireInfo.orientation = core::coords::canonicalToServerYaw(wireInfo.orientation);
@@ -1671,9 +1673,10 @@ void MovementHandler::handleTeleportAck(network::Packet& packet) {
     float serverZ = packet.readFloat();
     float orientation = packet.readFloat();
 
-    LOG_INFO("MSG_MOVE_TELEPORT_ACK: guid=0x", std::hex, guid, std::dec,
-             " counter=", counter,
-             " pos=(", serverX, ", ", serverY, ", ", serverZ, ")");
+    LOG_WARNING("MSG_MOVE_TELEPORT_ACK: guid=0x", std::hex, guid, std::dec,
+                " counter=", counter,
+                " pos=(", serverX, ", ", serverY, ", ", serverZ, ")",
+                " currentPos=(", movementInfo.x, ", ", movementInfo.y, ", ", movementInfo.z, ")");
 
     glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(serverX, serverY, serverZ));
     movementInfo.x = canonical.x;
