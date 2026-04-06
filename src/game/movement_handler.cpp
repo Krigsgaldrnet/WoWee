@@ -515,12 +515,28 @@ void MovementHandler::sendMovement(Opcode opcode) {
 
     // Add transport data if player is on a server-recognized transport
     if (includeTransportInWire) {
+        bool transportResolved = false;
         if (owner_.getTransportManager()) {
-            glm::vec3 composed = owner_.getTransportManager()->getPlayerWorldPosition(owner_.playerTransportGuidRef(), owner_.playerTransportOffsetRef());
-            movementInfo.x = composed.x;
-            movementInfo.y = composed.y;
-            movementInfo.z = composed.z;
+            auto* tr = owner_.getTransportManager()->getTransport(owner_.playerTransportGuidRef());
+            if (tr) {
+                transportResolved = true;
+                glm::vec3 composed = owner_.getTransportManager()->getPlayerWorldPosition(owner_.playerTransportGuidRef(), owner_.playerTransportOffsetRef());
+                movementInfo.x = composed.x;
+                movementInfo.y = composed.y;
+                movementInfo.z = composed.z;
+            }
         }
+        if (!transportResolved) {
+            // Transport not tracked — don't send ONTRANSPORT to the server.
+            // Sending stale transport GUID + local offset causes the server to
+            // compute a bad world position and teleport us to map origin.
+            LOG_WARNING("sendMovement: transport 0x", std::hex, owner_.playerTransportGuidRef(),
+                        std::dec, " not found — clearing transport state");
+            includeTransportInWire = false;
+            owner_.clearPlayerTransport();
+        }
+    }
+    if (includeTransportInWire) {
         movementInfo.flags |= static_cast<uint32_t>(MovementFlags::ONTRANSPORT);
         movementInfo.transportGuid = owner_.playerTransportGuidRef();
         movementInfo.transportX = owner_.playerTransportOffsetRef().x;
@@ -596,6 +612,17 @@ void MovementHandler::sendMovement(Opcode opcode) {
               wireOpcode(opcode), std::dec,
               (includeTransportInWire ? " ONTRANSPORT" : ""));
 
+    // Detect near-origin position on Eastern Kingdoms (map 0) — this would place
+    // the player near Alterac Mountains and is almost certainly a bug.
+    if (owner_.getCurrentMapId() == 0 &&
+        std::abs(movementInfo.x) < 500.0f && std::abs(movementInfo.y) < 500.0f) {
+        LOG_WARNING("sendMovement: position near map origin! canonical=(",
+                    movementInfo.x, ", ", movementInfo.y, ", ", movementInfo.z,
+                    ") onTransport=", owner_.isOnTransport(),
+                    " transportGuid=0x", std::hex, owner_.playerTransportGuidRef(), std::dec,
+                    " flags=0x", std::hex, movementInfo.flags, std::dec);
+    }
+
     // Convert canonical → server coordinates for the wire
     MovementInfo wireInfo = movementInfo;
     glm::vec3 serverPos = core::coords::canonicalToServer(glm::vec3(wireInfo.x, wireInfo.y, wireInfo.z));
@@ -603,10 +630,12 @@ void MovementHandler::sendMovement(Opcode opcode) {
     wireInfo.y = serverPos.y;
     wireInfo.z = serverPos.z;
 
-    // Periodic position audit — DEBUG to avoid flooding production logs.
-    if (opcode == Opcode::MSG_MOVE_HEARTBEAT && ++heartbeatLogCount_ % 30 == 0) {
-        LOG_DEBUG("HEARTBEAT pos canonical=(", movementInfo.x, ",", movementInfo.y, ",", movementInfo.z,
-                  ") wire=(", wireInfo.x, ",", wireInfo.y, ",", wireInfo.z, ")");
+    // Periodic position audit — log every ~60 heartbeats (~30s) to trace position drift.
+    if (opcode == Opcode::MSG_MOVE_HEARTBEAT && ++heartbeatLogCount_ % 60 == 0) {
+        LOG_WARNING("HEARTBEAT #", heartbeatLogCount_, " canonical=(",
+                    movementInfo.x, ",", movementInfo.y, ",", movementInfo.z,
+                    ") server=(", wireInfo.x, ",", wireInfo.y, ",", wireInfo.z,
+                    ") flags=0x", std::hex, movementInfo.flags, std::dec);
     }
 
     wireInfo.orientation = core::coords::canonicalToServerYaw(wireInfo.orientation);
@@ -1644,9 +1673,10 @@ void MovementHandler::handleTeleportAck(network::Packet& packet) {
     float serverZ = packet.readFloat();
     float orientation = packet.readFloat();
 
-    LOG_INFO("MSG_MOVE_TELEPORT_ACK: guid=0x", std::hex, guid, std::dec,
-             " counter=", counter,
-             " pos=(", serverX, ", ", serverY, ", ", serverZ, ")");
+    LOG_WARNING("MSG_MOVE_TELEPORT_ACK: guid=0x", std::hex, guid, std::dec,
+                " counter=", counter,
+                " pos=(", serverX, ", ", serverY, ", ", serverZ, ")",
+                " currentPos=(", movementInfo.x, ", ", movementInfo.y, ", ", movementInfo.z, ")");
 
     glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(serverX, serverY, serverZ));
     movementInfo.x = canonical.x;
@@ -2534,6 +2564,17 @@ void MovementHandler::checkAreaTriggers() {
     const float px = movementInfo.x;
     const float py = movementInfo.y;
     const float pz = movementInfo.z;
+
+    // Sanity: if position is near map origin on Eastern Kingdoms (map 0),
+    // something has corrupted movementInfo — skip area trigger check to
+    // avoid firing Alterac/Hillsbrad triggers and causing a rogue teleport.
+    if (owner_.getCurrentMapId() == 0 && std::abs(px) < 500.0f && std::abs(py) < 500.0f) {
+        LOG_WARNING("checkAreaTriggers: position near map origin (", px, ", ", py, ", ", pz,
+                    ") on map 0 — skipping to avoid rogue teleport. onTransport=",
+                    owner_.isOnTransport(), " transportGuid=0x", std::hex,
+                    owner_.playerTransportGuidRef(), std::dec);
+        return;
+    }
 
     // On first check after map transfer, just mark which triggers we're inside
     // without firing them — prevents exit portal from immediately sending us back
