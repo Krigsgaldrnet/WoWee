@@ -163,11 +163,11 @@ void main() {
 
     vec3 result;
 
-    // Sample shadow map — skip entirely for interior groups (flag 0x2000).
-    // Interior surfaces rely on pre-baked MOCV vertex-color lighting and the
-    // directional shadow map only makes them darker without any benefit.
+    // Sample shadow map for all groups.  Interior groups receive attenuated
+    // shadow (30%) so they get subtle light/shadow variation without the full
+    // outdoor darkening that makes them look wrong.
     float shadow = 1.0;
-    if (isInterior == 0 && shadowParams.x > 0.5) {
+    if (shadowParams.x > 0.5) {
         vec3 ldir = normalize(-lightDir.xyz);
         float normalOffset = SHADOW_TEXEL * 2.0 * (1.0 - abs(dot(norm, ldir)));
         vec3 biasedPos = FragPos + norm * normalOffset;
@@ -188,15 +188,14 @@ void main() {
         result = texColor.rgb * 1.5;
     } else if (isInterior != 0) {
         // WMO interior: vertex colors (MOCV) are pre-baked lighting from the artist.
-        // The MOHD ambient color tints/floors the vertex colors so dark spots don't
-        // go completely black, matching the WoW client's interior shading.
-        // We handle BOTH lit and unlit interior materials — directional
-        // sun shadows and lighting are skipped for all interior groups.
+        // The MOHD ambient color floors the vertex colors so dark spots don't go
+        // completely black.  Full shadow strength is applied but clamped so
+        // interiors never go darker than a minimum brightness.
         vec3 wmoAmbient = vec3(wmoAmbientR, wmoAmbientG, wmoAmbientB);
-        // Clamp ambient to at least 0.3 to avoid total darkness when MOHD color is zero
-        wmoAmbient = max(wmoAmbient, vec3(0.3));
+        wmoAmbient = max(wmoAmbient, vec3(0.35));
         vec3 mocv = max(VertColor.rgb, wmoAmbient);
-        result = texColor.rgb * mocv;
+        float clampedShadow = max(shadow, 0.45);
+        result = texColor.rgb * mocv * clampedShadow;
     } else if (unlit != 0) {
         // Outdoor unlit surface — still receives directional shadows
         result = texColor.rgb * shadow;

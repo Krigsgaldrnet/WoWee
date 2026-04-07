@@ -894,29 +894,21 @@ void Renderer::beginFrame() {
     // Update per-frame UBO with current camera/lighting state
     updatePerFrameUBO();
 
-    // ── Early compute: HiZ pyramid build + M2 frustum/occlusion cull ──
-    // These run in a SEPARATE command buffer submission so the GPU executes
-    // them immediately.  The CPU then reads the fresh visibility results
-    // before recording the main render pass — eliminating the 2-frame
-    // staleness that occurs when compute + render share one submission.
+    // ── Early compute: M2 frustum culling ──
+    // GPU frustum cull keeps draw call counts low.  The HiZ occlusion pyramid
+    // is skipped for now — building ~11 mip levels with per-level barriers
+    // behind a blocking fence was the main frame-rate bottleneck.  Frustum-
+    // only culling is fast enough that the fence wait is negligible.
     if (m2Renderer && camera && vkCtx) {
         VkCommandBuffer computeCmd = vkCtx->beginSingleTimeCommands();
         uint32_t frame = vkCtx->getCurrentFrame();
 
-        // Build HiZ depth pyramid from previous frame's depth buffer
-        if (hizSystem_ && hizSystem_->isReady()) {
-            VkImage depthSrc = vkCtx->getDepthCopySourceImage();
-            hizSystem_->buildPyramid(computeCmd, frame, depthSrc);
-        }
-
-        // Dispatch GPU frustum + HiZ occlusion culling
+        // Dispatch GPU frustum culling (HiZ disabled → frustum-only pipeline)
         m2Renderer->dispatchCullCompute(computeCmd, frame, *camera);
 
         vkCtx->endSingleTimeCommands(computeCmd);
 
-        // Ensure GPU→CPU buffer writes are visible to host (non-coherent memory).
         m2Renderer->invalidateCullOutput(frame);
-        // Visibility results are now in cullOutputMapped_[frame], readable by CPU.
     }
 
     // --- Off-screen pre-passes ---
@@ -1948,22 +1940,10 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
         }
     }
 
-    // HiZ occlusion culling — temporal reprojection.
-    // The HiZ pyramid is built from the previous frame's depth buffer.  The cull
-    // compute shader uses prevViewProj to project objects into the previous frame's
-    // screen space so that depth samples match the pyramid, eliminating flicker
-    // caused by camera movement between frames.
-    if (!hizSystem_ && m2Renderer && vkCtx) {
-        hizSystem_ = std::make_unique<HiZSystem>();
-        auto extent = vkCtx->getSwapchainExtent();
-        if (hizSystem_->initialize(vkCtx, extent.width, extent.height)) {
-            m2Renderer->setHiZSystem(hizSystem_.get());
-            LOG_INFO("HiZ occlusion culling initialized (", extent.width, "x", extent.height, ")");
-        } else {
-            LOG_WARNING("HiZ occlusion culling unavailable — falling back to frustum-only culling");
-            hizSystem_.reset();
-        }
-    }
+    // HiZ occlusion culling disabled — the pyramid build + blocking fence was
+    // the main frame-rate bottleneck.  GPU frustum culling alone provides good
+    // draw-call reduction without the per-frame GPU stall.  HiZ can be re-
+    // enabled once the pyramid build is moved to an async compute queue.
     if (!wmoRenderer) {
         wmoRenderer = std::make_unique<WMORenderer>();
         if (!wmoRenderer->initialize(vkCtx, perFrameSetLayout, assetManager))
