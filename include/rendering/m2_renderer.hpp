@@ -394,11 +394,16 @@ private:
     // Vulkan context
     VkContext* vkCtx_ = nullptr;
 
-    // Vulkan pipelines (one per blend mode)
+    // Vulkan pipelines — two-sided (VK_CULL_MODE_NONE) variants
     VkPipeline opaquePipeline_ = VK_NULL_HANDLE;       // blend mode 0
     VkPipeline alphaTestPipeline_ = VK_NULL_HANDLE;     // blend mode 1
     VkPipeline alphaPipeline_ = VK_NULL_HANDLE;         // blend mode 2
     VkPipeline additivePipeline_ = VK_NULL_HANDLE;      // blend mode 3+
+    // Backface-culled variants for one-sided materials (materialFlags & 0x04 == 0)
+    VkPipeline opaqueCulledPipeline_ = VK_NULL_HANDLE;
+    VkPipeline alphaTestCulledPipeline_ = VK_NULL_HANDLE;
+    VkPipeline alphaCulledPipeline_ = VK_NULL_HANDLE;
+    VkPipeline additiveCulledPipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 
     // Shadow rendering (Phase 7)

@@ -570,13 +570,14 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
 
     // Pipeline derivatives — opaque is the base, others derive from it for shared state optimization
     auto buildM2Pipeline = [&](VkPipelineColorBlendAttachmentState blendState, bool depthWrite,
+                               VkCullModeFlags cullMode = VK_CULL_MODE_NONE,
                                VkPipelineCreateFlags flags = 0, VkPipeline basePipeline = VK_NULL_HANDLE) -> VkPipeline {
         return PipelineBuilder()
             .setShaders(m2Vert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
                         m2Frag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
             .setVertexInput({m2Binding}, m2Attrs)
             .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-            .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
+            .setRasterization(VK_POLYGON_MODE_FILL, cullMode)
             .setDepthTest(true, depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
             .setColorBlendAttachment(blendState)
             .setMultisample(vkCtx_->getMsaaSamples())
@@ -588,14 +589,25 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
             .build(device, vkCtx_->getPipelineCache());
     };
 
-    opaquePipeline_ = buildM2Pipeline(PipelineBuilder::blendDisabled(), true,
+    // Two-sided pipelines (VK_CULL_MODE_NONE) — for materials with TwoSided flag (0x04)
+    opaquePipeline_ = buildM2Pipeline(PipelineBuilder::blendDisabled(), true, VK_CULL_MODE_NONE,
                                       VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT);
-    alphaTestPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), true,
+    alphaTestPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), true, VK_CULL_MODE_NONE,
                                          VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
-    alphaPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), false,
+    alphaPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), false, VK_CULL_MODE_NONE,
                                      VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
-    additivePipeline_ = buildM2Pipeline(PipelineBuilder::blendAdditive(), false,
+    additivePipeline_ = buildM2Pipeline(PipelineBuilder::blendAdditive(), false, VK_CULL_MODE_NONE,
                                         VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
+
+    // Backface-culled pipelines — default for one-sided materials
+    opaqueCulledPipeline_ = buildM2Pipeline(PipelineBuilder::blendDisabled(), true, VK_CULL_MODE_BACK_BIT,
+                                            VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT);
+    alphaTestCulledPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), true, VK_CULL_MODE_BACK_BIT,
+                                               VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaqueCulledPipeline_);
+    alphaCulledPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), false, VK_CULL_MODE_BACK_BIT,
+                                           VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaqueCulledPipeline_);
+    additiveCulledPipeline_ = buildM2Pipeline(PipelineBuilder::blendAdditive(), false, VK_CULL_MODE_BACK_BIT,
+                                              VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaqueCulledPipeline_);
 
     // --- Build particle pipelines ---
     if (particleVert.isValid() && particleFrag.isValid()) {
@@ -861,6 +873,10 @@ void M2Renderer::shutdown() {
     destroyPipeline(alphaTestPipeline_);
     destroyPipeline(alphaPipeline_);
     destroyPipeline(additivePipeline_);
+    destroyPipeline(opaqueCulledPipeline_);
+    destroyPipeline(alphaTestCulledPipeline_);
+    destroyPipeline(alphaCulledPipeline_);
+    destroyPipeline(additiveCulledPipeline_);
     destroyPipeline(particlePipeline_);
     destroyPipeline(particleAdditivePipeline_);
     destroyPipeline(smokePipeline_);
