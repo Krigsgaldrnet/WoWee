@@ -1147,24 +1147,15 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     }
                     if (forceCutout) effectiveBlendMode = 1;
 
-                    const bool twoSided = (batch.materialFlags & 0x04) != 0;
                     VkPipeline desiredPipeline;
                     if (forceCutout) {
-                        // Foliage / ground-detail cards are effectively two-sided
                         desiredPipeline = opaquePipeline_;
-                    } else if (twoSided) {
+                    } else {
                         switch (effectiveBlendMode) {
                             case 0: desiredPipeline = opaquePipeline_; break;
                             case 1: desiredPipeline = alphaTestPipeline_; break;
                             case 2: desiredPipeline = alphaPipeline_; break;
                             default: desiredPipeline = additivePipeline_; break;
-                        }
-                    } else {
-                        switch (effectiveBlendMode) {
-                            case 0: desiredPipeline = opaqueCulledPipeline_; break;
-                            case 1: desiredPipeline = alphaTestCulledPipeline_; break;
-                            case 2: desiredPipeline = alphaCulledPipeline_; break;
-                            default: desiredPipeline = additiveCulledPipeline_; break;
                         }
                     }
                     if (desiredPipeline != currentPipeline) {
@@ -1357,18 +1348,10 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 else if (effectiveBlendMode == 4 || effectiveBlendMode == 5) effectiveBlendMode = 3;
             }
 
-            const bool twoSided = (batch.materialFlags & 0x04) != 0;
             VkPipeline desiredPipeline;
-            if (twoSided) {
-                switch (effectiveBlendMode) {
-                    case 2: desiredPipeline = alphaPipeline_; break;
-                    default: desiredPipeline = additivePipeline_; break;
-                }
-            } else {
-                switch (effectiveBlendMode) {
-                    case 2: desiredPipeline = alphaCulledPipeline_; break;
-                    default: desiredPipeline = additiveCulledPipeline_; break;
-                }
+            switch (effectiveBlendMode) {
+                case 2: desiredPipeline = alphaPipeline_; break;
+                default: desiredPipeline = additivePipeline_; break;
             }
             if (desiredPipeline != currentPipeline) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
