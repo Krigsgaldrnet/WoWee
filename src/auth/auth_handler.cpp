@@ -68,6 +68,26 @@ void AuthHandler::disconnect() {
         socket->disconnect();
         socket.reset();
     }
+
+    // Scrub sensitive material when tearing down the auth session.
+    if (!password.empty()) {
+        volatile char* p = const_cast<volatile char*>(password.data());
+        for (size_t i = 0; i < password.size(); ++i)
+            p[i] = '\0';
+        password.clear();
+        password.shrink_to_fit();
+    }
+    if (!sessionKey.empty()) {
+        volatile uint8_t* k = const_cast<volatile uint8_t*>(sessionKey.data());
+        for (size_t i = 0; i < sessionKey.size(); ++i)
+            k[i] = 0;
+        sessionKey.clear();
+        sessionKey.shrink_to_fit();
+    }
+    if (srp) {
+        srp->clearCredentials();
+    }
+
     setState(AuthState::DISCONNECTED);
     LOG_INFO("Disconnected from auth server");
 }
@@ -245,16 +265,15 @@ void AuthHandler::sendLogonProof() {
     const std::array<uint8_t, 20>* crcHashPtr = nullptr;
 
     if (securityFlags_ & kSecurityFlagPin) {
-        try {
-            PinProof proof = computePinProof(pendingSecurityCode_, pinGridSeed_, pinServerSalt_);
-            pinClientSalt = proof.clientSalt;
-            pinHash = proof.hash;
-            pinClientSaltPtr = &pinClientSalt;
-            pinHashPtr = &pinHash;
-        } catch (const std::exception& e) {
-            fail(std::string("PIN required but invalid: ") + e.what());
+        auto proof = computePinProof(pendingSecurityCode_, pinGridSeed_, pinServerSalt_);
+        if (!proof) {
+            fail("PIN required but invalid input");
             return;
         }
+        pinClientSalt = proof->clientSalt;
+        pinHash = proof->hash;
+        pinClientSaltPtr = &pinClientSalt;
+        pinHashPtr = &pinHash;
     }
 
     // Legacy client integrity hash (aka "CRC hash"). Some servers enforce this for classic builds.
@@ -353,6 +372,16 @@ void AuthHandler::handleLogonProofResponse(network::Packet& packet) {
     // Authentication successful!
     sessionKey = srp->getSessionKey();
     setState(AuthState::AUTHENTICATED);
+
+    // Plaintext password is no longer needed — zero-fill and release it so it
+    // doesn't sit in process memory for the rest of the session.
+    if (!password.empty()) {
+        volatile char* p = const_cast<volatile char*>(password.data());
+        for (size_t i = 0; i < password.size(); ++i)
+            p[i] = '\0';
+        password.clear();
+        password.shrink_to_fit();
+    }
 
     LOG_INFO("========================================");
     LOG_INFO("   AUTHENTICATION SUCCESSFUL!");

@@ -1,6 +1,7 @@
 #include "rendering/m2_renderer.hpp"
 #include "rendering/m2_renderer_internal.h"
 #include "rendering/m2_model_classifier.hpp"
+#include "rendering/hiz_system.hpp"
 #include "rendering/vk_context.hpp"
 #include "rendering/vk_buffer.hpp"
 #include "rendering/vk_texture.hpp"
@@ -10,6 +11,7 @@
 #include "rendering/vk_frame_data.hpp"
 #include "rendering/camera.hpp"
 #include "rendering/frustum.hpp"
+#include "rendering/render_constants.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "core/logger.hpp"
@@ -89,7 +91,7 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
             instance.idleSequenceIndex = 0;
             instance.animDuration = static_cast<float>(mdl.sequences[0].duration);
             instance.animTime = static_cast<float>(randRange(std::max(1u, mdl.sequences[0].duration)));
-            instance.variationTimer = randFloat(3000.0f, 11000.0f);
+            instance.variationTimer = randFloat(rendering::M2_VARIATION_TIMER_MIN_MS, rendering::M2_VARIATION_TIMER_MAX_MS);
         }
 
         // Seed bone matrices from an existing instance of the same model so the
@@ -198,7 +200,7 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
             instance.idleSequenceIndex = 0;
             instance.animDuration = static_cast<float>(mdl2.sequences[0].duration);
             instance.animTime = static_cast<float>(randRange(std::max(1u, mdl2.sequences[0].duration)));
-            instance.variationTimer = randFloat(3000.0f, 11000.0f);
+            instance.variationTimer = randFloat(rendering::M2_VARIATION_TIMER_MIN_MS, rendering::M2_VARIATION_TIMER_MAX_MS);
         }
 
         // Seed bone matrices from an existing sibling so the instance renders immediately
@@ -262,7 +264,9 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
 
     // Cache camera state for frustum-culling bone computation
     cachedCamPos_ = cameraPos;
-    const float maxRenderDistance = (instances.size() > 2000) ? 800.0f : 2800.0f;
+    const float maxRenderDistance = (instances.size() > rendering::M2_HIGH_DENSITY_INSTANCE_THRESHOLD)
+                                     ? rendering::M2_MAX_RENDER_DISTANCE_HIGH_DENSITY
+                                     : rendering::M2_MAX_RENDER_DISTANCE_LOW_DENSITY;
     cachedMaxRenderDistSq_ = maxRenderDistance * maxRenderDistance;
 
     // Build frustum for culling bones
@@ -270,10 +274,10 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
     updateFrustum.extractFromMatrix(viewProjection);
 
     // --- Smoke particle spawning (only iterate tracked smoke instances) ---
-    std::uniform_real_distribution<float> distXY(-0.4f, 0.4f);
+    std::uniform_real_distribution<float> distXY(rendering::SMOKE_OFFSET_XY_MIN, rendering::SMOKE_OFFSET_XY_MAX);
     std::uniform_real_distribution<float> distVelXY(-0.3f, 0.3f);
-    std::uniform_real_distribution<float> distVelZ(3.0f, 5.0f);
-    std::uniform_real_distribution<float> distLife(4.0f, 7.0f);
+    std::uniform_real_distribution<float> distVelZ(rendering::SMOKE_VEL_Z_MIN, rendering::SMOKE_VEL_Z_MAX);
+    std::uniform_real_distribution<float> distLife(rendering::SMOKE_LIFETIME_MIN, rendering::SMOKE_LIFETIME_MAX);
     std::uniform_real_distribution<float> distDrift(-0.2f, 0.2f);
 
     smokeEmitAccum += deltaTime;
@@ -286,13 +290,13 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
             auto& instance = instances[si];
 
             glm::vec3 emitWorld = glm::vec3(instance.modelMatrix * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-            bool spark = (smokeRng() % 8 == 0);
+            bool spark = (smokeRng() % rendering::SPARK_PROBABILITY_DENOM == 0);
 
             SmokeParticle p;
             p.position = emitWorld + glm::vec3(distXY(smokeRng), distXY(smokeRng), 0.0f);
             if (spark) {
                 p.velocity = glm::vec3(distVelXY(smokeRng) * 2.0f, distVelXY(smokeRng) * 2.0f, distVelZ(smokeRng) * 1.5f);
-                p.maxLife = 0.8f + static_cast<float>(smokeRng() % 100) / 100.0f * 1.2f;
+                p.maxLife = rendering::SPARK_LIFE_BASE + static_cast<float>(smokeRng() % 100) / 100.0f * rendering::SPARK_LIFE_RANGE;
                 p.size = 0.5f;
                 p.isSpark = 1.0f;
             } else {
@@ -319,12 +323,12 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
             continue;
         }
         p.position += p.velocity * deltaTime;
-        p.velocity.z *= 0.98f;  // Slight deceleration
+        p.velocity.z *= rendering::SMOKE_Z_VEL_DAMPING;  // Slight deceleration
         p.velocity.x += distDrift(smokeRng) * deltaTime;
         p.velocity.y += distDrift(smokeRng) * deltaTime;
         // Grow from 1.0 to 3.5 over lifetime
         float t = p.life / p.maxLife;
-        p.size = 1.0f + t * 2.5f;
+        p.size = rendering::SMOKE_SIZE_START + t * rendering::SMOKE_SIZE_GROWTH;
         ++i;
     }
 
@@ -388,7 +392,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
 
         // Handle animation looping / variation transitions
         if (instance.animDuration <= 0.0f && instance.cachedHasParticleEmitters) {
-            instance.animDuration = 3333.0f;
+            instance.animDuration = rendering::M2_DEFAULT_PARTICLE_ANIM_MS;
         }
         if (instance.animDuration > 0.0f && instance.animTime >= instance.animDuration) {
             if (instance.playingVariation) {
@@ -398,7 +402,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
                     instance.animDuration = static_cast<float>(model.sequences[instance.idleSequenceIndex].duration);
                 }
                 instance.animTime = 0.0f;
-                instance.variationTimer = randFloat(4000.0f, 10000.0f);
+                instance.variationTimer = randFloat(rendering::M2_LOOP_VARIATION_TIMER_MIN_MS, rendering::M2_LOOP_VARIATION_TIMER_MAX_MS);
             } else {
                 // Use iterative subtraction instead of fmod() to preserve precision
                 float duration = std::max(1.0f, instance.animDuration);
@@ -420,7 +424,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
                     instance.animDuration = static_cast<float>(model.sequences[newSeq].duration);
                     instance.animTime = 0.0f;
                 } else {
-                    instance.variationTimer = randFloat(2000.0f, 6000.0f);
+                    instance.variationTimer = randFloat(rendering::M2_IDLE_VARIATION_TIMER_MIN_MS, rendering::M2_IDLE_VARIATION_TIMER_MAX_MS);
                 }
             }
         }
@@ -430,21 +434,21 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
         float cullRadius = worldRadius;
         glm::vec3 toCam = instance.position - cachedCamPos_;
         float distSq = glm::dot(toCam, toCam);
-        float effectiveMaxDistSq = cachedMaxRenderDistSq_ * std::max(1.0f, cullRadius / 12.0f);
+        float effectiveMaxDistSq = cachedMaxRenderDistSq_ * std::max(1.0f, cullRadius / rendering::M2_CULL_RADIUS_SCALE_DIVISOR);
         if (distSq > effectiveMaxDistSq) continue;
-        float paddedRadius = std::max(cullRadius * 1.5f, cullRadius + 3.0f);
+        float paddedRadius = std::max(cullRadius * rendering::M2_PADDED_RADIUS_SCALE, cullRadius + rendering::M2_PADDED_RADIUS_MIN_MARGIN);
         if (cullRadius > 0.0f && !updateFrustum.intersectsSphere(instance.position, paddedRadius)) continue;
 
         // LOD 3 skip: models beyond 150 units use the lowest LOD mesh which has
         // no visible skeletal animation.  Keep their last-computed bone matrices
         // (always valid — seeded on spawn) and avoid the expensive per-bone work.
-        constexpr float kLOD3DistSq = 150.0f * 150.0f;
+        constexpr float kLOD3DistSq = rendering::M2_LOD3_DISTANCE * rendering::M2_LOD3_DISTANCE;
         if (distSq > kLOD3DistSq) continue;
 
         // Distance-based frame skipping: update distant bones less frequently
         uint32_t boneInterval = 1;
-        if (distSq > 100.0f * 100.0f) boneInterval = 4;
-        else if (distSq > 50.0f * 50.0f) boneInterval = 2;
+        if (distSq > rendering::M2_BONE_SKIP_DIST_FAR * rendering::M2_BONE_SKIP_DIST_FAR) boneInterval = 4;
+        else if (distSq > rendering::M2_BONE_SKIP_DIST_MID * rendering::M2_BONE_SKIP_DIST_MID) boneInterval = 2;
         instance.frameSkipCounter++;
         if ((instance.frameSkipCounter % boneInterval) != 0) continue;
 
@@ -600,6 +604,52 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
         }
         ubo->cameraPos = glm::vec4(camPos, maxPossibleDistSq);
         ubo->instanceCount = numInstances;
+
+        // HiZ occlusion culling fields
+        const bool hizReady = hizSystem_ && hizSystem_->isReady();
+
+        // Auto-disable HiZ when the camera has moved/rotated significantly.
+        // Large VP changes make the depth pyramid unreliable because the
+        // reprojected screen positions diverge from the actual pyramid data.
+        bool hizSafe = hizReady;
+        if (hizReady) {
+            // Compare current VP against previous VP — Frobenius-style max diff.
+            float maxDiff = 0.0f;
+            const float* curM  = &vp[0][0];
+            const float* prevM = &prevVP_[0][0];
+            for (int k = 0; k < 16; ++k)
+                maxDiff = std::max(maxDiff, std::abs(curM[k] - prevM[k]));
+            // Threshold: typical tracking-camera motion (following a walking
+            // character) produces diffs of 0.05–0.25.  A fast rotation or
+            // zoom easily exceeds 0.5.  The previous threshold (0.15) caused
+            // the HiZ pass to toggle on/off every other frame during normal
+            // gameplay, which produced global M2 doodad flicker.
+            if (maxDiff > rendering::HIZ_VP_DIFF_THRESHOLD) hizSafe = false;
+        }
+
+        ubo->hizEnabled = hizSafe ? 1u : 0u;
+        ubo->hizMipLevels = hizReady ? hizSystem_->getMipLevels() : 0u;
+        ubo->_pad2 = 0;
+        if (hizReady) {
+            ubo->hizParams = glm::vec4(
+                static_cast<float>(hizSystem_->getPyramidWidth()),
+                static_cast<float>(hizSystem_->getPyramidHeight()),
+                camera.getNearPlane(),
+                0.0f
+            );
+            ubo->viewProj = vp;
+            // Use previous frame's VP for HiZ reprojection — the HiZ pyramid
+            // was built from the previous frame's depth, so we must project
+            // into the same screen space to sample the correct depths.
+            ubo->prevViewProj = prevVP_;
+        } else {
+            ubo->hizParams = glm::vec4(0.0f);
+            ubo->viewProj = glm::mat4(1.0f);
+            ubo->prevViewProj = glm::mat4(1.0f);
+        }
+
+        // Save current VP for next frame's temporal reprojection
+        prevVP_ = vp;
     }
 
     // --- Upload per-instance cull data (SSBO, binding 1) ---
@@ -612,16 +662,22 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
             if (inst.cachedDisableAnimation) {
                 cullRadius = std::max(cullRadius, 3.0f);
             }
-            float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / 12.0f);
+            float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / rendering::M2_CULL_RADIUS_SCALE_DIVISOR);
             if (inst.cachedDisableAnimation)  effectiveMaxDistSq *= 2.6f;
             if (inst.cachedIsGroundDetail)     effectiveMaxDistSq *= 0.9f;
 
-            float paddedRadius = std::max(cullRadius * 1.5f, cullRadius + 3.0f);
+            float paddedRadius = std::max(cullRadius * rendering::M2_PADDED_RADIUS_SCALE, cullRadius + rendering::M2_PADDED_RADIUS_MIN_MARGIN);
 
             uint32_t flags = 0;
             if (inst.cachedIsValid)          flags |= 1u;
             if (inst.cachedIsSmoke)           flags |= 2u;
             if (inst.cachedIsInvisibleTrap)   flags |= 4u;
+            // Bit 3: previouslyVisible — the shader skips HiZ for objects
+            // that were NOT rendered last frame (no reliable depth data).
+            // Hysteresis: treat as "previously visible" unless culled for
+            // 2+ consecutive frames, preventing single-frame false-cull flicker.
+            if (i < prevFrameVisible_.size() && prevFrameVisible_[i] < 2)
+                flags |= 8u;
 
             input[i].sphere = glm::vec4(inst.position, paddedRadius);
             input[i].effectiveMaxDistSq = effectiveMaxDistSq;
@@ -630,9 +686,22 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
     }
 
     // --- Dispatch compute shader ---
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullPipeline_);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                            cullPipelineLayout_, 0, 1, &cullSet_[frameIndex], 0, nullptr);
+    const bool useHiZ = (cullHiZPipeline_ != VK_NULL_HANDLE)
+                     && hizSystem_ && hizSystem_->isReady();
+    if (useHiZ) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullHiZPipeline_);
+        // Set 0: cull UBO + input/output SSBOs
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                cullHiZPipelineLayout_, 0, 1, &cullSet_[frameIndex], 0, nullptr);
+        // Set 1: HiZ pyramid sampler
+        VkDescriptorSet hizSet = hizSystem_->getDescriptorSet(frameIndex);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                cullHiZPipelineLayout_, 1, 1, &hizSet, 0, nullptr);
+    } else {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                cullPipelineLayout_, 0, 1, &cullSet_[frameIndex], 0, nullptr);
+    }
 
     const uint32_t groupCount = (numInstances + 63) / 64;
     vkCmdDispatch(cmd, groupCount, 1, 1);
@@ -693,6 +762,29 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
     const uint32_t* visibility = static_cast<const uint32_t*>(cullOutputMapped_[frameIndex]);
     const bool gpuCullAvailable = (cullPipeline_ != VK_NULL_HANDLE && visibility != nullptr);
 
+    // Snapshot the GPU visibility results into prevFrameVisible_ so the NEXT
+    // frame's compute dispatch can set the per-instance `previouslyVisible`
+    // flag (bit 3).  We use a hysteresis counter instead of a binary flag to
+    // prevent a 1-frame-on / 1-frame-off oscillation: an object must be HiZ-
+    // culled for 2 consecutive frames before we stop considering it
+    // "previously visible".  This eliminates doodad flicker near characters
+    // caused by stale depth data from character movement.
+    if (gpuCullAvailable) {
+        prevFrameVisible_.resize(numInstances, 0);
+        for (uint32_t i = 0; i < numInstances; ++i) {
+            if (visibility[i]) {
+                // Visible this frame — reset cull counter.
+                prevFrameVisible_[i] = 0;
+            } else {
+                // Culled this frame — increment counter (cap at 3 to avoid overflow).
+                prevFrameVisible_[i] = std::min<uint8_t>(prevFrameVisible_[i] + 1, 3);
+            }
+        }
+    } else {
+        // No GPU cull data — conservatively mark all as visible (counter = 0).
+        prevFrameVisible_.assign(static_cast<size_t>(instances.size()), 0);
+    }
+
     // If GPU culling was not dispatched, fallback: compute distances on CPU
     float maxRenderDistanceSq;
     if (!gpuCullAvailable) {
@@ -744,12 +836,12 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             float worldRadius = instance.cachedBoundRadius * instance.scale;
             float cullRadius = worldRadius;
             if (instance.cachedDisableAnimation) cullRadius = std::max(cullRadius, 3.0f);
-            float effDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / 12.0f);
+            float effDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / rendering::M2_CULL_RADIUS_SCALE_DIVISOR);
             if (instance.cachedDisableAnimation) effDistSq *= 2.6f;
             if (instance.cachedIsGroundDetail) effDistSq *= 0.9f;
             if (distSqTest > effDistSq) continue;
 
-            float paddedRadius = std::max(cullRadius * 1.5f, cullRadius + 3.0f);
+            float paddedRadius = std::max(cullRadius * rendering::M2_PADDED_RADIUS_SCALE, cullRadius + rendering::M2_PADDED_RADIUS_MIN_MARGIN);
             if (cullRadius > 0.0f && !frustum.intersectsSphere(instance.position, paddedRadius)) continue;
         }
 
@@ -759,7 +851,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         float worldRadius = instance.cachedBoundRadius * instance.scale;
         float cullRadius = worldRadius;
         if (instance.cachedDisableAnimation) cullRadius = std::max(cullRadius, 3.0f);
-        float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / 12.0f);
+        float effectiveMaxDistSq = maxRenderDistanceSq * std::max(1.0f, cullRadius / rendering::M2_CULL_RADIUS_SCALE_DIVISOR);
         if (instance.cachedDisableAnimation)  effectiveMaxDistSq *= 2.6f;
         if (instance.cachedIsGroundDetail)     effectiveMaxDistSq *= 0.9f;
 
@@ -1074,7 +1166,10 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     // Update material UBO
                     if (batch.materialUBOMapped) {
                         auto* mat = static_cast<M2MaterialUBO*>(batch.materialUBOMapped);
-                        mat->interiorDarken = insideInterior ? 1.0f : 0.0f;
+                        // interiorDarken is a camera-based flag — it darkens ALL M2s (incl.
+                        // outdoor trees) when the camera is inside a WMO.  Disable it; indoor
+                        // M2s already look correct from the darker ambient/lighting.
+                        mat->interiorDarken = 0.0f;
                         if (batch.colorKeyBlack)
                             mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
                         if (forceCutout) {
@@ -1265,7 +1360,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
             if (batch.materialUBOMapped) {
                 auto* mat = static_cast<M2MaterialUBO*>(batch.materialUBOMapped);
-                mat->interiorDarken = insideInterior ? 1.0f : 0.0f;
+                mat->interiorDarken = 0.0f;
                 if (batch.colorKeyBlack)
                     mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
             }

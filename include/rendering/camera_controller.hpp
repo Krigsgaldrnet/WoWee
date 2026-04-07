@@ -83,6 +83,7 @@ public:
     bool isSitting() const { return sitting; }
     bool isSwimming() const { return swimming; }
     bool isInsideWMO() const { return cachedInsideWMO; }
+    bool isInsideInteriorWMO() const { return cachedInsideInteriorWMO; }
     void setGrounded(bool g) { grounded = g; }
     void setSitting(bool s) { sitting = s; }
     bool isOnTaxi() const { return externalFollow_; }

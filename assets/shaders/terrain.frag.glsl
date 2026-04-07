@@ -50,19 +50,21 @@ float sampleShadowPCF(sampler2DShadow smap, vec3 coords) {
 }
 
 float sampleAlpha(sampler2D tex, vec2 uv) {
+    // Smooth 5-tap box near chunk edges to hide alpha-map seams;
+    // blends gradually to avoid a visible ring at the transition.
     vec2 edge = min(uv, 1.0 - uv);
     float border = min(edge.x, edge.y);
-    float doBlur = step(border, 2.0 / 64.0);
-    if (doBlur < 0.5) {
-        return texture(tex, uv).r;
-    }
+    float blurWeight = 1.0 - smoothstep(0.5 / 64.0, 3.0 / 64.0, border);
+    float center = texture(tex, uv).r;
+    if (blurWeight < 0.001) return center;
     vec2 texel = vec2(1.0 / 64.0);
-    float a = 0.0;
-    a += texture(tex, uv + vec2(-texel.x, 0.0)).r;
-    a += texture(tex, uv + vec2(texel.x, 0.0)).r;
-    a += texture(tex, uv + vec2(0.0, -texel.y)).r;
-    a += texture(tex, uv + vec2(0.0, texel.y)).r;
-    return a * 0.25;
+    float avg = center;
+    avg += texture(tex, uv + vec2(-texel.x, 0.0)).r;
+    avg += texture(tex, uv + vec2( texel.x, 0.0)).r;
+    avg += texture(tex, uv + vec2(0.0, -texel.y)).r;
+    avg += texture(tex, uv + vec2(0.0,  texel.y)).r;
+    avg *= 0.2;
+    return mix(center, avg, blurWeight);
 }
 
 void main() {
@@ -87,9 +89,12 @@ void main() {
     vec3 norm = normalize(Normal);
 
     // Derivative-based normal mapping: perturb vertex normal using texture detail.
-    // Fade out with distance — looks noisy/harsh beyond ~100 units.
+    // Fade out with distance and near chunk edges (dFdx/dFdy are invalid across
+    // chunk draw-call boundaries, producing visible seams if not faded).
     float fragDist = length(viewPos.xyz - FragPos);
     float bumpFade = 1.0 - smoothstep(50.0, 125.0, fragDist);
+    float edgeDist = min(min(LayerUV.x, 1.0 - LayerUV.x), min(LayerUV.y, 1.0 - LayerUV.y));
+    bumpFade *= smoothstep(0.0, 0.06, edgeDist);
     if (bumpFade > 0.001) {
         float lum = dot(finalColor.rgb, vec3(0.299, 0.587, 0.114));
         float dLdx = dFdx(lum);

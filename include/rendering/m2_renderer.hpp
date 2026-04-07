@@ -28,6 +28,7 @@ namespace rendering {
 class Camera;
 class VkContext;
 class VkTexture;
+class HiZSystem;
 
 /**
  * GPU representation of an M2 model
@@ -275,7 +276,7 @@ public:
     M2Renderer();
     ~M2Renderer();
 
-    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+    [[nodiscard]] bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
                     pipeline::AssetManager* assets);
     void shutdown();
 
@@ -299,10 +300,17 @@ public:
     void dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, const Camera& camera);
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera);
 
+    /** Set the HiZ system for occlusion culling (Phase 6.3). nullptr disables HiZ. */
+    void setHiZSystem(HiZSystem* hiz) { hizSystem_ = hiz; }
+
+    /** Ensure GPU→CPU cull output is visible to the host after a fence wait.
+     *  Call after the early compute submission finishes (endSingleTimeCommands). */
+    void invalidateCullOutput(uint32_t frameIndex);
+
     /**
      * Initialize shadow pipeline (Phase 7)
      */
-    bool initializeShadow(VkRenderPass shadowRenderPass);
+    [[nodiscard]] bool initializeShadow(VkRenderPass shadowRenderPass);
     bool hasShadowPipeline() const { return shadowPipeline_ != VK_NULL_HANDLE; }
 
     /**
@@ -437,7 +445,7 @@ private:
 
     // Mega bone SSBO — consolidates all per-instance bone matrices into a single buffer per frame.
     // Replaces per-instance bone SSBOs for fewer descriptor binds and enables GPU instancing.
-    static constexpr uint32_t MEGA_BONE_MAX_INSTANCES = 2048;
+    static constexpr uint32_t MEGA_BONE_MAX_INSTANCES = 4096;
     static constexpr uint32_t MAX_BONES_PER_INSTANCE = 128;
     ::VkBuffer megaBoneBuffer_[2] = {};
     VmaAllocation megaBoneAlloc_[2] = {};
@@ -472,19 +480,26 @@ private:
         uint32_t flags;             // bit 0 = valid, bit 1 = smoke, bit 2 = invisibleTrap
         float _pad[2] = {};
     };
-    struct CullUniformsGPU {        // matches CullUniforms in m2_cull.comp.glsl (128 bytes, std140)
-        glm::vec4 frustumPlanes[6]; // xyz = normal, w = distance
-        glm::vec4 cameraPos;        // xyz = camera position, w = maxPossibleDistSq
-        uint32_t instanceCount;
-        uint32_t _pad[3] = {};
-    };
+    struct CullUniformsGPU {        // matches CullUniforms in m2_cull_hiz.comp.glsl (std140)
+        glm::vec4 frustumPlanes[6]; // xyz = normal, w = distance         (96 bytes)
+        glm::vec4 cameraPos;        // xyz = camera position, w = maxPossibleDistSq (16 bytes)
+        uint32_t instanceCount;     //                                    (4 bytes)
+        uint32_t hizEnabled;        // 1 = HiZ occlusion active           (4 bytes)
+        uint32_t hizMipLevels;      // mip levels in HiZ pyramid          (4 bytes)
+        uint32_t _pad2 = {};        //                                    (4 bytes)
+        glm::vec4 hizParams;        // x=pyramidW, y=pyramidH, z=nearPlane, w=unused (16 bytes)
+        glm::mat4 viewProj;         // current frame view-projection                 (64 bytes)
+        glm::mat4 prevViewProj;     // previous frame VP for HiZ reprojection        (64 bytes)
+    };                              // Total: 272 bytes
     static constexpr uint32_t MAX_CULL_INSTANCES = 24576;
-    VkPipeline cullPipeline_ = VK_NULL_HANDLE;
-    VkPipelineLayout cullPipelineLayout_ = VK_NULL_HANDLE;
+    VkPipeline cullPipeline_ = VK_NULL_HANDLE;           // frustum-only (fallback)
+    VkPipeline cullHiZPipeline_ = VK_NULL_HANDLE;        // frustum + HiZ occlusion
+    VkPipelineLayout cullPipelineLayout_ = VK_NULL_HANDLE;  // frustum-only layout (set 0)
+    VkPipelineLayout cullHiZPipelineLayout_ = VK_NULL_HANDLE; // HiZ layout (set 0 + set 1)
     VkDescriptorSetLayout cullSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool cullDescPool_ = VK_NULL_HANDLE;
     VkDescriptorSet cullSet_[2] = {};               // double-buffered
-    ::VkBuffer cullUniformBuffer_[2] = {};           // frustum planes + camera (UBO)
+    ::VkBuffer cullUniformBuffer_[2] = {};           // frustum planes + camera + HiZ params (UBO)
     VmaAllocation cullUniformAlloc_[2] = {};
     void* cullUniformMapped_[2] = {};
     ::VkBuffer cullInputBuffer_[2] = {};             // per-instance bounding sphere + flags (SSBO)
@@ -493,6 +508,20 @@ private:
     ::VkBuffer cullOutputBuffer_[2] = {};            // uint visibility[] (SSBO, host-readable)
     VmaAllocation cullOutputAlloc_[2] = {};
     void* cullOutputMapped_[2] = {};
+
+    // HiZ occlusion culling (Phase 6.3) — optional, driven by Renderer
+    HiZSystem* hizSystem_ = nullptr;
+
+    // Previous frame's view-projection for temporal reprojection in HiZ culling.
+    // Stored each frame so the cull shader can project into the same screen space
+    // as the depth buffer the HiZ pyramid was built from.
+    glm::mat4 prevVP_{1.0f};
+
+    // Per-instance visibility from the previous frame.  Used to set the
+    // `previouslyVisible` flag (bit 3) on each CullInstance so the shader
+    // skips the HiZ test for objects that weren't rendered last frame
+    // (their depth data is unreliable).
+    std::vector<uint8_t> prevFrameVisible_;
 
     // Dynamic ribbon vertex buffer (CPU-written triangle strip)
     static constexpr size_t MAX_RIBBON_VERTS = 2048;  // 9 floats each

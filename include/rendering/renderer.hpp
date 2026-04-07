@@ -58,6 +58,7 @@ class ChargeEffect;
 class SwimEffects;
 class RenderGraph;
 class OverlaySystem;
+class HiZSystem;
 
 class Renderer {
 public:
@@ -362,6 +363,9 @@ private:
     // Render Graph — declarative pass ordering with automatic barriers
     std::unique_ptr<RenderGraph> renderGraph_;
     void buildFrameGraph(game::GameHandler* gameHandler);
+
+    // HiZ occlusion culling — builds depth pyramid each frame
+    std::unique_ptr<HiZSystem> hizSystem_;
 
     // CPU timing stats (last frame/update).
     double lastUpdateMs = 0.0;

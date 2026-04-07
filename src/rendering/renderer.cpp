@@ -23,6 +23,7 @@
 #include "rendering/character_preview.hpp"
 #include "rendering/wmo_renderer.hpp"
 #include "rendering/m2_renderer.hpp"
+#include "rendering/hiz_system.hpp"
 #include "rendering/minimap.hpp"
 #include "rendering/world_map.hpp"
 #include "rendering/quest_marker_renderer.hpp"
@@ -530,19 +531,24 @@ bool Renderer::initialize(core::Window* win) {
     lensFlare = nullptr;
 
     weather = std::make_unique<Weather>();
-    weather->initialize(vkCtx, perFrameSetLayout);
+    if (!weather->initialize(vkCtx, perFrameSetLayout))
+        LOG_WARNING("Weather effect initialization failed (non-fatal)");
 
     lightning = std::make_unique<Lightning>();
-    lightning->initialize(vkCtx, perFrameSetLayout);
+    if (!lightning->initialize(vkCtx, perFrameSetLayout))
+        LOG_WARNING("Lightning effect initialization failed (non-fatal)");
 
     swimEffects = std::make_unique<SwimEffects>();
-    swimEffects->initialize(vkCtx, perFrameSetLayout);
+    if (!swimEffects->initialize(vkCtx, perFrameSetLayout))
+        LOG_WARNING("Swim effect initialization failed (non-fatal)");
 
     mountDust = std::make_unique<MountDust>();
-    mountDust->initialize(vkCtx, perFrameSetLayout);
+    if (!mountDust->initialize(vkCtx, perFrameSetLayout))
+        LOG_WARNING("Mount dust effect initialization failed (non-fatal)");
 
     chargeEffect = std::make_unique<ChargeEffect>();
-    chargeEffect->initialize(vkCtx, perFrameSetLayout);
+    if (!chargeEffect->initialize(vkCtx, perFrameSetLayout))
+        LOG_WARNING("Charge effect initialization failed (non-fatal)");
 
     levelUpEffect = std::make_unique<LevelUpEffect>();
 
@@ -580,7 +586,6 @@ bool Renderer::initialize(core::Window* win) {
     overlaySystem_ = std::make_unique<OverlaySystem>(vkCtx);
     renderGraph_->registerResource("shadow_depth");
     renderGraph_->registerResource("reflection_texture");
-    renderGraph_->registerResource("cull_visibility");
     renderGraph_->registerResource("scene_color");
     renderGraph_->registerResource("scene_depth");
     renderGraph_->registerResource("final_image");
@@ -672,6 +677,10 @@ void Renderer::shutdown() {
     }
 
     LOG_DEBUG("Renderer::shutdown - m2Renderer...");
+    if (hizSystem_) {
+        hizSystem_->shutdown();
+        hizSystem_.reset();
+    }
     if (m2Renderer) {
         m2Renderer->shutdown();
         m2Renderer.reset();
@@ -798,6 +807,17 @@ void Renderer::applyMsaaChange() {
 
     if (minimap) minimap->recreatePipelines();
 
+    // Resize HiZ pyramid (depth format/MSAA may have changed)
+    if (hizSystem_) {
+        auto ext = vkCtx->getSwapchainExtent();
+        if (!hizSystem_->resize(ext.width, ext.height)) {
+            LOG_WARNING("HiZ resize failed after MSAA change");
+            if (m2Renderer) m2Renderer->setHiZSystem(nullptr);
+            hizSystem_->shutdown();
+            hizSystem_.reset();
+        }
+    }
+
     // Selection circle + overlay + FSR use lazy init, just destroy them
     if (overlaySystem_) overlaySystem_->recreatePipelines();
     if (postProcessPipeline_) postProcessPipeline_->destroyAllResources(); // Will be lazily recreated in beginFrame()
@@ -846,6 +866,16 @@ void Renderer::beginFrame() {
         }
         // Recreate post-process resources for new swapchain dimensions
         if (postProcessPipeline_) postProcessPipeline_->handleSwapchainResize();
+        // Resize HiZ depth pyramid for new swapchain dimensions
+        if (hizSystem_) {
+            auto ext = vkCtx->getSwapchainExtent();
+            if (!hizSystem_->resize(ext.width, ext.height)) {
+                LOG_WARNING("HiZ resize failed — disabling occlusion culling");
+                if (m2Renderer) m2Renderer->setHiZSystem(nullptr);
+                hizSystem_->shutdown();
+                hizSystem_.reset();
+            }
+        }
     }
 
     // Acquire swapchain image and begin command buffer
@@ -863,6 +893,31 @@ void Renderer::beginFrame() {
 
     // Update per-frame UBO with current camera/lighting state
     updatePerFrameUBO();
+
+    // ── Early compute: HiZ pyramid build + M2 frustum/occlusion cull ──
+    // These run in a SEPARATE command buffer submission so the GPU executes
+    // them immediately.  The CPU then reads the fresh visibility results
+    // before recording the main render pass — eliminating the 2-frame
+    // staleness that occurs when compute + render share one submission.
+    if (m2Renderer && camera && vkCtx) {
+        VkCommandBuffer computeCmd = vkCtx->beginSingleTimeCommands();
+        uint32_t frame = vkCtx->getCurrentFrame();
+
+        // Build HiZ depth pyramid from previous frame's depth buffer
+        if (hizSystem_ && hizSystem_->isReady()) {
+            VkImage depthSrc = vkCtx->getDepthCopySourceImage();
+            hizSystem_->buildPyramid(computeCmd, frame, depthSrc);
+        }
+
+        // Dispatch GPU frustum + HiZ occlusion culling
+        m2Renderer->dispatchCullCompute(computeCmd, frame, *camera);
+
+        vkCtx->endSingleTimeCommands(computeCmd);
+
+        // Ensure GPU→CPU buffer writes are visible to host (non-coherent memory).
+        m2Renderer->invalidateCullOutput(frame);
+        // Visibility results are now in cullOutputMapped_[frame], readable by CPU.
+    }
 
     // --- Off-screen pre-passes ---
     // Build frame graph: registers pre-passes as graph nodes with dependencies.
@@ -1401,7 +1456,8 @@ void Renderer::runDeferredWorldInitStep(float deltaTime) {
             if (audioCoordinator_->getMovementSoundManager()) audioCoordinator_->getMovementSoundManager()->initialize(cachedAssetManager);
             break;
         case 5:
-            if (questMarkerRenderer) questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, cachedAssetManager);
+            if (questMarkerRenderer && !questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, cachedAssetManager))
+                LOG_WARNING("Quest marker renderer re-init failed (non-fatal)");
             break;
         default:
             deferredWorldInitPending_ = false;
@@ -1489,7 +1545,9 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     if (parallelRecordingEnabled_) {
         // --- Pre-compute state + GPU allocations on main thread (not thread-safe) ---
         if (m2Renderer && cameraController) {
-            m2Renderer->setInsideInterior(cameraController->isInsideWMO());
+            // Use isInsideInteriorWMO (flag 0x2000) — not isInsideWMO which includes
+            // outdoor WMO groups like archways/bridges that should receive shadows.
+            m2Renderer->setInsideInterior(cameraController->isInsideInteriorWMO());
             m2Renderer->setOnTaxi(cameraController->isOnTaxi());
         }
         if (wmoRenderer) wmoRenderer->prepareRender();
@@ -1734,7 +1792,8 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
 
         if (m2Renderer && camera && !skipM2) {
             if (cameraController) {
-                m2Renderer->setInsideInterior(cameraController->isInsideWMO());
+                // Use isInsideInteriorWMO (flag 0x2000) for correct indoor detection
+                m2Renderer->setInsideInterior(cameraController->isInsideInteriorWMO());
                 m2Renderer->setOnTaxi(cameraController->isOnTaxi());
             }
             m2Renderer->prepareRender(frameIdx, *camera);
@@ -1877,7 +1936,8 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
     // Create M2, WMO, and Character renderers
     if (!m2Renderer) {
         m2Renderer = std::make_unique<M2Renderer>();
-        m2Renderer->initialize(vkCtx, perFrameSetLayout, assetManager);
+        if (!m2Renderer->initialize(vkCtx, perFrameSetLayout, assetManager))
+            LOG_ERROR("M2Renderer initialization failed");
         if (swimEffects) {
             swimEffects->setM2Renderer(m2Renderer.get());
         }
@@ -1887,23 +1947,45 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
             spellVisualSystem_->initialize(m2Renderer.get());
         }
     }
+
+    // HiZ occlusion culling — temporal reprojection.
+    // The HiZ pyramid is built from the previous frame's depth buffer.  The cull
+    // compute shader uses prevViewProj to project objects into the previous frame's
+    // screen space so that depth samples match the pyramid, eliminating flicker
+    // caused by camera movement between frames.
+    if (!hizSystem_ && m2Renderer && vkCtx) {
+        hizSystem_ = std::make_unique<HiZSystem>();
+        auto extent = vkCtx->getSwapchainExtent();
+        if (hizSystem_->initialize(vkCtx, extent.width, extent.height)) {
+            m2Renderer->setHiZSystem(hizSystem_.get());
+            LOG_INFO("HiZ occlusion culling initialized (", extent.width, "x", extent.height, ")");
+        } else {
+            LOG_WARNING("HiZ occlusion culling unavailable — falling back to frustum-only culling");
+            hizSystem_.reset();
+        }
+    }
     if (!wmoRenderer) {
         wmoRenderer = std::make_unique<WMORenderer>();
-        wmoRenderer->initialize(vkCtx, perFrameSetLayout, assetManager);
+        if (!wmoRenderer->initialize(vkCtx, perFrameSetLayout, assetManager))
+            LOG_ERROR("WMORenderer initialization failed");
         if (shadowRenderPass != VK_NULL_HANDLE) {
-            wmoRenderer->initializeShadow(shadowRenderPass);
+            if (!wmoRenderer->initializeShadow(shadowRenderPass))
+                LOG_WARNING("WMO shadow pipeline initialization failed");
         }
     }
 
     // Initialize shadow pipelines for M2 if not yet done
     if (m2Renderer && shadowRenderPass != VK_NULL_HANDLE && !m2Renderer->hasShadowPipeline()) {
-        m2Renderer->initializeShadow(shadowRenderPass);
+        if (!m2Renderer->initializeShadow(shadowRenderPass))
+            LOG_WARNING("M2 shadow pipeline initialization failed");
     }
     if (!characterRenderer) {
         characterRenderer = std::make_unique<CharacterRenderer>();
-        characterRenderer->initialize(vkCtx, perFrameSetLayout, assetManager);
+        if (!characterRenderer->initialize(vkCtx, perFrameSetLayout, assetManager))
+            LOG_ERROR("CharacterRenderer initialization failed");
         if (shadowRenderPass != VK_NULL_HANDLE) {
-            characterRenderer->initializeShadow(shadowRenderPass);
+            if (!characterRenderer->initializeShadow(shadowRenderPass))
+                LOG_WARNING("Character shadow pipeline initialization failed");
         }
     }
 
@@ -1998,7 +2080,8 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
                 audioCoordinator_->getMovementSoundManager()->initialize(assetManager);
             }
             if (questMarkerRenderer) {
-                questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, assetManager);
+                if (!questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, assetManager))
+                    LOG_WARNING("Quest marker renderer initialization failed (non-fatal)");
             }
 
             if (envFlagEnabled("WOWEE_PREWARM_ZONE_MUSIC", false)) {
@@ -2191,7 +2274,8 @@ bool Renderer::loadTerrainArea(const std::string& mapName, int centerX, int cent
             audioCoordinator_->getMovementSoundManager()->initialize(cachedAssetManager);
         }
         if (questMarkerRenderer && cachedAssetManager) {
-            questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, cachedAssetManager);
+            if (!questMarkerRenderer->initialize(vkCtx, perFrameSetLayout, cachedAssetManager))
+                LOG_WARNING("Quest marker renderer re-init failed (non-fatal)");
         }
     } else {
         deferredWorldInitPending_ = true;
@@ -2627,7 +2711,6 @@ void Renderer::buildFrameGraph(game::GameHandler* gameHandler) {
 
     auto shadowDepth = renderGraph_->findResource("shadow_depth");
     auto reflTex = renderGraph_->findResource("reflection_texture");
-    auto cullVis = renderGraph_->findResource("cull_visibility");
 
     // Minimap composites (no dependencies — standalone off-screen render target)
     renderGraph_->addPass("minimap_composite", {}, {},
@@ -2668,13 +2751,6 @@ void Renderer::buildFrameGraph(game::GameHandler* gameHandler) {
     renderGraph_->addPass("reflection_pass", {shadowDepth}, {reflTex},
         [this](VkCommandBuffer) {
             renderReflectionPass();
-        });
-
-    // GPU frustum cull compute → outputs cull_visibility
-    renderGraph_->addPass("compute_cull", {}, {cullVis},
-        [this](VkCommandBuffer cmd) {
-            if (m2Renderer && camera)
-                m2Renderer->dispatchCullCompute(cmd, vkCtx->getCurrentFrame(), *camera);
         });
 
     renderGraph_->compile();

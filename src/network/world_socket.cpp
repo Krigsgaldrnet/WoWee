@@ -110,12 +110,12 @@ namespace wowee {
 namespace network {
 
 // WoW 3.3.5a RC4 encryption keys (hardcoded in client)
-static const uint8_t ENCRYPT_KEY[] = {
+static constexpr uint8_t ENCRYPT_KEY[] = {
     0xC2, 0xB3, 0x72, 0x3C, 0xC6, 0xAE, 0xD9, 0xB5,
     0x34, 0x3C, 0x53, 0xEE, 0x2F, 0x43, 0x67, 0xCE
 };
 
-static const uint8_t DECRYPT_KEY[] = {
+static constexpr uint8_t DECRYPT_KEY[] = {
     0xCC, 0x98, 0xAE, 0x04, 0xE8, 0x97, 0xEA, 0xCA,
     0x12, 0xDD, 0xC0, 0x93, 0x42, 0x91, 0x53, 0x57
 };
@@ -571,7 +571,21 @@ void WorldSocket::pumpNetworkIO() {
                 }
                 receiveBuffer.insert(receiveBuffer.end(), buffer, buffer + receivedSize);
             } else {
-                receiveBuffer.insert(receiveBuffer.end(), buffer, buffer + received);
+                // Non-fast path: same overflow pre-check as fast path to prevent
+                // unbounded buffer growth before the post-check below.
+                size_t liveBytes = bufferedBytes();
+                if (liveBytes > kMaxReceiveBufferBytes || receivedSize > (kMaxReceiveBufferBytes - liveBytes)) {
+                    compactReceiveBuffer();
+                    liveBytes = bufferedBytes();
+                }
+                if (liveBytes > kMaxReceiveBufferBytes || receivedSize > (kMaxReceiveBufferBytes - liveBytes)) {
+                    LOG_ERROR("World socket receive buffer would overflow (buffered=", liveBytes,
+                              " incoming=", receivedSize, " max=", kMaxReceiveBufferBytes,
+                              "). Disconnecting to recover framing.");
+                    closeSocketNoJoin();
+                    return;
+                }
+                receiveBuffer.insert(receiveBuffer.end(), buffer, buffer + receivedSize);
             }
             if (bufferedBytes() > kMaxReceiveBufferBytes) {
                 LOG_ERROR("World socket receive buffer overflow (", bufferedBytes(),

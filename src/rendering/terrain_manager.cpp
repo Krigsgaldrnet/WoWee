@@ -868,7 +868,8 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
 
         // Ensure M2 renderer has asset manager
         if (m2Renderer && assetManager) {
-            m2Renderer->initialize(nullptr, VK_NULL_HANDLE, assetManager);
+            if (!m2Renderer->initialize(nullptr, VK_NULL_HANDLE, assetManager))
+                LOG_WARNING("M2Renderer terrain re-init failed");
         }
 
         ft.phase = FinalizationPhase::M2_MODELS;
@@ -952,7 +953,8 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
     case FinalizationPhase::WMO_MODELS: {
         // Upload multiple WMO models per call (batched GPU uploads)
         if (wmoRenderer && assetManager) {
-            wmoRenderer->initialize(nullptr, VK_NULL_HANDLE, assetManager);
+            if (!wmoRenderer->initialize(nullptr, VK_NULL_HANDLE, assetManager))
+                LOG_WARNING("WMORenderer terrain re-init failed");
             // Set pre-decoded BLP cache and defer normal maps during streaming
             wmoRenderer->setPredecodedBLPCache(&pending->preloadedWMOTextures);
             wmoRenderer->setDeferNormalMaps(true);
@@ -1210,6 +1212,28 @@ void TerrainManager::workerLoop() {
 
             if (!workerRunning.load()) {
                 break;
+            }
+
+            // --- Memory-aware throttling ---
+            // Back-pressure: if the ready queue is deep (finalization can't
+            // keep up), or the system is running low on RAM, sleep instead
+            // of pulling more tiles.  Each prepared tile can hold hundreds
+            // of MB of decoded textures; limiting concurrency here prevents
+            // WoWee from consuming all system memory during world load.
+            const auto& memMon = core::MemoryMonitor::getInstance();
+            if (memMon.isSevereMemoryPressure()) {
+                // Severe pressure — don't pull ANY work until main thread
+                // finalizes tiles and frees decoded texture data.
+                lock.unlock();
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                continue;
+            }
+            if (readyQueue.size() >= maxReadyQueueSize_ || memMon.isMemoryPressure()) {
+                // Moderate pressure or ready queue is backing up — sleep briefly
+                // to let the main thread catch up with finalization.
+                lock.unlock();
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                continue;
             }
 
             if (!loadQueue.empty()) {
