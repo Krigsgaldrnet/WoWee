@@ -199,7 +199,7 @@ public:
     using CharCreateCallback = std::function<void(bool success, const std::string& message)>;
     void setCharCreateCallback(CharCreateCallback cb) { charCreateCallback_ = std::move(cb); }
 
-    using CharDeleteCallback = std::function<void(bool success)>;
+    using CharDeleteCallback = std::function<void(bool success, const std::string& message)>;
     void setCharDeleteCallback(CharDeleteCallback cb) { charDeleteCallback_ = std::move(cb); }
     uint8_t getLastCharDeleteResult() const { return lastCharDeleteResult_; }
 
@@ -3336,6 +3336,10 @@ private:
     CharDeleteCallback charDeleteCallback_;
     CharLoginFailCallback charLoginFailCallback_;
     uint8_t lastCharDeleteResult_ = 0xFF;
+    bool pendingCharDeleteResponse_ = false;
+    uint64_t pendingDeleteGuid_ = 0;
+    float pendingDeleteTimer_ = 0.0f;
+    bool pendingDeleteFallbackEnum_ = false;
     bool pendingCharCreateResult_ = false;
     bool pendingCharCreateSuccess_ = false;
     std::string pendingCharCreateMsg_;
