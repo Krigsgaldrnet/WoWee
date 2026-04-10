@@ -1756,6 +1756,17 @@ void Application::update(float deltaTime) {
                         inOverrun ? entity->getLatestZ() : entity->getZ());
                     glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
 
+                    // Clamp creature Z to terrain surface during movement interpolation.
+                    // The server sends single-segment moves and expects the client to place
+                    // creatures on the ground.  Only clamp while actively moving — idle
+                    // creatures keep their server-authoritative Z (flight masters, etc.).
+                    if (entity->isActivelyMoving() && renderer->getTerrainManager()) {
+                        auto terrainZ = renderer->getTerrainManager()->getHeightAt(renderPos.x, renderPos.y);
+                        if (terrainZ.has_value()) {
+                            renderPos.z = terrainZ.value();
+                        }
+                    }
+
                     // Visual collision guard: keep hostile melee units from rendering inside the
                     // player's model while attacking. This is client-side only (no server position change).
                     // Only check for creatures within 8 units (melee range) — saves expensive
@@ -1958,6 +1969,14 @@ void Application::update(float deltaTime) {
                         inOverrun ? entity->getLatestY() : entity->getY(),
                         inOverrun ? entity->getLatestZ() : entity->getZ());
                     glm::vec3 renderPos = core::coords::canonicalToRender(canonical);
+
+                    // Clamp other players' Z to terrain surface during movement
+                    if (entity->isActivelyMoving() && renderer->getTerrainManager()) {
+                        auto terrainZ = renderer->getTerrainManager()->getHeightAt(renderPos.x, renderPos.y);
+                        if (terrainZ.has_value()) {
+                            renderPos.z = terrainZ.value();
+                        }
+                    }
 
                     auto posIt = _pCreatureRenderPosCache.find(guid);
                     if (posIt == _pCreatureRenderPosCache.end()) {
