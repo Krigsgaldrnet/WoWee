@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/transport_path_repository.hpp"
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
@@ -17,21 +18,6 @@ namespace wowee::pipeline {
 }
 
 namespace wowee::game {
-
-struct TimedPoint {
-    uint32_t tMs;          // Time in milliseconds from DBC
-    glm::vec3 pos;         // Position at this time
-};
-
-struct TransportPath {
-    uint32_t pathId;
-    std::vector<TimedPoint> points;  // Time-indexed waypoints (includes duplicate first point at end for wrap)
-    bool looping;  // Set to false after adding explicit wrap point
-    uint32_t durationMs;   // Total loop duration in ms (includes wrap segment if added)
-    bool zOnly;    // True if path only has Z movement (elevator/bobbing), false if real XY travel
-    bool fromDBC;  // True if loaded from TransportAnimation.dbc, false for runtime fallback/custom paths
-    bool worldCoords = false;  // True if points are absolute world coords (TaxiPathNode), not local offsets
-};
 
 struct ActiveTransport {
     uint64_t guid;              // Entity GUID
@@ -137,13 +123,12 @@ public:
 
 private:
     void updateTransportMovement(ActiveTransport& transport, float deltaTime);
-    glm::vec3 evalTimedCatmullRom(const TransportPath& path, uint32_t pathTimeMs);
-    glm::quat orientationFromTangent(const TransportPath& path, uint32_t pathTimeMs);
     void updateTransformMatrices(ActiveTransport& transport);
+    /// Legacy transport orientation from tangent (preserves original cross-product order).
+    static glm::quat orientationFromSplineTangent(const glm::vec3& tangent);
 
+    TransportPathRepository pathRepo_;
     std::unordered_map<uint64_t, ActiveTransport> transports_;
-    std::unordered_map<uint32_t, TransportPath> paths_;      // Indexed by transportEntry (pathId from TransportAnimation.dbc)
-    std::unordered_map<uint32_t, TransportPath> taxiPaths_;  // Indexed by TaxiPath.dbc ID (world-coord paths for MO_TRANSPORT)
     rendering::WMORenderer* wmoRenderer_ = nullptr;
     rendering::M2Renderer* m2Renderer_ = nullptr;
     bool clientSideAnimation_ = false;  // DISABLED - use server positions instead of client prediction

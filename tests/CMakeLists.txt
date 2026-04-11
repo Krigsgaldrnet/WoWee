@@ -59,6 +59,32 @@ target_link_libraries(test_srp PRIVATE catch2_main OpenSSL::SSL OpenSSL::Crypto)
 add_test(NAME srp COMMAND test_srp)
 register_test_target(test_srp)
 
+# ── test_spline ──────────────────────────────────────────────
+add_executable(test_spline
+    test_spline.cpp
+    ${TEST_COMMON_SOURCES}
+    ${CMAKE_SOURCE_DIR}/src/math/spline.cpp
+)
+target_include_directories(test_spline PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_spline SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_spline PRIVATE catch2_main)
+add_test(NAME spline COMMAND test_spline)
+register_test_target(test_spline)
+
+# ── test_transport_path_repo ─────────────────────────────────
+add_executable(test_transport_path_repo
+    test_transport_path_repo.cpp
+    ${TEST_COMMON_SOURCES}
+    ${CMAKE_SOURCE_DIR}/src/game/transport_path_repository.cpp
+    ${CMAKE_SOURCE_DIR}/src/math/spline.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/dbc_loader.cpp
+)
+target_include_directories(test_transport_path_repo PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_transport_path_repo SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_transport_path_repo PRIVATE catch2_main)
+add_test(NAME transport_path_repo COMMAND test_transport_path_repo)
+register_test_target(test_transport_path_repo)
+
 # ── test_opcode_table ────────────────────────────────────────
 add_executable(test_opcode_table
     test_opcode_table.cpp
