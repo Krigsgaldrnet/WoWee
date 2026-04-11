@@ -1,10 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <cmath>
 #include <string>
+#include <array>
+#include <vector>
 #include <map>
 #include <unordered_map>
 #include <memory>
+#include <optional>
+#include "math/spline.hpp"
 
 namespace wowee {
 namespace game {
@@ -76,13 +81,80 @@ public:
         z = pz;
         orientation = o;
         isMoving_ = false; // Instant position set cancels interpolation
+        usePathMode_ = false;
+        activeSpline_.reset();
+    }
+
+    // Multi-segment path movement (Catmull-Rom spline interpolation)
+    void startMoveAlongPath(const std::vector<std::array<float, 3>>& path, float destO, float totalDuration) {
+        if (path.empty()) return;
+        if (path.size() == 1 || totalDuration <= 0.0f) {
+            startMoveTo(path.back()[0], path.back()[1], path.back()[2], destO, totalDuration);
+            return;
+        }
+        // Build cumulative distances for proportional time assignment
+        std::vector<float> cumDist(path.size(), 0.0f);
+        float totalDist = 0.0f;
+        for (size_t i = 1; i < path.size(); i++) {
+            float dx = path[i][0] - path[i - 1][0];
+            float dy = path[i][1] - path[i - 1][1];
+            float dz = path[i][2] - path[i - 1][2];
+            totalDist += std::sqrt(dx * dx + dy * dy + dz * dz);
+            cumDist[i] = totalDist;
+        }
+        if (totalDist < 0.001f) {
+            startMoveTo(path.back()[0], path.back()[1], path.back()[2], destO, totalDuration);
+            return;
+        }
+        // Build SplineKeys with distance-proportional time
+        uint32_t durationMs = static_cast<uint32_t>(totalDuration * 1000.0f);
+        std::vector<math::SplineKey> keys(path.size());
+        for (size_t i = 0; i < path.size(); i++) {
+            float fraction = cumDist[i] / totalDist;
+            keys[i].timeMs = static_cast<uint32_t>(fraction * durationMs);
+            keys[i].position = {path[i][0], path[i][1], path[i][2]};
+        }
+        activeSpline_.emplace(std::move(keys), /*timeClosed=*/false);
+        splineDurationMs_ = durationMs;
+
+        // Snap position if in overrun phase
+        if (isMoving_ && moveElapsed_ >= moveDuration_) {
+            x = moveEndX_; y = moveEndY_; z = moveEndZ_;
+        }
+        moveEndX_ = path.back()[0]; moveEndY_ = path.back()[1]; moveEndZ_ = path.back()[2];
+        moveDuration_ = totalDuration;
+        moveElapsed_ = 0.0f;
+        orientation = destO;
+        isMoving_ = true;
+        usePathMode_ = true;
+        // Velocity for dead-reckoning after path completes
+        float fromX = isMoving_ ? moveEndX_ : x;
+        float fromY = isMoving_ ? moveEndY_ : y;
+        float impliedVX = (path.back()[0] - fromX) / totalDuration;
+        float impliedVY = (path.back()[1] - fromY) / totalDuration;
+        float impliedVZ = (path.back()[2] - path[0][2]) / totalDuration;
+        const float alpha = 0.65f;
+        velX_ = alpha * impliedVX + (1.0f - alpha) * velX_;
+        velY_ = alpha * impliedVY + (1.0f - alpha) * velY_;
+        velZ_ = alpha * impliedVZ + (1.0f - alpha) * velZ_;
     }
 
     // Movement interpolation (syncs entity position with renderer during movement)
     void startMoveTo(float destX, float destY, float destZ, float destO, float durationSec) {
+        usePathMode_ = false;
+        activeSpline_.reset();
         if (durationSec <= 0.0f) {
             setPosition(destX, destY, destZ, destO);
             return;
+        }
+        // If we're in the dead-reckoning overrun phase, snap x/y/z back to the
+        // destination before using them as the new start.  The renderer was showing
+        // the entity at moveEnd (via getLatest) during overrun, so the new
+        // interpolation must start there to avoid a visible teleport.
+        if (isMoving_ && moveElapsed_ >= moveDuration_) {
+            x = moveEndX_;
+            y = moveEndY_;
+            z = moveEndZ_;
         }
         // Derive velocity from the displacement this packet implies.
         // Use the previous destination (not current lerped pos) as the "from" so
@@ -113,11 +185,21 @@ public:
         if (!isMoving_) return;
         moveElapsed_ += deltaTime;
         if (moveElapsed_ < moveDuration_) {
-            // Linear interpolation within the packet window
-            float t = moveElapsed_ / moveDuration_;
-            x = moveStartX_ + (moveEndX_ - moveStartX_) * t;
-            y = moveStartY_ + (moveEndY_ - moveStartY_) * t;
-            z = moveStartZ_ + (moveEndZ_ - moveStartZ_) * t;
+            if (usePathMode_ && activeSpline_) {
+                // Catmull-Rom spline interpolation
+                uint32_t pathTimeMs = static_cast<uint32_t>(moveElapsed_ * 1000.0f);
+                if (pathTimeMs >= splineDurationMs_) pathTimeMs = splineDurationMs_ - 1;
+                glm::vec3 pos = activeSpline_->evaluatePosition(pathTimeMs);
+                x = pos.x;
+                y = pos.y;
+                z = pos.z;
+            } else {
+                // Single-segment linear interpolation
+                float t = moveElapsed_ / moveDuration_;
+                x = moveStartX_ + (moveEndX_ - moveStartX_) * t;
+                y = moveStartY_ + (moveEndY_ - moveStartY_) * t;
+                z = moveStartZ_ + (moveEndZ_ - moveStartZ_) * t;
+            }
         } else {
             // Past the interpolation window: dead-reckon at the smoothed velocity
             // rather than freezing in place. Cap to one extra interval so we don't
@@ -192,11 +274,15 @@ protected:
 
     // Movement interpolation state
     bool isMoving_ = false;
+    bool usePathMode_ = false;
     float moveStartX_ = 0, moveStartY_ = 0, moveStartZ_ = 0;
     float moveEndX_ = 0, moveEndY_ = 0, moveEndZ_ = 0;
     float moveDuration_ = 0;
     float moveElapsed_ = 0;
     float velX_ = 0, velY_ = 0, velZ_ = 0;  // Smoothed velocity for dead reckoning
+    // CatmullRom spline for multi-segment path movement (replaces linear pathPoints_/pathSegDists_)
+    std::optional<math::CatmullRomSpline> activeSpline_;
+    uint32_t splineDurationMs_ = 0;
 };
 
 /**
