@@ -687,6 +687,28 @@ set(WOWEE_SOURCES
     src/ui/chat_panel.cpp
     src/ui/chat_panel_commands.cpp
     src/ui/chat_panel_utils.cpp
+    src/ui/chat/chat_settings.cpp
+    src/ui/chat/chat_input.cpp
+    src/ui/chat/chat_tab_manager.cpp
+    src/ui/chat/chat_bubble_manager.cpp
+    src/ui/chat/chat_markup_parser.cpp
+    src/ui/chat/chat_markup_renderer.cpp
+    src/ui/chat/chat_command_registry.cpp
+    src/ui/chat/chat_tab_completer.cpp
+    src/ui/chat/macro_evaluator.cpp
+    src/ui/chat/game_state_adapter.cpp
+    src/ui/chat/input_modifier_adapter.cpp
+    src/ui/chat/commands/system_commands.cpp
+    src/ui/chat/commands/social_commands.cpp
+    src/ui/chat/commands/channel_commands.cpp
+    src/ui/chat/commands/combat_commands.cpp
+    src/ui/chat/commands/group_commands.cpp
+    src/ui/chat/commands/guild_commands.cpp
+    src/ui/chat/commands/target_commands.cpp
+    src/ui/chat/commands/emote_commands.cpp
+    src/ui/chat/commands/misc_commands.cpp
+    src/ui/chat/commands/help_commands.cpp
+    src/ui/chat/commands/gm_commands.cpp
     src/ui/toast_manager.cpp
     src/ui/dialog_manager.cpp
     src/ui/settings_panel.cpp

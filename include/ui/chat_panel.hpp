@@ -2,6 +2,15 @@
 
 #include "game/game_handler.hpp"
 #include "ui/ui_services.hpp"
+#include "ui/chat/chat_settings.hpp"
+#include "ui/chat/chat_input.hpp"
+#include "ui/chat/chat_tab_manager.hpp"
+#include "ui/chat/chat_bubble_manager.hpp"
+#include "ui/chat/cast_sequence_tracker.hpp"
+#include "ui/chat/chat_markup_parser.hpp"
+#include "ui/chat/chat_markup_renderer.hpp"
+#include "ui/chat/chat_command_registry.hpp"
+#include "ui/chat/chat_tab_completer.hpp"
 #include <vulkan/vulkan.h>
 #include <imgui.h>
 #include <string>
@@ -69,9 +78,6 @@ public:
 
     /** Execute a macro body (one line per 'click'). */
     void executeMacroText(game::GameHandler& gameHandler,
-                          InventoryScreen& inventoryScreen,
-                          SpellbookScreen& spellbookScreen,
-                          QuestLogScreen& questLogScreen,
                           const std::string& macroText);
 
     // ---- Slash-command side-effects ----
@@ -90,25 +96,31 @@ public:
     /** Return accumulated slash-command flags and reset them. */
     SlashCommands consumeSlashCommands();
 
-    // ---- Chat settings (read/written by GameScreen save/load & settings tab) ----
+    // ---- Chat settings (delegated to ChatSettings) ----
 
-    bool  chatShowTimestamps  = false;
-    int   chatFontSize        = 1;   // 0=small, 1=medium, 2=large
-    bool  chatAutoJoinGeneral = true;
-    bool  chatAutoJoinTrade   = true;
-    bool  chatAutoJoinLocalDefense = true;
-    bool  chatAutoJoinLFG     = true;
-    bool  chatAutoJoinLocal   = true;
+    ChatSettings settings;
     int   activeChatTab       = 0;
+
+    // Legacy accessors — forward to settings struct for external code
+    // (GameScreen save/load reads these directly)
+    bool& chatShowTimestamps       = settings.showTimestamps;
+    int&  chatFontSize             = settings.fontSize;
+    bool& chatAutoJoinGeneral      = settings.autoJoinGeneral;
+    bool& chatAutoJoinTrade        = settings.autoJoinTrade;
+    bool& chatAutoJoinLocalDefense = settings.autoJoinLocalDefense;
+    bool& chatAutoJoinLFG          = settings.autoJoinLFG;
+    bool& chatAutoJoinLocal        = settings.autoJoinLocal;
 
     /** Spell icon lookup callback — set by GameScreen each frame before render(). */
     std::function<VkDescriptorSet(uint32_t, pipeline::AssetManager*)> getSpellIcon;
 
-    /** Render the "Chat" tab inside the Settings window. */
-    void renderSettingsTab(std::function<void()> saveSettingsFn);
+    /** Render the "Chat" tab inside the Settings window (delegates to settings). */
+    void renderSettingsTab(std::function<void()> saveSettingsFn) {
+        settings.renderSettingsTab(std::move(saveSettingsFn));
+    }
 
-    /** Reset all chat settings to defaults. */
-    void restoreDefaults();
+    /** Reset all chat settings to defaults (delegates to settings). */
+    void restoreDefaults() { settings.restoreDefaults(); }
 
     // UIServices injection (Phase B singleton breaking)
     void setServices(const UIServices& services) { services_ = services; }
@@ -116,14 +128,31 @@ public:
     /** Replace $g/$G and $n/$N gender/name placeholders in quest/chat text. */
     std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler);
 
+    // ---- Accessors for command system (Phase 3) ----
+    char* getChatInputBuffer() { return chatInputBuffer_; }
+    size_t getChatInputBufferSize() const { return sizeof(chatInputBuffer_); }
+    char* getWhisperTargetBuffer() { return whisperTargetBuffer_; }
+    size_t getWhisperTargetBufferSize() const { return sizeof(whisperTargetBuffer_); }
+    int  getSelectedChatType() const { return selectedChatType_; }
+    void setSelectedChatType(int t) { selectedChatType_ = t; }
+    int  getSelectedChannelIdx() const { return selectedChannelIdx_; }
+    bool& macroStopped() { return macroStopped_; }
+    CastSequenceTracker& getCastSeqTracker() { return castSeqTracker_; }
+    SlashCommands& getSlashCmds() { return slashCmds_; }
+    UIServices& getServices() { return services_; }
+    ChatCommandRegistry& getCommandRegistry() { return commandRegistry_; }
+
 private:
     // Injected UI services (Phase B singleton breaking)
     UIServices services_;
 
     // ---- Chat input state ----
+    // NOTE: These will migrate to ChatInput in Phase 6 (slim ChatPanel).
+    // ChatInput class is ready at include/ui/chat/chat_input.hpp.
     char chatInputBuffer_[512] = "";
     char whisperTargetBuffer_[256] = "";
     bool chatInputActive_ = false;
+    int  chatInputCooldown_ = 0;  // frames to suppress re-activation after send
     int  selectedChatType_ = 0;  // 0=SAY .. 10=CHANNEL
     int  lastChatType_     = 0;
     int  selectedChannelIdx_ = 0;
@@ -137,55 +166,44 @@ private:
     // Macro stop flag
     bool macroStopped_ = false;
 
-    // Tab-completion state
-    std::string chatTabPrefix_;
-    std::vector<std::string> chatTabMatches_;
-    int chatTabMatchIdx_ = -1;
+    // /castsequence state (delegated to CastSequenceTracker, Phase 1.5)
+    CastSequenceTracker castSeqTracker_;
+
+    // Command registry (Phase 3 — replaces if/else chain)
+    ChatCommandRegistry commandRegistry_;
+    void registerAllCommands();
+
+    // Markup parser + renderer (Phase 2)
+    ChatMarkupParser markupParser_;
+    ChatMarkupRenderer markupRenderer_;
+
+    // Tab-completion (Phase 5 — delegated to ChatTabCompleter)
+    ChatTabCompleter tabCompleter_;
 
     // Mention notification
     size_t chatMentionSeenCount_ = 0;
 
-    // ---- Chat tabs ----
-    struct ChatTab {
-        std::string name;
-        uint64_t typeMask;
-    };
-    std::vector<ChatTab> chatTabs_;
-    std::vector<int> chatTabUnread_;
-    size_t chatTabSeenCount_ = 0;
-
-    void initChatTabs();
-    bool shouldShowMessage(const game::MessageChatData& msg, int tabIndex) const;
+    // ---- Chat tabs (delegated to ChatTabManager) ----
+    ChatTabManager tabManager_;
 
     // ---- Chat window visual state ----
     bool  chatScrolledUp_          = false;
     bool  chatForceScrollToBottom_ = false;
-    bool  chatWindowLocked_        = true;
+    // windowLocked is in settings.windowLocked (kept in sync via reference)
+    bool& chatWindowLocked_        = settings.windowLocked;
     ImVec2 chatWindowPos_          = ImVec2(0.0f, 0.0f);
     bool  chatWindowPosInit_       = false;
 
-    // ---- Chat bubbles ----
-    struct ChatBubble {
-        uint64_t senderGuid   = 0;
-        std::string message;
-        float timeRemaining   = 0.0f;
-        float totalDuration   = 0.0f;
-        bool isYell           = false;
-    };
-    std::vector<ChatBubble> chatBubbles_;
-    bool chatBubbleCallbackSet_ = false;
+    // ---- Chat bubbles (delegated to ChatBubbleManager) ----
+    ChatBubbleManager bubbleManager_;
 
     // ---- Whisper toast state (populated in render, rendered by GameScreen/ToastManager) ----
     // Whisper scanning lives here because it's tightly coupled to chat history iteration.
     size_t whisperSeenCount_ = 0;
 
     // ---- Helpers ----
-    void sendChatMessage(game::GameHandler& gameHandler,
-                         InventoryScreen& inventoryScreen,
-                         SpellbookScreen& spellbookScreen,
-                         QuestLogScreen& questLogScreen);
-    const char* getChatTypeName(game::ChatType type) const;
-    ImVec4 getChatTypeColor(game::ChatType type) const;
+    void sendChatMessage(game::GameHandler& gameHandler);
+    // getChatTypeName / getChatTypeColor now static in ChatTabManager
 
     // Cached game handler for input callback (set each frame in render)
     game::GameHandler* cachedGameHandler_ = nullptr;
