@@ -685,17 +685,18 @@ set(WOWEE_SOURCES
     src/ui/game_screen_hud.cpp
     src/ui/game_screen_minimap.cpp
     src/ui/chat_panel.cpp
-    src/ui/chat_panel_commands.cpp
-    src/ui/chat_panel_utils.cpp
     src/ui/chat/chat_settings.cpp
     src/ui/chat/chat_input.cpp
+    src/ui/chat/chat_utils.cpp
     src/ui/chat/chat_tab_manager.cpp
     src/ui/chat/chat_bubble_manager.cpp
     src/ui/chat/chat_markup_parser.cpp
     src/ui/chat/chat_markup_renderer.cpp
+    src/ui/chat/item_tooltip_renderer.cpp
     src/ui/chat/chat_command_registry.cpp
     src/ui/chat/chat_tab_completer.cpp
     src/ui/chat/macro_evaluator.cpp
+    src/ui/chat/macro_eval_convenience.cpp
     src/ui/chat/game_state_adapter.cpp
     src/ui/chat/input_modifier_adapter.cpp
     src/ui/chat/commands/system_commands.cpp

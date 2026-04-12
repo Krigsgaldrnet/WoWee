@@ -47,15 +47,6 @@ public:
     void render(const std::vector<ChatSegment>& segments,
                 const ImVec4& baseColor,
                 const MarkupRenderContext& ctx) const;
-
-    /**
-     * Render a full item tooltip for the given item entry.
-     * Extracted from the renderItemLinkTooltip inline lambda.
-     */
-    static void renderItemTooltip(uint32_t itemEntry,
-                                  game::GameHandler& gameHandler,
-                                  InventoryScreen& inventoryScreen,
-                                  pipeline::AssetManager* assetMgr);
 };
 
 } // namespace ui

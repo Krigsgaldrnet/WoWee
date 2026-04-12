@@ -1,14 +1,18 @@
 #pragma once
 
 #include "game/world_packets.hpp"
+#include "game/entity.hpp"
 #include <algorithm>
 #include <cctype>
+#include <memory>
 #include <string>
 
 namespace wowee {
 
-// Forward declaration
-namespace game { class GameHandler; }
+// Forward declarations
+namespace game {
+    class GameHandler;
+}
 
 namespace ui {
 namespace chat_utils {
@@ -37,6 +41,17 @@ inline std::string toLower(std::string s) {
     });
     return s;
 }
+
+/**
+ * Replace $g/$G gender, $n/$N name, $c/$C class, $r/$R race,
+ * $p/$o/$s/$S pronoun, $b/$B linebreak, and |n linebreak placeholders.
+ * Extracted from ChatPanel::replaceGenderPlaceholders (Phase 6.6).
+ */
+std::string replaceGenderPlaceholders(const std::string& text,
+                                       game::GameHandler& gameHandler);
+
+/** Get display name for any entity (Player/Unit/GameObject). */
+std::string getEntityDisplayName(const std::shared_ptr<game::Entity>& entity);
 
 } // namespace chat_utils
 } // namespace ui

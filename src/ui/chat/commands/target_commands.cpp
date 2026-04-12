@@ -3,6 +3,7 @@
 //                  /focus, /clearfocus
 // Moved from ChatPanel::sendChatMessage() if/else chain (Phase 3).
 #include "ui/chat/i_chat_command.hpp"
+#include "ui/chat/macro_evaluator.hpp"
 #include "ui/chat_panel.hpp"
 #include "game/game_handler.hpp"
 #include "game/entity.hpp"
@@ -12,11 +13,6 @@
 #include <memory>
 
 namespace wowee { namespace ui {
-
-// Forward declaration of evaluateMacroConditionals (still in chat_panel_commands.cpp)
-std::string evaluateMacroConditionals(const std::string& rawArg,
-                                       game::GameHandler& gameHandler,
-                                       uint64_t& targetOverride);
 
 namespace {
 

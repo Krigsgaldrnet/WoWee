@@ -1,40 +1,15 @@
-#include "ui/chat_panel.hpp"
-#include "ui/ui_colors.hpp"
-#include "rendering/vk_context.hpp"
-#include "core/application.hpp"
-#include "rendering/renderer.hpp"
-#include "rendering/camera.hpp"
-#include "rendering/camera_controller.hpp"
-#include "audio/audio_coordinator.hpp"
-#include "audio/ui_sound_manager.hpp"
-#include "pipeline/asset_manager.hpp"
-#include "pipeline/dbc_loader.hpp"
-#include "pipeline/dbc_layout.hpp"
-#include "game/expansion_profile.hpp"
+// chat_utils.cpp — Shared chat utility functions.
+// Extracted from chat_panel_utils.cpp (Phase 6.6 of chat_panel_ref.md).
+
+#include "ui/chat/chat_utils.hpp"
+#include "game/game_handler.hpp"
 #include "game/character.hpp"
-#include "core/logger.hpp"
-#include <imgui.h>
-#include <imgui_internal.h>
-#include "core/coordinates.hpp"
-#include <algorithm>
-#include <cmath>
-#include <sstream>
-#include <cstring>
-#include <unordered_map>
+#include <vector>
 
-namespace {
-    using namespace wowee::ui::colors;
-    constexpr auto& kColorRed        = kRed;
-    constexpr auto& kColorBrightGreen= kBrightGreen;
-    constexpr auto& kColorYellow     = kYellow;
-} // namespace
+namespace wowee { namespace ui { namespace chat_utils {
 
-namespace wowee { namespace ui {
-
-// getChatTypeName / getChatTypeColor moved to ChatTabManager (Phase 1.3)
-
-
-std::string ChatPanel::replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler) {
+std::string replaceGenderPlaceholders(const std::string& text,
+                                       game::GameHandler& gameHandler) {
     // Get player gender, pronouns, and name
     game::Gender gender = game::Gender::NONBINARY;
     std::string playerName = "Adventurer";
@@ -50,7 +25,7 @@ std::string ChatPanel::replaceGenderPlaceholders(const std::string& text, game::
     std::string result = text;
 
     // Helper to trim whitespace
-    auto trim = [](std::string& s) {
+    auto trimStr = [](std::string& s) {
         const char* ws = " \t\n\r";
         size_t start = s.find_first_not_of(ws);
         if (start == std::string::npos) { s.clear(); return; }
@@ -76,46 +51,32 @@ std::string ChatPanel::replaceGenderPlaceholders(const std::string& text, game::
         size_t colonPos;
         while ((colonPos = placeholder.find(':', start)) != std::string::npos) {
             std::string part = placeholder.substr(start, colonPos - start);
-            trim(part);
+            trimStr(part);
             parts.push_back(part);
             start = colonPos + 1;
         }
         // Add the last part
         std::string lastPart = placeholder.substr(start);
-        trim(lastPart);
+        trimStr(lastPart);
         parts.push_back(lastPart);
 
         // Select appropriate text based on gender
         std::string replacement;
         if (parts.size() >= 3) {
-            // Three options: male, female, nonbinary
             switch (gender) {
-                case game::Gender::MALE:
-                    replacement = parts[0];
-                    break;
-                case game::Gender::FEMALE:
-                    replacement = parts[1];
-                    break;
-                case game::Gender::NONBINARY:
-                    replacement = parts[2];
-                    break;
+                case game::Gender::MALE:      replacement = parts[0]; break;
+                case game::Gender::FEMALE:    replacement = parts[1]; break;
+                case game::Gender::NONBINARY: replacement = parts[2]; break;
             }
         } else if (parts.size() >= 2) {
-            // Two options: male, female (use first for nonbinary)
             switch (gender) {
-                case game::Gender::MALE:
-                    replacement = parts[0];
-                    break;
-                case game::Gender::FEMALE:
-                    replacement = parts[1];
-                    break;
+                case game::Gender::MALE:   replacement = parts[0]; break;
+                case game::Gender::FEMALE: replacement = parts[1]; break;
                 case game::Gender::NONBINARY:
-                    // Default to gender-neutral: use the shorter/simpler option
                     replacement = parts[0].length() <= parts[1].length() ? parts[0] : parts[1];
                     break;
             }
         } else {
-            // Malformed placeholder
             pos = endPos + 1;
             continue;
         }
@@ -177,53 +138,20 @@ std::string ChatPanel::replaceGenderPlaceholders(const std::string& text, game::
     return result;
 }
 
-// renderBubbles delegates to ChatBubbleManager (Phase 1.4)
-void ChatPanel::renderBubbles(game::GameHandler& gameHandler) {
-    bubbleManager_.render(gameHandler, services_);
-}
-
-
-// ---- Public interface methods ----
-
-// setupCallbacks delegates to ChatBubbleManager (Phase 1.4)
-void ChatPanel::setupCallbacks(game::GameHandler& gameHandler) {
-    bubbleManager_.setupCallback(gameHandler);
-}
-
-void ChatPanel::insertChatLink(const std::string& link) {
-    if (link.empty()) return;
-    size_t curLen = strlen(chatInputBuffer_);
-    if (curLen + link.size() + 1 < sizeof(chatInputBuffer_)) {
-        strncat(chatInputBuffer_, link.c_str(), sizeof(chatInputBuffer_) - curLen - 1);
-        chatInputMoveCursorToEnd_ = true;
-        refocusChatInput_ = true;
+std::string getEntityDisplayName(const std::shared_ptr<game::Entity>& entity) {
+    if (entity->getType() == game::ObjectType::PLAYER) {
+        auto player = std::static_pointer_cast<game::Player>(entity);
+        if (!player->getName().empty()) return player->getName();
+    } else if (entity->getType() == game::ObjectType::UNIT) {
+        auto unit = std::static_pointer_cast<game::Unit>(entity);
+        if (!unit->getName().empty()) return unit->getName();
+    } else if (entity->getType() == game::ObjectType::GAMEOBJECT) {
+        auto go = std::static_pointer_cast<game::GameObject>(entity);
+        if (!go->getName().empty()) return go->getName();
     }
+    return "Unknown";
 }
 
-void ChatPanel::activateSlashInput() {
-    refocusChatInput_ = true;
-    chatInputBuffer_[0] = '/';
-    chatInputBuffer_[1] = '\0';
-    chatInputMoveCursorToEnd_ = true;
-}
-
-void ChatPanel::activateInput() {
-    if (chatInputCooldown_ > 0) return;  // suppress re-activation right after send
-    refocusChatInput_ = true;
-}
-
-void ChatPanel::setWhisperTarget(const std::string& name) {
-    selectedChatType_ = 4;  // WHISPER
-    strncpy(whisperTargetBuffer_, name.c_str(), sizeof(whisperTargetBuffer_) - 1);
-    whisperTargetBuffer_[sizeof(whisperTargetBuffer_) - 1] = '\0';
-    refocusChatInput_ = true;
-}
-
-ChatPanel::SlashCommands ChatPanel::consumeSlashCommands() {
-    SlashCommands result = slashCmds_;
-    slashCmds_ = {};
-    return result;
-}
-
+} // namespace chat_utils
 } // namespace ui
 } // namespace wowee

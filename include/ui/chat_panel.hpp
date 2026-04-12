@@ -125,9 +125,6 @@ public:
     // UIServices injection (Phase B singleton breaking)
     void setServices(const UIServices& services) { services_ = services; }
 
-    /** Replace $g/$G and $n/$N gender/name placeholders in quest/chat text. */
-    std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler);
-
     // ---- Accessors for command system (Phase 3) ----
     char* getChatInputBuffer() { return chatInputBuffer_; }
     size_t getChatInputBufferSize() const { return sizeof(chatInputBuffer_); }
@@ -203,7 +200,8 @@ private:
 
     // ---- Helpers ----
     void sendChatMessage(game::GameHandler& gameHandler);
-    // getChatTypeName / getChatTypeColor now static in ChatTabManager
+    static int inputTextCallback(ImGuiInputTextCallbackData* data);
+    void detectChannelPrefix(game::GameHandler& gameHandler);
 
     // Cached game handler for input callback (set each frame in render)
     game::GameHandler* cachedGameHandler_ = nullptr;

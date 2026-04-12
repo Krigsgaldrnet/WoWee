@@ -1,6 +1,7 @@
 // System commands: /run, /dump, /reload, /stopmacro, /clear, /logout
 // Moved from ChatPanel::sendChatMessage() if/else chain (Phase 3).
 #include "ui/chat/i_chat_command.hpp"
+#include "ui/chat/macro_evaluator.hpp"
 #include "ui/chat_panel.hpp"
 #include "ui/ui_services.hpp"
 #include "game/game_handler.hpp"
@@ -10,11 +11,6 @@
 #include <cctype>
 
 namespace wowee { namespace ui {
-
-// Forward declaration of evaluateMacroConditionals (still in chat_panel_commands.cpp)
-std::string evaluateMacroConditionals(const std::string& rawArg,
-                                       game::GameHandler& gameHandler,
-                                       uint64_t& targetOverride);
 
 // --- /run, /script ---
 class RunCommand : public IChatCommand {

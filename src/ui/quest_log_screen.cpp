@@ -2,6 +2,7 @@
 #include "ui/ui_colors.hpp"
 #include "ui/inventory_screen.hpp"
 #include "ui/keybinding_manager.hpp"
+#include "ui/chat/chat_utils.hpp"
 #include "core/application.hpp"
 #include "core/input.hpp"
 #include <imgui.h>
@@ -10,125 +11,6 @@
 namespace wowee { namespace ui {
 
 namespace {
-// Helper function to replace gender placeholders, pronouns, and name
-std::string replaceGenderPlaceholders(const std::string& text, game::GameHandler& gameHandler) {
-    game::Gender gender = game::Gender::NONBINARY;
-    std::string playerName = "Adventurer";
-    const auto* character = gameHandler.getActiveCharacter();
-    if (character) {
-        gender = character->gender;
-        if (!character->name.empty()) {
-            playerName = character->name;
-        }
-    }
-    game::Pronouns pronouns = game::Pronouns::forGender(gender);
-
-    std::string result = text;
-
-    auto trim = [](std::string& s) {
-        const char* ws = " \t\n\r";
-        size_t start = s.find_first_not_of(ws);
-        if (start == std::string::npos) { s.clear(); return; }
-        size_t end = s.find_last_not_of(ws);
-        s = s.substr(start, end - start + 1);
-    };
-
-    // Replace $g placeholders
-    size_t pos = 0;
-    while ((pos = result.find('$', pos)) != std::string::npos) {
-        if (pos + 1 >= result.length()) break;
-        char marker = result[pos + 1];
-        if (marker != 'g' && marker != 'G') { pos++; continue; }
-
-        size_t endPos = result.find(';', pos);
-        if (endPos == std::string::npos) { pos += 2; continue; }
-
-        std::string placeholder = result.substr(pos + 2, endPos - pos - 2);
-
-        std::vector<std::string> parts;
-        size_t start = 0;
-        size_t colonPos;
-        while ((colonPos = placeholder.find(':', start)) != std::string::npos) {
-            std::string part = placeholder.substr(start, colonPos - start);
-            trim(part);
-            parts.push_back(part);
-            start = colonPos + 1;
-        }
-        std::string lastPart = placeholder.substr(start);
-        trim(lastPart);
-        parts.push_back(lastPart);
-
-        std::string replacement;
-        if (parts.size() >= 3) {
-            switch (gender) {
-                case game::Gender::MALE: replacement = parts[0]; break;
-                case game::Gender::FEMALE: replacement = parts[1]; break;
-                case game::Gender::NONBINARY: replacement = parts[2]; break;
-            }
-        } else if (parts.size() >= 2) {
-            switch (gender) {
-                case game::Gender::MALE: replacement = parts[0]; break;
-                case game::Gender::FEMALE: replacement = parts[1]; break;
-                case game::Gender::NONBINARY:
-                    replacement = parts[0].length() <= parts[1].length() ? parts[0] : parts[1];
-                    break;
-            }
-        } else {
-            pos = endPos + 1;
-            continue;
-        }
-
-        result.replace(pos, endPos - pos + 1, replacement);
-        pos += replacement.length();
-    }
-
-    // Resolve class and race names for $C and $R placeholders
-    std::string className = "Adventurer";
-    std::string raceName = "Unknown";
-    if (character) {
-        className = game::getClassName(character->characterClass);
-        raceName = game::getRaceName(character->race);
-    }
-
-    // Replace simple placeholders
-    pos = 0;
-    while ((pos = result.find('$', pos)) != std::string::npos) {
-        if (pos + 1 >= result.length()) break;
-
-        char code = result[pos + 1];
-        std::string replacement;
-
-        switch (code) {
-            case 'n': case 'N': replacement = playerName; break;
-            case 'c': case 'C': replacement = className; break;
-            case 'r': case 'R': replacement = raceName; break;
-            case 'p': replacement = pronouns.subject; break;
-            case 'o': replacement = pronouns.object; break;
-            case 's': replacement = pronouns.possessive; break;
-            case 'S': replacement = pronouns.possessiveP; break;
-            case 'b': case 'B': replacement = "\n"; break;
-            case 'g': case 'G': pos++; continue;
-            default: pos++; continue;
-        }
-
-        result.replace(pos, 2, replacement);
-        pos += replacement.length();
-    }
-
-    // WoW markup linebreak token
-    pos = 0;
-    while ((pos = result.find("|n", pos)) != std::string::npos) {
-        result.replace(pos, 2, "\n");
-        pos += 1;
-    }
-    pos = 0;
-    while ((pos = result.find("|N", pos)) != std::string::npos) {
-        result.replace(pos, 2, "\n");
-        pos += 1;
-    }
-
-    return result;
-}
 
 std::string cleanQuestTitleForUi(const std::string& raw, uint32_t questId) {
     std::string s = raw;
@@ -446,7 +328,7 @@ void QuestLogScreen::render(game::GameHandler& gameHandler, InventoryScreen& inv
                     if (lastDetailRequestQuestId_ == sel.questId) lastDetailRequestQuestId_ = 0;
                     questDetailQueryNoResponse_.erase(sel.questId);
                     ImGui::TextColored(ImVec4(0.82f, 0.9f, 1.0f, 1.0f), "Summary");
-                    std::string processedObjectives = replaceGenderPlaceholders(sel.objectives, gameHandler);
+                    std::string processedObjectives = chat_utils::replaceGenderPlaceholders(sel.objectives, gameHandler);
                     float textHeight = ImGui::GetContentRegionAvail().y * 0.45f;
                     if (textHeight < 120.0f) textHeight = 120.0f;
                     ImGui::BeginChild("QuestObjectiveText", ImVec2(0, textHeight), true);

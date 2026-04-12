@@ -7,6 +7,7 @@
 #include <string>
 
 namespace wowee {
+namespace game { class GameHandler; }
 namespace ui {
 
 class IGameState;
@@ -45,6 +46,12 @@ private:
     IGameState& gameState_;
     IModifierState& modState_;
 };
+
+// Convenience free function — thin wrapper over MacroEvaluator.
+// Used by command modules (combat_commands, system_commands, target_commands).
+std::string evaluateMacroConditionals(const std::string& rawArg,
+                                      game::GameHandler& gameHandler,
+                                      uint64_t& targetOverride);
 
 } // namespace ui
 } // namespace wowee

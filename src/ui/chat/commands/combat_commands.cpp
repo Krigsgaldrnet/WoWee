@@ -2,6 +2,7 @@
 //                  /startattack, /stopattack, /stopcasting, /cancelqueuedspell
 // Moved from ChatPanel::sendChatMessage() if/else chain (Phase 3).
 #include "ui/chat/i_chat_command.hpp"
+#include "ui/chat/macro_evaluator.hpp"
 #include "ui/chat_panel.hpp"
 #include "game/game_handler.hpp"
 #include "game/inventory.hpp"
@@ -11,11 +12,6 @@
 #include <sstream>
 
 namespace wowee { namespace ui {
-
-// Forward declaration of evaluateMacroConditionals (still in chat_panel_commands.cpp)
-std::string evaluateMacroConditionals(const std::string& rawArg,
-                                       game::GameHandler& gameHandler,
-                                       uint64_t& targetOverride);
 
 // --------------- helpers (local to this TU) ---------------
 namespace {
