@@ -590,6 +590,7 @@ void WorldMapFacade::Impl::renderImGuiOverlay(const glm::vec3& playerRenderPos,
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 
     // Bug fix: pass nullptr instead of &open so ImGui's X-button doesn't
     // set open=false directly — that bypasses cleanup (userMapOverride,
@@ -979,19 +980,17 @@ void WorldMapFacade::Impl::renderImGuiOverlay(const glm::vec3& playerRenderPos,
                     //   • Full stretch (like WoW original): hlW = displayW, hlH = displayH
                     //   • Shift glow position: adjust hlX offset
                     //
-                    float hlW,hlH,hlX, hlY;
+                    // Render highlight as a square (side = displayH) to preserve
+                    // the 1:1 aspect of the 512×512 glow textures at any resolution.
+                    float hlW = displayH;
+                    float hlH = displayH;
+                    float hlX, hlY;
                     if (cosmicLabel == "azeroth") {
-                        hlW = displayW * 0.90f;            // width  of highlight rect (= square)
-                        hlH = displayH * 0.985f;           // height of highlight rect (= square)
-                    
-                        hlX = imgMax.x - hlW;              // flush right
-                        hlY = imgMax.y - hlH;              // flush bottom + title bar
+                        hlX = imgMax.x - hlW;   // flush right (glow sits in right-center of texture)
+                        hlY = imgMin.y;          // flush top
                     } else {
-                        hlW = displayW * 0.86f;            // width  of highlight rect (= square)
-                        hlH = displayH * 0.91f;            // height of highlight rect (= square)
-                        
-                        hlX = imgMin.x + displayW * 0.02f; // flush left
-                        hlY = imgMax.y - displayH * 0.95f; // flush bottom
+                        hlX = imgMin.x;          // flush left (glow sits in left-center of texture)
+                        hlY = imgMin.y;          // flush top
                     }
 
                     if (zoneHighlightLayer) {
@@ -1064,7 +1063,7 @@ void WorldMapFacade::Impl::renderImGuiOverlay(const glm::vec3& playerRenderPos,
     }
     ImGui::End();
 
-    ImGui::PopStyleVar(2);  // WindowPadding + ItemSpacing
+    ImGui::PopStyleVar(3);  // WindowPadding + ItemSpacing + WindowBorderSize
 }
 
 } // namespace world_map

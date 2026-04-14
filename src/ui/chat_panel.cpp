@@ -672,6 +672,7 @@ int ChatPanel::inputTextCallback(ImGuiInputTextCallbackData* data) {
                 if (!self->tabCompleter_.isActive() || self->tabCompleter_.getPrefix() != lowerPrefix) {
                     std::vector<std::string> candidates;
                     auto* gh = self->cachedGameHandler_;
+                    if (!gh) return 0;
                     for (const auto& m : gh->getPartyData().members) {
                         if (m.name.empty()) continue;
                         std::string lname = m.name;
@@ -803,7 +804,7 @@ void ChatPanel::setupCallbacks(game::GameHandler& gameHandler) {
 void ChatPanel::insertChatLink(const std::string& link) {
     if (link.empty()) return;
     size_t curLen = strlen(chatInputBuffer_);
-    if (curLen + link.size() + 1 < sizeof(chatInputBuffer_)) {
+    if (curLen + link.size() + 1 <= sizeof(chatInputBuffer_)) {
         strncat(chatInputBuffer_, link.c_str(), sizeof(chatInputBuffer_) - curLen - 1);
         chatInputMoveCursorToEnd_ = true;
         refocusChatInput_ = true;

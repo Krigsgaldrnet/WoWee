@@ -172,10 +172,6 @@ void ZoneHighlightLayer::render(const LayerContext& ctx) {
         float mv = (mousePos.y - ctx.imgMin.y) / ctx.displayH;
 
         if (mu >= 0.0f && mu <= 1.0f && mv >= 0.0f && mv <= 1.0f) {
-            // Undo the -0.15 vertical offset applied during continent rendering
-            constexpr float kVOffset = -0.15f;
-            mv -= kVOffset;
-
             // Screen UV → world coordinates
             float wowX = cLeft - mu * cDenomU;
             float wowY = cTop  - mv * cDenomV;
