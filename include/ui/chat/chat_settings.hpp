@@ -1,0 +1,40 @@
+#pragma once
+
+#include <functional>
+
+// Forward declaration for ImGui (avoid pulling full imgui header)
+struct ImGuiContext;
+
+namespace wowee {
+namespace ui {
+
+/**
+ * Chat appearance and auto-join settings.
+ *
+ * Extracted from ChatPanel (Phase 1.1 of chat_panel_ref.md).
+ * Pure data + settings UI; no dependency on GameHandler or network.
+ */
+struct ChatSettings {
+    // Appearance
+    bool showTimestamps  = false;
+    int  fontSize        = 1;   // 0=small, 1=medium, 2=large
+
+    // Auto-join channels
+    bool autoJoinGeneral      = true;
+    bool autoJoinTrade        = true;
+    bool autoJoinLocalDefense = true;
+    bool autoJoinLFG          = true;
+    bool autoJoinLocal        = true;
+
+    // Window state
+    bool windowLocked = true;
+
+    /** Reset all chat settings to defaults. */
+    void restoreDefaults();
+
+    /** Render the "Chat" tab inside the Settings window. */
+    void renderSettingsTab(std::function<void()> saveSettingsFn);
+};
+
+} // namespace ui
+} // namespace wowee

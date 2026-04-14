@@ -4,6 +4,7 @@
 // ============================================================
 #include "ui/window_manager.hpp"
 #include "ui/chat_panel.hpp"
+#include "ui/chat/chat_utils.hpp"
 #include "ui/settings_panel.hpp"
 #include "ui/spellbook_screen.hpp"
 #include "ui/inventory_screen.hpp"
@@ -252,7 +253,7 @@ void WindowManager::renderLootWindow(game::GameHandler& gameHandler,
 }
 
 void WindowManager::renderGossipWindow(game::GameHandler& gameHandler,
-                               ChatPanel& chatPanel) {
+                               ChatPanel& /*chatPanel*/) {
     if (!gameHandler.isGossipWindowOpen()) return;
 
     auto* window = services_.window;
@@ -330,7 +331,7 @@ void WindowManager::renderGossipWindow(game::GameHandler& gameHandler,
                 displayText = placeholderIt->second;
             }
 
-            std::string processedText = chatPanel.replaceGenderPlaceholders(displayText, gameHandler);
+            std::string processedText = chat_utils::replaceGenderPlaceholders(displayText, gameHandler);
             std::string label = std::string(icon) + " " + processedText;
             if (ImGui::Selectable(label.c_str())) {
                 if (opt.text == "GOSSIP_OPTION_ARMORER") {
@@ -436,11 +437,11 @@ void WindowManager::renderQuestDetailsWindow(game::GameHandler& gameHandler,
 
     bool open = true;
     const auto& quest = gameHandler.getQuestDetails();
-    std::string processedTitle = chatPanel.replaceGenderPlaceholders(quest.title, gameHandler);
+    std::string processedTitle = chat_utils::replaceGenderPlaceholders(quest.title, gameHandler);
     if (ImGui::Begin(processedTitle.c_str(), &open)) {
         // Quest description
         if (!quest.details.empty()) {
-            std::string processedDetails = chatPanel.replaceGenderPlaceholders(quest.details, gameHandler);
+            std::string processedDetails = chat_utils::replaceGenderPlaceholders(quest.details, gameHandler);
             ImGui::TextWrapped("%s", processedDetails.c_str());
         }
 
@@ -449,7 +450,7 @@ void WindowManager::renderQuestDetailsWindow(game::GameHandler& gameHandler,
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::TextColored(ui::colors::kTooltipGold, "Objectives:");
-            std::string processedObjectives = chatPanel.replaceGenderPlaceholders(quest.objectives, gameHandler);
+            std::string processedObjectives = chat_utils::replaceGenderPlaceholders(quest.objectives, gameHandler);
             ImGui::TextWrapped("%s", processedObjectives.c_str());
         }
 
@@ -577,10 +578,10 @@ void WindowManager::renderQuestRequestItemsWindow(game::GameHandler& gameHandler
         return total;
     };
 
-    std::string processedTitle = chatPanel.replaceGenderPlaceholders(quest.title, gameHandler);
+    std::string processedTitle = chat_utils::replaceGenderPlaceholders(quest.title, gameHandler);
     if (ImGui::Begin(processedTitle.c_str(), &open, ImGuiWindowFlags_NoCollapse)) {
         if (!quest.completionText.empty()) {
-            std::string processedCompletionText = chatPanel.replaceGenderPlaceholders(quest.completionText, gameHandler);
+            std::string processedCompletionText = chat_utils::replaceGenderPlaceholders(quest.completionText, gameHandler);
             ImGui::TextWrapped("%s", processedCompletionText.c_str());
         }
 
@@ -670,10 +671,10 @@ void WindowManager::renderQuestOfferRewardWindow(game::GameHandler& gameHandler,
         selectedChoice = 0;
     }
 
-    std::string processedTitle = chatPanel.replaceGenderPlaceholders(quest.title, gameHandler);
+    std::string processedTitle = chat_utils::replaceGenderPlaceholders(quest.title, gameHandler);
     if (ImGui::Begin(processedTitle.c_str(), &open, ImGuiWindowFlags_NoCollapse)) {
         if (!quest.rewardText.empty()) {
-            std::string processedRewardText = chatPanel.replaceGenderPlaceholders(quest.rewardText, gameHandler);
+            std::string processedRewardText = chat_utils::replaceGenderPlaceholders(quest.rewardText, gameHandler);
             ImGui::TextWrapped("%s", processedRewardText.c_str());
         }
 

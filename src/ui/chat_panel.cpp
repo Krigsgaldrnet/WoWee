@@ -1,4 +1,9 @@
 #include "ui/chat_panel.hpp"
+#include "ui/chat/chat_utils.hpp"
+#include "ui/chat/macro_evaluator.hpp"
+#include "ui/chat/game_state_adapter.hpp"
+#include "ui/chat/input_modifier_adapter.hpp"
+#include "ui/chat/gm_command_data.hpp"
 #include "ui/inventory_screen.hpp"
 #include "ui/spellbook_screen.hpp"
 #include "ui/quest_log_screen.hpp"
@@ -26,6 +31,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cctype>
 #include <sstream>
 #include <cstdlib>
 #include <cctype>
@@ -46,72 +52,80 @@ namespace {
 
     // Common ImGui window flags for popup dialogs
     const ImGuiWindowFlags kDialogFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
+
+    // ---------------------------------------------------------------------------
+    // formatChatMessage — build the display string for a single chat message.
+    // Extracted from ChatPanel::render() message loop (Phase 6.2).
+    // ---------------------------------------------------------------------------
+    std::string formatChatMessage(
+        const wowee::game::MessageChatData& msg,
+        const std::string& processedMessage,
+        const std::string& resolvedSenderName,
+        const std::string& tsPrefix,
+        wowee::game::GameHandler& gameHandler)
+    {
+        using CT = wowee::game::ChatType;
+
+        // Build chat tag prefix: <GM>, <AFK>, <DND>
+        std::string tagPrefix;
+        if (msg.chatTag & 0x04) tagPrefix = "<GM> ";
+        else if (msg.chatTag & 0x01) tagPrefix = "<AFK> ";
+        else if (msg.chatTag & 0x02) tagPrefix = "<DND> ";
+
+        if (msg.type == CT::SYSTEM || msg.type == CT::TEXT_EMOTE)
+            return tsPrefix + processedMessage;
+
+        if (!resolvedSenderName.empty()) {
+            if (msg.type == CT::SAY || msg.type == CT::MONSTER_SAY || msg.type == CT::MONSTER_PARTY)
+                return tsPrefix + tagPrefix + resolvedSenderName + " says: " + processedMessage;
+            if (msg.type == CT::YELL || msg.type == CT::MONSTER_YELL)
+                return tsPrefix + tagPrefix + resolvedSenderName + " yells: " + processedMessage;
+            if (msg.type == CT::WHISPER || msg.type == CT::MONSTER_WHISPER || msg.type == CT::RAID_BOSS_WHISPER)
+                return tsPrefix + tagPrefix + resolvedSenderName + " whispers: " + processedMessage;
+            if (msg.type == CT::WHISPER_INFORM) {
+                const std::string& target = !msg.receiverName.empty() ? msg.receiverName : resolvedSenderName;
+                return tsPrefix + "To " + target + ": " + processedMessage;
+            }
+            if (msg.type == CT::EMOTE || msg.type == CT::MONSTER_EMOTE || msg.type == CT::RAID_BOSS_EMOTE)
+                return tsPrefix + tagPrefix + resolvedSenderName + " " + processedMessage;
+            if (msg.type == CT::CHANNEL && !msg.channelName.empty()) {
+                int chIdx = gameHandler.getChannelIndex(msg.channelName);
+                std::string chDisplay = chIdx > 0
+                    ? "[" + std::to_string(chIdx) + ". " + msg.channelName + "]"
+                    : "[" + msg.channelName + "]";
+                return tsPrefix + chDisplay + " [" + tagPrefix + resolvedSenderName + "]: " + processedMessage;
+            }
+            return tsPrefix + "[" + std::string(wowee::ui::ChatTabManager::getChatTypeName(msg.type)) + "] " + tagPrefix + resolvedSenderName + ": " + processedMessage;
+        }
+
+        bool isGroupType =
+            msg.type == CT::PARTY || msg.type == CT::GUILD ||
+            msg.type == CT::OFFICER || msg.type == CT::RAID ||
+            msg.type == CT::RAID_LEADER || msg.type == CT::RAID_WARNING ||
+            msg.type == CT::BATTLEGROUND || msg.type == CT::BATTLEGROUND_LEADER;
+        if (isGroupType)
+            return tsPrefix + "[" + std::string(wowee::ui::ChatTabManager::getChatTypeName(msg.type)) + "] " + processedMessage;
+        return tsPrefix + processedMessage;
+    }
 }
 
 namespace wowee { namespace ui {
 
 ChatPanel::ChatPanel() {
-    initChatTabs();
+    // ChatTabManager constructor handles tab initialization
+    registerAllCommands();
 }
 
-void ChatPanel::initChatTabs() {
-    chatTabs_.clear();
-    // General tab: shows everything
-    chatTabs_.push_back({"General", ~0ULL});
-    // Combat tab: system, loot, skills, achievements, and NPC speech/emotes
-    chatTabs_.push_back({"Combat", (1ULL << static_cast<uint8_t>(game::ChatType::SYSTEM)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::LOOT)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::SKILL)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::ACHIEVEMENT)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::GUILD_ACHIEVEMENT)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::MONSTER_SAY)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::MONSTER_YELL)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::MONSTER_EMOTE)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::MONSTER_WHISPER)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::MONSTER_PARTY)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::RAID_BOSS_WHISPER)) |
-                                    (1ULL << static_cast<uint8_t>(game::ChatType::RAID_BOSS_EMOTE))});
-    // Whispers tab
-    chatTabs_.push_back({"Whispers", (1ULL << static_cast<uint8_t>(game::ChatType::WHISPER)) |
-                                      (1ULL << static_cast<uint8_t>(game::ChatType::WHISPER_INFORM))});
-    // Guild tab: guild and officer chat
-    chatTabs_.push_back({"Guild", (1ULL << static_cast<uint8_t>(game::ChatType::GUILD)) |
-                                   (1ULL << static_cast<uint8_t>(game::ChatType::OFFICER)) |
-                                   (1ULL << static_cast<uint8_t>(game::ChatType::GUILD_ACHIEVEMENT))});
-    // Trade/LFG tab: channel messages
-    chatTabs_.push_back({"Trade/LFG", (1ULL << static_cast<uint8_t>(game::ChatType::CHANNEL))});
-    // Reset unread counts to match new tab list
-    chatTabUnread_.assign(chatTabs_.size(), 0);
-    chatTabSeenCount_ = 0;
-}
-
-bool ChatPanel::shouldShowMessage(const game::MessageChatData& msg, int tabIndex) const {
-    if (tabIndex < 0 || tabIndex >= static_cast<int>(chatTabs_.size())) return true;
-    const auto& tab = chatTabs_[tabIndex];
-    if (tab.typeMask == ~0ULL) return true;  // General tab shows all
-
-    uint64_t typeBit = 1ULL << static_cast<uint8_t>(msg.type);
-
-    // For Trade/LFG tab (now index 4), also filter by channel name
-    if (tabIndex == 4 && msg.type == game::ChatType::CHANNEL) {
-        const std::string& ch = msg.channelName;
-        if (ch.find("Trade") == std::string::npos &&
-            ch.find("General") == std::string::npos &&
-            ch.find("LookingForGroup") == std::string::npos &&
-            ch.find("Local") == std::string::npos) {
-            return false;
-        }
-        return true;
-    }
-
-    return (tab.typeMask & typeBit) != 0;
-}
+// Tab init and filtering moved to ChatTabManager (Phase 1.3)
 
 
 void ChatPanel::render(game::GameHandler& gameHandler,
                        InventoryScreen& inventoryScreen,
                        SpellbookScreen& spellbookScreen,
                        QuestLogScreen& questLogScreen) {
+    // Cache game handler for input callback lambda (player name tab-completion)
+    cachedGameHandler_ = &gameHandler;
+
     auto* window = services_.window;
     auto* assetMgr = services_.assetManager;
     float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
@@ -133,7 +147,7 @@ void ChatPanel::render(game::GameHandler& gameHandler,
         ImGui::SetNextWindowSize(ImVec2(chatW, chatH), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowPos(chatWindowPos_, ImGuiCond_FirstUseEver);
     }
-    ImGuiWindowFlags flags = kDialogFlags;
+    ImGuiWindowFlags flags = kDialogFlags | ImGuiWindowFlags_NoNavInputs;
     if (chatWindowLocked_) {
         flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar;
     }
@@ -143,37 +157,20 @@ void ChatPanel::render(game::GameHandler& gameHandler,
         chatWindowPos_ = ImGui::GetWindowPos();
     }
 
-    // Update unread counts: scan any new messages since last frame
-    {
-        const auto& history = gameHandler.getChatHistory();
-        // Ensure unread array is sized correctly (guards against late init)
-        if (chatTabUnread_.size() != chatTabs_.size())
-            chatTabUnread_.assign(chatTabs_.size(), 0);
-        // If history shrank (e.g. cleared), reset
-        if (chatTabSeenCount_ > history.size()) chatTabSeenCount_ = 0;
-        for (size_t mi = chatTabSeenCount_; mi < history.size(); ++mi) {
-            const auto& msg = history[mi];
-            // For each non-General (non-0) tab that isn't currently active, check visibility
-            for (int ti = 1; ti < static_cast<int>(chatTabs_.size()); ++ti) {
-                if (ti == activeChatTab) continue;
-                if (shouldShowMessage(msg, ti)) {
-                    chatTabUnread_[ti]++;
-                }
-            }
-        }
-        chatTabSeenCount_ = history.size();
-    }
+    // Update unread counts via ChatTabManager (Phase 1.3)
+    tabManager_.updateUnread(gameHandler.getChatHistory(), activeChatTab);
 
-    // Chat tabs
+    // Chat tabs (rendered via ChatTabManager)
     if (ImGui::BeginTabBar("ChatTabs")) {
-        for (int i = 0; i < static_cast<int>(chatTabs_.size()); ++i) {
+        for (int i = 0; i < tabManager_.getTabCount(); ++i) {
             // Build label with unread count suffix for non-General tabs
-            std::string tabLabel = chatTabs_[i].name;
-            if (i > 0 && i < static_cast<int>(chatTabUnread_.size()) && chatTabUnread_[i] > 0) {
-                tabLabel += " (" + std::to_string(chatTabUnread_[i]) + ")";
+            std::string tabLabel = tabManager_.getTabName(i);
+            int unread = tabManager_.getUnreadCount(i);
+            if (i > 0 && unread > 0) {
+                tabLabel += " (" + std::to_string(unread) + ")";
             }
             // Flash tab text color when unread messages exist
-            bool hasUnread = (i > 0 && i < static_cast<int>(chatTabUnread_.size()) && chatTabUnread_[i] > 0);
+            bool hasUnread = (i > 0 && unread > 0);
             if (hasUnread) {
                 float pulse = 0.6f + 0.4f * std::sin(static_cast<float>(ImGui::GetTime()) * 4.0f);
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f * pulse, 0.2f * pulse, 1.0f));
@@ -182,8 +179,7 @@ void ChatPanel::render(game::GameHandler& gameHandler,
                 if (activeChatTab != i) {
                     activeChatTab = i;
                     // Clear unread count when tab becomes active
-                    if (i < static_cast<int>(chatTabUnread_.size()))
-                        chatTabUnread_[i] = 0;
+                    tabManager_.clearUnread(i);
                 }
                 ImGui::EndTabItem();
             }
@@ -202,806 +198,17 @@ void ChatPanel::render(game::GameHandler& gameHandler,
     ImGui::BeginChild("ChatHistory", ImVec2(0, -70), true, ImGuiWindowFlags_HorizontalScrollbar);
     bool chatHistoryHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
 
-    // Helper: parse WoW color code |cAARRGGBB → ImVec4
-    auto parseWowColor = [](const std::string& text, size_t pos) -> ImVec4 {
-        // |cAARRGGBB (10 chars total: |c + 8 hex)
-        if (pos + 10 > text.size()) return colors::kWhite;
-        auto hexByte = [&](size_t offset) -> float {
-            const char* s = text.c_str() + pos + offset;
-            char buf[3] = {s[0], s[1], '\0'};
-            return static_cast<float>(strtol(buf, nullptr, 16)) / 255.0f;
-        };
-        float a = hexByte(2);
-        float r = hexByte(4);
-        float g = hexByte(6);
-        float b = hexByte(8);
-        return ImVec4(r, g, b, a);
-    };
-
-    // Helper: render an item tooltip from ItemQueryResponseData
-    auto renderItemLinkTooltip = [&](uint32_t itemEntry) {
-        const auto* info = gameHandler.getItemInfo(itemEntry);
-        if (!info || !info->valid) return;
-        auto findComparableEquipped = [&](uint8_t inventoryType) -> const game::ItemSlot* {
-            using ES = game::EquipSlot;
-            const auto& inv = gameHandler.getInventory();
-            auto slotPtr = [&](ES slot) -> const game::ItemSlot* {
-                const auto& s = inv.getEquipSlot(slot);
-                return s.empty() ? nullptr : &s;
-            };
-            switch (inventoryType) {
-                case 1: return slotPtr(ES::HEAD);
-                case 2: return slotPtr(ES::NECK);
-                case 3: return slotPtr(ES::SHOULDERS);
-                case 4: return slotPtr(ES::SHIRT);
-                case 5:
-                case 20: return slotPtr(ES::CHEST);
-                case 6: return slotPtr(ES::WAIST);
-                case 7: return slotPtr(ES::LEGS);
-                case 8: return slotPtr(ES::FEET);
-                case 9: return slotPtr(ES::WRISTS);
-                case 10: return slotPtr(ES::HANDS);
-                case 11: {
-                    if (auto* s = slotPtr(ES::RING1)) return s;
-                    return slotPtr(ES::RING2);
-                }
-                case 12: {
-                    if (auto* s = slotPtr(ES::TRINKET1)) return s;
-                    return slotPtr(ES::TRINKET2);
-                }
-                case 13:
-                    if (auto* s = slotPtr(ES::MAIN_HAND)) return s;
-                    return slotPtr(ES::OFF_HAND);
-                case 14:
-                case 22:
-                case 23: return slotPtr(ES::OFF_HAND);
-                case 15:
-                case 25:
-                case 26: return slotPtr(ES::RANGED);
-                case 16: return slotPtr(ES::BACK);
-                case 17:
-                case 21: return slotPtr(ES::MAIN_HAND);
-                case 18:
-                    for (int i = 0; i < game::Inventory::NUM_BAG_SLOTS; ++i) {
-                        auto slot = static_cast<ES>(static_cast<int>(ES::BAG1) + i);
-                        if (auto* s = slotPtr(slot)) return s;
-                    }
-                    return nullptr;
-                case 19: return slotPtr(ES::TABARD);
-                default: return nullptr;
-            }
-        };
-
-        ImGui::BeginTooltip();
-        // Quality color for name
-        auto qColor = ui::getQualityColor(static_cast<game::ItemQuality>(info->quality));
-        ImGui::TextColored(qColor, "%s", info->name.c_str());
-
-        // Heroic indicator (green, matches WoW tooltip style)
-        constexpr uint32_t kFlagHeroic         = 0x8;
-        constexpr uint32_t kFlagUniqueEquipped = 0x1000000;
-        if (info->itemFlags & kFlagHeroic)
-            ImGui::TextColored(ImVec4(0.0f, 0.8f, 0.0f, 1.0f), "Heroic");
-
-        // Bind type (appears right under name in WoW)
-        switch (info->bindType) {
-            case 1: ImGui::TextDisabled("Binds when picked up");   break;
-            case 2: ImGui::TextDisabled("Binds when equipped");    break;
-            case 3: ImGui::TextDisabled("Binds when used");        break;
-            case 4: ImGui::TextDisabled("Quest Item");             break;
-        }
-        // Unique / Unique-Equipped
-        if (info->maxCount == 1)
-            ImGui::TextColored(ui::colors::kTooltipGold, "Unique");
-        else if (info->itemFlags & kFlagUniqueEquipped)
-            ImGui::TextColored(ui::colors::kTooltipGold, "Unique-Equipped");
-
-        // Slot type
-        if (info->inventoryType > 0) {
-            const char* slotName = ui::getInventorySlotName(info->inventoryType);
-            if (slotName[0]) {
-                if (!info->subclassName.empty())
-                    ImGui::TextColored(ui::colors::kLightGray, "%s  %s", slotName, info->subclassName.c_str());
-                else
-                    ImGui::TextColored(ui::colors::kLightGray, "%s", slotName);
-            }
-        }
-        auto isWeaponInventoryType = [](uint32_t invType) {
-            switch (invType) {
-                case 13: // One-Hand
-                case 15: // Ranged
-                case 17: // Two-Hand
-                case 21: // Main Hand
-                case 25: // Thrown
-                case 26: // Ranged Right
-                    return true;
-                default:
-                    return false;
-            }
-        };
-        const bool isWeapon = isWeaponInventoryType(info->inventoryType);
-
-        // Item level (after slot/subclass)
-        if (info->itemLevel > 0)
-            ImGui::TextDisabled("Item Level %u", info->itemLevel);
-
-        if (isWeapon && info->damageMax > 0.0f && info->delayMs > 0) {
-            float speed = static_cast<float>(info->delayMs) / 1000.0f;
-            float dps = ((info->damageMin + info->damageMax) * 0.5f) / speed;
-            // WoW-style: "22 - 41 Damage" with speed right-aligned on same row
-            char dmgBuf[64], spdBuf[32];
-            std::snprintf(dmgBuf, sizeof(dmgBuf), "%d - %d Damage",
-                          static_cast<int>(info->damageMin), static_cast<int>(info->damageMax));
-            std::snprintf(spdBuf, sizeof(spdBuf), "Speed %.2f", speed);
-            float spdW = ImGui::CalcTextSize(spdBuf).x;
-            ImGui::Text("%s", dmgBuf);
-            ImGui::SameLine(ImGui::GetWindowWidth() - spdW - 16.0f);
-            ImGui::Text("%s", spdBuf);
-            ImGui::TextDisabled("(%.1f damage per second)", dps);
-        }
-        ImVec4 green(0.0f, 1.0f, 0.0f, 1.0f);
-        auto appendBonus = [](std::string& out, int32_t val, const char* shortName) {
-            if (val <= 0) return;
-            if (!out.empty()) out += "  ";
-            out += "+" + std::to_string(val) + " ";
-            out += shortName;
-        };
-        std::string bonusLine;
-        appendBonus(bonusLine, info->strength, "Str");
-        appendBonus(bonusLine, info->agility, "Agi");
-        appendBonus(bonusLine, info->stamina, "Sta");
-        appendBonus(bonusLine, info->intellect, "Int");
-        appendBonus(bonusLine, info->spirit, "Spi");
-        if (!bonusLine.empty()) {
-            ImGui::TextColored(green, "%s", bonusLine.c_str());
-        }
-        if (info->armor > 0) {
-            ImGui::Text("%d Armor", info->armor);
-        }
-        // Elemental resistances (fire resist gear, nature resist gear, etc.)
-        {
-            const int32_t resVals[6] = {
-                info->holyRes, info->fireRes, info->natureRes,
-                info->frostRes, info->shadowRes, info->arcaneRes
-            };
-            static constexpr const char* resLabels[6] = {
-                "Holy Resistance", "Fire Resistance", "Nature Resistance",
-                "Frost Resistance", "Shadow Resistance", "Arcane Resistance"
-            };
-            for (int ri = 0; ri < 6; ++ri)
-                if (resVals[ri] > 0) ImGui::Text("+%d %s", resVals[ri], resLabels[ri]);
-        }
-        // Extra stats (hit/crit/haste/sp/ap/expertise/resilience/etc.)
-        if (!info->extraStats.empty()) {
-            auto statName = [](uint32_t t) -> const char* {
-                switch (t) {
-                    case 12: return "Defense Rating";
-                    case 13: return "Dodge Rating";
-                    case 14: return "Parry Rating";
-                    case 15: return "Block Rating";
-                    case 16: case 17: case 18: case 31: return "Hit Rating";
-                    case 19: case 20: case 21: case 32: return "Critical Strike Rating";
-                    case 28: case 29: case 30: case 35: return "Haste Rating";
-                    case 34: return "Resilience Rating";
-                    case 36: return "Expertise Rating";
-                    case 37: return "Attack Power";
-                    case 38: return "Ranged Attack Power";
-                    case 45: return "Spell Power";
-                    case 46: return "Healing Power";
-                    case 47: return "Spell Damage";
-                    case 49: return "Mana per 5 sec.";
-                    case 43: return "Spell Penetration";
-                    case 44: return "Block Value";
-                    default: return nullptr;
-                }
-            };
-            for (const auto& es : info->extraStats) {
-                const char* nm = statName(es.statType);
-                if (nm && es.statValue > 0)
-                    ImGui::TextColored(green, "+%d %s", es.statValue, nm);
-            }
-        }
-        // Gem sockets (WotLK only — socketColor != 0 means socket present)
-        // socketColor bitmask: 1=Meta, 2=Red, 4=Yellow, 8=Blue
-        {
-            const auto& kSocketTypes = ui::kSocketTypes;
-            bool hasSocket = false;
-            for (int s = 0; s < 3; ++s) {
-                if (info->socketColor[s] == 0) continue;
-                if (!hasSocket) { ImGui::Spacing(); hasSocket = true; }
-                for (const auto& st : kSocketTypes) {
-                    if (info->socketColor[s] & st.mask) {
-                        ImGui::TextColored(st.col, "%s", st.label);
-                        break;
-                    }
-                }
-            }
-            if (hasSocket && info->socketBonus != 0) {
-                // Socket bonus ID maps to SpellItemEnchantment.dbc — lazy-load names
-                static std::unordered_map<uint32_t, std::string> s_enchantNames;
-                static bool s_enchantNamesLoaded = false;
-                if (!s_enchantNamesLoaded && assetMgr) {
-                    s_enchantNamesLoaded = true;
-                    auto dbc = assetMgr->loadDBC("SpellItemEnchantment.dbc");
-                    if (dbc && dbc->isLoaded()) {
-                        const auto* lay = pipeline::getActiveDBCLayout()
-                            ? pipeline::getActiveDBCLayout()->getLayout("SpellItemEnchantment") : nullptr;
-                        uint32_t nameField = lay ? lay->field("Name") : 8u;
-                        if (nameField == 0xFFFFFFFF) nameField = 8;
-                        uint32_t fc = dbc->getFieldCount();
-                        for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
-                            uint32_t eid = dbc->getUInt32(r, 0);
-                            if (eid == 0 || nameField >= fc) continue;
-                            std::string ename = dbc->getString(r, nameField);
-                            if (!ename.empty()) s_enchantNames[eid] = std::move(ename);
-                        }
-                    }
-                }
-                auto enchIt = s_enchantNames.find(info->socketBonus);
-                if (enchIt != s_enchantNames.end())
-                    ImGui::TextColored(colors::kSocketGreen, "Socket Bonus: %s", enchIt->second.c_str());
-                else
-                    ImGui::TextColored(colors::kSocketGreen, "Socket Bonus: (id %u)", info->socketBonus);
-            }
-        }
-        // Item set membership
-        if (info->itemSetId != 0) {
-            struct SetEntry {
-                std::string name;
-                std::array<uint32_t, 10> itemIds{};
-                std::array<uint32_t, 10> spellIds{};
-                std::array<uint32_t, 10> thresholds{};
-            };
-            static std::unordered_map<uint32_t, SetEntry> s_setData;
-            static bool s_setDataLoaded = false;
-            if (!s_setDataLoaded && assetMgr) {
-                s_setDataLoaded = true;
-                auto dbc = assetMgr->loadDBC("ItemSet.dbc");
-                if (dbc && dbc->isLoaded()) {
-                    const auto* layout = pipeline::getActiveDBCLayout()
-                        ? pipeline::getActiveDBCLayout()->getLayout("ItemSet") : nullptr;
-                    auto lf = [&](const char* k, uint32_t def) -> uint32_t {
-                        return layout ? (*layout)[k] : def;
-                    };
-                    uint32_t idF = lf("ID", 0), nameF = lf("Name", 1);
-                    const auto& itemKeys = ui::kItemSetItemKeys;
-                    const auto& spellKeys = ui::kItemSetSpellKeys;
-                    const auto& thrKeys = ui::kItemSetThresholdKeys;
-                    for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
-                        uint32_t id = dbc->getUInt32(r, idF);
-                        if (!id) continue;
-                        SetEntry e;
-                        e.name = dbc->getString(r, nameF);
-                        for (int i = 0; i < 10; ++i) {
-                            e.itemIds[i]    = dbc->getUInt32(r, layout ? (*layout)[itemKeys[i]]  : uint32_t(18 + i));
-                            e.spellIds[i]   = dbc->getUInt32(r, layout ? (*layout)[spellKeys[i]] : uint32_t(28 + i));
-                            e.thresholds[i] = dbc->getUInt32(r, layout ? (*layout)[thrKeys[i]]   : uint32_t(38 + i));
-                        }
-                        s_setData[id] = std::move(e);
-                    }
-                }
-            }
-            ImGui::Spacing();
-            const auto& inv = gameHandler.getInventory();
-            auto setIt = s_setData.find(info->itemSetId);
-            if (setIt != s_setData.end()) {
-                const SetEntry& se = setIt->second;
-                int equipped = 0, total = 0;
-                for (int i = 0; i < 10; ++i) {
-                    if (se.itemIds[i] == 0) continue;
-                    ++total;
-                    for (int sl = 0; sl < game::Inventory::NUM_EQUIP_SLOTS; sl++) {
-                        const auto& eq = inv.getEquipSlot(static_cast<game::EquipSlot>(sl));
-                        if (!eq.empty() && eq.item.itemId == se.itemIds[i]) { ++equipped; break; }
-                    }
-                }
-                if (total > 0)
-                    ImGui::TextColored(ui::colors::kTooltipGold,
-                        "%s (%d/%d)", se.name.empty() ? "Set" : se.name.c_str(), equipped, total);
-                else if (!se.name.empty())
-                    ImGui::TextColored(ui::colors::kTooltipGold, "%s", se.name.c_str());
-                for (int i = 0; i < 10; ++i) {
-                    if (se.spellIds[i] == 0 || se.thresholds[i] == 0) continue;
-                    const std::string& bname = gameHandler.getSpellName(se.spellIds[i]);
-                    bool active = (equipped >= static_cast<int>(se.thresholds[i]));
-                    ImVec4 col = active ? colors::kActiveGreen : colors::kInactiveGray;
-                    if (!bname.empty())
-                        ImGui::TextColored(col, "(%u) %s", se.thresholds[i], bname.c_str());
-                    else
-                        ImGui::TextColored(col, "(%u) Set Bonus", se.thresholds[i]);
-                }
-            } else {
-                ImGui::TextColored(ui::colors::kTooltipGold, "Set (id %u)", info->itemSetId);
-            }
-        }
-        // Item spell effects (Use / Equip / Chance on Hit / Teaches)
-        for (const auto& sp : info->spells) {
-            if (sp.spellId == 0) continue;
-            const char* triggerLabel = nullptr;
-            switch (sp.spellTrigger) {
-                case 0: triggerLabel = "Use";          break;
-                case 1: triggerLabel = "Equip";        break;
-                case 2: triggerLabel = "Chance on Hit"; break;
-                case 5: triggerLabel = "Teaches";      break;
-            }
-            if (!triggerLabel) continue;
-            // Use full spell description if available (matches inventory tooltip style)
-            const std::string& spDesc = gameHandler.getSpellDescription(sp.spellId);
-            const std::string& spText = !spDesc.empty() ? spDesc
-                                        : gameHandler.getSpellName(sp.spellId);
-            if (!spText.empty()) {
-                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 300.0f);
-                ImGui::TextColored(colors::kCyan,
-                                   "%s: %s", triggerLabel, spText.c_str());
-                ImGui::PopTextWrapPos();
-            }
-        }
-        // Required level
-        if (info->requiredLevel > 1)
-            ImGui::TextDisabled("Requires Level %u", info->requiredLevel);
-        // Required skill (e.g. "Requires Blacksmithing (300)")
-        if (info->requiredSkill != 0 && info->requiredSkillRank > 0) {
-            static std::unordered_map<uint32_t, std::string> s_skillNames;
-            static bool s_skillNamesLoaded = false;
-            if (!s_skillNamesLoaded && assetMgr) {
-                s_skillNamesLoaded = true;
-                auto dbc = assetMgr->loadDBC("SkillLine.dbc");
-                if (dbc && dbc->isLoaded()) {
-                    const auto* layout = pipeline::getActiveDBCLayout()
-                        ? pipeline::getActiveDBCLayout()->getLayout("SkillLine") : nullptr;
-                    uint32_t idF   = layout ? (*layout)["ID"]   : 0u;
-                    uint32_t nameF = layout ? (*layout)["Name"] : 2u;
-                    for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
-                        uint32_t sid = dbc->getUInt32(r, idF);
-                        if (!sid) continue;
-                        std::string sname = dbc->getString(r, nameF);
-                        if (!sname.empty()) s_skillNames[sid] = std::move(sname);
-                    }
-                }
-            }
-            uint32_t playerSkillVal = 0;
-            const auto& skills = gameHandler.getPlayerSkills();
-            auto skPit = skills.find(info->requiredSkill);
-            if (skPit != skills.end()) playerSkillVal = skPit->second.effectiveValue();
-            bool meetsSkill = (playerSkillVal == 0 || playerSkillVal >= info->requiredSkillRank);
-            ImVec4 skColor = meetsSkill ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : colors::kPaleRed;
-            auto skIt = s_skillNames.find(info->requiredSkill);
-            if (skIt != s_skillNames.end())
-                ImGui::TextColored(skColor, "Requires %s (%u)", skIt->second.c_str(), info->requiredSkillRank);
-            else
-                ImGui::TextColored(skColor, "Requires Skill %u (%u)", info->requiredSkill, info->requiredSkillRank);
-        }
-        // Required reputation (e.g. "Requires Exalted with Argent Dawn")
-        if (info->requiredReputationFaction != 0 && info->requiredReputationRank > 0) {
-            static std::unordered_map<uint32_t, std::string> s_factionNames;
-            static bool s_factionNamesLoaded = false;
-            if (!s_factionNamesLoaded && assetMgr) {
-                s_factionNamesLoaded = true;
-                auto dbc = assetMgr->loadDBC("Faction.dbc");
-                if (dbc && dbc->isLoaded()) {
-                    const auto* layout = pipeline::getActiveDBCLayout()
-                        ? pipeline::getActiveDBCLayout()->getLayout("Faction") : nullptr;
-                    uint32_t idF   = layout ? (*layout)["ID"]   : 0u;
-                    uint32_t nameF = layout ? (*layout)["Name"] : 20u;
-                    for (uint32_t r = 0; r < dbc->getRecordCount(); ++r) {
-                        uint32_t fid = dbc->getUInt32(r, idF);
-                        if (!fid) continue;
-                        std::string fname = dbc->getString(r, nameF);
-                        if (!fname.empty()) s_factionNames[fid] = std::move(fname);
-                    }
-                }
-            }
-            static constexpr const char* kRepRankNames[] = {
-                "Hated", "Hostile", "Unfriendly", "Neutral",
-                "Friendly", "Honored", "Revered", "Exalted"
-            };
-            const char* rankName = (info->requiredReputationRank < 8)
-                ? kRepRankNames[info->requiredReputationRank] : "Unknown";
-            auto fIt = s_factionNames.find(info->requiredReputationFaction);
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.75f), "Requires %s with %s",
-                rankName,
-                fIt != s_factionNames.end() ? fIt->second.c_str() : "Unknown Faction");
-        }
-        // Class restriction (e.g. "Classes: Paladin, Warrior")
-        if (info->allowableClass != 0) {
-            const auto& kClasses = ui::kClassMasks;
-            int matchCount = 0;
-            for (const auto& kc : kClasses)
-                if (info->allowableClass & kc.mask) ++matchCount;
-            if (matchCount > 0 && matchCount < 10) {
-                char classBuf[128] = "Classes: ";
-                bool first = true;
-                for (const auto& kc : kClasses) {
-                    if (!(info->allowableClass & kc.mask)) continue;
-                    if (!first) strncat(classBuf, ", ", sizeof(classBuf) - strlen(classBuf) - 1);
-                    strncat(classBuf, kc.name, sizeof(classBuf) - strlen(classBuf) - 1);
-                    first = false;
-                }
-                uint8_t pc = gameHandler.getPlayerClass();
-                uint32_t pmask = (pc > 0 && pc <= 10) ? (1u << (pc - 1)) : 0u;
-                bool playerAllowed = (pmask == 0 || (info->allowableClass & pmask));
-                ImVec4 clColor = playerAllowed ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : colors::kPaleRed;
-                ImGui::TextColored(clColor, "%s", classBuf);
-            }
-        }
-        // Race restriction (e.g. "Races: Night Elf, Human")
-        if (info->allowableRace != 0) {
-            const auto& kRaces = ui::kRaceMasks;
-            constexpr uint32_t kAllPlayable = 1|2|4|8|16|32|64|128|512|1024;
-            if ((info->allowableRace & kAllPlayable) != kAllPlayable) {
-                int matchCount = 0;
-                for (const auto& kr : kRaces)
-                    if (info->allowableRace & kr.mask) ++matchCount;
-                if (matchCount > 0) {
-                    char raceBuf[160] = "Races: ";
-                    bool first = true;
-                    for (const auto& kr : kRaces) {
-                        if (!(info->allowableRace & kr.mask)) continue;
-                        if (!first) strncat(raceBuf, ", ", sizeof(raceBuf) - strlen(raceBuf) - 1);
-                        strncat(raceBuf, kr.name, sizeof(raceBuf) - strlen(raceBuf) - 1);
-                        first = false;
-                    }
-                    uint8_t pr = gameHandler.getPlayerRace();
-                    uint32_t pmask = (pr > 0 && pr <= 11) ? (1u << (pr - 1)) : 0u;
-                    bool playerAllowed = (pmask == 0 || (info->allowableRace & pmask));
-                    ImVec4 rColor = playerAllowed ? ImVec4(1.0f, 1.0f, 1.0f, 0.75f) : colors::kPaleRed;
-                    ImGui::TextColored(rColor, "%s", raceBuf);
-                }
-            }
-        }
-        // Flavor / lore text (shown in gold italic in WoW, use a yellow-ish dim color here)
-        if (!info->description.empty()) {
-            ImGui::Spacing();
-            ImGui::PushTextWrapPos(300.0f);
-            ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.0f, 0.85f), "\"%s\"", info->description.c_str());
-            ImGui::PopTextWrapPos();
-        }
-        if (info->sellPrice > 0) {
-            ImGui::TextDisabled("Sell:"); ImGui::SameLine(0, 4);
-            renderCoinsFromCopper(info->sellPrice);
-        }
-
-        if (ImGui::GetIO().KeyShift && info->inventoryType > 0) {
-            if (const auto* eq = findComparableEquipped(static_cast<uint8_t>(info->inventoryType))) {
-                ImGui::Separator();
-                ImGui::TextDisabled("Equipped:");
-                VkDescriptorSet eqIcon = inventoryScreen.getItemIcon(eq->item.displayInfoId);
-                if (eqIcon) {
-                    ImGui::Image((ImTextureID)(uintptr_t)eqIcon, ImVec2(18.0f, 18.0f));
-                    ImGui::SameLine();
-                }
-                ImGui::TextColored(InventoryScreen::getQualityColor(eq->item.quality), "%s", eq->item.name.c_str());
-                if (isWeaponInventoryType(eq->item.inventoryType) &&
-                    eq->item.damageMax > 0.0f && eq->item.delayMs > 0) {
-                    float speed = static_cast<float>(eq->item.delayMs) / 1000.0f;
-                    float dps = ((eq->item.damageMin + eq->item.damageMax) * 0.5f) / speed;
-                    char eqDmg[64], eqSpd[32];
-                    std::snprintf(eqDmg, sizeof(eqDmg), "%d - %d Damage",
-                                  static_cast<int>(eq->item.damageMin), static_cast<int>(eq->item.damageMax));
-                    std::snprintf(eqSpd, sizeof(eqSpd), "Speed %.2f", speed);
-                    float eqSpdW = ImGui::CalcTextSize(eqSpd).x;
-                    ImGui::Text("%s", eqDmg);
-                    ImGui::SameLine(ImGui::GetWindowWidth() - eqSpdW - 16.0f);
-                    ImGui::Text("%s", eqSpd);
-                    ImGui::TextDisabled("(%.1f damage per second)", dps);
-                }
-                if (eq->item.armor > 0) {
-                    ImGui::Text("%d Armor", eq->item.armor);
-                }
-                std::string eqBonusLine;
-                appendBonus(eqBonusLine, eq->item.strength, "Str");
-                appendBonus(eqBonusLine, eq->item.agility, "Agi");
-                appendBonus(eqBonusLine, eq->item.stamina, "Sta");
-                appendBonus(eqBonusLine, eq->item.intellect, "Int");
-                appendBonus(eqBonusLine, eq->item.spirit, "Spi");
-                if (!eqBonusLine.empty()) {
-                    ImGui::TextColored(green, "%s", eqBonusLine.c_str());
-                }
-                // Extra stats for the equipped item
-                for (const auto& es : eq->item.extraStats) {
-                    const char* nm = nullptr;
-                    switch (es.statType) {
-                        case 12: nm = "Defense Rating"; break;
-                        case 13: nm = "Dodge Rating"; break;
-                        case 14: nm = "Parry Rating"; break;
-                        case 16: case 17: case 18: case 31: nm = "Hit Rating"; break;
-                        case 19: case 20: case 21: case 32: nm = "Critical Strike Rating"; break;
-                        case 28: case 29: case 30: case 35: nm = "Haste Rating"; break;
-                        case 34: nm = "Resilience Rating"; break;
-                        case 36: nm = "Expertise Rating"; break;
-                        case 37: nm = "Attack Power"; break;
-                        case 38: nm = "Ranged Attack Power"; break;
-                        case 45: nm = "Spell Power"; break;
-                        case 46: nm = "Healing Power"; break;
-                        case 49: nm = "Mana per 5 sec."; break;
-                        default: break;
-                    }
-                    if (nm && es.statValue > 0)
-                        ImGui::TextColored(green, "+%d %s", es.statValue, nm);
-                }
-            }
-        }
-        ImGui::EndTooltip();
-    };
-
-    // Helper: render text with clickable URLs and WoW item links
-    auto renderTextWithLinks = [&](const std::string& text, const ImVec4& color) {
-        size_t pos = 0;
-        while (pos < text.size()) {
-            // Find next special element: URL or WoW link
-            size_t urlStart = text.find("https://", pos);
-
-            // Find next WoW link (may be colored with |c prefix or bare |H)
-            size_t linkStart = text.find("|c", pos);
-            // Also handle bare |H links without color prefix
-            size_t bareItem  = text.find("|Hitem:",  pos);
-            size_t bareSpell = text.find("|Hspell:", pos);
-            size_t bareQuest = text.find("|Hquest:", pos);
-            size_t bareLinkStart = std::min({bareItem, bareSpell, bareQuest});
-
-            // Determine which comes first
-            size_t nextSpecial = std::min({urlStart, linkStart, bareLinkStart});
-
-            if (nextSpecial == std::string::npos) {
-                // No more special elements, render remaining text
-                std::string remaining = text.substr(pos);
-                if (!remaining.empty()) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, color);
-                    ImGui::TextWrapped("%s", remaining.c_str());
-                    ImGui::PopStyleColor();
-                }
-                break;
-            }
-
-            // Render plain text before special element
-            if (nextSpecial > pos) {
-                std::string before = text.substr(pos, nextSpecial - pos);
-                ImGui::PushStyleColor(ImGuiCol_Text, color);
-                ImGui::TextWrapped("%s", before.c_str());
-                ImGui::PopStyleColor();
-                ImGui::SameLine(0, 0);
-            }
-
-            // Handle WoW item link
-            if (nextSpecial == linkStart || nextSpecial == bareLinkStart) {
-                ImVec4 linkColor = color;
-                size_t hStart = std::string::npos;
-
-                if (nextSpecial == linkStart && text.size() > linkStart + 10) {
-                    // Parse |cAARRGGBB color
-                    linkColor = parseWowColor(text, linkStart);
-                    // Find the nearest |H link of any supported type
-                    size_t hItem  = text.find("|Hitem:",        linkStart + 10);
-                    size_t hSpell = text.find("|Hspell:",       linkStart + 10);
-                    size_t hQuest = text.find("|Hquest:",       linkStart + 10);
-                    size_t hAch   = text.find("|Hachievement:", linkStart + 10);
-                    hStart = std::min({hItem, hSpell, hQuest, hAch});
-                } else if (nextSpecial == bareLinkStart) {
-                    hStart = bareLinkStart;
-                }
-
-                if (hStart != std::string::npos) {
-                    // Determine link type
-                    const bool isSpellLink = (text.compare(hStart, 8, "|Hspell:") == 0);
-                    const bool isQuestLink = (text.compare(hStart, 8, "|Hquest:") == 0);
-                    const bool isAchievLink = (text.compare(hStart, 14, "|Hachievement:") == 0);
-                    // Default: item link
-
-                    // Parse the first numeric ID after |Htype:
-                    size_t idOffset = isSpellLink ? 8 : (isQuestLink ? 8 : (isAchievLink ? 14 : 7));
-                    size_t entryStart = hStart + idOffset;
-                    size_t entryEnd = text.find(':', entryStart);
-                    uint32_t linkId = 0;
-                    if (entryEnd != std::string::npos) {
-                        linkId = static_cast<uint32_t>(strtoul(
-                            text.substr(entryStart, entryEnd - entryStart).c_str(), nullptr, 10));
-                    }
-
-                    // Find display name: |h[Name]|h
-                    size_t nameTagStart = text.find("|h[", hStart);
-                    size_t nameTagEnd = (nameTagStart != std::string::npos)
-                        ? text.find("]|h", nameTagStart + 3) : std::string::npos;
-
-                    std::string linkName = isSpellLink ? "Unknown Spell"
-                                        : isQuestLink  ? "Unknown Quest"
-                                        : isAchievLink ? "Unknown Achievement"
-                                        : "Unknown Item";
-                    if (nameTagStart != std::string::npos && nameTagEnd != std::string::npos) {
-                        linkName = text.substr(nameTagStart + 3, nameTagEnd - nameTagStart - 3);
-                    }
-
-                    // Find end of entire link sequence (|r or after ]|h)
-                    size_t linkEnd = (nameTagEnd != std::string::npos) ? nameTagEnd + 3 : hStart + idOffset;
-                    size_t resetPos = text.find("|r", linkEnd);
-                    if (resetPos != std::string::npos && resetPos <= linkEnd + 2) {
-                        linkEnd = resetPos + 2;
-                    }
-
-                    if (!isSpellLink && !isQuestLink && !isAchievLink) {
-                        // --- Item link ---
-                        uint32_t itemEntry = linkId;
-                        if (itemEntry > 0) {
-                            gameHandler.ensureItemInfo(itemEntry);
-                        }
-
-                        // Show small icon before item link if available
-                        if (itemEntry > 0) {
-                            const auto* chatInfo = gameHandler.getItemInfo(itemEntry);
-                            if (chatInfo && chatInfo->valid && chatInfo->displayInfoId != 0) {
-                                VkDescriptorSet chatIcon = inventoryScreen.getItemIcon(chatInfo->displayInfoId);
-                                if (chatIcon) {
-                                    ImGui::Image((ImTextureID)(uintptr_t)chatIcon, ImVec2(12, 12));
-                                    if (ImGui::IsItemHovered()) {
-                                        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                                        renderItemLinkTooltip(itemEntry);
-                                    }
-                                    ImGui::SameLine(0, 2);
-                                }
-                            }
-                        }
-
-                        // Render bracketed item name in quality color
-                        std::string display = "[" + linkName + "]";
-                        ImGui::PushStyleColor(ImGuiCol_Text, linkColor);
-                        ImGui::TextWrapped("%s", display.c_str());
-                        ImGui::PopStyleColor();
-
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                            if (itemEntry > 0) {
-                                renderItemLinkTooltip(itemEntry);
-                            }
-                        }
-                    } else if (isSpellLink) {
-                        // --- Spell link: |Hspell:SPELLID:RANK|h[Name]|h ---
-                        // Small icon (use spell icon cache if available)
-                        VkDescriptorSet spellIcon = (linkId > 0) ? getSpellIcon(linkId, assetMgr) : VK_NULL_HANDLE;
-                        if (spellIcon) {
-                            ImGui::Image((ImTextureID)(uintptr_t)spellIcon, ImVec2(12, 12));
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                                spellbookScreen.renderSpellInfoTooltip(linkId, gameHandler, assetMgr);
-                            }
-                            ImGui::SameLine(0, 2);
-                        }
-
-                        std::string display = "[" + linkName + "]";
-                        ImGui::PushStyleColor(ImGuiCol_Text, linkColor);
-                        ImGui::TextWrapped("%s", display.c_str());
-                        ImGui::PopStyleColor();
-
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                            if (linkId > 0) {
-                                spellbookScreen.renderSpellInfoTooltip(linkId, gameHandler, assetMgr);
-                            }
-                        }
-                    } else if (isQuestLink) {
-                        // --- Quest link: |Hquest:QUESTID:QUESTLEVEL|h[Name]|h ---
-                        std::string display = "[" + linkName + "]";
-                        ImGui::PushStyleColor(ImGuiCol_Text, colors::kWarmGold); // gold
-                        ImGui::TextWrapped("%s", display.c_str());
-                        ImGui::PopStyleColor();
-
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                            ImGui::BeginTooltip();
-                            ImGui::TextColored(colors::kWarmGold, "%s", linkName.c_str());
-                            // Parse quest level (second field after questId)
-                            if (entryEnd != std::string::npos) {
-                                size_t lvlEnd = text.find(':', entryEnd + 1);
-                                if (lvlEnd == std::string::npos) lvlEnd = text.find('|', entryEnd + 1);
-                                if (lvlEnd != std::string::npos) {
-                                    uint32_t qLvl = static_cast<uint32_t>(strtoul(
-                                        text.substr(entryEnd + 1, lvlEnd - entryEnd - 1).c_str(), nullptr, 10));
-                                    if (qLvl > 0) ImGui::TextDisabled("Level %u Quest", qLvl);
-                                }
-                            }
-                            ImGui::TextDisabled("Click quest log to view details");
-                            ImGui::EndTooltip();
-                        }
-                        // Click: open quest log and select this quest if we have it
-                        if (ImGui::IsItemClicked() && linkId > 0) {
-                            questLogScreen.openAndSelectQuest(linkId);
-                        }
-                    } else {
-                        // --- Achievement link ---
-                        std::string display = "[" + linkName + "]";
-                        ImGui::PushStyleColor(ImGuiCol_Text, colors::kBrightGold); // gold
-                        ImGui::TextWrapped("%s", display.c_str());
-                        ImGui::PopStyleColor();
-
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                            ImGui::SetTooltip("Achievement: %s", linkName.c_str());
-                        }
-                    }
-
-                    // Shift-click: insert entire link back into chat input
-                    if (ImGui::IsItemClicked() && ImGui::GetIO().KeyShift) {
-                        std::string linkText = text.substr(nextSpecial, linkEnd - nextSpecial);
-                        size_t curLen = strlen(chatInputBuffer_);
-                        if (curLen + linkText.size() + 1 < sizeof(chatInputBuffer_)) {
-                            strncat(chatInputBuffer_, linkText.c_str(), sizeof(chatInputBuffer_) - curLen - 1);
-                            chatInputMoveCursorToEnd_ = true;
-                        }
-                    }
-
-                    pos = linkEnd;
-                    continue;
-                }
-
-                // Not an item link — treat as colored text: |cAARRGGBB...text...|r
-                if (nextSpecial == linkStart && text.size() > linkStart + 10) {
-                    ImVec4 cColor = parseWowColor(text, linkStart);
-                    size_t textStart = linkStart + 10; // after |cAARRGGBB
-                    size_t resetPos2 = text.find("|r", textStart);
-                    std::string coloredText;
-                    if (resetPos2 != std::string::npos) {
-                        coloredText = text.substr(textStart, resetPos2 - textStart);
-                        pos = resetPos2 + 2; // skip |r
-                    } else {
-                        coloredText = text.substr(textStart);
-                        pos = text.size();
-                    }
-                    // Strip any remaining WoW markup from the colored segment
-                    // (e.g. |H...|h pairs that aren't item links)
-                    std::string clean;
-                    for (size_t i = 0; i < coloredText.size(); i++) {
-                        if (coloredText[i] == '|' && i + 1 < coloredText.size()) {
-                            char next = coloredText[i + 1];
-                            if (next == 'H') {
-                                // Skip |H...|h
-                                size_t hEnd = coloredText.find("|h", i + 2);
-                                if (hEnd != std::string::npos) { i = hEnd + 1; continue; }
-                            } else if (next == 'h') {
-                                i += 1; continue; // skip |h
-                            } else if (next == 'r') {
-                                i += 1; continue; // skip |r
-                            }
-                        }
-                        clean += coloredText[i];
-                    }
-                    if (!clean.empty()) {
-                        ImGui::PushStyleColor(ImGuiCol_Text, cColor);
-                        ImGui::TextWrapped("%s", clean.c_str());
-                        ImGui::PopStyleColor();
-                        ImGui::SameLine(0, 0);
-                    }
-                } else {
-                    // Bare |c without enough chars for color — render literally
-                    ImGui::PushStyleColor(ImGuiCol_Text, color);
-                    ImGui::TextWrapped("|c");
-                    ImGui::PopStyleColor();
-                    ImGui::SameLine(0, 0);
-                    pos = nextSpecial + 2;
-                }
-                continue;
-            }
-
-            // Handle URL
-            if (nextSpecial == urlStart) {
-                size_t urlEnd = text.find_first_of(" \t\n\r", urlStart);
-                if (urlEnd == std::string::npos) urlEnd = text.size();
-                std::string url = text.substr(urlStart, urlEnd - urlStart);
-
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 1.0f, 1.0f));
-                ImGui::TextWrapped("%s", url.c_str());
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                    ImGui::SetTooltip("Open: %s", url.c_str());
-                }
-                if (ImGui::IsItemClicked()) {
-                    std::string cmd = "xdg-open '" + url + "' &";
-                    [[maybe_unused]] int result = system(cmd.c_str());
-                }
-                ImGui::PopStyleColor();
-
-                pos = urlEnd;
-                continue;
-            }
-        }
-    };
+    // Markup parsing and rendering delegated to ChatMarkupParser / ChatMarkupRenderer (Phase 2)
+    MarkupRenderContext markupCtx;
+    markupCtx.gameHandler     = &gameHandler;
+    markupCtx.inventory       = &inventoryScreen;
+    markupCtx.spellbook       = &spellbookScreen;
+    markupCtx.questLog        = &questLogScreen;
+    markupCtx.assetMgr        = assetMgr;
+    markupCtx.getSpellIcon    = getSpellIcon;
+    markupCtx.chatInputBuffer = chatInputBuffer_;
+    markupCtx.chatInputBufSize = sizeof(chatInputBuffer_);
+    markupCtx.moveCursorToEnd = &chatInputMoveCursorToEnd_;
 
     // Determine local player name for mention detection (case-insensitive)
     std::string selfNameLower;
@@ -1040,8 +247,8 @@ void ChatPanel::render(game::GameHandler& gameHandler,
 
     int chatMsgIdx = 0;
     for (const auto& msg : chatHistory) {
-        if (!shouldShowMessage(msg, activeChatTab)) continue;
-        std::string processedMessage = replaceGenderPlaceholders(msg.message, gameHandler);
+        if (!tabManager_.shouldShowMessage(msg, activeChatTab)) continue;
+        std::string processedMessage = chat_utils::replaceGenderPlaceholders(msg.message, gameHandler);
 
         // Resolve sender name at render time in case it wasn't available at parse time.
         // This handles the race where SMSG_MESSAGECHAT arrives before the entity spawns.
@@ -1053,7 +260,7 @@ void ChatPanel::render(game::GameHandler& gameHandler,
             return msg.senderName;
         }();
 
-        ImVec4 color = getChatTypeColor(msg.type);
+        ImVec4 color = ChatTabManager::getChatTypeColor(msg.type);
 
         // Optional timestamp prefix
         std::string tsPrefix;
@@ -1070,56 +277,7 @@ void ChatPanel::render(game::GameHandler& gameHandler,
             tsPrefix = tsBuf;
         }
 
-        // Build chat tag prefix: <GM>, <AFK>, <DND> from chatTag bitmask
-        std::string tagPrefix;
-        if (msg.chatTag & 0x04) tagPrefix = "<GM> ";
-        else if (msg.chatTag & 0x01) tagPrefix = "<AFK> ";
-        else if (msg.chatTag & 0x02) tagPrefix = "<DND> ";
-
-        // Build full message string for this entry
-        std::string fullMsg;
-        if (msg.type == game::ChatType::SYSTEM || msg.type == game::ChatType::TEXT_EMOTE) {
-            fullMsg = tsPrefix + processedMessage;
-        } else if (!resolvedSenderName.empty()) {
-            if (msg.type == game::ChatType::SAY ||
-                msg.type == game::ChatType::MONSTER_SAY || msg.type == game::ChatType::MONSTER_PARTY) {
-                fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " says: " + processedMessage;
-            } else if (msg.type == game::ChatType::YELL || msg.type == game::ChatType::MONSTER_YELL) {
-                fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " yells: " + processedMessage;
-            } else if (msg.type == game::ChatType::WHISPER ||
-                       msg.type == game::ChatType::MONSTER_WHISPER || msg.type == game::ChatType::RAID_BOSS_WHISPER) {
-                fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " whispers: " + processedMessage;
-            } else if (msg.type == game::ChatType::WHISPER_INFORM) {
-                const std::string& target = !msg.receiverName.empty() ? msg.receiverName : resolvedSenderName;
-                fullMsg = tsPrefix + "To " + target + ": " + processedMessage;
-            } else if (msg.type == game::ChatType::EMOTE ||
-                       msg.type == game::ChatType::MONSTER_EMOTE || msg.type == game::ChatType::RAID_BOSS_EMOTE) {
-                fullMsg = tsPrefix + tagPrefix + resolvedSenderName + " " + processedMessage;
-            } else if (msg.type == game::ChatType::CHANNEL && !msg.channelName.empty()) {
-                int chIdx = gameHandler.getChannelIndex(msg.channelName);
-                std::string chDisplay = chIdx > 0
-                    ? "[" + std::to_string(chIdx) + ". " + msg.channelName + "]"
-                    : "[" + msg.channelName + "]";
-                fullMsg = tsPrefix + chDisplay + " [" + tagPrefix + resolvedSenderName + "]: " + processedMessage;
-            } else {
-                fullMsg = tsPrefix + "[" + std::string(getChatTypeName(msg.type)) + "] " + tagPrefix + resolvedSenderName + ": " + processedMessage;
-            }
-        } else {
-            bool isGroupType =
-                msg.type == game::ChatType::PARTY ||
-                msg.type == game::ChatType::GUILD ||
-                msg.type == game::ChatType::OFFICER ||
-                msg.type == game::ChatType::RAID ||
-                msg.type == game::ChatType::RAID_LEADER ||
-                msg.type == game::ChatType::RAID_WARNING ||
-                msg.type == game::ChatType::BATTLEGROUND ||
-                msg.type == game::ChatType::BATTLEGROUND_LEADER;
-            if (isGroupType) {
-                fullMsg = tsPrefix + "[" + std::string(getChatTypeName(msg.type)) + "] " + processedMessage;
-            } else {
-                fullMsg = tsPrefix + processedMessage;
-            }
-        }
+        std::string fullMsg = formatChatMessage(msg, processedMessage, resolvedSenderName, tsPrefix, gameHandler);
 
         // Detect mention: does this message contain the local player's name?
         bool isMention = false;
@@ -1134,7 +292,10 @@ void ChatPanel::render(game::GameHandler& gameHandler,
         // Render message in a group so we can attach a right-click context menu
         ImGui::PushID(chatMsgIdx++);
         ImGui::BeginGroup();
-        renderTextWithLinks(fullMsg, isMention ? ImVec4(1.0f, 0.9f, 0.35f, 1.0f) : color);
+        {
+            auto segments = markupParser_.parse(fullMsg);
+            markupRenderer_.render(segments, isMention ? ImVec4(1.0f, 0.9f, 0.35f, 1.0f) : color, markupCtx);
+        }
         ImGui::EndGroup();
         if (isMention) {
             // Draw highlight AFTER rendering so the rect covers all wrapped lines,
@@ -1285,70 +446,7 @@ void ChatPanel::render(game::GameHandler& gameHandler,
     }
 
     // Detect chat channel prefix as user types and switch the dropdown
-    {
-        std::string buf(chatInputBuffer_);
-        if (buf.size() >= 2 && buf[0] == '/') {
-            // Find the command and check if there's a space after it
-            size_t sp = buf.find(' ', 1);
-            if (sp != std::string::npos) {
-                std::string cmd = buf.substr(1, sp - 1);
-                for (char& c : cmd) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                int detected = -1;
-                bool isReply = false;
-                if (cmd == "s" || cmd == "say") detected = 0;
-                else if (cmd == "y" || cmd == "yell" || cmd == "shout") detected = 1;
-                else if (cmd == "p" || cmd == "party") detected = 2;
-                else if (cmd == "g" || cmd == "guild") detected = 3;
-                else if (cmd == "w" || cmd == "whisper" || cmd == "tell" || cmd == "t") detected = 4;
-                else if (cmd == "r" || cmd == "reply") { detected = 4; isReply = true; }
-                else if (cmd == "raid" || cmd == "rsay" || cmd == "ra") detected = 5;
-                else if (cmd == "o" || cmd == "officer" || cmd == "osay") detected = 6;
-                else if (cmd == "bg" || cmd == "battleground") detected = 7;
-                else if (cmd == "rw" || cmd == "raidwarning") detected = 8;
-                else if (cmd == "i" || cmd == "instance") detected = 9;
-                else if (cmd.size() == 1 && cmd[0] >= '1' && cmd[0] <= '9') detected = 10; // /1, /2 etc.
-                if (detected >= 0 && (selectedChatType_ != detected || detected == 10 || isReply)) {
-                    // For channel shortcuts, also update selectedChannelIdx_
-                    if (detected == 10) {
-                        int chanIdx = cmd[0] - '1'; // /1 -> index 0, /2 -> index 1, etc.
-                        const auto& chans = gameHandler.getJoinedChannels();
-                        if (chanIdx >= 0 && chanIdx < static_cast<int>(chans.size())) {
-                            selectedChannelIdx_ = chanIdx;
-                        }
-                    }
-                    selectedChatType_ = detected;
-                    // Strip the prefix, keep only the message part
-                    std::string remaining = buf.substr(sp + 1);
-                    // /r reply: pre-fill whisper target from last whisper sender
-                    if (detected == 4 && isReply) {
-                        std::string lastSender = gameHandler.getLastWhisperSender();
-                        if (!lastSender.empty()) {
-                            strncpy(whisperTargetBuffer_, lastSender.c_str(), sizeof(whisperTargetBuffer_) - 1);
-                            whisperTargetBuffer_[sizeof(whisperTargetBuffer_) - 1] = '\0';
-                        }
-                        // remaining is the message — don't extract a target from it
-                    } else if (detected == 4) {
-                        // For whisper, first word after /w is the target
-                        size_t msgStart = remaining.find(' ');
-                        if (msgStart != std::string::npos) {
-                            std::string wTarget = remaining.substr(0, msgStart);
-                            strncpy(whisperTargetBuffer_, wTarget.c_str(), sizeof(whisperTargetBuffer_) - 1);
-                            whisperTargetBuffer_[sizeof(whisperTargetBuffer_) - 1] = '\0';
-                            remaining = remaining.substr(msgStart + 1);
-                        } else {
-                            // Just the target name so far, no message yet
-                            strncpy(whisperTargetBuffer_, remaining.c_str(), sizeof(whisperTargetBuffer_) - 1);
-                            whisperTargetBuffer_[sizeof(whisperTargetBuffer_) - 1] = '\0';
-                            remaining = "";
-                        }
-                    }
-                    strncpy(chatInputBuffer_, remaining.c_str(), sizeof(chatInputBuffer_) - 1);
-                    chatInputBuffer_[sizeof(chatInputBuffer_) - 1] = '\0';
-                    chatInputMoveCursorToEnd_ = true;
-                }
-            }
-        }
-    }
+    detectChannelPrefix(gameHandler);
 
     // Color the input text based on current chat type
     ImVec4 inputColor;
@@ -1367,243 +465,20 @@ void ChatPanel::render(game::GameHandler& gameHandler,
     }
     ImGui::PushStyleColor(ImGuiCol_Text, inputColor);
 
-    auto inputCallback = [](ImGuiInputTextCallbackData* data) -> int {
-        auto* self = static_cast<ChatPanel*>(data->UserData);
-        if (!self) return 0;
-
-        // Cursor-to-end after channel switch
-        if (self->chatInputMoveCursorToEnd_) {
-            int len = static_cast<int>(std::strlen(data->Buf));
-            data->CursorPos = len;
-            data->SelectionStart = len;
-            data->SelectionEnd = len;
-            self->chatInputMoveCursorToEnd_ = false;
-        }
-
-        // Tab: slash-command autocomplete
-        if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion) {
-            if (data->BufTextLen > 0 && data->Buf[0] == '/') {
-                // Split buffer into command word and trailing args
-                std::string fullBuf(data->Buf, data->BufTextLen);
-                size_t spacePos = fullBuf.find(' ');
-                std::string word = (spacePos != std::string::npos) ? fullBuf.substr(0, spacePos) : fullBuf;
-                std::string rest = (spacePos != std::string::npos) ? fullBuf.substr(spacePos) : "";
-
-                // Normalize to lowercase for matching
-                std::string lowerWord = word;
-                for (auto& ch : lowerWord) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-
-                static const std::vector<std::string> kCmds = {
-                    "/afk", "/assist", "/away",
-                    "/cancelaura", "/cancelform", "/cancellogout", "/cancelshapeshift",
-                    "/cast", "/castsequence", "/chathelp", "/clear", "/clearfocus",
-                    "/clearmainassist", "/clearmaintank", "/cleartarget", "/cloak",
-                    "/combatlog", "/dance", "/difficulty", "/dismount", "/dnd", "/do", "/duel", "/dump",
-                    "/e", "/emote", "/equip", "/equipset", "/exit",
-                    "/focus", "/follow", "/forfeit", "/friend",
-                    "/g", "/gdemote", "/ginvite", "/gkick", "/gleader", "/gmotd",
-                    "/gmticket", "/gpromote", "/gquit", "/grouploot", "/groster",
-                    "/guild", "/guildinfo",
-                    "/helm", "/help",
-                    "/i", "/ignore", "/inspect", "/instance", "/invite",
-                    "/j", "/join", "/kick", "/kneel",
-                    "/l", "/leave", "/leaveparty", "/loc", "/local", "/logout",
-                    "/lootmethod", "/lootthreshold",
-                    "/macrohelp", "/mainassist", "/maintank", "/mark", "/me",
-                    "/notready",
-                    "/p", "/party", "/petaggressive", "/petattack", "/petdefensive",
-                    "/petdismiss", "/petfollow", "/pethalt", "/petpassive", "/petstay",
-                    "/played", "/pvp",
-                    "/quit",
-                    "/r", "/raid", "/raidconvert", "/raidinfo", "/raidwarning", "/random", "/ready",
-                    "/readycheck", "/reload", "/reloadui", "/removefriend",
-                    "/reply", "/rl", "/roll", "/run",
-                    "/s", "/say", "/score", "/screenshot", "/script", "/setloot",
-                    "/shout", "/sit", "/stand",
-                    "/startattack", "/stopattack", "/stopcasting", "/stopfollow", "/stopmacro",
-                    "/t", "/target", "/targetenemy", "/targetfriend", "/targetlast",
-                    "/threat", "/ticket", "/time", "/trade",
-                    "/unignore", "/uninvite", "/unstuck", "/use",
-                    "/w", "/whisper", "/who", "/wts", "/wtb",
-                    "/y", "/yell", "/zone"
-                };
-
-                // New session if prefix changed
-                if (self->chatTabMatchIdx_ < 0 || self->chatTabPrefix_ != lowerWord) {
-                    self->chatTabPrefix_ = lowerWord;
-                    self->chatTabMatches_.clear();
-                    for (const auto& cmd : kCmds) {
-                        if (cmd.size() >= lowerWord.size() &&
-                            cmd.compare(0, lowerWord.size(), lowerWord) == 0)
-                            self->chatTabMatches_.push_back(cmd);
-                    }
-                    self->chatTabMatchIdx_ = 0;
-                } else {
-                    // Cycle forward through matches
-                    ++self->chatTabMatchIdx_;
-                    if (self->chatTabMatchIdx_ >= static_cast<int>(self->chatTabMatches_.size()))
-                        self->chatTabMatchIdx_ = 0;
-                }
-
-                if (!self->chatTabMatches_.empty()) {
-                    std::string match = self->chatTabMatches_[self->chatTabMatchIdx_];
-                    // Append trailing space when match is unambiguous
-                    if (self->chatTabMatches_.size() == 1 && rest.empty())
-                        match += ' ';
-                    std::string newBuf = match + rest;
-                    data->DeleteChars(0, data->BufTextLen);
-                    data->InsertChars(0, newBuf.c_str());
-                }
-            } else if (data->BufTextLen > 0) {
-                // Player name tab-completion for commands like /w, /whisper, /invite, /trade, /duel
-                // Also works for plain text (completes nearby player names)
-                std::string fullBuf(data->Buf, data->BufTextLen);
-                size_t spacePos = fullBuf.find(' ');
-                bool isNameCommand = false;
-                std::string namePrefix;
-                size_t replaceStart = 0;
-
-                if (fullBuf[0] == '/' && spacePos != std::string::npos) {
-                    std::string cmd = fullBuf.substr(0, spacePos);
-                    for (char& c : cmd) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    // Commands that take a player name as the first argument after the command
-                    if (cmd == "/w" || cmd == "/whisper" || cmd == "/invite" ||
-                        cmd == "/trade" || cmd == "/duel" || cmd == "/follow" ||
-                        cmd == "/inspect" || cmd == "/friend" || cmd == "/removefriend" ||
-                        cmd == "/ignore" || cmd == "/unignore" || cmd == "/who" ||
-                        cmd == "/t" || cmd == "/target" || cmd == "/kick" ||
-                        cmd == "/uninvite" || cmd == "/ginvite" || cmd == "/gkick") {
-                        // Extract the partial name after the space
-                        namePrefix = fullBuf.substr(spacePos + 1);
-                        // Only complete the first word after the command
-                        size_t nameSpace = namePrefix.find(' ');
-                        if (nameSpace == std::string::npos) {
-                            isNameCommand = true;
-                            replaceStart = spacePos + 1;
-                        }
-                    }
-                }
-
-                if (isNameCommand && !namePrefix.empty()) {
-                    std::string lowerPrefix = namePrefix;
-                    for (char& c : lowerPrefix) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-                    if (self->chatTabMatchIdx_ < 0 || self->chatTabPrefix_ != lowerPrefix) {
-                        self->chatTabPrefix_ = lowerPrefix;
-                        self->chatTabMatches_.clear();
-                        // Search player name cache and nearby entities
-                        auto* gh = self->cachedGameHandler_;
-                        // Party/raid members
-                        for (const auto& m : gh->getPartyData().members) {
-                            if (m.name.empty()) continue;
-                            std::string lname = m.name;
-                            for (char& c : lname) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                            if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0)
-                                self->chatTabMatches_.push_back(m.name);
-                        }
-                        // Friends
-                        for (const auto& c : gh->getContacts()) {
-                            if (!c.isFriend() || c.name.empty()) continue;
-                            std::string lname = c.name;
-                            for (char& cc : lname) cc = static_cast<char>(std::tolower(static_cast<unsigned char>(cc)));
-                            if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
-                                // Avoid duplicates from party
-                                bool dup = false;
-                                for (const auto& em : self->chatTabMatches_)
-                                    if (em == c.name) { dup = true; break; }
-                                if (!dup) self->chatTabMatches_.push_back(c.name);
-                            }
-                        }
-                        // Nearby visible players
-                        for (const auto& [guid, entity] : gh->getEntityManager().getEntities()) {
-                            if (!entity || entity->getType() != game::ObjectType::PLAYER) continue;
-                            auto player = std::static_pointer_cast<game::Player>(entity);
-                            if (player->getName().empty()) continue;
-                            std::string lname = player->getName();
-                            for (char& cc : lname) cc = static_cast<char>(std::tolower(static_cast<unsigned char>(cc)));
-                            if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
-                                bool dup = false;
-                                for (const auto& em : self->chatTabMatches_)
-                                    if (em == player->getName()) { dup = true; break; }
-                                if (!dup) self->chatTabMatches_.push_back(player->getName());
-                            }
-                        }
-                        // Last whisper sender
-                        if (!gh->getLastWhisperSender().empty()) {
-                            std::string lname = gh->getLastWhisperSender();
-                            for (char& cc : lname) cc = static_cast<char>(std::tolower(static_cast<unsigned char>(cc)));
-                            if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
-                                bool dup = false;
-                                for (const auto& em : self->chatTabMatches_)
-                                    if (em == gh->getLastWhisperSender()) { dup = true; break; }
-                                if (!dup) self->chatTabMatches_.insert(self->chatTabMatches_.begin(), gh->getLastWhisperSender());
-                            }
-                        }
-                        self->chatTabMatchIdx_ = 0;
-                    } else {
-                        ++self->chatTabMatchIdx_;
-                        if (self->chatTabMatchIdx_ >= static_cast<int>(self->chatTabMatches_.size()))
-                            self->chatTabMatchIdx_ = 0;
-                    }
-
-                    if (!self->chatTabMatches_.empty()) {
-                        std::string match = self->chatTabMatches_[self->chatTabMatchIdx_];
-                        std::string prefix = fullBuf.substr(0, replaceStart);
-                        std::string newBuf = prefix + match;
-                        if (self->chatTabMatches_.size() == 1) newBuf += ' ';
-                        data->DeleteChars(0, data->BufTextLen);
-                        data->InsertChars(0, newBuf.c_str());
-                    }
-                }
-            }
-            return 0;
-        }
-
-        // Up/Down arrow: cycle through sent message history
-        if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
-            // Any history navigation resets autocomplete
-            self->chatTabMatchIdx_ = -1;
-            self->chatTabMatches_.clear();
-
-            const int histSize = static_cast<int>(self->chatSentHistory_.size());
-            if (histSize == 0) return 0;
-
-            if (data->EventKey == ImGuiKey_UpArrow) {
-                // Go back in history
-                if (self->chatHistoryIdx_ == -1)
-                    self->chatHistoryIdx_ = histSize - 1;
-                else if (self->chatHistoryIdx_ > 0)
-                    --self->chatHistoryIdx_;
-            } else if (data->EventKey == ImGuiKey_DownArrow) {
-                if (self->chatHistoryIdx_ == -1) return 0;
-                ++self->chatHistoryIdx_;
-                if (self->chatHistoryIdx_ >= histSize) {
-                    self->chatHistoryIdx_ = -1;
-                    data->DeleteChars(0, data->BufTextLen);
-                    return 0;
-                }
-            }
-
-            if (self->chatHistoryIdx_ >= 0 && self->chatHistoryIdx_ < histSize) {
-                const std::string& entry = self->chatSentHistory_[self->chatHistoryIdx_];
-                data->DeleteChars(0, data->BufTextLen);
-                data->InsertChars(0, entry.c_str());
-            }
-        }
-        return 0;
-    };
-
     ImGuiInputTextFlags inputFlags = ImGuiInputTextFlags_EnterReturnsTrue |
                                      ImGuiInputTextFlags_CallbackAlways |
                                      ImGuiInputTextFlags_CallbackHistory |
                                      ImGuiInputTextFlags_CallbackCompletion;
-    if (ImGui::InputText("##ChatInput", chatInputBuffer_, sizeof(chatInputBuffer_), inputFlags, inputCallback, this)) {
-        sendChatMessage(gameHandler, inventoryScreen, spellbookScreen, questLogScreen);
+    if (ImGui::InputText("##ChatInput", chatInputBuffer_, sizeof(chatInputBuffer_), inputFlags, &ChatPanel::inputTextCallback, this)) {
+        sendChatMessage(gameHandler);
         // Close chat input on send so movement keys work immediately.
         refocusChatInput_ = false;
+        chatInputCooldown_ = 2;  // suppress Enter re-opening chat for 2 frames
         ImGui::ClearActiveID();
     }
     ImGui::PopStyleColor();
+
+    if (chatInputCooldown_ > 0) --chatInputCooldown_;
 
     if (ImGui::IsItemActive()) {
         chatInputActive_ = true;
@@ -1621,8 +496,623 @@ void ChatPanel::render(game::GameHandler& gameHandler,
     ImGui::End();
 }
 
+// ---------------------------------------------------------------------------
+// detectChannelPrefix — auto-detect /say, /party, /whisper etc. prefixes
+// and switch the chat type dropdown + strip the prefix from the input buffer.
+// Extracted from render() (Phase 6.2).
+// ---------------------------------------------------------------------------
+void ChatPanel::detectChannelPrefix(game::GameHandler& gameHandler) {
+    std::string buf(chatInputBuffer_);
+    if (buf.size() < 2 || buf[0] != '/') return;
+
+    size_t sp = buf.find(' ', 1);
+    if (sp == std::string::npos) return;
+
+    std::string cmd = buf.substr(1, sp - 1);
+    for (char& c : cmd) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    int detected = -1;
+    bool isReply = false;
+    if (cmd == "s" || cmd == "say") detected = 0;
+    else if (cmd == "y" || cmd == "yell" || cmd == "shout") detected = 1;
+    else if (cmd == "p" || cmd == "party") detected = 2;
+    else if (cmd == "g" || cmd == "guild") detected = 3;
+    else if (cmd == "w" || cmd == "whisper" || cmd == "tell" || cmd == "t") detected = 4;
+    else if (cmd == "r" || cmd == "reply") { detected = 4; isReply = true; }
+    else if (cmd == "raid" || cmd == "rsay" || cmd == "ra") detected = 5;
+    else if (cmd == "o" || cmd == "officer" || cmd == "osay") detected = 6;
+    else if (cmd == "bg" || cmd == "battleground") detected = 7;
+    else if (cmd == "rw" || cmd == "raidwarning") detected = 8;
+    else if (cmd == "i" || cmd == "instance") detected = 9;
+    else if (cmd.size() == 1 && cmd[0] >= '1' && cmd[0] <= '9') detected = 10;
+
+    if (detected < 0 || (selectedChatType_ == detected && detected != 10 && !isReply)) return;
+
+    if (detected == 10) {
+        int chanIdx = cmd[0] - '1';
+        const auto& chans = gameHandler.getJoinedChannels();
+        if (chanIdx >= 0 && chanIdx < static_cast<int>(chans.size()))
+            selectedChannelIdx_ = chanIdx;
+    }
+    selectedChatType_ = detected;
+    std::string remaining = buf.substr(sp + 1);
+
+    if (detected == 4 && isReply) {
+        std::string lastSender = gameHandler.getLastWhisperSender();
+        if (!lastSender.empty()) {
+            strncpy(whisperTargetBuffer_, lastSender.c_str(), sizeof(whisperTargetBuffer_) - 1);
+            whisperTargetBuffer_[sizeof(whisperTargetBuffer_) - 1] = '\0';
+        }
+    } else if (detected == 4) {
+        size_t msgStart = remaining.find(' ');
+        if (msgStart != std::string::npos) {
+            std::string wTarget = remaining.substr(0, msgStart);
+            strncpy(whisperTargetBuffer_, wTarget.c_str(), sizeof(whisperTargetBuffer_) - 1);
+            whisperTargetBuffer_[sizeof(whisperTargetBuffer_) - 1] = '\0';
+            remaining = remaining.substr(msgStart + 1);
+        } else {
+            strncpy(whisperTargetBuffer_, remaining.c_str(), sizeof(whisperTargetBuffer_) - 1);
+            whisperTargetBuffer_[sizeof(whisperTargetBuffer_) - 1] = '\0';
+            remaining = "";
+        }
+    }
+    strncpy(chatInputBuffer_, remaining.c_str(), sizeof(chatInputBuffer_) - 1);
+    chatInputBuffer_[sizeof(chatInputBuffer_) - 1] = '\0';
+    chatInputMoveCursorToEnd_ = true;
+}
+
+// ---------------------------------------------------------------------------
+// inputTextCallback — static ImGui input text callback for tab-completion,
+// cursor management, and sent-message history (Up/Down arrows).
+// Extracted from render() inline lambda (Phase 6.2).
+// ---------------------------------------------------------------------------
+int ChatPanel::inputTextCallback(ImGuiInputTextCallbackData* data) {
+    auto* self = static_cast<ChatPanel*>(data->UserData);
+    if (!self) return 0;
+
+    // Cursor-to-end after channel switch
+    if (self->chatInputMoveCursorToEnd_) {
+        int len = static_cast<int>(std::strlen(data->Buf));
+        data->CursorPos = len;
+        data->SelectionStart = len;
+        data->SelectionEnd = len;
+        self->chatInputMoveCursorToEnd_ = false;
+    }
+
+    // Tab: slash-command autocomplete (Phase 5)
+    if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion) {
+        if (data->BufTextLen > 0 && data->Buf[0] == '/') {
+            std::string fullBuf(data->Buf, data->BufTextLen);
+            size_t spacePos = fullBuf.find(' ');
+            std::string word = (spacePos != std::string::npos) ? fullBuf.substr(0, spacePos) : fullBuf;
+            std::string rest = (spacePos != std::string::npos) ? fullBuf.substr(spacePos) : "";
+
+            std::string lowerCmd = word.substr(1);
+            for (auto& ch : lowerCmd) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+
+            if (!self->tabCompleter_.isActive() || self->tabCompleter_.getPrefix() != lowerCmd) {
+                auto candidates = self->commandRegistry_.getCompletions(lowerCmd);
+                for (auto& c : candidates) c = "/" + c;
+                self->tabCompleter_.startCompletion(lowerCmd, std::move(candidates));
+            } else {
+                self->tabCompleter_.next();
+            }
+
+            std::string match = self->tabCompleter_.getCurrentMatch();
+            if (!match.empty()) {
+                if (self->tabCompleter_.matchCount() == 1 && rest.empty())
+                    match += ' ';
+                std::string newBuf = match + rest;
+                data->DeleteChars(0, data->BufTextLen);
+                data->InsertChars(0, newBuf.c_str());
+            }
+        } else if (data->BufTextLen > 1 && data->Buf[0] == '.') {
+            // GM dot-command tab-completion
+            std::string fullBuf(data->Buf, data->BufTextLen);
+            size_t spacePos = fullBuf.find(' ');
+            std::string word = (spacePos != std::string::npos) ? fullBuf.substr(0, spacePos) : fullBuf;
+            std::string rest = (spacePos != std::string::npos) ? fullBuf.substr(spacePos) : "";
+
+            std::string lowerDot = word;
+            for (auto& ch : lowerDot) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+
+            if (!self->tabCompleter_.isActive() || self->tabCompleter_.getPrefix() != lowerDot) {
+                std::vector<std::string> candidates;
+                for (const auto& entry : kGmCommands) {
+                    std::string dotName = "." + std::string(entry.name);
+                    if (dotName.size() >= lowerDot.size() &&
+                        dotName.compare(0, lowerDot.size(), lowerDot) == 0) {
+                        candidates.push_back(dotName);
+                    }
+                }
+                std::sort(candidates.begin(), candidates.end());
+                self->tabCompleter_.startCompletion(lowerDot, std::move(candidates));
+            } else {
+                self->tabCompleter_.next();
+            }
+
+            std::string match = self->tabCompleter_.getCurrentMatch();
+            if (!match.empty()) {
+                if (self->tabCompleter_.matchCount() == 1 && rest.empty())
+                    match += ' ';
+                std::string newBuf = match + rest;
+                data->DeleteChars(0, data->BufTextLen);
+                data->InsertChars(0, newBuf.c_str());
+            }
+        } else if (data->BufTextLen > 0) {
+            // Player name tab-completion
+            std::string fullBuf(data->Buf, data->BufTextLen);
+            size_t spacePos = fullBuf.find(' ');
+            bool isNameCommand = false;
+            std::string namePrefix;
+            size_t replaceStart = 0;
+
+            if (fullBuf[0] == '/' && spacePos != std::string::npos) {
+                std::string cmd = fullBuf.substr(0, spacePos);
+                for (char& c : cmd) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                if (cmd == "/w" || cmd == "/whisper" || cmd == "/invite" ||
+                    cmd == "/trade" || cmd == "/duel" || cmd == "/follow" ||
+                    cmd == "/inspect" || cmd == "/friend" || cmd == "/removefriend" ||
+                    cmd == "/ignore" || cmd == "/unignore" || cmd == "/who" ||
+                    cmd == "/t" || cmd == "/target" || cmd == "/kick" ||
+                    cmd == "/uninvite" || cmd == "/ginvite" || cmd == "/gkick") {
+                    namePrefix = fullBuf.substr(spacePos + 1);
+                    size_t nameSpace = namePrefix.find(' ');
+                    if (nameSpace == std::string::npos) {
+                        isNameCommand = true;
+                        replaceStart = spacePos + 1;
+                    }
+                }
+            }
+
+            if (isNameCommand && !namePrefix.empty()) {
+                std::string lowerPrefix = namePrefix;
+                for (char& c : lowerPrefix) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+                if (!self->tabCompleter_.isActive() || self->tabCompleter_.getPrefix() != lowerPrefix) {
+                    std::vector<std::string> candidates;
+                    auto* gh = self->cachedGameHandler_;
+                    for (const auto& m : gh->getPartyData().members) {
+                        if (m.name.empty()) continue;
+                        std::string lname = m.name;
+                        for (char& c : lname) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0)
+                            candidates.push_back(m.name);
+                    }
+                    for (const auto& c : gh->getContacts()) {
+                        if (!c.isFriend() || c.name.empty()) continue;
+                        std::string lname = c.name;
+                        for (char& cc : lname) cc = static_cast<char>(std::tolower(static_cast<unsigned char>(cc)));
+                        if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
+                            bool dup = false;
+                            for (const auto& em : candidates)
+                                if (em == c.name) { dup = true; break; }
+                            if (!dup) candidates.push_back(c.name);
+                        }
+                    }
+                    for (const auto& [guid, entity] : gh->getEntityManager().getEntities()) {
+                        if (!entity || entity->getType() != game::ObjectType::PLAYER) continue;
+                        auto player = std::static_pointer_cast<game::Player>(entity);
+                        if (player->getName().empty()) continue;
+                        std::string lname = player->getName();
+                        for (char& cc : lname) cc = static_cast<char>(std::tolower(static_cast<unsigned char>(cc)));
+                        if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
+                            bool dup = false;
+                            for (const auto& em : candidates)
+                                if (em == player->getName()) { dup = true; break; }
+                            if (!dup) candidates.push_back(player->getName());
+                        }
+                    }
+                    if (!gh->getLastWhisperSender().empty()) {
+                        std::string lname = gh->getLastWhisperSender();
+                        for (char& cc : lname) cc = static_cast<char>(std::tolower(static_cast<unsigned char>(cc)));
+                        if (lname.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
+                            bool dup = false;
+                            for (const auto& em : candidates)
+                                if (em == gh->getLastWhisperSender()) { dup = true; break; }
+                            if (!dup) candidates.insert(candidates.begin(), gh->getLastWhisperSender());
+                        }
+                    }
+                    self->tabCompleter_.startCompletion(lowerPrefix, std::move(candidates));
+                } else {
+                    self->tabCompleter_.next();
+                }
+
+                std::string match = self->tabCompleter_.getCurrentMatch();
+                if (!match.empty()) {
+                    std::string prefix = fullBuf.substr(0, replaceStart);
+                    std::string newBuf = prefix + match;
+                    if (self->tabCompleter_.matchCount() == 1) newBuf += ' ';
+                    data->DeleteChars(0, data->BufTextLen);
+                    data->InsertChars(0, newBuf.c_str());
+                }
+            }
+        }
+        return 0;
+    }
+
+    // Up/Down arrow: cycle through sent message history
+    if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
+        self->tabCompleter_.reset();
+
+        const int histSize = static_cast<int>(self->chatSentHistory_.size());
+        if (histSize == 0) return 0;
+
+        if (data->EventKey == ImGuiKey_UpArrow) {
+            if (self->chatHistoryIdx_ == -1)
+                self->chatHistoryIdx_ = histSize - 1;
+            else if (self->chatHistoryIdx_ > 0)
+                --self->chatHistoryIdx_;
+        } else if (data->EventKey == ImGuiKey_DownArrow) {
+            if (self->chatHistoryIdx_ == -1) return 0;
+            ++self->chatHistoryIdx_;
+            if (self->chatHistoryIdx_ >= histSize) {
+                self->chatHistoryIdx_ = -1;
+                data->DeleteChars(0, data->BufTextLen);
+                return 0;
+            }
+        }
+
+        if (self->chatHistoryIdx_ >= 0 && self->chatHistoryIdx_ < histSize) {
+            const std::string& entry = self->chatSentHistory_[self->chatHistoryIdx_];
+            data->DeleteChars(0, data->BufTextLen);
+            data->InsertChars(0, entry.c_str());
+        }
+    }
+    return 0;
+}
+
+// --- Command registration (calls into each command group file) ---
+// Forward declarations of registration functions from command files
+void registerSystemCommands(ChatCommandRegistry& reg);
+void registerSocialCommands(ChatCommandRegistry& reg);
+void registerChannelCommands(ChatCommandRegistry& reg);
+void registerCombatCommands(ChatCommandRegistry& reg);
+void registerGroupCommands(ChatCommandRegistry& reg);
+void registerGuildCommands(ChatCommandRegistry& reg);
+void registerTargetCommands(ChatCommandRegistry& reg);
+void registerEmoteCommands(ChatCommandRegistry& reg);
+void registerMiscCommands(ChatCommandRegistry& reg);
+void registerHelpCommands(ChatCommandRegistry& reg);
+void registerGmCommands(ChatCommandRegistry& reg);
+
+void ChatPanel::registerAllCommands() {
+    registerSystemCommands(commandRegistry_);
+    registerSocialCommands(commandRegistry_);
+    registerChannelCommands(commandRegistry_);
+    registerCombatCommands(commandRegistry_);
+    registerGroupCommands(commandRegistry_);
+    registerGuildCommands(commandRegistry_);
+    registerTargetCommands(commandRegistry_);
+    registerEmoteCommands(commandRegistry_);
+    registerMiscCommands(commandRegistry_);
+    registerHelpCommands(commandRegistry_);
+    registerGmCommands(commandRegistry_);
+}
+
+// renderBubbles delegates to ChatBubbleManager (Phase 1.4)
+void ChatPanel::renderBubbles(game::GameHandler& gameHandler) {
+    bubbleManager_.render(gameHandler, services_);
+}
+
+// setupCallbacks delegates to ChatBubbleManager (Phase 1.4)
+void ChatPanel::setupCallbacks(game::GameHandler& gameHandler) {
+    bubbleManager_.setupCallback(gameHandler);
+}
+
+void ChatPanel::insertChatLink(const std::string& link) {
+    if (link.empty()) return;
+    size_t curLen = strlen(chatInputBuffer_);
+    if (curLen + link.size() + 1 < sizeof(chatInputBuffer_)) {
+        strncat(chatInputBuffer_, link.c_str(), sizeof(chatInputBuffer_) - curLen - 1);
+        chatInputMoveCursorToEnd_ = true;
+        refocusChatInput_ = true;
+    }
+}
+
+void ChatPanel::activateSlashInput() {
+    refocusChatInput_ = true;
+    chatInputBuffer_[0] = '/';
+    chatInputBuffer_[1] = '\0';
+    chatInputMoveCursorToEnd_ = true;
+}
+
+void ChatPanel::activateInput() {
+    if (chatInputCooldown_ > 0) return;
+    refocusChatInput_ = true;
+}
+
+void ChatPanel::setWhisperTarget(const std::string& name) {
+    selectedChatType_ = 4;  // WHISPER
+    strncpy(whisperTargetBuffer_, name.c_str(), sizeof(whisperTargetBuffer_) - 1);
+    whisperTargetBuffer_[sizeof(whisperTargetBuffer_) - 1] = '\0';
+    refocusChatInput_ = true;
+}
+
+ChatPanel::SlashCommands ChatPanel::consumeSlashCommands() {
+    SlashCommands result = slashCmds_;
+    slashCmds_ = {};
+    return result;
+}
+
+namespace {
+    bool isPortBotTarget(const std::string& target) {
+        std::string t = chat_utils::toLower(chat_utils::trim(target));
+        return t == "portbot" || t == "gmbot" || t == "telebot";
+    }
+
+    std::string buildPortBotCommand(const std::string& rawInput) {
+        std::string input = chat_utils::trim(rawInput);
+        if (input.empty()) return "";
+
+        std::string lower = chat_utils::toLower(input);
+        if (lower == "help" || lower == "?") return "__help__";
+
+        if (lower.rfind(".tele ", 0) == 0 || lower.rfind(".go ", 0) == 0) return input;
+        if (lower.rfind("xyz ", 0) == 0) return ".go " + input;
+
+        if (lower == "sw" || lower == "stormwind") return ".tele stormwind";
+        if (lower == "if" || lower == "ironforge") return ".tele ironforge";
+        if (lower == "darn" || lower == "darnassus") return ".tele darnassus";
+        if (lower == "org" || lower == "orgrimmar") return ".tele orgrimmar";
+        if (lower == "tb" || lower == "thunderbluff") return ".tele thunderbluff";
+        if (lower == "uc" || lower == "undercity") return ".tele undercity";
+        if (lower == "shatt" || lower == "shattrath") return ".tele shattrath";
+        if (lower == "dal" || lower == "dalaran") return ".tele dalaran";
+
+        return ".tele " + input;
+    }
+} // anonymous namespace
 
 // Collect all non-comment, non-empty lines from a macro body.
+static std::vector<std::string> allMacroCommands(const std::string& macroText) {
+    std::vector<std::string> cmds;
+    size_t pos = 0;
+    while (pos <= macroText.size()) {
+        size_t nl = macroText.find('\n', pos);
+        std::string line = (nl != std::string::npos) ? macroText.substr(pos, nl - pos) : macroText.substr(pos);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        size_t start = line.find_first_not_of(" \t");
+        if (start != std::string::npos) line = line.substr(start);
+        if (!line.empty() && line.front() != '#')
+            cmds.push_back(std::move(line));
+        if (nl == std::string::npos) break;
+        pos = nl + 1;
+    }
+    return cmds;
+}
+
+// Execute all non-comment lines of a macro body in sequence.
+void ChatPanel::executeMacroText(game::GameHandler& gameHandler,
+                                  const std::string& macroText) {
+    macroStopped_ = false;
+    for (const auto& cmd : allMacroCommands(macroText)) {
+        strncpy(chatInputBuffer_, cmd.c_str(), sizeof(chatInputBuffer_) - 1);
+        chatInputBuffer_[sizeof(chatInputBuffer_) - 1] = '\0';
+        sendChatMessage(gameHandler);
+        if (macroStopped_) break;
+    }
+    macroStopped_ = false;
+}
+
+void ChatPanel::sendChatMessage(game::GameHandler& gameHandler) {
+    if (strlen(chatInputBuffer_) == 0) return;
+    std::string input(chatInputBuffer_);
+
+    // Save to sent-message history (skip pure whitespace, cap at 50 entries)
+    {
+        bool allSpace = true;
+        for (char c : input) { if (!std::isspace(static_cast<unsigned char>(c))) { allSpace = false; break; } }
+        if (!allSpace) {
+            if (chatSentHistory_.empty() || chatSentHistory_.back() != input) {
+                chatSentHistory_.push_back(input);
+                if (chatSentHistory_.size() > 50)
+                    chatSentHistory_.erase(chatSentHistory_.begin());
+            }
+        }
+    }
+    chatHistoryIdx_ = -1;
+
+    game::ChatType type = game::ChatType::SAY;
+    std::string message = input;
+    std::string target;
+
+    // GM dot-prefix commands (.gm, .tele, .additem, etc.)
+    if (input.size() > 1 && input[0] == '.') {
+        LOG_INFO("GM command: '", input, "' — sending as SAY to server");
+        gameHandler.sendChatMessage(game::ChatType::SAY, input, "");
+
+        std::string dotCmd = input;
+        size_t sp = dotCmd.find(' ');
+        std::string cmdPart = (sp != std::string::npos)
+            ? dotCmd.substr(1, sp - 1) : dotCmd.substr(1);
+        for (char& c : cmdPart) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        std::string feedback;
+        for (const auto& entry : kGmCommands) {
+            if (entry.name == cmdPart) {
+                feedback = "Sent: " + input + "  (" + std::string(entry.help) + ")";
+                break;
+            }
+        }
+        if (feedback.empty())
+            feedback = "Sent: " + input
+                + "  (requires GM access — server console: account set gmlevel <user> 3 -1)";
+        gameHandler.addLocalChatMessage(chat_utils::makeSystemMessage(feedback));
+        chatInputBuffer_[0] = '\0';
+        return;
+    }
+
+    // Slash commands
+    if (input.size() > 1 && input[0] == '/') {
+        std::string command = input.substr(1);
+        size_t spacePos = command.find(' ');
+        std::string cmd = (spacePos != std::string::npos) ? command.substr(0, spacePos) : command;
+        std::string cmdLower = cmd;
+        for (char& c : cmdLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        // /run <lua code>
+        if ((cmdLower == "run" || cmdLower == "script") && spacePos != std::string::npos) {
+            std::string luaCode = command.substr(spacePos + 1);
+            auto* am = services_.addonManager;
+            if (am) {
+                am->runScript(luaCode);
+            } else {
+                gameHandler.addUIError("Addon system not initialized.");
+            }
+            chatInputBuffer_[0] = '\0';
+            return;
+        }
+
+        // /dump <expression>
+        if ((cmdLower == "dump" || cmdLower == "print") && spacePos != std::string::npos) {
+            std::string expr = command.substr(spacePos + 1);
+            auto* am = services_.addonManager;
+            if (am && am->isInitialized()) {
+                std::string wrapped = "local __v = " + expr +
+                    "; if type(__v) == 'table' then "
+                    "  local parts = {} "
+                    "  for k,v in pairs(__v) do parts[#parts+1] = tostring(k)..'='..tostring(v) end "
+                    "  print('{' .. table.concat(parts, ', ') .. '}') "
+                    "else print(tostring(__v)) end";
+                am->runScript(wrapped);
+            } else {
+                game::MessageChatData errMsg;
+                errMsg.type = game::ChatType::SYSTEM;
+                errMsg.language = game::ChatLanguage::UNIVERSAL;
+                errMsg.message = "Addon system not initialized.";
+                gameHandler.addLocalChatMessage(errMsg);
+            }
+            chatInputBuffer_[0] = '\0';
+            return;
+        }
+
+        // Addon slash commands (SlashCmdList)
+        {
+            auto* am = services_.addonManager;
+            if (am && am->isInitialized()) {
+                std::string slashCmd = "/" + cmdLower;
+                std::string slashArgs;
+                if (spacePos != std::string::npos) slashArgs = command.substr(spacePos + 1);
+                if (am->getLuaEngine()->dispatchSlashCommand(slashCmd, slashArgs)) {
+                    chatInputBuffer_[0] = '\0';
+                    return;
+                }
+            }
+        }
+
+        // Dispatch through command registry (Phase 3.11)
+        std::string args;
+        if (spacePos != std::string::npos)
+            args = command.substr(spacePos + 1);
+
+        ChatCommandContext ctx{gameHandler, services_, *this, args, cmdLower};
+        ChatCommandResult result = commandRegistry_.dispatch(cmdLower, ctx);
+        if (result.handled) {
+            if (result.clearInput)
+                chatInputBuffer_[0] = '\0';
+            return;
+        }
+
+        // Emote fallthrough — dynamic DBC lookup for emote text.
+        {
+            std::string targetName;
+            const std::string* targetNamePtr = nullptr;
+            if (gameHandler.hasTarget()) {
+                auto targetEntity = gameHandler.getTarget();
+                if (targetEntity) {
+                    targetName = chat_utils::getEntityDisplayName(targetEntity);
+                    if (!targetName.empty()) targetNamePtr = &targetName;
+                }
+            }
+
+            std::string emoteText = rendering::AnimationController::getEmoteText(cmdLower, targetNamePtr);
+            if (!emoteText.empty()) {
+                auto* renderer = services_.renderer;
+                if (renderer) {
+                    if (auto* ac = renderer->getAnimationController()) ac->playEmote(cmdLower);
+                }
+
+                uint32_t dbcId = rendering::AnimationController::getEmoteDbcId(cmdLower);
+                if (dbcId != 0) {
+                    uint64_t targetGuid = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
+                    gameHandler.sendTextEmote(dbcId, targetGuid);
+                }
+
+                game::MessageChatData msg;
+                msg.type = game::ChatType::TEXT_EMOTE;
+                msg.language = game::ChatLanguage::COMMON;
+                msg.message = emoteText;
+                gameHandler.addLocalChatMessage(msg);
+
+                chatInputBuffer_[0] = '\0';
+                return;
+            }
+        }
+
+        // Unrecognized slash command — fall through to dropdown chat type
+        message = input;
+    }
+
+    // Determine chat type from dropdown selection
+    switch (selectedChatType_) {
+        case 0: type = game::ChatType::SAY; break;
+        case 1: type = game::ChatType::YELL; break;
+        case 2: type = game::ChatType::PARTY; break;
+        case 3: type = game::ChatType::GUILD; break;
+        case 4: type = game::ChatType::WHISPER; target = whisperTargetBuffer_; break;
+        case 5: type = game::ChatType::RAID; break;
+        case 6: type = game::ChatType::OFFICER; break;
+        case 7: type = game::ChatType::BATTLEGROUND; break;
+        case 8: type = game::ChatType::RAID_WARNING; break;
+        case 9: type = game::ChatType::PARTY; break;
+        case 10: {
+            const auto& chans = gameHandler.getJoinedChannels();
+            if (!chans.empty() && selectedChannelIdx_ < static_cast<int>(chans.size())) {
+                type = game::ChatType::CHANNEL;
+                target = chans[selectedChannelIdx_];
+            } else { type = game::ChatType::SAY; }
+            break;
+        }
+        default: type = game::ChatType::SAY; break;
+    }
+
+    // PortBot whisper interception
+    if (type == game::ChatType::WHISPER && isPortBotTarget(target)) {
+        std::string cmd = buildPortBotCommand(message);
+        game::MessageChatData msg;
+        msg.type = game::ChatType::SYSTEM;
+        msg.language = game::ChatLanguage::UNIVERSAL;
+        if (cmd.empty() || cmd == "__help__") {
+            msg.message = "PortBot: /w PortBot <dest>. Aliases: sw if darn org tb uc shatt dal. Also supports '.tele ...' or 'xyz x y z [map [o]]'.";
+            gameHandler.addLocalChatMessage(msg);
+            chatInputBuffer_[0] = '\0';
+            return;
+        }
+
+        gameHandler.sendChatMessage(game::ChatType::SAY, cmd, "");
+        msg.message = "PortBot executed: " + cmd;
+        gameHandler.addLocalChatMessage(msg);
+        chatInputBuffer_[0] = '\0';
+        return;
+    }
+
+    // Validate whisper has a target
+    if (type == game::ChatType::WHISPER && target.empty()) {
+        game::MessageChatData msg;
+        msg.type = game::ChatType::SYSTEM;
+        msg.language = game::ChatLanguage::UNIVERSAL;
+        msg.message = "You must specify a player name for whisper.";
+        gameHandler.addLocalChatMessage(msg);
+        chatInputBuffer_[0] = '\0';
+        return;
+    }
+
+    if (!message.empty()) {
+        gameHandler.sendChatMessage(type, message, target);
+    }
+    chatInputBuffer_[0] = '\0';
+}
 
 } // namespace ui
 } // namespace wowee

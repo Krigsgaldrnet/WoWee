@@ -259,6 +259,7 @@ bool MessageChatParser::parse(network::Packet& packet, MessageChatData& data) {
 
 const char* getChatTypeString(ChatType type) {
     switch (type) {
+        case ChatType::SYSTEM: return "SYSTEM";
         case ChatType::SAY: return "SAY";
         case ChatType::PARTY: return "PARTY";
         case ChatType::RAID: return "RAID";
@@ -266,12 +267,14 @@ const char* getChatTypeString(ChatType type) {
         case ChatType::OFFICER: return "OFFICER";
         case ChatType::YELL: return "YELL";
         case ChatType::WHISPER: return "WHISPER";
+        case ChatType::WHISPER_FOREIGN: return "WHISPER_FOREIGN";
         case ChatType::WHISPER_INFORM: return "WHISPER_INFORM";
         case ChatType::EMOTE: return "EMOTE";
         case ChatType::TEXT_EMOTE: return "TEXT_EMOTE";
-        case ChatType::SYSTEM: return "SYSTEM";
         case ChatType::MONSTER_SAY: return "MONSTER_SAY";
+        case ChatType::MONSTER_PARTY: return "MONSTER_PARTY";
         case ChatType::MONSTER_YELL: return "MONSTER_YELL";
+        case ChatType::MONSTER_WHISPER: return "MONSTER_WHISPER";
         case ChatType::MONSTER_EMOTE: return "MONSTER_EMOTE";
         case ChatType::CHANNEL: return "CHANNEL";
         case ChatType::CHANNEL_JOIN: return "CHANNEL_JOIN";
@@ -284,12 +287,18 @@ const char* getChatTypeString(ChatType type) {
         case ChatType::IGNORED: return "IGNORED";
         case ChatType::SKILL: return "SKILL";
         case ChatType::LOOT: return "LOOT";
-        case ChatType::BATTLEGROUND: return "BATTLEGROUND";
-        case ChatType::BATTLEGROUND_LEADER: return "BATTLEGROUND_LEADER";
+        case ChatType::BG_SYSTEM_NEUTRAL: return "BG_SYSTEM_NEUTRAL";
+        case ChatType::BG_SYSTEM_ALLIANCE: return "BG_SYSTEM_ALLIANCE";
+        case ChatType::BG_SYSTEM_HORDE: return "BG_SYSTEM_HORDE";
         case ChatType::RAID_LEADER: return "RAID_LEADER";
         case ChatType::RAID_WARNING: return "RAID_WARNING";
+        case ChatType::RAID_BOSS_EMOTE: return "RAID_BOSS_EMOTE";
+        case ChatType::RAID_BOSS_WHISPER: return "RAID_BOSS_WHISPER";
+        case ChatType::BATTLEGROUND: return "BATTLEGROUND";
+        case ChatType::BATTLEGROUND_LEADER: return "BATTLEGROUND_LEADER";
         case ChatType::ACHIEVEMENT: return "ACHIEVEMENT";
         case ChatType::GUILD_ACHIEVEMENT: return "GUILD_ACHIEVEMENT";
+        case ChatType::PARTY_LEADER: return "PARTY_LEADER";
         default: return "UNKNOWN";
     }
 }

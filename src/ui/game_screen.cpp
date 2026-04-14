@@ -895,15 +895,16 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
         chatPanel_.activateSlashInput();
     }
     if (!io.WantTextInput && !chatPanel_.isChatInputActive() &&
-        KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_CHAT, true)) {
+        KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_CHAT, false)) {
         chatPanel_.activateInput();
     }
 
     const bool textFocus = chatPanel_.isChatInputActive() || io.WantTextInput;
 
-    // Tab targeting (when keyboard not captured by UI)
-    if (!io.WantCaptureKeyboard) {
-        // When typing in chat (or any text input), never treat keys as gameplay/UI shortcuts.
+    // Game hotkeys — gate on textFocus (chat/text-input active) rather than
+    // WantCaptureKeyboard so that toggle keys like M, C, I still work when an
+    // ImGui window (character panel, map, etc.) happens to have focus.
+    {
         if (!textFocus && input.isKeyJustPressed(SDL_SCANCODE_TAB)) {
             const auto& movement = gameHandler.getMovementInfo();
             gameHandler.tabTarget(movement.x, movement.y, movement.z);
@@ -1005,7 +1006,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             }
 
             // Toggle Titles window with H (hero/title screen — no conflicting keybinding)
-            if (input.isKeyJustPressed(SDL_SCANCODE_H) && !ImGui::GetIO().WantCaptureKeyboard) {
+            if (input.isKeyJustPressed(SDL_SCANCODE_H)) {
                 windowManager_.showTitlesWindow_ = !windowManager_.showTitlesWindow_;
             }
 
@@ -1065,7 +1066,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                     } else if (bar[slotIdx].type == game::ActionBarSlot::ITEM && bar[slotIdx].id != 0) {
                         gameHandler.useItemById(bar[slotIdx].id);
                     } else if (bar[slotIdx].type == game::ActionBarSlot::MACRO) {
-                        chatPanel_.executeMacroText(gameHandler, inventoryScreen, spellbookScreen, questLogScreen, gameHandler.getMacroText(bar[slotIdx].id));
+                        chatPanel_.executeMacroText(gameHandler, gameHandler.getMacroText(bar[slotIdx].id));
                     }
                 }
             }
