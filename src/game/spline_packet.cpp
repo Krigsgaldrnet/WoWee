@@ -299,9 +299,10 @@ bool parseWotlkMoveUpdateSpline(
             packet.setReadPos(prePointCount);
             return false;
         }
-        // Proximity check: if entity position is known, reject endpoints that
-        // are implausibly far from it (catches misinterpreted compressed data).
-        if (entityPos.x != 0.0f || entityPos.y != 0.0f || entityPos.z != 0.0f) {
+        // Proximity check: if entity position is known (not the default 0,0,0
+        // sentinel), reject endpoints that are implausibly far from it.
+        float posLenSq = entityPos.x * entityPos.x + entityPos.y * entityPos.y + entityPos.z * entityPos.z;
+        if (posLenSq > 1.0f) {
             float dx = epX - entityPos.x;
             float dy = epY - entityPos.y;
             float dz = epZ - entityPos.z;

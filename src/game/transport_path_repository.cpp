@@ -315,12 +315,13 @@ bool TransportPathRepository::loadTransportAnimationDBC(pipeline::AssetManager* 
             // Negate X and Y before converting to canonical (Z=height stays the same).
             glm::vec3 canonical = core::coords::serverToCanonical(glm::vec3(-pos.x, -pos.y, pos.z));
 
-            // CRITICAL: Detect if serverToCanonical is zeroing nonzero inputs
+            // Skip waypoints where serverToCanonical zeroes nonzero inputs
             if ((pos.x != 0.0f || pos.y != 0.0f || pos.z != 0.0f) &&
                 (canonical.x == 0.0f && canonical.y == 0.0f && canonical.z == 0.0f)) {
-                LOG_ERROR("serverToCanonical ZEROED! entry=", transportEntry,
+                LOG_ERROR("serverToCanonical ZEROED — skipping waypoint! entry=", transportEntry,
                           " server=(", pos.x, ",", pos.y, ",", pos.z, ")",
                           " → canon=(", canonical.x, ",", canonical.y, ",", canonical.z, ")");
+                continue;
             }
 
             // Debug waypoint conversion for first transport (entry 2074)
