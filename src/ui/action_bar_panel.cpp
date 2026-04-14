@@ -166,7 +166,7 @@ void ActionBarPanel::renderActionBar(game::GameHandler& gameHandler,
                              ChatPanel& chatPanel,
                              InventoryScreen& inventoryScreen,
                              SpellbookScreen& spellbookScreen,
-                             QuestLogScreen& questLogScreen,
+                             QuestLogScreen& /*questLogScreen*/,
                              SpellIconFn getSpellIcon) {
     // Use ImGui's display size — always in sync with the current swap-chain/frame,
     // whereas window->getWidth/Height() can lag by one frame on resize events.
@@ -539,7 +539,7 @@ void ActionBarPanel::renderActionBar(game::GameHandler& gameHandler,
             } else if (slot.type == game::ActionBarSlot::ITEM && slot.id != 0) {
                 gameHandler.useItemById(slot.id);
             } else if (slot.type == game::ActionBarSlot::MACRO) {
-                chatPanel.executeMacroText(gameHandler, inventoryScreen, spellbookScreen, questLogScreen, gameHandler.getMacroText(slot.id));
+                chatPanel.executeMacroText(gameHandler, gameHandler.getMacroText(slot.id));
             }
         }
 
@@ -572,7 +572,7 @@ void ActionBarPanel::renderActionBar(game::GameHandler& gameHandler,
                     ImGui::TextDisabled("Macro #%u", slot.id);
                     ImGui::Separator();
                     if (ImGui::MenuItem("Execute")) {
-                        chatPanel.executeMacroText(gameHandler, inventoryScreen, spellbookScreen, questLogScreen, gameHandler.getMacroText(slot.id));
+                        chatPanel.executeMacroText(gameHandler, gameHandler.getMacroText(slot.id));
                     }
                     if (ImGui::MenuItem("Edit")) {
                         const std::string& txt = gameHandler.getMacroText(slot.id);

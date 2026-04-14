@@ -349,6 +349,56 @@ endif()
 add_test(NAME world_map_zone_metadata COMMAND test_world_map_zone_metadata)
 register_test_target(test_world_map_zone_metadata)
 
+# ── test_chat_markup_parser ──────────────────────────────────
+add_executable(test_chat_markup_parser
+    test_chat_markup_parser.cpp
+    ${TEST_COMMON_SOURCES}
+    ${CMAKE_SOURCE_DIR}/src/ui/chat/chat_markup_parser.cpp
+)
+target_include_directories(test_chat_markup_parser PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_chat_markup_parser SYSTEM PRIVATE
+    ${TEST_SYSTEM_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/extern/imgui
+)
+target_link_libraries(test_chat_markup_parser PRIVATE catch2_main)
+add_test(NAME chat_markup_parser COMMAND test_chat_markup_parser)
+register_test_target(test_chat_markup_parser)
+
+# ── test_macro_evaluator ─────────────────────────────────────
+add_executable(test_macro_evaluator
+    test_macro_evaluator.cpp
+    ${TEST_COMMON_SOURCES}
+    ${CMAKE_SOURCE_DIR}/src/ui/chat/macro_evaluator.cpp
+)
+target_include_directories(test_macro_evaluator PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_macro_evaluator SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_macro_evaluator PRIVATE catch2_main)
+add_test(NAME macro_evaluator COMMAND test_macro_evaluator)
+register_test_target(test_macro_evaluator)
+
+# ── test_chat_tab_completer ──────────────────────────────────
+add_executable(test_chat_tab_completer
+    test_chat_tab_completer.cpp
+    ${TEST_COMMON_SOURCES}
+    ${CMAKE_SOURCE_DIR}/src/ui/chat/chat_tab_completer.cpp
+)
+target_include_directories(test_chat_tab_completer PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_chat_tab_completer SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_chat_tab_completer PRIVATE catch2_main)
+add_test(NAME chat_tab_completer COMMAND test_chat_tab_completer)
+register_test_target(test_chat_tab_completer)
+
+# ── test_gm_commands ─────────────────────────────────────────
+add_executable(test_gm_commands
+    test_gm_commands.cpp
+    ${TEST_COMMON_SOURCES}
+)
+target_include_directories(test_gm_commands PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_gm_commands SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_gm_commands PRIVATE catch2_main)
+add_test(NAME gm_commands COMMAND test_gm_commands)
+register_test_target(test_gm_commands)
+
 # ── ASAN / UBSan for test targets ────────────────────────────
 if(WOWEE_ENABLE_ASAN AND NOT MSVC)
     foreach(_t IN LISTS ALL_TEST_TARGETS)
