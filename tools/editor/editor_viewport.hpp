@@ -35,6 +35,7 @@ public:
 
     void updateWater(const pipeline::ADTTerrain& terrain, int tileX, int tileY);
     void updateMarkers(const std::vector<PlacedObject>& objects);
+    void updateNpcMarkers(const std::vector<CreatureSpawn>& npcs);
     void placeM2(const std::string& path, const glm::vec3& pos, const glm::vec3& rot, float scale);
     void placeWMO(const std::string& path, const glm::vec3& pos, const glm::vec3& rot);
     void clearObjects();

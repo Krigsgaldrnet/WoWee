@@ -103,12 +103,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 ImGui::EndMenu();
             }
             if (ImGui::MenuItem("Clear All Objects/NPCs", nullptr, false, app.hasTerrainLoaded())) {
-                app.getObjectPlacer().clearAll();
-                app.getNpcSpawner().clearSelection();
-                app.getNpcSpawner().getSpawns().clear();
-                app.getTerrainEditor().history().clear();
-                app.markObjectsDirty();
-                app.showToast("All objects and NPCs cleared");
+                app.clearAllObjects();
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Quick Save", "Ctrl+S", false, app.hasTerrainLoaded()))

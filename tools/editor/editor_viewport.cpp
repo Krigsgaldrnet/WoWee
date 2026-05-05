@@ -144,15 +144,27 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                     continue;
                 }
 
-                // Ensure boundRadius is reasonable for culling
                 if (model.boundRadius < 1.0f) model.boundRadius = 50.0f;
+
+                // Validate vertex data to prevent GPU crashes
+                bool vertexOk = true;
+                for (const auto& vert : model.vertices) {
+                    if (!std::isfinite(vert.position.x) || !std::isfinite(vert.position.y) ||
+                        !std::isfinite(vert.position.z) || std::abs(vert.position.x) > 100000.0f) {
+                        vertexOk = false;
+                        break;
+                    }
+                }
+                if (!vertexOk) {
+                    LOG_WARNING("M2 has invalid vertex data, skipping: ", obj.path);
+                    continue;
+                }
 
                 modelId = nextModelId++;
                 if (!m2Renderer_->loadModel(model, modelId)) {
                     LOG_WARNING("M2 failed to upload to GPU: ", obj.path);
                     continue;
                 }
-                // Wait for async texture uploads to complete before rendering
                 vkCtx_->waitAllUploads();
                 vkCtx_->pollUploadBatches();
                 LOG_INFO("M2 loaded: ", obj.path, " (modelId=", modelId, ", ",
@@ -234,6 +246,14 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 }
                 if (!model.isValid()) continue;
                 if (model.boundRadius < 1.0f) model.boundRadius = 50.0f;
+                // Validate vertex data
+                bool ok = true;
+                for (const auto& vert : model.vertices) {
+                    if (!std::isfinite(vert.position.x) || std::abs(vert.position.x) > 100000.0f) {
+                        ok = false; break;
+                    }
+                }
+                if (!ok) { LOG_WARNING("NPC M2 bad vertices: ", npc.modelPath); continue; }
                 modelId = nextModelId++;
                 if (!m2Renderer_->loadModel(model, modelId)) continue;
                 vkCtx_->waitAllUploads();
@@ -248,64 +268,8 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
     vkCtx_->waitAllUploads();
     vkCtx_->pollUploadBatches();
 
-    // Build NPC position markers (always visible, renders as colored discs)
-    if (npcMarkerVB_) {
-        vmaDestroyBuffer(vkCtx_->getAllocator(), npcMarkerVB_, npcMarkerVBAlloc_);
-        npcMarkerVB_ = VK_NULL_HANDLE;
-        npcMarkerVertCount_ = 0;
-    }
-    if (!npcs.empty()) {
-        struct MV { float pos[3]; float color[4]; };
-        std::vector<MV> verts;
-        for (const auto& npc : npcs) {
-            float s = 5.0f;
-            float x = npc.position.x, y = npc.position.y, z = npc.position.z;
-            float r = npc.hostile ? 1.0f : 0.1f;
-            float g = npc.hostile ? 0.15f : 0.9f;
-            float b = 0.1f, a = 0.9f;
-
-            // Large base circle (8 triangles forming octagon)
-            MV v; v.color[0]=r; v.color[1]=g; v.color[2]=b; v.color[3]=a;
-            for (int seg = 0; seg < 8; seg++) {
-                float a0 = seg * 0.7854f, a1 = (seg+1) * 0.7854f;
-                v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+0.3f; verts.push_back(v);
-                v.pos[0]=x+std::cos(a0)*s; v.pos[1]=y+std::sin(a0)*s; v.pos[2]=z+0.3f; verts.push_back(v);
-                v.pos[0]=x+std::cos(a1)*s; v.pos[1]=y+std::sin(a1)*s; v.pos[2]=z+0.3f; verts.push_back(v);
-            }
-
-            // Tall pole (2 triangles forming thin quad, 30 units high)
-            float pw = 0.8f, ph = 30.0f;
-            v.color[3] = 0.8f;
-            v.pos[0]=x-pw; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x+pw; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+ph; verts.push_back(v);
-            v.pos[0]=x; v.pos[1]=y-pw; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x; v.pos[1]=y+pw; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+ph; verts.push_back(v);
-
-            // Top diamond (visible from above)
-            float ts = 3.0f;
-            float tz = z + ph;
-            v.color[0]=1; v.color[1]=1; v.color[2]=0.3f; v.color[3]=0.95f;
-            v.pos[0]=x+ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
-            v.pos[0]=x; v.pos[1]=y+ts; v.pos[2]=tz; verts.push_back(v);
-            v.pos[0]=x-ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
-            v.pos[0]=x+ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
-            v.pos[0]=x-ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
-            v.pos[0]=x; v.pos[1]=y-ts; v.pos[2]=tz; verts.push_back(v);
-        }
-        npcMarkerVertCount_ = static_cast<uint32_t>(verts.size());
-        LOG_INFO("NPC markers: ", npcs.size(), " npcs -> ", npcMarkerVertCount_, " verts");
-        VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bi.size = verts.size() * sizeof(MV);
-        bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        VmaAllocationCreateInfo ai{}; ai.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-        ai.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-        VmaAllocationInfo mi{};
-        if (vmaCreateBuffer(vkCtx_->getAllocator(), &bi, &ai,
-                &npcMarkerVB_, &npcMarkerVBAlloc_, &mi) == VK_SUCCESS)
-            std::memcpy(mi.pMappedData, verts.data(), verts.size() * sizeof(MV));
-    }
+    // Update NPC markers via dedicated method
+    updateNpcMarkers(npcs);
 }
 
 void EditorViewport::setBrushIndicator(const glm::vec3& center, float radius, bool active) {
@@ -360,6 +324,59 @@ void EditorViewport::setBrushIndicator(const glm::vec3& center, float radius, bo
             &brushVB_, &brushVBAlloc_, &mapInfo) == VK_SUCCESS) {
         std::memcpy(mapInfo.pMappedData, verts.data(), verts.size() * sizeof(BV));
     }
+}
+
+void EditorViewport::updateNpcMarkers(const std::vector<CreatureSpawn>& npcs) {
+    if (npcMarkerVB_) {
+        vmaDestroyBuffer(vkCtx_->getAllocator(), npcMarkerVB_, npcMarkerVBAlloc_);
+        npcMarkerVB_ = VK_NULL_HANDLE;
+        npcMarkerVertCount_ = 0;
+    }
+    if (npcs.empty()) return;
+
+    struct MV { float pos[3]; float color[4]; };
+    std::vector<MV> verts;
+    for (const auto& npc : npcs) {
+        float s = 5.0f;
+        float x = npc.position.x, y = npc.position.y, z = npc.position.z;
+        float r = npc.hostile ? 1.0f : 0.1f;
+        float g = npc.hostile ? 0.15f : 0.9f;
+        float b = 0.1f, a = 0.9f;
+
+        MV v; v.color[0]=r; v.color[1]=g; v.color[2]=b; v.color[3]=a;
+        for (int seg = 0; seg < 8; seg++) {
+            float a0 = seg * 0.7854f, a1 = (seg+1) * 0.7854f;
+            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+0.3f; verts.push_back(v);
+            v.pos[0]=x+std::cos(a0)*s; v.pos[1]=y+std::sin(a0)*s; v.pos[2]=z+0.3f; verts.push_back(v);
+            v.pos[0]=x+std::cos(a1)*s; v.pos[1]=y+std::sin(a1)*s; v.pos[2]=z+0.3f; verts.push_back(v);
+        }
+        float pw = 0.8f, ph = 30.0f;
+        v.color[3] = 0.8f;
+        v.pos[0]=x-pw; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
+        v.pos[0]=x+pw; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
+        v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+ph; verts.push_back(v);
+        v.pos[0]=x; v.pos[1]=y-pw; v.pos[2]=z; verts.push_back(v);
+        v.pos[0]=x; v.pos[1]=y+pw; v.pos[2]=z; verts.push_back(v);
+        v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+ph; verts.push_back(v);
+        float ts = 3.0f, tz = z + ph;
+        v.color[0]=1; v.color[1]=1; v.color[2]=0.3f; v.color[3]=0.95f;
+        v.pos[0]=x+ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
+        v.pos[0]=x; v.pos[1]=y+ts; v.pos[2]=tz; verts.push_back(v);
+        v.pos[0]=x-ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
+        v.pos[0]=x+ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
+        v.pos[0]=x-ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
+        v.pos[0]=x; v.pos[1]=y-ts; v.pos[2]=tz; verts.push_back(v);
+    }
+    npcMarkerVertCount_ = static_cast<uint32_t>(verts.size());
+    VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bi.size = verts.size() * sizeof(MV);
+    bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    VmaAllocationCreateInfo ai{}; ai.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    ai.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo mi{};
+    if (vmaCreateBuffer(vkCtx_->getAllocator(), &bi, &ai,
+            &npcMarkerVB_, &npcMarkerVBAlloc_, &mi) == VK_SUCCESS)
+        std::memcpy(mi.pMappedData, verts.data(), verts.size() * sizeof(MV));
 }
 
 void EditorViewport::update(float deltaTime) {

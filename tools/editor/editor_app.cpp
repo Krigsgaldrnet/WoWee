@@ -98,13 +98,19 @@ void EditorApp::run() {
         // Refresh dirty terrain chunks
         refreshDirtyChunks();
 
-        // Rebuild object visuals when object list changes
+        // Update NPC markers (cheap — just vertex buffer, no M2 reload)
         size_t objCount = objectPlacer_.objectCount() + npcSpawner_.spawnCount();
         if (objectsDirty_ || objCount != lastObjectCount_) {
             objectsDirty_ = false;
+            bool countChanged = (objCount != lastObjectCount_);
             lastObjectCount_ = objCount;
-            vkDeviceWaitIdle(window_->getVkContext()->getDevice());
-            viewport_.rebuildObjects(objectPlacer_.getObjects(), npcSpawner_.getSpawns());
+            // Only update NPC position markers (always cheap)
+            viewport_.updateNpcMarkers(npcSpawner_.getSpawns());
+            // Full M2 rebuild only when explicitly requested (not on every click)
+            if (countChanged && objCount > 0) {
+                vkDeviceWaitIdle(vkCtx->getDevice());
+                viewport_.rebuildObjects(objectPlacer_.getObjects(), npcSpawner_.getSpawns());
+            }
         }
 
         // Show gizmo arrows on selected object
@@ -602,10 +608,7 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome) {
     terrain_ = TerrainEditor::createBlankTerrain(tileX, tileY, baseHeight, biome);
     // Clear previous state
-    objectPlacer_.clearAll();
-    npcSpawner_.clearSelection();
-    npcSpawner_.getSpawns().clear();
-    viewport_.clearObjects();
+    clearAllObjects();
 
     terrainEditor_.setTerrain(&terrain_);
     terrainEditor_.history().clear();
@@ -802,6 +805,19 @@ void EditorApp::flyToSelected() {
     if (npc) {
         camera_.setPosition(npc->position + glm::vec3(0, 0, 30));
     }
+}
+
+void EditorApp::clearAllObjects() {
+    vkDeviceWaitIdle(window_->getVkContext()->getDevice());
+    objectPlacer_.clearAll();
+    npcSpawner_.clearSelection();
+    npcSpawner_.getSpawns().clear();
+    viewport_.clearObjects();
+    viewport_.updateNpcMarkers({});
+    terrainEditor_.history().clear();
+    lastObjectCount_ = 0;
+    objectsDirty_ = false;
+    showToast("All objects and NPCs cleared");
 }
 
 void EditorApp::centerOnTerrain() {
