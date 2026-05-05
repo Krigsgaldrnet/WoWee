@@ -603,6 +603,18 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Island Generator")) {
+            static float islandHeight = 30.0f, islandDrop = 20.0f;
+            ImGui::SliderFloat("Center Height##island", &islandHeight, 5.0f, 100.0f);
+            ImGui::SliderFloat("Edge Drop##island", &islandDrop, 5.0f, 50.0f);
+            if (ImGui::Button("Create Island Shape", ImVec2(-1, 0))) {
+                app.getTerrainEditor().createIsland(islandHeight, islandDrop);
+                app.showToast("Island created");
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "Raised center dropping to edges. Add water around for ocean.");
+        }
+
         if (ImGui::CollapsingHeader("Ridge / Mountain Range")) {
             static glm::vec3 ridgeStart{0}, ridgeEnd{0};
             static float ridgeWidth = 20.0f, ridgeHeight = 30.0f;

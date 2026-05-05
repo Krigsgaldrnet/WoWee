@@ -860,6 +860,49 @@ void TerrainEditor::createHill(const glm::vec3& center, float radius, float heig
     dirty_ = true;
 }
 
+void TerrainEditor::createIsland(float centerHeight, float edgeDropoff) {
+    if (!terrain_) return;
+
+    // Island shape: distance from tile center determines height
+    // Center is high, edges drop below base height (underwater)
+    float tileCenterX = 0, tileCenterY = 0;
+    // Compute tile center from first chunk
+    {
+        float tileNW_X = (32.0f - static_cast<float>(terrain_->coord.y)) * TILE_SIZE;
+        float tileNW_Y = (32.0f - static_cast<float>(terrain_->coord.x)) * TILE_SIZE;
+        tileCenterX = tileNW_X - TILE_SIZE * 0.5f;
+        tileCenterY = tileNW_Y - TILE_SIZE * 0.5f;
+    }
+    float maxDist = TILE_SIZE * 0.45f; // island radius slightly smaller than tile
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            float dist = glm::length(glm::vec2(pos.x - tileCenterX, pos.y - tileCenterY));
+            float t = std::clamp(dist / maxDist, 0.0f, 1.0f);
+
+            // Smooth island falloff: high center, gradual drop, steep beach
+            float islandH;
+            if (t < 0.6f) {
+                islandH = centerHeight; // flat interior
+            } else if (t < 0.85f) {
+                float beachT = (t - 0.6f) / 0.25f;
+                islandH = centerHeight * (1.0f - beachT * beachT);
+            } else {
+                float dropT = (t - 0.85f) / 0.15f;
+                islandH = centerHeight * (1.0f - 0.85f * 0.85f) * (1.0f - dropT) - edgeDropoff * dropT;
+            }
+
+            chunk.heightMap.heights[v] = islandH + chunk.heightMap.heights[v] * 0.3f;
+        }
+        dirtyChunks_.push_back(ci);
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::createRidge(const glm::vec3& start, const glm::vec3& end,
                                  float width, float height) {
     if (!terrain_) return;
