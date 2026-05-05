@@ -10,6 +10,7 @@
 #include "pipeline/wowee_collision.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "sql_exporter.hpp"
+#include "server_module_gen.hpp"
 #include "core/coordinates.hpp"
 #include <nlohmann/json.hpp>
 #include "rendering/vk_context.hpp"

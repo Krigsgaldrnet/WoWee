@@ -9,6 +9,7 @@
 #include "pipeline/custom_zone_discovery.hpp"
 #include "content_pack.hpp"
 #include "sql_exporter.hpp"
+#include "server_module_gen.hpp"
 #include "wowee_terrain.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include <filesystem>
@@ -372,6 +373,14 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                     app.getQuestEditor().getQuests(),
                     sqlPath, app.getZoneManifest().mapId);
                 app.showToast("SQL exported: " + sqlPath);
+            }
+            if (ImGui::MenuItem("Generate Server Module", nullptr, false, app.hasTerrainLoaded())) {
+                editor::ServerModuleGenerator::generate(
+                    app.getZoneManifest(),
+                    app.getNpcSpawner().getSpawns(),
+                    app.getQuestEditor().getQuests(),
+                    "output");
+                app.showToast("Server module: output/mod_wowee_" + app.getLoadedMap());
             }
             if (ImGui::MenuItem("Export Content Pack (.wcp)", "Ctrl+Shift+E", false, app.hasTerrainLoaded())) {
                 std::string wcpPath = "output/" + app.getLoadedMap() + ".wcp";

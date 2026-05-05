@@ -1298,6 +1298,7 @@ add_executable(wowee_editor
     tools/editor/npc_spawner.cpp
     tools/editor/npc_presets.cpp
     tools/editor/sql_exporter.cpp
+    tools/editor/server_module_gen.cpp
     tools/editor/quest_editor.cpp
     tools/editor/transform_gizmo.cpp
     tools/editor/zone_manifest.cpp
