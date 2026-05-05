@@ -25,7 +25,13 @@ void ObjectPlacer::placeObject(const glm::vec3& position) {
     obj.nameId = 0;
     obj.uniqueId = nextUniqueId();
     obj.position = position;
-    obj.rotation = glm::vec3(0.0f, placementRotY_, 0.0f);
+    float rotY = placementRotY_;
+    if (randomRotation_) {
+        static std::mt19937 rng(42);
+        std::uniform_real_distribution<float> dist(0.0f, 360.0f);
+        rotY = dist(rng);
+    }
+    obj.rotation = glm::vec3(0.0f, rotY, 0.0f);
     obj.scale = placementScale_;
     obj.selected = false;
 

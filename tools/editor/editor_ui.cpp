@@ -463,6 +463,9 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         float rot = placer.getPlacementRotationY();
         if (ImGui::SliderFloat("Y Rotation", &rot, 0.0f, 360.0f, "%.0f deg"))
             placer.setPlacementRotationY(rot);
+        bool randRot = placer.getRandomRotation();
+        if (ImGui::Checkbox("Random Rotation", &randRot))
+            placer.setRandomRotation(randRot);
         float scale = placer.getPlacementScale();
         if (ImGui::SliderFloat("Scale", &scale, 0.1f, 10.0f, "%.2f"))
             placer.setPlacementScale(scale);
@@ -513,6 +516,27 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
 
         ImGui::Separator();
         ImGui::Text("Placed: %zu objects", placer.objectCount());
+        if (placer.objectCount() > 0 && ImGui::CollapsingHeader("Object List")) {
+            ImGui::BeginChild("ObjPlacedList", ImVec2(0, 100), true);
+            for (int i = 0; i < static_cast<int>(placer.objectCount()); i++) {
+                auto& o = const_cast<std::vector<PlacedObject>&>(placer.getObjects())[i];
+                std::string disp = o.path;
+                auto sl = disp.rfind('\\');
+                if (sl != std::string::npos) disp = disp.substr(sl + 1);
+                char lbl[128];
+                std::snprintf(lbl, sizeof(lbl), "%s (%.0f,%.0f,%.0f)##obj%d",
+                              disp.c_str(), o.position.x, o.position.y, o.position.z, i);
+                if (ImGui::Selectable(lbl, o.selected)) {
+                    placer.clearSelection();
+                    // Select by creating a ray through the object position
+                    rendering::Ray r;
+                    r.origin = o.position + glm::vec3(0, 0, 1);
+                    r.direction = glm::vec3(0, 0, -1);
+                    placer.selectAt(r, 1000.0f);
+                }
+            }
+            ImGui::EndChild();
+        }
         if (auto* sel = placer.getSelected()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.9f, 0.3f, 1));
             ImGui::Text("Selected: %s", sel->path.c_str());

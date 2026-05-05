@@ -56,6 +56,8 @@ public:
     void setPlacementRotationY(float deg) { placementRotY_ = deg; }
     float getPlacementScale() const { return placementScale_; }
     void setPlacementScale(float s) { placementScale_ = s; }
+    bool getRandomRotation() const { return randomRotation_; }
+    void setRandomRotation(bool v) { randomRotation_ = v; }
 
     // Undo last placement
     bool canUndoPlace() const { return !undoStack_.empty(); }
@@ -78,6 +80,7 @@ private:
     uint32_t uniqueIdCounter_ = 1;
     float placementRotY_ = 0.0f;
     float placementScale_ = 1.0f;
+    bool randomRotation_ = false;
 };
 
 } // namespace editor
