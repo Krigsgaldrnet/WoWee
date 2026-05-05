@@ -823,6 +823,9 @@ void EditorApp::generateCompleteZone() {
     if (!terrain_.isLoaded()) return;
     showToast("Generating zone...");
 
+    // Step 0: Reset first for clean slate
+    terrainEditor_.resetToFlat();
+
     // Step 1: Apply noise
     terrainEditor_.applyNoise(0.005f, 30.0f, 4, 42);
 
