@@ -158,6 +158,10 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 app.quickSave();
             if (ImGui::MenuItem("Export Zone...", nullptr, false, app.hasTerrainLoaded()))
                 showSaveDialog_ = true;
+            if (ImGui::MenuItem("Export Content Pack (.wcp)", nullptr, false, app.hasTerrainLoaded())) {
+                std::string wcpPath = "output/" + app.getLoadedMap() + ".wcp";
+                app.exportContentPack(wcpPath);
+            }
             if (ImGui::BeginMenu("Add Adjacent Tile", app.hasTerrainLoaded())) {
                 if (ImGui::MenuItem("North (+X)")) app.addAdjacentTile(1, 0);
                 if (ImGui::MenuItem("South (-X)")) app.addAdjacentTile(-1, 0);

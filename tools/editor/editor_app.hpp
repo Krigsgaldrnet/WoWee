@@ -36,6 +36,7 @@ public:
     void saveWDT(const std::string& path);
     void exportZone(const std::string& outputDir);
     void quickSave();
+    void exportContentPack(const std::string& destPath);
 
     void requestQuit();
     void resetCamera();

@@ -1,6 +1,7 @@
 #include "editor_app.hpp"
 #include "adt_writer.hpp"
 #include "zone_manifest.hpp"
+#include "content_pack.hpp"
 #include "core/coordinates.hpp"
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
@@ -760,6 +761,23 @@ void EditorApp::exportZone(const std::string& outputDir) {
     lastSavePath_ = outputDir;
     showToast("Zone exported to " + base);
     LOG_INFO("Zone exported to: ", base);
+}
+
+void EditorApp::exportContentPack(const std::string& destPath) {
+    if (!terrain_.isLoaded()) return;
+    // Save zone first
+    std::string dir = lastSavePath_.empty() ? "output" : lastSavePath_;
+    exportZone(dir);
+    // Pack into WCP
+    ContentPackInfo info;
+    info.name = loadedMap_;
+    info.author = "Kelsi Davis";
+    info.description = "Custom zone created with Wowee World Editor";
+    info.mapId = 9000;
+    if (ContentPacker::packZone(dir, loadedMap_, destPath, info))
+        showToast("Content pack exported: " + destPath);
+    else
+        showToast("Failed to create content pack");
 }
 
 void EditorApp::quickSave() {
