@@ -29,6 +29,11 @@ int main(int argc, char* argv[]) {
             adtMap = argv[++i];
             adtX = std::atoi(argv[++i]);
             adtY = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--version") == 0 || std::strcmp(argv[i], "-v") == 0) {
+            LOG_INFO("Wowee World Editor v0.9.0");
+            LOG_INFO("Open formats: WOT/WHM/WOM/WOB/WCP (all novel, no Blizzard IP)");
+            LOG_INFO("By Kelsi Davis");
+            return 0;
         } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
             printUsage(argv[0]);
             return 0;
