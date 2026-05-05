@@ -603,6 +603,24 @@ void EditorApp::exportZone(const std::string& outputDir) {
         objectPlacer_.saveToFile(objPath);
     }
 
+    // Write zone info README
+    {
+        std::ofstream readme(base + "/README.txt");
+        if (readme) {
+            readme << "Zone: " << loadedMap_ << "\n";
+            readme << "Tile: [" << loadedTileX_ << ", " << loadedTileY_ << "]\n";
+            readme << "Objects: " << objectPlacer_.objectCount() << "\n";
+            readme << "NPCs: " << npcSpawner_.spawnCount() << "\n";
+            readme << "Created with Wowee World Editor\n\n";
+            readme << "Files:\n";
+            readme << "  zone.json       - Zone manifest (for client)\n";
+            readme << "  " << loadedMap_ << ".wdt   - Map definition\n";
+            readme << "  " << loadedMap_ << "_" << loadedTileX_ << "_" << loadedTileY_ << ".adt - Terrain tile\n";
+            if (objectPlacer_.objectCount() > 0) readme << "  objects.json    - Placed M2/WMO objects\n";
+            if (npcSpawner_.spawnCount() > 0) readme << "  creatures.json  - NPC/monster spawns\n";
+        }
+    }
+
     // Write zone manifest (for client loading)
     ZoneManifest manifest;
     manifest.mapName = loadedMap_;
@@ -694,6 +712,18 @@ void EditorApp::addAdjacentTile(int offsetX, int offsetY) {
     LOG_INFO("Adjacent tile created at [", newX, ",", newY, "] (not yet rendered in viewport)");
     ADTWriter::write(adj, "output/" + loadedMap_ + "/" + loadedMap_ + "_" +
                      std::to_string(newX) + "_" + std::to_string(newY) + ".adt");
+}
+
+void EditorApp::flyToSelected() {
+    auto* sel = objectPlacer_.getSelected();
+    if (sel) {
+        camera_.setPosition(sel->position + glm::vec3(0, 0, 30));
+        return;
+    }
+    auto* npc = npcSpawner_.getSelected();
+    if (npc) {
+        camera_.setPosition(npc->position + glm::vec3(0, 0, 30));
+    }
 }
 
 void EditorApp::snapSelectedToGround() {

@@ -560,10 +560,13 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
 
             if (changed) app.markObjectsDirty();
 
-            if (ImGui::Button("Snap Ground", ImVec2(100, 0)))
+            if (ImGui::Button("Snap Ground", ImVec2(75, 0)))
                 app.snapSelectedToGround();
             ImGui::SameLine();
-            if (ImGui::Button("Delete", ImVec2(100, 0))) placer.deleteSelected();
+            if (ImGui::Button("Fly To", ImVec2(55, 0)))
+                app.flyToSelected();
+            ImGui::SameLine();
+            if (ImGui::Button("Delete", ImVec2(55, 0))) placer.deleteSelected();
             if (ImGui::Button("Duplicate", ImVec2(100, 0))) {
                 std::string dupPath = sel->path;
                 glm::vec3 dupPos = sel->position + glm::vec3(10.0f, 10.0f, 0.0f);
@@ -800,6 +803,9 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             }
 
             ImGui::Separator();
+            if (ImGui::Button("Fly To##npc", ImVec2(55, 0)))
+                app.flyToSelected();
+            ImGui::SameLine();
             if (ImGui::Button("Duplicate##npc", ImVec2(80, 0))) {
                 CreatureSpawn copy = *sel;
                 copy.position += glm::vec3(10, 10, 0);
