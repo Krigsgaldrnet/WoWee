@@ -20,6 +20,7 @@ public:
     void processActions(EditorApp& app);
     void openNewTerrainDialog() { showNewDialog_ = true; }
     void openLoadDialog() { showLoadDialog_ = true; }
+    void toggleHelp() { showHelp_ = !showHelp_; }
 
     PaintMode getPaintMode() const { return paintMode_; }
 

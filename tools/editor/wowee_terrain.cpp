@@ -217,6 +217,7 @@ int WoweeTerrain::exportAlphaMaps(const pipeline::ADTTerrain& terrain,
 }
 
 bool WoweeTerrain::importOpen(const std::string& basePath, pipeline::ADTTerrain& terrain) {
+    // Load binary heightmap (.whm)
     std::string hmPath = basePath + ".whm";
     std::ifstream f(hmPath, std::ios::binary);
     if (!f) return false;
@@ -233,10 +234,91 @@ bool WoweeTerrain::importOpen(const std::string& basePath, pipeline::ADTTerrain&
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain.chunks[ci];
         chunk.heightMap.loaded = true;
+        chunk.indexX = ci % 16;
+        chunk.indexY = ci / 16;
         float base;
         f.read(reinterpret_cast<char*>(&base), 4);
         chunk.position[2] = base;
         f.read(reinterpret_cast<char*>(chunk.heightMap.heights.data()), 145 * 4);
+
+        uint32_t alphaSize = 0;
+        if (f.read(reinterpret_cast<char*>(&alphaSize), 4) && alphaSize > 0 && alphaSize <= 65536) {
+            chunk.alphaMap.resize(alphaSize);
+            f.read(reinterpret_cast<char*>(chunk.alphaMap.data()), alphaSize);
+        }
+
+        for (int i = 0; i < 145; i++) {
+            chunk.normals[i * 3 + 0] = 0;
+            chunk.normals[i * 3 + 1] = 0;
+            chunk.normals[i * 3 + 2] = 127;
+        }
+    }
+
+    // Load JSON metadata (.wot)
+    std::string wotPath = basePath + ".wot";
+    std::ifstream wf(wotPath);
+    if (wf) {
+        try {
+            auto j = nlohmann::json::parse(wf);
+
+            terrain.coord.x = j.value("tileX", 0);
+            terrain.coord.y = j.value("tileY", 0);
+
+            float tileSize = 533.33333f;
+            float chunkSize = tileSize / 16.0f;
+            for (int cy = 0; cy < 16; cy++) {
+                for (int cx = 0; cx < 16; cx++) {
+                    auto& chunk = terrain.chunks[cy * 16 + cx];
+                    chunk.position[0] = (32.0f - terrain.coord.x) * tileSize - cx * chunkSize;
+                    chunk.position[1] = (32.0f - terrain.coord.y) * tileSize - cy * chunkSize;
+                }
+            }
+
+            if (j.contains("textures") && j["textures"].is_array()) {
+                for (const auto& tex : j["textures"]) {
+                    if (tex.is_string() && !tex.get<std::string>().empty())
+                        terrain.textures.push_back(tex.get<std::string>());
+                }
+            }
+
+            if (j.contains("chunkLayers") && j["chunkLayers"].is_array()) {
+                const auto& layers = j["chunkLayers"];
+                for (int ci = 0; ci < std::min(256, static_cast<int>(layers.size())); ci++) {
+                    const auto& cl = layers[ci];
+                    if (cl.contains("layers") && cl["layers"].is_array()) {
+                        for (const auto& texId : cl["layers"]) {
+                            pipeline::TextureLayer layer{};
+                            layer.textureId = texId.get<uint32_t>();
+                            layer.flags = terrain.chunks[ci].layers.empty() ? 0 : 0x100;
+                            terrain.chunks[ci].layers.push_back(layer);
+                        }
+                    }
+                    if (cl.contains("holes"))
+                        terrain.chunks[ci].holes = cl["holes"].get<uint16_t>();
+                }
+            }
+
+            if (j.contains("water") && j["water"].is_array()) {
+                for (const auto& w : j["water"]) {
+                    if (w.is_null()) continue;
+                    int wci = w.value("chunk", -1);
+                    if (wci < 0 || wci >= 256) continue;
+                    pipeline::ADTTerrain::WaterLayer wl;
+                    wl.liquidType = w.value("type", 0u);
+                    wl.maxHeight = w.value("height", 0.0f);
+                    wl.minHeight = wl.maxHeight;
+                    wl.x = 0; wl.y = 0; wl.width = 9; wl.height = 9;
+                    wl.heights.assign(81, wl.maxHeight);
+                    wl.mask.assign(8, 0xFF);
+                    terrain.waterData[wci].layers.push_back(wl);
+                }
+            }
+
+            LOG_INFO("WOT metadata loaded: tile [", terrain.coord.x, ",", terrain.coord.y,
+                     "], ", terrain.textures.size(), " textures");
+        } catch (const std::exception& e) {
+            LOG_WARNING("Could not parse WOT metadata: ", e.what());
+        }
     }
 
     LOG_INFO("Open terrain imported: ", basePath);

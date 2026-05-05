@@ -418,14 +418,14 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("Ctrl+click — select object/NPC");
             ImGui::BulletText("Ctrl+S — quick save");
             ImGui::BulletText("Ctrl+Z — undo");
-            ImGui::BulletText("Ctrl+Shift+Z — redo");
+            ImGui::BulletText("Ctrl+Shift+Z / Ctrl+Y — redo");
             ImGui::BulletText("Delete — remove selected");
             ImGui::Separator();
             ImGui::Text("Object Transform:");
             ImGui::BulletText("G — move mode (then drag)");
             ImGui::BulletText("R — rotate mode (then drag)");
             ImGui::BulletText("T — scale mode (then drag)");
-            ImGui::BulletText("X/Y — constrain to axis");
+            ImGui::BulletText("X/Y/Z — constrain to axis");
             ImGui::BulletText("Escape — deselect / cancel");
             ImGui::BulletText("Right-click — context menu");
             ImGui::Separator();

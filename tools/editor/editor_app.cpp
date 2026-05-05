@@ -241,6 +241,9 @@ void EditorApp::processEvents() {
                     if (sc == SDL_SCANCODE_6) setMode(EditorMode::Quest);
                 }
                 // F1 handled by UI (showHelp_ toggle)
+                // F1 = toggle help
+                if (sc == SDL_SCANCODE_F1 && !io.WantCaptureKeyboard)
+                    ui_.toggleHelp();
                 // Transform shortcuts (Blender-style)
                 if (objectPlacer_.getSelected()) {
                     if (sc == SDL_SCANCODE_G) startGizmoMode(TransformMode::Move);
@@ -248,6 +251,8 @@ void EditorApp::processEvents() {
                     if (sc == SDL_SCANCODE_T) startGizmoMode(TransformMode::Scale);
                     if (sc == SDL_SCANCODE_X) setGizmoAxis(TransformAxis::X);
                     if (sc == SDL_SCANCODE_Y) setGizmoAxis(TransformAxis::Y);
+                    if (sc == SDL_SCANCODE_Z && !(event.key.keysym.mod & KMOD_CTRL))
+                        setGizmoAxis(TransformAxis::Z);
                     if (sc == SDL_SCANCODE_ESCAPE) {
                         viewport_.getGizmo().endDrag();
                         viewport_.getGizmo().setMode(TransformMode::None);
@@ -269,10 +274,16 @@ void EditorApp::processEvents() {
                     ui_.openNewTerrainDialog();
                 if (sc == SDL_SCANCODE_O && (event.key.keysym.mod & KMOD_CTRL))
                     ui_.openLoadDialog();
+                // Ctrl+Y = Redo (alternate binding)
+                if (sc == SDL_SCANCODE_Y && (event.key.keysym.mod & KMOD_CTRL)) {
+                    if (terrainEditor_.history().canRedo()) {
+                        terrainEditor_.redo();
+                        showToast("Redo");
+                    }
+                }
                 if (sc == SDL_SCANCODE_Z && (event.key.keysym.mod & KMOD_CTRL)) {
                     bool isRedo = (event.key.keysym.mod & KMOD_SHIFT) != 0;
                     if (isRedo) {
-                        // Ctrl+Shift+Z = Redo (sculpt only for now)
                         if (terrainEditor_.history().canRedo()) {
                             terrainEditor_.redo();
                             showToast("Redo");
