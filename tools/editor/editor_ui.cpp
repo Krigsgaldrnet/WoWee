@@ -510,13 +510,14 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("631 creature presets across 8 categories");
             ImGui::BulletText("Full undo/redo for terrain + texture painting");
             ImGui::Separator();
-            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1), "Open Format Replacements (6/6):");
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1), "Open Format Replacements (7/7):");
             ImGui::BulletText("ADT -> WOT/WHM (terrain + heightmap)");
             ImGui::BulletText("WDT -> zone.json (map definition)");
             ImGui::BulletText("BLP -> PNG (textures)");
             ImGui::BulletText("DBC -> JSON (data tables)");
             ImGui::BulletText("M2  -> WOM (models)");
             ImGui::BulletText("WMO -> WOB (buildings)");
+            ImGui::BulletText("Col -> WOC (collision/walkability)");
             ImGui::Separator();
             ImGui::Text("Built with SDL2 / Vulkan / ImGui / nlohmann-json");
         }
@@ -591,9 +592,10 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("Auto-paint by height/slope, scatter patches");
             ImGui::Separator();
             ImGui::Text("Export:");
-            ImGui::BulletText("Ctrl+S — quick save (all formats)");
+            ImGui::BulletText("Ctrl+S — quick save (all formats + collision)");
             ImGui::BulletText("Ctrl+Shift+E — export content pack (.wcp)");
             ImGui::BulletText("File → Batch Convert Assets (M2→WOM, WMO→WOB)");
+            ImGui::BulletText("Minimap: toggle slope overlay for collision preview");
         }
         ImGui::End();
     }
@@ -2315,6 +2317,39 @@ void EditorUI::renderMinimap(EditorApp& app) {
             }
         }
 
+        // Slope/collision overlay (steep chunks highlighted red)
+        static bool showSlopeOverlay = false;
+        if (showSlopeOverlay) {
+            float steepCos = std::cos(50.0f * 3.14159f / 180.0f);
+            float unitSize = 533.33333f / 16.0f / 8.0f;
+            for (int cy2 = 0; cy2 < 16; cy2++) {
+                for (int cx2 = 0; cx2 < 16; cx2++) {
+                    const auto& c = terrain->chunks[cy2 * 16 + cx2];
+                    if (!c.hasHeightMap()) continue;
+                    int steepVerts = 0;
+                    for (int row = 0; row < 8; row++) {
+                        for (int col2 = 0; col2 < 8; col2++) {
+                            int i = row * 17 + col2;
+                            float h00 = c.heightMap.heights[i];
+                            float h10 = c.heightMap.heights[i + 1];
+                            float h01 = c.heightMap.heights[i + 17];
+                            float dzdx = (h10 - h00) / unitSize;
+                            float dzdy = (h01 - h00) / unitSize;
+                            float nz = 1.0f / std::sqrt(1.0f + dzdx*dzdx + dzdy*dzdy);
+                            if (nz < steepCos) steepVerts++;
+                        }
+                    }
+                    if (steepVerts > 0) {
+                        float intensity = std::min(1.0f, steepVerts / 20.0f);
+                        ImVec2 p0(origin.x + cx2 * cellW, origin.y + cy2 * cellH);
+                        ImVec2 p1(p0.x + cellW - 1, p0.y + cellH - 1);
+                        dl->AddRectFilled(p0, p1, IM_COL32(255, 30, 30,
+                            static_cast<int>(intensity * 150)));
+                    }
+                }
+            }
+        }
+
         // Hole indicators (dark X marks)
         for (int cy2 = 0; cy2 < 16; cy2++) {
             for (int cx2 = 0; cx2 < 16; cx2++) {
@@ -2334,6 +2369,7 @@ void EditorUI::renderMinimap(EditorApp& app) {
         dl2->AddCircleFilled(ImVec2(legPos.x + 45, legPos.y + 5), 3, IM_COL32(255, 60, 60, 200));
         dl2->AddCircleFilled(ImVec2(legPos.x + 100, legPos.y + 5), 3, IM_COL32(60, 200, 60, 200));
         ImGui::Text("  Obj   Hostile  Friendly  +Cam  H=Hole");
+        ImGui::Checkbox("Show Slopes (collision)", &showSlopeOverlay);
     }
     ImGui::End();
     ImGui::PopStyleVar();
