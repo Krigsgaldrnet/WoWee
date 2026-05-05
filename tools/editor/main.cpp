@@ -13,6 +13,8 @@ static void printUsage(const char* argv0) {
     LOG_INFO("  --data <path>          Path to extracted WoW data (manifest.json)");
     LOG_INFO("  --adt <map> <x> <y>    Load an ADT tile on startup");
     LOG_INFO("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)");
+    LOG_INFO("  --list-zones           List discovered custom zones and exit");
+    LOG_INFO("  --version              Show version and format info");
     LOG_INFO("");
     LOG_INFO("Wowee World Editor v0.8.0 — by Kelsi Davis");
     LOG_INFO("Novel open formats: WOT/WHM/WOM/WOB/WCP");
