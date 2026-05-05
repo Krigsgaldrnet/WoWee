@@ -709,6 +709,22 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Quantizes heights into flat shelves");
         }
 
+        if (ImGui::CollapsingHeader("Dune Generator")) {
+            static float duneWave = 30.0f, duneAmp = 8.0f, duneDir = 45.0f;
+            static int duneSeed = 10;
+            ImGui::SliderFloat("Wavelength##dune", &duneWave, 10.0f, 100.0f);
+            ImGui::SliderFloat("Amplitude##dune", &duneAmp, 2.0f, 30.0f);
+            ImGui::SliderFloat("Direction##dune", &duneDir, 0.0f, 360.0f, "%.0f deg");
+            ImGui::InputInt("Seed##dune", &duneSeed);
+            if (ImGui::Button("Create Dunes", ImVec2(-1, 0))) {
+                app.getTerrainEditor().createDunes(duneWave, duneAmp, duneDir,
+                                                    static_cast<uint32_t>(duneSeed));
+                app.showToast("Dunes created");
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "Rolling sand dune pattern. Paint desert texture after.");
+        }
+
         if (ImGui::CollapsingHeader("Canyon Generator")) {
             static float canyonWidth = 15.0f, canyonDepth = 20.0f;
             static int canyonSeed = 1;

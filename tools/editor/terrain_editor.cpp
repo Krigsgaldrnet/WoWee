@@ -900,6 +900,36 @@ void TerrainEditor::applyVoronoiNoise(int cellCount, float amplitude, uint32_t s
     dirty_ = true;
 }
 
+void TerrainEditor::createDunes(float wavelength, float amplitude, float direction, uint32_t seed) {
+    if (!terrain_) return;
+    float dirRad = direction * 3.14159f / 180.0f;
+    float dx = std::cos(dirRad), dy = std::sin(dirRad);
+
+    // Secondary wave for variation
+    auto hash = [](int x, uint32_t s) -> float {
+        uint32_t h = static_cast<uint32_t>(x * 374761393 + s * 668265263);
+        h = (h ^ (h >> 13)) * 1274126177;
+        return (static_cast<float>(h & 0xFFFF) / 65535.0f - 0.5f) * 2.0f;
+    };
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            float proj = pos.x * dx + pos.y * dy;
+            float wave = std::sin(proj / wavelength * 6.2832f) * amplitude;
+            float secondary = std::sin(proj / (wavelength * 2.3f) * 6.2832f + seed * 0.1f) * amplitude * 0.3f;
+            float perp = pos.x * dy - pos.y * dx;
+            float variation = hash(static_cast<int>(perp * 0.1f), seed) * amplitude * 0.15f;
+            chunk.heightMap.heights[v] += wave + secondary + variation;
+        }
+        dirtyChunks_.push_back(ci);
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::rotateTerrain90() {
     if (!terrain_) return;
     // Snapshot all outer vertex heights into a 129x129 grid
