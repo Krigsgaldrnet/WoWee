@@ -377,6 +377,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Text("custom WoW zones for the wowee client.");
             ImGui::Separator();
             ImGui::Text("6 modes, 30+ terrain tools, 3 noise types");
+            ImGui::Text("All 6 Blizzard formats replaced with open alternatives");
             ImGui::Text("Export: ADT + WDT + JSON (zone manifest)");
             ImGui::Text("11k+ lines, 6 novel open formats");
             ImGui::Text("WOT/WHM/WOM/WOB/WCP + PNG/JSON");
