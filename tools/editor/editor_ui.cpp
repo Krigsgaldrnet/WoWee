@@ -51,6 +51,26 @@ void EditorUI::render(EditorApp& app) {
     renderPropertiesPanel(app);
     renderStatusBar(app);
 
+    // NPC name labels in viewport (screen-space text above markers)
+    if (app.hasTerrainLoaded() && app.getNpcSpawner().spawnCount() > 0) {
+        auto& cam = app.getEditorCamera().getCamera();
+        auto vp2 = ImGui::GetMainViewport();
+        glm::mat4 viewProj = cam.getProjectionMatrix() * cam.getViewMatrix();
+        for (const auto& npc : app.getNpcSpawner().getSpawns()) {
+            glm::vec4 clip = viewProj * glm::vec4(npc.position.x, npc.position.y,
+                                                    npc.position.z + 35.0f, 1.0f);
+            if (clip.w <= 0.01f) continue;
+            glm::vec3 ndc = glm::vec3(clip) / clip.w;
+            float sx = (ndc.x * 0.5f + 0.5f) * vp2->Size.x;
+            float sy = (ndc.y * 0.5f + 0.5f) * vp2->Size.y;
+            if (sx < 0 || sx > vp2->Size.x || sy < 0 || sy > vp2->Size.y) continue;
+
+            ImVec4 col = npc.hostile ? ImVec4(1, 0.3f, 0.3f, 0.9f) : ImVec4(0.3f, 1, 0.3f, 0.9f);
+            ImGui::GetForegroundDrawList()->AddText(ImVec2(sx - 30, sy - 10), ImGui::ColorConvertFloat4ToU32(col),
+                npc.name.c_str());
+        }
+    }
+
     // Toast notifications
     ImGuiViewport* tvp = ImGui::GetMainViewport();
     float toastY = tvp->Size.y - 60;
