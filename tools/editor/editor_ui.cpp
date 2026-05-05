@@ -229,9 +229,9 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Text("Standalone world editor for creating");
             ImGui::Text("custom WoW zones for the wowee client.");
             ImGui::Separator();
-            ImGui::Text("Tools: Sculpt, Paint, Objects, Water, NPCs");
+            ImGui::Text("6 modes, 30+ terrain tools, 2 noise types");
             ImGui::Text("Export: ADT + WDT + JSON (zone manifest)");
-            ImGui::Text("Formats: WoW 3.3.5a compatible");
+            ImGui::Text("9k lines, WoW 3.3.5a compatible");
             ImGui::EndPopup();
         }
         ImGui::EndMainMenuBar();
