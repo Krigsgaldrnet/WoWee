@@ -652,6 +652,18 @@ void TerrainEditor::smoothEntireTile(int iterations) {
     dirty_ = true;
 }
 
+void TerrainEditor::resetToFlat() {
+    if (!terrain_) return;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        chunk.heightMap.heights.fill(0.0f);
+        dirtyChunks_.push_back(ci);
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::scaleHeights(float factor) {
     if (!terrain_) return;
     for (int ci = 0; ci < 256; ci++) {

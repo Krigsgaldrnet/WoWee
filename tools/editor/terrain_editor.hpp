@@ -60,6 +60,9 @@ public:
     // Clamp all heights to a min/max range
     void clampHeights(float minH, float maxH);
 
+    // Reset all heights to zero (flat terrain)
+    void resetToFlat();
+
     // Scale all heights by a factor (useful for exaggerating or flattening)
     void scaleHeights(float factor);
 

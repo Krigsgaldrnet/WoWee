@@ -479,8 +479,12 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 app.getTerrainEditor().scaleHeights(hScale);
                 app.showToast("Heights scaled");
             }
+            if (ImGui::Button("Reset to Flat", ImVec2(-1, 0))) {
+                app.getTerrainEditor().resetToFlat();
+                app.showToast("Terrain reset to flat");
+            }
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
-                "Exaggerate (>1) or flatten (<1) terrain relief");
+                "Scale: exaggerate (>1) or flatten (<1) relief");
         }
 
         ImGui::Separator();
