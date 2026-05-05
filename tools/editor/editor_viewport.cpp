@@ -398,7 +398,7 @@ void EditorViewport::setGhostPreview(const std::string& path, const glm::vec3& p
     if (path != ghostModelPath_ || ghostModelId_ == 0) {
         clearGhostPreview();
         auto data = assetManager_->readFile(path);
-        if (data.empty()) return;
+        if (data.empty()) { LOG_WARNING("Ghost: file not found: ", path); return; }
         auto model = pipeline::M2Loader::load(data);
         if (!model.isValid()) {
             std::string skinPath = path;
