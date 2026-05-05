@@ -360,8 +360,25 @@ void EditorApp::processEvents() {
                     giz.endDrag();
                     giz.setMode(TransformMode::None);
                 } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+                    // Path point capture (river/road tool)
+                    if (ui_.getPathCapture() != EditorUI::PathCapture::None) {
+                        auto ext = window_->getVkContext()->getSwapchainExtent();
+                        rendering::Ray ray = camera_.getCamera().screenToWorldRay(
+                            static_cast<float>(event.button.x),
+                            static_cast<float>(event.button.y),
+                            static_cast<float>(ext.width),
+                            static_cast<float>(ext.height));
+                        glm::vec3 hitPos;
+                        if (terrainEditor_.raycastTerrain(ray, hitPos)) {
+                            ui_.setPathPoint(hitPos);
+                            if (ui_.getPathCapture() == EditorUI::PathCapture::None && ui_.isPathReady())
+                                showToast("Both points set — click Apply Path");
+                            else if (ui_.getPathCapture() == EditorUI::PathCapture::WaitingEnd)
+                                showToast("Start point set — click terrain for end");
+                        }
+                    }
                     // Ctrl+click = select object (any mode)
-                    if ((event.key.keysym.mod & KMOD_CTRL) || (SDL_GetModState() & KMOD_CTRL)) {
+                    else if ((event.key.keysym.mod & KMOD_CTRL) || (SDL_GetModState() & KMOD_CTRL)) {
                         auto ext = window_->getVkContext()->getSwapchainExtent();
                         rendering::Ray ray = camera_.getCamera().screenToWorldRay(
                             static_cast<float>(event.button.x),

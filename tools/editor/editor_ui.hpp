@@ -1,6 +1,7 @@
 #pragma once
 
 #include "terrain_biomes.hpp"
+#include <glm/glm.hpp>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,15 @@ public:
     void openLoadDialog() { showLoadDialog_ = true; }
 
     PaintMode getPaintMode() const { return paintMode_; }
+
+    // Path point capture: when active, next terrain click sets the point
+    enum class PathCapture { None, WaitingStart, WaitingEnd };
+    PathCapture getPathCapture() const { return pathCapture_; }
+    void setPathPoint(const glm::vec3& pos);
+    glm::vec3 getPathStart() const { return pathStart_; }
+    glm::vec3 getPathEnd() const { return pathEnd_; }
+    bool isPathReady() const { return pathStartSet_ && pathEndSet_; }
+    void clearPath() { pathStartSet_ = false; pathEndSet_ = false; pathCapture_ = PathCapture::None; }
 
 private:
     void renderMenuBar(EditorApp& app);
@@ -71,6 +81,13 @@ private:
     int objDirIdx_ = -1;
     bool showM2s_ = true;
     bool showWMOs_ = true;
+
+    // Path point capture
+    PathCapture pathCapture_ = PathCapture::None;
+    glm::vec3 pathStart_{0}, pathEnd_{0};
+    bool pathStartSet_ = false, pathEndSet_ = false;
+    int pathMode_ = 0; // 0=river, 1=road
+    float pathWidth_ = 8.0f, pathDepth_ = 5.0f;
 };
 
 } // namespace editor

@@ -130,6 +130,18 @@ void EditorUI::processActions(EditorApp& app) {
     }
 }
 
+void EditorUI::setPathPoint(const glm::vec3& pos) {
+    if (pathCapture_ == PathCapture::WaitingStart) {
+        pathStart_ = pos;
+        pathStartSet_ = true;
+        pathCapture_ = PathCapture::WaitingEnd;
+    } else if (pathCapture_ == PathCapture::WaitingEnd) {
+        pathEnd_ = pos;
+        pathEndSet_ = true;
+        pathCapture_ = PathCapture::None;
+    }
+}
+
 void EditorUI::renderMenuBar(EditorApp& app) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
@@ -770,45 +782,53 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
 
         ImGui::Separator();
         if (ImGui::CollapsingHeader("River / Road Carver")) {
-            static glm::vec3 pathStart{0}, pathEnd{0};
-            static float pathWidth = 8.0f, pathDepth = 5.0f;
-            static bool pathStartSet = false;
-            static int pathMode = 0; // 0=river, 1=road
-            ImGui::RadioButton("River (carve down)", &pathMode, 0);
+            ImGui::RadioButton("River (carve down)", &pathMode_, 0);
             ImGui::SameLine();
-            ImGui::RadioButton("Road (flatten)", &pathMode, 1);
-            ImGui::SliderFloat("Width##path", &pathWidth, 2.0f, 50.0f);
-            if (pathMode == 0) ImGui::SliderFloat("Depth##path", &pathDepth, 1.0f, 30.0f);
-            auto& brush4 = app.getTerrainEditor().brush();
-            auto brushPos = brush4.getPosition();
-            ImGui::Text("Cursor: %.0f, %.0f, %.0f %s",
-                        brushPos.x, brushPos.y, brushPos.z,
-                        brush4.isActive() ? "" : "(off terrain)");
-            if (ImGui::Button("Set Start##path", ImVec2(120, 0))) {
-                pathStart = brushPos;
-                pathStartSet = true;
-                app.showToast("Path start set");
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Set End + Apply##path", ImVec2(140, 0)) && pathStartSet) {
-                pathEnd = brushPos;
-                if (pathMode == 0) {
-                    app.getTerrainEditor().carveRiver(pathStart, pathEnd, pathWidth, pathDepth);
-                    app.getTexturePainter().paintAlongPath(pathStart, pathEnd, pathWidth * 1.5f,
-                        "Tileset\\Ashenvale\\AshenvaleSand.blp");
-                    app.showToast("River carved + banks textured");
-                } else {
-                    app.getTerrainEditor().flattenRoad(pathStart, pathEnd, pathWidth);
-                    app.getTexturePainter().paintAlongPath(pathStart, pathEnd, pathWidth,
-                        "Tileset\\Elwynn\\ElwynnCobblestoneBase.blp");
-                    app.showToast("Road flattened + textured");
+            ImGui::RadioButton("Road (flatten)", &pathMode_, 1);
+            ImGui::SliderFloat("Width##path", &pathWidth_, 2.0f, 50.0f);
+            if (pathMode_ == 0) ImGui::SliderFloat("Depth##path", &pathDepth_, 1.0f, 30.0f);
+
+            if (pathCapture_ == PathCapture::None && !pathStartSet_) {
+                if (ImGui::Button("Click Start Point", ImVec2(-1, 0))) {
+                    pathCapture_ = PathCapture::WaitingStart;
+                    pathStartSet_ = false;
+                    pathEndSet_ = false;
+                    app.showToast("Click terrain to set start point");
                 }
-                pathStartSet = false;
+            } else if (pathCapture_ == PathCapture::WaitingStart) {
+                ImGui::TextColored(ImVec4(1, 1, 0.3f, 1), "Click terrain for START point...");
+                if (ImGui::SmallButton("Cancel##path")) {
+                    pathCapture_ = PathCapture::None;
+                }
+            } else if (pathCapture_ == PathCapture::WaitingEnd) {
+                ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1), "Start set at (%.0f, %.0f) — click for END",
+                                   pathStart_.x, pathStart_.y);
+                if (ImGui::SmallButton("Cancel##path")) {
+                    clearPath();
+                }
+            } else if (pathStartSet_ && pathEndSet_) {
+                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1),
+                    "Start: (%.0f,%.0f) End: (%.0f,%.0f)", pathStart_.x, pathStart_.y, pathEnd_.x, pathEnd_.y);
+                if (ImGui::Button("Apply Path", ImVec2(-1, 0))) {
+                    if (pathMode_ == 0) {
+                        app.getTerrainEditor().carveRiver(pathStart_, pathEnd_, pathWidth_, pathDepth_);
+                        app.getTexturePainter().paintAlongPath(pathStart_, pathEnd_, pathWidth_ * 1.5f,
+                            "Tileset\\Ashenvale\\AshenvaleSand.blp");
+                        app.showToast("River carved + banks textured");
+                    } else {
+                        app.getTerrainEditor().flattenRoad(pathStart_, pathEnd_, pathWidth_);
+                        app.getTexturePainter().paintAlongPath(pathStart_, pathEnd_, pathWidth_,
+                            "Tileset\\Elwynn\\ElwynnCobblestoneBase.blp");
+                        app.showToast("Road flattened + textured");
+                    }
+                    clearPath();
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Reset##path")) clearPath();
+            } else if (pathStartSet_) {
+                if (ImGui::Button("Click End Point", ImVec2(-1, 0)))
+                    pathCapture_ = PathCapture::WaitingEnd;
             }
-            if (pathStartSet)
-                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1), "Start set — click end point");
-            else
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Set start then end to apply");
         }
 
         if (ImGui::CollapsingHeader("Mirror / Rotate")) {
