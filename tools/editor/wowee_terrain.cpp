@@ -121,6 +121,29 @@ bool WoweeTerrain::exportNormalMap(const pipeline::ADTTerrain& terrain,
     return true;
 }
 
+int WoweeTerrain::exportAlphaMaps(const pipeline::ADTTerrain& terrain,
+                                    const std::string& outputDir) {
+    namespace fs = std::filesystem;
+    fs::create_directories(outputDir);
+    int exported = 0;
+
+    for (int ci = 0; ci < 256; ci++) {
+        const auto& chunk = terrain.chunks[ci];
+        for (size_t li = 1; li < chunk.layers.size(); li++) {
+            if (!chunk.layers[li].useAlpha()) continue;
+            size_t off = chunk.layers[li].offsetMCAL;
+            if (off + 4096 > chunk.alphaMap.size()) continue;
+
+            std::string path = outputDir + "/chunk_" + std::to_string(ci) +
+                               "_layer_" + std::to_string(li) + ".png";
+            stbi_write_png(path.c_str(), 64, 64, 1,
+                           chunk.alphaMap.data() + off, 64);
+            exported++;
+        }
+    }
+    return exported;
+}
+
 bool WoweeTerrain::importOpen(const std::string& basePath, pipeline::ADTTerrain& terrain) {
     std::string hmPath = basePath + ".whm";
     std::ifstream f(hmPath, std::ios::binary);

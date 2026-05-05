@@ -18,6 +18,10 @@ public:
     static bool exportNormalMap(const pipeline::ADTTerrain& terrain,
                                 const std::string& path);
 
+    // Export alpha maps as individual 64x64 grayscale PNGs per chunk layer
+    static int exportAlphaMaps(const pipeline::ADTTerrain& terrain,
+                                const std::string& outputDir);
+
     // Import terrain from open format back to ADTTerrain
     static bool importOpen(const std::string& basePath, pipeline::ADTTerrain& terrain);
 };
