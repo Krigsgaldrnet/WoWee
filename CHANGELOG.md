@@ -43,7 +43,7 @@
 - WDT → zone.json: map definition with full placement arrays
 - BLP → PNG: texture override system
 - DBC → JSON: data tables via DBCFile::loadJSON()
-- M2 → WOM (WOM1): models with render batches, textures, materials
+- M2 → WOM (WOM1/WOM2): static models + animated models with bones, keyframes, skeletal binding
 - WMO → WOB (WOB1): buildings with material flags/shader/blendMode, doodad rotation
 - Collision → WOC (WOC1): walkability mesh with slope classification, hole support, water flags
 - WCP (WCP1): content pack archive with categorized file list

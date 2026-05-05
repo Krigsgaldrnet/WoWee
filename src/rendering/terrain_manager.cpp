@@ -503,6 +503,8 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                         mv.position = v.position;
                         mv.normal = v.normal;
                         mv.texCoords[0] = v.texCoord;
+                        std::memcpy(mv.boneWeights, v.boneWeights, 4);
+                        std::memcpy(mv.boneIndices, v.boneIndices, 4);
                         m2Model.vertices.push_back(mv);
                     }
                     m2Model.indices.reserve(wom.indices.size());
@@ -536,6 +538,25 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                     mat.flags = 0;
                     mat.blendMode = 0;
                     m2Model.materials.push_back(mat);
+
+                    // Copy bone hierarchy from WOM2
+                    for (const auto& wb : wom.bones) {
+                        pipeline::M2Bone bone;
+                        bone.keyBoneId = wb.keyBoneId;
+                        bone.parentBone = wb.parentBone;
+                        bone.pivot = wb.pivot;
+                        bone.flags = wb.flags;
+                        m2Model.bones.push_back(bone);
+                    }
+
+                    // Copy animation sequences from WOM2
+                    for (const auto& wa : wom.animations) {
+                        pipeline::M2Sequence seq;
+                        seq.id = wa.id;
+                        seq.duration = wa.durationMs;
+                        seq.movingSpeed = wa.movingSpeed;
+                        m2Model.sequences.push_back(seq);
+                    }
 
                     pending->m2Models.push_back({modelId, std::move(m2Model), {}});
                     preparedModelIds.insert(modelId);

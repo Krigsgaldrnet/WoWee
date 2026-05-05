@@ -47,7 +47,7 @@ cmake --build build --target wowee_editor
 
 **6 editing modes** (Sculpt, Paint, Objects, Water, NPCs, Quests) with 30+ terrain tools, multi-select, time-of-day lighting, quest chains, and full undo/redo.
 
-**7 novel open format replacements** for all Blizzard proprietary formats: WOT/WHM (terrain), WOC (collision), WOM (models), WOB (buildings), zone.json (map def), PNG (textures), JSON (data tables). See `tools/editor/FORMAT_SPEC.md` for full specifications.
+**7 novel open format replacements** for all Blizzard proprietary formats: WOT/WHM (terrain), WOC (collision), WOM1/WOM2 (static+animated models), WOB (buildings), zone.json (map def), PNG (textures), JSON (data tables). See `tools/editor/FORMAT_SPEC.md` for full specifications.
 
 Exported zones auto-load in the wowee client from `custom_zones/` or `output/` directories.
 
