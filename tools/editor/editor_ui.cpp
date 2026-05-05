@@ -1600,6 +1600,17 @@ void EditorUI::renderMinimap(EditorApp& app) {
             }
         }
 
+        // Hole indicators (dark X marks)
+        for (int cy2 = 0; cy2 < 16; cy2++) {
+            for (int cx2 = 0; cx2 < 16; cx2++) {
+                if (terrain->chunks[cy2 * 16 + cx2].holes) {
+                    ImVec2 hp(origin.x + cx2 * cellW + cellW * 0.5f,
+                              origin.y + cy2 * cellH + cellH * 0.5f);
+                    dl->AddText(ImVec2(hp.x - 3, hp.y - 5), IM_COL32(0, 0, 0, 200), "H");
+                }
+            }
+        }
+
         ImGui::Dummy(ImVec2(avail.x, 16 * cellH));
         // Legend
         ImDrawList* dl2 = ImGui::GetWindowDrawList();
