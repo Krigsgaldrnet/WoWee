@@ -484,6 +484,24 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Flatten Platform")) {
+            auto& brush3 = app.getTerrainEditor().brush();
+            if (ImGui::Button("Create Flat Platform at Cursor", ImVec2(-1, 0)) && brush3.isActive()) {
+                // Flatten all vertices under brush to the cursor height
+                auto& te = app.getTerrainEditor();
+                float targetZ = brush3.getPosition().z;
+                te.brush().settings().flattenHeight = targetZ;
+                auto savedMode = te.brush().settings().mode;
+                te.brush().settings().mode = BrushMode::Flatten;
+                // Apply flatten for several frames worth
+                for (int i = 0; i < 30; i++) te.applyBrush(0.1f);
+                te.brush().settings().mode = savedMode;
+                app.showToast("Platform created");
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "Flattens area under brush to cursor height.\nGood for building sites, roads, camps.");
+        }
+
         ImGui::Separator();
         ImGui::Text("Terrain Holes (cave entrances):");
         auto& brush = app.getTerrainEditor().brush();
