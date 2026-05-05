@@ -24,6 +24,10 @@ public:
     // Auto-paint steep slopes with rock texture
     void autoPaintBySlope(float slopeThreshold, const std::string& steepTexture);
 
+    // Paint a texture along a line (for roads/paths after flattening)
+    void paintAlongPath(const glm::vec3& start, const glm::vec3& end,
+                        float width, const std::string& texturePath);
+
     // Paint the active texture at the given world position
     // Returns list of modified chunk indices
     std::vector<int> paint(const glm::vec3& center, float radius, float strength, float falloff);

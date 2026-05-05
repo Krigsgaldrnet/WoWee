@@ -607,11 +607,15 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SameLine();
             if (ImGui::Button("Set End + Apply##path", ImVec2(140, 0)) && brush4.isActive() && pathStartSet) {
                 pathEnd = brush4.getPosition();
-                if (pathMode == 0)
+                if (pathMode == 0) {
                     app.getTerrainEditor().carveRiver(pathStart, pathEnd, pathWidth, pathDepth);
-                else
+                    app.showToast("River carved");
+                } else {
                     app.getTerrainEditor().flattenRoad(pathStart, pathEnd, pathWidth);
-                app.showToast(pathMode == 0 ? "River carved" : "Road flattened");
+                    app.getTexturePainter().paintAlongPath(pathStart, pathEnd, pathWidth,
+                        "Tileset\\Elwynn\\ElwynnCobblestoneBase.blp");
+                    app.showToast("Road flattened + textured");
+                }
                 pathStartSet = false;
             }
             if (pathStartSet)

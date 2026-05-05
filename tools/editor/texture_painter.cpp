@@ -233,6 +233,62 @@ void TexturePainter::autoPaintBySlope(float slopeThreshold, const std::string& s
     }
 }
 
+void TexturePainter::paintAlongPath(const glm::vec3& start, const glm::vec3& end,
+                                     float width, const std::string& texturePath) {
+    if (!terrain_ || texturePath.empty()) return;
+    uint32_t texId = ensureTextureInList(texturePath);
+    glm::vec2 lineStart(start.x, start.y);
+    glm::vec2 lineEnd(end.x, end.y);
+    glm::vec2 lineDir = glm::normalize(lineEnd - lineStart);
+    float lineLen = glm::length(lineEnd - lineStart);
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap() || chunk.layers.empty()) continue;
+
+        int cx = ci % 16, cy = ci / 16;
+        float tileNW_X = (32.0f - static_cast<float>(terrain_->coord.y)) * 533.33333f;
+        float tileNW_Y = (32.0f - static_cast<float>(terrain_->coord.x)) * 533.33333f;
+        float chunkCenterX = tileNW_X - (cy + 0.5f) * (533.33333f / 16.0f);
+        float chunkCenterY = tileNW_Y - (cx + 0.5f) * (533.33333f / 16.0f);
+
+        // Quick distance check
+        glm::vec2 cc(chunkCenterX, chunkCenterY);
+        glm::vec2 toCC = cc - lineStart;
+        float proj = glm::dot(toCC, lineDir);
+        proj = std::clamp(proj, 0.0f, lineLen);
+        glm::vec2 closest = lineStart + lineDir * proj;
+        if (glm::length(cc - closest) > width + 40.0f) continue;
+
+        int layerIdx = ensureLayerOnChunk(ci, texId);
+        if (layerIdx < 0) continue;
+
+        size_t alphaOffset = chunk.layers[layerIdx].offsetMCAL;
+        if (alphaOffset + 4096 > chunk.alphaMap.size()) continue;
+
+        float texelSize = (533.33333f / 16.0f) / 64.0f;
+        for (int ty = 0; ty < 64; ty++) {
+            for (int tx = 0; tx < 64; tx++) {
+                float wx = tileNW_X - cy * (533.33333f / 16.0f) - (ty + 0.5f) * texelSize;
+                float wy = tileNW_Y - cx * (533.33333f / 16.0f) - (tx + 0.5f) * texelSize;
+                glm::vec2 p(wx, wy);
+                glm::vec2 toP = p - lineStart;
+                float t = glm::dot(toP, lineDir);
+                t = std::clamp(t, 0.0f, lineLen);
+                glm::vec2 near = lineStart + lineDir * t;
+                float dist = glm::length(p - near);
+                if (dist < width) {
+                    float falloff = 1.0f - (dist / width);
+                    falloff = falloff * falloff;
+                    uint8_t alpha = static_cast<uint8_t>(std::min(255.0f, falloff * 255.0f));
+                    chunk.alphaMap[alphaOffset + ty * 64 + tx] = std::max(
+                        chunk.alphaMap[alphaOffset + ty * 64 + tx], alpha);
+                }
+            }
+        }
+    }
+}
+
 std::vector<int> TexturePainter::erase(const glm::vec3& center, float radius,
                                         float strength, float falloff) {
     if (!terrain_ || activeTexture_.empty()) return {};
