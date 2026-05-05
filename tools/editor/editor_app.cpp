@@ -214,6 +214,7 @@ void EditorApp::processEvents() {
                     if (sc == SDL_SCANCODE_3) setMode(EditorMode::PlaceObject);
                     if (sc == SDL_SCANCODE_4) setMode(EditorMode::Water);
                     if (sc == SDL_SCANCODE_5) setMode(EditorMode::NPC);
+                    if (sc == SDL_SCANCODE_6) setMode(EditorMode::Quest);
                 }
                 // F1 handled by UI (showHelp_ toggle)
                 // Transform shortcuts (Blender-style)

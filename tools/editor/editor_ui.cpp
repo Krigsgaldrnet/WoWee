@@ -233,6 +233,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("3 — Objects");
             ImGui::BulletText("4 — Water");
             ImGui::BulletText("5 — NPCs");
+            ImGui::BulletText("6 — Quests");
             ImGui::Separator();
             ImGui::Text("View:");
             ImGui::BulletText("F1 — this help");
