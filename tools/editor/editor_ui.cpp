@@ -216,12 +216,16 @@ void EditorUI::renderMenuBar(EditorApp& app) {
         if (ImGui::BeginMenu("Help")) {
             if (ImGui::MenuItem("Keyboard Shortcuts", "F1")) showHelp_ = !showHelp_;
             ImGui::Separator();
-            if (ImGui::MenuItem("About Wowee Editor")) {
-                ImGui::OpenPopup("AboutEditor");
-            }
+            if (ImGui::MenuItem("About Wowee Editor")) showAbout_ = true;
             ImGui::EndMenu();
         }
-        if (ImGui::BeginPopup("AboutEditor")) {
+        ImGui::EndMainMenuBar();
+    }
+
+    // About dialog (must be outside menu bar scope)
+    if (showAbout_) {
+        ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("About Wowee World Editor", &showAbout_)) {
             ImGui::Text("Wowee World Editor");
             ImGui::Text("by Kelsi Davis");
             ImGui::Separator();
@@ -233,9 +237,8 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Text("Export: ADT + WDT + JSON (zone manifest)");
             ImGui::Text("9k+ lines, WoW 3.3.5a ADT/WDT format");
             ImGui::Text("Built with SDL2 / Vulkan / ImGui");
-            ImGui::EndPopup();
         }
-        ImGui::EndMainMenuBar();
+        ImGui::End();
     }
 
     // Help overlay
