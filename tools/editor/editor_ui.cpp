@@ -378,7 +378,8 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Separator();
             ImGui::Text("6 modes, 30+ terrain tools, 3 noise types");
             ImGui::Text("Export: ADT + WDT + JSON (zone manifest)");
-            ImGui::Text("9k+ lines, WoW 3.3.5a ADT/WDT format");
+            ImGui::Text("11k+ lines, 6 novel open formats");
+            ImGui::Text("WOT/WHM/WOM/WOB/WCP + PNG/JSON");
             ImGui::Text("Built with SDL2 / Vulkan / ImGui");
         }
         ImGui::End();
