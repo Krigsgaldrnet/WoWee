@@ -94,6 +94,16 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             bool wf = app.isWireframe();
             if (ImGui::MenuItem("Wireframe", "F3", &wf)) app.setWireframe(wf);
             if (ImGui::MenuItem("Reset Camera")) app.resetCamera();
+            ImGui::Separator();
+            if (ImGui::MenuItem("Save Bookmark", "F5")) app.saveBookmark("");
+            auto& bmarks = app.getBookmarks();
+            if (!bmarks.empty() && ImGui::BeginMenu("Load Bookmark")) {
+                for (int i = 0; i < static_cast<int>(bmarks.size()); i++) {
+                    if (ImGui::MenuItem(bmarks[i].name.c_str()))
+                        app.loadBookmark(i);
+                }
+                ImGui::EndMenu();
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -379,6 +389,32 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
             if (ImGui::Button("Deselect", ImVec2(100, 0)))
                 placer.clearSelection();
         }
+
+        ImGui::Separator();
+        // Object scatter
+        if (ImGui::CollapsingHeader("Scatter Objects")) {
+            static int objScatterCount = 8;
+            static float objScatterRadius = 60.0f;
+            static float objMinScale = 0.8f;
+            static float objMaxScale = 1.5f;
+            ImGui::SliderInt("Count##objsc", &objScatterCount, 1, 50);
+            ImGui::SliderFloat("Radius##objsc", &objScatterRadius, 10.0f, 300.0f);
+            ImGui::DragFloatRange2("Scale##objsc", &objMinScale, &objMaxScale, 0.05f, 0.1f, 10.0f);
+            auto& brush = app.getTerrainEditor().brush();
+            if (ImGui::Button("Scatter at Cursor##obj", ImVec2(-1, 0))) {
+                if (brush.isActive() && !placer.getActivePath().empty()) {
+                    placer.scatter(brush.getPosition(), objScatterRadius,
+                                   objScatterCount, objMinScale, objMaxScale);
+                    app.markObjectsDirty();
+                }
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "Scatters selected model with random rotation/scale");
+        }
+
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1), "Left-click: place | Ctrl+click: select");
+        ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1), "G: move | R: rotate | T: scale | Del: remove");
     }
     ImGui::End();
 }

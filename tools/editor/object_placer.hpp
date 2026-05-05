@@ -61,6 +61,10 @@ public:
     bool canUndoPlace() const { return !undoStack_.empty(); }
     void undoLastPlace();
 
+    // Scatter: place multiple copies with random offset/rotation
+    void scatter(const glm::vec3& center, float radius, int count,
+                 float minScale, float maxScale);
+
 private:
     uint32_t nextUniqueId();
 

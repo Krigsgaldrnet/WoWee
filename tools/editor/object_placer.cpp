@@ -2,6 +2,7 @@
 #include "core/logger.hpp"
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 namespace wowee {
 namespace editor {
@@ -93,6 +94,34 @@ void ObjectPlacer::deleteSelected() {
     if (selectedIdx_ < 0 || selectedIdx_ >= static_cast<int>(objects_.size())) return;
     objects_.erase(objects_.begin() + selectedIdx_);
     selectedIdx_ = -1;
+}
+
+void ObjectPlacer::scatter(const glm::vec3& center, float radius, int count,
+                            float minScale, float maxScale) {
+    if (activePath_.empty()) return;
+    std::mt19937 rng(static_cast<uint32_t>(center.x * 100 + center.y * 37 + objects_.size()));
+    std::uniform_real_distribution<float> distAngle(0.0f, 6.2831853f);
+    std::uniform_real_distribution<float> distDist(0.0f, 1.0f);
+    std::uniform_real_distribution<float> distRot(0.0f, 360.0f);
+    std::uniform_real_distribution<float> distScale(minScale, maxScale);
+
+    for (int i = 0; i < count; i++) {
+        float angle = distAngle(rng);
+        float dist = std::sqrt(distDist(rng)) * radius;
+        glm::vec3 pos = center + glm::vec3(std::cos(angle) * dist, std::sin(angle) * dist, 0.0f);
+
+        PlacedObject obj;
+        obj.type = activeType_;
+        obj.path = activePath_;
+        obj.nameId = 0;
+        obj.uniqueId = nextUniqueId();
+        obj.position = pos;
+        obj.rotation = glm::vec3(0.0f, distRot(rng), 0.0f);
+        obj.scale = distScale(rng);
+        obj.selected = false;
+        objects_.push_back(obj);
+    }
+    LOG_INFO("Scattered ", count, " objects in radius ", radius);
 }
 
 void ObjectPlacer::undoLastPlace() {

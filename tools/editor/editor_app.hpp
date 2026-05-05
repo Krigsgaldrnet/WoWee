@@ -67,6 +67,12 @@ public:
 
     // Multi-tile support
     void addAdjacentTile(int offsetX, int offsetY);
+
+    // Camera bookmarks
+    struct CameraBookmark { glm::vec3 pos; float yaw; float pitch; std::string name; };
+    void saveBookmark(const std::string& name);
+    void loadBookmark(int index);
+    const std::vector<CameraBookmark>& getBookmarks() const { return bookmarks_; }
     TransformGizmo& getGizmo() { return viewport_.getGizmo(); }
     bool shouldOpenContextMenu() const { return openContextMenu_; }
     void clearContextMenuFlag() { openContextMenu_ = false; }
@@ -102,6 +108,7 @@ private:
     bool objectsDirty_ = false;
     bool openContextMenu_ = false;
     std::string lastSavePath_;
+    std::vector<CameraBookmark> bookmarks_;
     size_t lastObjectCount_ = 0;
     EditorMode mode_ = EditorMode::Sculpt;
     float waterHeight_ = 100.0f;

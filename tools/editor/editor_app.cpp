@@ -189,6 +189,7 @@ void EditorApp::processEvents() {
             if (event.type == SDL_KEYDOWN) {
                 auto sc = event.key.keysym.scancode;
                 if (sc == SDL_SCANCODE_F3) setWireframe(!isWireframe());
+                if (sc == SDL_SCANCODE_F5) saveBookmark("");
                 // Transform shortcuts (Blender-style)
                 if (objectPlacer_.getSelected()) {
                     if (sc == SDL_SCANCODE_G) startGizmoMode(TransformMode::Move);
@@ -601,6 +602,19 @@ void EditorApp::setGizmoAxis(TransformAxis axis) {
     viewport_.getGizmo().setAxis(axis);
     if (auto* sel = objectPlacer_.getSelected())
         viewport_.getGizmo().setTarget(sel->position, sel->scale);
+}
+
+void EditorApp::saveBookmark(const std::string& name) {
+    CameraBookmark bm;
+    bm.pos = camera_.getCamera().getPosition();
+    bm.yaw = 0; bm.pitch = 0; // EditorCamera doesn't expose these directly
+    bm.name = name.empty() ? ("Bookmark " + std::to_string(bookmarks_.size() + 1)) : name;
+    bookmarks_.push_back(bm);
+}
+
+void EditorApp::loadBookmark(int index) {
+    if (index < 0 || index >= static_cast<int>(bookmarks_.size())) return;
+    camera_.setPosition(bookmarks_[index].pos);
 }
 
 void EditorApp::addAdjacentTile(int offsetX, int offsetY) {
