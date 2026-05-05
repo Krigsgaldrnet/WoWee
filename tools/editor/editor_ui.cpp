@@ -498,6 +498,8 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Amplitude", &noiseAmp, 1.0f, 200.0f, "%.0f");
             ImGui::SliderInt("Octaves", &noiseOctaves, 1, 8);
             ImGui::InputInt("Seed", &noiseSeed);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Random##seed")) noiseSeed = static_cast<int>(std::rand());
             if (ImGui::Button("Apply Noise", ImVec2(-1, 0))) {
                 app.getTerrainEditor().applyNoise(noiseFreq, noiseAmp, noiseOctaves,
                                                    static_cast<uint32_t>(noiseSeed));
