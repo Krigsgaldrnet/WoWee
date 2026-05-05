@@ -816,6 +816,41 @@ void EditorApp::flyToSelected() {
     }
 }
 
+void EditorApp::generateCompleteZone() {
+    if (!terrain_.isLoaded()) return;
+    showToast("Generating zone...");
+
+    // Step 1: Apply noise
+    terrainEditor_.applyNoise(0.005f, 30.0f, 4, 42);
+
+    // Step 2: Smooth
+    terrainEditor_.smoothEntireTile(3);
+
+    // Step 3: Recalc normals for slope paint
+    std::vector<int> allChunks;
+    for (int i = 0; i < 256; i++) allChunks.push_back(i);
+    terrainEditor_.recalcNormals(allChunks);
+
+    // Step 4: Auto-paint by height
+    std::vector<TexturePainter::HeightBand> bands = {
+        {90.0f, "Tileset\\Tanaris\\TanarisSandBase01.blp"},
+        {110.0f, "Tileset\\Elwynn\\ElwynnGrassBase.blp"},
+        {140.0f, "Tileset\\Barrens\\BarrensRock01.blp"},
+        {99999.0f, "Tileset\\Expansion02\\Dragonblight\\DragonblightFreshSmoothSnowA.blp"}
+    };
+    texturePainter_.autoPaintByHeight(bands);
+
+    // Step 5: Slope paint (rock on cliffs)
+    texturePainter_.autoPaintBySlope(0.4f, "Tileset\\Desolace\\DesolaceRock01.blp");
+
+    // Refresh
+    auto mesh = terrainEditor_.regenerateMesh();
+    viewport_.clearTerrain();
+    viewport_.loadTerrain(mesh, terrain_.textures, loadedTileX_, loadedTileY_);
+
+    showToast("Zone generated!");
+}
+
 void EditorApp::clearAllObjects() {
     vkDeviceWaitIdle(window_->getVkContext()->getDevice());
     objectPlacer_.clearAll();

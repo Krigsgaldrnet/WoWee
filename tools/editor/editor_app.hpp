@@ -77,6 +77,7 @@ public:
     void snapSelectedToGround();
     void flyToSelected();
     void clearAllObjects();
+    void generateCompleteZone();
     void centerOnTerrain();
 
     // Multi-tile support
