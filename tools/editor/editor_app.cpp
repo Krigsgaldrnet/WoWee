@@ -212,10 +212,17 @@ void EditorApp::processEvents() {
                     }
                 }
                 if (sc == SDL_SCANCODE_Z && (event.key.keysym.mod & KMOD_CTRL)) {
-                    if (event.key.keysym.mod & KMOD_SHIFT)
-                        terrainEditor_.redo();
-                    else
-                        terrainEditor_.undo();
+                    if (mode_ == EditorMode::Sculpt) {
+                        if (event.key.keysym.mod & KMOD_SHIFT)
+                            terrainEditor_.redo();
+                        else
+                            terrainEditor_.undo();
+                    } else if (mode_ == EditorMode::PlaceObject || mode_ == EditorMode::NPC) {
+                        if (!(event.key.keysym.mod & KMOD_SHIFT) && objectPlacer_.canUndoPlace()) {
+                            objectPlacer_.undoLastPlace();
+                            objectsDirty_ = true;
+                        }
+                    }
                 }
             }
             if (!io.WantCaptureKeyboard)
@@ -552,6 +559,21 @@ void EditorApp::setGizmoAxis(TransformAxis axis) {
     viewport_.getGizmo().setAxis(axis);
     if (auto* sel = objectPlacer_.getSelected())
         viewport_.getGizmo().setTarget(sel->position, sel->scale);
+}
+
+void EditorApp::snapSelectedToGround() {
+    auto* sel = objectPlacer_.getSelected();
+    if (!sel || !terrain_.isLoaded()) return;
+
+    // Cast ray straight down from object position
+    rendering::Ray ray;
+    ray.origin = sel->position + glm::vec3(0, 0, 500);
+    ray.direction = glm::vec3(0, 0, -1);
+    glm::vec3 hitPos;
+    if (terrainEditor_.raycastTerrain(ray, hitPos)) {
+        sel->position.z = hitPos.z;
+        objectsDirty_ = true;
+    }
 }
 
 void EditorApp::resetCamera() {

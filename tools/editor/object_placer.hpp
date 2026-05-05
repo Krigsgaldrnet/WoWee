@@ -57,6 +57,10 @@ public:
     float getPlacementScale() const { return placementScale_; }
     void setPlacementScale(float s) { placementScale_ = s; }
 
+    // Undo last placement
+    bool canUndoPlace() const { return !undoStack_.empty(); }
+    void undoLastPlace();
+
 private:
     uint32_t nextUniqueId();
 
@@ -65,6 +69,7 @@ private:
     PlaceableType activeType_ = PlaceableType::M2;
 
     std::vector<PlacedObject> objects_;
+    std::vector<int> undoStack_; // indices of recently placed objects
     int selectedIdx_ = -1;
     uint32_t uniqueIdCounter_ = 1;
     float placementRotY_ = 0.0f;

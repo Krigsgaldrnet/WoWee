@@ -29,6 +29,8 @@ void ObjectPlacer::placeObject(const glm::vec3& position) {
     obj.selected = false;
 
     objects_.push_back(obj);
+    undoStack_.push_back(static_cast<int>(objects_.size() - 1));
+    if (undoStack_.size() > 50) undoStack_.erase(undoStack_.begin());
     LOG_INFO("Placed ", (activeType_ == PlaceableType::M2 ? "M2" : "WMO"),
              ": ", activePath_, " at (", position.x, ",", position.y, ",", position.z, ")");
 }
@@ -91,6 +93,19 @@ void ObjectPlacer::deleteSelected() {
     if (selectedIdx_ < 0 || selectedIdx_ >= static_cast<int>(objects_.size())) return;
     objects_.erase(objects_.begin() + selectedIdx_);
     selectedIdx_ = -1;
+}
+
+void ObjectPlacer::undoLastPlace() {
+    if (undoStack_.empty()) return;
+    int idx = undoStack_.back();
+    undoStack_.pop_back();
+    if (idx >= 0 && idx < static_cast<int>(objects_.size())) {
+        if (selectedIdx_ == idx) selectedIdx_ = -1;
+        else if (selectedIdx_ > idx) selectedIdx_--;
+        objects_.erase(objects_.begin() + idx);
+        // Adjust remaining undo indices
+        for (auto& i : undoStack_) { if (i > idx) i--; }
+    }
 }
 
 void ObjectPlacer::syncToTerrain() {

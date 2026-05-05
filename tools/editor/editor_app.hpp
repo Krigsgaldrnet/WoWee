@@ -61,6 +61,7 @@ public:
 
     void startGizmoMode(TransformMode mode);
     void setGizmoAxis(TransformAxis axis);
+    void snapSelectedToGround();
     TransformGizmo& getGizmo() { return viewport_.getGizmo(); }
     bool shouldOpenContextMenu() const { return openContextMenu_; }
     void clearContextMenuFlag() { openContextMenu_ = false; }

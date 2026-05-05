@@ -360,8 +360,10 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
 
             if (changed) app.markObjectsDirty();
 
-            if (ImGui::Button("Delete", ImVec2(100, 0))) placer.deleteSelected();
+            if (ImGui::Button("Snap Ground", ImVec2(100, 0)))
+                app.snapSelectedToGround();
             ImGui::SameLine();
+            if (ImGui::Button("Delete", ImVec2(100, 0))) placer.deleteSelected();
             if (ImGui::Button("Duplicate", ImVec2(100, 0))) {
                 PlacedObject copy = *sel;
                 copy.uniqueId = 0;
