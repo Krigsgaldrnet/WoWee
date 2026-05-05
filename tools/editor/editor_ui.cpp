@@ -253,10 +253,14 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 }
                 if (ImGui::MenuItem("Inspect Pack Info")) {
                     editor::ContentPackInfo info;
-                    if (editor::ContentPacker::readInfo(wcpImportPath, info))
-                        app.showToast(info.name + " by " + info.author + " (" + info.version + ")");
-                    else
-                        app.showToast("Cannot read pack info");
+                    if (editor::ContentPacker::readInfo(wcpImportPath, info)) {
+                        std::string msg = info.name + " v" + info.version;
+                        if (!info.author.empty()) msg += " by " + info.author;
+                        msg += " (" + info.format + ")";
+                        app.showToast(msg);
+                    } else {
+                        app.showToast("Cannot read pack — check path");
+                    }
                 }
                 ImGui::EndMenu();
             }
