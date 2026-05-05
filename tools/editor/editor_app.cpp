@@ -549,6 +549,37 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     camera_.setPosition(glm::vec3(centerX, centerY, 400.0f));
     camera_.setYawPitch(0.0f, -45.0f);
 
+    // Import doodad/WMO placements from the ADT itself
+    for (const auto& dp : terrain_.doodadPlacements) {
+        if (dp.nameId < terrain_.doodadNames.size()) {
+            PlacedObject obj;
+            obj.type = PlaceableType::M2;
+            obj.path = terrain_.doodadNames[dp.nameId];
+            obj.position = glm::vec3(dp.position[0], dp.position[1], dp.position[2]);
+            obj.rotation = glm::vec3(dp.rotation[0], dp.rotation[1], dp.rotation[2]);
+            obj.scale = static_cast<float>(dp.scale) / 1024.0f;
+            obj.uniqueId = dp.uniqueId;
+            objectPlacer_.getObjects().push_back(obj);
+        }
+    }
+    for (const auto& wp : terrain_.wmoPlacements) {
+        if (wp.nameId < terrain_.wmoNames.size()) {
+            PlacedObject obj;
+            obj.type = PlaceableType::WMO;
+            obj.path = terrain_.wmoNames[wp.nameId];
+            obj.position = glm::vec3(wp.position[0], wp.position[1], wp.position[2]);
+            obj.rotation = glm::vec3(wp.rotation[0], wp.rotation[1], wp.rotation[2]);
+            obj.scale = 1.0f;
+            obj.uniqueId = wp.uniqueId;
+            objectPlacer_.getObjects().push_back(obj);
+        }
+    }
+    if (!terrain_.doodadPlacements.empty() || !terrain_.wmoPlacements.empty()) {
+        objectsDirty_ = true;
+        LOG_INFO("Imported ", terrain_.doodadPlacements.size(), " doodads + ",
+                 terrain_.wmoPlacements.size(), " WMOs from ADT");
+    }
+
     LOG_INFO("ADT loaded: ", mapName, " [", tileX, ",", tileY, "]");
 
     // Try loading objects/NPCs from output directory if they exist

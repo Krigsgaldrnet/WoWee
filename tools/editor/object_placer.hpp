@@ -54,6 +54,7 @@ public:
     bool loadFromFile(const std::string& path);
 
     const std::vector<PlacedObject>& getObjects() const { return objects_; }
+    std::vector<PlacedObject>& getObjects() { return objects_; }
     void clearAll() { objects_.clear(); undoStack_.clear(); selectedIdx_ = -1; }
     size_t objectCount() const { return objects_.size(); }
 
