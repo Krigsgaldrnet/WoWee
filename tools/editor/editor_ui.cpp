@@ -242,11 +242,23 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::MenuItem("Import Content Pack (.wcp)")) {
+            if (ImGui::BeginMenu("Content Packs (.wcp)")) {
                 static char wcpImportPath[256] = "content.wcp";
-                // Simple import — unpack to custom_zones/
-                editor::ContentPacker::unpackZone(wcpImportPath, "custom_zones");
-                app.showToast("Content pack imported to custom_zones/");
+                ImGui::InputText("Path##wcp", wcpImportPath, sizeof(wcpImportPath));
+                if (ImGui::MenuItem("Import (unpack to custom_zones/)")) {
+                    if (editor::ContentPacker::unpackZone(wcpImportPath, "custom_zones"))
+                        app.showToast("Content pack imported");
+                    else
+                        app.showToast("Import failed — check path");
+                }
+                if (ImGui::MenuItem("Inspect Pack Info")) {
+                    editor::ContentPackInfo info;
+                    if (editor::ContentPacker::readInfo(wcpImportPath, info))
+                        app.showToast(info.name + " by " + info.author + " (" + info.version + ")");
+                    else
+                        app.showToast("Cannot read pack info");
+                }
+                ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Import Heightmap", app.hasTerrainLoaded())) {
                 static char hmPath[256] = "heightmap.raw";
