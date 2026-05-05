@@ -169,7 +169,23 @@ void EditorUI::renderMenuBar(EditorApp& app) {
         }
         if (ImGui::BeginMenu("Help")) {
             if (ImGui::MenuItem("Keyboard Shortcuts", "F1")) showHelp_ = !showHelp_;
+            ImGui::Separator();
+            if (ImGui::MenuItem("About Wowee Editor")) {
+                ImGui::OpenPopup("AboutEditor");
+            }
             ImGui::EndMenu();
+        }
+        if (ImGui::BeginPopup("AboutEditor")) {
+            ImGui::Text("Wowee World Editor");
+            ImGui::Separator();
+            ImGui::Text("Version: 0.1.0 (rough/WIP)");
+            ImGui::Text("Standalone world editor for creating");
+            ImGui::Text("custom WoW zones for the wowee client.");
+            ImGui::Separator();
+            ImGui::Text("Tools: Sculpt, Paint, Objects, Water, NPCs");
+            ImGui::Text("Export: ADT + WDT + JSON (zone manifest)");
+            ImGui::Text("Formats: WoW 3.3.5a compatible");
+            ImGui::EndPopup();
         }
         ImGui::EndMainMenuBar();
     }
@@ -1111,6 +1127,18 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
         } else {
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No terrain loaded");
         }
+        if (auto* t = app.getTerrainEditor().getTerrain()) {
+            ImGui::Text("Textures: %zu", t->textures.size());
+            int waterChunks = 0;
+            int holeChunks = 0;
+            for (int i = 0; i < 256; i++) {
+                if (t->waterData[i].hasWater()) waterChunks++;
+                if (t->chunks[i].holes) holeChunks++;
+            }
+            if (waterChunks > 0) ImGui::Text("Water chunks: %d", waterChunks);
+            if (holeChunks > 0) ImGui::Text("Hole chunks: %d", holeChunks);
+        }
+
         ImGui::Separator();
         auto pos = app.getEditorCamera().getCamera().getPosition();
         ImGui::Text("Camera: %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
@@ -1145,12 +1173,17 @@ void EditorUI::renderStatusBar(EditorApp& app) {
     if (ImGui::Begin("##StatusBar", nullptr, flags)) {
         const char* ms[] = {"Sculpt", "Paint", "Objects", "Water", "NPCs"};
         const char* m = ms[static_cast<int>(app.getMode())];
-        if (app.hasTerrainLoaded())
+        if (app.hasTerrainLoaded()) {
             ImGui::Text("[%s] %s [%d,%d]%s", m, app.getLoadedMap().c_str(),
                         app.getLoadedTileX(), app.getLoadedTileY(),
                         app.getTerrainEditor().hasUnsavedChanges() ? " *" : "");
-        else
+            ImGui::SameLine(vp->Size.x * 0.4f);
+            ImGui::Text("Obj:%zu NPC:%zu",
+                        app.getObjectPlacer().objectCount(),
+                        app.getNpcSpawner().spawnCount());
+        } else {
             ImGui::Text("[%s] Wowee World Editor", m);
+        }
         ImGui::SameLine(vp->Size.x - 120);
         ImGui::Text("%.1f FPS", ImGui::GetIO().Framerate);
     }
