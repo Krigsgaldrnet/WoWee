@@ -568,7 +568,7 @@ void EditorViewport::updatePerFrameUBO() {
     data.view = camera_->getViewMatrix();
     data.projection = camera_->getProjectionMatrix();
     data.lightSpaceMatrix = glm::mat4(1.0f);
-    data.lightDir = glm::vec4(glm::normalize(glm::vec3(0.5f, -1.0f, 0.3f)), 0.0f);
+    data.lightDir = glm::vec4(lightDir_, 0.0f);
     data.lightColor = glm::vec4(1.0f, 0.95f, 0.85f, 0.0f);
     data.ambientColor = glm::vec4(0.3f, 0.3f, 0.35f, 0.0f);
     data.viewPos = glm::vec4(camera_->getPosition(), 0.0f);

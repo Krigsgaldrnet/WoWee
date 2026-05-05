@@ -124,7 +124,9 @@ void EditorApp::run() {
         rpInfo.renderArea.extent = vkCtx->getSwapchainExtent();
 
         VkClearValue clearValues[4]{};
-        clearValues[0].color = {{0.15f, 0.15f, 0.2f, 1.0f}};
+        float cr, cg, cb;
+        viewport_.getClearColor(cr, cg, cb);
+        clearValues[0].color = {{cr, cg, cb, 1.0f}};
         clearValues[1].depthStencil = {1.0f, 0};
         rpInfo.clearValueCount = 2;
         rpInfo.pClearValues = clearValues;
@@ -592,6 +594,23 @@ void EditorApp::quickSave() {
 
 void EditorApp::requestQuit() {
     window_->setShouldClose(true);
+}
+
+void EditorApp::setSkyPreset(int preset) {
+    switch (preset) {
+        case 0: // Day
+            viewport_.setClearColor(0.4f, 0.6f, 0.9f);
+            viewport_.setLightDir(glm::normalize(glm::vec3(0.5f, -1.0f, 0.8f)));
+            break;
+        case 1: // Dusk
+            viewport_.setClearColor(0.6f, 0.3f, 0.2f);
+            viewport_.setLightDir(glm::normalize(glm::vec3(0.8f, -0.3f, 0.1f)));
+            break;
+        case 2: // Night
+            viewport_.setClearColor(0.05f, 0.05f, 0.12f);
+            viewport_.setLightDir(glm::normalize(glm::vec3(0.2f, -0.5f, 0.8f)));
+            break;
+    }
 }
 
 void EditorApp::startGizmoMode(TransformMode mode) {

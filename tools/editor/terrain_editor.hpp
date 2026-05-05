@@ -51,6 +51,9 @@ public:
     // Recalculate normals for modified chunks (improves lighting after sculpt)
     void recalcNormals(const std::vector<int>& chunkIndices);
 
+    // Noise generator: applies procedural height noise to the terrain
+    void applyNoise(float frequency, float amplitude, int octaves, uint32_t seed);
+
     // Water editing
     void setWaterLevel(const glm::vec3& center, float radius, float waterHeight, uint16_t liquidType = 0);
     void removeWater(const glm::vec3& center, float radius);

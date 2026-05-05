@@ -55,6 +55,11 @@ public:
     void setWireframe(bool enabled);
     bool isWireframe() const { return wireframe_; }
 
+    void setClearColor(float r, float g, float b) { clearR_=r; clearG_=g; clearB_=b; }
+    void getClearColor(float& r, float& g, float& b) const { r=clearR_; g=clearG_; b=clearB_; }
+    void setLightDir(const glm::vec3& d) { lightDir_ = d; }
+    glm::vec3 getLightDir() const { return lightDir_; }
+
     rendering::TerrainRenderer* getTerrainRenderer() { return terrainRenderer_.get(); }
 
 private:
@@ -85,6 +90,8 @@ private:
     VkSampler shadowSampler_ = VK_NULL_HANDLE;
 
     bool wireframe_ = false;
+    float clearR_ = 0.15f, clearG_ = 0.15f, clearB_ = 0.2f;
+    glm::vec3 lightDir_ = glm::normalize(glm::vec3(0.5f, -1.0f, 0.3f));
 
     // Ghost preview state
     std::string ghostModelPath_;

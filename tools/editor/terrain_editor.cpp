@@ -586,6 +586,57 @@ void TerrainEditor::removeWater(const glm::vec3& center, float radius) {
     }
 }
 
+void TerrainEditor::applyNoise(float frequency, float amplitude, int octaves, uint32_t seed) {
+    if (!terrain_) return;
+
+    // Simple value noise with octaves
+    auto hash2d = [](int x, int y, uint32_t s) -> float {
+        uint32_t h = static_cast<uint32_t>(x * 374761393 + y * 668265263 + s * 1274126177);
+        h = (h ^ (h >> 13)) * 1274126177;
+        h = h ^ (h >> 16);
+        return static_cast<float>(h & 0xFFFF) / 65535.0f * 2.0f - 1.0f;
+    };
+
+    auto smoothNoise = [&](float fx, float fy, uint32_t s) -> float {
+        int ix = static_cast<int>(std::floor(fx));
+        int iy = static_cast<int>(std::floor(fy));
+        float fracX = fx - ix;
+        float fracY = fy - iy;
+        // Smoothstep
+        fracX = fracX * fracX * (3.0f - 2.0f * fracX);
+        fracY = fracY * fracY * (3.0f - 2.0f * fracY);
+        float v00 = hash2d(ix, iy, s);
+        float v10 = hash2d(ix + 1, iy, s);
+        float v01 = hash2d(ix, iy + 1, s);
+        float v11 = hash2d(ix + 1, iy + 1, s);
+        float i0 = v00 + (v10 - v00) * fracX;
+        float i1 = v01 + (v11 - v01) * fracX;
+        return i0 + (i1 - i0) * fracY;
+    };
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        int cx = ci % 16, cy = ci / 16;
+
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 wpos = chunkVertexWorldPos(ci, v);
+
+            float total = 0.0f;
+            float amp = amplitude;
+            float freq = frequency;
+            for (int o = 0; o < octaves; o++) {
+                total += smoothNoise(wpos.x * freq, wpos.y * freq, seed + o * 97) * amp;
+                freq *= 2.0f;
+                amp *= 0.5f;
+            }
+            chunk.heightMap.heights[v] += total;
+        }
+        dirtyChunks_.push_back(ci);
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::punchHole(const glm::vec3& center, float radius) {
     if (!terrain_) return;
     auto affected = getAffectedChunks(center, radius);

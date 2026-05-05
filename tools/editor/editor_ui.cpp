@@ -101,6 +101,13 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             if (ImGui::MenuItem("Wireframe", "F3", &wf)) app.setWireframe(wf);
             if (ImGui::MenuItem("Reset Camera")) app.resetCamera();
             ImGui::Separator();
+            if (ImGui::BeginMenu("Sky / Lighting")) {
+                if (ImGui::MenuItem("Day")) app.setSkyPreset(0);
+                if (ImGui::MenuItem("Dusk")) app.setSkyPreset(1);
+                if (ImGui::MenuItem("Night")) app.setSkyPreset(2);
+                ImGui::EndMenu();
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Save Bookmark", "F5")) app.saveBookmark("");
             auto& bmarks = app.getBookmarks();
             if (!bmarks.empty() && ImGui::BeginMenu("Load Bookmark")) {
@@ -230,6 +237,24 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Set target height from cursor position");
         }
+        ImGui::Separator();
+        if (ImGui::CollapsingHeader("Noise Generator")) {
+            static float noiseFreq = 0.005f;
+            static float noiseAmp = 20.0f;
+            static int noiseOctaves = 4;
+            static int noiseSeed = 42;
+            ImGui::SliderFloat("Frequency", &noiseFreq, 0.001f, 0.05f, "%.4f");
+            ImGui::SliderFloat("Amplitude", &noiseAmp, 1.0f, 200.0f, "%.0f");
+            ImGui::SliderInt("Octaves", &noiseOctaves, 1, 8);
+            ImGui::InputInt("Seed", &noiseSeed);
+            if (ImGui::Button("Apply Noise", ImVec2(-1, 0))) {
+                app.getTerrainEditor().applyNoise(noiseFreq, noiseAmp, noiseOctaves,
+                                                   static_cast<uint32_t>(noiseSeed));
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "Adds procedural hills/valleys to entire tile");
+        }
+
         ImGui::Separator();
         ImGui::Text("Terrain Holes (cave entrances):");
         auto& brush = app.getTerrainEditor().brush();
