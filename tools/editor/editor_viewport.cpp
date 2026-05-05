@@ -730,6 +730,41 @@ void EditorViewport::destroyPerFrameResources() {
     }
 }
 
+void EditorViewport::setTimeOfDay(float t) {
+    timeOfDay_ = std::clamp(t, 0.0f, 24.0f);
+    float hour = timeOfDay_;
+
+    // Sun angle: noon=overhead, 6am/6pm=horizon, night=below
+    float sunAngle = (hour - 6.0f) / 12.0f * 3.14159f;
+    lightDir_ = glm::normalize(glm::vec3(std::cos(sunAngle) * 0.5f, -1.0f, std::sin(sunAngle)));
+
+    // Dawn/dusk warm tones, noon white, night blue
+    if (hour >= 6.0f && hour <= 8.0f) {
+        float t2 = (hour - 6.0f) / 2.0f;
+        lightColor_ = glm::mix(glm::vec3(1.0f, 0.5f, 0.2f), glm::vec3(1.0f, 0.95f, 0.85f), t2);
+        ambientColor_ = glm::mix(glm::vec3(0.15f, 0.1f, 0.2f), glm::vec3(0.3f, 0.3f, 0.35f), t2);
+        fogColor_ = glm::mix(glm::vec3(0.5f, 0.3f, 0.3f), glm::vec3(0.6f, 0.7f, 0.8f), t2);
+    } else if (hour >= 17.0f && hour <= 19.0f) {
+        float t2 = (hour - 17.0f) / 2.0f;
+        lightColor_ = glm::mix(glm::vec3(1.0f, 0.95f, 0.85f), glm::vec3(1.0f, 0.4f, 0.15f), t2);
+        ambientColor_ = glm::mix(glm::vec3(0.3f, 0.3f, 0.35f), glm::vec3(0.1f, 0.08f, 0.15f), t2);
+        fogColor_ = glm::mix(glm::vec3(0.6f, 0.7f, 0.8f), glm::vec3(0.4f, 0.25f, 0.3f), t2);
+    } else if (hour < 6.0f || hour > 19.0f) {
+        lightColor_ = glm::vec3(0.15f, 0.15f, 0.25f);
+        ambientColor_ = glm::vec3(0.05f, 0.05f, 0.1f);
+        fogColor_ = glm::vec3(0.1f, 0.1f, 0.15f);
+    } else {
+        lightColor_ = glm::vec3(1.0f, 0.95f, 0.85f);
+        ambientColor_ = glm::vec3(0.3f, 0.3f, 0.35f);
+        fogColor_ = glm::vec3(0.6f, 0.7f, 0.8f);
+    }
+
+    // Sky/clear color follows fog
+    clearR_ = fogColor_.x * 0.7f;
+    clearG_ = fogColor_.y * 0.7f;
+    clearB_ = fogColor_.z * 0.7f;
+}
+
 void EditorViewport::updatePerFrameUBO() {
     uint32_t frame = vkCtx_->getCurrentFrame();
 
@@ -738,11 +773,11 @@ void EditorViewport::updatePerFrameUBO() {
     data.projection = camera_->getProjectionMatrix();
     data.lightSpaceMatrix = glm::mat4(1.0f);
     data.lightDir = glm::vec4(lightDir_, 0.0f);
-    data.lightColor = glm::vec4(1.0f, 0.95f, 0.85f, 0.0f);
-    data.ambientColor = glm::vec4(0.3f, 0.3f, 0.35f, 0.0f);
+    data.lightColor = glm::vec4(lightColor_, 0.0f);
+    data.ambientColor = glm::vec4(ambientColor_, 0.0f);
     data.viewPos = glm::vec4(camera_->getPosition(), 0.0f);
-    data.fogColor = glm::vec4(0.6f, 0.7f, 0.8f, 0.0f);
-    data.fogParams = glm::vec4(5000.0f, 10000.0f, 0.0f, 0.0f);
+    data.fogColor = glm::vec4(fogColor_, 0.0f);
+    data.fogParams = glm::vec4(fogNear_, fogFar_, 0.0f, 0.0f);
     data.shadowParams = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
 
     std::memcpy(perFrameUBOMapped_[frame], &data, sizeof(data));

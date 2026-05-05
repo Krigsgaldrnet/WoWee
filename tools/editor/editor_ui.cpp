@@ -382,9 +382,21 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             if (ImGui::MenuItem("Center on Terrain", "Home")) app.centerOnTerrain();
             ImGui::Separator();
             if (ImGui::BeginMenu("Sky / Lighting")) {
-                if (ImGui::MenuItem("Day")) app.setSkyPreset(0);
-                if (ImGui::MenuItem("Dusk")) app.setSkyPreset(1);
-                if (ImGui::MenuItem("Night")) app.setSkyPreset(2);
+                auto& vp = app.getViewport();
+                float tod = vp.getTimeOfDay();
+                if (ImGui::SliderFloat("Time of Day", &tod, 0.0f, 24.0f, "%.1fh"))
+                    vp.setTimeOfDay(tod);
+                ImGui::Separator();
+                if (ImGui::MenuItem("Dawn (6:30)")) vp.setTimeOfDay(6.5f);
+                if (ImGui::MenuItem("Noon (12:00)")) vp.setTimeOfDay(12.0f);
+                if (ImGui::MenuItem("Dusk (18:00)")) vp.setTimeOfDay(18.0f);
+                if (ImGui::MenuItem("Night (22:00)")) vp.setTimeOfDay(22.0f);
+                ImGui::Separator();
+                ImGui::ColorEdit3("Light", &vp.getLightColor().x, ImGuiColorEditFlags_Float);
+                ImGui::ColorEdit3("Ambient", &vp.getAmbientColor().x, ImGuiColorEditFlags_Float);
+                ImGui::ColorEdit3("Fog", &vp.getFogColor().x, ImGuiColorEditFlags_Float);
+                ImGui::SliderFloat("Fog Near", &vp.getFogNear(), 100.0f, 10000.0f);
+                ImGui::SliderFloat("Fog Far", &vp.getFogFar(), 500.0f, 20000.0f);
                 ImGui::EndMenu();
             }
             ImGui::Separator();
@@ -1424,7 +1436,10 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         }
         if (auto* sel = placer.getSelected()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.9f, 0.3f, 1));
-            ImGui::Text("Selected: %s", sel->path.c_str());
+            if (placer.isMultiSelected())
+                ImGui::Text("Selected: %zu objects", placer.selectionCount());
+            else
+                ImGui::Text("Selected: %s", sel->path.c_str());
             ImGui::PopStyleColor();
 
             bool changed = false;

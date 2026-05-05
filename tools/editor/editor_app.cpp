@@ -428,15 +428,25 @@ void EditorApp::processEvents() {
                                 showToast("Start point set — click terrain for end");
                         }
                     }
-                    // Ctrl+click = select object (any mode)
+                    // Ctrl+click = select (Ctrl+Shift+click = add to selection)
                     else if ((event.key.keysym.mod & KMOD_CTRL) || (SDL_GetModState() & KMOD_CTRL)) {
+                        bool additive = (SDL_GetModState() & KMOD_SHIFT) != 0;
                         auto ext = window_->getVkContext()->getSwapchainExtent();
                         rendering::Ray ray = camera_.getCamera().screenToWorldRay(
                             static_cast<float>(event.button.x),
                             static_cast<float>(event.button.y),
                             static_cast<float>(ext.width),
                             static_cast<float>(ext.height));
-                        objectPlacer_.selectAt(ray, 200.0f);
+                        if (additive) {
+                            int prevSel = objectPlacer_.getSelectedIndex();
+                            int hit = objectPlacer_.selectAt(ray, 200.0f);
+                            if (hit >= 0) {
+                                if (prevSel >= 0) objectPlacer_.addToSelection(prevSel);
+                                objectPlacer_.addToSelection(hit);
+                            }
+                        } else {
+                            objectPlacer_.selectAt(ray, 200.0f);
+                        }
                     } else if (mode_ == EditorMode::NPC) {
                         auto ext = window_->getVkContext()->getSwapchainExtent();
                         rendering::Ray ray = camera_.getCamera().screenToWorldRay(
@@ -1049,18 +1059,9 @@ void EditorApp::updateToasts(float dt) {
 
 void EditorApp::setSkyPreset(int preset) {
     switch (preset) {
-        case 0: // Day
-            viewport_.setClearColor(0.4f, 0.6f, 0.9f);
-            viewport_.setLightDir(glm::normalize(glm::vec3(0.5f, -1.0f, 0.8f)));
-            break;
-        case 1: // Dusk
-            viewport_.setClearColor(0.6f, 0.3f, 0.2f);
-            viewport_.setLightDir(glm::normalize(glm::vec3(0.8f, -0.3f, 0.1f)));
-            break;
-        case 2: // Night
-            viewport_.setClearColor(0.05f, 0.05f, 0.12f);
-            viewport_.setLightDir(glm::normalize(glm::vec3(0.2f, -0.5f, 0.8f)));
-            break;
+        case 0: viewport_.setTimeOfDay(12.0f); break;
+        case 1: viewport_.setTimeOfDay(18.0f); break;
+        case 2: viewport_.setTimeOfDay(22.0f); break;
     }
 }
 

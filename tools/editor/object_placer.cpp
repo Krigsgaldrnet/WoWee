@@ -75,7 +75,32 @@ int ObjectPlacer::selectAt(const rendering::Ray& ray, float maxDist) {
     return bestIdx;
 }
 
+void ObjectPlacer::addToSelection(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(objects_.size())) return;
+    for (int si : selectedIndices_) { if (si == idx) return; }
+    selectedIndices_.push_back(idx);
+    objects_[idx].selected = true;
+    selectedIdx_ = idx;
+}
+
+void ObjectPlacer::toggleSelection(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(objects_.size())) return;
+    auto it = std::find(selectedIndices_.begin(), selectedIndices_.end(), idx);
+    if (it != selectedIndices_.end()) {
+        objects_[idx].selected = false;
+        selectedIndices_.erase(it);
+        selectedIdx_ = selectedIndices_.empty() ? -1 : selectedIndices_.back();
+    } else {
+        addToSelection(idx);
+    }
+}
+
 void ObjectPlacer::clearSelection() {
+    for (int idx : selectedIndices_) {
+        if (idx >= 0 && idx < static_cast<int>(objects_.size()))
+            objects_[idx].selected = false;
+    }
+    selectedIndices_.clear();
     if (selectedIdx_ >= 0 && selectedIdx_ < static_cast<int>(objects_.size()))
         objects_[selectedIdx_].selected = false;
     selectedIdx_ = -1;
@@ -87,22 +112,43 @@ PlacedObject* ObjectPlacer::getSelected() {
 }
 
 void ObjectPlacer::moveSelected(const glm::vec3& delta) {
-    if (auto* obj = getSelected()) obj->position += delta;
+    if (selectedIndices_.size() > 1) {
+        for (int idx : selectedIndices_) objects_[idx].position += delta;
+    } else if (auto* obj = getSelected()) {
+        obj->position += delta;
+    }
 }
 
 void ObjectPlacer::rotateSelected(const glm::vec3& deltaDeg) {
-    if (auto* obj = getSelected()) obj->rotation += deltaDeg;
+    if (selectedIndices_.size() > 1) {
+        for (int idx : selectedIndices_) objects_[idx].rotation += deltaDeg;
+    } else if (auto* obj = getSelected()) {
+        obj->rotation += deltaDeg;
+    }
 }
 
 void ObjectPlacer::scaleSelected(float delta) {
-    if (auto* obj = getSelected())
+    if (selectedIndices_.size() > 1) {
+        for (int idx : selectedIndices_)
+            objects_[idx].scale = std::max(0.1f, objects_[idx].scale + delta);
+    } else if (auto* obj = getSelected()) {
         obj->scale = std::max(0.1f, obj->scale + delta);
+    }
 }
 
 void ObjectPlacer::deleteSelected() {
-    if (selectedIdx_ < 0 || selectedIdx_ >= static_cast<int>(objects_.size())) return;
-    objects_.erase(objects_.begin() + selectedIdx_);
-    selectedIdx_ = -1;
+    if (!selectedIndices_.empty()) {
+        std::sort(selectedIndices_.begin(), selectedIndices_.end(), std::greater<int>());
+        for (int idx : selectedIndices_) {
+            if (idx >= 0 && idx < static_cast<int>(objects_.size()))
+                objects_.erase(objects_.begin() + idx);
+        }
+        selectedIndices_.clear();
+        selectedIdx_ = -1;
+    } else if (selectedIdx_ >= 0 && selectedIdx_ < static_cast<int>(objects_.size())) {
+        objects_.erase(objects_.begin() + selectedIdx_);
+        selectedIdx_ = -1;
+    }
 }
 
 void ObjectPlacer::scatter(const glm::vec3& center, float radius, int count,
