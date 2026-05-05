@@ -7,6 +7,7 @@
 #include "npc_presets.hpp"
 #include "quest_editor.hpp"
 #include "pipeline/custom_zone_discovery.hpp"
+#include "content_pack.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include <filesystem>
 #include "asset_browser.hpp"
@@ -240,6 +241,12 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                     }
                 }
                 ImGui::EndMenu();
+            }
+            if (ImGui::MenuItem("Import Content Pack (.wcp)")) {
+                static char wcpImportPath[256] = "content.wcp";
+                // Simple import — unpack to custom_zones/
+                editor::ContentPacker::unpackZone(wcpImportPath, "custom_zones");
+                app.showToast("Content pack imported to custom_zones/");
             }
             if (ImGui::BeginMenu("Import Heightmap", app.hasTerrainLoaded())) {
                 static char hmPath[256] = "heightmap.raw";
