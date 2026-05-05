@@ -15,6 +15,7 @@ public:
 
     void setActiveTexture(const std::string& texturePath);
     const std::string& getActiveTexture() const { return activeTexture_; }
+    const std::vector<std::string>& getRecentTextures() const { return recentTextures_; }
 
     // Paint the active texture at the given world position
     // Returns list of modified chunk indices
@@ -33,6 +34,7 @@ private:
 
     pipeline::ADTTerrain* terrain_ = nullptr;
     std::string activeTexture_;
+    std::vector<std::string> recentTextures_;
 
     static constexpr float TILE_SIZE = 533.33333f;
     static constexpr float CHUNK_SIZE = TILE_SIZE / 16.0f;

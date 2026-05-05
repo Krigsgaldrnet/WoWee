@@ -55,6 +55,10 @@ public:
     void setWaterLevel(const glm::vec3& center, float radius, float waterHeight, uint16_t liquidType = 0);
     void removeWater(const glm::vec3& center, float radius);
 
+    // Hole editing (4x4 bitmask per chunk — cave entrances, mine shafts)
+    void punchHole(const glm::vec3& center, float radius);
+    void fillHole(const glm::vec3& center, float radius);
+
     bool hasUnsavedChanges() const { return dirty_; }
     void markSaved() { dirty_ = false; }
 

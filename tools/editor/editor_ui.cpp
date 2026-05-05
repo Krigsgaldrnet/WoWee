@@ -231,6 +231,15 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::SetTooltip("Set target height from cursor position");
         }
         ImGui::Separator();
+        ImGui::Text("Terrain Holes (cave entrances):");
+        auto& brush = app.getTerrainEditor().brush();
+        if (ImGui::Button("Punch Hole", ImVec2(120, 0)) && brush.isActive())
+            app.getTerrainEditor().punchHole(brush.getPosition(), s.radius);
+        ImGui::SameLine();
+        if (ImGui::Button("Fill Hole", ImVec2(120, 0)) && brush.isActive())
+            app.getTerrainEditor().fillHole(brush.getPosition(), s.radius);
+
+        ImGui::Separator();
         auto& hist = app.getTerrainEditor().history();
         ImGui::Text("Undo: %zu  Redo: %zu", hist.undoCount(), hist.redoCount());
     }
@@ -304,6 +313,25 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
         if (!selectedTexture_.empty())
             ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Active: %s",
                                selectedTexture_.c_str());
+
+        // Recent textures
+        auto& recent = app.getTexturePainter().getRecentTextures();
+        if (!recent.empty()) {
+            ImGui::Separator();
+            ImGui::Text("Recent:");
+            for (int i = 0; i < static_cast<int>(recent.size()) && i < 6; i++) {
+                std::string disp = recent[i];
+                auto sl = disp.rfind('\\');
+                if (sl != std::string::npos) disp = disp.substr(sl + 1);
+                if (ImGui::SmallButton(disp.c_str())) {
+                    selectedTexture_ = recent[i];
+                    app.getTexturePainter().setActiveTexture(recent[i]);
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", recent[i].c_str());
+                if (i < 5 && i + 1 < static_cast<int>(recent.size())) ImGui::SameLine();
+            }
+        }
     }
     ImGui::End();
 }

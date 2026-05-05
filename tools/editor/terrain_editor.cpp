@@ -586,5 +586,59 @@ void TerrainEditor::removeWater(const glm::vec3& center, float radius) {
     }
 }
 
+void TerrainEditor::punchHole(const glm::vec3& center, float radius) {
+    if (!terrain_) return;
+    auto affected = getAffectedChunks(center, radius);
+    for (int ci : affected) {
+        auto& chunk = terrain_->chunks[ci];
+        // Each chunk has 8x8 quads, holes use a 4x4 bitmask (each bit covers 2x2 quads)
+        for (int hy = 0; hy < 4; hy++) {
+            for (int hx = 0; hx < 4; hx++) {
+                // Center of this 2x2 quad group
+                int cx = ci % 16, cy = ci / 16;
+                float tileNW_X = (32.0f - static_cast<float>(terrain_->coord.y)) * TILE_SIZE;
+                float tileNW_Y = (32.0f - static_cast<float>(terrain_->coord.x)) * TILE_SIZE;
+                float qx = tileNW_X - cy * CHUNK_SIZE - (hy * 2 + 1) * CHUNK_SIZE / 8.0f;
+                float qy = tileNW_Y - cx * CHUNK_SIZE - (hx * 2 + 1) * CHUNK_SIZE / 8.0f;
+                float dist = std::sqrt((qx - center.x) * (qx - center.x) +
+                                       (qy - center.y) * (qy - center.y));
+                if (dist < radius) {
+                    int bit = 1 << (hy * 4 + hx);
+                    chunk.holes |= static_cast<uint16_t>(bit);
+                }
+            }
+        }
+        if (std::find(dirtyChunks_.begin(), dirtyChunks_.end(), ci) == dirtyChunks_.end())
+            dirtyChunks_.push_back(ci);
+        dirty_ = true;
+    }
+}
+
+void TerrainEditor::fillHole(const glm::vec3& center, float radius) {
+    if (!terrain_) return;
+    auto affected = getAffectedChunks(center, radius);
+    for (int ci : affected) {
+        auto& chunk = terrain_->chunks[ci];
+        for (int hy = 0; hy < 4; hy++) {
+            for (int hx = 0; hx < 4; hx++) {
+                int cx = ci % 16, cy = ci / 16;
+                float tileNW_X = (32.0f - static_cast<float>(terrain_->coord.y)) * TILE_SIZE;
+                float tileNW_Y = (32.0f - static_cast<float>(terrain_->coord.x)) * TILE_SIZE;
+                float qx = tileNW_X - cy * CHUNK_SIZE - (hy * 2 + 1) * CHUNK_SIZE / 8.0f;
+                float qy = tileNW_Y - cx * CHUNK_SIZE - (hx * 2 + 1) * CHUNK_SIZE / 8.0f;
+                float dist = std::sqrt((qx - center.x) * (qx - center.x) +
+                                       (qy - center.y) * (qy - center.y));
+                if (dist < radius) {
+                    int bit = 1 << (hy * 4 + hx);
+                    chunk.holes &= ~static_cast<uint16_t>(bit);
+                }
+            }
+        }
+        if (std::find(dirtyChunks_.begin(), dirtyChunks_.end(), ci) == dirtyChunks_.end())
+            dirtyChunks_.push_back(ci);
+        dirty_ = true;
+    }
+}
+
 } // namespace editor
 } // namespace wowee

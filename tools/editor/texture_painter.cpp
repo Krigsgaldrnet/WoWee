@@ -8,6 +8,11 @@ namespace editor {
 
 void TexturePainter::setActiveTexture(const std::string& texturePath) {
     activeTexture_ = texturePath;
+    // Track recent textures (max 10)
+    auto it = std::find(recentTextures_.begin(), recentTextures_.end(), texturePath);
+    if (it != recentTextures_.end()) recentTextures_.erase(it);
+    recentTextures_.insert(recentTextures_.begin(), texturePath);
+    if (recentTextures_.size() > 10) recentTextures_.pop_back();
 }
 
 uint32_t TexturePainter::ensureTextureInList(const std::string& path) {
