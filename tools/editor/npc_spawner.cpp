@@ -69,6 +69,7 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
         f << "    \"displayId\": " << s.displayId << ",\n";
         f << "    \"position\": [" << s.position.x << "," << s.position.y << "," << s.position.z << "],\n";
         f << "    \"orientation\": " << s.orientation << ",\n";
+        f << "    \"scale\": " << s.scale << ",\n";
         f << "    \"level\": " << s.level << ",\n";
         f << "    \"health\": " << s.health << ",\n";
         f << "    \"mana\": " << s.mana << ",\n";

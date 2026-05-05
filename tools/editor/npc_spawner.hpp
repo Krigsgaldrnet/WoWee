@@ -39,6 +39,9 @@ struct CreatureSpawn {
     uint32_t armor = 0;
     uint32_t faction = 0; // 0 = neutral
 
+    // Display
+    float scale = 1.0f;
+
     // Behavior
     CreatureBehavior behavior = CreatureBehavior::Stationary;
     float wanderRadius = 10.0f;

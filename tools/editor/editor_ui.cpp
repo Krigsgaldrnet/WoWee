@@ -458,6 +458,8 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             if (ImGui::InputText("Name##tmpl", nameBuf, sizeof(nameBuf)))
                 tmpl.name = nameBuf;
 
+            ImGui::SliderFloat("Scale", &tmpl.scale, 0.5f, 10.0f, "%.1f");
+
             int lvl = tmpl.level;
             if (ImGui::SliderInt("Level", &lvl, 1, 83)) {
                 tmpl.level = lvl;

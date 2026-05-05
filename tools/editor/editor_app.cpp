@@ -344,13 +344,17 @@ void EditorApp::updateTerrainEditing(float dt) {
             terrainEditor_.brush().setPosition(hitPos);
             terrainEditor_.brush().setActive(true);
 
-            // Ghost preview for object placement
+            // Ghost preview for object/NPC placement
             if (mode_ == EditorMode::PlaceObject && !objectPlacer_.getActivePath().empty()) {
                 viewport_.setGhostPreview(
                     objectPlacer_.getActivePath(), hitPos,
                     glm::vec3(0, objectPlacer_.getPlacementRotationY(), 0),
                     objectPlacer_.getPlacementScale());
-            } else if (mode_ != EditorMode::PlaceObject) {
+            } else if (mode_ == EditorMode::NPC && !npcSpawner_.getTemplate().modelPath.empty()) {
+                viewport_.setGhostPreview(
+                    npcSpawner_.getTemplate().modelPath, hitPos,
+                    glm::vec3(0, 0, 0), npcSpawner_.getTemplate().scale);
+            } else if (mode_ != EditorMode::PlaceObject && mode_ != EditorMode::NPC) {
                 viewport_.clearGhostPreview();
             }
 

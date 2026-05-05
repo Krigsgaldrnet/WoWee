@@ -242,7 +242,7 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 m2ModelIds[npc.modelPath] = modelId;
             }
             glm::vec3 rotRad = glm::radians(glm::vec3(0, 0, npc.orientation));
-            m2Renderer_->createInstance(modelId, npc.position, rotRad, 1.0f);
+            m2Renderer_->createInstance(modelId, npc.position, rotRad, npc.scale);
         }
     }
 
