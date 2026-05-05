@@ -85,7 +85,7 @@ bool EditorProject::gitCommit(const std::string& message) const {
         if (c == '\'' || c == '\\') safe += '\\';
         safe += c;
     }
-    int ret = std::system(("cd '" + projectDir + "' && git add -A && "
+    int ret = std::system(("cd \"" + projectDir + "\" && git add -A && "
                            "git commit -m '" + safe + "'").c_str());
     return ret == 0;
 }

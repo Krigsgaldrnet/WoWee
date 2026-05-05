@@ -16,6 +16,16 @@ static void ensureTestDir() {
     std::filesystem::create_directories(TEST_DIR);
 }
 
+static void cleanupTestDir() {
+    std::filesystem::remove_all(TEST_DIR);
+}
+
+struct CleanupListener : Catch::EventListenerBase {
+    using EventListenerBase::EventListenerBase;
+    void testRunEnded(const Catch::TestRunStats&) override { cleanupTestDir(); }
+};
+CATCH_REGISTER_LISTENER(CleanupListener)
+
 // ============== WOB Tests ==============
 
 TEST_CASE("WOB save and load round-trip", "[wob]") {
