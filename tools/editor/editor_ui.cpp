@@ -48,6 +48,25 @@ void EditorUI::render(EditorApp& app) {
     renderMinimap(app);
     renderPropertiesPanel(app);
     renderStatusBar(app);
+
+    // Toast notifications
+    ImGuiViewport* tvp = ImGui::GetMainViewport();
+    float toastY = tvp->Size.y - 60;
+    for (const auto& t : app.getToasts()) {
+        float alpha = std::min(1.0f, t.timer);
+        ImGui::SetNextWindowPos(ImVec2(tvp->Size.x / 2 - 150, toastY));
+        ImGui::SetNextWindowSize(ImVec2(300, 30));
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.4f, 0.1f, 0.9f));
+        char toastId[32]; std::snprintf(toastId, sizeof(toastId), "##toast%p", (void*)&t);
+        ImGui::Begin(toastId, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+        ImGui::Text("%s", t.msg.c_str());
+        ImGui::End();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+        toastY -= 35;
+    }
 }
 
 void EditorUI::processActions(EditorApp& app) {
@@ -69,6 +88,20 @@ void EditorUI::renderMenuBar(EditorApp& app) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Terrain...", "Ctrl+N")) showNewDialog_ = true;
             if (ImGui::MenuItem("Load ADT...", "Ctrl+O")) showLoadDialog_ = true;
+            if (ImGui::BeginMenu("Import Heightmap", app.hasTerrainLoaded())) {
+                static char hmPath[256] = "heightmap.raw";
+                static float hmScale = 200.0f;
+                ImGui::InputText("File##hm", hmPath, sizeof(hmPath));
+                ImGui::SliderFloat("Height Scale", &hmScale, 10.0f, 1000.0f);
+                ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1), "RAW 16-bit or 8-bit (129x129 or 257x257)");
+                if (ImGui::MenuItem("Import")) {
+                    if (app.getTerrainEditor().importHeightmap(hmPath, hmScale))
+                        app.showToast("Heightmap imported");
+                    else
+                        app.showToast("Failed to import heightmap");
+                }
+                ImGui::EndMenu();
+            }
             if (ImGui::MenuItem("Clear All", nullptr, false, app.hasTerrainLoaded())) {
                 app.getTerrainEditor().history().clear();
                 app.getObjectPlacer().clearSelection();

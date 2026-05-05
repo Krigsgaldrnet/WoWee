@@ -54,6 +54,9 @@ public:
     // Noise generator: applies procedural height noise to the terrain
     void applyNoise(float frequency, float amplitude, int octaves, uint32_t seed);
 
+    // Import heightmap from raw 16-bit grayscale (129x129 or 257x257)
+    bool importHeightmap(const std::string& path, float heightScale);
+
     // Water editing
     void setWaterLevel(const glm::vec3& center, float radius, float waterHeight, uint16_t liquidType = 0);
     void removeWater(const glm::vec3& center, float radius);

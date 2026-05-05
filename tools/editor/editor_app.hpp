@@ -117,8 +117,17 @@ private:
     std::string lastSavePath_;
     std::vector<CameraBookmark> bookmarks_;
     float autoSaveTimer_ = 0.0f;
-    float autoSaveInterval_ = 300.0f; // 5 minutes
+    float autoSaveInterval_ = 300.0f;
     bool autoSaveEnabled_ = true;
+
+    // Toast notifications
+    struct Toast { std::string msg; float timer; };
+    std::vector<Toast> toasts_;
+public:
+    void showToast(const std::string& msg, float duration = 3.0f);
+    const std::vector<Toast>& getToasts() const { return toasts_; }
+    void updateToasts(float dt);
+private:
     size_t lastObjectCount_ = 0;
     EditorMode mode_ = EditorMode::Sculpt;
     float waterHeight_ = 100.0f;

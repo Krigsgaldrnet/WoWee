@@ -7,6 +7,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
 #include <imgui_impl_vulkan.h>
+#include <algorithm>
 #include <chrono>
 #include <sstream>
 
@@ -80,6 +81,8 @@ void EditorApp::run() {
 
         // Handle pending UI actions
         ui_.processActions(*this);
+
+        updateToasts(dt);
 
         // Auto-save
         if (autoSaveEnabled_ && terrain_.isLoaded() && terrainEditor_.hasUnsavedChanges()) {
@@ -593,6 +596,7 @@ void EditorApp::exportZone(const std::string& outputDir) {
     }
 
     lastSavePath_ = outputDir;
+    showToast("Zone exported to " + base);
     LOG_INFO("Zone exported to: ", base);
 }
 
@@ -604,6 +608,16 @@ void EditorApp::quickSave() {
 
 void EditorApp::requestQuit() {
     window_->setShouldClose(true);
+}
+
+void EditorApp::showToast(const std::string& msg, float duration) {
+    toasts_.push_back({msg, duration});
+}
+
+void EditorApp::updateToasts(float dt) {
+    for (auto& t : toasts_) t.timer -= dt;
+    toasts_.erase(std::remove_if(toasts_.begin(), toasts_.end(),
+                  [](const Toast& t) { return t.timer <= 0; }), toasts_.end());
 }
 
 void EditorApp::setSkyPreset(int preset) {

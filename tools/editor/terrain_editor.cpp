@@ -2,6 +2,7 @@
 #include "core/logger.hpp"
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <numeric>
 #include <random>
 
@@ -680,6 +681,65 @@ void TerrainEditor::applyNoise(float frequency, float amplitude, int octaves, ui
         dirtyChunks_.push_back(ci);
     }
     dirty_ = true;
+}
+
+bool TerrainEditor::importHeightmap(const std::string& path, float heightScale) {
+    if (!terrain_) return false;
+
+    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    if (!f) { return false; }
+    auto fileSize = f.tellg();
+    f.seekg(0);
+
+    // Determine resolution from file size
+    // 129x129 x 2 bytes = 33282 (one chunk row+1 per tile row+1)
+    // 257x257 x 2 bytes = 132098 (2 samples per chunk quad)
+    int res = 0;
+    if (fileSize >= 132098) res = 257;
+    else if (fileSize >= 33282) res = 129;
+    else if (fileSize >= 16641) { res = 129; } // 8-bit 129x129
+    else return false;
+
+    bool is16bit = (fileSize >= res * res * 2);
+    std::vector<float> heightData(res * res);
+
+    if (is16bit) {
+        std::vector<uint16_t> raw(res * res);
+        f.read(reinterpret_cast<char*>(raw.data()), res * res * 2);
+        for (int i = 0; i < res * res; i++)
+            heightData[i] = static_cast<float>(raw[i]) / 65535.0f;
+    } else {
+        std::vector<uint8_t> raw(res * res);
+        f.read(reinterpret_cast<char*>(raw.data()), res * res);
+        for (int i = 0; i < res * res; i++)
+            heightData[i] = static_cast<float>(raw[i]) / 255.0f;
+    }
+
+    // Map heightmap pixels to terrain vertices
+    for (int cy = 0; cy < 16; cy++) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& chunk = terrain_->chunks[cy * 16 + cx];
+            if (!chunk.hasHeightMap()) continue;
+
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                float offX = static_cast<float>(col);
+                float offY = static_cast<float>(row);
+                if (col > 8) { offY += 0.5f; offX -= 8.5f; }
+
+                // Map to pixel coords
+                float px = (cx * 8.0f + offX) / 128.0f * (res - 1);
+                float py = (cy * 8.0f + offY) / 128.0f * (res - 1);
+                int ix = std::clamp(static_cast<int>(px), 0, res - 1);
+                int iy = std::clamp(static_cast<int>(py), 0, res - 1);
+
+                chunk.heightMap.heights[v] = heightData[iy * res + ix] * heightScale;
+            }
+            dirtyChunks_.push_back(cy * 16 + cx);
+        }
+    }
+    dirty_ = true;
+    return true;
 }
 
 void TerrainEditor::punchHole(const glm::vec3& center, float radius) {
