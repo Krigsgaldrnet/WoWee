@@ -61,7 +61,13 @@ bool WoweeTerrain::exportOpen(const pipeline::ADTTerrain& terrain,
                 f << chunk.layers[li].textureId;
                 if (li + 1 < chunk.layers.size()) f << ",";
             }
-            f << "], \"holes\": " << chunk.holes << "}";
+            f << "], \"holes\": " << chunk.holes;
+            // Include alpha map presence flag
+            bool hasAlpha = false;
+            for (size_t li = 1; li < chunk.layers.size(); li++)
+                if (chunk.layers[li].useAlpha()) { hasAlpha = true; break; }
+            f << ", \"hasAlpha\": " << (hasAlpha ? "true" : "false");
+            f << "}";
             if (ci < 255) f << ",";
             f << "\n";
         }
