@@ -1467,6 +1467,19 @@ void EditorUI::renderMinimap(EditorApp& app) {
             dl->AddLine(ImVec2(cp.x, cp.y - 3), ImVec2(cp.x, cp.y + 3), IM_COL32(255,255,255,220), 2);
         }
 
+        // Brush radius indicator on minimap
+        if (app.getTerrainEditor().brush().isActive()) {
+            auto bp = app.getTerrainEditor().brush().getPosition();
+            float bu = (tileNW_X - bp.x) / 533.33333f;
+            float bv = (tileNW_Y - bp.y) / 533.33333f;
+            if (bu >= 0 && bu <= 1 && bv >= 0 && bv <= 1) {
+                ImVec2 bc(origin.x + bv * avail.x, origin.y + bu * (16 * cellH));
+                float bRadius = app.getTerrainEditor().brush().settings().radius / 533.33333f;
+                float pixRadius = bRadius * avail.x;
+                dl->AddCircle(bc, pixRadius, IM_COL32(255, 255, 100, 150), 16, 1.5f);
+            }
+        }
+
         ImGui::Dummy(ImVec2(avail.x, 16 * cellH));
         // Legend
         ImDrawList* dl2 = ImGui::GetWindowDrawList();
