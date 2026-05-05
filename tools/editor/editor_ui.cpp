@@ -2218,11 +2218,21 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
         ImGui::Text("Camera: %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
         ImGui::Text("Speed: %.0f (Shift+scroll)", app.getEditorCamera().getSpeed());
 
-        // Cursor world position
+        // Cursor world position + chunk info
         auto& brush = app.getTerrainEditor().brush();
         if (brush.isActive()) {
             auto bp = brush.getPosition();
             ImGui::Text("Cursor: %.1f, %.1f, %.1f", bp.x, bp.y, bp.z);
+
+            // Show active texture in paint mode
+            if (app.getMode() == EditorMode::Paint) {
+                auto& tex = app.getTexturePainter().getActiveTexture();
+                if (!tex.empty()) {
+                    auto lastSlash = tex.rfind('\\');
+                    ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1), "Texture: %s",
+                        lastSlash != std::string::npos ? tex.c_str() + lastSlash + 1 : tex.c_str());
+                }
+            }
         }
 
         ImGui::Separator();
@@ -2232,6 +2242,22 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
             ImGui::Text("Undo: %zu  Redo: %zu", hist.undoCount(), hist.redoCount());
 
         ImGui::Text("Quests: %zu", app.getQuestEditor().questCount());
+
+        // Terrain height stats
+        if (auto* t = app.getTerrainEditor().getTerrain()) {
+            float minH = 1e30f, maxH = -1e30f, sumH = 0;
+            int count = 0;
+            for (int ci = 0; ci < 256; ci++) {
+                if (!t->chunks[ci].hasHeightMap()) continue;
+                for (int v = 0; v < 145; v++) {
+                    float h = t->chunks[ci].position[2] + t->chunks[ci].heightMap.heights[v];
+                    minH = std::min(minH, h); maxH = std::max(maxH, h);
+                    sumH += h; count++;
+                }
+            }
+            if (count > 0)
+                ImGui::Text("Height: %.0f-%.0f (avg %.0f)", minH, maxH, sumH / count);
+        }
 
         if (app.getTerrainEditor().hasUnsavedChanges())
             ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "* Unsaved (Ctrl+S to save)");
