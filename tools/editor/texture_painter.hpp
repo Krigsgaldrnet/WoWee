@@ -42,6 +42,9 @@ public:
     // Erase a texture layer at the given position
     std::vector<int> erase(const glm::vec3& center, float radius, float strength, float falloff);
 
+    // Pick the dominant texture at a world position (eyedropper)
+    std::string pickTextureAt(const glm::vec3& worldPos) const;
+
 private:
     uint32_t ensureTextureInList(const std::string& path);
     int ensureLayerOnChunk(int chunkIdx, uint32_t textureId);

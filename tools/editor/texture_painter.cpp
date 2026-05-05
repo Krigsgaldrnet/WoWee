@@ -325,7 +325,7 @@ void TexturePainter::gradientBlend(const std::string& tex1, const std::string& t
 void TexturePainter::scatterPatches(const std::string& texturePath, int count,
                                      float minRadius, float maxRadius, uint32_t seed) {
     if (!terrain_ || texturePath.empty()) return;
-    uint32_t texId = ensureTextureInList(texturePath);
+    ensureTextureInList(texturePath);
 
     float tileNW_X = (32.0f - static_cast<float>(terrain_->coord.y)) * 533.33333f;
     float tileNW_Y = (32.0f - static_cast<float>(terrain_->coord.x)) * 533.33333f;
@@ -369,6 +369,49 @@ std::vector<int> TexturePainter::erase(const glm::vec3& center, float radius,
     }
 
     return modified;
+}
+
+std::string TexturePainter::pickTextureAt(const glm::vec3& worldPos) const {
+    if (!terrain_) return "";
+
+    for (int ci = 0; ci < 256; ci++) {
+        const auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap() || chunk.layers.empty()) continue;
+
+        glm::vec2 uv = worldToChunkUV(ci, worldPos);
+        if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1) continue;
+
+        if (chunk.layers.size() == 1) {
+            if (chunk.layers[0].textureId < terrain_->textures.size())
+                return terrain_->textures[chunk.layers[0].textureId];
+            continue;
+        }
+
+        int px = std::clamp(static_cast<int>(uv.x * 64.0f), 0, 63);
+        int py = std::clamp(static_cast<int>(uv.y * 64.0f), 0, 63);
+        int pixelIdx = py * 64 + px;
+
+        uint32_t bestLayer = 0;
+        uint8_t bestAlpha = 0;
+        for (size_t li = 1; li < chunk.layers.size(); li++) {
+            size_t alphaOffset = (li - 1) * 4096 + pixelIdx;
+            if (alphaOffset < chunk.alphaMap.size()) {
+                uint8_t alpha = chunk.alphaMap[alphaOffset];
+                if (alpha > bestAlpha) {
+                    bestAlpha = alpha;
+                    bestLayer = static_cast<uint32_t>(li);
+                }
+            }
+        }
+
+        if (bestAlpha < 128) bestLayer = 0;
+
+        if (bestLayer < chunk.layers.size() &&
+            chunk.layers[bestLayer].textureId < terrain_->textures.size()) {
+            return terrain_->textures[chunk.layers[bestLayer].textureId];
+        }
+    }
+    return "";
 }
 
 } // namespace editor

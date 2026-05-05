@@ -401,7 +401,18 @@ void EditorApp::processEvents() {
                     giz.setMode(TransformMode::None);
                 } else if (event.type == SDL_MOUSEBUTTONDOWN) {
                     // Path point capture (river/road tool)
-                    if (ui_.getPathCapture() != EditorUI::PathCapture::None) {
+                    // Alt+click eyedropper in paint mode
+                    if (mode_ == EditorMode::Paint && (SDL_GetModState() & KMOD_ALT)) {
+                        if (terrainEditor_.brush().isActive()) {
+                            std::string picked = texturePainter_.pickTextureAt(
+                                terrainEditor_.brush().getPosition());
+                            if (!picked.empty()) {
+                                texturePainter_.setActiveTexture(picked);
+                                showToast("Picked: " + picked.substr(picked.rfind('\\') + 1));
+                            }
+                        }
+                    }
+                    else if (ui_.getPathCapture() != EditorUI::PathCapture::None) {
                         auto ext = window_->getVkContext()->getSwapchainExtent();
                         rendering::Ray ray = camera_.getCamera().screenToWorldRay(
                             static_cast<float>(event.button.x),
@@ -620,23 +631,37 @@ void EditorApp::refreshDirtyChunks() {
 }
 
 void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
-    std::ostringstream path;
-    path << "World\\Maps\\" << mapName << "\\" << mapName
-         << "_" << tileX << "_" << tileY << ".adt";
-
-    LOG_INFO("Loading ADT: ", path.str());
-
-    auto adtData = assetManager_->readFile(path.str());
-    if (adtData.empty()) {
-        LOG_ERROR("ADT file not found: ", path.str());
-        return;
+    // Prefer open format (WOT/WHM) if available
+    for (const char* dir : {"custom_zones", "output"}) {
+        std::string wotBase = std::string(dir) + "/" + mapName + "/" + mapName + "_" +
+                              std::to_string(tileX) + "_" + std::to_string(tileY);
+        if (WoweeTerrain::importOpen(wotBase, terrain_) && terrain_.isLoaded()) {
+            LOG_INFO("Loaded open format terrain: ", wotBase);
+            showToast("Loaded WOT/WHM: " + mapName);
+            goto terrainReady;
+        }
     }
 
-    terrain_ = pipeline::ADTLoader::load(adtData);
-    if (!terrain_.isLoaded()) {
-        LOG_ERROR("Failed to parse ADT: ", path.str());
-        return;
+    {
+        std::ostringstream path;
+        path << "World\\Maps\\" << mapName << "\\" << mapName
+             << "_" << tileX << "_" << tileY << ".adt";
+
+        LOG_INFO("Loading ADT: ", path.str());
+
+        auto adtData = assetManager_->readFile(path.str());
+        if (adtData.empty()) {
+            LOG_ERROR("ADT file not found: ", path.str());
+            return;
+        }
+
+        terrain_ = pipeline::ADTLoader::load(adtData);
+        if (!terrain_.isLoaded()) {
+            LOG_ERROR("Failed to parse ADT: ", path.str());
+            return;
+        }
     }
+    terrainReady:
 
     // Override internal coords with what we know from the filename
     // (instanced maps have arbitrary internal coord values)

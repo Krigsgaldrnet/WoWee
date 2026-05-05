@@ -477,6 +477,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Text("Quick Actions:");
             ImGui::BulletText("Ctrl+N — new terrain");
             ImGui::BulletText("Ctrl+O — load map tile");
+            ImGui::BulletText("Alt+Click — eyedropper (paint mode)");
             ImGui::BulletText("Middle-drag — orbit camera");
             ImGui::Separator();
             ImGui::Text("View:");
@@ -1107,6 +1108,17 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
         int pm = static_cast<int>(paintMode_);
         if (ImGui::Combo("Paint Mode", &pm, paintModes, 3))
             paintMode_ = static_cast<PaintMode>(pm);
+
+        if (ImGui::Button("Eyedropper (Alt+Click)")) {
+            auto& brush = app.getTerrainEditor().brush();
+            if (brush.isActive()) {
+                std::string picked = app.getTexturePainter().pickTextureAt(brush.getPosition());
+                if (!picked.empty()) {
+                    app.getTexturePainter().setActiveTexture(picked);
+                    app.showToast("Picked: " + picked.substr(picked.rfind('\\') + 1));
+                }
+            }
+        }
 
         ImGui::Separator();
 
