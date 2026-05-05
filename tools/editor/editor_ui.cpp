@@ -147,6 +147,11 @@ void EditorUI::renderMenuBar(EditorApp& app) {
         if (ImGui::BeginMenu("View")) {
             bool wf = app.isWireframe();
             if (ImGui::MenuItem("Wireframe", "F3", &wf)) app.setWireframe(wf);
+            bool fog = false;
+            auto* tr = app.getTerrainRenderer();
+            if (tr) fog = tr->isFogEnabled();
+            if (ImGui::MenuItem("Fog", nullptr, &fog) && tr) tr->setFogEnabled(fog);
+            ImGui::Separator();
             if (ImGui::MenuItem("Reset Camera")) app.resetCamera();
             if (ImGui::MenuItem("Center on Terrain", "Home")) app.centerOnTerrain();
             ImGui::Separator();
