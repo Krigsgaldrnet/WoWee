@@ -1328,7 +1328,7 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         ImGui::EndChild();
 
         ImGui::Separator();
-        ImGui::Text("Placed: %zu objects", placer.objectCount());
+        ImGui::Text("Placed: %zu objects (open format: WOM)", placer.objectCount());
         if (placer.objectCount() > 0 && ImGui::CollapsingHeader("Object List")) {
             ImGui::BeginChild("ObjPlacedList", ImVec2(0, 100), true);
             for (int i = 0; i < static_cast<int>(placer.objectCount()); i++) {
