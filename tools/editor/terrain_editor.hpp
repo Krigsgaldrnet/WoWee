@@ -90,6 +90,9 @@ public:
     // Create a smooth hill/mountain
     void createHill(const glm::vec3& center, float radius, float height);
 
+    // Create a ridge/mountain range between two points
+    void createRidge(const glm::vec3& start, const glm::vec3& end, float width, float height);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);

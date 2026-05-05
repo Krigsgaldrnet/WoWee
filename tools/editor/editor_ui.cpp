@@ -551,6 +551,29 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Ridge / Mountain Range")) {
+            static glm::vec3 ridgeStart{0}, ridgeEnd{0};
+            static float ridgeWidth = 20.0f, ridgeHeight = 30.0f;
+            static bool ridgeStartSet = false;
+            ImGui::SliderFloat("Width##ridge", &ridgeWidth, 5.0f, 80.0f);
+            ImGui::SliderFloat("Height##ridge", &ridgeHeight, 5.0f, 100.0f);
+            auto& brushR = app.getTerrainEditor().brush();
+            if (ImGui::Button("Set Start##ridge", ImVec2(120, 0)) && brushR.isActive()) {
+                ridgeStart = brushR.getPosition();
+                ridgeStartSet = true;
+                app.showToast("Ridge start set");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Set End + Create##ridge", ImVec2(140, 0)) && brushR.isActive() && ridgeStartSet) {
+                ridgeEnd = brushR.getPosition();
+                app.getTerrainEditor().createRidge(ridgeStart, ridgeEnd, ridgeWidth, ridgeHeight);
+                app.showToast("Ridge created");
+                ridgeStartSet = false;
+            }
+            if (ridgeStartSet)
+                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1), "Start set");
+        }
+
         if (ImGui::CollapsingHeader("Hill Generator")) {
             static float hillRadius = 40.0f, hillHeight = 25.0f;
             ImGui::SliderFloat("Radius##hill", &hillRadius, 10.0f, 150.0f);

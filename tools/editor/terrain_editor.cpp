@@ -860,6 +860,41 @@ void TerrainEditor::createHill(const glm::vec3& center, float radius, float heig
     dirty_ = true;
 }
 
+void TerrainEditor::createRidge(const glm::vec3& start, const glm::vec3& end,
+                                 float width, float height) {
+    if (!terrain_) return;
+    glm::vec2 lineStart(start.x, start.y);
+    glm::vec2 lineEnd(end.x, end.y);
+    glm::vec2 lineDir = glm::normalize(lineEnd - lineStart);
+    float lineLen = glm::length(lineEnd - lineStart);
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        bool modified = false;
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            glm::vec2 p(pos.x, pos.y);
+            glm::vec2 toP = p - lineStart;
+            float along = glm::dot(toP, lineDir);
+            along = std::clamp(along, 0.0f, lineLen);
+            glm::vec2 closest = lineStart + lineDir * along;
+            float dist = glm::length(p - closest);
+            if (dist >= width) continue;
+
+            float crossFalloff = 1.0f - (dist / width);
+            crossFalloff = crossFalloff * crossFalloff;
+            float alongFalloff = 1.0f - 2.0f * std::abs(along / lineLen - 0.5f);
+            alongFalloff = std::max(0.0f, alongFalloff);
+            float h = height * crossFalloff * std::sqrt(alongFalloff);
+            chunk.heightMap.heights[v] += h;
+            modified = true;
+        }
+        if (modified) { stitchEdges(ci); dirtyChunks_.push_back(ci); }
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::flattenRoad(const glm::vec3& start, const glm::vec3& end, float width) {
     if (!terrain_) return;
     glm::vec2 lineStart(start.x, start.y);
