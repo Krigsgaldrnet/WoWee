@@ -565,12 +565,17 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
             ImGui::SameLine();
             if (ImGui::Button("Delete", ImVec2(100, 0))) placer.deleteSelected();
             if (ImGui::Button("Duplicate", ImVec2(100, 0))) {
-                PlacedObject copy = *sel;
-                copy.uniqueId = 0;
-                copy.position += glm::vec3(5.0f, 5.0f, 0.0f);
-                copy.selected = false;
+                std::string dupPath = sel->path;
+                glm::vec3 dupPos = sel->position + glm::vec3(10.0f, 10.0f, 0.0f);
+                glm::vec3 dupRot = sel->rotation;
+                float dupScale = sel->scale;
+                auto dupType = sel->type;
                 placer.clearSelection();
-                // Can't easily push from here, but move slightly signals intent
+                placer.setActivePath(dupPath, dupType);
+                placer.setPlacementScale(dupScale);
+                placer.setPlacementRotationY(dupRot.y);
+                placer.placeObject(dupPos);
+                app.markObjectsDirty();
             }
             ImGui::SameLine();
             if (ImGui::Button("Deselect", ImVec2(100, 0)))

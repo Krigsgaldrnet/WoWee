@@ -597,6 +597,12 @@ void EditorApp::exportZone(const std::string& outputDir) {
         npcSpawner_.saveToFile(npcPath);
     }
 
+    // Save placed objects
+    if (objectPlacer_.objectCount() > 0) {
+        std::string objPath = base + "/objects.json";
+        objectPlacer_.saveToFile(objPath);
+    }
+
     // Write zone manifest (for client loading)
     ZoneManifest manifest;
     manifest.mapName = loadedMap_;

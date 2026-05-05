@@ -49,6 +49,10 @@ public:
     // Sync placed objects back to ADTTerrain structs
     void syncToTerrain();
 
+    // Save/load placed objects to JSON
+    bool saveToFile(const std::string& path) const;
+    bool loadFromFile(const std::string& path);
+
     const std::vector<PlacedObject>& getObjects() const { return objects_; }
     size_t objectCount() const { return objects_.size(); }
 

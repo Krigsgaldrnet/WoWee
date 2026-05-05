@@ -2,6 +2,8 @@
 #include "core/logger.hpp"
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <filesystem>
 #include <random>
 
 namespace wowee {
@@ -141,6 +143,88 @@ void ObjectPlacer::undoLastPlace() {
         // Adjust remaining undo indices
         for (auto& i : undoStack_) { if (i > idx) i--; }
     }
+}
+
+bool ObjectPlacer::saveToFile(const std::string& path) const {
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    std::ofstream f(path);
+    if (!f) return false;
+    f << "[\n";
+    for (size_t i = 0; i < objects_.size(); i++) {
+        const auto& o = objects_[i];
+        f << "  {\"type\":" << static_cast<int>(o.type)
+          << ",\"path\":\"" << o.path << "\""
+          << ",\"pos\":[" << o.position.x << "," << o.position.y << "," << o.position.z << "]"
+          << ",\"rot\":[" << o.rotation.x << "," << o.rotation.y << "," << o.rotation.z << "]"
+          << ",\"scale\":" << o.scale
+          << "}" << (i + 1 < objects_.size() ? "," : "") << "\n";
+    }
+    f << "]\n";
+    LOG_INFO("Objects saved: ", path, " (", objects_.size(), " objects)");
+    return true;
+}
+
+bool ObjectPlacer::loadFromFile(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) return false;
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+
+    objects_.clear();
+    undoStack_.clear();
+    selectedIdx_ = -1;
+
+    size_t start = 0;
+    while ((start = content.find('{', start)) != std::string::npos) {
+        auto end = content.find('}', start);
+        if (end == std::string::npos) break;
+        std::string block = content.substr(start, end - start + 1);
+
+        PlacedObject obj;
+        // Parse type
+        auto tp = block.find("\"type\":");
+        if (tp != std::string::npos) obj.type = static_cast<PlaceableType>(std::stoi(block.substr(tp + 7)));
+
+        // Parse path
+        auto pp = block.find("\"path\":\"");
+        if (pp != std::string::npos) {
+            pp += 8;
+            auto pe = block.find('"', pp);
+            if (pe != std::string::npos) obj.path = block.substr(pp, pe - pp);
+        }
+
+        // Parse pos array
+        auto posP = block.find("\"pos\":[");
+        if (posP != std::string::npos) {
+            posP += 7;
+            obj.position.x = std::stof(block.substr(posP));
+            posP = block.find(',', posP) + 1;
+            obj.position.y = std::stof(block.substr(posP));
+            posP = block.find(',', posP) + 1;
+            obj.position.z = std::stof(block.substr(posP));
+        }
+
+        // Parse rot array
+        auto rotP = block.find("\"rot\":[");
+        if (rotP != std::string::npos) {
+            rotP += 7;
+            obj.rotation.x = std::stof(block.substr(rotP));
+            rotP = block.find(',', rotP) + 1;
+            obj.rotation.y = std::stof(block.substr(rotP));
+            rotP = block.find(',', rotP) + 1;
+            obj.rotation.z = std::stof(block.substr(rotP));
+        }
+
+        auto scP = block.find("\"scale\":");
+        if (scP != std::string::npos) obj.scale = std::stof(block.substr(scP + 8));
+
+        if (!obj.path.empty()) {
+            obj.uniqueId = nextUniqueId();
+            objects_.push_back(obj);
+        }
+        start = end + 1;
+    }
+    LOG_INFO("Objects loaded: ", path, " (", objects_.size(), " objects)");
+    return true;
 }
 
 void ObjectPlacer::syncToTerrain() {
