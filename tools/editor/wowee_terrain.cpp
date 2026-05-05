@@ -1,6 +1,7 @@
 #include "wowee_terrain.hpp"
 #include "core/logger.hpp"
 #include "stb_image_write.h"
+#include <nlohmann/json.hpp>
 #include <fstream>
 #include <filesystem>
 #include <cstring>
@@ -25,74 +26,72 @@ bool WoweeTerrain::exportOpen(const pipeline::ADTTerrain& terrain,
         f.write(reinterpret_cast<const char*>(&magic), 4);
         f.write(reinterpret_cast<const char*>(&chunks), 4);
         f.write(reinterpret_cast<const char*>(&verts), 4);
-        // Per-chunk: baseHeight(4) + heights[145](580)
+        // Per-chunk: baseHeight(4) + heights[145](580) + alphaSize(4) + alphaData(N)
         for (int ci = 0; ci < 256; ci++) {
             const auto& chunk = terrain.chunks[ci];
             float base = chunk.position[2];
             f.write(reinterpret_cast<const char*>(&base), 4);
             f.write(reinterpret_cast<const char*>(chunk.heightMap.heights.data()), 145 * 4);
+            uint32_t alphaSize = static_cast<uint32_t>(chunk.alphaMap.size());
+            f.write(reinterpret_cast<const char*>(&alphaSize), 4);
+            if (alphaSize > 0) {
+                f.write(reinterpret_cast<const char*>(chunk.alphaMap.data()), alphaSize);
+            }
         }
     }
 
     // Export JSON metadata (.wot = Wowee Open Terrain)
     std::string jsonPath = basePath + ".wot";
     {
-        std::ofstream f(jsonPath);
-        if (!f) return false;
-        f << "{\n";
-        f << "  \"format\": \"wot-1.0\",\n";
-        f << "  \"editor\": \"wowee-editor-0.8.0\",\n";
-        f << "  \"tileX\": " << tileX << ",\n";
-        f << "  \"tileY\": " << tileY << ",\n";
-        f << "  \"chunkGrid\": [16, 16],\n";
-        f << "  \"vertsPerChunk\": 145,\n";
-        f << "  \"heightmapFile\": \"" << fs::path(hmPath).filename().string() << "\",\n";
-        f << "  \"textures\": [\n";
-        for (size_t i = 0; i < terrain.textures.size(); i++) {
-            f << "    \"" << terrain.textures[i] << "\"";
-            if (i + 1 < terrain.textures.size()) f << ",";
-            f << "\n";
-        }
-        f << "  ],\n";
-        f << "  \"tileSize\": 533.33333,\n";
-        f << "  \"chunkSize\": 33.33333,\n";
-        f << "  \"chunkLayers\": [\n";
+        nlohmann::json j;
+        j["format"] = "wot-1.0";
+        j["editor"] = "wowee-editor-1.0.0";
+        j["tileX"] = tileX;
+        j["tileY"] = tileY;
+        j["chunkGrid"] = {16, 16};
+        j["vertsPerChunk"] = 145;
+        j["heightmapFile"] = fs::path(hmPath).filename().string();
+        j["tileSize"] = 533.33333f;
+        j["chunkSize"] = 33.33333f;
+
+        nlohmann::json texArr = nlohmann::json::array();
+        for (const auto& tex : terrain.textures) texArr.push_back(tex);
+        j["textures"] = texArr;
+
+        nlohmann::json chunkArr = nlohmann::json::array();
         for (int ci = 0; ci < 256; ci++) {
             const auto& chunk = terrain.chunks[ci];
-            f << "    {\"layers\": [";
-            for (size_t li = 0; li < chunk.layers.size(); li++) {
-                f << chunk.layers[li].textureId;
-                if (li + 1 < chunk.layers.size()) f << ",";
-            }
-            f << "], \"holes\": " << chunk.holes;
-            // Include alpha map presence flag
+            nlohmann::json cl;
+            nlohmann::json layerIds = nlohmann::json::array();
+            for (const auto& layer : chunk.layers) layerIds.push_back(layer.textureId);
+            cl["layers"] = layerIds;
+            cl["holes"] = chunk.holes;
             bool hasAlpha = false;
             for (size_t li = 1; li < chunk.layers.size(); li++)
                 if (chunk.layers[li].useAlpha()) { hasAlpha = true; break; }
-            f << ", \"hasAlpha\": " << (hasAlpha ? "true" : "false");
-            f << "}";
-            if (ci < 255) f << ",";
-            f << "\n";
+            cl["hasAlpha"] = hasAlpha;
+            chunkArr.push_back(cl);
         }
-        f << "  ],\n";
-        // Water data
-        f << "  \"water\": [\n";
+        j["chunkLayers"] = chunkArr;
+
+        nlohmann::json waterArr = nlohmann::json::array();
         for (int ci = 0; ci < 256; ci++) {
             const auto& water = terrain.waterData[ci];
             if (water.hasWater()) {
-                f << "    {\"chunk\": " << ci
-                  << ", \"type\": " << water.layers[0].liquidType
-                  << ", \"height\": " << water.layers[0].maxHeight << "}";
+                waterArr.push_back({{"chunk", ci},
+                    {"type", water.layers[0].liquidType},
+                    {"height", water.layers[0].maxHeight}});
             } else {
-                f << "    null";
+                waterArr.push_back(nullptr);
             }
-            if (ci < 255) f << ",";
-            f << "\n";
         }
-        f << "  ],\n";
-        f << "  \"doodadCount\": " << terrain.doodadPlacements.size() << ",\n";
-        f << "  \"wmoCount\": " << terrain.wmoPlacements.size() << "\n";
-        f << "}\n";
+        j["water"] = waterArr;
+        j["doodadCount"] = terrain.doodadPlacements.size();
+        j["wmoCount"] = terrain.wmoPlacements.size();
+
+        std::ofstream f(jsonPath);
+        if (!f) return false;
+        f << j.dump(2) << "\n";
     }
 
     LOG_INFO("Open terrain exported: ", basePath, " (.wot + .whm)");
