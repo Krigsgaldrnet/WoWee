@@ -63,6 +63,11 @@ public:
     // Scale all heights by a factor (useful for exaggerating or flattening)
     void scaleHeights(float factor);
 
+    // Terrain stamp: copy heights from source area, paste at destination
+    void copyStamp(const glm::vec3& center, float radius);
+    void pasteStamp(const glm::vec3& center);
+    bool hasStamp() const { return !stampData_.empty(); }
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);
@@ -89,6 +94,10 @@ private:
     glm::vec3 chunkVertexWorldPos(int chunkIdx, int vertIdx) const;
     float getVertexHeight(int chunkIdx, int vertIdx) const;
     void setVertexHeight(int chunkIdx, int vertIdx, float height);
+
+    struct StampVertex { float dx, dy, height; };
+    std::vector<StampVertex> stampData_;
+    glm::vec3 stampCenter_{0};
 
     pipeline::ADTTerrain* terrain_ = nullptr;
     EditorBrush brush_;

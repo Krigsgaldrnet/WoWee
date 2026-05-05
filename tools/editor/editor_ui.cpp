@@ -453,6 +453,21 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
         }
 
         ImGui::Separator();
+        if (ImGui::CollapsingHeader("Stamp / Clone")) {
+            auto& brush2 = app.getTerrainEditor().brush();
+            if (ImGui::Button("Copy Stamp", ImVec2(120, 0)) && brush2.isActive())
+                app.getTerrainEditor().copyStamp(brush2.getPosition(), s.radius);
+            ImGui::SameLine();
+            if (ImGui::Button("Paste Stamp", ImVec2(120, 0)) && brush2.isActive() &&
+                app.getTerrainEditor().hasStamp())
+                app.getTerrainEditor().pasteStamp(brush2.getPosition());
+            if (app.getTerrainEditor().hasStamp())
+                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1), "Stamp ready");
+            else
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
+        }
+
+        ImGui::Separator();
         ImGui::Text("Terrain Holes (cave entrances):");
         auto& brush = app.getTerrainEditor().brush();
         if (ImGui::Button("Punch Hole", ImVec2(120, 0)) && brush.isActive())

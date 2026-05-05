@@ -666,6 +666,63 @@ void TerrainEditor::scaleHeights(float factor) {
     dirty_ = true;
 }
 
+void TerrainEditor::copyStamp(const glm::vec3& center, float radius) {
+    if (!terrain_) return;
+    stampData_.clear();
+    stampCenter_ = center;
+
+    for (int ci = 0; ci < 256; ci++) {
+        if (!terrain_->chunks[ci].hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            float dx = pos.x - center.x;
+            float dy = pos.y - center.y;
+            if (std::sqrt(dx * dx + dy * dy) <= radius) {
+                StampVertex sv;
+                sv.dx = dx;
+                sv.dy = dy;
+                sv.height = terrain_->chunks[ci].heightMap.heights[v];
+                stampData_.push_back(sv);
+            }
+        }
+    }
+    LOG_INFO("Stamp copied: ", stampData_.size(), " vertices in radius ", radius);
+}
+
+void TerrainEditor::pasteStamp(const glm::vec3& center) {
+    if (!terrain_ || stampData_.empty()) return;
+
+    for (const auto& sv : stampData_) {
+        float wx = center.x + sv.dx;
+        float wy = center.y + sv.dy;
+
+        // Find nearest vertex and set its height
+        float bestDist = 1e30f;
+        int bestChunk = -1, bestVert = -1;
+        for (int ci = 0; ci < 256; ci++) {
+            if (!terrain_->chunks[ci].hasHeightMap()) continue;
+            for (int v = 0; v < 145; v++) {
+                glm::vec3 pos = chunkVertexWorldPos(ci, v);
+                float d = std::sqrt((pos.x - wx) * (pos.x - wx) + (pos.y - wy) * (pos.y - wy));
+                if (d < bestDist && d < 3.0f) {
+                    bestDist = d;
+                    bestChunk = ci;
+                    bestVert = v;
+                }
+            }
+        }
+        if (bestChunk >= 0) {
+            terrain_->chunks[bestChunk].heightMap.heights[bestVert] = sv.height;
+            if (std::find(dirtyChunks_.begin(), dirtyChunks_.end(), bestChunk) == dirtyChunks_.end())
+                dirtyChunks_.push_back(bestChunk);
+        }
+    }
+
+    for (int ci : dirtyChunks_) stitchEdges(ci);
+    dirty_ = true;
+    LOG_INFO("Stamp pasted at (", center.x, ",", center.y, ")");
+}
+
 void TerrainEditor::clampHeights(float minH, float maxH) {
     if (!terrain_) return;
     for (int ci = 0; ci < 256; ci++) {
