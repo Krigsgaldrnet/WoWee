@@ -305,6 +305,9 @@ void EditorUI::renderNewTerrainDialog(EditorApp& /*app*/) {
         ImGui::TextColored(ImVec4(0.5f, 0.6f, 0.5f, 1.0f), "  + %s", bt.detail);
 
         ImGui::Spacing();
+        static bool quickGenerate = false;
+        ImGui::Checkbox("Quick Generate (noise + smooth + auto-paint)", &quickGenerate);
+
         if (ImGui::Button("Create", ImVec2(120, 0))) { newRequested_ = true; showNewDialog_ = false; }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(120, 0))) showNewDialog_ = false;
