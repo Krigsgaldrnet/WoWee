@@ -75,6 +75,9 @@ public:
     // Carve a river/path between two points (lowers terrain along line)
     void carveRiver(const glm::vec3& start, const glm::vec3& end, float width, float depth);
 
+    // Flatten a road between two points (smooths to average height along path)
+    void flattenRoad(const glm::vec3& start, const glm::vec3& end, float width);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);
