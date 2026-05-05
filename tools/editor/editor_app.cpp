@@ -2,6 +2,7 @@
 #include "adt_writer.hpp"
 #include "zone_manifest.hpp"
 #include "content_pack.hpp"
+#include "wowee_terrain.hpp"
 #include "core/coordinates.hpp"
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
@@ -730,6 +731,11 @@ void EditorApp::exportZone(const std::string& outputDir) {
         objectPlacer_.saveToFile(objPath);
     }
 
+    // Export open terrain format alongside ADT
+    std::string openBase = base + "/" + loadedMap_ + "_" +
+                           std::to_string(loadedTileX_) + "_" + std::to_string(loadedTileY_);
+    WoweeTerrain::exportOpen(terrain_, openBase, loadedTileX_, loadedTileY_);
+
     // Write zone info README
     {
         std::ofstream readme(base + "/README.txt");
@@ -778,6 +784,16 @@ void EditorApp::exportContentPack(const std::string& destPath) {
         showToast("Content pack exported: " + destPath);
     else
         showToast("Failed to create content pack");
+}
+
+void EditorApp::exportOpenFormat(const std::string& basePath) {
+    if (!terrain_.isLoaded()) return;
+    std::string base = basePath + "/" + loadedMap_ + "/" + loadedMap_ + "_" +
+                       std::to_string(loadedTileX_) + "_" + std::to_string(loadedTileY_);
+    if (WoweeTerrain::exportOpen(terrain_, base, loadedTileX_, loadedTileY_))
+        showToast("Open format exported (.wot + .whm)");
+    else
+        showToast("Open format export failed");
 }
 
 void EditorApp::quickSave() {

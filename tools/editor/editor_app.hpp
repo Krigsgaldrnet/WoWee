@@ -37,6 +37,7 @@ public:
     void exportZone(const std::string& outputDir);
     void quickSave();
     void exportContentPack(const std::string& destPath);
+    void exportOpenFormat(const std::string& basePath);
 
     void requestQuit();
     void resetCamera();

@@ -158,6 +158,8 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 app.quickSave();
             if (ImGui::MenuItem("Export Zone...", nullptr, false, app.hasTerrainLoaded()))
                 showSaveDialog_ = true;
+            if (ImGui::MenuItem("Export Open Format (.wot/.whm)", nullptr, false, app.hasTerrainLoaded()))
+                app.exportOpenFormat("output");
             if (ImGui::MenuItem("Export Content Pack (.wcp)", nullptr, false, app.hasTerrainLoaded())) {
                 std::string wcpPath = "output/" + app.getLoadedMap() + ".wcp";
                 app.exportContentPack(wcpPath);
