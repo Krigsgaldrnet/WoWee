@@ -3,6 +3,7 @@
 #include "zone_manifest.hpp"
 #include "content_pack.hpp"
 #include "wowee_terrain.hpp"
+#include "texture_exporter.hpp"
 #include "core/coordinates.hpp"
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
@@ -729,6 +730,14 @@ void EditorApp::exportZone(const std::string& outputDir) {
     if (objectPlacer_.objectCount() > 0) {
         std::string objPath = base + "/objects.json";
         objectPlacer_.saveToFile(objPath);
+    }
+
+    // Export used textures as PNG (open format replacement for BLP)
+    auto usedTextures = TextureExporter::collectUsedTextures(terrain_);
+    if (!usedTextures.empty()) {
+        int exported = TextureExporter::exportTexturesAsPng(
+            assetManager_.get(), usedTextures, base + "/textures");
+        LOG_INFO("Exported ", exported, " textures as PNG");
     }
 
     // Export open terrain format alongside ADT
