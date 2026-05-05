@@ -28,6 +28,9 @@ public:
     void paintAlongPath(const glm::vec3& start, const glm::vec3& end,
                         float width, const std::string& texturePath);
 
+    // Gradient blend: transitions base texture from one to another across tile
+    void gradientBlend(const std::string& tex1, const std::string& tex2, bool horizontal);
+
     // Paint the active texture at the given world position
     // Returns list of modified chunk indices
     std::vector<int> paint(const glm::vec3& center, float radius, float strength, float falloff);

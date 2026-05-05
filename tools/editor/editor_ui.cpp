@@ -897,6 +897,26 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
                                selectedTexture_.c_str());
 
         // Auto-paint by height
+        if (ImGui::CollapsingHeader("Gradient Blend")) {
+            static int gradDir = 0;
+            ImGui::RadioButton("Horizontal##grad", &gradDir, 0);
+            ImGui::SameLine();
+            ImGui::RadioButton("Vertical##grad", &gradDir, 1);
+            if (ImGui::Button("Grass → Sand Gradient", ImVec2(-1, 0))) {
+                app.getTexturePainter().gradientBlend(
+                    "Tileset\\Elwynn\\ElwynnGrassBase.blp",
+                    "Tileset\\Tanaris\\TanarisSandBase01.blp", gradDir == 0);
+                app.showToast("Gradient applied");
+            }
+            if (ImGui::Button("Grass → Snow Gradient", ImVec2(-1, 0))) {
+                app.getTexturePainter().gradientBlend(
+                    "Tileset\\Elwynn\\ElwynnGrassBase.blp",
+                    "Tileset\\Expansion02\\Dragonblight\\DragonblightFreshSmoothSnowA.blp", gradDir == 0);
+                app.showToast("Gradient applied");
+            }
+            ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1), "Smooth texture transition across tile");
+        }
+
         if (ImGui::CollapsingHeader("Auto-Paint by Slope")) {
             static float slopeThresh = 0.4f;
             ImGui::SliderFloat("Slope Threshold", &slopeThresh, 0.1f, 0.9f);

@@ -289,6 +289,38 @@ void TexturePainter::paintAlongPath(const glm::vec3& start, const glm::vec3& end
     }
 }
 
+void TexturePainter::gradientBlend(const std::string& tex1, const std::string& tex2, bool horizontal) {
+    if (!terrain_) return;
+    uint32_t id1 = ensureTextureInList(tex1);
+    uint32_t id2 = ensureTextureInList(tex2);
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap() || chunk.layers.empty()) continue;
+        int cx = ci % 16, cy = ci / 16;
+
+        // Set base texture to tex1
+        chunk.layers[0].textureId = id1;
+
+        // Add tex2 as blended layer
+        int layerIdx = ensureLayerOnChunk(ci, id2);
+        if (layerIdx < 0) continue;
+        size_t off = chunk.layers[layerIdx].offsetMCAL;
+        if (off + 4096 > chunk.alphaMap.size()) continue;
+
+        for (int ty = 0; ty < 64; ty++) {
+            for (int tx = 0; tx < 64; tx++) {
+                float t;
+                if (horizontal)
+                    t = (cx * 64.0f + tx) / (16.0f * 64.0f);
+                else
+                    t = (cy * 64.0f + ty) / (16.0f * 64.0f);
+                chunk.alphaMap[off + ty * 64 + tx] = static_cast<uint8_t>(t * 255.0f);
+            }
+        }
+    }
+}
+
 std::vector<int> TexturePainter::erase(const glm::vec3& center, float radius,
                                         float strength, float falloff) {
     if (!terrain_ || activeTexture_.empty()) return {};
