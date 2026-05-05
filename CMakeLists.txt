@@ -1316,6 +1316,7 @@ add_executable(wowee_editor
     src/pipeline/adt_loader.cpp
     src/pipeline/wdt_loader.cpp
     src/pipeline/wowee_terrain_loader.cpp
+    src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 
     # Rendering core

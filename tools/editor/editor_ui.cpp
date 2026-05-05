@@ -6,6 +6,9 @@
 #include "npc_spawner.hpp"
 #include "npc_presets.hpp"
 #include "quest_editor.hpp"
+#include "pipeline/custom_zone_discovery.hpp"
+#include "pipeline/wowee_terrain_loader.hpp"
+#include <filesystem>
 #include "asset_browser.hpp"
 #include "transform_gizmo.hpp"
 #include "terrain_biomes.hpp"
@@ -201,6 +204,43 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Separator();
             if (ImGui::MenuItem("New Terrain...", "Ctrl+N")) showNewDialog_ = true;
             if (ImGui::MenuItem("Load ADT...", "Ctrl+O")) showLoadDialog_ = true;
+            if (ImGui::BeginMenu("Load Custom Zone")) {
+                auto zones = pipeline::CustomZoneDiscovery::scan({"output", "custom_zones"});
+                if (zones.empty()) {
+                    ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1), "No custom zones found");
+                    ImGui::TextColored(ImVec4(0.5f,0.5f,0.5f,1), "Export a zone first, or place .wcp in custom_zones/");
+                } else {
+                    for (const auto& z : zones) {
+                        char label[128];
+                        std::snprintf(label, sizeof(label), "%s%s",
+                                      z.name.c_str(), z.hasQuests ? " [Q]" : "");
+                        if (ImGui::MenuItem(label)) {
+                            // Find first WOT file in this zone directory
+                            for (auto& entry : std::filesystem::directory_iterator(z.directory)) {
+                                if (entry.path().extension() == ".wot") {
+                                    std::string base = entry.path().stem().string();
+                                    // Parse tile coords from filename: MapName_X_Y
+                                    auto lastU = base.rfind('_');
+                                    auto prevU = base.rfind('_', lastU - 1);
+                                    if (lastU != std::string::npos && prevU != std::string::npos) {
+                                        int tx = std::stoi(base.substr(prevU + 1, lastU - prevU - 1));
+                                        int ty = std::stoi(base.substr(lastU + 1));
+                                        app.createNewTerrain(z.name, tx, ty, 100.0f, Biome::Grassland);
+                                        // Load the WOT/WHM data
+                                        std::string wotBase = entry.path().parent_path().string() + "/" + base;
+                                        pipeline::WoweeTerrainLoader::load(wotBase, *app.getTerrainEditor().getTerrain());
+                                        app.showToast("Loaded custom zone: " + z.name);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        if (ImGui::IsItemHovered() && !z.description.empty())
+                            ImGui::SetTooltip("%s\nBy: %s", z.description.c_str(), z.author.c_str());
+                    }
+                }
+                ImGui::EndMenu();
+            }
             if (ImGui::BeginMenu("Import Heightmap", app.hasTerrainLoaded())) {
                 static char hmPath[256] = "heightmap.raw";
                 static float hmScale = 200.0f;
