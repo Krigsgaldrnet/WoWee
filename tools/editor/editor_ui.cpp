@@ -1512,6 +1512,10 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
             ImGui::SameLine();
             if (ImGui::Button("Align Slope", ImVec2(75, 0)))
                 app.alignSelectedToTerrain();
+            if (ImGui::Button("Flatten Ground", ImVec2(100, 0)))
+                app.flattenAroundSelected();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Flatten terrain around object to its height");
             if (ImGui::Button("Fly To", ImVec2(55, 0)))
                 app.flyToSelected();
             ImGui::SameLine();
@@ -1544,16 +1548,32 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
             ImGui::SliderInt("Count##objsc", &objScatterCount, 1, 50);
             ImGui::SliderFloat("Radius##objsc", &objScatterRadius, 10.0f, 300.0f);
             ImGui::DragFloatRange2("Scale##objsc", &objMinScale, &objMaxScale, 0.05f, 0.1f, 10.0f);
+            static bool scatterAlign = true;
+            ImGui::Checkbox("Align to terrain", &scatterAlign);
             auto& brush = app.getTerrainEditor().brush();
             if (ImGui::Button("Scatter at Cursor##obj", ImVec2(-1, 0))) {
                 if (brush.isActive() && !placer.getActivePath().empty()) {
+                    size_t before = placer.objectCount();
                     placer.scatter(brush.getPosition(), objScatterRadius,
                                    objScatterCount, objMinScale, objMaxScale);
+                    if (scatterAlign) {
+                        for (size_t i = before; i < placer.objectCount(); i++) {
+                            auto& obj = placer.getObjects()[i];
+                            rendering::Ray ray;
+                            ray.origin = obj.position + glm::vec3(0, 0, 500);
+                            ray.direction = glm::vec3(0, 0, -1);
+                            glm::vec3 hitPos;
+                            if (app.getTerrainEditor().raycastTerrain(ray, hitPos)) {
+                                obj.position.z = hitPos.z;
+                                glm::vec3 n = app.getTerrainEditor().sampleTerrainNormal(obj.position);
+                                obj.rotation.x = glm::degrees(std::asin(-n.x));
+                                obj.rotation.z = glm::degrees(std::asin(n.y));
+                            }
+                        }
+                    }
                     app.markObjectsDirty();
                 }
             }
-            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
-                "Scatters selected model with random rotation/scale");
         }
 
         ImGui::Separator();

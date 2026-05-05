@@ -1298,6 +1298,35 @@ void EditorApp::snapSelectedToGround() {
     }
 }
 
+void EditorApp::flattenAroundSelected(float radius) {
+    auto* sel = objectPlacer_.getSelected();
+    if (!sel || !terrain_.isLoaded()) return;
+
+    terrainEditor_.beginGeneratorUndo();
+    float targetHeight = sel->position.z;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_.chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        bool modified = false;
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 vpos = terrainEditor_.getChunkVertexWorldPos(ci, v);
+            float dist = glm::length(glm::vec2(vpos.x - sel->position.x, vpos.y - sel->position.y));
+            if (dist >= radius) continue;
+            float t = dist / radius;
+            float blend = t * t;
+            float relTarget = targetHeight - chunk.position[2];
+            chunk.heightMap.heights[v] = chunk.heightMap.heights[v] * blend + relTarget * (1.0f - blend);
+            modified = true;
+        }
+        if (modified) {
+            terrainEditor_.stitchChunkEdges(ci);
+            terrainEditor_.markDirty(ci);
+        }
+    }
+    terrainEditor_.endGeneratorUndo();
+    showToast("Flattened terrain around object (r=" + std::to_string(static_cast<int>(radius)) + ")");
+}
+
 void EditorApp::alignSelectedToTerrain() {
     auto& indices = objectPlacer_.getSelectedIndices();
     auto& objects = objectPlacer_.getObjects();
@@ -1323,14 +1352,27 @@ void EditorApp::alignSelectedToTerrain() {
 
 int EditorApp::batchConvertAssets(const std::string& dataDir) {
     namespace fs = std::filesystem;
-    if (!fs::exists(dataDir)) return 0;
-
     int converted = 0;
-    for (auto& entry : fs::recursive_directory_iterator(dataDir)) {
-        if (!entry.is_regular_file()) continue;
-        std::string ext = entry.path().extension().string();
+
+    // Collect paths from filesystem or manifest
+    std::vector<std::string> assetPaths;
+    if (fs::exists(dataDir)) {
+        for (auto& entry : fs::recursive_directory_iterator(dataDir)) {
+            if (entry.is_regular_file())
+                assetPaths.push_back(fs::relative(entry.path(), dataDir).string());
+        }
+    }
+    if (assetPaths.empty() && assetManager_) {
+        for (const auto& [path, _] : assetManager_->getManifest().getEntries())
+            assetPaths.push_back(path);
+        LOG_INFO("Batch convert: using manifest (", assetPaths.size(), " entries)");
+    }
+
+    for (const auto& relPath : assetPaths) {
+        std::string ext;
+        auto dot = relPath.rfind('.');
+        if (dot != std::string::npos) ext = relPath.substr(dot);
         for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        std::string relPath = fs::relative(entry.path(), dataDir).string();
 
         if (ext == ".m2") {
             auto wom = pipeline::WoweeModelLoader::fromM2(relPath, assetManager_.get());

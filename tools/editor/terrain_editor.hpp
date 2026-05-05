@@ -43,6 +43,11 @@ public:
 
     // Get chunks modified since last call (for re-upload)
     std::vector<int> consumeDirtyChunks();
+    void markDirty(int chunkIdx) { dirtyChunks_.push_back(chunkIdx); dirty_ = true; }
+    void stitchChunkEdges(int chunkIdx) { stitchEdges(chunkIdx); }
+    glm::vec3 getChunkVertexWorldPos(int ci, int vi) const { return chunkVertexWorldPos(ci, vi); }
+    void beginGeneratorUndo() { recordGeneratorUndo(); }
+    void endGeneratorUndo() { commitGeneratorUndo(); }
 
     // Regenerate mesh for specific chunks
     pipeline::TerrainMesh regenerateMesh() const;

@@ -90,6 +90,7 @@ public:
     void setSkyPreset(int preset); // 0=day, 1=dusk, 2=night
     void snapSelectedToGround();
     void alignSelectedToTerrain();
+    void flattenAroundSelected(float radius = 30.0f);
     void flyToSelected();
     int batchConvertAssets(const std::string& dataDir);
     void clearAllObjects();
