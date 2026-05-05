@@ -1,5 +1,6 @@
 #include "wowee_terrain.hpp"
 #include "core/logger.hpp"
+#include "stb_image_write.h"
 #include <fstream>
 #include <filesystem>
 #include <cstring>
@@ -84,6 +85,39 @@ bool WoweeTerrain::exportOpen(const pipeline::ADTTerrain& terrain,
     }
 
     LOG_INFO("Open terrain exported: ", basePath, " (.wot + .whm)");
+    return true;
+}
+
+bool WoweeTerrain::exportNormalMap(const pipeline::ADTTerrain& terrain,
+                                    const std::string& path) {
+    // Export 129x129 normal map as RGB PNG
+    constexpr int res = 129;
+    std::vector<uint8_t> pixels(res * res * 3);
+
+    for (int cy = 0; cy < 16; cy++) {
+        for (int cx = 0; cx < 16; cx++) {
+            const auto& chunk = terrain.chunks[cy * 16 + cx];
+            if (!chunk.hasHeightMap()) continue;
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                if (col > 8) continue;
+                int px = cx * 8 + col, py = cy * 8 + row;
+                if (px >= res || py >= res) continue;
+
+                int ni = v * 3;
+                float nx = static_cast<float>(chunk.normals[ni]) / 127.0f;
+                float ny = static_cast<float>(chunk.normals[ni + 1]) / 127.0f;
+                float nz = static_cast<float>(chunk.normals[ni + 2]) / 127.0f;
+
+                int idx = (py * res + px) * 3;
+                pixels[idx] = static_cast<uint8_t>((nx * 0.5f + 0.5f) * 255);
+                pixels[idx + 1] = static_cast<uint8_t>((ny * 0.5f + 0.5f) * 255);
+                pixels[idx + 2] = static_cast<uint8_t>((nz * 0.5f + 0.5f) * 255);
+            }
+        }
+    }
+
+    stbi_write_png(path.c_str(), res, res, 3, pixels.data(), res * 3);
     return true;
 }
 
