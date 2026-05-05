@@ -59,6 +59,11 @@ public:
     size_t getEntryCount() const { return entries_.size(); }
 
     /**
+     * Access entries map (read-only) for iteration
+     */
+    const std::unordered_map<std::string, Entry>& getEntries() const { return entries_; }
+
+    /**
      * Check if manifest is loaded
      */
     bool isLoaded() const { return loaded_; }

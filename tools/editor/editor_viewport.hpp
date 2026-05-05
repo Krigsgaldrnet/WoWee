@@ -1,0 +1,96 @@
+#pragma once
+
+#include "rendering/vk_frame_data.hpp"
+#include "rendering/terrain_renderer.hpp"
+#include "rendering/m2_renderer.hpp"
+#include "rendering/wmo_renderer.hpp"
+#include "rendering/camera.hpp"
+#include "editor_water.hpp"
+#include "editor_markers.hpp"
+#include "transform_gizmo.hpp"
+#include "object_placer.hpp"
+#include "npc_spawner.hpp"
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
+#include <memory>
+
+namespace wowee {
+namespace pipeline { class AssetManager; }
+namespace rendering { class VkContext; class VkTexture; }
+
+namespace editor {
+
+class EditorViewport {
+public:
+    EditorViewport();
+    ~EditorViewport();
+
+    bool initialize(rendering::VkContext* ctx, pipeline::AssetManager* am, rendering::Camera* cam);
+    void shutdown();
+
+    bool loadTerrain(const pipeline::TerrainMesh& mesh,
+                     const std::vector<std::string>& texturePaths,
+                     int tileX, int tileY);
+    void clearTerrain();
+
+    void updateWater(const pipeline::ADTTerrain& terrain, int tileX, int tileY);
+    void updateMarkers(const std::vector<PlacedObject>& objects);
+    void placeM2(const std::string& path, const glm::vec3& pos, const glm::vec3& rot, float scale);
+    void placeWMO(const std::string& path, const glm::vec3& pos, const glm::vec3& rot);
+    void clearObjects();
+    void rebuildObjects(const std::vector<PlacedObject>& objects,
+                        const std::vector<CreatureSpawn>& npcs = {});
+
+    void update(float deltaTime);
+    void render(VkCommandBuffer cmd);
+
+    // Ghost preview for placement
+    void setGhostPreview(const std::string& path, const glm::vec3& pos,
+                         const glm::vec3& rotDeg, float scale);
+    void clearGhostPreview();
+
+    TransformGizmo& getGizmo() { return gizmo_; }
+
+    void setWireframe(bool enabled);
+    bool isWireframe() const { return wireframe_; }
+
+    rendering::TerrainRenderer* getTerrainRenderer() { return terrainRenderer_.get(); }
+
+private:
+    bool createPerFrameResources();
+    void destroyPerFrameResources();
+    void updatePerFrameUBO();
+
+    rendering::VkContext* vkCtx_ = nullptr;
+    pipeline::AssetManager* assetManager_ = nullptr;
+    rendering::Camera* camera_ = nullptr;
+
+    std::unique_ptr<rendering::TerrainRenderer> terrainRenderer_;
+    std::unique_ptr<rendering::M2Renderer> m2Renderer_;
+    std::unique_ptr<rendering::WMORenderer> wmoRenderer_;
+    EditorWater waterRenderer_;
+    EditorMarkers markerRenderer_;
+    TransformGizmo gizmo_;
+
+    static constexpr uint32_t MAX_FRAMES = 2;
+    VkDescriptorSetLayout perFrameSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool sceneDescPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet perFrameDescSets_[MAX_FRAMES] = {};
+    VkBuffer perFrameUBOs_[MAX_FRAMES] = {};
+    VmaAllocation perFrameUBOAllocs_[MAX_FRAMES] = {};
+    void* perFrameUBOMapped_[MAX_FRAMES] = {};
+
+    std::unique_ptr<rendering::VkTexture> dummyShadowTexture_;
+    VkSampler shadowSampler_ = VK_NULL_HANDLE;
+
+    bool wireframe_ = false;
+
+    // Ghost preview state
+    std::string ghostModelPath_;
+    uint32_t ghostModelId_ = 0;
+    uint32_t ghostInstanceId_ = 0;
+    bool ghostActive_ = false;
+};
+
+} // namespace editor
+} // namespace wowee

@@ -1,0 +1,39 @@
+#pragma once
+
+#include "rendering/camera.hpp"
+#include <SDL2/SDL.h>
+#include <glm/glm.hpp>
+
+namespace wowee {
+namespace editor {
+
+class EditorCamera {
+public:
+    EditorCamera();
+
+    void update(float deltaTime);
+    void processMouseMotion(int dx, int dy);
+    void processMouseWheel(float delta);
+    void processKeyEvent(const SDL_KeyboardEvent& event);
+    void processMouseButton(const SDL_MouseButtonEvent& event);
+
+    rendering::Camera& getCamera() { return camera_; }
+    const rendering::Camera& getCamera() const { return camera_; }
+
+    float getSpeed() const { return speed_; }
+    void setSpeed(float s) { speed_ = s; }
+    void setPosition(const glm::vec3& pos);
+    void setYawPitch(float yaw, float pitch);
+
+private:
+    rendering::Camera camera_;
+    float speed_ = 100.0f;
+    float yaw_ = 0.0f;
+    float pitch_ = 0.0f;
+    bool keyW_ = false, keyA_ = false, keyS_ = false, keyD_ = false;
+    bool keyQ_ = false, keyE_ = false, keyShift_ = false;
+    bool rightMouseDown_ = false;
+};
+
+} // namespace editor
+} // namespace wowee

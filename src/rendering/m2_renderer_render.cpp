@@ -824,11 +824,11 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
     for (uint32_t i = 0; i < totalInstances; ++i) {
         const auto& instance = instances[i];
 
-        if (gpuCullAvailable && i < numInstances) {
-            // GPU already tested flags + distance + frustum
+        if (forceNoCull_) {
+            if (!instance.cachedIsValid) continue;
+        } else if (gpuCullAvailable && i < numInstances) {
             if (!visibility[i]) continue;
         } else {
-            // CPU fallback: for non-GPU path or instances beyond cull buffer
             if (!instance.cachedIsValid || instance.cachedIsSmoke || instance.cachedIsInvisibleTrap) continue;
 
             glm::vec3 toCam = instance.position - camPos;

@@ -47,6 +47,7 @@ public:
      */
     bool isInitialized() const { return initialized; }
     const std::string& getDataPath() const { return dataPath; }
+    const AssetManifest& getManifest() const { return manifest_; }
 
     /**
      * Load a BLP texture
