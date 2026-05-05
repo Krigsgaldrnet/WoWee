@@ -237,7 +237,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Text("Wowee World Editor");
             ImGui::Text("by Kelsi Davis");
             ImGui::Separator();
-            ImGui::Text("Version: 0.4.0");
+            ImGui::Text("Version: 0.5.0 (130 commits)");
             ImGui::Text("Standalone world editor for creating");
             ImGui::Text("custom WoW zones for the wowee client.");
             ImGui::Separator();
