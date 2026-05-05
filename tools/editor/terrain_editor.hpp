@@ -111,6 +111,9 @@ public:
     // Offset all heights by a constant
     void offsetHeights(float amount);
 
+    // Voronoi cell noise — creates cell-like terrain patterns
+    void applyVoronoiNoise(int cellCount, float amplitude, uint32_t seed);
+
     // Fill entire tile with water at a height
     void fillWater(float height, uint16_t liquidType);
 

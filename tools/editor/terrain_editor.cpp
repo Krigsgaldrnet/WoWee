@@ -860,6 +860,46 @@ void TerrainEditor::createHill(const glm::vec3& center, float radius, float heig
     dirty_ = true;
 }
 
+void TerrainEditor::applyVoronoiNoise(int cellCount, float amplitude, uint32_t seed) {
+    if (!terrain_) return;
+
+    float tileNW_X = (32.0f - static_cast<float>(terrain_->coord.y)) * TILE_SIZE;
+    float tileNW_Y = (32.0f - static_cast<float>(terrain_->coord.x)) * TILE_SIZE;
+
+    // Generate random cell centers
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> distX(tileNW_X - TILE_SIZE, tileNW_X);
+    std::uniform_real_distribution<float> distY(tileNW_Y - TILE_SIZE, tileNW_Y);
+    std::uniform_real_distribution<float> distH(0.0f, amplitude);
+
+    struct Cell { float x, y, h; };
+    std::vector<Cell> cells(cellCount);
+    for (auto& c : cells) { c.x = distX(rng); c.y = distY(rng); c.h = distH(rng); }
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            // Find nearest two cells
+            float d1 = 1e30f, d2 = 1e30f;
+            float h1 = 0;
+            for (const auto& c : cells) {
+                float d = (pos.x - c.x) * (pos.x - c.x) + (pos.y - c.y) * (pos.y - c.y);
+                if (d < d1) { d2 = d1; d1 = d; h1 = c.h; }
+                else if (d < d2) { d2 = d; }
+            }
+            // F2-F1 creates ridge patterns at cell boundaries
+            float edge = std::sqrt(d2) - std::sqrt(d1);
+            float edgeNorm = std::min(edge / 30.0f, 1.0f);
+            chunk.heightMap.heights[v] += h1 * (1.0f - edgeNorm * 0.5f);
+        }
+        dirtyChunks_.push_back(ci);
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::offsetHeights(float amount) {
     if (!terrain_) return;
     for (int ci = 0; ci < 256; ci++) {

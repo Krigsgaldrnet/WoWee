@@ -505,7 +505,22 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::InputInt("Seed", &noiseSeed);
             ImGui::SameLine();
             if (ImGui::SmallButton("Random##seed")) noiseSeed = static_cast<int>(std::rand());
-            if (ImGui::Button("Apply Noise", ImVec2(140, 0))) {
+            static int noiseType = 0;
+            ImGui::RadioButton("Value##nt", &noiseType, 0);
+            ImGui::SameLine();
+            ImGui::RadioButton("Voronoi##nt", &noiseType, 1);
+
+            if (noiseType == 1) {
+                static int voronoiCells = 20;
+                ImGui::SliderInt("Cells##vor", &voronoiCells, 5, 100);
+                if (ImGui::Button("Apply Voronoi", ImVec2(-1, 0))) {
+                    app.getTerrainEditor().applyVoronoiNoise(voronoiCells, noiseAmp,
+                                                              static_cast<uint32_t>(noiseSeed));
+                    app.showToast("Voronoi noise applied");
+                }
+            }
+
+            if (noiseType == 0 && ImGui::Button("Apply Noise", ImVec2(140, 0))) {
                 app.getTerrainEditor().applyNoise(noiseFreq, noiseAmp, noiseOctaves,
                                                    static_cast<uint32_t>(noiseSeed));
                 app.showToast("Noise applied");
