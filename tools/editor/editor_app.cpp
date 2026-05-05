@@ -281,26 +281,32 @@ void EditorApp::processEvents() {
         }
 
         if ((event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) && !io.WantCaptureMouse) {
-            // Right-click context menu on selected objects
+            // Right-click on selected objects = context menu
             if (event.button.button == SDL_BUTTON_RIGHT && event.type == SDL_MOUSEBUTTONDOWN) {
                 auto& giz = viewport_.getGizmo();
                 if (giz.isDragging()) {
                     giz.endDrag();
                     giz.setMode(TransformMode::None);
-                } else if (objectPlacer_.getSelected()) {
+                } else if (objectPlacer_.getSelected() || npcSpawner_.getSelected()) {
                     openContextMenu_ = true;
                 } else {
                     camera_.processMouseButton(event.button);
                 }
+            } else if (event.button.button == SDL_BUTTON_RIGHT && event.type == SDL_MOUSEBUTTONUP) {
+                if (!objectPlacer_.getSelected() && !npcSpawner_.getSelected())
+                    camera_.processMouseButton(event.button);
             } else {
-                camera_.processMouseButton(event.button);
+                // Only pass to camera if gizmo not active
+                auto& giz = viewport_.getGizmo();
+                if (!giz.isDragging())
+                    camera_.processMouseButton(event.button);
             }
 
             // Left click
             if (event.button.button == SDL_BUTTON_LEFT && terrain_.isLoaded()) {
-                // End gizmo drag on click release
                 auto& giz = viewport_.getGizmo();
-                if (giz.isDragging() && event.type == SDL_MOUSEBUTTONUP) {
+                // End gizmo drag on left click
+                if (giz.isDragging() && event.type == SDL_MOUSEBUTTONDOWN) {
                     giz.endDrag();
                     giz.setMode(TransformMode::None);
                 } else if (event.type == SDL_MOUSEBUTTONDOWN) {
@@ -540,6 +546,12 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 
 void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome) {
     terrain_ = TerrainEditor::createBlankTerrain(tileX, tileY, baseHeight, biome);
+    // Clear previous state
+    objectPlacer_.clearAll();
+    npcSpawner_.clearSelection();
+    npcSpawner_.getSpawns().clear();
+    viewport_.clearObjects();
+
     terrainEditor_.setTerrain(&terrain_);
     terrainEditor_.history().clear();
     texturePainter_.setTerrain(&terrain_);
@@ -552,6 +564,8 @@ void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tile
     loadedMap_ = mapName;
     loadedTileX_ = tileX;
     loadedTileY_ = tileY;
+    lastObjectCount_ = 0;
+    objectsDirty_ = false;
 
     float centerX = (32.0f - tileY) * 533.33333f - 8.0f * 533.33333f / 16.0f;
     float centerY = (32.0f - tileX) * 533.33333f - 8.0f * 533.33333f / 16.0f;

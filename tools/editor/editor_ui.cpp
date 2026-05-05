@@ -100,10 +100,13 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::MenuItem("Clear All", nullptr, false, app.hasTerrainLoaded())) {
-                app.getTerrainEditor().history().clear();
-                app.getObjectPlacer().clearSelection();
+            if (ImGui::MenuItem("Clear All Objects/NPCs", nullptr, false, app.hasTerrainLoaded())) {
+                app.getObjectPlacer().clearAll();
                 app.getNpcSpawner().clearSelection();
+                app.getNpcSpawner().getSpawns().clear();
+                app.getTerrainEditor().history().clear();
+                app.markObjectsDirty();
+                app.showToast("All objects and NPCs cleared");
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Quick Save", "Ctrl+S", false, app.hasTerrainLoaded()))
@@ -900,38 +903,54 @@ void EditorUI::renderContextMenu(EditorApp& app) {
         app.clearContextMenuFlag();
     }
     if (ImGui::BeginPopup("ObjectContextMenu")) {
-        auto* sel = app.getObjectPlacer().getSelected();
-        if (!sel) { ImGui::EndPopup(); return; }
+        auto* objSel = app.getObjectPlacer().getSelected();
+        auto* npcSel = app.getNpcSpawner().getSelected();
+        if (!objSel && !npcSel) { ImGui::EndPopup(); return; }
 
-        std::string display = sel->path;
-        auto slash = display.rfind('\\');
-        if (slash != std::string::npos) display = display.substr(slash + 1);
-        ImGui::TextColored(ImVec4(1, 0.9f, 0.3f, 1), "%s", display.c_str());
+        if (objSel) {
+            std::string display = objSel->path;
+            auto slash = display.rfind('\\');
+            if (slash != std::string::npos) display = display.substr(slash + 1);
+            ImGui::TextColored(ImVec4(1, 0.9f, 0.3f, 1), "%s", display.c_str());
+        } else {
+            ImGui::TextColored(ImVec4(1, 0.9f, 0.3f, 1), "%s (NPC)", npcSel->name.c_str());
+        }
         ImGui::Separator();
 
-        if (ImGui::MenuItem("Move (left-drag)"))
-            app.startGizmoMode(TransformMode::Move);
-        if (ImGui::MenuItem("Rotate (left-drag)"))
-            app.startGizmoMode(TransformMode::Rotate);
-        if (ImGui::MenuItem("Scale (left-drag)"))
-            app.startGizmoMode(TransformMode::Scale);
-
-        ImGui::Separator();
-        if (ImGui::BeginMenu("Constrain Axis")) {
-            if (ImGui::MenuItem("All Axes")) app.setGizmoAxis(TransformAxis::All);
-            if (ImGui::MenuItem("X (Red)")) app.setGizmoAxis(TransformAxis::X);
-            if (ImGui::MenuItem("Y (Green)")) app.setGizmoAxis(TransformAxis::Y);
-            if (ImGui::MenuItem("Z (Blue)")) app.setGizmoAxis(TransformAxis::Z);
-            ImGui::EndMenu();
+        if (objSel) {
+            if (ImGui::MenuItem("Move (G)"))
+                app.startGizmoMode(TransformMode::Move);
+            if (ImGui::MenuItem("Rotate (R)"))
+                app.startGizmoMode(TransformMode::Rotate);
+            if (ImGui::MenuItem("Scale (T)"))
+                app.startGizmoMode(TransformMode::Scale);
+            ImGui::Separator();
+            if (ImGui::MenuItem("Snap to Ground"))
+                app.snapSelectedToGround();
+            if (ImGui::MenuItem("Fly To"))
+                app.flyToSelected();
+        }
+        if (npcSel) {
+            if (ImGui::MenuItem("Fly To"))
+                app.flyToSelected();
+            if (ImGui::MenuItem("Duplicate")) {
+                CreatureSpawn copy = *npcSel;
+                copy.position += glm::vec3(10, 10, 0);
+                app.getNpcSpawner().placeCreature(copy);
+                app.markObjectsDirty();
+            }
         }
 
         ImGui::Separator();
         if (ImGui::MenuItem("Delete")) {
-            app.getObjectPlacer().deleteSelected();
+            if (objSel) { app.getObjectPlacer().deleteSelected(); }
+            else { app.getNpcSpawner().removeCreature(app.getNpcSpawner().getSelectedIndex()); }
             app.markObjectsDirty();
         }
-        if (ImGui::MenuItem("Deselect"))
+        if (ImGui::MenuItem("Deselect")) {
             app.getObjectPlacer().clearSelection();
+            app.getNpcSpawner().clearSelection();
+        }
 
         ImGui::EndPopup();
     }
