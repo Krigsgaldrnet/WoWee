@@ -170,6 +170,18 @@ bool WoweeTerrain::exportHeightmapPreview(const pipeline::ADTTerrain& terrain,
     return true;
 }
 
+bool WoweeTerrain::exportWaterMask(const pipeline::ADTTerrain& terrain,
+                                    const std::string& path) {
+    constexpr int res = 16; // One pixel per chunk
+    std::vector<uint8_t> pixels(res * res);
+    for (int ci = 0; ci < 256; ci++)
+        pixels[ci] = terrain.waterData[ci].hasWater() ? 255 : 0;
+
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    stbi_write_png(path.c_str(), res, res, 1, pixels.data(), res);
+    return true;
+}
+
 int WoweeTerrain::exportAlphaMaps(const pipeline::ADTTerrain& terrain,
                                     const std::string& outputDir) {
     namespace fs = std::filesystem;
