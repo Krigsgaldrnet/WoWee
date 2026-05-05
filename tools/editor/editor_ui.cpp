@@ -627,7 +627,11 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Set start then end to apply");
         }
 
-        if (ImGui::CollapsingHeader("Mirror Terrain")) {
+        if (ImGui::CollapsingHeader("Mirror / Rotate")) {
+            if (ImGui::Button("Rotate 90 CW", ImVec2(-1, 0))) {
+                app.getTerrainEditor().rotateTerrain90();
+                app.showToast("Terrain rotated 90 degrees");
+            }
             if (ImGui::Button("Mirror X (Left<>Right)", ImVec2(-1, 0))) {
                 app.getTerrainEditor().mirrorX();
                 app.showToast("Terrain mirrored X");

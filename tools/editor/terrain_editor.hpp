@@ -126,6 +126,9 @@ public:
     // Add random detail noise to existing terrain (preserves shape, adds roughness)
     void addDetailNoise(float amplitude, float frequency, uint32_t seed);
 
+    // Rotate terrain 90 degrees clockwise
+    void rotateTerrain90();
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);

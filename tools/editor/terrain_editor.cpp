@@ -900,6 +900,51 @@ void TerrainEditor::applyVoronoiNoise(int cellCount, float amplitude, uint32_t s
     dirty_ = true;
 }
 
+void TerrainEditor::rotateTerrain90() {
+    if (!terrain_) return;
+    // Snapshot all outer vertex heights into a 129x129 grid
+    std::array<std::array<float, 129>, 129> grid{};
+    for (int cy = 0; cy < 16; cy++) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& chunk = terrain_->chunks[cy * 16 + cx];
+            if (!chunk.hasHeightMap()) continue;
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                if (col > 8) continue;
+                grid[cy * 8 + row][cx * 8 + col] = chunk.heightMap.heights[v];
+            }
+        }
+    }
+    // Rotate 90 degrees CW: new[x][128-y] = old[y][x]
+    std::array<std::array<float, 129>, 129> rotated{};
+    for (int y = 0; y < 129; y++)
+        for (int x = 0; x < 129; x++)
+            rotated[x][128 - y] = grid[y][x];
+    // Write back
+    for (int cy = 0; cy < 16; cy++) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& chunk = terrain_->chunks[cy * 16 + cx];
+            if (!chunk.hasHeightMap()) continue;
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                if (col > 8) {
+                    // Inner vertex: average of surrounding outer
+                    int innerCol = col - 9;
+                    int gy = cy * 8 + row, gx = cx * 8 + innerCol;
+                    if (gy < 128 && gx < 128)
+                        chunk.heightMap.heights[v] = (rotated[gy][gx] + rotated[gy][gx+1] +
+                                                       rotated[gy+1][gx] + rotated[gy+1][gx+1]) * 0.25f;
+                } else {
+                    chunk.heightMap.heights[v] = rotated[cy * 8 + row][cx * 8 + col];
+                }
+            }
+            dirtyChunks_.push_back(cy * 16 + cx);
+        }
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::offsetHeights(float amount) {
     if (!terrain_) return;
     for (int ci = 0; ci < 256; ci++) {
