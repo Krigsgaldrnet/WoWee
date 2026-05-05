@@ -651,6 +651,21 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Detail Noise")) {
+            static float detailAmp = 2.0f, detailFreq = 0.1f;
+            static int detailSeed = 99;
+            ImGui::SliderFloat("Amplitude##detail", &detailAmp, 0.5f, 10.0f);
+            ImGui::SliderFloat("Frequency##detail", &detailFreq, 0.01f, 0.5f, "%.3f");
+            ImGui::InputInt("Seed##detail", &detailSeed);
+            if (ImGui::Button("Add Detail", ImVec2(-1, 0))) {
+                app.getTerrainEditor().addDetailNoise(detailAmp, detailFreq,
+                                                       static_cast<uint32_t>(detailSeed));
+                app.showToast("Detail noise added");
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "Adds small-scale roughness to existing terrain");
+        }
+
         if (ImGui::CollapsingHeader("Edge Ramp (Multi-tile)")) {
             static float rampTarget = 100.0f, rampWidth = 20.0f;
             ImGui::SliderFloat("Target Height##ramp", &rampTarget, 0.0f, 500.0f);

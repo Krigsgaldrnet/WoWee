@@ -985,6 +985,29 @@ void TerrainEditor::smoothBeaches(float waterHeight, float beachWidth) {
     dirty_ = true;
 }
 
+void TerrainEditor::addDetailNoise(float amplitude, float frequency, uint32_t seed) {
+    if (!terrain_) return;
+    auto hash2d = [](int x, int y, uint32_t s) -> float {
+        uint32_t h = static_cast<uint32_t>(x * 374761393 + y * 668265263 + s);
+        h = (h ^ (h >> 13)) * 1274126177;
+        h = h ^ (h >> 16);
+        return (static_cast<float>(h & 0xFFFF) / 65535.0f - 0.5f) * 2.0f;
+    };
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            int ix = static_cast<int>(std::floor(pos.x * frequency));
+            int iy = static_cast<int>(std::floor(pos.y * frequency));
+            chunk.heightMap.heights[v] += hash2d(ix, iy, seed) * amplitude;
+        }
+        dirtyChunks_.push_back(ci);
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::rampEdges(float targetHeight, float rampWidth) {
     if (!terrain_) return;
     float relTarget = targetHeight - terrain_->chunks[0].position[2];

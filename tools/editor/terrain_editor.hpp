@@ -123,6 +123,9 @@ public:
     // Ramp tile edges to a target height for seamless multi-tile joins
     void rampEdges(float targetHeight, float rampWidth);
 
+    // Add random detail noise to existing terrain (preserves shape, adds roughness)
+    void addDetailNoise(float amplitude, float frequency, uint32_t seed);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);
