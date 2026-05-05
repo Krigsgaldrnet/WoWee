@@ -560,6 +560,8 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
             ImGui::DragFloat("Grass max##ap", &h2, 1.0f);
             ImGui::DragFloat("Rock max##ap", &h3, 1.0f);
             ImGui::Text("Above %.0f: Snow", h3);
+            static bool autoScatterObjects = false;
+            ImGui::Checkbox("Also scatter objects by band", &autoScatterObjects);
             if (ImGui::Button("Apply Auto-Paint", ImVec2(-1, 0))) {
                 std::vector<TexturePainter::HeightBand> bands = {
                     {h1, "Tileset\\Tanaris\\TanarisSandBase01.blp"},
