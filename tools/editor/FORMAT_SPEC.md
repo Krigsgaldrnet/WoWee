@@ -20,10 +20,14 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 
 ## WOM — Wowee Open Model (binary)
 - Extension: `.wom`
-- Magic: `WOM1` (0x314D4F57)
+- Magic: `WOM1` (0x314D4F57) for static, `WOM2` (0x324D4F57) for animated
 - Layout: magic(4) + vertCount(4) + indexCount(4) + texCount(4) + bounds(28) + name + vertices + indices + texPaths
-- Vertex: position(vec3) + normal(vec3) + texCoord(vec2) = 32 bytes
-- Note: geometry-only (no skeletal animation — WOM2 planned for bone data)
+- WOM1 Vertex: position(vec3) + normal(vec3) + texCoord(vec2) = 32 bytes
+- WOM2 Vertex: + boneWeights(4) + boneIndices(4) = 40 bytes
+- WOM2 Bones: boneCount(4) + [keyBoneId(4) + parentBone(2) + pivot(12) + flags(4)] × N
+- WOM2 Animations: animCount(4) + [id(4) + duration(4) + speed(4) + per-bone keyframes] × N
+- Keyframe: timeMs(4) + translation(12) + rotation(16) + scale(12) = 44 bytes
+- Backward compatible: WOM1 files load without bone/animation data
 
 ## WOB — Wowee Open Building (binary)
 - Extension: `.wob`
