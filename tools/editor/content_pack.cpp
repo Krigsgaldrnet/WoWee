@@ -1,5 +1,6 @@
 #include "content_pack.hpp"
 #include "core/logger.hpp"
+#include <nlohmann/json.hpp>
 #include <fstream>
 #include <filesystem>
 #include <cstring>
@@ -39,22 +40,20 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
     }
 
     // Build info JSON
-    std::string infoJson = "{\n";
-    infoJson += "  \"format\": \"" + info.format + "\",\n";
-    infoJson += "  \"name\": \"" + info.name + "\",\n";
-    infoJson += "  \"author\": \"" + info.author + "\",\n";
-    infoJson += "  \"description\": \"" + info.description + "\",\n";
-    infoJson += "  \"version\": \"" + info.version + "\",\n";
-    infoJson += "  \"mapId\": " + std::to_string(info.mapId) + ",\n";
-    infoJson += "  \"fileCount\": " + std::to_string(files.size()) + ",\n";
-    infoJson += "  \"files\": [\n";
-    for (size_t i = 0; i < files.size(); i++) {
-        auto fsize = fs::file_size(files[i].second);
-        infoJson += "    {\"path\": \"" + files[i].first + "\", \"size\": " + std::to_string(fsize) + "}";
-        if (i + 1 < files.size()) infoJson += ",";
-        infoJson += "\n";
+    nlohmann::json infoObj;
+    infoObj["format"] = info.format;
+    infoObj["name"] = info.name;
+    infoObj["author"] = info.author;
+    infoObj["description"] = info.description;
+    infoObj["version"] = info.version;
+    infoObj["mapId"] = info.mapId;
+    infoObj["fileCount"] = files.size();
+    nlohmann::json fileArr = nlohmann::json::array();
+    for (const auto& [rel, full] : files) {
+        fileArr.push_back({{"path", rel}, {"size", fs::file_size(full)}});
     }
-    infoJson += "  ]\n}\n";
+    infoObj["files"] = fileArr;
+    std::string infoJson = infoObj.dump(2);
 
     // Write WCP file
     std::ofstream out(destPath, std::ios::binary);
@@ -149,26 +148,30 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
     in.read(reinterpret_cast<char*>(&fileCount), 4);
     in.read(reinterpret_cast<char*>(&infoSize), 4);
 
-    std::string json(infoSize, '\0');
-    in.read(json.data(), infoSize);
+    std::string jsonStr(infoSize, '\0');
+    in.read(jsonStr.data(), infoSize);
 
-    // Parse basic fields
-    auto findStr = [&](const std::string& key) -> std::string {
-        auto pos = json.find("\"" + key + "\"");
-        if (pos == std::string::npos) return "";
-        pos = json.find('"', json.find(':', pos) + 1);
-        if (pos == std::string::npos) return "";
-        auto end = json.find('"', pos + 1);
-        return json.substr(pos + 1, end - pos - 1);
-    };
-
-    info.name = findStr("name");
-    info.author = findStr("author");
-    info.description = findStr("description");
-    info.version = findStr("version");
-    info.format = findStr("format");
+    try {
+        auto j = nlohmann::json::parse(jsonStr);
+        info.name = j.value("name", "");
+        info.author = j.value("author", "");
+        info.description = j.value("description", "");
+        info.version = j.value("version", "");
+        info.format = j.value("format", "");
+        info.mapId = j.value("mapId", 9000u);
+    } catch (...) {
+        return false;
+    }
 
     return true;
+}
+
+static bool checkMagic(const std::string& path, uint32_t expectedMagic) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    uint32_t magic = 0;
+    f.read(reinterpret_cast<char*>(&magic), 4);
+    return magic == expectedMagic;
 }
 
 ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& zoneDir) {
@@ -176,35 +179,64 @@ ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& z
     ValidationResult r;
     if (!fs::exists(zoneDir)) return r;
 
+    static constexpr uint32_t WHM_MAGIC = 0x314D4857; // "WHM1"
+    static constexpr uint32_t WOM_MAGIC = 0x314D4F57; // "WOM1"
+    static constexpr uint32_t WOB_MAGIC = 0x31424F57; // "WOB1"
+
     for (auto& entry : fs::recursive_directory_iterator(zoneDir)) {
         if (!entry.is_regular_file()) continue;
         std::string ext = entry.path().extension().string();
-        std::string name = entry.path().filename().string();
+        std::string fname = entry.path().filename().string();
         if (ext == ".wot") r.hasWot = true;
-        if (ext == ".whm") r.hasWhm = true;
-        if (ext == ".wom") r.hasWom = true;
+        if (ext == ".whm") {
+            r.hasWhm = true;
+            if (checkMagic(entry.path().string(), WHM_MAGIC)) r.whmValid = true;
+        }
+        if (ext == ".wom") {
+            r.hasWom = true;
+            if (checkMagic(entry.path().string(), WOM_MAGIC)) r.womValid = true;
+        }
+        if (ext == ".wob") {
+            r.hasWob = true;
+            if (checkMagic(entry.path().string(), WOB_MAGIC)) r.wobValid = true;
+        }
         if (ext == ".png") r.hasPng = true;
-        if (name == "zone.json") r.hasZoneJson = true;
-        if (name == "creatures.json") r.hasCreatures = true;
-        if (name == "quests.json") r.hasQuests = true;
-        if (name == "objects.json") r.hasObjects = true;
+        if (fname == "zone.json") r.hasZoneJson = true;
+        if (fname == "creatures.json") r.hasCreatures = true;
+        if (fname == "quests.json") r.hasQuests = true;
+        if (fname == "objects.json") r.hasObjects = true;
     }
     return r;
 }
 
 int ContentPacker::ValidationResult::openFormatScore() const {
     int score = 0;
-    if (hasWot) score++; if (hasWhm) score++; if (hasZoneJson) score++;
-    if (hasPng) score++; if (hasWom) score++;
-    return score; // max 5 for fully open
+    if (hasWot) score++;
+    if (hasWhm && whmValid) score++;
+    if (hasZoneJson) score++;
+    if (hasPng) score++;
+    if (hasWom && womValid) score++;
+    if (hasWob && wobValid) score++;
+    return score; // max 6 for fully open
 }
 
 std::string ContentPacker::ValidationResult::summary() const {
     std::string s;
-    s += hasWot ? "WOT " : ""; s += hasWhm ? "WHM " : "";
-    s += hasZoneJson ? "zone.json " : ""; s += hasPng ? "PNG " : "";
-    s += hasWom ? "WOM " : ""; s += hasCreatures ? "creatures " : "";
-    s += hasQuests ? "quests " : ""; s += hasObjects ? "objects " : "";
+    auto add = [&](bool has, bool valid, const char* name) {
+        if (!has) return;
+        s += name;
+        if (!valid) s += "(!)";
+        s += " ";
+    };
+    add(hasWot, true, "WOT");
+    add(hasWhm, whmValid, "WHM");
+    add(hasWom, womValid, "WOM");
+    add(hasWob, wobValid, "WOB");
+    if (hasZoneJson) s += "zone.json ";
+    if (hasPng) s += "PNG ";
+    if (hasCreatures) s += "creatures ";
+    if (hasQuests) s += "quests ";
+    if (hasObjects) s += "objects ";
     return s.empty() ? "(empty)" : s;
 }
 

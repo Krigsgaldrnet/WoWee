@@ -653,6 +653,8 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
         showToast("Loaded " + std::to_string(objectPlacer_.objectCount()) + " objects");
     if (npcSpawner_.loadFromFile(outBase + "/creatures.json"))
         showToast("Loaded " + std::to_string(npcSpawner_.spawnCount()) + " NPCs");
+    if (questEditor_.loadFromFile(outBase + "/quests.json"))
+        showToast("Loaded " + std::to_string(questEditor_.questCount()) + " quests");
     if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0)
         objectsDirty_ = true;
 }
@@ -726,6 +728,11 @@ void EditorApp::exportZone(const std::string& outputDir) {
     if (questEditor_.questCount() > 0) {
         std::string questPath = base + "/quests.json";
         questEditor_.saveToFile(questPath);
+        std::vector<std::string> chainErrors;
+        if (!questEditor_.validateChains(chainErrors)) {
+            for (const auto& err : chainErrors)
+                LOG_WARNING("Quest chain issue: ", err);
+        }
     }
 
     // Update WDT with additional tiles from adjacent exports
