@@ -165,6 +165,35 @@ std::vector<int> TexturePainter::paint(const glm::vec3& center, float radius,
     return modified;
 }
 
+void TexturePainter::autoPaintByHeight(const std::vector<HeightBand>& bands) {
+    if (!terrain_ || bands.empty()) return;
+
+    // Ensure all band textures are in the texture list
+    for (const auto& band : bands)
+        ensureTextureInList(band.texturePath);
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+
+        // Find average height of this chunk
+        float avgH = chunk.position[2];
+        float sum = 0;
+        for (int v = 0; v < 145; v++) sum += chunk.heightMap.heights[v];
+        avgH += sum / 145.0f;
+
+        // Find which band this chunk falls into
+        for (const auto& band : bands) {
+            if (avgH <= band.maxHeight) {
+                uint32_t texId = ensureTextureInList(band.texturePath);
+                if (!chunk.layers.empty())
+                    chunk.layers[0].textureId = texId;
+                break;
+            }
+        }
+    }
+}
+
 std::vector<int> TexturePainter::erase(const glm::vec3& center, float radius,
                                         float strength, float falloff) {
     if (!terrain_ || activeTexture_.empty()) return {};

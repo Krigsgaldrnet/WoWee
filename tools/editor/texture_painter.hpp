@@ -17,6 +17,10 @@ public:
     const std::string& getActiveTexture() const { return activeTexture_; }
     const std::vector<std::string>& getRecentTextures() const { return recentTextures_; }
 
+    // Auto-paint textures based on terrain height bands
+    struct HeightBand { float maxHeight; std::string texturePath; };
+    void autoPaintByHeight(const std::vector<HeightBand>& bands);
+
     // Paint the active texture at the given world position
     // Returns list of modified chunk indices
     std::vector<int> paint(const glm::vec3& center, float radius, float strength, float falloff);

@@ -551,6 +551,32 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
             ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Active: %s",
                                selectedTexture_.c_str());
 
+        // Auto-paint by height
+        if (ImGui::CollapsingHeader("Auto-Paint by Height")) {
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "Sets base texture per chunk based on average height");
+            static float h1 = 90, h2 = 110, h3 = 140;
+            ImGui::DragFloat("Sand/Dirt max##ap", &h1, 1.0f);
+            ImGui::DragFloat("Grass max##ap", &h2, 1.0f);
+            ImGui::DragFloat("Rock max##ap", &h3, 1.0f);
+            ImGui::Text("Above %.0f: Snow", h3);
+            if (ImGui::Button("Apply Auto-Paint", ImVec2(-1, 0))) {
+                std::vector<TexturePainter::HeightBand> bands = {
+                    {h1, "Tileset\\Tanaris\\TanarisSandBase01.blp"},
+                    {h2, "Tileset\\Elwynn\\ElwynnGrassBase.blp"},
+                    {h3, "Tileset\\Barrens\\BarrensRock01.blp"},
+                    {99999.0f, "Tileset\\Expansion02\\Dragonblight\\DragonblightFreshSmoothSnowA.blp"}
+                };
+                app.getTexturePainter().autoPaintByHeight(bands);
+                // Force terrain refresh
+                auto mesh = app.getTerrainEditor().regenerateMesh();
+                // Mark all chunks dirty through a dummy edit
+                app.showToast("Auto-painted by height");
+            }
+        }
+
+        ImGui::Separator();
+
         // Show textures on chunk under cursor
         auto& brush = app.getTerrainEditor().brush();
         if (brush.isActive()) {
