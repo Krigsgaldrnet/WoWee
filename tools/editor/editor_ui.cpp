@@ -331,8 +331,20 @@ void EditorUI::renderLoadDialog(EditorApp& app) {
         loadTileX_ = std::max(0, std::min(63, loadTileX_));
         loadTileY_ = std::max(0, std::min(63, loadTileY_));
 
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
-            "Azeroth: 28-50 range. Kalimdor: 20-50 range.");
+        // Check if the selected tile exists
+        {
+            std::string testPath = std::string("world\\maps\\") + loadMapNameBuf_ + "\\" +
+                                   loadMapNameBuf_ + "_" + std::to_string(loadTileX_) + "_" +
+                                   std::to_string(loadTileY_) + ".adt";
+            std::string lower = testPath;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            bool exists = app.getAssetManager()->getManifest().hasEntry(lower);
+            if (exists)
+                ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1), "Tile found in manifest");
+            else
+                ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.3f, 1), "Tile not found — try different coords");
+        }
 
         ImGui::Spacing();
         if (ImGui::Button("Load", ImVec2(120, 0))) { loadRequested_ = true; showLoadDialog_ = false; }

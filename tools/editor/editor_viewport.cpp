@@ -279,6 +279,7 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
             v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+h; verts.push_back(v);
         }
         npcMarkerVertCount_ = static_cast<uint32_t>(verts.size());
+        LOG_INFO("NPC markers: ", npcs.size(), " npcs -> ", npcMarkerVertCount_, " verts");
         VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
         bi.size = verts.size() * sizeof(MV);
         bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
@@ -429,6 +430,8 @@ void EditorViewport::render(VkCommandBuffer cmd) {
     if (npcMarkerVB_ && npcMarkerVertCount_ > 0) {
         auto* wp = waterRenderer_.getPipeline();
         auto* wl = waterRenderer_.getPipelineLayout();
+        static bool loggedOnce = false;
+        if (!loggedOnce) { loggedOnce = true; LOG_INFO("NPC render: vb=", (wp?"ok":"null"), " layout=", (wl?"ok":"null"), " verts=", npcMarkerVertCount_); }
         if (wp && wl) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, wp);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, wl,
