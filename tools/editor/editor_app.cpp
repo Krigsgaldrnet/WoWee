@@ -152,6 +152,30 @@ void EditorApp::run() {
 
         ui_.render(*this);
 
+        if (showQuitConfirm_) {
+            ImGui::OpenPopup("Unsaved Changes");
+            if (ImGui::BeginPopupModal("Unsaved Changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("You have unsaved changes. Save before quitting?");
+                ImGui::Separator();
+                if (ImGui::Button("Save & Quit", ImVec2(120, 0))) {
+                    quickSave();
+                    window_->setShouldClose(true);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Quit", ImVec2(80, 0))) {
+                    window_->setShouldClose(true);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+                    showQuitConfirm_ = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+        }
+
         ImGui::Render();
 
         VkRenderPassBeginInfo rpInfo{};
@@ -212,8 +236,12 @@ void EditorApp::processEvents() {
         ImGui_ImplSDL2_ProcessEvent(&event);
 
         if (event.type == SDL_QUIT) {
-            window_->setShouldClose(true);
-            return;
+            if (terrain_.isLoaded() && terrainEditor_.hasUnsavedChanges()) {
+                showQuitConfirm_ = true;
+            } else {
+                window_->setShouldClose(true);
+                return;
+            }
         }
 
         if (event.type == SDL_WINDOWEVENT) {
@@ -690,8 +718,10 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 
 void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome) {
     terrain_ = TerrainEditor::createBlankTerrain(tileX, tileY, baseHeight, biome);
-    // Clear previous state
+    // Clear all previous state
     clearAllObjects();
+    questEditor_.clear();
+    ui_.clearPath();
 
     terrainEditor_.setTerrain(&terrain_);
     terrainEditor_.history().clear();

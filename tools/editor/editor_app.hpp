@@ -135,6 +135,7 @@ private:
     float autoSaveTimer_ = 0.0f;
     float autoSaveInterval_ = 300.0f;
     bool autoSaveEnabled_ = true;
+    bool showQuitConfirm_ = false;
 
     // Toast notifications
     struct Toast { std::string msg; float timer; };

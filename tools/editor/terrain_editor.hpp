@@ -163,6 +163,9 @@ private:
     std::vector<StampVertex> stampData_;
     glm::vec3 stampCenter_{0};
 
+    void recordGeneratorUndo();
+    void commitGeneratorUndo();
+
     pipeline::ADTTerrain* terrain_ = nullptr;
     EditorBrush brush_;
     EditorHistory history_;

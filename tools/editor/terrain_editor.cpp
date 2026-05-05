@@ -244,6 +244,20 @@ void TerrainEditor::endStroke() {
     history_.endEdit(*terrain_);
 }
 
+void TerrainEditor::recordGeneratorUndo() {
+    if (!terrain_) return;
+    std::vector<int> valid;
+    for (int i = 0; i < 256; i++) {
+        if (terrain_->chunks[i].hasHeightMap()) valid.push_back(i);
+    }
+    history_.beginEdit(*terrain_, valid);
+}
+
+void TerrainEditor::commitGeneratorUndo() {
+    if (!terrain_) return;
+    history_.endEdit(*terrain_);
+}
+
 void TerrainEditor::applyBrush(float deltaTime) {
     if (!terrain_ || !brush_.isActive()) return;
 
@@ -727,6 +741,7 @@ void TerrainEditor::mirrorY() {
 void TerrainEditor::carveRiver(const glm::vec3& start, const glm::vec3& end,
                                 float width, float depth) {
     if (!terrain_) return;
+    recordGeneratorUndo();
     glm::vec2 lineStart(start.x, start.y);
     glm::vec2 lineEnd(end.x, end.y);
     glm::vec2 lineDir = glm::normalize(lineEnd - lineStart);
@@ -762,10 +777,12 @@ void TerrainEditor::carveRiver(const glm::vec3& start, const glm::vec3& end,
         }
     }
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::createCrater(const glm::vec3& center, float radius, float depth, float rimHeight) {
     if (!terrain_) return;
+    recordGeneratorUndo();
 
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
@@ -803,11 +820,12 @@ void TerrainEditor::createCrater(const glm::vec3& center, float radius, float de
         }
     }
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::createMesa(const glm::vec3& center, float radius, float height, float edgeSteepness) {
     if (!terrain_) return;
-
+    recordGeneratorUndo();
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
         if (!chunk.hasHeightMap()) continue;
@@ -838,10 +856,12 @@ void TerrainEditor::createMesa(const glm::vec3& center, float radius, float heig
         }
     }
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::createHill(const glm::vec3& center, float radius, float height) {
     if (!terrain_) return;
+    recordGeneratorUndo();
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
         if (!chunk.hasHeightMap()) continue;
@@ -858,10 +878,12 @@ void TerrainEditor::createHill(const glm::vec3& center, float radius, float heig
         if (modified) { stitchEdges(ci); dirtyChunks_.push_back(ci); }
     }
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::applyVoronoiNoise(int cellCount, float amplitude, uint32_t seed) {
     if (!terrain_) return;
+    recordGeneratorUndo();
 
     float tileNW_X = (32.0f - static_cast<float>(terrain_->coord.y)) * TILE_SIZE;
     float tileNW_Y = (32.0f - static_cast<float>(terrain_->coord.x)) * TILE_SIZE;
@@ -898,10 +920,12 @@ void TerrainEditor::applyVoronoiNoise(int cellCount, float amplitude, uint32_t s
     }
     for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::createDunes(float wavelength, float amplitude, float direction, uint32_t seed) {
     if (!terrain_) return;
+    recordGeneratorUndo();
     float dirRad = direction * 3.14159f / 180.0f;
     float dx = std::cos(dirRad), dy = std::sin(dirRad);
 
@@ -928,6 +952,7 @@ void TerrainEditor::createDunes(float wavelength, float amplitude, float directi
     }
     for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::rotateTerrain90() {
@@ -1061,6 +1086,7 @@ void TerrainEditor::smoothBeaches(float waterHeight, float beachWidth) {
 }
 
 void TerrainEditor::addDetailNoise(float amplitude, float frequency, uint32_t seed) {
+    recordGeneratorUndo();
     if (!terrain_) return;
     auto hash2d = [](int x, int y, uint32_t s) -> float {
         uint32_t h = static_cast<uint32_t>(x * 374761393 + y * 668265263 + s);
@@ -1116,9 +1142,11 @@ void TerrainEditor::rampEdges(float targetHeight, float rampWidth) {
     }
     for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::thermalErosion(int iterations, float talusAngle) {
+    recordGeneratorUndo();
     if (!terrain_) return;
     float unitSize = CHUNK_SIZE / 8.0f;
     float maxDelta = std::tan(talusAngle * 3.14159f / 180.0f) * unitSize;
@@ -1184,9 +1212,11 @@ void TerrainEditor::terraceHeights(int steps) {
     }
     for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::createCanyon(float width, float depth, uint32_t seed) {
+    recordGeneratorUndo();
     if (!terrain_) return;
 
     float tileNW_X = (32.0f - static_cast<float>(terrain_->coord.y)) * TILE_SIZE;
@@ -1228,10 +1258,12 @@ void TerrainEditor::createCanyon(float width, float depth, uint32_t seed) {
         if (modified) { stitchEdges(ci); dirtyChunks_.push_back(ci); }
     }
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::createIsland(float centerHeight, float edgeDropoff) {
     if (!terrain_) return;
+    recordGeneratorUndo();
 
     // Island shape: distance from tile center determines height
     // Center is high, edges drop below base height (underwater)
@@ -1271,11 +1303,13 @@ void TerrainEditor::createIsland(float centerHeight, float edgeDropoff) {
     }
     for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::createRidge(const glm::vec3& start, const glm::vec3& end,
                                  float width, float height) {
     if (!terrain_) return;
+    recordGeneratorUndo();
     glm::vec2 lineStart(start.x, start.y);
     glm::vec2 lineEnd(end.x, end.y);
     glm::vec2 lineDir = glm::normalize(lineEnd - lineStart);
@@ -1306,10 +1340,12 @@ void TerrainEditor::createRidge(const glm::vec3& start, const glm::vec3& end,
         if (modified) { stitchEdges(ci); dirtyChunks_.push_back(ci); }
     }
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::flattenRoad(const glm::vec3& start, const glm::vec3& end, float width) {
     if (!terrain_) return;
+    recordGeneratorUndo();
     glm::vec2 lineStart(start.x, start.y);
     glm::vec2 lineEnd(end.x, end.y);
     glm::vec2 lineDir = glm::normalize(lineEnd - lineStart);
@@ -1350,6 +1386,7 @@ void TerrainEditor::flattenRoad(const glm::vec3& start, const glm::vec3& end, fl
         }
     }
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::copyStamp(const glm::vec3& center, float radius) {
@@ -1475,6 +1512,7 @@ void TerrainEditor::applyErode(float dt) {
 }
 
 void TerrainEditor::applyNoise(float frequency, float amplitude, int octaves, uint32_t seed) {
+    recordGeneratorUndo();
     if (!terrain_) return;
 
     // Simple value noise with octaves
@@ -1521,6 +1559,7 @@ void TerrainEditor::applyNoise(float frequency, float amplitude, int octaves, ui
         dirtyChunks_.push_back(ci);
     }
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 bool TerrainEditor::importHeightmap(const std::string& path, float heightScale) {
