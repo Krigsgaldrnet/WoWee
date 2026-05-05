@@ -84,6 +84,9 @@ public:
     // Create a crater at a position (bowl shape with raised rim)
     void createCrater(const glm::vec3& center, float radius, float depth, float rimHeight);
 
+    // Create a mesa/plateau (raised flat area with steep cliff edges)
+    void createMesa(const glm::vec3& center, float radius, float height, float edgeSteepness);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);

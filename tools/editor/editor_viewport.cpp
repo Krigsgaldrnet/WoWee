@@ -442,21 +442,7 @@ void EditorViewport::render(VkCommandBuffer cmd) {
 
     waterRenderer_.render(cmd, perFrameSet);
 
-    // NPC position markers (always visible)
-    if (npcMarkerVB_ && npcMarkerVertCount_ > 0) {
-        auto* wp = waterRenderer_.getPipeline();
-        auto* wl = waterRenderer_.getPipelineLayout();
-        static bool loggedOnce = false;
-        if (!loggedOnce) { loggedOnce = true; LOG_INFO("NPC render: vb=", (wp?"ok":"null"), " layout=", (wl?"ok":"null"), " verts=", npcMarkerVertCount_); }
-        if (wp && wl) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, wp);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, wl,
-                                    0, 1, &perFrameSet, 0, nullptr);
-            VkDeviceSize off = 0;
-            vkCmdBindVertexBuffers(cmd, 0, 1, &npcMarkerVB_, &off);
-            vkCmdDraw(cmd, npcMarkerVertCount_, 1, 0, 0);
-        }
-    }
+    // NPC position markers — render AFTER gizmo (no depth test = always on top)
 
     // Brush indicator circle
     if (brushVisible_ && brushVB_ && brushVertCount_ > 0) {
@@ -480,6 +466,18 @@ void EditorViewport::render(VkCommandBuffer cmd) {
     }
 
     gizmo_.render(cmd, perFrameSet);
+
+    // NPC markers rendered last with no depth test (always on top via gizmo pipeline)
+    if (npcMarkerVB_ && npcMarkerVertCount_ > 0) {
+        // Gizmo pipeline has depthTestEnable=VK_FALSE — markers always visible
+        auto& gizmoPL = gizmo_;
+        // Re-bind gizmo pipeline (same vertex format, no depth test)
+        // gizmo_.render already set it up, just draw our buffer
+        VkDeviceSize off = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &npcMarkerVB_, &off);
+        vkCmdDraw(cmd, npcMarkerVertCount_, 1, 0, 0);
+        (void)gizmoPL;
+    }
 }
 
 void EditorViewport::setWireframe(bool enabled) {

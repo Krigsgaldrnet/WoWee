@@ -805,6 +805,41 @@ void TerrainEditor::createCrater(const glm::vec3& center, float radius, float de
     dirty_ = true;
 }
 
+void TerrainEditor::createMesa(const glm::vec3& center, float radius, float height, float edgeSteepness) {
+    if (!terrain_) return;
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        bool modified = false;
+
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            float dist = glm::length(glm::vec2(pos.x - center.x, pos.y - center.y));
+            if (dist > radius * 1.5f) continue;
+
+            float t = dist / radius;
+            float blend;
+            if (t < 0.7f) {
+                blend = 1.0f; // flat top
+            } else if (t < 1.0f) {
+                float edgeT = (t - 0.7f) / 0.3f;
+                blend = 1.0f - std::pow(edgeT, 1.0f / std::max(0.1f, edgeSteepness));
+            } else {
+                blend = 0.0f;
+            }
+
+            chunk.heightMap.heights[v] += height * blend;
+            modified = true;
+        }
+        if (modified) {
+            stitchEdges(ci);
+            dirtyChunks_.push_back(ci);
+        }
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::flattenRoad(const glm::vec3& start, const glm::vec3& end, float width) {
     if (!terrain_) return;
     glm::vec2 lineStart(start.x, start.y);

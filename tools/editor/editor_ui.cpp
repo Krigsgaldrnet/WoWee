@@ -551,6 +551,19 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Mesa / Plateau")) {
+            static float mesaRadius = 40.0f, mesaHeight = 20.0f, mesaSteep = 0.3f;
+            ImGui::SliderFloat("Radius##mesa", &mesaRadius, 10.0f, 150.0f);
+            ImGui::SliderFloat("Height##mesa", &mesaHeight, 5.0f, 100.0f);
+            ImGui::SliderFloat("Edge Steepness##mesa", &mesaSteep, 0.05f, 1.0f);
+            auto& brush6 = app.getTerrainEditor().brush();
+            if (ImGui::Button("Create Mesa at Cursor", ImVec2(-1, 0)) && brush6.isActive()) {
+                app.getTerrainEditor().createMesa(brush6.getPosition(), mesaRadius, mesaHeight, mesaSteep);
+                app.showToast("Mesa created");
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Raised flat area with cliff edges");
+        }
+
         if (ImGui::CollapsingHeader("Crater Generator")) {
             static float craterRadius = 30.0f, craterDepth = 10.0f, craterRim = 3.0f;
             ImGui::SliderFloat("Radius##crater", &craterRadius, 5.0f, 100.0f);
