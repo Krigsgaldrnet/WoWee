@@ -206,6 +206,7 @@ void EditorApp::processEvents() {
                 auto sc = event.key.keysym.scancode;
                 if (sc == SDL_SCANCODE_F3) setWireframe(!isWireframe());
                 if (sc == SDL_SCANCODE_F5) saveBookmark("");
+                if (sc == SDL_SCANCODE_HOME) centerOnTerrain();
                 // Number keys switch modes (when not typing in ImGui)
                 if (!io.WantCaptureKeyboard) {
                     if (sc == SDL_SCANCODE_1) setMode(EditorMode::Sculpt);
@@ -786,6 +787,15 @@ void EditorApp::flyToSelected() {
     if (npc) {
         camera_.setPosition(npc->position + glm::vec3(0, 0, 30));
     }
+}
+
+void EditorApp::centerOnTerrain() {
+    if (!terrain_.isLoaded()) return;
+    float centerX = (32.0f - loadedTileY_) * 533.33333f - 8.0f * 533.33333f / 16.0f;
+    float centerY = (32.0f - loadedTileX_) * 533.33333f - 8.0f * 533.33333f / 16.0f;
+    camera_.setPosition(glm::vec3(centerX, centerY, terrain_.chunks[0].position[2] + 300.0f));
+    camera_.setYawPitch(0.0f, -45.0f);
+    showToast("Camera centered on terrain");
 }
 
 void EditorApp::snapSelectedToGround() {

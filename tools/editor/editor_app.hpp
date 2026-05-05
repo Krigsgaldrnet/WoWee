@@ -73,6 +73,7 @@ public:
     void setSkyPreset(int preset); // 0=day, 1=dusk, 2=night
     void snapSelectedToGround();
     void flyToSelected();
+    void centerOnTerrain();
 
     // Multi-tile support
     void addAdjacentTile(int offsetX, int offsetY);

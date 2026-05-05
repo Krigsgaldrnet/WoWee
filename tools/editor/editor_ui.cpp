@@ -148,6 +148,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             bool wf = app.isWireframe();
             if (ImGui::MenuItem("Wireframe", "F3", &wf)) app.setWireframe(wf);
             if (ImGui::MenuItem("Reset Camera")) app.resetCamera();
+            if (ImGui::MenuItem("Center on Terrain", "Home")) app.centerOnTerrain();
             ImGui::Separator();
             if (ImGui::BeginMenu("Sky / Lighting")) {
                 if (ImGui::MenuItem("Day")) app.setSkyPreset(0);
