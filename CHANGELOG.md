@@ -14,7 +14,7 @@
 - Decompose TransportManager (1,200→500 LOC): extract TransportPathRepository, TransportClockSync, TransportAnimator; consolidate 7 duplicated spline parsers into `spline_packet.cpp` (PR #60)
 
 ### World Editor (tools/editor/)
-- Standalone world editor for creating custom WoW zones (12.5k+ lines, 55 files)
+- Standalone world editor for creating custom WoW zones (13.8k+ lines, 55 files)
 - 6 editing modes: Sculpt, Paint, Objects, Water, NPCs, Quests
 - 30+ terrain tools: procedural generators (hill, mesa, crater, canyon, island, ridge, dunes), thermal erosion, noise, mirror/rotate, stamp copy/paste with file persistence
 - Multi-select objects (Ctrl+Shift+Click), Select All (Ctrl+A), Select by Type (M2/WMO)
@@ -27,6 +27,12 @@
 - Full undo/redo for ALL terrain operations (generators, transforms, paint)
 - Auto-save with configurable interval, unsaved changes quit confirmation
 - Zone rename, recent zones menu, adjacent tile export with edge stitching
+- Zone metadata panel: configurable Map ID, Display Name, Description
+- Zone gameplay flags: Allow Flying, PvP, Indoor, Sanctuary (serialized to zone.json)
+- Zone audio configuration: music track, day/night ambience, volume sliders, presets
+- PNG/JPG/BMP/TGA heightmap image import (any resolution, 8/16-bit, undoable)
+- Collision slope overlay on minimap (steep terrain visualization)
+- Client-side WOC collision loading with walkability queries
 - Live open format validation (0-7 score) in File menu
 
 ### Novel Open Formats (7/7 Blizzard format replacements)
