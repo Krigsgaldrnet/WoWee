@@ -285,6 +285,8 @@ void EditorApp::processEvents() {
                         viewport_.getGizmo().endDrag();
                         viewport_.getGizmo().setMode(TransformMode::None);
                         objectPlacer_.clearSelection();
+                        npcSpawner_.clearSelection();
+                        ui_.clearPath();
                     }
                 }
                 if (sc == SDL_SCANCODE_DELETE) {
@@ -1108,14 +1110,51 @@ void EditorApp::addAdjacentTile(int offsetX, int offsetY) {
     int newY = loadedTileY_ + offsetY;
     if (newX < 0 || newX > 63 || newY < 0 || newY > 63) return;
 
-    // Create a blank tile adjacent to current
     auto adj = TerrainEditor::createBlankTerrain(newX, newY, terrain_.chunks[0].position[2],
                                                   Biome::Grassland);
-    // Stitch edges: copy border heights from current terrain to adjacent
-    // (This is a simplified version — full multi-tile needs a different architecture)
-    LOG_INFO("Adjacent tile created at [", newX, ",", newY, "] (not yet rendered in viewport)");
-    ADTWriter::write(adj, "output/" + loadedMap_ + "/" + loadedMap_ + "_" +
-                     std::to_string(newX) + "_" + std::to_string(newY) + ".adt");
+
+    // Stitch edge heights from current tile to adjacent tile
+    if (offsetX == 1) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& src = terrain_.chunks[15 * 16 + cx];
+            auto& dst = adj.chunks[0 * 16 + cx];
+            if (!src.hasHeightMap() || !dst.hasHeightMap()) continue;
+            for (int v = 0; v < 9; v++)
+                dst.heightMap.heights[v] = src.heightMap.heights[8 * 17 + v];
+        }
+    } else if (offsetX == -1) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& src = terrain_.chunks[0 * 16 + cx];
+            auto& dst = adj.chunks[15 * 16 + cx];
+            if (!src.hasHeightMap() || !dst.hasHeightMap()) continue;
+            for (int v = 0; v < 9; v++)
+                dst.heightMap.heights[8 * 17 + v] = src.heightMap.heights[v];
+        }
+    } else if (offsetY == 1) {
+        for (int cy = 0; cy < 16; cy++) {
+            auto& src = terrain_.chunks[cy * 16 + 15];
+            auto& dst = adj.chunks[cy * 16 + 0];
+            if (!src.hasHeightMap() || !dst.hasHeightMap()) continue;
+            for (int r = 0; r <= 8; r++)
+                dst.heightMap.heights[r * 17] = src.heightMap.heights[r * 17 + 8];
+        }
+    } else if (offsetY == -1) {
+        for (int cy = 0; cy < 16; cy++) {
+            auto& src = terrain_.chunks[cy * 16 + 0];
+            auto& dst = adj.chunks[cy * 16 + 15];
+            if (!src.hasHeightMap() || !dst.hasHeightMap()) continue;
+            for (int r = 0; r <= 8; r++)
+                dst.heightMap.heights[r * 17 + 8] = src.heightMap.heights[r * 17];
+        }
+    }
+
+    std::string base = "output/" + loadedMap_ + "/" + loadedMap_ + "_" +
+                       std::to_string(newX) + "_" + std::to_string(newY);
+    ADTWriter::write(adj, base + ".adt");
+    WoweeTerrain::exportOpen(adj, base, newX, newY);
+
+    showToast("Adjacent tile [" + std::to_string(newX) + "," + std::to_string(newY) + "] exported");
+    LOG_INFO("Adjacent tile created at [", newX, ",", newY, "] with edge stitching (ADT+WOT/WHM)");
 }
 
 void EditorApp::flyToSelected() {
