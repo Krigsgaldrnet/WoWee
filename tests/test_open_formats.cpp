@@ -1,6 +1,7 @@
 // Tests for Wowee open format round-trips (WOM, WOB, WHM/WOT)
 #include <catch_amalgamated.hpp>
 #include "pipeline/wowee_building.hpp"
+#include "pipeline/wowee_collision.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include "pipeline/adt_loader.hpp"
@@ -260,6 +261,83 @@ TEST_CASE("WOT metadata round-trip with placements", "[wot]") {
     REQUIRE(terrain.wmoPlacements[0].doodadSet == 0);
 
     std::filesystem::remove(wotPath);
+}
+
+// ============== WOC Tests ==============
+
+TEST_CASE("WOC collision from flat terrain", "[woc]") {
+    ADTTerrain terrain{};
+    terrain.loaded = true;
+    terrain.coord = {32, 48};
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain.chunks[ci];
+        chunk.heightMap.loaded = true;
+        chunk.indexX = ci % 16;
+        chunk.indexY = ci / 16;
+        chunk.position[2] = 100.0f;
+        chunk.holes = 0;
+        for (int v = 0; v < 145; v++)
+            chunk.heightMap.heights[v] = 0.0f;
+    }
+
+    auto col = WoweeCollisionBuilder::fromTerrain(terrain);
+    REQUIRE(col.isValid());
+    REQUIRE(col.triangles.size() == 256 * 64 * 2); // 8x8 quads * 2 tris * 256 chunks
+    REQUIRE(col.walkableCount() == col.triangles.size()); // flat = all walkable
+    REQUIRE(col.steepCount() == 0);
+    REQUIRE(col.tileX == 32);
+    REQUIRE(col.tileY == 48);
+}
+
+TEST_CASE("WOC save and load round-trip", "[woc]") {
+    ensureTestDir();
+
+    WoweeCollision col;
+    col.tileX = 10; col.tileY = 20;
+    WoweeCollision::Triangle tri;
+    tri.v0 = {0,0,0}; tri.v1 = {1,0,0}; tri.v2 = {0,1,0}; tri.flags = 0x01;
+    col.triangles.push_back(tri);
+    tri.v0 = {5,5,10}; tri.v1 = {6,5,10}; tri.v2 = {5,6,15}; tri.flags = 0x04;
+    col.triangles.push_back(tri);
+    col.bounds.expand({0,0,0}); col.bounds.expand({6,6,15});
+
+    std::string path = TEST_DIR + "/test_collision.woc";
+    REQUIRE(WoweeCollisionBuilder::save(col, path));
+
+    auto loaded = WoweeCollisionBuilder::load(path);
+    REQUIRE(loaded.isValid());
+    REQUIRE(loaded.triangles.size() == 2);
+    REQUIRE(loaded.tileX == 10);
+    REQUIRE(loaded.tileY == 20);
+    REQUIRE(loaded.triangles[0].flags == 0x01);
+    REQUIRE(loaded.triangles[1].flags == 0x04);
+    REQUIRE(loaded.triangles[0].v0.x == Catch::Approx(0.0f));
+    REQUIRE(loaded.triangles[1].v2.z == Catch::Approx(15.0f));
+    REQUIRE(loaded.walkableCount() == 1);
+    REQUIRE(loaded.steepCount() == 1);
+}
+
+TEST_CASE("WOC holes skip triangles", "[woc]") {
+    ADTTerrain terrain{};
+    terrain.loaded = true;
+    terrain.coord = {32, 32};
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain.chunks[ci];
+        chunk.heightMap.loaded = true;
+        chunk.indexX = ci % 16;
+        chunk.indexY = ci / 16;
+        chunk.position[2] = 100.0f;
+        chunk.holes = 0;
+        for (int v = 0; v < 145; v++)
+            chunk.heightMap.heights[v] = 0.0f;
+    }
+    // Punch a hole in chunk 0 (all 16 sub-quads)
+    terrain.chunks[0].holes = 0xFFFF;
+
+    auto col = WoweeCollisionBuilder::fromTerrain(terrain);
+    REQUIRE(col.isValid());
+    // Chunk 0 should produce zero triangles, rest produce 128 each
+    REQUIRE(col.triangles.size() == 255 * 128);
 }
 
 TEST_CASE("WOB rejects missing file", "[wob]") {

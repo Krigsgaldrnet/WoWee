@@ -1,0 +1,176 @@
+#include "pipeline/wowee_collision.hpp"
+#include "pipeline/adt_loader.hpp"
+#include "core/logger.hpp"
+#include <fstream>
+#include <filesystem>
+#include <cstring>
+#include <cmath>
+
+namespace wowee {
+namespace pipeline {
+
+static constexpr uint32_t WOC_MAGIC = 0x31434F57; // "WOC1"
+
+size_t WoweeCollision::walkableCount() const {
+    size_t n = 0;
+    for (const auto& t : triangles)
+        if (t.flags & 0x01) n++;
+    return n;
+}
+
+size_t WoweeCollision::steepCount() const {
+    size_t n = 0;
+    for (const auto& t : triangles)
+        if (t.flags & 0x04) n++;
+    return n;
+}
+
+WoweeCollision WoweeCollisionBuilder::fromTerrain(const ADTTerrain& terrain,
+                                                    float steepAngle) {
+    WoweeCollision col;
+    col.tileX = terrain.coord.x;
+    col.tileY = terrain.coord.y;
+
+    float steepCos = std::cos(steepAngle * 3.14159265f / 180.0f);
+
+    float tileSize = 533.33333f;
+    float chunkSize = tileSize / 16.0f;
+    float vertSpacing = chunkSize / 8.0f;
+
+    for (int ci = 0; ci < 256; ci++) {
+        const auto& chunk = terrain.chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+
+        int cx = ci % 16;
+        int cy = ci / 16;
+        float chunkBaseX = (32.0f - terrain.coord.y) * tileSize - cy * chunkSize;
+        float chunkBaseY = (32.0f - terrain.coord.x) * tileSize - cx * chunkSize;
+
+        bool isHoleChunk = (chunk.holes != 0);
+
+        // Build outer vertex grid (9x9)
+        for (int row = 0; row < 8; row++) {
+            for (int col2 = 0; col2 < 8; col2++) {
+                // Check hole mask (4x4 grid, each bit covers 2x2 sub-quads)
+                if (isHoleChunk) {
+                    int hx = col2 / 2, hy = row / 2;
+                    if (chunk.holes & (1 << (hy * 4 + hx))) continue;
+                }
+
+                int i00 = row * 17 + col2;
+                int i10 = row * 17 + col2 + 1;
+                int i01 = (row + 1) * 17 + col2;
+                int i11 = (row + 1) * 17 + col2 + 1;
+
+                auto vtx = [&](int idx) -> glm::vec3 {
+                    int r = idx / 17, c = idx % 17;
+                    float x = chunkBaseX - r * vertSpacing;
+                    float y = chunkBaseY - c * vertSpacing;
+                    float z = chunk.position[2] + chunk.heightMap.heights[idx];
+                    return glm::vec3(x, y, z);
+                };
+
+                glm::vec3 v00 = vtx(i00), v10 = vtx(i10);
+                glm::vec3 v01 = vtx(i01), v11 = vtx(i11);
+
+                auto classifyTri = [&](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
+                    WoweeCollision::Triangle tri;
+                    tri.v0 = a; tri.v1 = b; tri.v2 = c;
+
+                    glm::vec3 normal = glm::normalize(glm::cross(b - a, c - a));
+                    float nz = std::abs(normal.z);
+
+                    tri.flags = 0;
+                    if (nz >= steepCos)
+                        tri.flags |= 0x01; // walkable
+                    else
+                        tri.flags |= 0x04; // steep
+
+                    col.bounds.expand(a);
+                    col.bounds.expand(b);
+                    col.bounds.expand(c);
+                    col.triangles.push_back(tri);
+                };
+
+                classifyTri(v00, v10, v01);
+                classifyTri(v10, v11, v01);
+            }
+        }
+
+        // Mark water triangles
+        if (terrain.waterData[ci].hasWater()) {
+            float waterH = terrain.waterData[ci].layers[0].maxHeight;
+            for (size_t ti = col.triangles.size() - 128; ti < col.triangles.size(); ti++) {
+                auto& tri = col.triangles[ti];
+                float avgZ = (tri.v0.z + tri.v1.z + tri.v2.z) / 3.0f;
+                if (avgZ < waterH) tri.flags |= 0x02;
+            }
+        }
+    }
+
+    LOG_INFO("Collision mesh: ", col.triangles.size(), " triangles (",
+             col.walkableCount(), " walkable, ", col.steepCount(), " steep)");
+    return col;
+}
+
+bool WoweeCollisionBuilder::save(const WoweeCollision& collision, const std::string& path) {
+    namespace fs = std::filesystem;
+    fs::create_directories(fs::path(path).parent_path());
+
+    std::ofstream f(path, std::ios::binary);
+    if (!f) return false;
+
+    f.write(reinterpret_cast<const char*>(&WOC_MAGIC), 4);
+    uint32_t triCount = static_cast<uint32_t>(collision.triangles.size());
+    f.write(reinterpret_cast<const char*>(&triCount), 4);
+    f.write(reinterpret_cast<const char*>(&collision.tileX), 4);
+    f.write(reinterpret_cast<const char*>(&collision.tileY), 4);
+    f.write(reinterpret_cast<const char*>(&collision.bounds.min), 12);
+    f.write(reinterpret_cast<const char*>(&collision.bounds.max), 12);
+
+    for (const auto& tri : collision.triangles) {
+        f.write(reinterpret_cast<const char*>(&tri.v0), 12);
+        f.write(reinterpret_cast<const char*>(&tri.v1), 12);
+        f.write(reinterpret_cast<const char*>(&tri.v2), 12);
+        f.write(reinterpret_cast<const char*>(&tri.flags), 1);
+    }
+
+    LOG_INFO("WOC saved: ", path, " (", triCount, " triangles)");
+    return true;
+}
+
+WoweeCollision WoweeCollisionBuilder::load(const std::string& path) {
+    WoweeCollision col;
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return col;
+
+    uint32_t magic;
+    f.read(reinterpret_cast<char*>(&magic), 4);
+    if (magic != WOC_MAGIC) return col;
+
+    uint32_t triCount;
+    f.read(reinterpret_cast<char*>(&triCount), 4);
+    f.read(reinterpret_cast<char*>(&col.tileX), 4);
+    f.read(reinterpret_cast<char*>(&col.tileY), 4);
+    f.read(reinterpret_cast<char*>(&col.bounds.min), 12);
+    f.read(reinterpret_cast<char*>(&col.bounds.max), 12);
+
+    col.triangles.resize(triCount);
+    for (uint32_t i = 0; i < triCount; i++) {
+        auto& tri = col.triangles[i];
+        f.read(reinterpret_cast<char*>(&tri.v0), 12);
+        f.read(reinterpret_cast<char*>(&tri.v1), 12);
+        f.read(reinterpret_cast<char*>(&tri.v2), 12);
+        f.read(reinterpret_cast<char*>(&tri.flags), 1);
+    }
+
+    LOG_INFO("WOC loaded: ", path, " (", triCount, " triangles)");
+    return col;
+}
+
+bool WoweeCollisionBuilder::exists(const std::string& basePath) {
+    return std::filesystem::exists(basePath + ".woc");
+}
+
+} // namespace pipeline
+} // namespace wowee

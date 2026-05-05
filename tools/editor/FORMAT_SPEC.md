@@ -59,18 +59,28 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 - Standard PNG format, loaded by client's texture override system
 - Editor auto-converts BLP→PNG on export via stb_image_write
 
+## WOC — Wowee Open Collision (binary)
+- Extension: `.woc`
+- Magic: `WOC1` (0x31434F57)
+- Layout: magic(4) + triCount(4) + tileX(4) + tileY(4) + boundsMin(12) + boundsMax(12) + triangles
+- Triangle: v0(12) + v1(12) + v2(12) + flags(1) = 37 bytes
+- Flags: 0x01=walkable, 0x02=water, 0x04=steep, 0x08=indoor
+- Generated from terrain heightmap with slope classification (50 deg threshold)
+- Respects terrain holes (skips triangles in hole regions)
+
 ## Terrain Stamps (.json)
 - Portable terrain feature snapshots (mountains, craters, etc.)
 - Format: `{"format": "wowee-stamp-1.0", "vertices": [[dx, dy, height], ...]}`
 - Can be saved/loaded across zones and sessions
 
-## Open Format Scoring (0-6)
+## Open Format Scoring (0-7)
 1. WOT terrain metadata present
 2. WHM heightmap with valid magic
 3. zone.json map definition
 4. PNG textures present
 5. WOM models with valid magic
 6. WOB buildings with valid magic
+7. WOC collision mesh with valid magic
 
 ## All formats are novel, portable, and open for redistribution.
 ## No Blizzard intellectual property is used in any format definition.

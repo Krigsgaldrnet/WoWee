@@ -202,6 +202,7 @@ ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& z
     static constexpr uint32_t WHM_MAGIC = 0x314D4857; // "WHM1"
     static constexpr uint32_t WOM_MAGIC = 0x314D4F57; // "WOM1"
     static constexpr uint32_t WOB_MAGIC = 0x31424F57; // "WOB1"
+    static constexpr uint32_t WOC_MAGIC = 0x31434F57; // "WOC1"
 
     for (auto& entry : fs::recursive_directory_iterator(zoneDir)) {
         if (!entry.is_regular_file()) continue;
@@ -220,6 +221,10 @@ ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& z
             r.hasWob = true;
             if (checkMagic(entry.path().string(), WOB_MAGIC)) r.wobValid = true;
         }
+        if (ext == ".woc") {
+            r.hasWoc = true;
+            if (checkMagic(entry.path().string(), WOC_MAGIC)) r.wocValid = true;
+        }
         if (ext == ".png") r.hasPng = true;
         if (fname == "zone.json") r.hasZoneJson = true;
         if (fname == "creatures.json") r.hasCreatures = true;
@@ -237,7 +242,8 @@ int ContentPacker::ValidationResult::openFormatScore() const {
     if (hasPng) score++;
     if (hasWom && womValid) score++;
     if (hasWob && wobValid) score++;
-    return score; // max 6 for fully open
+    if (hasWoc && wocValid) score++;
+    return score; // max 7 for fully open
 }
 
 std::string ContentPacker::ValidationResult::summary() const {
@@ -252,6 +258,7 @@ std::string ContentPacker::ValidationResult::summary() const {
     add(hasWhm, whmValid, "WHM");
     add(hasWom, womValid, "WOM");
     add(hasWob, wobValid, "WOB");
+    add(hasWoc, wocValid, "WOC");
     if (hasZoneJson) s += "zone.json ";
     if (hasPng) s += "PNG ";
     if (hasCreatures) s += "creatures ";

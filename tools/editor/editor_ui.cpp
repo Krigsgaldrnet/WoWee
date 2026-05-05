@@ -366,7 +366,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 ImVec4 scoreColor = score >= 5 ? ImVec4(0.3f, 1, 0.3f, 1) :
                                     score >= 3 ? ImVec4(1, 1, 0.3f, 1) :
                                                  ImVec4(1, 0.3f, 0.3f, 1);
-                ImGui::TextColored(scoreColor, "Open Format Score: %d/6", score);
+                ImGui::TextColored(scoreColor, "Open Format Score: %d/7", score);
                 ImGui::Separator();
                 auto fmt = [](bool has, bool valid, const char* name, const char* desc) {
                     ImVec4 c = has ? (valid ? ImVec4(0.3f,1,0.3f,1) : ImVec4(1,0.7f,0.3f,1))
@@ -380,6 +380,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 fmt(val.hasPng, true, "PNG", "textures");
                 fmt(val.hasWom, val.womValid, "WOM", "models");
                 fmt(val.hasWob, val.wobValid, "WOB", "buildings");
+                fmt(val.hasWoc, val.wocValid, "WOC", "collision mesh");
                 ImGui::Separator();
                 fmt(val.hasCreatures, true, "creatures", "NPC spawns");
                 fmt(val.hasQuests, true, "quests", "quest data");

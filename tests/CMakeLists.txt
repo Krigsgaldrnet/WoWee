@@ -403,6 +403,7 @@ register_test_target(test_gm_commands)
 add_executable(test_open_formats
     test_open_formats.cpp
     ${CMAKE_SOURCE_DIR}/src/pipeline/wowee_building.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/wowee_collision.cpp
     ${CMAKE_SOURCE_DIR}/src/pipeline/wowee_terrain_loader.cpp
     ${CMAKE_SOURCE_DIR}/src/pipeline/wmo_loader.cpp
     ${CMAKE_SOURCE_DIR}/src/core/logger.cpp

@@ -38,9 +38,9 @@ public:
     // Validate that a zone directory has all required open format files
     struct ValidationResult {
         bool hasWot = false, hasWhm = false, hasZoneJson = false;
-        bool hasPng = false, hasWom = false, hasWob = false;
+        bool hasPng = false, hasWom = false, hasWob = false, hasWoc = false;
         bool hasCreatures = false, hasQuests = false, hasObjects = false;
-        bool whmValid = false, womValid = false, wobValid = false;
+        bool whmValid = false, womValid = false, wobValid = false, wocValid = false;
         int openFormatScore() const;
         std::string summary() const;
     };

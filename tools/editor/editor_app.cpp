@@ -7,6 +7,7 @@
 #include "dbc_exporter.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
+#include "pipeline/wowee_collision.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "core/coordinates.hpp"
 #include <nlohmann/json.hpp>
@@ -956,6 +957,11 @@ void EditorApp::exportZone(const std::string& outputDir) {
                            std::to_string(loadedTileX_) + "_" + std::to_string(loadedTileY_);
     WoweeTerrain::exportOpen(terrain_, openBase, loadedTileX_, loadedTileY_);
     WoweeTerrain::exportNormalMap(terrain_, openBase + "_normals.png");
+
+    // Export collision mesh (.woc)
+    auto collision = pipeline::WoweeCollisionBuilder::fromTerrain(terrain_);
+    if (collision.isValid())
+        pipeline::WoweeCollisionBuilder::save(collision, openBase + ".woc");
     WoweeTerrain::exportAlphaMaps(terrain_, base + "/alphamaps");
     WoweeTerrain::exportWaterMask(terrain_, openBase + "_watermask.png");
     WoweeTerrain::exportHoleMask(terrain_, openBase + "_holemask.png");
@@ -1059,11 +1065,11 @@ void EditorApp::exportZone(const std::string& outputDir) {
     if (objectPlacer_.objectCount() > 0) summary += ", " + std::to_string(objectPlacer_.objectCount()) + " obj";
     if (npcSpawner_.spawnCount() > 0) summary += ", " + std::to_string(npcSpawner_.spawnCount()) + " NPC";
     if (questEditor_.questCount() > 0) summary += ", " + std::to_string(questEditor_.questCount()) + " quest";
-    summary += " (score " + std::to_string(score) + "/6)";
+    summary += " (score " + std::to_string(score) + "/7)";
     showToast(summary, 5.0f);
     LOG_INFO("=== Zone Export Summary ===");
     LOG_INFO("  Output: ", base);
-    LOG_INFO("  Open format score: ", score, "/6");
+    LOG_INFO("  Open format score: ", score, "/7");
     LOG_INFO("  Formats: ", validation.summary());
     LOG_INFO("  Terrain: WOT/WHM + heightmap/normals PNG");
     LOG_INFO("  Textures: ", usedTextures.size(), " BLP→PNG");
