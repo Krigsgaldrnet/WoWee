@@ -670,10 +670,10 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
 
         if (ImGui::CollapsingHeader("Stamp / Clone")) {
             auto& brush2 = app.getTerrainEditor().brush();
-            if (ImGui::Button("Copy Stamp", ImVec2(120, 0)) && brush2.isActive())
+            if (ImGui::Button("Copy Stamp", ImVec2(120, 0)) )
                 app.getTerrainEditor().copyStamp(brush2.getPosition(), s.radius);
             ImGui::SameLine();
-            if (ImGui::Button("Paste Stamp", ImVec2(120, 0)) && brush2.isActive() &&
+            if (ImGui::Button("Paste Stamp", ImVec2(120, 0))  &&
                 app.getTerrainEditor().hasStamp())
                 app.getTerrainEditor().pasteStamp(brush2.getPosition());
             if (app.getTerrainEditor().hasStamp())
@@ -782,13 +782,13 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Width##ridge", &ridgeWidth, 5.0f, 80.0f);
             ImGui::SliderFloat("Height##ridge", &ridgeHeight, 5.0f, 100.0f);
             auto& brushR = app.getTerrainEditor().brush();
-            if (ImGui::Button("Set Start##ridge", ImVec2(120, 0)) && brushR.isActive()) {
+            if (ImGui::Button("Set Start##ridge", ImVec2(120, 0)) ) {
                 ridgeStart = brushR.getPosition();
                 ridgeStartSet = true;
                 app.showToast("Ridge start set");
             }
             ImGui::SameLine();
-            if (ImGui::Button("Set End + Create##ridge", ImVec2(140, 0)) && brushR.isActive() && ridgeStartSet) {
+            if (ImGui::Button("Set End + Create##ridge", ImVec2(140, 0))  && ridgeStartSet) {
                 ridgeEnd = brushR.getPosition();
                 app.getTerrainEditor().createRidge(ridgeStart, ridgeEnd, ridgeWidth, ridgeHeight);
                 app.showToast("Ridge created");
@@ -803,12 +803,12 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Radius##hill", &hillRadius, 10.0f, 150.0f);
             ImGui::SliderFloat("Height##hill", &hillHeight, 5.0f, 100.0f);
             auto& brushH = app.getTerrainEditor().brush();
-            if (ImGui::Button("Create Hill", ImVec2(120, 0)) && brushH.isActive()) {
+            if (ImGui::Button("Create Hill", ImVec2(120, 0)) ) {
                 app.getTerrainEditor().createHill(brushH.getPosition(), hillRadius, hillHeight);
                 app.showToast("Hill created");
             }
             ImGui::SameLine();
-            if (ImGui::Button("Create Valley", ImVec2(120, 0)) && brushH.isActive()) {
+            if (ImGui::Button("Create Valley", ImVec2(120, 0)) ) {
                 app.getTerrainEditor().createHill(brushH.getPosition(), hillRadius, -hillHeight);
                 app.showToast("Valley created");
             }
@@ -820,7 +820,7 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Height##mesa", &mesaHeight, 5.0f, 100.0f);
             ImGui::SliderFloat("Edge Steepness##mesa", &mesaSteep, 0.05f, 1.0f);
             auto& brush6 = app.getTerrainEditor().brush();
-            if (ImGui::Button("Create Mesa at Cursor", ImVec2(-1, 0)) && brush6.isActive()) {
+            if (ImGui::Button("Create Mesa at Cursor", ImVec2(-1, 0)) ) {
                 app.getTerrainEditor().createMesa(brush6.getPosition(), mesaRadius, mesaHeight, mesaSteep);
                 app.showToast("Mesa created");
             }
@@ -833,7 +833,7 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Depth##crater", &craterDepth, 2.0f, 50.0f);
             ImGui::SliderFloat("Rim Height##crater", &craterRim, 0.0f, 15.0f);
             auto& brush5 = app.getTerrainEditor().brush();
-            if (ImGui::Button("Create Crater at Cursor", ImVec2(-1, 0)) && brush5.isActive()) {
+            if (ImGui::Button("Create Crater at Cursor", ImVec2(-1, 0)) ) {
                 app.getTerrainEditor().createCrater(brush5.getPosition(), craterRadius, craterDepth, craterRim);
                 app.showToast("Crater created");
             }
@@ -842,7 +842,7 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
 
         if (ImGui::CollapsingHeader("Flatten Platform")) {
             auto& brush3 = app.getTerrainEditor().brush();
-            if (ImGui::Button("Create Flat Platform at Cursor", ImVec2(-1, 0)) && brush3.isActive()) {
+            if (ImGui::Button("Create Flat Platform at Cursor", ImVec2(-1, 0)) ) {
                 // Flatten all vertices under brush to the cursor height
                 auto& te = app.getTerrainEditor();
                 float targetZ = brush3.getPosition().z;
