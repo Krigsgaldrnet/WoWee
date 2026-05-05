@@ -62,8 +62,7 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--convert-m2") == 0 && i + 1 < argc) {
             std::string m2Path = argv[++i];
-            LOG_INFO("Batch convert mode: M2→WOM for ", m2Path);
-            // Need data path for asset loading
+            std::printf("Converting M2→WOM: %s\n", m2Path.c_str());
             if (dataPath.empty()) dataPath = "Data";
             wowee::pipeline::AssetManager am;
             if (am.initialize(dataPath)) {
@@ -73,11 +72,17 @@ int main(int argc, char* argv[]) {
                     auto dot = outPath.rfind('.');
                     if (dot != std::string::npos) outPath = outPath.substr(0, dot);
                     wowee::pipeline::WoweeModelLoader::save(wom, "output/models/" + outPath);
-                    LOG_INFO("Converted: ", m2Path, " → output/models/", outPath, ".wom");
+                    std::printf("OK: output/models/%s.wom (%zu verts, %zu bones)\n",
+                        outPath.c_str(), wom.vertices.size(), wom.bones.size());
                 } else {
-                    LOG_ERROR("Failed to convert: ", m2Path);
+                    std::fprintf(stderr, "FAILED: %s\n", m2Path.c_str());
+                    am.shutdown();
+                    return 1;
                 }
                 am.shutdown();
+            } else {
+                std::fprintf(stderr, "FAILED: cannot initialize asset manager\n");
+                return 1;
             }
             return 0;
         }
@@ -87,7 +92,7 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--convert-wmo") == 0 && i + 1 < argc) {
             std::string wmoPath = argv[++i];
-            LOG_INFO("Batch convert mode: WMO→WOB for ", wmoPath);
+            std::printf("Converting WMO→WOB: %s\n", wmoPath.c_str());
             if (dataPath.empty()) dataPath = "Data";
             wowee::pipeline::AssetManager am;
             if (am.initialize(dataPath)) {
@@ -110,14 +115,22 @@ int main(int argc, char* argv[]) {
                         auto dot = outPath.rfind('.');
                         if (dot != std::string::npos) outPath = outPath.substr(0, dot);
                         wowee::pipeline::WoweeBuildingLoader::save(wob, "output/buildings/" + outPath);
-                        LOG_INFO("Converted: ", wmoPath, " → output/buildings/", outPath, ".wob");
+                        std::printf("OK: output/buildings/%s.wob (%zu groups)\n",
+                            outPath.c_str(), wob.groups.size());
                     } else {
-                        LOG_ERROR("Failed to convert: ", wmoPath);
+                        std::fprintf(stderr, "FAILED: %s\n", wmoPath.c_str());
+                        am.shutdown();
+                        return 1;
                     }
                 } else {
-                    LOG_ERROR("WMO file not found: ", wmoPath);
+                    std::fprintf(stderr, "FAILED: file not found: %s\n", wmoPath.c_str());
+                    am.shutdown();
+                    return 1;
                 }
                 am.shutdown();
+            } else {
+                std::fprintf(stderr, "FAILED: cannot initialize asset manager\n");
+                return 1;
             }
             return 0;
         }
