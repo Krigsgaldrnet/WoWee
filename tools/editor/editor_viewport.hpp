@@ -105,6 +105,11 @@ private:
     VmaAllocation brushVBAlloc_ = VK_NULL_HANDLE;
     uint32_t brushVertCount_ = 0;
     bool brushVisible_ = false;
+
+    // NPC position markers (always visible fallback)
+    VkBuffer npcMarkerVB_ = VK_NULL_HANDLE;
+    VmaAllocation npcMarkerVBAlloc_ = VK_NULL_HANDLE;
+    uint32_t npcMarkerVertCount_ = 0;
 };
 
 } // namespace editor

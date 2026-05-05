@@ -56,6 +56,7 @@ void EditorViewport::shutdown() {
     if (!vkCtx_) return;
     vkDeviceWaitIdle(vkCtx_->getDevice());
 
+    if (npcMarkerVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), npcMarkerVB_, npcMarkerVBAlloc_); npcMarkerVB_ = VK_NULL_HANDLE; }
     if (brushVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), brushVB_, brushVBAlloc_); brushVB_ = VK_NULL_HANDLE; }
     gizmo_.shutdown();
     waterRenderer_.shutdown();
@@ -246,6 +247,48 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
 
     vkCtx_->waitAllUploads();
     vkCtx_->pollUploadBatches();
+
+    // Build NPC position markers (always visible, renders as colored discs)
+    if (npcMarkerVB_) {
+        vmaDestroyBuffer(vkCtx_->getAllocator(), npcMarkerVB_, npcMarkerVBAlloc_);
+        npcMarkerVB_ = VK_NULL_HANDLE;
+        npcMarkerVertCount_ = 0;
+    }
+    if (!npcs.empty()) {
+        struct MV { float pos[3]; float color[4]; };
+        std::vector<MV> verts;
+        for (const auto& npc : npcs) {
+            float s = 3.0f * npc.scale;
+            float x = npc.position.x, y = npc.position.y, z = npc.position.z + 0.5f;
+            float r = npc.hostile ? 0.9f : 0.2f;
+            float g = npc.hostile ? 0.2f : 0.8f;
+            float b = 0.2f, a = 0.85f;
+            // Flat diamond on ground
+            MV v; v.color[0]=r; v.color[1]=g; v.color[2]=b; v.color[3]=a;
+            v.pos[0]=x+s; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y+s; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x-s; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x+s; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x-s; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y-s; v.pos[2]=z; verts.push_back(v);
+            // Vertical pillar
+            float h = s * 3.0f;
+            v.color[3] = 0.6f;
+            v.pos[0]=x-0.5f; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x+0.5f; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+h; verts.push_back(v);
+        }
+        npcMarkerVertCount_ = static_cast<uint32_t>(verts.size());
+        VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bi.size = verts.size() * sizeof(MV);
+        bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        VmaAllocationCreateInfo ai{}; ai.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        ai.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        VmaAllocationInfo mi{};
+        if (vmaCreateBuffer(vkCtx_->getAllocator(), &bi, &ai,
+                &npcMarkerVB_, &npcMarkerVBAlloc_, &mi) == VK_SUCCESS)
+            std::memcpy(mi.pMappedData, verts.data(), verts.size() * sizeof(MV));
+    }
 }
 
 void EditorViewport::setBrushIndicator(const glm::vec3& center, float radius, bool active) {
@@ -381,6 +424,20 @@ void EditorViewport::render(VkCommandBuffer cmd) {
         wmoRenderer_->render(cmd, perFrameSet, *camera_);
 
     waterRenderer_.render(cmd, perFrameSet);
+
+    // NPC position markers (always visible)
+    if (npcMarkerVB_ && npcMarkerVertCount_ > 0) {
+        auto* wp = waterRenderer_.getPipeline();
+        auto* wl = waterRenderer_.getPipelineLayout();
+        if (wp && wl) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, wp);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, wl,
+                                    0, 1, &perFrameSet, 0, nullptr);
+            VkDeviceSize off = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &npcMarkerVB_, &off);
+            vkCmdDraw(cmd, npcMarkerVertCount_, 1, 0, 0);
+        }
+    }
 
     // Brush indicator circle
     if (brushVisible_ && brushVB_ && brushVertCount_ > 0) {
