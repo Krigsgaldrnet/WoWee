@@ -101,6 +101,7 @@ void EditorApp::run() {
             if (autoSaveTimer_ >= autoSaveInterval_) {
                 autoSaveTimer_ = 0.0f;
                 quickSave();
+                showToast("Auto-saved", 2.0f);
                 LOG_INFO("Auto-saved zone");
             }
         }
@@ -969,10 +970,28 @@ void EditorApp::exportZone(const std::string& outputDir) {
     }
 
     // Write zone manifest (for client loading)
+    // Scan output directory for all exported tiles (includes adjacent tiles)
     ZoneManifest manifest;
     manifest.mapName = loadedMap_;
     manifest.displayName = loadedMap_;
     manifest.tiles.push_back({loadedTileX_, loadedTileY_});
+    namespace fs = std::filesystem;
+    if (fs::exists(base)) {
+        for (auto& entry : fs::directory_iterator(base)) {
+            if (entry.path().extension() != ".adt") continue;
+            std::string stem = entry.path().stem().string();
+            auto lastU = stem.rfind('_');
+            auto prevU = stem.rfind('_', lastU - 1);
+            if (lastU != std::string::npos && prevU != std::string::npos) {
+                try {
+                    int tx = std::stoi(stem.substr(prevU + 1, lastU - prevU - 1));
+                    int ty = std::stoi(stem.substr(lastU + 1));
+                    if (tx == loadedTileX_ && ty == loadedTileY_) continue;
+                    manifest.tiles.push_back({tx, ty});
+                } catch (...) {}
+            }
+        }
+    }
     manifest.hasCreatures = (npcSpawner_.spawnCount() > 0);
     manifest.baseHeight = terrain_.chunks[0].position[2];
     manifest.save(base + "/zone.json");

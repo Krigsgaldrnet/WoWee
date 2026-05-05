@@ -149,6 +149,11 @@ public:
     void showToast(const std::string& msg, float duration = 3.0f);
     const std::vector<Toast>& getToasts() const { return toasts_; }
     const std::vector<RecentZone>& getRecentZones() const { return recentZones_; }
+    bool isAutoSaveEnabled() const { return autoSaveEnabled_; }
+    void setAutoSaveEnabled(bool v) { autoSaveEnabled_ = v; }
+    float getAutoSaveInterval() const { return autoSaveInterval_; }
+    void setAutoSaveInterval(float s) { autoSaveInterval_ = std::clamp(s, 60.0f, 900.0f); }
+    float getAutoSaveTimeRemaining() const { return autoSaveInterval_ - autoSaveTimer_; }
     void updateToasts(float dt);
 private:
     size_t lastObjCount_ = 0;

@@ -375,6 +375,17 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             auto& te = app.getTerrainEditor();
             if (ImGui::MenuItem("Undo", "Ctrl+Z", false, te.history().canUndo())) te.undo();
             if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, te.history().canRedo())) te.redo();
+            ImGui::Separator();
+            if (ImGui::BeginMenu("Auto-Save Settings")) {
+                bool enabled = app.isAutoSaveEnabled();
+                if (ImGui::Checkbox("Enabled", &enabled)) app.setAutoSaveEnabled(enabled);
+                float interval = app.getAutoSaveInterval();
+                if (ImGui::SliderFloat("Interval (sec)", &interval, 60.0f, 900.0f, "%.0fs"))
+                    app.setAutoSaveInterval(interval);
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                    "Next in: %.0fs", app.getAutoSaveTimeRemaining());
+                ImGui::EndMenu();
+            }
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("View")) {
