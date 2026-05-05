@@ -336,6 +336,17 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
         const char* modes[] = {"Raise", "Lower", "Smooth", "Flatten", "Level", "Erode"};
         int idx = static_cast<int>(s.mode);
         if (ImGui::Combo("Mode", &idx, modes, 6)) s.mode = static_cast<BrushMode>(idx);
+        if (ImGui::IsItemHovered()) {
+            const char* tips[] = {
+                "Raise: lift terrain up",
+                "Lower: push terrain down",
+                "Smooth: average neighbor heights",
+                "Flatten: set to target height",
+                "Level: same as flatten",
+                "Erode: simulate water erosion downhill"
+            };
+            ImGui::SetTooltip("%s", tips[idx]);
+        }
         ImGui::SliderFloat("Radius", &s.radius, 5.0f, 200.0f, "%.0f");
         ImGui::SliderFloat("Strength", &s.strength, 0.5f, 50.0f, "%.1f");
         ImGui::SliderFloat("Falloff", &s.falloff, 0.0f, 1.0f, "%.2f");
@@ -456,6 +467,32 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
         if (!selectedTexture_.empty())
             ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Active: %s",
                                selectedTexture_.c_str());
+
+        // Show textures on chunk under cursor
+        auto& brush = app.getTerrainEditor().brush();
+        if (brush.isActive()) {
+            if (auto* terrain = app.getTerrainEditor().getTerrain()) {
+                glm::vec3 bp = brush.getPosition();
+                float tileNW_X = (32.0f - static_cast<float>(terrain->coord.y)) * 533.33333f;
+                float tileNW_Y = (32.0f - static_cast<float>(terrain->coord.x)) * 533.33333f;
+                int cy = static_cast<int>((tileNW_X - bp.x) / (533.33333f / 16.0f));
+                int cx = static_cast<int>((tileNW_Y - bp.y) / (533.33333f / 16.0f));
+                cx = std::clamp(cx, 0, 15);
+                cy = std::clamp(cy, 0, 15);
+                auto& chunk = terrain->chunks[cy * 16 + cx];
+                if (!chunk.layers.empty()) {
+                    ImGui::Separator();
+                    ImGui::Text("Chunk [%d,%d] layers:", cx, cy);
+                    for (size_t li = 0; li < chunk.layers.size(); li++) {
+                        uint32_t tid = chunk.layers[li].textureId;
+                        std::string tname = (tid < terrain->textures.size()) ? terrain->textures[tid] : "?";
+                        auto sl = tname.rfind('\\');
+                        if (sl != std::string::npos) tname = tname.substr(sl + 1);
+                        ImGui::BulletText("%s%s", li == 0 ? "[base] " : "", tname.c_str());
+                    }
+                }
+            }
+        }
 
         // Recent textures
         auto& recent = app.getTexturePainter().getRecentTextures();
