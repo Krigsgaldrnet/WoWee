@@ -62,7 +62,7 @@ public:
     std::vector<PlacedObject>& getObjects() { return objects_; }
     void selectAll();
     void selectByType(PlaceableType type);
-    void clearAll() { objects_.clear(); undoStack_.clear(); selectedIdx_ = -1; selectedIndices_.clear(); }
+    void clearAll() { objects_.clear(); undoStack_.clear(); selectedIdx_ = -1; selectedIndices_.clear(); uniqueIdCounter_ = 1; }
     size_t objectCount() const { return objects_.size(); }
 
     float getPlacementRotationY() const { return placementRotY_; }

@@ -1814,6 +1814,10 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
     ImGui::SetNextWindowPos(ImVec2(vp->Size.x - 400, 90), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(390, 600), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Quest Editor")) {
+        if (!app.hasTerrainLoaded()) {
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Load or create terrain first");
+            ImGui::End(); return;
+        }
         auto& qe = app.getQuestEditor();
         auto& tmpl = qe.getTemplate();
 
@@ -2245,8 +2249,16 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
     if (ImGui::Begin("Info")) {
         auto* tr = app.getTerrainRenderer();
         if (tr && tr->getChunkCount() > 0) {
-            ImGui::Text("Map: %s [%d, %d]", app.getLoadedMap().c_str(),
-                        app.getLoadedTileX(), app.getLoadedTileY());
+            static char renameBuf[128] = {};
+            std::strncpy(renameBuf, app.getLoadedMap().c_str(), sizeof(renameBuf) - 1);
+            ImGui::SetNextItemWidth(140);
+            if (ImGui::InputText("##mapname", renameBuf, sizeof(renameBuf),
+                    ImGuiInputTextFlags_EnterReturnsTrue)) {
+                app.setMapName(renameBuf);
+                app.showToast("Zone renamed: " + std::string(renameBuf));
+            }
+            ImGui::SameLine();
+            ImGui::Text("[%d, %d]", app.getLoadedTileX(), app.getLoadedTileY());
             ImGui::Text("Chunks: %d  Tris: %d", tr->getChunkCount(), tr->getTriangleCount());
             ImGui::Text("Objects: %zu  NPCs: %zu",
                         app.getObjectPlacer().objectCount(),

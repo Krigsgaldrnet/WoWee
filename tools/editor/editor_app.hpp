@@ -54,6 +54,7 @@ public:
     QuestEditor& getQuestEditor() { return questEditor_; }
     AssetBrowser& getAssetBrowser() { return assetBrowser_; }
     EditorViewport& getViewport() { return viewport_; }
+    void setMapName(const std::string& name) { loadedMap_ = name; }
     rendering::TerrainRenderer* getTerrainRenderer();
     rendering::M2Renderer* getM2Renderer() { return viewport_.getM2Renderer(); }
     pipeline::AssetManager* getAssetManager() { return assetManager_.get(); }

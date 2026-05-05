@@ -773,14 +773,19 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 
     LOG_INFO("ADT loaded: ", mapName, " [", tileX, ",", tileY, "]");
 
-    // Try loading objects/NPCs from output directory if they exist
-    std::string outBase = "output/" + mapName;
-    if (objectPlacer_.loadFromFile(outBase + "/objects.json"))
-        showToast("Loaded " + std::to_string(objectPlacer_.objectCount()) + " objects");
-    if (npcSpawner_.loadFromFile(outBase + "/creatures.json"))
-        showToast("Loaded " + std::to_string(npcSpawner_.spawnCount()) + " NPCs");
-    if (questEditor_.loadFromFile(outBase + "/quests.json"))
-        showToast("Loaded " + std::to_string(questEditor_.questCount()) + " quests");
+    // Try loading objects/NPCs/quests from zone directories
+    for (const char* dir : {"output", "custom_zones"}) {
+        std::string zoneBase = std::string(dir) + "/" + mapName;
+        if (objectPlacer_.objectCount() == 0)
+            if (objectPlacer_.loadFromFile(zoneBase + "/objects.json"))
+                showToast("Loaded " + std::to_string(objectPlacer_.objectCount()) + " objects");
+        if (npcSpawner_.spawnCount() == 0)
+            if (npcSpawner_.loadFromFile(zoneBase + "/creatures.json"))
+                showToast("Loaded " + std::to_string(npcSpawner_.spawnCount()) + " NPCs");
+        if (questEditor_.questCount() == 0)
+            if (questEditor_.loadFromFile(zoneBase + "/quests.json"))
+                showToast("Loaded " + std::to_string(questEditor_.questCount()) + " quests");
+    }
     if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0)
         objectsDirty_ = true;
 }
@@ -1254,8 +1259,7 @@ void EditorApp::generateCompleteZone() {
 void EditorApp::clearAllObjects() {
     vkDeviceWaitIdle(window_->getVkContext()->getDevice());
     objectPlacer_.clearAll();
-    npcSpawner_.clearSelection();
-    npcSpawner_.getSpawns().clear();
+    npcSpawner_.clearAll();
     viewport_.clearObjects();
     viewport_.updateNpcMarkers({});
     terrainEditor_.history().clear();

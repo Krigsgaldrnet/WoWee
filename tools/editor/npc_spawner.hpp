@@ -73,6 +73,7 @@ public:
     const std::vector<CreatureSpawn>& getSpawns() const { return spawns_; }
     std::vector<CreatureSpawn>& getSpawns() { return spawns_; }
     size_t spawnCount() const { return spawns_.size(); }
+    void clearAll() { spawns_.clear(); selectedIdx_ = -1; idCounter_ = 1; }
 
     // Serialize to/from JSON
     bool saveToFile(const std::string& path) const;
