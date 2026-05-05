@@ -364,7 +364,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Text("Standalone world editor for creating");
             ImGui::Text("custom WoW zones for the wowee client.");
             ImGui::Separator();
-            ImGui::Text("6 modes, 30+ terrain tools, 2 noise types");
+            ImGui::Text("6 modes, 30+ terrain tools, 3 noise types");
             ImGui::Text("Export: ADT + WDT + JSON (zone manifest)");
             ImGui::Text("9k+ lines, WoW 3.3.5a ADT/WDT format");
             ImGui::Text("Built with SDL2 / Vulkan / ImGui");
