@@ -9,6 +9,7 @@
 #include "audio/ambient_sound_manager.hpp"
 #include "core/coordinates.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
+#include "pipeline/wowee_model.hpp"
 #include "core/memory_monitor.hpp"
 #include "core/profiler.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -449,10 +450,45 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             }
         }
 
+        // Check for WOM open format first (custom zone models)
+        std::string womBase = m2Path;
+        auto womDot = womBase.rfind('.');
+        if (womDot != std::string::npos) womBase = womBase.substr(0, womDot);
+        // Check custom_zones and output directories
+        std::vector<std::string> womPrefixes = {"custom_zones/models/", "output/" + mapName + "/models/"};
+        for (const std::string& prefix : womPrefixes) {
+            std::string womPath = prefix + womBase;
+            std::replace(womPath.begin(), womPath.end(), '\\', '/');
+            if (pipeline::WoweeModelLoader::exists(womPath)) {
+                auto wom = pipeline::WoweeModelLoader::load(womPath);
+                if (wom.isValid()) {
+                    // Convert WOM to M2Model for the renderer
+                    pipeline::M2Model m2Model;
+                    m2Model.name = wom.name;
+                    m2Model.boundRadius = wom.boundRadius;
+                    m2Model.vertices.reserve(wom.vertices.size());
+                    for (const auto& v : wom.vertices) {
+                        pipeline::M2Vertex mv;
+                        mv.position = v.position;
+                        mv.normal = v.normal;
+                        mv.texCoords[0] = v.texCoord;
+                        m2Model.vertices.push_back(mv);
+                    }
+                    m2Model.indices.reserve(wom.indices.size());
+                    for (uint32_t idx : wom.indices)
+                        m2Model.indices.push_back(static_cast<uint16_t>(idx));
+
+                    pending->m2Models.push_back({modelId, std::move(m2Model), {}});
+                    preparedModelIds.insert(modelId);
+                    LOG_INFO("Loaded WOM model: ", womPath);
+                    return true;
+                }
+            }
+        }
+
         std::vector<uint8_t> m2Data = assetManager->readFile(m2Path);
         if (m2Data.empty()) {
             skippedFileNotFound++;
-            LOG_WARNING("M2 file not found: ", m2Path);
             return false;
         }
 
