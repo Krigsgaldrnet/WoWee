@@ -903,6 +903,11 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
 
             ImGui::SliderFloat("Scale", &tmpl.scale, 0.5f, 10.0f, "%.1f");
 
+            // Quick NPC linking for quests
+            if (app.getQuestEditor().questCount() > 0) {
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.3f, 1), "Quest link: set as giver/turn-in via Quest panel");
+            }
+
             int lvl = tmpl.level;
             if (ImGui::SliderInt("Level", &lvl, 1, 83)) {
                 tmpl.level = lvl;
