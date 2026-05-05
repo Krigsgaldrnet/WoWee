@@ -742,6 +742,34 @@ bool TerrainEditor::importHeightmap(const std::string& path, float heightScale) 
     return true;
 }
 
+bool TerrainEditor::exportHeightmap(const std::string& path, float heightScale) {
+    if (!terrain_) return false;
+    constexpr int res = 129;
+    std::vector<uint16_t> data(res * res, 0);
+
+    for (int cy = 0; cy < 16; cy++) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& chunk = terrain_->chunks[cy * 16 + cx];
+            if (!chunk.hasHeightMap()) continue;
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                if (col > 8) continue; // outer vertices only for 129x129
+                int px = cx * 8 + col;
+                int py = cy * 8 + row;
+                if (px >= res || py >= res) continue;
+                float h = (chunk.position[2] + chunk.heightMap.heights[v]) / heightScale;
+                h = std::clamp(h, 0.0f, 1.0f);
+                data[py * res + px] = static_cast<uint16_t>(h * 65535.0f);
+            }
+        }
+    }
+
+    std::ofstream f(path, std::ios::binary);
+    if (!f) return false;
+    f.write(reinterpret_cast<const char*>(data.data()), data.size() * 2);
+    return true;
+}
+
 void TerrainEditor::punchHole(const glm::vec3& center, float radius) {
     if (!terrain_) return;
     auto affected = getAffectedChunks(center, radius);

@@ -205,6 +205,7 @@ void EditorApp::processEvents() {
                 auto sc = event.key.keysym.scancode;
                 if (sc == SDL_SCANCODE_F3) setWireframe(!isWireframe());
                 if (sc == SDL_SCANCODE_F5) saveBookmark("");
+                // F1 handled by UI (showHelp_ toggle)
                 // Transform shortcuts (Blender-style)
                 if (objectPlacer_.getSelected()) {
                     if (sc == SDL_SCANCODE_G) startGizmoMode(TransformMode::Move);

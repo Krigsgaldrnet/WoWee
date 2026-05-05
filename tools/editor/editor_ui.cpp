@@ -120,6 +120,20 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 ImGui::EndMenu();
             }
             ImGui::Separator();
+            if (ImGui::BeginMenu("Export Heightmap", app.hasTerrainLoaded())) {
+                static char expHmPath[256] = "output/heightmap.raw";
+                static float expHmScale = 500.0f;
+                ImGui::InputText("File##exphm", expHmPath, sizeof(expHmPath));
+                ImGui::SliderFloat("Max Height##exphm", &expHmScale, 50.0f, 2000.0f);
+                if (ImGui::MenuItem("Export 16-bit RAW (129x129)")) {
+                    if (app.getTerrainEditor().exportHeightmap(expHmPath, expHmScale))
+                        app.showToast("Heightmap exported");
+                    else
+                        app.showToast("Export failed");
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Quit", "Alt+F4")) app.requestQuit();
             ImGui::EndMenu();
         }
@@ -152,7 +166,46 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             }
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("Help")) {
+            if (ImGui::MenuItem("Keyboard Shortcuts", "F1")) showHelp_ = !showHelp_;
+            ImGui::EndMenu();
+        }
         ImGui::EndMainMenuBar();
+    }
+
+    // Help overlay
+    if (showHelp_) {
+        ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Keyboard Shortcuts", &showHelp_)) {
+            ImGui::Text("Navigation:");
+            ImGui::BulletText("WASD — fly camera");
+            ImGui::BulletText("Q/E — descend/ascend");
+            ImGui::BulletText("Right-drag — look around");
+            ImGui::BulletText("Scroll — adjust camera speed");
+            ImGui::BulletText("Shift — sprint");
+            ImGui::Separator();
+            ImGui::Text("Editing:");
+            ImGui::BulletText("Left-click — paint/place (depends on mode)");
+            ImGui::BulletText("Ctrl+click — select object/NPC");
+            ImGui::BulletText("Ctrl+S — quick save");
+            ImGui::BulletText("Ctrl+Z — undo");
+            ImGui::BulletText("Ctrl+Shift+Z — redo");
+            ImGui::BulletText("Delete — remove selected");
+            ImGui::Separator();
+            ImGui::Text("Object Transform:");
+            ImGui::BulletText("G — move mode (then drag)");
+            ImGui::BulletText("R — rotate mode (then drag)");
+            ImGui::BulletText("T — scale mode (then drag)");
+            ImGui::BulletText("X/Y — constrain to axis");
+            ImGui::BulletText("Escape — deselect / cancel");
+            ImGui::BulletText("Right-click — context menu");
+            ImGui::Separator();
+            ImGui::Text("View:");
+            ImGui::BulletText("F1 — this help");
+            ImGui::BulletText("F3 — wireframe toggle");
+            ImGui::BulletText("F5 — save camera bookmark");
+        }
+        ImGui::End();
     }
 }
 

@@ -39,6 +39,7 @@ private:
     bool showNewDialog_ = false;
     bool showLoadDialog_ = false;
     bool showSaveDialog_ = false;
+    bool showHelp_ = false;
 
     char newMapNameBuf_[256] = "CustomZone";
     int newTileX_ = 32;
