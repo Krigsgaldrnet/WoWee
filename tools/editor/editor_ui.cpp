@@ -1824,6 +1824,11 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
         }
 
         ImGui::Separator();
+        // Undo/redo status
+        auto& hist = app.getTerrainEditor().history();
+        if (hist.canUndo() || hist.canRedo())
+            ImGui::Text("Undo: %zu  Redo: %zu", hist.undoCount(), hist.redoCount());
+
         if (app.getTerrainEditor().hasUnsavedChanges())
             ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "* Unsaved (Ctrl+S to save)");
         else
