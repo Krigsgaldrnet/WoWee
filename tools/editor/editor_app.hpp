@@ -8,6 +8,7 @@
 #include "object_placer.hpp"
 #include "npc_spawner.hpp"
 #include "npc_presets.hpp"
+#include "zone_manifest.hpp"
 #include "asset_browser.hpp"
 #include "core/window.hpp"
 #include "pipeline/asset_manager.hpp"

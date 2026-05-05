@@ -1292,6 +1292,7 @@ add_executable(wowee_editor
     tools/editor/npc_spawner.cpp
     tools/editor/npc_presets.cpp
     tools/editor/transform_gizmo.cpp
+    tools/editor/zone_manifest.cpp
     tools/editor/asset_browser.cpp
     tools/editor/editor_water.cpp
     tools/editor/editor_markers.cpp

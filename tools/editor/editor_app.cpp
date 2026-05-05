@@ -1,5 +1,6 @@
 #include "editor_app.hpp"
 #include "adt_writer.hpp"
+#include "zone_manifest.hpp"
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
 #include "pipeline/terrain_mesh.hpp"
@@ -595,6 +596,15 @@ void EditorApp::exportZone(const std::string& outputDir) {
         std::string npcPath = base + "/creatures.json";
         npcSpawner_.saveToFile(npcPath);
     }
+
+    // Write zone manifest (for client loading)
+    ZoneManifest manifest;
+    manifest.mapName = loadedMap_;
+    manifest.displayName = loadedMap_;
+    manifest.tiles.push_back({loadedTileX_, loadedTileY_});
+    manifest.hasCreatures = (npcSpawner_.spawnCount() > 0);
+    manifest.baseHeight = terrain_.chunks[0].position[2];
+    manifest.save(base + "/zone.json");
 
     lastSavePath_ = outputDir;
     showToast("Zone exported to " + base);

@@ -235,9 +235,11 @@ void EditorUI::renderToolbar(EditorApp& app) {
 }
 
 void EditorUI::renderNewTerrainDialog(EditorApp& /*app*/) {
-    ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(400, 320), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("New Terrain", &showNewDialog_)) {
         ImGui::InputText("Map Name", newMapNameBuf_, sizeof(newMapNameBuf_));
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+            "Internal name (no spaces). Used for file paths.");
         ImGui::InputInt("Tile X", &newTileX_);
         ImGui::InputInt("Tile Y", &newTileY_);
         ImGui::SliderFloat("Base Height", &newBaseHeight_, 0.0f, 500.0f);
