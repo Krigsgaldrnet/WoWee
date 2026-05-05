@@ -206,3 +206,75 @@ TEST_CASE("DBCFile getStringByOffset", "[dbc]") {
     REQUIRE(dbc.getStringByOffset(1) == "Offset5");
     REQUIRE(dbc.getStringByOffset(0).empty());
 }
+
+// ============== JSON DBC Tests ==============
+
+static std::vector<uint8_t> buildJsonDBC(const std::string& json) {
+    return std::vector<uint8_t>(json.begin(), json.end());
+}
+
+TEST_CASE("JSON DBC basic load", "[dbc][json]") {
+    auto data = buildJsonDBC(R"({
+        "format": "wowee-dbc-json-1.0",
+        "fieldCount": 3,
+        "recordCount": 2,
+        "records": [
+            [1, "Fireball", 100],
+            [2, "Frostbolt", 200]
+        ]
+    })");
+
+    DBCFile dbc;
+    REQUIRE(dbc.load(data));
+    REQUIRE(dbc.getRecordCount() == 2);
+    REQUIRE(dbc.getFieldCount() == 3);
+    REQUIRE(dbc.getUInt32(0, 0) == 1);
+    REQUIRE(dbc.getString(0, 1) == "Fireball");
+    REQUIRE(dbc.getUInt32(0, 2) == 100);
+    REQUIRE(dbc.getUInt32(1, 0) == 2);
+    REQUIRE(dbc.getString(1, 1) == "Frostbolt");
+    REQUIRE(dbc.getUInt32(1, 2) == 200);
+}
+
+TEST_CASE("JSON DBC with float values", "[dbc][json]") {
+    auto data = buildJsonDBC(R"({
+        "fieldCount": 2,
+        "records": [
+            [1, 3.14]
+        ]
+    })");
+
+    DBCFile dbc;
+    REQUIRE(dbc.load(data));
+    REQUIRE(dbc.getUInt32(0, 0) == 1);
+    REQUIRE(dbc.getFloat(0, 1) == Catch::Approx(3.14f).margin(0.01f));
+}
+
+TEST_CASE("JSON DBC empty records", "[dbc][json]") {
+    auto data = buildJsonDBC(R"({"records": []})");
+    DBCFile dbc;
+    REQUIRE_FALSE(dbc.load(data));
+}
+
+TEST_CASE("JSON DBC missing records key", "[dbc][json]") {
+    auto data = buildJsonDBC(R"({"format": "test"})");
+    DBCFile dbc;
+    REQUIRE_FALSE(dbc.load(data));
+}
+
+TEST_CASE("JSON DBC findRecordById", "[dbc][json]") {
+    auto data = buildJsonDBC(R"({
+        "fieldCount": 2,
+        "records": [
+            [10, "Alpha"],
+            [20, "Beta"],
+            [30, "Gamma"]
+        ]
+    })");
+
+    DBCFile dbc;
+    REQUIRE(dbc.load(data));
+    REQUIRE(dbc.findRecordById(20) == 1);
+    REQUIRE(dbc.findRecordById(30) == 2);
+    REQUIRE(dbc.findRecordById(99) == -1);
+}

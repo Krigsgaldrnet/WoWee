@@ -479,6 +479,34 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                     for (uint32_t idx : wom.indices)
                         m2Model.indices.push_back(static_cast<uint16_t>(idx));
 
+                    // Set up textures from WOM paths
+                    for (const auto& texPath : wom.texturePaths) {
+                        pipeline::M2Texture tex;
+                        tex.type = 0;
+                        tex.flags = 0;
+                        tex.filename = texPath;
+                        m2Model.textures.push_back(tex);
+                    }
+                    m2Model.textureLookup = {0};
+
+                    // Create default render batch covering all geometry
+                    pipeline::M2Batch batch{};
+                    batch.flags = 0;
+                    batch.shader = 0;
+                    batch.textureCount = std::min(1u, static_cast<uint32_t>(wom.texturePaths.size()));
+                    batch.textureIndex = 0;
+                    batch.indexStart = 0;
+                    batch.indexCount = static_cast<uint32_t>(m2Model.indices.size());
+                    batch.vertexStart = 0;
+                    batch.vertexCount = static_cast<uint32_t>(m2Model.vertices.size());
+                    m2Model.batches.push_back(batch);
+
+                    // Default opaque material
+                    pipeline::M2Material mat;
+                    mat.flags = 0;
+                    mat.blendMode = 0;
+                    m2Model.materials.push_back(mat);
+
                     pending->m2Models.push_back({modelId, std::move(m2Model), {}});
                     preparedModelIds.insert(modelId);
                     LOG_INFO("Loaded WOM model: ", womPath);
