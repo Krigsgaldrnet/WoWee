@@ -261,15 +261,24 @@ void EditorApp::processEvents() {
                 if (sc == SDL_SCANCODE_O && (event.key.keysym.mod & KMOD_CTRL))
                     ui_.openLoadDialog();
                 if (sc == SDL_SCANCODE_Z && (event.key.keysym.mod & KMOD_CTRL)) {
-                    if (mode_ == EditorMode::Sculpt) {
-                        if (event.key.keysym.mod & KMOD_SHIFT)
+                    bool isRedo = (event.key.keysym.mod & KMOD_SHIFT) != 0;
+                    if (isRedo) {
+                        // Ctrl+Shift+Z = Redo (sculpt only for now)
+                        if (terrainEditor_.history().canRedo()) {
                             terrainEditor_.redo();
-                        else
+                            showToast("Redo");
+                        }
+                    } else {
+                        // Ctrl+Z = Undo
+                        if (mode_ == EditorMode::PlaceObject || mode_ == EditorMode::NPC) {
+                            if (objectPlacer_.canUndoPlace()) {
+                                objectPlacer_.undoLastPlace();
+                                objectsDirty_ = true;
+                                showToast("Undo placement");
+                            }
+                        } else if (terrainEditor_.history().canUndo()) {
                             terrainEditor_.undo();
-                    } else if (mode_ == EditorMode::PlaceObject || mode_ == EditorMode::NPC) {
-                        if (!(event.key.keysym.mod & KMOD_SHIFT) && objectPlacer_.canUndoPlace()) {
-                            objectPlacer_.undoLastPlace();
-                            objectsDirty_ = true;
+                            showToast("Undo");
                         }
                     }
                 }
@@ -909,9 +918,12 @@ void EditorApp::clearAllObjects() {
 
 void EditorApp::centerOnTerrain() {
     if (!terrain_.isLoaded()) return;
-    float centerX = (32.0f - loadedTileY_) * 533.33333f - 8.0f * 533.33333f / 16.0f;
-    float centerY = (32.0f - loadedTileX_) * 533.33333f - 8.0f * 533.33333f / 16.0f;
-    camera_.setPosition(glm::vec3(centerX, centerY, terrain_.chunks[0].position[2] + 300.0f));
+    auto mesh = terrainEditor_.regenerateMesh();
+    if (mesh.validChunkCount > 0) {
+        float cx = (mesh.chunks[0].worldX + mesh.chunks[255].worldX) * 0.5f;
+        float cy = (mesh.chunks[0].worldY + mesh.chunks[255].worldY) * 0.5f;
+        camera_.setPosition(glm::vec3(cx, cy, terrain_.chunks[0].position[2] + 300.0f));
+    }
     camera_.setYawPitch(0.0f, -45.0f);
     showToast("Camera centered on terrain");
 }
