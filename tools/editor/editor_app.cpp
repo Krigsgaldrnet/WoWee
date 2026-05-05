@@ -206,6 +206,14 @@ void EditorApp::processEvents() {
                 auto sc = event.key.keysym.scancode;
                 if (sc == SDL_SCANCODE_F3) setWireframe(!isWireframe());
                 if (sc == SDL_SCANCODE_F5) saveBookmark("");
+                // Number keys switch modes (when not typing in ImGui)
+                if (!io.WantCaptureKeyboard) {
+                    if (sc == SDL_SCANCODE_1) setMode(EditorMode::Sculpt);
+                    if (sc == SDL_SCANCODE_2) setMode(EditorMode::Paint);
+                    if (sc == SDL_SCANCODE_3) setMode(EditorMode::PlaceObject);
+                    if (sc == SDL_SCANCODE_4) setMode(EditorMode::Water);
+                    if (sc == SDL_SCANCODE_5) setMode(EditorMode::NPC);
+                }
                 // F1 handled by UI (showHelp_ toggle)
                 // Transform shortcuts (Blender-style)
                 if (objectPlacer_.getSelected()) {
@@ -542,6 +550,15 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     camera_.setYawPitch(0.0f, -45.0f);
 
     LOG_INFO("ADT loaded: ", mapName, " [", tileX, ",", tileY, "]");
+
+    // Try loading objects/NPCs from output directory if they exist
+    std::string outBase = "output/" + mapName;
+    if (objectPlacer_.loadFromFile(outBase + "/objects.json"))
+        showToast("Loaded " + std::to_string(objectPlacer_.objectCount()) + " objects");
+    if (npcSpawner_.loadFromFile(outBase + "/creatures.json"))
+        showToast("Loaded " + std::to_string(npcSpawner_.spawnCount()) + " NPCs");
+    if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0)
+        objectsDirty_ = true;
 }
 
 void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome) {

@@ -212,26 +212,31 @@ void EditorUI::renderMenuBar(EditorApp& app) {
 
 void EditorUI::renderToolbar(EditorApp& app) {
     ImGui::SetNextWindowPos(ImVec2(300, 30), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(400, 50), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(500, 50), ImGuiCond_FirstUseEver);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoScrollbar;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
     if (ImGui::Begin("##Toolbar", nullptr, flags)) {
         auto mode = app.getMode();
-        if (ImGui::RadioButton("Sculpt", mode == EditorMode::Sculpt))
-            app.setMode(EditorMode::Sculpt);
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Paint", mode == EditorMode::Paint))
-            app.setMode(EditorMode::Paint);
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Objects", mode == EditorMode::PlaceObject))
-            app.setMode(EditorMode::PlaceObject);
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Water", mode == EditorMode::Water))
-            app.setMode(EditorMode::Water);
-        ImGui::SameLine();
-        if (ImGui::RadioButton("NPCs", mode == EditorMode::NPC))
-            app.setMode(EditorMode::NPC);
+
+        auto modeButton = [&](const char* label, EditorMode m) {
+            bool active = (mode == m);
+            if (active) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.6f, 0.9f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+            }
+            if (ImGui::Button(label, ImVec2(70, 28)))
+                app.setMode(m);
+            if (active)
+                ImGui::PopStyleColor(2);
+            ImGui::SameLine();
+        };
+
+        modeButton("Sculpt", EditorMode::Sculpt);
+        modeButton("Paint", EditorMode::Paint);
+        modeButton("Objects", EditorMode::PlaceObject);
+        modeButton("Water", EditorMode::Water);
+        modeButton("NPCs", EditorMode::NPC);
     }
     ImGui::End();
     ImGui::PopStyleVar();
