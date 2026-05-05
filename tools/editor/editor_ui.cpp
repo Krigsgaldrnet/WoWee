@@ -1362,6 +1362,8 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
 
             if (changed) app.markObjectsDirty();
 
+            ImGui::Text("Scale: %.2f  Rot: %.0f,%.0f,%.0f",
+                        sel->scale, sel->rotation.x, sel->rotation.y, sel->rotation.z);
             if (ImGui::Button("Snap Ground", ImVec2(75, 0)))
                 app.snapSelectedToGround();
             ImGui::SameLine();
