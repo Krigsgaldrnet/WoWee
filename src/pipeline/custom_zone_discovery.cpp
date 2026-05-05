@@ -1,5 +1,6 @@
 #include "pipeline/custom_zone_discovery.hpp"
 #include "core/logger.hpp"
+#include <nlohmann/json.hpp>
 #include <fstream>
 #include <filesystem>
 
@@ -29,30 +30,34 @@ std::vector<CustomZoneInfo> CustomZoneDiscovery::scanDirectory(const std::string
 
         std::ifstream f(zoneJson);
         if (!f) continue;
-        std::string content((std::istreambuf_iterator<char>(f)),
-                             std::istreambuf_iterator<char>());
 
-        auto findStr = [&](const std::string& key) -> std::string {
-            auto pos = content.find("\"" + key + "\"");
-            if (pos == std::string::npos) return "";
-            pos = content.find('"', content.find(':', pos) + 1);
-            if (pos == std::string::npos) return "";
-            auto end = content.find('"', pos + 1);
-            return content.substr(pos + 1, end - pos - 1);
-        };
+        try {
+            auto j = nlohmann::json::parse(f);
 
-        CustomZoneInfo info;
-        info.name = findStr("mapName");
-        if (info.name.empty()) info.name = findStr("name");
-        info.author = findStr("author");
-        info.description = findStr("description");
-        info.directory = entry.path().string();
-        info.hasCreatures = fs::exists(entry.path().string() + "/creatures.json");
-        info.hasQuests = fs::exists(entry.path().string() + "/quests.json");
+            CustomZoneInfo info;
+            info.name = j.value("mapName", "");
+            if (info.name.empty()) info.name = j.value("name", "");
+            info.author = j.value("author", "");
+            info.description = j.value("description", "");
+            info.mapId = j.value("mapId", 9000u);
+            info.directory = entry.path().string();
+            info.hasCreatures = j.value("hasCreatures", false) ||
+                                fs::exists(entry.path().string() + "/creatures.json");
+            info.hasQuests = fs::exists(entry.path().string() + "/quests.json");
 
-        if (!info.name.empty()) {
-            results.push_back(info);
-            LOG_INFO("Discovered custom zone: ", info.name, " in ", info.directory);
+            if (j.contains("tiles") && j["tiles"].is_array()) {
+                for (const auto& t : j["tiles"]) {
+                    if (t.is_array() && t.size() >= 2)
+                        info.tiles.push_back({t[0].get<int>(), t[1].get<int>()});
+                }
+            }
+
+            if (!info.name.empty()) {
+                results.push_back(info);
+                LOG_INFO("Discovered custom zone: ", info.name, " in ", info.directory);
+            }
+        } catch (const std::exception& e) {
+            LOG_WARNING("Failed to parse zone.json in ", entry.path().string(), ": ", e.what());
         }
     }
 

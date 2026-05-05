@@ -9,6 +9,7 @@
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "core/coordinates.hpp"
+#include <nlohmann/json.hpp>
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
 #include "pipeline/terrain_mesh.hpp"
@@ -895,26 +896,24 @@ void EditorApp::exportZone(const std::string& outputDir) {
     int score = validation.openFormatScore();
     // Write zone statistics JSON
     {
+        nlohmann::json sj;
+        sj["map"] = loadedMap_;
+        sj["tile"] = {loadedTileX_, loadedTileY_};
+        sj["objects"] = objectPlacer_.objectCount();
+        sj["npcs"] = npcSpawner_.spawnCount();
+        sj["quests"] = questEditor_.questCount();
+        sj["textures"] = usedTextures.size();
+        sj["openFormatScore"] = score;
+        sj["formats"] = validation.summary();
         std::ofstream stats(base + "/stats.json");
-        if (stats) {
-            stats << "{\n";
-            stats << "  \"map\": \"" << loadedMap_ << "\",\n";
-            stats << "  \"tile\": [" << loadedTileX_ << "," << loadedTileY_ << "],\n";
-            stats << "  \"objects\": " << objectPlacer_.objectCount() << ",\n";
-            stats << "  \"npcs\": " << npcSpawner_.spawnCount() << ",\n";
-            stats << "  \"quests\": " << questEditor_.questCount() << ",\n";
-            stats << "  \"textures\": " << usedTextures.size() << ",\n";
-            stats << "  \"openFormatScore\": " << score << ",\n";
-            stats << "  \"formats\": \"" << validation.summary() << "\"\n";
-            stats << "}\n";
-        }
+        if (stats) stats << sj.dump(2) << "\n";
     }
 
     showToast("Exported " + std::to_string(fileCount) + " files (" +
-              std::to_string(score) + "/5 open format)");
+              std::to_string(score) + "/6 open format)");
     LOG_INFO("=== Zone Export Summary ===");
     LOG_INFO("  Output: ", base);
-    LOG_INFO("  Open format score: ", score, "/5");
+    LOG_INFO("  Open format score: ", score, "/6");
     LOG_INFO("  Formats: ", validation.summary());
     LOG_INFO("  Terrain: WOT/WHM + heightmap/normals PNG");
     LOG_INFO("  Textures: ", usedTextures.size(), " BLP→PNG");
