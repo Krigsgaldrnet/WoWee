@@ -34,6 +34,12 @@ TEST_CASE("WOB save and load round-trip", "[wob]") {
     grp.vertices.push_back({{0,1,0}, {0,0,1}, {0,1}, {1,1,1,1}});
     grp.indices = {0, 1, 2};
     grp.texturePaths.push_back("textures/wall.png");
+    WoweeBuilding::Material mat;
+    mat.texturePath = "textures/wall.png";
+    mat.flags = 0x10;
+    mat.shader = 3;
+    mat.blendMode = 1;
+    grp.materials.push_back(mat);
     bld.groups.push_back(grp);
 
     WoweeBuilding::Portal portal;
@@ -63,6 +69,11 @@ TEST_CASE("WOB save and load round-trip", "[wob]") {
     REQUIRE(loaded.groups[0].vertices.size() == 3);
     REQUIRE(loaded.groups[0].indices.size() == 3);
     REQUIRE(loaded.groups[0].isOutdoor == false);
+    REQUIRE(loaded.groups[0].materials.size() == 1);
+    REQUIRE(loaded.groups[0].materials[0].texturePath == "textures/wall.png");
+    REQUIRE(loaded.groups[0].materials[0].flags == 0x10);
+    REQUIRE(loaded.groups[0].materials[0].shader == 3);
+    REQUIRE(loaded.groups[0].materials[0].blendMode == 1);
     REQUIRE(loaded.portals.size() == 1);
     REQUIRE(loaded.portals[0].groupA == 0);
     REQUIRE(loaded.portals[0].vertices.size() == 4);

@@ -64,6 +64,23 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
             f.read(tp.data(), tl);
             grp.texturePaths.push_back(tp);
         }
+
+        // Read material data (v1.1+)
+        uint32_t mc = 0;
+        if (f.read(reinterpret_cast<char*>(&mc), 4) && mc > 0 && mc <= 256) {
+            for (uint32_t mi = 0; mi < mc; mi++) {
+                WoweeBuilding::Material mat;
+                uint16_t pl;
+                f.read(reinterpret_cast<char*>(&pl), 2);
+                mat.texturePath.resize(pl);
+                f.read(mat.texturePath.data(), pl);
+                f.read(reinterpret_cast<char*>(&mat.flags), 4);
+                f.read(reinterpret_cast<char*>(&mat.shader), 4);
+                f.read(reinterpret_cast<char*>(&mat.blendMode), 4);
+                grp.materials.push_back(mat);
+            }
+        }
+
         bld.groups.push_back(std::move(grp));
     }
 
@@ -139,6 +156,18 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
             uint16_t tl = static_cast<uint16_t>(tp.size());
             f.write(reinterpret_cast<const char*>(&tl), 2);
             f.write(tp.data(), tl);
+        }
+
+        // Write material data
+        uint32_t mc = static_cast<uint32_t>(grp.materials.size());
+        f.write(reinterpret_cast<const char*>(&mc), 4);
+        for (const auto& mat : grp.materials) {
+            uint16_t pl = static_cast<uint16_t>(mat.texturePath.size());
+            f.write(reinterpret_cast<const char*>(&pl), 2);
+            f.write(mat.texturePath.data(), pl);
+            f.write(reinterpret_cast<const char*>(&mat.flags), 4);
+            f.write(reinterpret_cast<const char*>(&mat.shader), 4);
+            f.write(reinterpret_cast<const char*>(&mat.blendMode), 4);
         }
     }
 
