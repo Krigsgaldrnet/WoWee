@@ -16,7 +16,8 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 
 ## WOM — Wowee Open Model (binary)
 - Extension: `.wom`
-- Magic: `WOM1` (0x314D4F57)
+- Magic: `WOM1` (0x314D4F57) — version 1
+- Version: embedded in magic (WOM2 for future revisions with animation support)
 - Layout: magic(4) + vertCount(4) + indexCount(4) + texCount(4) + bounds(28) + name + vertices + indices + texPaths
 - Vertex: position(vec3) + normal(vec3) + texCoord(vec2) = 32 bytes
 
