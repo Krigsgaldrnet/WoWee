@@ -1101,10 +1101,28 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
             int lvl = tmpl.requiredLevel;
             if (ImGui::InputInt("Required Level", &lvl)) tmpl.requiredLevel = std::max(1, lvl);
 
-            int giver = tmpl.questGiverNpcId;
-            if (ImGui::InputInt("Giver NPC ID", &giver)) tmpl.questGiverNpcId = std::max(0, giver);
-            int turnin = tmpl.turnInNpcId;
-            if (ImGui::InputInt("Turn-in NPC ID", &turnin)) tmpl.turnInNpcId = std::max(0, turnin);
+            // Link to NPCs from spawn list
+            auto& spawner = app.getNpcSpawner();
+            if (ImGui::BeginCombo("Quest Giver##qg",
+                    tmpl.questGiverNpcId > 0 ? std::to_string(tmpl.questGiverNpcId).c_str() : "None")) {
+                if (ImGui::Selectable("None")) tmpl.questGiverNpcId = 0;
+                for (const auto& s : spawner.getSpawns()) {
+                    char lbl[64];
+                    std::snprintf(lbl, sizeof(lbl), "%s (id %u)", s.name.c_str(), s.id);
+                    if (ImGui::Selectable(lbl)) tmpl.questGiverNpcId = s.id;
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::BeginCombo("Turn-in NPC##qt",
+                    tmpl.turnInNpcId > 0 ? std::to_string(tmpl.turnInNpcId).c_str() : "None")) {
+                if (ImGui::Selectable("None##ti")) tmpl.turnInNpcId = 0;
+                for (const auto& s : spawner.getSpawns()) {
+                    char lbl[64];
+                    std::snprintf(lbl, sizeof(lbl), "%s (id %u)", s.name.c_str(), s.id);
+                    if (ImGui::Selectable(lbl)) tmpl.turnInNpcId = s.id;
+                }
+                ImGui::EndCombo();
+            }
 
             ImGui::Separator();
             ImGui::Text("Objectives:");
