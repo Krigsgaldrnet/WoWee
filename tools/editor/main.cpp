@@ -6,21 +6,20 @@
 #include "pipeline/custom_zone_discovery.hpp"
 #include "core/logger.hpp"
 #include <string>
+#include <cstdio>
 #include <cstring>
 
 static void printUsage(const char* argv0) {
-    LOG_INFO("Usage: ", argv0, " --data <path> [options]");
-    LOG_INFO("");
-    LOG_INFO("Options:");
-    LOG_INFO("  --data <path>          Path to extracted WoW data (manifest.json)");
-    LOG_INFO("  --adt <map> <x> <y>    Load an ADT tile on startup");
-    LOG_INFO("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)");
-    LOG_INFO("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)");
-    LOG_INFO("  --list-zones           List discovered custom zones and exit");
-    LOG_INFO("  --version              Show version and format info");
-    LOG_INFO("");
-    LOG_INFO("Wowee World Editor v1.0.0 — by Kelsi Davis");
-    LOG_INFO("Novel open formats: WOT/WHM/WOM/WOB/WCP");
+    std::printf("Usage: %s --data <path> [options]\n\n", argv0);
+    std::printf("Options:\n");
+    std::printf("  --data <path>          Path to extracted WoW data (manifest.json)\n");
+    std::printf("  --adt <map> <x> <y>    Load an ADT tile on startup\n");
+    std::printf("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)\n");
+    std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
+    std::printf("  --list-zones           List discovered custom zones and exit\n");
+    std::printf("  --version              Show version and format info\n\n");
+    std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
+    std::printf("Novel open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON\n");
 }
 
 int main(int argc, char* argv[]) {
@@ -38,20 +37,20 @@ int main(int argc, char* argv[]) {
         } else if (std::strcmp(argv[i], "--list-zones") == 0) {
             auto zones = wowee::pipeline::CustomZoneDiscovery::scan({"custom_zones", "output"});
             if (zones.empty()) {
-                LOG_INFO("No custom zones found in custom_zones/ or output/");
+                std::printf("No custom zones found in custom_zones/ or output/\n");
             } else {
-                LOG_INFO("Custom zones found:");
+                std::printf("Custom zones found:\n");
                 for (const auto& z : zones) {
-                    LOG_INFO("  ", z.name, " — ", z.directory,
+                    std::printf("  %s — %s%s%s\n", z.name.c_str(), z.directory.c_str(),
                              z.hasCreatures ? " [NPCs]" : "",
                              z.hasQuests ? " [Quests]" : "");
                 }
             }
             return 0;
         } else if (std::strcmp(argv[i], "--version") == 0 || std::strcmp(argv[i], "-v") == 0) {
-            LOG_INFO("Wowee World Editor v1.0.0");
-            LOG_INFO("Open formats: WOT/WHM/WOM/WOB/WCP (all novel, no Blizzard IP)");
-            LOG_INFO("By Kelsi Davis");
+            std::printf("Wowee World Editor v1.0.0\n");
+            std::printf("Open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON (all novel)\n");
+            std::printf("By Kelsi Davis\n");
             return 0;
         } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
             printUsage(argv[0]);
