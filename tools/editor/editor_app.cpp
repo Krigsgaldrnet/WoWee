@@ -847,6 +847,7 @@ void EditorApp::initImGui() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.IniFilename = "wowee_editor_layout.ini";
 
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
