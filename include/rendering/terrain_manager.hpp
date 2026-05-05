@@ -201,6 +201,8 @@ public:
      * @param mapName Map name (e.g., "Azeroth", "Kalimdor")
      */
     void setMapName(const std::string& mapName) { this->mapName = mapName; }
+    bool isCustomZone() const { return isCustomZone_; }
+    void setCustomZone(bool custom) { isCustomZone_ = custom; }
 
     /**
      * Load a single tile
@@ -352,6 +354,7 @@ private:
     float timeSinceLastUpdate = 0.0f;
     float proactiveStreamTimer_ = 0.0f;
     bool taxiStreamingMode_ = false;
+    bool isCustomZone_ = false;
 
     // Tile size constants (WoW ADT specifications)
     // A tile (ADT) = 16x16 chunks = 533.33 units across

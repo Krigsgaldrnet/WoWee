@@ -196,5 +196,69 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
     return true;
 }
 
+WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::string& name) {
+    WoweeBuilding bld;
+    bld.name = name.empty() ? "Converted WMO" : name;
+
+    float maxDist = 0.0f;
+    for (const auto& grp : wmo.groups) {
+        WoweeBuilding::Group wobGroup;
+        wobGroup.name = grp.name;
+        wobGroup.isOutdoor = (grp.flags & 0x08) != 0;
+        wobGroup.boundMin = grp.boundingBoxMin;
+        wobGroup.boundMax = grp.boundingBoxMax;
+
+        wobGroup.vertices.reserve(grp.vertices.size());
+        for (const auto& v : grp.vertices) {
+            WoweeBuilding::Vertex wv;
+            wv.position = v.position;
+            wv.normal = v.normal;
+            wv.texCoord = v.texCoord;
+            wv.color = v.color;
+            wobGroup.vertices.push_back(wv);
+
+            float d = glm::length(v.position);
+            if (d > maxDist) maxDist = d;
+        }
+
+        wobGroup.indices.reserve(grp.indices.size());
+        for (uint16_t idx : grp.indices)
+            wobGroup.indices.push_back(static_cast<uint32_t>(idx));
+
+        for (const auto& mat : wmo.materials) {
+            if (mat.texture1 < wmo.textures.size()) {
+                std::string texPath = wmo.textures[mat.texture1];
+                auto dot = texPath.rfind('.');
+                if (dot != std::string::npos)
+                    texPath = texPath.substr(0, dot) + ".png";
+                wobGroup.texturePaths.push_back(texPath);
+            }
+        }
+
+        bld.groups.push_back(std::move(wobGroup));
+    }
+
+    bld.boundRadius = maxDist;
+
+    for (const auto& doodad : wmo.doodads) {
+        auto nameIt = wmo.doodadNames.find(doodad.nameIndex);
+        if (nameIt == wmo.doodadNames.end()) continue;
+
+        WoweeBuilding::DoodadPlacement dp;
+        dp.modelPath = nameIt->second;
+        auto dot = dp.modelPath.rfind('.');
+        if (dot != std::string::npos)
+            dp.modelPath = dp.modelPath.substr(0, dot) + ".wom";
+        dp.position = doodad.position;
+        dp.rotation = glm::vec3(0.0f);
+        dp.scale = doodad.scale;
+        bld.doodads.push_back(dp);
+    }
+
+    LOG_INFO("WOB from WMO: ", bld.name, " (", bld.groups.size(), " groups, ",
+             bld.doodads.size(), " doodads)");
+    return bld;
+}
+
 } // namespace pipeline
 } // namespace wowee

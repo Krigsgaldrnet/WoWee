@@ -149,6 +149,8 @@ private:
      * Rebuilds the same in-memory layout as binary load.
      */
     bool loadCSV(const std::vector<uint8_t>& csvData);
+
+    bool loadJSON(const std::vector<uint8_t>& jsonData);
 };
 
 /**

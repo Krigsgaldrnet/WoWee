@@ -1,5 +1,7 @@
 #include "editor_app.hpp"
 #include "pipeline/wowee_model.hpp"
+#include "pipeline/wowee_building.hpp"
+#include "pipeline/wmo_loader.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/custom_zone_discovery.hpp"
 #include "core/logger.hpp"
@@ -13,6 +15,7 @@ static void printUsage(const char* argv0) {
     LOG_INFO("  --data <path>          Path to extracted WoW data (manifest.json)");
     LOG_INFO("  --adt <map> <x> <y>    Load an ADT tile on startup");
     LOG_INFO("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)");
+    LOG_INFO("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)");
     LOG_INFO("  --list-zones           List discovered custom zones and exit");
     LOG_INFO("  --version              Show version and format info");
     LOG_INFO("");
@@ -74,6 +77,46 @@ int main(int argc, char* argv[]) {
                     LOG_INFO("Converted: ", m2Path, " → output/models/", outPath, ".wom");
                 } else {
                     LOG_ERROR("Failed to convert: ", m2Path);
+                }
+                am.shutdown();
+            }
+            return 0;
+        }
+    }
+
+    // Batch convert mode: --convert-wmo converts WMO to WOB
+    for (int i = 1; i < argc; i++) {
+        if (std::strcmp(argv[i], "--convert-wmo") == 0 && i + 1 < argc) {
+            std::string wmoPath = argv[++i];
+            LOG_INFO("Batch convert mode: WMO→WOB for ", wmoPath);
+            if (dataPath.empty()) dataPath = "Data";
+            wowee::pipeline::AssetManager am;
+            if (am.initialize(dataPath)) {
+                auto wmoData = am.readFile(wmoPath);
+                if (!wmoData.empty()) {
+                    auto wmoModel = wowee::pipeline::WMOLoader::load(wmoData);
+                    if (wmoModel.nGroups > 0) {
+                        std::string wmoBase = wmoPath;
+                        if (wmoBase.size() > 4) wmoBase = wmoBase.substr(0, wmoBase.size() - 4);
+                        for (uint32_t gi = 0; gi < wmoModel.nGroups; gi++) {
+                            char suffix[16];
+                            snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+                            auto gd = am.readFile(wmoBase + suffix);
+                            if (!gd.empty()) wowee::pipeline::WMOLoader::loadGroup(gd, wmoModel, gi);
+                        }
+                    }
+                    auto wob = wowee::pipeline::WoweeBuildingLoader::fromWMO(wmoModel, wmoPath);
+                    if (wob.isValid()) {
+                        std::string outPath = wmoPath;
+                        auto dot = outPath.rfind('.');
+                        if (dot != std::string::npos) outPath = outPath.substr(0, dot);
+                        wowee::pipeline::WoweeBuildingLoader::save(wob, "output/buildings/" + outPath);
+                        LOG_INFO("Converted: ", wmoPath, " → output/buildings/", outPath, ".wob");
+                    } else {
+                        LOG_ERROR("Failed to convert: ", wmoPath);
+                    }
+                } else {
+                    LOG_ERROR("WMO file not found: ", wmoPath);
                 }
                 am.shutdown();
             }

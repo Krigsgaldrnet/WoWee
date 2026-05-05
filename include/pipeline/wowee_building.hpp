@@ -56,6 +56,9 @@ public:
 
     // Convert WOB to WMOModel for the client's WMO renderer
     static bool toWMOModel(const WoweeBuilding& building, class WMOModel& outModel);
+
+    // Convert WMOModel to WOB (for editor export)
+    static WoweeBuilding fromWMO(const class WMOModel& wmo, const std::string& name = "");
 };
 
 } // namespace pipeline

@@ -7,6 +7,7 @@
 #include "dbc_exporter.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
+#include "pipeline/wmo_loader.hpp"
 #include "core/coordinates.hpp"
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
@@ -761,19 +762,36 @@ void EditorApp::exportZone(const std::string& outputDir) {
         std::unordered_set<std::string> convertedWMOs;
         for (const auto& obj : objectPlacer_.getObjects()) {
             if (obj.type == PlaceableType::WMO && !convertedWMOs.count(obj.path)) {
-                // Create a placeholder WOB (full WMO→WOB conversion needs group loading)
-                pipeline::WoweeBuilding bld;
-                bld.name = obj.path;
                 std::string wobPath = obj.path;
                 std::replace(wobPath.begin(), wobPath.end(), '\\', '/');
                 auto dot = wobPath.rfind('.');
                 if (dot != std::string::npos) wobPath = wobPath.substr(0, dot);
-                pipeline::WoweeBuildingLoader::save(bld, base + "/buildings/" + wobPath);
+
+                auto wmoData = assetManager_->readFile(obj.path);
+                if (!wmoData.empty()) {
+                    auto wmoModel = pipeline::WMOLoader::load(wmoData);
+                    if (wmoModel.nGroups > 0) {
+                        std::string wmoBase = obj.path;
+                        if (wmoBase.size() > 4) wmoBase = wmoBase.substr(0, wmoBase.size() - 4);
+                        for (uint32_t gi = 0; gi < wmoModel.nGroups; gi++) {
+                            char suffix[16];
+                            snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+                            auto gd = assetManager_->readFile(wmoBase + suffix);
+                            if (!gd.empty()) pipeline::WMOLoader::loadGroup(gd, wmoModel, gi);
+                        }
+                    }
+                    auto bld = pipeline::WoweeBuildingLoader::fromWMO(wmoModel, obj.path);
+                    pipeline::WoweeBuildingLoader::save(bld, base + "/buildings/" + wobPath);
+                } else {
+                    pipeline::WoweeBuilding bld;
+                    bld.name = obj.path;
+                    pipeline::WoweeBuildingLoader::save(bld, base + "/buildings/" + wobPath);
+                }
                 convertedWMOs.insert(obj.path);
             }
         }
         if (!convertedWMOs.empty())
-            LOG_INFO("Created ", convertedWMOs.size(), " WOB building placeholders");
+            LOG_INFO("Converted ", convertedWMOs.size(), " WMO buildings to WOB");
     }
 
     // Export used textures as PNG (open format replacement for BLP)

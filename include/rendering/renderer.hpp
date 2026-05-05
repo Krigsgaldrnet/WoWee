@@ -14,6 +14,7 @@
 #include "rendering/vk_frame_data.hpp"
 #include "rendering/vk_utils.hpp"
 #include "rendering/sky_system.hpp"
+#include "pipeline/custom_zone_discovery.hpp"
 
 namespace wowee {
 namespace core { class Window; }
@@ -188,6 +189,8 @@ public:
     game::ZoneManager* getZoneManager() { return zoneManager.get(); }
     LightingManager* getLightingManager() { return lightingManager.get(); }
 
+    const std::vector<pipeline::CustomZoneInfo>& getCustomZones() const { return customZones_; }
+
 private:
     void runDeferredWorldInitStep(float deltaTime);
 
@@ -267,6 +270,7 @@ private:
     void renderShadowPass();
     glm::mat4 computeLightSpaceMatrix();
 
+    std::vector<pipeline::CustomZoneInfo> customZones_;
     pipeline::AssetManager* cachedAssetManager = nullptr;
 
     // Spell visual effects — owned SpellVisualSystem (extracted from Renderer §4.4)

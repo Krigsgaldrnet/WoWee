@@ -597,6 +597,8 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             const std::string& wmoPath = pending->terrain.wmoNames[placement.nameId];
 
             // Check for WOB open format first (custom zone buildings)
+            bool wobLoaded = false;
+            pipeline::WMOModel wmoModel;
             {
                 std::string wobBase = wmoPath;
                 auto wobDot = wobBase.rfind('.');
@@ -607,10 +609,9 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                     if (pipeline::WoweeBuildingLoader::exists(prefix + wobBase)) {
                         auto wob = pipeline::WoweeBuildingLoader::load(prefix + wobBase);
                         if (wob.isValid()) {
-                            pipeline::WMOModel wobAsWmo;
-                            if (pipeline::WoweeBuildingLoader::toWMOModel(wob, wobAsWmo)) {
+                            if (pipeline::WoweeBuildingLoader::toWMOModel(wob, wmoModel)) {
                                 LOG_INFO("Loaded WOB building: ", prefix + wobBase);
-                                // TODO: feed wobAsWmo into the WMO render pipeline
+                                wobLoaded = true;
                             }
                         }
                         break;
@@ -618,37 +619,39 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                 }
             }
 
-            std::vector<uint8_t> wmoData = assetManager->readFile(wmoPath);
-            if (wmoData.empty()) continue;
+            if (!wobLoaded) {
+                std::vector<uint8_t> wmoData = assetManager->readFile(wmoPath);
+                if (wmoData.empty()) continue;
 
-            pipeline::WMOModel wmoModel = pipeline::WMOLoader::load(wmoData);
-            if (wmoModel.nGroups > 0) {
-                std::string basePath = wmoPath;
-                std::string extension;
-                if (basePath.size() > 4) {
-                    extension = basePath.substr(basePath.size() - 4);
-                    std::string extLower = extension;
-                    for (char& c : extLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    if (extLower == ".wmo") {
-                        basePath = basePath.substr(0, basePath.size() - 4);
+                wmoModel = pipeline::WMOLoader::load(wmoData);
+                if (wmoModel.nGroups > 0) {
+                    std::string basePath = wmoPath;
+                    std::string extension;
+                    if (basePath.size() > 4) {
+                        extension = basePath.substr(basePath.size() - 4);
+                        std::string extLower = extension;
+                        for (char& c : extLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        if (extLower == ".wmo") {
+                            basePath = basePath.substr(0, basePath.size() - 4);
+                        }
                     }
-                }
 
-                for (uint32_t gi = 0; gi < wmoModel.nGroups; gi++) {
-                    char groupSuffix[16];
-                    snprintf(groupSuffix, sizeof(groupSuffix), "_%03u%s", gi, extension.c_str());
-                    std::string groupPath = basePath + groupSuffix;
-                    std::vector<uint8_t> groupData = assetManager->readFile(groupPath);
-                    if (groupData.empty()) {
-                        snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.wmo", gi);
-                        groupData = assetManager->readFile(basePath + groupSuffix);
-                    }
-                    if (groupData.empty()) {
-                        snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.WMO", gi);
-                        groupData = assetManager->readFile(basePath + groupSuffix);
-                    }
-                    if (!groupData.empty()) {
-                        pipeline::WMOLoader::loadGroup(groupData, wmoModel, gi);
+                    for (uint32_t gi = 0; gi < wmoModel.nGroups; gi++) {
+                        char groupSuffix[16];
+                        snprintf(groupSuffix, sizeof(groupSuffix), "_%03u%s", gi, extension.c_str());
+                        std::string groupPath = basePath + groupSuffix;
+                        std::vector<uint8_t> groupData = assetManager->readFile(groupPath);
+                        if (groupData.empty()) {
+                            snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.wmo", gi);
+                            groupData = assetManager->readFile(basePath + groupSuffix);
+                        }
+                        if (groupData.empty()) {
+                            snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.WMO", gi);
+                            groupData = assetManager->readFile(basePath + groupSuffix);
+                        }
+                        if (!groupData.empty()) {
+                            pipeline::WMOLoader::loadGroup(groupData, wmoModel, gi);
+                        }
                     }
                 }
             }

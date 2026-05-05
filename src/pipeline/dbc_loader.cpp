@@ -1,5 +1,6 @@
 #include "pipeline/dbc_loader.hpp"
 #include "core/logger.hpp"
+#include <nlohmann/json.hpp>
 #include <cctype>
 #include <cstring>
 #include <set>
@@ -35,6 +36,15 @@ bool DBCFile::load(const std::vector<uint8_t>& dbcData) {
     // Detect CSV format: starts with '#'
     if (dbcData[0] == '#') {
         return loadCSV(dbcData);
+    }
+
+    // Detect JSON format: starts with '{'
+    if (dbcData[0] == '{' || (dbcData[0] <= ' ' && dbcData.size() > 1)) {
+        size_t start = 0;
+        while (start < dbcData.size() && dbcData[start] <= ' ') start++;
+        if (start < dbcData.size() && dbcData[start] == '{') {
+            return loadJSON(dbcData);
+        }
     }
 
     if (dbcData.size() < sizeof(DBCHeader)) {
@@ -366,6 +376,75 @@ bool DBCFile::loadCSV(const std::vector<uint8_t>& csvData) {
               fieldCount, " fields, ", stringCols.size(), " string cols, ",
               stringBlockSize, " string bytes");
     return true;
+}
+
+bool DBCFile::loadJSON(const std::vector<uint8_t>& jsonData) {
+    try {
+        auto j = nlohmann::json::parse(jsonData.begin(), jsonData.end());
+
+        if (!j.contains("records") || !j["records"].is_array()) {
+            LOG_ERROR("JSON DBC: missing 'records' array");
+            return false;
+        }
+
+        const auto& records = j["records"];
+        if (records.empty()) {
+            LOG_WARNING("JSON DBC: empty records array");
+            return false;
+        }
+
+        fieldCount = j.value("fieldCount", 0u);
+        if (fieldCount == 0 && !records[0].empty()) {
+            fieldCount = static_cast<uint32_t>(records[0].size());
+        }
+        if (fieldCount == 0) return false;
+
+        recordSize = fieldCount * 4;
+        recordCount = static_cast<uint32_t>(records.size());
+
+        stringBlock.clear();
+        stringBlock.push_back(0);
+
+        recordData.resize(static_cast<size_t>(recordCount) * recordSize, 0);
+
+        for (uint32_t i = 0; i < recordCount; i++) {
+            const auto& row = records[i];
+            uint32_t* fields = reinterpret_cast<uint32_t*>(
+                recordData.data() + static_cast<size_t>(i) * recordSize);
+
+            uint32_t cols = std::min(fieldCount, static_cast<uint32_t>(row.size()));
+            for (uint32_t col = 0; col < cols; col++) {
+                const auto& val = row[col];
+                if (val.is_string()) {
+                    const std::string& str = val.get_ref<const std::string&>();
+                    if (str.empty()) {
+                        fields[col] = 0;
+                    } else {
+                        fields[col] = static_cast<uint32_t>(stringBlock.size());
+                        stringBlock.insert(stringBlock.end(), str.begin(), str.end());
+                        stringBlock.push_back(0);
+                    }
+                } else if (val.is_number_float()) {
+                    float f = val.get<float>();
+                    std::memcpy(&fields[col], &f, 4);
+                } else if (val.is_number_integer()) {
+                    fields[col] = val.get<uint32_t>();
+                }
+            }
+        }
+
+        stringBlockSize = static_cast<uint32_t>(stringBlock.size());
+        loaded = true;
+        idCacheBuilt = false;
+        idToIndexCache.clear();
+
+        LOG_INFO("Loaded JSON DBC: ", recordCount, " records, ",
+                 fieldCount, " fields, ", stringBlockSize, " string bytes");
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("JSON DBC parse error: ", e.what());
+        return false;
+    }
 }
 
 } // namespace pipeline
