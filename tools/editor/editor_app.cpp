@@ -848,8 +848,16 @@ void EditorApp::exportZone(const std::string& outputDir) {
     int score = validation.openFormatScore();
     showToast("Exported " + std::to_string(fileCount) + " files (" +
               std::to_string(score) + "/5 open format)");
-    LOG_INFO("Zone exported to: ", base, " (", fileCount, " files, open score: ",
-             score, "/5 — ", validation.summary(), ")");
+    LOG_INFO("=== Zone Export Summary ===");
+    LOG_INFO("  Output: ", base);
+    LOG_INFO("  Open format score: ", score, "/5");
+    LOG_INFO("  Formats: ", validation.summary());
+    LOG_INFO("  Terrain: WOT/WHM + heightmap/normals PNG");
+    LOG_INFO("  Textures: ", usedTextures.size(), " BLP→PNG");
+    LOG_INFO("  Objects: ", objectPlacer_.objectCount(), " placed");
+    LOG_INFO("  NPCs: ", npcSpawner_.spawnCount(), " creatures");
+    LOG_INFO("  Quests: ", questEditor_.questCount());
+    LOG_INFO("========================");
 }
 
 void EditorApp::exportContentPack(const std::string& destPath) {
