@@ -478,6 +478,58 @@ void TerrainEditor::undo() {
     }
 }
 
+void TerrainEditor::recalcNormals(const std::vector<int>& chunkIndices) {
+    if (!terrain_) return;
+    float unitSize = CHUNK_SIZE / 8.0f;
+
+    for (int ci : chunkIndices) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+
+        for (int i = 0; i < 145; i++) {
+            int row = i / 17;
+            int col = i % 17;
+
+            // Get heights of neighbors
+            float hC = chunk.heightMap.heights[i];
+            float hL = hC, hR = hC, hU = hC, hD = hC;
+
+            if (col <= 8) {
+                // Outer vertex
+                int li = row * 17 + std::max(0, col - 1);
+                int ri = row * 17 + std::min(8, col + 1);
+                int ui = std::max(0, row - 1) * 17 + col;
+                int di = std::min(8, row + 1) * 17 + col;
+                hL = chunk.heightMap.heights[li];
+                hR = chunk.heightMap.heights[ri];
+                hU = chunk.heightMap.heights[ui];
+                hD = chunk.heightMap.heights[di];
+            } else {
+                // Inner vertex — use adjacent outer verts
+                int innerCol = col - 9;
+                int tl = row * 17 + innerCol;
+                int tr = row * 17 + innerCol + 1;
+                int bl = (row + 1) * 17 + innerCol;
+                int br = (row + 1) * 17 + innerCol + 1;
+                if (tl >= 0 && tl < 145) hU = chunk.heightMap.heights[tl];
+                if (tr >= 0 && tr < 145) hR = chunk.heightMap.heights[tr];
+                if (bl >= 0 && bl < 145) hD = chunk.heightMap.heights[bl];
+                if (br >= 0 && br < 145) hL = chunk.heightMap.heights[br];
+            }
+
+            // Compute normal from height differences
+            float dx = (hL - hR) / (2.0f * unitSize);
+            float dy = (hU - hD) / (2.0f * unitSize);
+            float len = std::sqrt(dx * dx + dy * dy + 1.0f);
+            glm::vec3 n(dx / len, dy / len, 1.0f / len);
+
+            chunk.normals[i * 3 + 0] = static_cast<int8_t>(n.x * 127.0f);
+            chunk.normals[i * 3 + 1] = static_cast<int8_t>(n.y * 127.0f);
+            chunk.normals[i * 3 + 2] = static_cast<int8_t>(n.z * 127.0f);
+        }
+    }
+}
+
 void TerrainEditor::redo() {
     if (!terrain_) return;
     history_.redo(*terrain_);

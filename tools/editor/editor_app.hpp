@@ -58,7 +58,13 @@ public:
     core::Window* getWindow() { return window_.get(); }
 
     EditorMode getMode() const { return mode_; }
-    void setMode(EditorMode m) { mode_ = m; }
+    void setMode(EditorMode m) {
+        if (m != mode_) {
+            viewport_.clearGhostPreview();
+            viewport_.setBrushIndicator({}, 0, false);
+        }
+        mode_ = m;
+    }
     void markObjectsDirty() { objectsDirty_ = true; }
 
     void startGizmoMode(TransformMode mode);

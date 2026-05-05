@@ -68,6 +68,11 @@ void EditorUI::renderMenuBar(EditorApp& app) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Terrain...", "Ctrl+N")) showNewDialog_ = true;
             if (ImGui::MenuItem("Load ADT...", "Ctrl+O")) showLoadDialog_ = true;
+            if (ImGui::MenuItem("Clear All", nullptr, false, app.hasTerrainLoaded())) {
+                app.getTerrainEditor().history().clear();
+                app.getObjectPlacer().clearSelection();
+                app.getNpcSpawner().clearSelection();
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Quick Save", "Ctrl+S", false, app.hasTerrainLoaded()))
                 app.quickSave();

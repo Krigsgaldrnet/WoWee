@@ -469,6 +469,9 @@ void EditorApp::refreshDirtyChunks() {
     auto dirty = terrainEditor_.consumeDirtyChunks();
     if (dirty.empty()) return;
 
+    // Recalculate normals for modified chunks (better lighting)
+    terrainEditor_.recalcNormals(dirty);
+
     // Regenerate full mesh and reload terrain
     auto mesh = terrainEditor_.regenerateMesh();
     viewport_.clearTerrain();
