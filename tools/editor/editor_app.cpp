@@ -579,9 +579,19 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     loadedTileX_ = tileX;
     loadedTileY_ = tileY;
 
-    float centerX = (32.0f - tileY) * 533.33333f - 8.0f * 533.33333f / 16.0f;
-    float centerY = (32.0f - tileX) * 533.33333f - 8.0f * 533.33333f / 16.0f;
-    camera_.setPosition(glm::vec3(centerX, centerY, 400.0f));
+    // Position camera at terrain center using actual chunk positions
+    if (mesh.validChunkCount > 0) {
+        auto& firstChunk = mesh.chunks[0];
+        auto& lastChunk = mesh.chunks[255];
+        float cx = (firstChunk.worldX + lastChunk.worldX) * 0.5f;
+        float cy = (firstChunk.worldY + lastChunk.worldY) * 0.5f;
+        float cz = firstChunk.worldZ + 300.0f;
+        camera_.setPosition(glm::vec3(cx, cy, cz));
+    } else {
+        float centerX = (32.0f - tileY) * 533.33333f - 8.0f * 533.33333f / 16.0f;
+        float centerY = (32.0f - tileX) * 533.33333f - 8.0f * 533.33333f / 16.0f;
+        camera_.setPosition(glm::vec3(centerX, centerY, 400.0f));
+    }
     camera_.setYawPitch(0.0f, -45.0f);
 
     // Import doodad/WMO placements from the ADT itself
