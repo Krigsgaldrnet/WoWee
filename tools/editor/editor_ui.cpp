@@ -756,6 +756,17 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
                                selectedTexture_.c_str());
 
         // Auto-paint by height
+        if (ImGui::CollapsingHeader("Auto-Paint by Slope")) {
+            static float slopeThresh = 0.4f;
+            ImGui::SliderFloat("Slope Threshold", &slopeThresh, 0.1f, 0.9f);
+            ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1), "Paints rock on steep slopes");
+            if (ImGui::Button("Apply Slope Paint", ImVec2(-1, 0))) {
+                app.getTexturePainter().autoPaintBySlope(slopeThresh,
+                    "Tileset\\Barrens\\BarrensRock01.blp");
+                app.showToast("Slope paint applied");
+            }
+        }
+
         if (ImGui::CollapsingHeader("Auto-Paint by Height")) {
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
                 "Sets base texture per chunk based on average height");

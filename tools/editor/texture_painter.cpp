@@ -194,6 +194,45 @@ void TexturePainter::autoPaintByHeight(const std::vector<HeightBand>& bands) {
     }
 }
 
+void TexturePainter::autoPaintBySlope(float slopeThreshold, const std::string& steepTexture) {
+    if (!terrain_) return;
+    uint32_t steepTexId = ensureTextureInList(steepTexture);
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap() || chunk.layers.empty()) continue;
+
+        // Compute average slope from normals
+        float maxSlope = 0.0f;
+        for (int v = 0; v < 145; v++) {
+            float nz = static_cast<float>(chunk.normals[v * 3 + 2]) / 127.0f;
+            float slope = 1.0f - std::abs(nz);
+            maxSlope = std::max(maxSlope, slope);
+        }
+
+        if (maxSlope > slopeThreshold) {
+            // Add steep texture as a layer
+            int layerIdx = ensureLayerOnChunk(ci, steepTexId);
+            if (layerIdx > 0) {
+                size_t off = chunk.layers[layerIdx].offsetMCAL;
+                if (off + 4096 <= chunk.alphaMap.size()) {
+                    for (int ty = 0; ty < 64; ty++) {
+                        for (int tx = 0; tx < 64; tx++) {
+                            // Sample slope at this texel
+                            int vi = (ty / 8) * 17 + (tx / 8);
+                            if (vi >= 145) vi = 144;
+                            float nz = static_cast<float>(chunk.normals[vi * 3 + 2]) / 127.0f;
+                            float slope = 1.0f - std::abs(nz);
+                            float alpha = std::clamp((slope - slopeThreshold * 0.5f) / (1.0f - slopeThreshold * 0.5f), 0.0f, 1.0f);
+                            chunk.alphaMap[off + ty * 64 + tx] = static_cast<uint8_t>(alpha * 255.0f);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 std::vector<int> TexturePainter::erase(const glm::vec3& center, float radius,
                                         float strength, float falloff) {
     if (!terrain_ || activeTexture_.empty()) return {};
