@@ -51,7 +51,26 @@ void EditorUI::render(EditorApp& app) {
     renderPropertiesPanel(app);
     renderStatusBar(app);
 
-    // NPC name labels in viewport (screen-space text above markers)
+    // Object/NPC name labels in viewport (screen-space text)
+    if (app.hasTerrainLoaded() && app.getObjectPlacer().objectCount() > 0) {
+        auto& cam0 = app.getEditorCamera().getCamera();
+        auto vp0 = ImGui::GetMainViewport();
+        glm::mat4 vp0m = cam0.getProjectionMatrix() * cam0.getViewMatrix();
+        for (const auto& obj : app.getObjectPlacer().getObjects()) {
+            if (!obj.selected) continue; // only show label for selected objects
+            glm::vec4 clip = vp0m * glm::vec4(obj.position.x, obj.position.y, obj.position.z + 10.0f, 1.0f);
+            if (clip.w <= 0.01f) continue;
+            glm::vec3 ndc = glm::vec3(clip) / clip.w;
+            float sx = (ndc.x * 0.5f + 0.5f) * vp0->Size.x;
+            float sy = (ndc.y * 0.5f + 0.5f) * vp0->Size.y;
+            if (sx < 0 || sx > vp0->Size.x || sy < 0 || sy > vp0->Size.y) continue;
+            std::string disp = obj.path;
+            auto sl = disp.rfind('\\');
+            if (sl != std::string::npos) disp = disp.substr(sl + 1);
+            ImGui::GetForegroundDrawList()->AddText(ImVec2(sx - 40, sy - 10),
+                IM_COL32(255, 220, 50, 220), disp.c_str());
+        }
+    }
     if (app.hasTerrainLoaded() && app.getNpcSpawner().spawnCount() > 0) {
         auto& cam = app.getEditorCamera().getCamera();
         auto vp2 = ImGui::GetMainViewport();
