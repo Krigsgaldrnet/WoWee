@@ -2104,10 +2104,12 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
         if (hist.canUndo() || hist.canRedo())
             ImGui::Text("Undo: %zu  Redo: %zu", hist.undoCount(), hist.redoCount());
 
+        ImGui::Text("Quests: %zu", app.getQuestEditor().questCount());
+
         if (app.getTerrainEditor().hasUnsavedChanges())
             ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "* Unsaved (Ctrl+S to save)");
         else
-            ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1), "Saved");
+            ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1), "Saved (open format)");
     }
     ImGui::End();
 }
