@@ -242,6 +242,12 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("Home — center on terrain");
             ImGui::BulletText("Scroll — zoom in/out");
             ImGui::BulletText("Shift+Scroll — adjust speed");
+            ImGui::Separator();
+            ImGui::Text("Terrain Tools:");
+            ImGui::BulletText("Noise → Smooth → Scale → Clamp → Auto-paint");
+            ImGui::BulletText("River/Road: Set Start → Set End");
+            ImGui::BulletText("Stamp: Copy → Paste");
+            ImGui::BulletText("Mirror X/Y for symmetric zones");
         }
         ImGui::End();
     }
