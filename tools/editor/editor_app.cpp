@@ -552,6 +552,10 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
         return;
     }
 
+    // Override internal coords with what we know from the filename
+    // (instanced maps have arbitrary internal coord values)
+    terrain_.coord = {tileX, tileY};
+
     terrainEditor_.setTerrain(&terrain_);
     terrainEditor_.history().clear();
     texturePainter_.setTerrain(&terrain_);
