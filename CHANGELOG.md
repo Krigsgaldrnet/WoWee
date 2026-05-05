@@ -13,6 +13,37 @@
 - Extract reusable CatmullRomSpline module to `src/math/` with O(log n) binary search and fused position+tangent evaluation (PR #60)
 - Decompose TransportManager (1,200→500 LOC): extract TransportPathRepository, TransportClockSync, TransportAnimator; consolidate 7 duplicated spline parsers into `spline_packet.cpp` (PR #60)
 
+### World Editor (tools/editor/)
+- Standalone world editor for creating custom WoW zones (12.5k+ lines, 55 files)
+- 6 editing modes: Sculpt, Paint, Objects, Water, NPCs, Quests
+- 30+ terrain tools: procedural generators (hill, mesa, crater, canyon, island, ridge, dunes), thermal erosion, noise, mirror/rotate, stamp copy/paste with file persistence
+- Multi-select objects (Ctrl+Shift+Click), Select All (Ctrl+A), Select by Type (M2/WMO)
+- Time-of-day lighting with dawn/dusk/night transitions and color pickers
+- Texture eyedropper (Alt+Click), brush size presets + bracket keys
+- Object tools: snap to ground, align to slope, flatten terrain around buildings, scatter with auto-align
+- River/road path tool with click-to-set points and translucent preview ribbon
+- Quest chains with circular reference detection, inline editing, load/save
+- 631 creature presets across 8 categories with patrol path editing
+- Full undo/redo for ALL terrain operations (generators, transforms, paint)
+- Auto-save with configurable interval, unsaved changes quit confirmation
+- Zone rename, recent zones menu, adjacent tile export with edge stitching
+- Live open format validation (0-6 score) in File menu
+
+### Novel Open Formats (6/6 Blizzard format replacements)
+- ADT → WOT/WHM: terrain metadata + binary heightmap with alpha maps and doodad/WMO placements
+- WDT → zone.json: map definition with full placement arrays
+- BLP → PNG: texture override system
+- DBC → JSON: data tables via DBCFile::loadJSON()
+- M2 → WOM (WOM1): models with render batches, textures, materials
+- WMO → WOB (WOB1): buildings with material flags/shader/blendMode, doodad rotation
+- WCP (WCP1): content pack archive with categorized file list
+- Terrain stamps: portable terrain features saved as JSON
+- All formats documented in FORMAT_SPEC.md v1.1
+- Client auto-loads open formats from custom_zones/ and output/ directories
+- Batch convert: M2→WOM and WMO→WOB from filesystem or asset manifest
+- WCP Import & Load: one-click unpack + auto-open for editing
+- 309 test assertions across 81 test cases (DBC binary+JSON, WOB, WHM, WOT)
+
 ### Features
 - Spell visual effects system with bone-tracked ribbons and particles (PR #58)
 - GM command support: 190-command data table with dot-prefix interception, tab-completion, `/gmhelp` with category filter (PR #62)

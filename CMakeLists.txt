@@ -1213,6 +1213,7 @@ add_executable(dbc_to_csv
 )
 target_include_directories(dbc_to_csv PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern
 )
 target_link_libraries(dbc_to_csv PRIVATE Threads::Threads)
 set_target_properties(dbc_to_csv PROPERTIES
