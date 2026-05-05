@@ -144,6 +144,7 @@ public:
 
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
+    bool importHeightmapImage(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);
 
     // Water editing

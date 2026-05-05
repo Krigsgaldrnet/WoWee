@@ -1,5 +1,6 @@
 #include "terrain_editor.hpp"
 #include "core/logger.hpp"
+#include "stb_image.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cmath>
@@ -1650,7 +1651,7 @@ void TerrainEditor::applyNoise(float frequency, float amplitude, int octaves, ui
 
 bool TerrainEditor::importHeightmap(const std::string& path, float heightScale) {
     if (!terrain_) return false;
-
+    recordGeneratorUndo();
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (!f) { return false; }
     auto fileSize = f.tellg();
@@ -1704,6 +1705,67 @@ bool TerrainEditor::importHeightmap(const std::string& path, float heightScale) 
         }
     }
     dirty_ = true;
+    commitGeneratorUndo();
+    return true;
+}
+
+bool TerrainEditor::importHeightmapImage(const std::string& path, float heightScale) {
+    if (!terrain_) return false;
+    recordGeneratorUndo();
+
+    int w = 0, h = 0, channels = 0;
+    bool is16 = false;
+    std::vector<float> heightData;
+
+    // Try 16-bit first for precision
+    unsigned short* data16 = stbi_load_16(path.c_str(), &w, &h, &channels, 1);
+    if (data16) {
+        is16 = true;
+        heightData.resize(w * h);
+        for (int i = 0; i < w * h; i++)
+            heightData[i] = static_cast<float>(data16[i]) / 65535.0f;
+        stbi_image_free(data16);
+    } else {
+        unsigned char* data8 = stbi_load(path.c_str(), &w, &h, &channels, 1);
+        if (!data8) {
+            LOG_ERROR("Failed to load heightmap image: ", path);
+            commitGeneratorUndo();
+            return false;
+        }
+        heightData.resize(w * h);
+        for (int i = 0; i < w * h; i++)
+            heightData[i] = static_cast<float>(data8[i]) / 255.0f;
+        stbi_image_free(data8);
+    }
+
+    LOG_INFO("Heightmap image loaded: ", path, " (", w, "x", h,
+             is16 ? " 16-bit" : " 8-bit", ")");
+
+    for (int cy = 0; cy < 16; cy++) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& chunk = terrain_->chunks[cy * 16 + cx];
+            if (!chunk.hasHeightMap()) continue;
+
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                float offX = static_cast<float>(col);
+                float offY = static_cast<float>(row);
+                if (col > 8) { offY += 0.5f; offX -= 8.5f; }
+
+                float u = (cx * 8.0f + offX) / 128.0f;
+                float vv = (cy * 8.0f + offY) / 128.0f;
+                int px = std::clamp(static_cast<int>(u * (w - 1)), 0, w - 1);
+                int py = std::clamp(static_cast<int>(vv * (h - 1)), 0, h - 1);
+
+                chunk.heightMap.heights[v] = heightData[py * w + px] * heightScale;
+            }
+            stitchEdges(cy * 16 + cx);
+            dirtyChunks_.push_back(cy * 16 + cx);
+        }
+    }
+    dirty_ = true;
+    commitGeneratorUndo();
+    LOG_INFO("Heightmap applied: scale=", heightScale);
     return true;
 }
 

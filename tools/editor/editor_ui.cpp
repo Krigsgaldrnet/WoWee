@@ -327,17 +327,24 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Import Heightmap", app.hasTerrainLoaded())) {
-                static char hmPath[256] = "heightmap.raw";
+                static char hmPath[256] = "heightmap.png";
                 static float hmScale = 200.0f;
                 ImGui::InputText("File##hm", hmPath, sizeof(hmPath));
                 ImGui::SliderFloat("Height Scale", &hmScale, 10.0f, 1000.0f);
-                ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1), "RAW 16-bit or 8-bit (129x129 or 257x257)");
-                if (ImGui::MenuItem("Import")) {
-                    if (app.getTerrainEditor().importHeightmap(hmPath, hmScale))
-                        app.showToast("Heightmap imported");
+                if (ImGui::MenuItem("Import Image (PNG/JPG/BMP/TGA)")) {
+                    if (app.getTerrainEditor().importHeightmapImage(hmPath, hmScale))
+                        app.showToast("Heightmap image imported (undoable)");
                     else
-                        app.showToast("Failed to import heightmap");
+                        app.showToast("Failed — check image path and format");
                 }
+                if (ImGui::MenuItem("Import RAW (16/8-bit binary)")) {
+                    if (app.getTerrainEditor().importHeightmap(hmPath, hmScale))
+                        app.showToast("RAW heightmap imported (undoable)");
+                    else
+                        app.showToast("Failed — need 129x129 or 257x257 RAW");
+                }
+                ImGui::TextColored(ImVec4(0.5f,0.5f,0.5f,1),
+                    "Supports any resolution PNG/JPG/BMP/TGA or RAW");
                 ImGui::EndMenu();
             }
             if (ImGui::MenuItem("Generate Complete Zone", nullptr, false, app.hasTerrainLoaded()))
