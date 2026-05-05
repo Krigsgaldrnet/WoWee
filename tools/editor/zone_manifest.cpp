@@ -2,6 +2,8 @@
 #include "core/logger.hpp"
 #include <fstream>
 #include <filesystem>
+#include <chrono>
+#include <ctime>
 
 namespace wowee {
 namespace editor {
@@ -21,7 +23,15 @@ bool ZoneManifest::save(const std::string& path) const {
     f << "  \"baseHeight\": " << baseHeight << ",\n";
     f << "  \"hasCreatures\": " << (hasCreatures ? "true" : "false") << ",\n";
     f << "  \"description\": \"" << description << "\",\n";
-    f << "  \"editorVersion\": \"0.2.0\",\n";
+    f << "  \"editorVersion\": \"0.9.0\",\n";
+    // Add export timestamp
+    {
+        auto now = std::chrono::system_clock::now();
+        auto time = std::chrono::system_clock::to_time_t(now);
+        char timeBuf[32];
+        std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%S", std::localtime(&time));
+        f << "  \"exportTime\": \"" << timeBuf << "\",\n";
+    }
     f << "  \"tiles\": [";
     for (size_t i = 0; i < tiles.size(); i++) {
         f << "[" << tiles[i].first << "," << tiles[i].second << "]";
