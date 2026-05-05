@@ -795,9 +795,16 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             }
 
             ImGui::Separator();
-            if (ImGui::Button("Delete##npc")) spawner.removeCreature(spawner.getSelectedIndex());
+            if (ImGui::Button("Duplicate##npc", ImVec2(80, 0))) {
+                CreatureSpawn copy = *sel;
+                copy.position += glm::vec3(10, 10, 0);
+                spawner.placeCreature(copy);
+                app.markObjectsDirty();
+            }
             ImGui::SameLine();
-            if (ImGui::Button("Deselect##npc")) spawner.clearSelection();
+            if (ImGui::Button("Delete##npc", ImVec2(80, 0))) spawner.removeCreature(spawner.getSelectedIndex());
+            ImGui::SameLine();
+            if (ImGui::Button("Desel.##npc", ImVec2(60, 0))) spawner.clearSelection();
         }
 
         ImGui::Separator();
@@ -976,8 +983,36 @@ void EditorUI::renderMinimap(EditorApp& app) {
             }
         }
 
+        // Draw objects as yellow dots
+        float tileNW_X = (32.0f - static_cast<float>(terrain->coord.y)) * 533.33333f;
+        float tileNW_Y = (32.0f - static_cast<float>(terrain->coord.x)) * 533.33333f;
+        for (const auto& obj : app.getObjectPlacer().getObjects()) {
+            float u = (tileNW_X - obj.position.x) / 533.33333f;
+            float v = (tileNW_Y - obj.position.y) / 533.33333f;
+            if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+                ImVec2 pt(origin.x + v * avail.x, origin.y + u * (16 * cellH));
+                dl->AddCircleFilled(pt, 2.0f, IM_COL32(255, 220, 50, 200));
+            }
+        }
+        // Draw NPCs as red dots
+        for (const auto& npc : app.getNpcSpawner().getSpawns()) {
+            float u = (tileNW_X - npc.position.x) / 533.33333f;
+            float v = (tileNW_Y - npc.position.y) / 533.33333f;
+            if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+                ImVec2 pt(origin.x + v * avail.x, origin.y + u * (16 * cellH));
+                dl->AddCircleFilled(pt, 2.5f, npc.hostile ? IM_COL32(255, 60, 60, 200)
+                                                           : IM_COL32(60, 200, 60, 200));
+            }
+        }
+
         ImGui::Dummy(ImVec2(avail.x, 16 * cellH));
-        ImGui::Text("Height: %.0f - %.0f", minH, maxH);
+        // Legend
+        ImDrawList* dl2 = ImGui::GetWindowDrawList();
+        ImVec2 legPos = ImGui::GetCursorScreenPos();
+        dl2->AddCircleFilled(ImVec2(legPos.x + 5, legPos.y + 5), 3, IM_COL32(255, 220, 50, 200));
+        dl2->AddCircleFilled(ImVec2(legPos.x + 45, legPos.y + 5), 3, IM_COL32(255, 60, 60, 200));
+        dl2->AddCircleFilled(ImVec2(legPos.x + 100, legPos.y + 5), 3, IM_COL32(60, 200, 60, 200));
+        ImGui::Text("   Obj      Hostile   Friendly");
     }
     ImGui::End();
     ImGui::PopStyleVar();
