@@ -6,9 +6,15 @@
 #include <cstring>
 
 static void printUsage(const char* argv0) {
-    LOG_INFO("Usage: ", argv0, " --data <path> [--adt <map> <x> <y>]");
-    LOG_INFO("  --data <path>   Path to extracted WoW data (contains manifest.json)");
-    LOG_INFO("  --adt <map> <x> <y>  Load an ADT tile on startup");
+    LOG_INFO("Usage: ", argv0, " --data <path> [options]");
+    LOG_INFO("");
+    LOG_INFO("Options:");
+    LOG_INFO("  --data <path>          Path to extracted WoW data (manifest.json)");
+    LOG_INFO("  --adt <map> <x> <y>    Load an ADT tile on startup");
+    LOG_INFO("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)");
+    LOG_INFO("");
+    LOG_INFO("Wowee World Editor v0.8.0 — by Kelsi Davis");
+    LOG_INFO("Novel open formats: WOT/WHM/WOM/WOB/WCP");
 }
 
 int main(int argc, char* argv[]) {
