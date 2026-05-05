@@ -612,6 +612,8 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     }
     if (!terrain_.doodadPlacements.empty() || !terrain_.wmoPlacements.empty()) {
         objectsDirty_ = true;
+        showToast("Imported " + std::to_string(terrain_.doodadPlacements.size()) +
+                  " doodads + " + std::to_string(terrain_.wmoPlacements.size()) + " WMOs");
         LOG_INFO("Imported ", terrain_.doodadPlacements.size(), " doodads + ",
                  terrain_.wmoPlacements.size(), " WMOs from ADT");
     }
