@@ -1295,6 +1295,7 @@ add_executable(wowee_editor
     tools/editor/transform_gizmo.cpp
     tools/editor/zone_manifest.cpp
     tools/editor/content_pack.cpp
+    tools/editor/wowee_terrain.cpp
     tools/editor/asset_browser.cpp
     tools/editor/editor_water.cpp
     tools/editor/editor_markers.cpp
