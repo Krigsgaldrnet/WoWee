@@ -1050,7 +1050,7 @@ void EditorUI::renderMinimap(EditorApp& app) {
 
 void EditorUI::renderPropertiesPanel(EditorApp& app) {
     ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(vp->Size.x - 280, 90), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(vp->Size.x - 280, 90), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(270, 220), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Info")) {
         auto* tr = app.getTerrainRenderer();

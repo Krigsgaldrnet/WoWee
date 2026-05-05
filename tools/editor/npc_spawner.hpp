@@ -40,7 +40,7 @@ struct CreatureSpawn {
     uint32_t faction = 0; // 0 = neutral
 
     // Display
-    float scale = 1.0f;
+    float scale = 3.0f;
 
     // Behavior
     CreatureBehavior behavior = CreatureBehavior::Stationary;
