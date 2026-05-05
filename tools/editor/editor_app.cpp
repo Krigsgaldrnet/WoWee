@@ -268,6 +268,15 @@ void EditorApp::processEvents() {
                     if (sc == SDL_SCANCODE_4) setMode(EditorMode::Water);
                     if (sc == SDL_SCANCODE_5) setMode(EditorMode::NPC);
                     if (sc == SDL_SCANCODE_6) setMode(EditorMode::Quest);
+                    // Bracket keys adjust brush size
+                    if (sc == SDL_SCANCODE_LEFTBRACKET) {
+                        auto& bs = terrainEditor_.brush().settings();
+                        bs.radius = std::max(5.0f, bs.radius - 10.0f);
+                    }
+                    if (sc == SDL_SCANCODE_RIGHTBRACKET) {
+                        auto& bs = terrainEditor_.brush().settings();
+                        bs.radius = std::min(200.0f, bs.radius + 10.0f);
+                    }
                 }
                 // F1 handled by UI (showHelp_ toggle)
                 // F1 = toggle help

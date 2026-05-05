@@ -484,6 +484,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Separator();
             ImGui::Text("Editing:");
             ImGui::BulletText("Left-click — paint/place (depends on mode)");
+            ImGui::BulletText("[ / ] — decrease / increase brush size");
             ImGui::BulletText("Ctrl+click — select object/NPC");
             ImGui::BulletText("Ctrl+S — quick save");
             ImGui::BulletText("Ctrl+Z — undo");
@@ -707,8 +708,9 @@ void EditorUI::renderSaveDialog(EditorApp& app) {
             std::snprintf(savePathBuf_, sizeof(savePathBuf_), "output");
         ImGui::InputText("Output Directory", savePathBuf_, sizeof(savePathBuf_));
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
-            "Exports: ADT, WDT, and creature spawns to %s/%s/",
-            savePathBuf_, app.getLoadedMap().c_str());
+            "Exports: ADT+WDT, WOT+WHM, WOM, WOB, PNG, JSON");
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1),
+            "Output: %s/%s/", savePathBuf_, app.getLoadedMap().c_str());
         ImGui::Spacing();
         if (ImGui::Button("Export All", ImVec2(140, 0))) {
             app.exportZone(savePathBuf_);
@@ -750,6 +752,10 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SetTooltip("%s", tips[idx]);
         }
         ImGui::SliderFloat("Radius", &s.radius, 5.0f, 200.0f, "%.0f");
+        if (ImGui::SmallButton("S##br")) { s.radius = 15.0f; } ImGui::SameLine();
+        if (ImGui::SmallButton("M##br")) { s.radius = 50.0f; } ImGui::SameLine();
+        if (ImGui::SmallButton("L##br")) { s.radius = 100.0f; } ImGui::SameLine();
+        if (ImGui::SmallButton("XL##br")) { s.radius = 180.0f; }
         ImGui::SliderFloat("Strength", &s.strength, 0.5f, 50.0f, "%.1f");
         ImGui::SliderFloat("Falloff", &s.falloff, 0.0f, 1.0f, "%.2f");
         if (s.mode == BrushMode::Flatten || s.mode == BrushMode::Level) {
