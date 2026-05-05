@@ -505,10 +505,17 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::InputInt("Seed", &noiseSeed);
             ImGui::SameLine();
             if (ImGui::SmallButton("Random##seed")) noiseSeed = static_cast<int>(std::rand());
-            if (ImGui::Button("Apply Noise", ImVec2(-1, 0))) {
+            if (ImGui::Button("Apply Noise", ImVec2(140, 0))) {
                 app.getTerrainEditor().applyNoise(noiseFreq, noiseAmp, noiseOctaves,
                                                    static_cast<uint32_t>(noiseSeed));
                 app.showToast("Noise applied");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Reset + Apply", ImVec2(120, 0))) {
+                app.getTerrainEditor().resetToFlat();
+                app.getTerrainEditor().applyNoise(noiseFreq, noiseAmp, noiseOctaves,
+                                                   static_cast<uint32_t>(noiseSeed));
+                app.showToast("Reset + noise applied");
             }
             static int smoothPasses = 2;
             ImGui::SliderInt("Smooth Passes", &smoothPasses, 1, 10);
