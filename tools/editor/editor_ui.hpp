@@ -44,6 +44,7 @@ private:
     bool showSaveDialog_ = false;
     bool showHelp_ = false;
     bool showAbout_ = false;
+    bool generateAfterCreate_ = false;
 
     char newMapNameBuf_[256] = "CustomZone";
     int newTileX_ = 32;

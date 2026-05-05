@@ -115,6 +115,10 @@ void EditorUI::processActions(EditorApp& app) {
         newRequested_ = false;
         app.createNewTerrain(newMapNameBuf_, newTileX_, newTileY_, newBaseHeight_,
                              static_cast<Biome>(newBiomeIdx_));
+        if (generateAfterCreate_) {
+            generateAfterCreate_ = false;
+            app.generateCompleteZone();
+        }
     }
     if (loadRequested_) {
         loadRequested_ = false;
@@ -362,8 +366,8 @@ void EditorUI::renderNewTerrainDialog(EditorApp& /*app*/) {
         ImGui::SameLine();
         if (ImGui::Button("Create + Generate", ImVec2(130, 0))) {
             newRequested_ = true;
+            generateAfterCreate_ = true;
             showNewDialog_ = false;
-            // Will call generateCompleteZone after terrain is created
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(80, 0))) showNewDialog_ = false;
