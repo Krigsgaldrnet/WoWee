@@ -589,6 +589,10 @@ set(WOWEE_SOURCES
     src/pipeline/wmo_loader.cpp
     src/pipeline/adt_loader.cpp
     src/pipeline/wdt_loader.cpp
+    src/pipeline/wowee_terrain_loader.cpp
+    src/pipeline/wowee_model.cpp
+    src/pipeline/wowee_building.cpp
+    src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
     src/pipeline/terrain_mesh.cpp
@@ -1276,6 +1280,122 @@ set_target_properties(blp_convert PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
 install(TARGETS blp_convert RUNTIME DESTINATION bin)
+
+# ---- Tool: wowee_editor (Standalone World Editor) ----
+add_executable(wowee_editor
+    tools/editor/main.cpp
+    tools/editor/editor_app.cpp
+    tools/editor/editor_camera.cpp
+    tools/editor/editor_viewport.cpp
+    tools/editor/editor_ui.cpp
+    tools/editor/editor_brush.cpp
+    tools/editor/editor_history.cpp
+    tools/editor/terrain_editor.cpp
+    tools/editor/texture_painter.cpp
+    tools/editor/object_placer.cpp
+    tools/editor/npc_spawner.cpp
+    tools/editor/npc_presets.cpp
+    tools/editor/quest_editor.cpp
+    tools/editor/transform_gizmo.cpp
+    tools/editor/zone_manifest.cpp
+    tools/editor/content_pack.cpp
+    tools/editor/wowee_terrain.cpp
+    tools/editor/editor_project.cpp
+    tools/editor/texture_exporter.cpp
+    tools/editor/dbc_exporter.cpp
+    tools/editor/asset_browser.cpp
+    tools/editor/editor_water.cpp
+    tools/editor/editor_markers.cpp
+    tools/editor/adt_writer.cpp
+
+    # Pipeline (asset loading)
+    src/pipeline/blp_loader.cpp
+    src/pipeline/dbc_loader.cpp
+    src/pipeline/dbc_layout.cpp
+    src/pipeline/asset_manager.cpp
+    src/pipeline/asset_manifest.cpp
+    src/pipeline/loose_file_reader.cpp
+    src/pipeline/m2_loader.cpp
+    src/pipeline/wmo_loader.cpp
+    src/pipeline/adt_loader.cpp
+    src/pipeline/wdt_loader.cpp
+    src/pipeline/wowee_terrain_loader.cpp
+    src/pipeline/wowee_model.cpp
+    src/pipeline/wowee_building.cpp
+    src/pipeline/custom_zone_discovery.cpp
+    src/pipeline/terrain_mesh.cpp
+
+    # Rendering core
+    src/rendering/vk_context.cpp
+    src/rendering/vk_utils.cpp
+    src/rendering/vk_shader.cpp
+    src/rendering/vk_texture.cpp
+    src/rendering/vk_buffer.cpp
+    src/rendering/vk_pipeline.cpp
+    src/rendering/camera.cpp
+    src/rendering/terrain_renderer.cpp
+    src/rendering/m2_renderer.cpp
+    src/rendering/m2_renderer_instance.cpp
+    src/rendering/m2_renderer_particles.cpp
+    src/rendering/m2_renderer_render.cpp
+    src/rendering/m2_model_classifier.cpp
+    src/rendering/wmo_renderer.cpp
+    src/rendering/frustum.cpp
+
+    # Core
+    src/core/window.cpp
+    src/core/logger.cpp
+    src/core/memory_monitor.cpp
+
+    # stb_image (needed by AssetManager for PNG overrides)
+    tools/editor/stb_image_impl.cpp
+)
+target_include_directories(wowee_editor PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/editor
+)
+target_include_directories(wowee_editor SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/vk-bootstrap/src
+)
+target_link_libraries(wowee_editor PRIVATE
+    SDL2::SDL2
+    Vulkan::Vulkan
+    Threads::Threads
+    ZLIB::ZLIB
+    ${CMAKE_DL_LIBS}
+    imgui
+    vk-bootstrap
+)
+if(TARGET glm::glm)
+    target_link_libraries(wowee_editor PRIVATE glm::glm)
+elseif(glm_FOUND)
+    target_include_directories(wowee_editor PRIVATE ${GLM_INCLUDE_DIRS})
+endif()
+if(UNIX AND NOT APPLE)
+    find_package(X11 QUIET)
+    if(X11_FOUND)
+        target_link_libraries(wowee_editor PRIVATE X11)
+    endif()
+endif()
+if(WIN32)
+    target_link_libraries(wowee_editor PRIVATE ws2_32)
+    if(TARGET SDL2::SDL2main)
+        target_link_libraries(wowee_editor PRIVATE SDL2::SDL2main)
+    endif()
+endif()
+if(NOT MSVC)
+    target_compile_options(wowee_editor PRIVATE -Wall -Wextra -Wpedantic -Wno-missing-field-initializers)
+endif()
+if(GLSLC)
+    add_dependencies(wowee_editor wowee_shaders)
+endif()
+set_target_properties(wowee_editor PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+install(TARGETS wowee_editor RUNTIME DESTINATION bin)
+message(STATUS "  wowee_editor tool: ENABLED")
 
 # Print configuration summary
 message(STATUS "")

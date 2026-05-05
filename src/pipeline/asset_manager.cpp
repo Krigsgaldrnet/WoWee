@@ -311,6 +311,27 @@ std::shared_ptr<DBCFile> AssetManager::loadDBC(const std::string& name) {
         }
     }
 
+    // Check for JSON DBC from custom zones (wowee open format)
+    // JSON DBCs exported by the editor contain the same record data
+    // but the DBCFile::load() only handles binary — so JSON overrides
+    // are logged for now and will need a JSON→DBC converter in future.
+    if (dbcData.empty()) {
+        std::string baseName = name;
+        auto dot = baseName.rfind('.');
+        if (dot != std::string::npos) baseName = baseName.substr(0, dot);
+        for (const std::string& dir : {"custom_zones", "output"}) {
+            if (!std::filesystem::exists(dir)) continue;
+            for (auto& entry : std::filesystem::directory_iterator(dir)) {
+                if (!entry.is_directory()) continue;
+                std::string jsonPath = entry.path().string() + "/data/" + baseName + ".json";
+                if (std::filesystem::exists(jsonPath)) {
+                    LOG_DEBUG("JSON DBC available (not yet loaded): ", jsonPath);
+                    break;
+                }
+            }
+        }
+    }
+
     // Fall back to expansion-specific CSV (e.g. Data/expansions/wotlk/db/Spell.csv)
     if (dbcData.empty() && !expansionDataPath_.empty()) {
         std::string baseName = name;

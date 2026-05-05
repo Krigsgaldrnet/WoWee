@@ -1,0 +1,200 @@
+#include "pipeline/wowee_building.hpp"
+#include "pipeline/wmo_loader.hpp"
+#include "core/logger.hpp"
+#include <fstream>
+#include <filesystem>
+#include <cstring>
+
+namespace wowee {
+namespace pipeline {
+
+static constexpr uint32_t WOB_MAGIC = 0x31424F57; // "WOB1"
+
+bool WoweeBuildingLoader::exists(const std::string& basePath) {
+    return std::filesystem::exists(basePath + ".wob");
+}
+
+WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
+    WoweeBuilding bld;
+    std::ifstream f(basePath + ".wob", std::ios::binary);
+    if (!f) return bld;
+
+    uint32_t magic;
+    f.read(reinterpret_cast<char*>(&magic), 4);
+    if (magic != WOB_MAGIC) return bld;
+
+    uint32_t groupCount, portalCount, doodadCount;
+    f.read(reinterpret_cast<char*>(&groupCount), 4);
+    f.read(reinterpret_cast<char*>(&portalCount), 4);
+    f.read(reinterpret_cast<char*>(&doodadCount), 4);
+    f.read(reinterpret_cast<char*>(&bld.boundRadius), 4);
+
+    uint16_t nameLen;
+    f.read(reinterpret_cast<char*>(&nameLen), 2);
+    bld.name.resize(nameLen);
+    f.read(bld.name.data(), nameLen);
+
+    for (uint32_t gi = 0; gi < groupCount; gi++) {
+        WoweeBuilding::Group grp;
+        uint16_t gnLen;
+        f.read(reinterpret_cast<char*>(&gnLen), 2);
+        grp.name.resize(gnLen);
+        f.read(grp.name.data(), gnLen);
+
+        uint32_t vc, ic, tc;
+        f.read(reinterpret_cast<char*>(&vc), 4);
+        f.read(reinterpret_cast<char*>(&ic), 4);
+        f.read(reinterpret_cast<char*>(&tc), 4);
+        uint8_t outdoor;
+        f.read(reinterpret_cast<char*>(&outdoor), 1);
+        grp.isOutdoor = (outdoor != 0);
+        f.read(reinterpret_cast<char*>(&grp.boundMin), 12);
+        f.read(reinterpret_cast<char*>(&grp.boundMax), 12);
+
+        grp.vertices.resize(vc);
+        f.read(reinterpret_cast<char*>(grp.vertices.data()), vc * sizeof(WoweeBuilding::Vertex));
+        grp.indices.resize(ic);
+        f.read(reinterpret_cast<char*>(grp.indices.data()), ic * 4);
+
+        for (uint32_t ti = 0; ti < tc; ti++) {
+            uint16_t tl;
+            f.read(reinterpret_cast<char*>(&tl), 2);
+            std::string tp(tl, '\0');
+            f.read(tp.data(), tl);
+            grp.texturePaths.push_back(tp);
+        }
+        bld.groups.push_back(std::move(grp));
+    }
+
+    for (uint32_t pi = 0; pi < portalCount; pi++) {
+        WoweeBuilding::Portal portal;
+        f.read(reinterpret_cast<char*>(&portal.groupA), 4);
+        f.read(reinterpret_cast<char*>(&portal.groupB), 4);
+        uint32_t pvCount;
+        f.read(reinterpret_cast<char*>(&pvCount), 4);
+        portal.vertices.resize(pvCount);
+        f.read(reinterpret_cast<char*>(portal.vertices.data()), pvCount * 12);
+        bld.portals.push_back(portal);
+    }
+
+    for (uint32_t di = 0; di < doodadCount; di++) {
+        WoweeBuilding::DoodadPlacement dp;
+        uint16_t pl;
+        f.read(reinterpret_cast<char*>(&pl), 2);
+        dp.modelPath.resize(pl);
+        f.read(dp.modelPath.data(), pl);
+        f.read(reinterpret_cast<char*>(&dp.position), 12);
+        f.read(reinterpret_cast<char*>(&dp.rotation), 12);
+        f.read(reinterpret_cast<char*>(&dp.scale), 4);
+        bld.doodads.push_back(dp);
+    }
+
+    LOG_INFO("WOB loaded: ", basePath, " (", groupCount, " groups, ",
+             portalCount, " portals, ", doodadCount, " doodads)");
+    return bld;
+}
+
+bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& basePath) {
+    namespace fs = std::filesystem;
+    fs::create_directories(fs::path(basePath).parent_path());
+
+    std::ofstream f(basePath + ".wob", std::ios::binary);
+    if (!f) return false;
+
+    f.write(reinterpret_cast<const char*>(&WOB_MAGIC), 4);
+    uint32_t gc = static_cast<uint32_t>(bld.groups.size());
+    uint32_t pc = static_cast<uint32_t>(bld.portals.size());
+    uint32_t dc = static_cast<uint32_t>(bld.doodads.size());
+    f.write(reinterpret_cast<const char*>(&gc), 4);
+    f.write(reinterpret_cast<const char*>(&pc), 4);
+    f.write(reinterpret_cast<const char*>(&dc), 4);
+    f.write(reinterpret_cast<const char*>(&bld.boundRadius), 4);
+
+    uint16_t nl = static_cast<uint16_t>(bld.name.size());
+    f.write(reinterpret_cast<const char*>(&nl), 2);
+    f.write(bld.name.data(), nl);
+
+    for (const auto& grp : bld.groups) {
+        uint16_t gnl = static_cast<uint16_t>(grp.name.size());
+        f.write(reinterpret_cast<const char*>(&gnl), 2);
+        f.write(grp.name.data(), gnl);
+
+        uint32_t vc = static_cast<uint32_t>(grp.vertices.size());
+        uint32_t ic = static_cast<uint32_t>(grp.indices.size());
+        uint32_t tc = static_cast<uint32_t>(grp.texturePaths.size());
+        f.write(reinterpret_cast<const char*>(&vc), 4);
+        f.write(reinterpret_cast<const char*>(&ic), 4);
+        f.write(reinterpret_cast<const char*>(&tc), 4);
+        uint8_t outdoor = grp.isOutdoor ? 1 : 0;
+        f.write(reinterpret_cast<const char*>(&outdoor), 1);
+        f.write(reinterpret_cast<const char*>(&grp.boundMin), 12);
+        f.write(reinterpret_cast<const char*>(&grp.boundMax), 12);
+
+        f.write(reinterpret_cast<const char*>(grp.vertices.data()),
+                vc * sizeof(WoweeBuilding::Vertex));
+        f.write(reinterpret_cast<const char*>(grp.indices.data()), ic * 4);
+
+        for (const auto& tp : grp.texturePaths) {
+            uint16_t tl = static_cast<uint16_t>(tp.size());
+            f.write(reinterpret_cast<const char*>(&tl), 2);
+            f.write(tp.data(), tl);
+        }
+    }
+
+    for (const auto& portal : bld.portals) {
+        f.write(reinterpret_cast<const char*>(&portal.groupA), 4);
+        f.write(reinterpret_cast<const char*>(&portal.groupB), 4);
+        uint32_t pvCount = static_cast<uint32_t>(portal.vertices.size());
+        f.write(reinterpret_cast<const char*>(&pvCount), 4);
+        f.write(reinterpret_cast<const char*>(portal.vertices.data()), pvCount * 12);
+    }
+
+    for (const auto& dp : bld.doodads) {
+        uint16_t pl = static_cast<uint16_t>(dp.modelPath.size());
+        f.write(reinterpret_cast<const char*>(&pl), 2);
+        f.write(dp.modelPath.data(), pl);
+        f.write(reinterpret_cast<const char*>(&dp.position), 12);
+        f.write(reinterpret_cast<const char*>(&dp.rotation), 12);
+        f.write(reinterpret_cast<const char*>(&dp.scale), 4);
+    }
+
+    LOG_INFO("WOB saved: ", basePath, ".wob (", gc, " groups)");
+    return true;
+}
+
+bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& outModel) {
+    if (building.groups.empty()) return false;
+
+    outModel.nGroups = static_cast<uint32_t>(building.groups.size());
+    outModel.groups.clear();
+
+    for (const auto& grp : building.groups) {
+        WMOGroup wmoGroup;
+        wmoGroup.name = grp.name;
+
+        // Convert vertices
+        wmoGroup.vertices.reserve(grp.vertices.size());
+        for (const auto& v : grp.vertices) {
+            WMOVertex wv;
+            wv.position = v.position;
+            wv.normal = v.normal;
+            wv.texCoord = v.texCoord;
+            wv.color = v.color;
+            wmoGroup.vertices.push_back(wv);
+        }
+
+        // Convert indices
+        wmoGroup.indices.reserve(grp.indices.size());
+        for (uint32_t idx : grp.indices)
+            wmoGroup.indices.push_back(static_cast<uint16_t>(idx));
+
+        outModel.groups.push_back(std::move(wmoGroup));
+    }
+
+    // WMOModel uses isValid() = nGroups > 0 && !groups.empty()
+    // Both are now set, so isValid() will return true
+    return true;
+}
+
+} // namespace pipeline
+} // namespace wowee

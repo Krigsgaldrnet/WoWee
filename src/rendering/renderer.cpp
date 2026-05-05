@@ -3,6 +3,7 @@
 #include "rendering/camera_controller.hpp"
 #include "rendering/terrain_renderer.hpp"
 #include "rendering/terrain_manager.hpp"
+#include "pipeline/custom_zone_discovery.hpp"
 #include "rendering/performance_hud.hpp"
 #include "rendering/water_renderer.hpp"
 #include "rendering/skybox.hpp"
@@ -1884,6 +1885,22 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
     }
 
     LOG_INFO("Initializing renderers for map: ", mapName);
+
+    // Scan for custom zones on first initialization
+    static bool customZonesScanned = false;
+    if (!customZonesScanned) {
+        customZonesScanned = true;
+        auto customZones = pipeline::CustomZoneDiscovery::scan({"custom_zones", "output"});
+        if (!customZones.empty()) {
+            LOG_INFO("=== Custom Zones Available ===");
+            for (const auto& z : customZones) {
+                LOG_INFO("  ", z.name, " (", z.directory, ")",
+                         z.hasCreatures ? " [NPCs]" : "",
+                         z.hasQuests ? " [Quests]" : "");
+            }
+            LOG_INFO("==============================");
+        }
+    }
 
     // Create terrain renderer if not already created
     if (!terrainRenderer) {

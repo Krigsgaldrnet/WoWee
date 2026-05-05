@@ -8,6 +8,9 @@
 #include "rendering/camera.hpp"
 #include "audio/ambient_sound_manager.hpp"
 #include "core/coordinates.hpp"
+#include "pipeline/wowee_terrain_loader.hpp"
+#include "pipeline/wowee_model.hpp"
+#include "pipeline/wowee_building.hpp"
 #include "core/memory_monitor.hpp"
 #include "core/profiler.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -310,28 +313,53 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
     // Early-exit check — worker should bail fast during shutdown
     if (!workerRunning.load()) return nullptr;
 
-    // Load ADT file
-    std::string adtPath = getADTPath(coord);
-    auto adtData = assetManager->readFile(adtPath);
+    // Try Wowee Open Terrain format first (custom zones)
+    std::string wotBase = "custom_zones/" + mapName + "/" + mapName + "_" +
+                          std::to_string(coord.x) + "_" + std::to_string(coord.y);
+    auto terrainPtr = std::make_unique<pipeline::ADTTerrain>();
+    bool loadedFromWot = false;
 
-    if (adtData.empty()) {
-        logMissingAdtOnce(adtPath);
-        return nullptr;
+    if (pipeline::WoweeTerrainLoader::exists(wotBase)) {
+        if (pipeline::WoweeTerrainLoader::load(wotBase, *terrainPtr)) {
+            loadedFromWot = true;
+            LOG_INFO("Loaded custom zone terrain: ", wotBase);
+        }
     }
 
-    // Parse ADT — allocate on heap to avoid stack overflow on macOS
-    // (ADTTerrain contains std::array<MapChunk,256> ≈ 280 KB; macOS worker
-    //  threads default to 512 KB stack, so two on-stack copies would overflow)
-    auto terrainPtr = std::make_unique<pipeline::ADTTerrain>(pipeline::ADTLoader::load(adtData));
-    if (!terrainPtr->isLoaded()) {
-        LOG_ERROR("Failed to parse ADT terrain: ", adtPath);
-        return nullptr;
+    // Also check output directory (editor exports here)
+    if (!loadedFromWot) {
+        std::string outputBase = "output/" + mapName + "/" + mapName + "_" +
+                                 std::to_string(coord.x) + "_" + std::to_string(coord.y);
+        if (pipeline::WoweeTerrainLoader::exists(outputBase)) {
+            if (pipeline::WoweeTerrainLoader::load(outputBase, *terrainPtr)) {
+                loadedFromWot = true;
+                LOG_INFO("Loaded editor output terrain: ", outputBase);
+            }
+        }
+    }
+
+    // Fall back to ADT format
+    if (!loadedFromWot) {
+        std::string adtPath = getADTPath(coord);
+        auto adtData = assetManager->readFile(adtPath);
+
+        if (adtData.empty()) {
+            logMissingAdtOnce(adtPath);
+            return nullptr;
+        }
+
+        *terrainPtr = pipeline::ADTLoader::load(adtData);
+        if (!terrainPtr->isLoaded()) {
+            LOG_ERROR("Failed to parse ADT terrain: ", adtPath);
+            return nullptr;
+        }
     }
 
     if (!workerRunning.load()) return nullptr;
 
     // WotLK split ADTs can store placements in *_obj0.adt.
-    // Merge object chunks so doodads/WMOs (including ground clutter) are available.
+    // Only needed for ADT-loaded tiles, not for WOT custom zones.
+    if (!loadedFromWot) {
     std::string objPath = "World\\Maps\\" + mapName + "\\" + mapName + "_" +
                           std::to_string(coord.x) + "_" + std::to_string(coord.y) + "_obj0.adt";
     auto objData = assetManager->readFile(objPath);
@@ -386,6 +414,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             }
         }
     }
+    } // end if (!loadedFromWot) obj0 merge
 
     // Set tile coordinates so mesh knows where to position this tile in world
     terrainPtr->coord.x = x;
@@ -394,7 +423,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
     // Generate mesh
     pipeline::TerrainMesh mesh = pipeline::TerrainMeshGenerator::generate(*terrainPtr);
     if (mesh.validChunkCount == 0) {
-        LOG_ERROR("Failed to generate terrain mesh: ", adtPath);
+        LOG_ERROR("Failed to generate terrain mesh for tile [", x, ",", y, "]");
         return nullptr;
     }
 
@@ -422,10 +451,45 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             }
         }
 
+        // Check for WOM open format first (custom zone models)
+        std::string womBase = m2Path;
+        auto womDot = womBase.rfind('.');
+        if (womDot != std::string::npos) womBase = womBase.substr(0, womDot);
+        // Check custom_zones and output directories
+        std::vector<std::string> womPrefixes = {"custom_zones/models/", "output/" + mapName + "/models/"};
+        for (const std::string& prefix : womPrefixes) {
+            std::string womPath = prefix + womBase;
+            std::replace(womPath.begin(), womPath.end(), '\\', '/');
+            if (pipeline::WoweeModelLoader::exists(womPath)) {
+                auto wom = pipeline::WoweeModelLoader::load(womPath);
+                if (wom.isValid()) {
+                    // Convert WOM to M2Model for the renderer
+                    pipeline::M2Model m2Model;
+                    m2Model.name = wom.name;
+                    m2Model.boundRadius = wom.boundRadius;
+                    m2Model.vertices.reserve(wom.vertices.size());
+                    for (const auto& v : wom.vertices) {
+                        pipeline::M2Vertex mv;
+                        mv.position = v.position;
+                        mv.normal = v.normal;
+                        mv.texCoords[0] = v.texCoord;
+                        m2Model.vertices.push_back(mv);
+                    }
+                    m2Model.indices.reserve(wom.indices.size());
+                    for (uint32_t idx : wom.indices)
+                        m2Model.indices.push_back(static_cast<uint16_t>(idx));
+
+                    pending->m2Models.push_back({modelId, std::move(m2Model), {}});
+                    preparedModelIds.insert(modelId);
+                    LOG_INFO("Loaded WOM model: ", womPath);
+                    return true;
+                }
+            }
+        }
+
         std::vector<uint8_t> m2Data = assetManager->readFile(m2Path);
         if (m2Data.empty()) {
             skippedFileNotFound++;
-            LOG_WARNING("M2 file not found: ", m2Path);
             return false;
         }
 
@@ -531,6 +595,29 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             if (placement.nameId >= pending->terrain.wmoNames.size()) continue;
 
             const std::string& wmoPath = pending->terrain.wmoNames[placement.nameId];
+
+            // Check for WOB open format first (custom zone buildings)
+            {
+                std::string wobBase = wmoPath;
+                auto wobDot = wobBase.rfind('.');
+                if (wobDot != std::string::npos) wobBase = wobBase.substr(0, wobDot);
+                std::replace(wobBase.begin(), wobBase.end(), '\\', '/');
+                std::vector<std::string> wobPrefixes = {"custom_zones/buildings/", "output/" + mapName + "/buildings/"};
+                for (const auto& prefix : wobPrefixes) {
+                    if (pipeline::WoweeBuildingLoader::exists(prefix + wobBase)) {
+                        auto wob = pipeline::WoweeBuildingLoader::load(prefix + wobBase);
+                        if (wob.isValid()) {
+                            pipeline::WMOModel wobAsWmo;
+                            if (pipeline::WoweeBuildingLoader::toWMOModel(wob, wobAsWmo)) {
+                                LOG_INFO("Loaded WOB building: ", prefix + wobBase);
+                                // TODO: feed wobAsWmo into the WMO render pipeline
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
             std::vector<uint8_t> wmoData = assetManager->readFile(wmoPath);
             if (wmoData.empty()) continue;
 

@@ -309,6 +309,7 @@ public:
 
     /** Set the HiZ system for occlusion culling (Phase 6.3). nullptr disables HiZ. */
     void setHiZSystem(HiZSystem* hiz) { hizSystem_ = hiz; }
+    void setForceNoCull(bool v) { forceNoCull_ = v; }
 
     /** Ensure GPU→CPU cull output is visible to the host after a fence wait.
      *  Call after the early compute submission finishes (endSingleTimeCommands). */
@@ -727,6 +728,7 @@ private:
     glm::vec3 cachedCamPos_ = glm::vec3(0.0f);
     float cachedMaxRenderDistSq_ = 0.0f;
     float smoothedRenderDist_ = 1000.0f;  // Smoothed render distance to prevent flickering
+    bool forceNoCull_ = false;
 
     // Thread count for parallel bone animation
     uint32_t numAnimThreads_ = 1;
