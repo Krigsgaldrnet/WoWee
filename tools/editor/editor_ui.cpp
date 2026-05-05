@@ -609,7 +609,9 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 pathEnd = brush4.getPosition();
                 if (pathMode == 0) {
                     app.getTerrainEditor().carveRiver(pathStart, pathEnd, pathWidth, pathDepth);
-                    app.showToast("River carved");
+                    app.getTexturePainter().paintAlongPath(pathStart, pathEnd, pathWidth * 1.5f,
+                        "Tileset\\Ashenvale\\AshenvaleSand.blp");
+                    app.showToast("River carved + banks textured");
                 } else {
                     app.getTerrainEditor().flattenRoad(pathStart, pathEnd, pathWidth);
                     app.getTexturePainter().paintAlongPath(pathStart, pathEnd, pathWidth,
