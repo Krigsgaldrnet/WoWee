@@ -392,8 +392,15 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 app.getTerrainEditor().smoothEntireTile(smoothPasses);
                 app.showToast("Tile smoothed");
             }
+            ImGui::Separator();
+            static float clampMin = 0.0f, clampMax = 500.0f;
+            ImGui::DragFloatRange2("Clamp Range", &clampMin, &clampMax, 1.0f, -500.0f, 2000.0f);
+            if (ImGui::Button("Clamp Heights", ImVec2(-1, 0))) {
+                app.getTerrainEditor().clampHeights(clampMin, clampMax);
+                app.showToast("Heights clamped");
+            }
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
-                "Generate terrain, then smooth for natural look");
+                "Generate, smooth, then clamp for controlled range");
         }
 
         ImGui::Separator();

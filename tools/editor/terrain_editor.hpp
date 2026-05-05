@@ -57,6 +57,9 @@ public:
     // Global smooth pass across entire tile (N iterations)
     void smoothEntireTile(int iterations);
 
+    // Clamp all heights to a min/max range
+    void clampHeights(float minH, float maxH);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);

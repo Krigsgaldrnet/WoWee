@@ -652,6 +652,27 @@ void TerrainEditor::smoothEntireTile(int iterations) {
     dirty_ = true;
 }
 
+void TerrainEditor::clampHeights(float minH, float maxH) {
+    if (!terrain_) return;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        bool modified = false;
+        for (int v = 0; v < 145; v++) {
+            float absH = chunk.position[2] + chunk.heightMap.heights[v];
+            if (absH < minH) {
+                chunk.heightMap.heights[v] = minH - chunk.position[2];
+                modified = true;
+            } else if (absH > maxH) {
+                chunk.heightMap.heights[v] = maxH - chunk.position[2];
+                modified = true;
+            }
+        }
+        if (modified) dirtyChunks_.push_back(ci);
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::applyErode(float dt) {
     float factor = std::min(1.0f, brush_.settings().strength * dt * 0.3f);
 
