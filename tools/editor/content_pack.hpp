@@ -34,6 +34,16 @@ public:
 
     // Read pack info without extracting
     static bool readInfo(const std::string& wcpPath, ContentPackInfo& info);
+
+    // Validate that a zone directory has all required open format files
+    struct ValidationResult {
+        bool hasWot = false, hasWhm = false, hasZoneJson = false;
+        bool hasPng = false, hasWom = false, hasCreatures = false;
+        bool hasQuests = false, hasObjects = false;
+        int openFormatScore() const;
+        std::string summary() const;
+    };
+    static ValidationResult validateZone(const std::string& zoneDir);
 };
 
 } // namespace editor

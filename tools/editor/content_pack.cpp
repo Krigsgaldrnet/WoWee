@@ -171,5 +171,42 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
     return true;
 }
 
+ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& zoneDir) {
+    namespace fs = std::filesystem;
+    ValidationResult r;
+    if (!fs::exists(zoneDir)) return r;
+
+    for (auto& entry : fs::recursive_directory_iterator(zoneDir)) {
+        if (!entry.is_regular_file()) continue;
+        std::string ext = entry.path().extension().string();
+        std::string name = entry.path().filename().string();
+        if (ext == ".wot") r.hasWot = true;
+        if (ext == ".whm") r.hasWhm = true;
+        if (ext == ".wom") r.hasWom = true;
+        if (ext == ".png") r.hasPng = true;
+        if (name == "zone.json") r.hasZoneJson = true;
+        if (name == "creatures.json") r.hasCreatures = true;
+        if (name == "quests.json") r.hasQuests = true;
+        if (name == "objects.json") r.hasObjects = true;
+    }
+    return r;
+}
+
+int ContentPacker::ValidationResult::openFormatScore() const {
+    int score = 0;
+    if (hasWot) score++; if (hasWhm) score++; if (hasZoneJson) score++;
+    if (hasPng) score++; if (hasWom) score++;
+    return score; // max 5 for fully open
+}
+
+std::string ContentPacker::ValidationResult::summary() const {
+    std::string s;
+    s += hasWot ? "WOT " : ""; s += hasWhm ? "WHM " : "";
+    s += hasZoneJson ? "zone.json " : ""; s += hasPng ? "PNG " : "";
+    s += hasWom ? "WOM " : ""; s += hasCreatures ? "creatures " : "";
+    s += hasQuests ? "quests " : ""; s += hasObjects ? "objects " : "";
+    return s.empty() ? "(empty)" : s;
+}
+
 } // namespace editor
 } // namespace wowee
