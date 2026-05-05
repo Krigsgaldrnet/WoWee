@@ -133,11 +133,19 @@ bool TerrainEditor::raycastTerrain(const rendering::Ray& ray, glm::vec3& hitPos)
         const auto& chunk = terrain_->chunks[chunkIdx];
         if (!chunk.hasHeightMap()) continue;
 
-        // Quick AABB check: compute chunk bounds in render space
+        // Quick AABB check using actual vertex extent
         glm::vec3 corner0 = chunkVertexWorldPos(chunkIdx, 0);
         glm::vec3 corner1 = chunkVertexWorldPos(chunkIdx, 144);
-        glm::vec3 minB = glm::min(corner0, corner1) - glm::vec3(0, 0, 200);
-        glm::vec3 maxB = glm::max(corner0, corner1) + glm::vec3(0, 0, 200);
+        glm::vec3 minB = glm::min(corner0, corner1);
+        glm::vec3 maxB = glm::max(corner0, corner1);
+        // Expand Z by actual height range in chunk
+        float minH = chunk.heightMap.heights[0], maxH = minH;
+        for (int h = 1; h < 145; h++) {
+            minH = std::min(minH, chunk.heightMap.heights[h]);
+            maxH = std::max(maxH, chunk.heightMap.heights[h]);
+        }
+        minB.z = chunk.position[2] + minH - 10.0f;
+        maxB.z = chunk.position[2] + maxH + 10.0f;
 
         // Simple AABB-ray test
         float tmin = -1e30f, tmax = 1e30f;

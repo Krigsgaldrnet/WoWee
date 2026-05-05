@@ -189,9 +189,27 @@ void EditorApp::processEvents() {
             if (event.type == SDL_KEYDOWN) {
                 auto sc = event.key.keysym.scancode;
                 if (sc == SDL_SCANCODE_F3) setWireframe(!isWireframe());
-                if (sc == SDL_SCANCODE_DELETE && mode_ == EditorMode::PlaceObject) {
-                    objectPlacer_.deleteSelected();
-                    objectsDirty_ = true;
+                // Transform shortcuts (Blender-style)
+                if (objectPlacer_.getSelected()) {
+                    if (sc == SDL_SCANCODE_G) startGizmoMode(TransformMode::Move);
+                    if (sc == SDL_SCANCODE_R) startGizmoMode(TransformMode::Rotate);
+                    if (sc == SDL_SCANCODE_T) startGizmoMode(TransformMode::Scale);
+                    if (sc == SDL_SCANCODE_X) setGizmoAxis(TransformAxis::X);
+                    if (sc == SDL_SCANCODE_Y) setGizmoAxis(TransformAxis::Y);
+                    if (sc == SDL_SCANCODE_ESCAPE) {
+                        viewport_.getGizmo().endDrag();
+                        viewport_.getGizmo().setMode(TransformMode::None);
+                        objectPlacer_.clearSelection();
+                    }
+                }
+                if (sc == SDL_SCANCODE_DELETE) {
+                    if (objectPlacer_.getSelected()) {
+                        objectPlacer_.deleteSelected();
+                        objectsDirty_ = true;
+                    } else if (npcSpawner_.getSelected()) {
+                        npcSpawner_.removeCreature(npcSpawner_.getSelectedIndex());
+                        objectsDirty_ = true;
+                    }
                 }
                 if (sc == SDL_SCANCODE_Z && (event.key.keysym.mod & KMOD_CTRL)) {
                     if (event.key.keysym.mod & KMOD_SHIFT)
@@ -242,7 +260,7 @@ void EditorApp::processEvents() {
                     giz.endDrag();
                     giz.setMode(TransformMode::None);
                 } else if (objectPlacer_.getSelected()) {
-                    ImGui::OpenPopup("ObjectContextMenu");
+                    openContextMenu_ = true;
                 } else {
                     camera_.processMouseButton(event.button);
                 }

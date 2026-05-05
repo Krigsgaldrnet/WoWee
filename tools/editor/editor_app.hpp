@@ -62,6 +62,8 @@ public:
     void startGizmoMode(TransformMode mode);
     void setGizmoAxis(TransformAxis axis);
     TransformGizmo& getGizmo() { return viewport_.getGizmo(); }
+    bool shouldOpenContextMenu() const { return openContextMenu_; }
+    void clearContextMenuFlag() { openContextMenu_ = false; }
 
     float getWaterHeight() const { return waterHeight_; }
     void setWaterHeight(float h) { waterHeight_ = h; }
@@ -92,6 +94,7 @@ private:
     bool imguiInitialized_ = false;
     bool painting_ = false;
     bool objectsDirty_ = false;
+    bool openContextMenu_ = false;
     size_t lastObjectCount_ = 0;
     EditorMode mode_ = EditorMode::Sculpt;
     float waterHeight_ = 100.0f;

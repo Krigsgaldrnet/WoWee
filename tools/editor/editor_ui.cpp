@@ -592,6 +592,10 @@ void EditorUI::renderWaterPanel(EditorApp& app) {
 }
 
 void EditorUI::renderContextMenu(EditorApp& app) {
+    if (app.shouldOpenContextMenu()) {
+        ImGui::OpenPopup("ObjectContextMenu");
+        app.clearContextMenuFlag();
+    }
     if (ImGui::BeginPopup("ObjectContextMenu")) {
         auto* sel = app.getObjectPlacer().getSelected();
         if (!sel) { ImGui::EndPopup(); return; }
