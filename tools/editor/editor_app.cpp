@@ -263,7 +263,12 @@ void EditorApp::processEvents() {
         if (event.type == SDL_MOUSEMOTION && !io.WantCaptureMouse) {
             // Gizmo drag takes priority over camera
             auto& giz = viewport_.getGizmo();
-            if (giz.isDragging()) {
+            if (event.motion.state & SDL_BUTTON_MMASK) {
+                // Middle mouse = orbit around brush/terrain point
+                auto& brush = terrainEditor_.brush();
+                glm::vec3 pivot = brush.isActive() ? brush.getPosition() : camera_.getCamera().getPosition() + camera_.getCamera().getForward() * 100.0f;
+                camera_.processMiddleMouseMotion(event.motion.xrel, event.motion.yrel, pivot);
+            } else if (giz.isDragging()) {
                 auto ext = window_->getVkContext()->getSwapchainExtent();
                 giz.updateDrag(glm::vec2(static_cast<float>(event.motion.x),
                                           static_cast<float>(event.motion.y)),

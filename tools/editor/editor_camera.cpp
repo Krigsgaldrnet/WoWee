@@ -71,6 +71,24 @@ void EditorCamera::processKeyEvent(const SDL_KeyboardEvent& event) {
 void EditorCamera::processMouseButton(const SDL_MouseButtonEvent& event) {
     if (event.button == SDL_BUTTON_RIGHT)
         rightMouseDown_ = (event.type == SDL_MOUSEBUTTONDOWN);
+    if (event.button == SDL_BUTTON_MIDDLE)
+        middleMouseDown_ = (event.type == SDL_MOUSEBUTTONDOWN);
+}
+
+void EditorCamera::processMiddleMouseMotion(int dx, int dy, const glm::vec3& pivotPoint) {
+    if (!middleMouseDown_) return;
+
+    constexpr float sensitivity = 0.3f;
+    yaw_ += static_cast<float>(dx) * sensitivity;
+    pitch_ -= static_cast<float>(dy) * sensitivity;
+    pitch_ = std::clamp(pitch_, -89.0f, 89.0f);
+    camera_.setRotation(yaw_, pitch_);
+
+    // Orbit: maintain distance from pivot
+    glm::vec3 toPivot = pivotPoint - camera_.getPosition();
+    float dist = glm::length(toPivot);
+    glm::vec3 newPos = pivotPoint - camera_.getForward() * dist;
+    camera_.setPosition(newPos);
 }
 
 void EditorCamera::setPosition(const glm::vec3& pos) {

@@ -16,6 +16,7 @@ public:
     void processMouseWheel(float delta, bool shiftHeld);
     void processKeyEvent(const SDL_KeyboardEvent& event);
     void processMouseButton(const SDL_MouseButtonEvent& event);
+    void processMiddleMouseMotion(int dx, int dy, const glm::vec3& pivotPoint);
 
     rendering::Camera& getCamera() { return camera_; }
     const rendering::Camera& getCamera() const { return camera_; }
@@ -33,6 +34,7 @@ private:
     bool keyW_ = false, keyA_ = false, keyS_ = false, keyD_ = false;
     bool keyQ_ = false, keyE_ = false, keyShift_ = false;
     bool rightMouseDown_ = false;
+    bool middleMouseDown_ = false;
 };
 
 } // namespace editor
