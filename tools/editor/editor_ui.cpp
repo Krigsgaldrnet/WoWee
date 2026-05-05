@@ -1727,7 +1727,7 @@ void EditorUI::renderMinimap(EditorApp& app) {
         dl2->AddCircleFilled(ImVec2(legPos.x + 5, legPos.y + 5), 3, IM_COL32(255, 220, 50, 200));
         dl2->AddCircleFilled(ImVec2(legPos.x + 45, legPos.y + 5), 3, IM_COL32(255, 60, 60, 200));
         dl2->AddCircleFilled(ImVec2(legPos.x + 100, legPos.y + 5), 3, IM_COL32(60, 200, 60, 200));
-        ImGui::Text("   Obj      Hostile   Friendly  + Cam");
+        ImGui::Text("  Obj   Hostile  Friendly  +Cam  H=Hole");
     }
     ImGui::End();
     ImGui::PopStyleVar();
