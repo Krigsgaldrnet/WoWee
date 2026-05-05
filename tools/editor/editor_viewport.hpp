@@ -61,6 +61,7 @@ public:
     glm::vec3 getLightDir() const { return lightDir_; }
 
     rendering::TerrainRenderer* getTerrainRenderer() { return terrainRenderer_.get(); }
+    rendering::M2Renderer* getM2Renderer() { return m2Renderer_.get(); }
 
 private:
     bool createPerFrameResources();

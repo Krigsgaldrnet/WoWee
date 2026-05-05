@@ -49,6 +49,7 @@ public:
     NpcPresets& getNpcPresets() { return npcPresets_; }
     AssetBrowser& getAssetBrowser() { return assetBrowser_; }
     rendering::TerrainRenderer* getTerrainRenderer();
+    rendering::M2Renderer* getM2Renderer() { return viewport_.getM2Renderer(); }
     pipeline::AssetManager* getAssetManager() { return assetManager_.get(); }
 
     const std::string& getLoadedMap() const { return loadedMap_; }

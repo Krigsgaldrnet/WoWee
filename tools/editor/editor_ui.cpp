@@ -1221,6 +1221,13 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
             if (holeChunks > 0) ImGui::Text("Hole chunks: %d", holeChunks);
         }
 
+        // M2 render diagnostics
+        if (auto* m2r = app.getM2Renderer()) {
+            ImGui::Text("M2: %u models, %u instances, %u draws",
+                        m2r->getModelCount(), m2r->getInstanceCount(),
+                        m2r->getDrawCallCount());
+        }
+
         ImGui::Separator();
         auto pos = app.getEditorCamera().getCamera().getPosition();
         ImGui::Text("Camera: %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
