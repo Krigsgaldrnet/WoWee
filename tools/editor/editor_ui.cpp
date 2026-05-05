@@ -383,8 +383,27 @@ void EditorUI::renderLoadDialog(EditorApp& app) {
         for (const auto& m : maps) {
             if (!filter.empty() && m.find(filter) == std::string::npos) continue;
             bool selected = (m == std::string(loadMapNameBuf_));
-            if (ImGui::Selectable(m.c_str(), selected))
+            if (ImGui::Selectable(m.c_str(), selected)) {
                 std::strncpy(loadMapNameBuf_, m.c_str(), sizeof(loadMapNameBuf_) - 1);
+                // Auto-find first valid tile for this map
+                std::string ml = m;
+                bool found = false;
+                for (int x = 25; x < 45 && !found; x++)
+                    for (int y = 25; y < 45 && !found; y++) {
+                        std::string tp = "world\\maps\\" + ml + "\\" + ml + "_" +
+                                         std::to_string(x) + "_" + std::to_string(y) + ".adt";
+                        if (app.getAssetManager()->getManifest().hasEntry(tp))
+                            { loadTileX_ = x; loadTileY_ = y; found = true; }
+                    }
+                if (!found)
+                    for (int x = 0; x < 64 && !found; x++)
+                        for (int y = 0; y < 64 && !found; y++) {
+                            std::string tp = "world\\maps\\" + ml + "\\" + ml + "_" +
+                                             std::to_string(x) + "_" + std::to_string(y) + ".adt";
+                            if (app.getAssetManager()->getManifest().hasEntry(tp))
+                                { loadTileX_ = x; loadTileY_ = y; found = true; }
+                        }
+            }
         }
         ImGui::EndChild();
 

@@ -1,6 +1,7 @@
 #include "editor_app.hpp"
 #include "adt_writer.hpp"
 #include "zone_manifest.hpp"
+#include "core/coordinates.hpp"
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
 #include "pipeline/terrain_mesh.hpp"
@@ -562,9 +563,15 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     objectPlacer_.setTerrain(&terrain_);
 
     auto mesh = pipeline::TerrainMeshGenerator::generate(terrain_);
+    if (mesh.validChunkCount == 0) {
+        LOG_ERROR("ADT has no valid terrain chunks");
+        showToast("Error: no valid terrain data in this tile");
+        return;
+    }
     viewport_.clearTerrain();
     if (!viewport_.loadTerrain(mesh, terrain_.textures, tileX, tileY)) {
-        LOG_ERROR("Failed to upload terrain to GPU");
+        LOG_ERROR("Failed to upload terrain to GPU (", mesh.validChunkCount, " chunks)");
+        showToast("Error: terrain upload failed");
         return;
     }
 
@@ -578,12 +585,13 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     camera_.setYawPitch(0.0f, -45.0f);
 
     // Import doodad/WMO placements from the ADT itself
+    // ADT positions are in ADT coordinate space — convert to render coords
     for (const auto& dp : terrain_.doodadPlacements) {
         if (dp.nameId < terrain_.doodadNames.size()) {
             PlacedObject obj;
             obj.type = PlaceableType::M2;
             obj.path = terrain_.doodadNames[dp.nameId];
-            obj.position = glm::vec3(dp.position[0], dp.position[1], dp.position[2]);
+            obj.position = core::coords::adtToWorld(dp.position[0], dp.position[1], dp.position[2]);
             obj.rotation = glm::vec3(dp.rotation[0], dp.rotation[1], dp.rotation[2]);
             obj.scale = static_cast<float>(dp.scale) / 1024.0f;
             obj.uniqueId = dp.uniqueId;
@@ -595,7 +603,7 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
             PlacedObject obj;
             obj.type = PlaceableType::WMO;
             obj.path = terrain_.wmoNames[wp.nameId];
-            obj.position = glm::vec3(wp.position[0], wp.position[1], wp.position[2]);
+            obj.position = core::coords::adtToWorld(wp.position[0], wp.position[1], wp.position[2]);
             obj.rotation = glm::vec3(wp.rotation[0], wp.rotation[1], wp.rotation[2]);
             obj.scale = 1.0f;
             obj.uniqueId = wp.uniqueId;
