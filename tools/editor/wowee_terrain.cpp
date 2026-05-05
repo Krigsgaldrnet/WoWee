@@ -182,6 +182,18 @@ bool WoweeTerrain::exportWaterMask(const pipeline::ADTTerrain& terrain,
     return true;
 }
 
+bool WoweeTerrain::exportHoleMask(const pipeline::ADTTerrain& terrain,
+                                   const std::string& path) {
+    constexpr int res = 16;
+    std::vector<uint8_t> pixels(res * res);
+    for (int ci = 0; ci < 256; ci++)
+        pixels[ci] = (terrain.chunks[ci].holes != 0) ? 255 : 0;
+
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    stbi_write_png(path.c_str(), res, res, 1, pixels.data(), res);
+    return true;
+}
+
 int WoweeTerrain::exportAlphaMaps(const pipeline::ADTTerrain& terrain,
                                     const std::string& outputDir) {
     namespace fs = std::filesystem;

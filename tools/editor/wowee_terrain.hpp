@@ -30,6 +30,10 @@ public:
     static bool exportWaterMask(const pipeline::ADTTerrain& terrain,
                                  const std::string& path);
 
+    // Export hole mask as PNG (white=hole, black=solid)
+    static bool exportHoleMask(const pipeline::ADTTerrain& terrain,
+                                const std::string& path);
+
     // Import terrain from open format back to ADTTerrain
     static bool importOpen(const std::string& basePath, pipeline::ADTTerrain& terrain);
 };
