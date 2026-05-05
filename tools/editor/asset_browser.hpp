@@ -28,6 +28,7 @@ public:
     const std::vector<std::string>& getWMODirectories() const { return wmoDirs_; }
 
     const std::vector<std::string>& getMapNames() const { return mapNames_; }
+    std::vector<std::pair<int,int>> getMapTiles(const std::string& mapName) const;
 
     bool isInitialized() const { return initialized_; }
 

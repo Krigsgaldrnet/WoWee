@@ -89,6 +89,8 @@ void AssetBrowser::initialize(pipeline::AssetManager* am) {
     mapNames_.assign(mapSet.begin(), mapSet.end());
     std::sort(mapNames_.begin(), mapNames_.end());
 
+    LOG_INFO("  Maps found: ", mapNames_.size());
+
     std::sort(textures_.begin(), textures_.end(),
               [](const AssetEntry& a, const AssetEntry& b) { return a.wowPath < b.wowPath; });
     std::sort(m2Models_.begin(), m2Models_.end(),
@@ -105,7 +107,24 @@ void AssetBrowser::initialize(pipeline::AssetManager* am) {
     std::sort(wmoDirs_.begin(), wmoDirs_.end());
 
     LOG_INFO("Asset browser: ", textures_.size(), " textures, ",
-             m2Models_.size(), " M2s, ", wmos_.size(), " WMOs indexed");
+             m2Models_.size(), " M2s, ", wmos_.size(), " WMOs indexed, ",
+             mapNames_.size(), " maps");
+}
+
+std::vector<std::pair<int,int>> AssetBrowser::getMapTiles(const std::string& mapName) const {
+    // Build tile list by checking manifest for each possible ADT
+    // Only called when user selects a map, so 64x64 is fine
+    std::vector<std::pair<int,int>> tiles;
+    for (int x = 0; x < 64; x++) {
+        for (int y = 0; y < 64; y++) {
+            std::string path = "world\\maps\\" + mapName + "\\" + mapName + "_" +
+                               std::to_string(x) + "_" + std::to_string(y) + ".adt";
+            // We stored entries as lowercase, so this should match
+            // But we don't have direct access to entries here
+            // Use a dummy check — the UI already does manifest lookups
+        }
+    }
+    return tiles; // Empty for now — UI uses direct manifest check per tile
 }
 
 } // namespace editor

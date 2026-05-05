@@ -343,17 +343,42 @@ void EditorUI::renderLoadDialog(EditorApp& app) {
 
         // Check if the selected tile exists
         {
-            std::string testPath = std::string("world\\maps\\") + loadMapNameBuf_ + "\\" +
-                                   loadMapNameBuf_ + "_" + std::to_string(loadTileX_) + "_" +
-                                   std::to_string(loadTileY_) + ".adt";
-            std::string lower = testPath;
-            std::transform(lower.begin(), lower.end(), lower.begin(),
+            std::string mapLower(loadMapNameBuf_);
+            std::transform(mapLower.begin(), mapLower.end(), mapLower.begin(),
                            [](unsigned char c) { return std::tolower(c); });
-            bool exists = app.getAssetManager()->getManifest().hasEntry(lower);
+            std::string testPath = "world\\maps\\" + mapLower + "\\" + mapLower + "_" +
+                                   std::to_string(loadTileX_) + "_" + std::to_string(loadTileY_) + ".adt";
+            bool exists = app.getAssetManager()->getManifest().hasEntry(testPath);
             if (exists)
-                ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1), "Tile found in manifest");
+                ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1), "Tile found");
             else
-                ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.3f, 1), "Tile not found — try different coords");
+                ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.3f, 1), "Tile not found");
+
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Find Valid Tile")) {
+                bool found = false;
+                for (int x = 25; x < 45 && !found; x++) {
+                    for (int y = 25; y < 45 && !found; y++) {
+                        std::string tp = "world\\maps\\" + mapLower + "\\" + mapLower + "_" +
+                                         std::to_string(x) + "_" + std::to_string(y) + ".adt";
+                        if (app.getAssetManager()->getManifest().hasEntry(tp)) {
+                            loadTileX_ = x; loadTileY_ = y; found = true;
+                        }
+                    }
+                }
+                if (!found) {
+                    for (int x = 0; x < 64 && !found; x++) {
+                        for (int y = 0; y < 64 && !found; y++) {
+                            std::string tp = "world\\maps\\" + mapLower + "\\" + mapLower + "_" +
+                                             std::to_string(x) + "_" + std::to_string(y) + ".adt";
+                            if (app.getAssetManager()->getManifest().hasEntry(tp)) {
+                                loadTileX_ = x; loadTileY_ = y; found = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scans for the first available tile");
         }
 
         ImGui::Spacing();
