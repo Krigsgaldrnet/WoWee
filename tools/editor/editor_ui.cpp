@@ -231,6 +231,9 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("F1 — this help");
             ImGui::BulletText("F3 — wireframe toggle");
             ImGui::BulletText("F5 — save camera bookmark");
+            ImGui::BulletText("Home — center on terrain");
+            ImGui::BulletText("Scroll — zoom in/out");
+            ImGui::BulletText("Shift+Scroll — adjust speed");
         }
         ImGui::End();
     }
