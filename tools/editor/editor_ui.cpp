@@ -551,6 +551,22 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Hill Generator")) {
+            static float hillRadius = 40.0f, hillHeight = 25.0f;
+            ImGui::SliderFloat("Radius##hill", &hillRadius, 10.0f, 150.0f);
+            ImGui::SliderFloat("Height##hill", &hillHeight, 5.0f, 100.0f);
+            auto& brushH = app.getTerrainEditor().brush();
+            if (ImGui::Button("Create Hill", ImVec2(120, 0)) && brushH.isActive()) {
+                app.getTerrainEditor().createHill(brushH.getPosition(), hillRadius, hillHeight);
+                app.showToast("Hill created");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Create Valley", ImVec2(120, 0)) && brushH.isActive()) {
+                app.getTerrainEditor().createHill(brushH.getPosition(), hillRadius, -hillHeight);
+                app.showToast("Valley created");
+            }
+        }
+
         if (ImGui::CollapsingHeader("Mesa / Plateau")) {
             static float mesaRadius = 40.0f, mesaHeight = 20.0f, mesaSteep = 0.3f;
             ImGui::SliderFloat("Radius##mesa", &mesaRadius, 10.0f, 150.0f);

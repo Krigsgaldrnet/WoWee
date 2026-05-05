@@ -840,6 +840,26 @@ void TerrainEditor::createMesa(const glm::vec3& center, float radius, float heig
     dirty_ = true;
 }
 
+void TerrainEditor::createHill(const glm::vec3& center, float radius, float height) {
+    if (!terrain_) return;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        bool modified = false;
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            float dist = glm::length(glm::vec2(pos.x - center.x, pos.y - center.y));
+            if (dist >= radius) continue;
+            float t = dist / radius;
+            float blend = (1.0f - t * t) * (1.0f - t * t); // smooth bell curve
+            chunk.heightMap.heights[v] += height * blend;
+            modified = true;
+        }
+        if (modified) { stitchEdges(ci); dirtyChunks_.push_back(ci); }
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::flattenRoad(const glm::vec3& start, const glm::vec3& end, float width) {
     if (!terrain_) return;
     glm::vec2 lineStart(start.x, start.y);
