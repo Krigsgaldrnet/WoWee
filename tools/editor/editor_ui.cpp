@@ -459,6 +459,31 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
         }
 
         ImGui::Separator();
+        if (ImGui::CollapsingHeader("River / Path Carver")) {
+            static glm::vec3 riverStart{0}, riverEnd{0};
+            static float riverWidth = 8.0f, riverDepth = 5.0f;
+            static bool riverStartSet = false;
+            ImGui::SliderFloat("Width##river", &riverWidth, 2.0f, 50.0f);
+            ImGui::SliderFloat("Depth##river", &riverDepth, 1.0f, 30.0f);
+            auto& brush4 = app.getTerrainEditor().brush();
+            if (ImGui::Button("Set Start##river", ImVec2(120, 0)) && brush4.isActive()) {
+                riverStart = brush4.getPosition();
+                riverStartSet = true;
+                app.showToast("River start set");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Set End + Carve##river", ImVec2(140, 0)) && brush4.isActive() && riverStartSet) {
+                riverEnd = brush4.getPosition();
+                app.getTerrainEditor().carveRiver(riverStart, riverEnd, riverWidth, riverDepth);
+                app.showToast("River carved");
+                riverStartSet = false;
+            }
+            if (riverStartSet)
+                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1), "Start set — click end point");
+            else
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Set start then end to carve");
+        }
+
         if (ImGui::CollapsingHeader("Mirror Terrain")) {
             if (ImGui::Button("Mirror X (Left<>Right)", ImVec2(-1, 0))) {
                 app.getTerrainEditor().mirrorX();

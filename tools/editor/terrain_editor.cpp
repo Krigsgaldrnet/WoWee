@@ -712,6 +712,46 @@ void TerrainEditor::mirrorY() {
     dirty_ = true;
 }
 
+void TerrainEditor::carveRiver(const glm::vec3& start, const glm::vec3& end,
+                                float width, float depth) {
+    if (!terrain_) return;
+    glm::vec2 lineStart(start.x, start.y);
+    glm::vec2 lineEnd(end.x, end.y);
+    glm::vec2 lineDir = glm::normalize(lineEnd - lineStart);
+    float lineLen = glm::length(lineEnd - lineStart);
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        bool modified = false;
+
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            glm::vec2 p(pos.x, pos.y);
+
+            // Project point onto line segment
+            glm::vec2 toP = p - lineStart;
+            float t = glm::dot(toP, lineDir);
+            t = std::clamp(t, 0.0f, lineLen);
+            glm::vec2 closest = lineStart + lineDir * t;
+            float dist = glm::length(p - closest);
+
+            if (dist < width) {
+                float falloff = 1.0f - (dist / width);
+                falloff = falloff * falloff; // smooth edges
+                float carve = depth * falloff;
+                chunk.heightMap.heights[v] -= carve;
+                modified = true;
+            }
+        }
+        if (modified) {
+            stitchEdges(ci);
+            dirtyChunks_.push_back(ci);
+        }
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::copyStamp(const glm::vec3& center, float radius) {
     if (!terrain_) return;
     stampData_.clear();
