@@ -44,6 +44,14 @@ bool ZoneManifest::save(const std::string& path) const {
     if (hasCreatures) files["creatures"] = "creatures.json";
     j["files"] = files;
 
+    // Zone gameplay flags
+    nlohmann::json flags;
+    flags["allowFlying"] = allowFlying;
+    flags["pvpEnabled"] = pvpEnabled;
+    flags["isIndoor"] = isIndoor;
+    flags["isSanctuary"] = isSanctuary;
+    j["flags"] = flags;
+
     // Audio configuration
     if (!musicTrack.empty() || !ambienceDay.empty()) {
         nlohmann::json audio;
@@ -85,6 +93,15 @@ bool ZoneManifest::load(const std::string& path) {
                 if (t.is_array() && t.size() >= 2)
                     tiles.push_back({t[0].get<int>(), t[1].get<int>()});
             }
+        }
+
+        // Zone gameplay flags
+        if (j.contains("flags")) {
+            const auto& fl = j["flags"];
+            allowFlying = fl.value("allowFlying", false);
+            pvpEnabled = fl.value("pvpEnabled", false);
+            isIndoor = fl.value("isIndoor", false);
+            isSanctuary = fl.value("isSanctuary", false);
         }
 
         // Audio configuration

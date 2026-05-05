@@ -17,6 +17,12 @@ struct ZoneManifest {
     bool hasCreatures = false;
     std::string description;
 
+    // Zone gameplay flags
+    bool allowFlying = false;
+    bool pvpEnabled = false;
+    bool isIndoor = false;
+    bool isSanctuary = false;
+
     // Audio configuration
     std::string musicTrack;         // Background music file path
     std::string ambienceDay;        // Daytime ambient sound

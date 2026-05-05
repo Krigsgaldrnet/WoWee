@@ -2402,9 +2402,41 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
             ImGui::SameLine();
             ImGui::Text("[%d, %d]", app.getLoadedTileX(), app.getLoadedTileY());
             ImGui::Text("Chunks: %d  Tris: %d", tr->getChunkCount(), tr->getTriangleCount());
-            ImGui::Text("Objects: %zu  NPCs: %zu",
+            ImGui::Text("Objects: %zu  NPCs: %zu  Q: %zu",
                         app.getObjectPlacer().objectCount(),
-                        app.getNpcSpawner().spawnCount());
+                        app.getNpcSpawner().spawnCount(),
+                        app.getQuestEditor().questCount());
+
+            // Zone metadata (mapId, displayName, flags)
+            if (ImGui::CollapsingHeader("Zone Metadata")) {
+                auto& m = app.getZoneManifest();
+                int mid = static_cast<int>(m.mapId);
+                if (ImGui::InputInt("Map ID", &mid))
+                    m.mapId = static_cast<uint32_t>(std::clamp(mid, 0, 65535));
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Custom zones: 9000-12000. Must be unique per server.");
+
+                char dispBuf[128] = {};
+                std::strncpy(dispBuf, m.displayName.c_str(), sizeof(dispBuf) - 1);
+                if (ImGui::InputText("Display Name", dispBuf, sizeof(dispBuf)))
+                    m.displayName = dispBuf;
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Name shown in-game on the world map and loading screen");
+
+                char descBuf[256] = {};
+                std::strncpy(descBuf, m.description.c_str(), sizeof(descBuf) - 1);
+                if (ImGui::InputTextMultiline("Description##zone", descBuf, sizeof(descBuf), ImVec2(-1, 40)))
+                    m.description = descBuf;
+
+                ImGui::Separator();
+                ImGui::Text("Zone Flags:");
+                ImGui::Checkbox("Allow Flying", &m.allowFlying);
+                ImGui::SameLine();
+                ImGui::Checkbox("PvP", &m.pvpEnabled);
+                ImGui::Checkbox("Indoor", &m.isIndoor);
+                ImGui::SameLine();
+                ImGui::Checkbox("Sanctuary", &m.isSanctuary);
+            }
         } else {
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No terrain loaded");
         }
