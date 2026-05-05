@@ -794,6 +794,7 @@ void EditorApp::exportZone(const std::string& outputDir) {
     WoweeTerrain::exportNormalMap(terrain_, openBase + "_normals.png");
     WoweeTerrain::exportAlphaMaps(terrain_, base + "/alphamaps");
     WoweeTerrain::exportWaterMask(terrain_, openBase + "_watermask.png");
+    WoweeTerrain::exportHoleMask(terrain_, openBase + "_holemask.png");
     WoweeTerrain::exportHeightmapPreview(terrain_, openBase + "_heightmap.png");
     // Also save heightmap as zone thumbnail for content pack browsing
     WoweeTerrain::exportHeightmapPreview(terrain_, base + "/thumbnail.png");
