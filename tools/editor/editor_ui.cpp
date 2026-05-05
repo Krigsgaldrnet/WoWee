@@ -305,14 +305,35 @@ void EditorUI::renderNewTerrainDialog(EditorApp& /*app*/) {
     ImGui::End();
 }
 
-void EditorUI::renderLoadDialog(EditorApp& /*app*/) {
-    ImGui::SetNextWindowSize(ImVec2(350, 180), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Load ADT", &showLoadDialog_)) {
-        ImGui::InputText("Map Name", loadMapNameBuf_, sizeof(loadMapNameBuf_));
+void EditorUI::renderLoadDialog(EditorApp& app) {
+    ImGui::SetNextWindowSize(ImVec2(400, 380), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Load Map Tile", &showLoadDialog_)) {
+        // Map browser
+        auto& maps = app.getAssetBrowser().getMapNames();
+        static char mapFilter[64] = "";
+        ImGui::InputText("Search Maps", mapFilter, sizeof(mapFilter));
+        std::string filter(mapFilter);
+        std::transform(filter.begin(), filter.end(), filter.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+
+        ImGui::BeginChild("MapList", ImVec2(0, 180), true);
+        for (const auto& m : maps) {
+            if (!filter.empty() && m.find(filter) == std::string::npos) continue;
+            bool selected = (m == std::string(loadMapNameBuf_));
+            if (ImGui::Selectable(m.c_str(), selected))
+                std::strncpy(loadMapNameBuf_, m.c_str(), sizeof(loadMapNameBuf_) - 1);
+        }
+        ImGui::EndChild();
+
+        ImGui::Text("Selected: %s", loadMapNameBuf_);
         ImGui::InputInt("Tile X", &loadTileX_);
         ImGui::InputInt("Tile Y", &loadTileY_);
         loadTileX_ = std::max(0, std::min(63, loadTileX_));
         loadTileY_ = std::max(0, std::min(63, loadTileY_));
+
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+            "Azeroth: 28-50 range. Kalimdor: 20-50 range.");
+
         ImGui::Spacing();
         if (ImGui::Button("Load", ImVec2(120, 0))) { loadRequested_ = true; showLoadDialog_ = false; }
         ImGui::SameLine();

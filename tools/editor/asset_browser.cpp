@@ -75,6 +75,20 @@ void AssetBrowser::initialize(pipeline::AssetManager* am) {
         }
     }
 
+    // Scan for available maps (WDT files)
+    std::set<std::string> mapSet;
+    for (const auto& [path, entry] : entries) {
+        if (path.starts_with("world\\maps\\") && path.ends_with(".wdt")) {
+            auto firstSlash = path.find('\\', 11); // after "world\\maps\\"
+            if (firstSlash != std::string::npos) {
+                std::string mapName = path.substr(11, firstSlash - 11);
+                mapSet.insert(mapName);
+            }
+        }
+    }
+    mapNames_.assign(mapSet.begin(), mapSet.end());
+    std::sort(mapNames_.begin(), mapNames_.end());
+
     std::sort(textures_.begin(), textures_.end(),
               [](const AssetEntry& a, const AssetEntry& b) { return a.wowPath < b.wowPath; });
     std::sort(m2Models_.begin(), m2Models_.end(),

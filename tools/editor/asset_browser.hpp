@@ -27,6 +27,8 @@ public:
     const std::vector<std::string>& getM2Directories() const { return m2Dirs_; }
     const std::vector<std::string>& getWMODirectories() const { return wmoDirs_; }
 
+    const std::vector<std::string>& getMapNames() const { return mapNames_; }
+
     bool isInitialized() const { return initialized_; }
 
 private:
@@ -39,6 +41,7 @@ private:
     std::vector<std::string> textureDirs_;
     std::vector<std::string> m2Dirs_;
     std::vector<std::string> wmoDirs_;
+    std::vector<std::string> mapNames_;
     bool initialized_ = false;
 };
 
