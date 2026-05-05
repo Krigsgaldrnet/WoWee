@@ -252,6 +252,7 @@ void TerrainEditor::applyBrush(float deltaTime) {
         case BrushMode::Smooth: applySmooth(deltaTime); break;
         case BrushMode::Flatten:
         case BrushMode::Level: applyFlatten(deltaTime); break;
+        case BrushMode::Erode: applyErode(deltaTime); break;
     }
 }
 
@@ -583,6 +584,50 @@ void TerrainEditor::removeWater(const glm::vec3& center, float radius) {
         if (std::find(dirtyChunks_.begin(), dirtyChunks_.end(), chunkIdx) == dirtyChunks_.end())
             dirtyChunks_.push_back(chunkIdx);
         dirty_ = true;
+    }
+}
+
+void TerrainEditor::applyErode(float dt) {
+    float factor = std::min(1.0f, brush_.settings().strength * dt * 0.3f);
+
+    auto affected = getAffectedChunks(brush_.getPosition(), brush_.settings().radius);
+    for (int chunkIdx : affected) {
+        bool modified = false;
+        auto& chunk = terrain_->chunks[chunkIdx];
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(chunkIdx, v);
+            float dist = glm::length(glm::vec2(pos.x - brush_.getPosition().x,
+                                                pos.y - brush_.getPosition().y));
+            float influence = brush_.getInfluence(dist);
+            if (influence <= 0.0f) continue;
+
+            float h = chunk.heightMap.heights[v];
+            int row = v / 17, col = v % 17;
+
+            // Find lowest neighbor (same chunk)
+            float lowestH = h;
+            if (col <= 8) {
+                int neighbors[] = {v - 17, v + 17, v - 1, v + 1};
+                for (int n : neighbors) {
+                    if (n >= 0 && n < 145)
+                        lowestH = std::min(lowestH, chunk.heightMap.heights[n]);
+                }
+            }
+
+            // Move height toward lowest neighbor (erosion)
+            float slope = h - lowestH;
+            if (slope > 0.1f) {
+                float erosion = slope * factor * influence * 0.3f;
+                chunk.heightMap.heights[v] -= erosion;
+                modified = true;
+            }
+        }
+        if (modified) {
+            stitchEdges(chunkIdx);
+            if (std::find(dirtyChunks_.begin(), dirtyChunks_.end(), chunkIdx) == dirtyChunks_.end())
+                dirtyChunks_.push_back(chunkIdx);
+            dirty_ = true;
+        }
     }
 }
 

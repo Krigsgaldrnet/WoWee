@@ -10,7 +10,8 @@ enum class BrushMode {
     Lower,
     Smooth,
     Flatten,
-    Level
+    Level,
+    Erode
 };
 
 struct BrushSettings {

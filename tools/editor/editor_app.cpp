@@ -81,6 +81,16 @@ void EditorApp::run() {
         // Handle pending UI actions
         ui_.processActions(*this);
 
+        // Auto-save
+        if (autoSaveEnabled_ && terrain_.isLoaded() && terrainEditor_.hasUnsavedChanges()) {
+            autoSaveTimer_ += dt;
+            if (autoSaveTimer_ >= autoSaveInterval_) {
+                autoSaveTimer_ = 0.0f;
+                quickSave();
+                LOG_INFO("Auto-saved zone");
+            }
+        }
+
         // Refresh dirty terrain chunks
         refreshDirtyChunks();
 

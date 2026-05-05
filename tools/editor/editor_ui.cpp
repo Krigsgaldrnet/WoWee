@@ -222,9 +222,9 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::End(); return;
         }
         auto& s = app.getTerrainEditor().brush().settings();
-        const char* modes[] = {"Raise", "Lower", "Smooth", "Flatten", "Level"};
+        const char* modes[] = {"Raise", "Lower", "Smooth", "Flatten", "Level", "Erode"};
         int idx = static_cast<int>(s.mode);
-        if (ImGui::Combo("Mode", &idx, modes, 5)) s.mode = static_cast<BrushMode>(idx);
+        if (ImGui::Combo("Mode", &idx, modes, 6)) s.mode = static_cast<BrushMode>(idx);
         ImGui::SliderFloat("Radius", &s.radius, 5.0f, 200.0f, "%.0f");
         ImGui::SliderFloat("Strength", &s.strength, 0.5f, 50.0f, "%.1f");
         ImGui::SliderFloat("Falloff", &s.falloff, 0.0f, 1.0f, "%.2f");
@@ -701,7 +701,12 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
         ImGui::Separator();
         static char npcPath[256] = "output/creatures.json";
         ImGui::InputText("File##npc", npcPath, sizeof(npcPath));
-        if (ImGui::Button("Save NPCs")) spawner.saveToFile(npcPath);
+        if (ImGui::Button("Save NPCs", ImVec2(100, 0))) spawner.saveToFile(npcPath);
+        ImGui::SameLine();
+        if (ImGui::Button("Load NPCs", ImVec2(100, 0))) {
+            spawner.loadFromFile(npcPath);
+            app.markObjectsDirty();
+        }
 
         ImGui::Separator();
         ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1), "Click terrain to place selected creature");

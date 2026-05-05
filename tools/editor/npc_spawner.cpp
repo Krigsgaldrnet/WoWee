@@ -121,9 +121,101 @@ void NpcSpawner::scatter(const CreatureSpawn& base, const glm::vec3& center,
 }
 
 bool NpcSpawner::loadFromFile(const std::string& path) {
-    // Simple JSON-ish parser for our format — full JSON parsing would need a library
-    LOG_INFO("NPC spawn loading not yet implemented for: ", path);
-    return false;
+    std::ifstream f(path);
+    if (!f) { LOG_ERROR("Failed to open NPC file: ", path); return false; }
+
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+
+    // Minimal JSON parser — extract fields from our known format
+    spawns_.clear();
+    selectedIdx_ = -1;
+
+    auto findStr = [&](const std::string& block, const std::string& key) -> std::string {
+        auto pos = block.find("\"" + key + "\"");
+        if (pos == std::string::npos) return "";
+        pos = block.find(':', pos);
+        if (pos == std::string::npos) return "";
+        pos = block.find('"', pos + 1);
+        if (pos == std::string::npos) return "";
+        auto end = block.find('"', pos + 1);
+        if (end == std::string::npos) return "";
+        return block.substr(pos + 1, end - pos - 1);
+    };
+
+    auto findNum = [&](const std::string& block, const std::string& key) -> float {
+        auto pos = block.find("\"" + key + "\"");
+        if (pos == std::string::npos) return 0;
+        pos = block.find(':', pos);
+        if (pos == std::string::npos) return 0;
+        return std::stof(block.substr(pos + 1));
+    };
+
+    auto findBool = [&](const std::string& block, const std::string& key) -> bool {
+        auto pos = block.find("\"" + key + "\"");
+        if (pos == std::string::npos) return false;
+        return block.find("true", pos) < block.find('\n', pos);
+    };
+
+    // Split by object boundaries
+    size_t start = 0;
+    while ((start = content.find('{', start)) != std::string::npos) {
+        auto end = content.find('}', start);
+        if (end == std::string::npos) break;
+        std::string block = content.substr(start, end - start + 1);
+
+        CreatureSpawn s;
+        s.name = findStr(block, "name");
+        s.modelPath = findStr(block, "model");
+        s.displayId = static_cast<uint32_t>(findNum(block, "displayId"));
+        s.orientation = findNum(block, "orientation");
+        s.scale = findNum(block, "scale");
+        if (s.scale < 0.1f) s.scale = 1.0f;
+        s.level = static_cast<uint32_t>(std::max(1.0f, findNum(block, "level")));
+        s.health = static_cast<uint32_t>(std::max(1.0f, findNum(block, "health")));
+        s.mana = static_cast<uint32_t>(findNum(block, "mana"));
+        s.minDamage = static_cast<uint32_t>(findNum(block, "minDamage"));
+        s.maxDamage = static_cast<uint32_t>(findNum(block, "maxDamage"));
+        s.armor = static_cast<uint32_t>(findNum(block, "armor"));
+        s.faction = static_cast<uint32_t>(findNum(block, "faction"));
+        s.behavior = static_cast<CreatureBehavior>(static_cast<int>(findNum(block, "behavior")));
+        s.wanderRadius = findNum(block, "wanderRadius");
+        s.aggroRadius = findNum(block, "aggroRadius");
+        s.leashRadius = findNum(block, "leashRadius");
+        s.respawnTimeMs = static_cast<uint32_t>(findNum(block, "respawnTimeMs"));
+        s.hostile = findBool(block, "hostile");
+        s.questgiver = findBool(block, "questgiver");
+        s.vendor = findBool(block, "vendor");
+        s.flightmaster = findBool(block, "flightmaster");
+        s.innkeeper = findBool(block, "innkeeper");
+
+        // Parse position array
+        auto posStart = block.find("\"position\"");
+        if (posStart != std::string::npos) {
+            auto bk = block.find('[', posStart);
+            if (bk != std::string::npos) {
+                float vals[3] = {};
+                int vi = 0;
+                auto p = bk + 1;
+                while (vi < 3 && p < block.size()) {
+                    vals[vi++] = std::stof(block.substr(p));
+                    p = block.find(',', p);
+                    if (p == std::string::npos) break;
+                    p++;
+                }
+                s.position = glm::vec3(vals[0], vals[1], vals[2]);
+            }
+        }
+
+        if (!s.name.empty()) {
+            s.id = nextId();
+            spawns_.push_back(s);
+        }
+        start = end + 1;
+    }
+
+    LOG_INFO("NPC spawns loaded: ", path, " (", spawns_.size(), " creatures)");
+    return true;
 }
 
 } // namespace editor

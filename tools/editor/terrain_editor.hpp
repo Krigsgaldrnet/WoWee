@@ -69,6 +69,7 @@ private:
     void applyRaise(float dt);
     void applySmooth(float dt);
     void applyFlatten(float dt);
+    void applyErode(float dt);
     void stitchEdges(int chunkIdx);
 
     std::vector<int> getAffectedChunks(const glm::vec3& center, float radius) const;

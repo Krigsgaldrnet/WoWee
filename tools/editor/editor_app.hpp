@@ -116,6 +116,9 @@ private:
     bool openContextMenu_ = false;
     std::string lastSavePath_;
     std::vector<CameraBookmark> bookmarks_;
+    float autoSaveTimer_ = 0.0f;
+    float autoSaveInterval_ = 300.0f; // 5 minutes
+    bool autoSaveEnabled_ = true;
     size_t lastObjectCount_ = 0;
     EditorMode mode_ = EditorMode::Sculpt;
     float waterHeight_ = 100.0f;
