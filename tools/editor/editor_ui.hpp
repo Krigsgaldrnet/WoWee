@@ -17,6 +17,8 @@ public:
 
     void render(EditorApp& app);
     void processActions(EditorApp& app);
+    void openNewTerrainDialog() { showNewDialog_ = true; }
+    void openLoadDialog() { showLoadDialog_ = true; }
 
     PaintMode getPaintMode() const { return paintMode_; }
 

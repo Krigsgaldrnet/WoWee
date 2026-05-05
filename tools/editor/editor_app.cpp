@@ -253,9 +253,12 @@ void EditorApp::processEvents() {
                         objectsDirty_ = true;
                     }
                 }
-                if (sc == SDL_SCANCODE_S && (event.key.keysym.mod & KMOD_CTRL)) {
+                if (sc == SDL_SCANCODE_S && (event.key.keysym.mod & KMOD_CTRL))
                     quickSave();
-                }
+                if (sc == SDL_SCANCODE_N && (event.key.keysym.mod & KMOD_CTRL))
+                    ui_.openNewTerrainDialog();
+                if (sc == SDL_SCANCODE_O && (event.key.keysym.mod & KMOD_CTRL))
+                    ui_.openLoadDialog();
                 if (sc == SDL_SCANCODE_Z && (event.key.keysym.mod & KMOD_CTRL)) {
                     if (mode_ == EditorMode::Sculpt) {
                         if (event.key.keysym.mod & KMOD_SHIFT)
