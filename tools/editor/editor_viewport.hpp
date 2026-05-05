@@ -50,6 +50,7 @@ public:
     void clearGhostPreview();
 
     TransformGizmo& getGizmo() { return gizmo_; }
+    void setBrushIndicator(const glm::vec3& center, float radius, bool active);
 
     void setWireframe(bool enabled);
     bool isWireframe() const { return wireframe_; }
@@ -90,6 +91,12 @@ private:
     uint32_t ghostModelId_ = 0;
     uint32_t ghostInstanceId_ = 0;
     bool ghostActive_ = false;
+
+    // Brush indicator
+    VkBuffer brushVB_ = VK_NULL_HANDLE;
+    VmaAllocation brushVBAlloc_ = VK_NULL_HANDLE;
+    uint32_t brushVertCount_ = 0;
+    bool brushVisible_ = false;
 };
 
 } // namespace editor

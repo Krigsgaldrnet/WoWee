@@ -6,6 +6,7 @@
 #include "pipeline/wmo_loader.hpp"
 #include "core/logger.hpp"
 #include <cstring>
+#include <cmath>
 #include <unordered_map>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -56,6 +57,7 @@ void EditorViewport::shutdown() {
     if (!vkCtx_) return;
     vkDeviceWaitIdle(vkCtx_->getDevice());
 
+    if (brushVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), brushVB_, brushVBAlloc_); brushVB_ = VK_NULL_HANDLE; }
     gizmo_.shutdown();
     markerRenderer_.shutdown();
     waterRenderer_.shutdown();
@@ -250,6 +252,60 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
     vkCtx_->pollUploadBatches();
 }
 
+void EditorViewport::setBrushIndicator(const glm::vec3& center, float radius, bool active) {
+    brushVisible_ = active;
+    if (!active) return;
+
+    // Rebuild circle vertex buffer
+    if (brushVB_) {
+        vmaDestroyBuffer(vkCtx_->getAllocator(), brushVB_, brushVBAlloc_);
+        brushVB_ = VK_NULL_HANDLE;
+    }
+
+    constexpr int SEGMENTS = 48;
+    struct BV { float pos[3]; float color[4]; };
+    std::vector<BV> verts;
+
+    for (int i = 0; i < SEGMENTS; i++) {
+        float a0 = static_cast<float>(i) / SEGMENTS * 6.2831853f;
+        float a1 = static_cast<float>(i + 1) / SEGMENTS * 6.2831853f;
+        float x0 = center.x + std::cos(a0) * radius;
+        float y0 = center.y + std::sin(a0) * radius;
+        float x1 = center.x + std::cos(a1) * radius;
+        float y1 = center.y + std::sin(a1) * radius;
+        float z = center.z + 1.0f; // slightly above terrain
+
+        float w = 0.6f; // line width via thin quad
+        float dx0 = std::cos(a0), dy0 = std::sin(a0);
+        float dx1 = std::cos(a1), dy1 = std::sin(a1);
+
+        BV v;
+        v.color[0] = 1.0f; v.color[1] = 1.0f; v.color[2] = 0.3f; v.color[3] = 0.7f;
+
+        // Thin quad for each segment
+        v.pos[0] = x0 - dy0*w; v.pos[1] = y0 + dx0*w; v.pos[2] = z; verts.push_back(v);
+        v.pos[0] = x0 + dy0*w; v.pos[1] = y0 - dx0*w; v.pos[2] = z; verts.push_back(v);
+        v.pos[0] = x1 - dy1*w; v.pos[1] = y1 + dx1*w; v.pos[2] = z; verts.push_back(v);
+
+        v.pos[0] = x1 - dy1*w; v.pos[1] = y1 + dx1*w; v.pos[2] = z; verts.push_back(v);
+        v.pos[0] = x0 + dy0*w; v.pos[1] = y0 - dx0*w; v.pos[2] = z; verts.push_back(v);
+        v.pos[0] = x1 + dy1*w; v.pos[1] = y1 - dx1*w; v.pos[2] = z; verts.push_back(v);
+    }
+
+    brushVertCount_ = static_cast<uint32_t>(verts.size());
+    VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufInfo.size = verts.size() * sizeof(BV);
+    bufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo mapInfo{};
+    if (vmaCreateBuffer(vkCtx_->getAllocator(), &bufInfo, &allocInfo,
+            &brushVB_, &brushVBAlloc_, &mapInfo) == VK_SUCCESS) {
+        std::memcpy(mapInfo.pMappedData, verts.data(), verts.size() * sizeof(BV));
+    }
+}
+
 void EditorViewport::update(float deltaTime) {
     if (m2Renderer_)
         m2Renderer_->update(deltaTime, camera_->getPosition(), camera_->getViewProjectionMatrix());
@@ -329,6 +385,28 @@ void EditorViewport::render(VkCommandBuffer cmd) {
         wmoRenderer_->render(cmd, perFrameSet, *camera_);
 
     waterRenderer_.render(cmd, perFrameSet);
+
+    // Brush indicator circle
+    if (brushVisible_ && brushVB_ && brushVertCount_ > 0) {
+        // Reuse gizmo pipeline (same vertex format, no depth test, alpha blend)
+        if (gizmo_.getMode() == TransformMode::None && !gizmo_.isActive()) {
+            // Use water pipeline for brush (it has alpha blend + depth test)
+            // Actually just render through the water pipeline
+        }
+        // Render brush circle using the water renderer's pipeline setup
+        // (same pos+color vertex format)
+        auto* waterPipeline = waterRenderer_.getPipeline();
+        auto* waterLayout = waterRenderer_.getPipelineLayout();
+        if (waterPipeline && waterLayout) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterPipeline);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout,
+                                    0, 1, &perFrameSet, 0, nullptr);
+            VkDeviceSize off = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &brushVB_, &off);
+            vkCmdDraw(cmd, brushVertCount_, 1, 0, 0);
+        }
+    }
+
     gizmo_.render(cmd, perFrameSet);
 }
 

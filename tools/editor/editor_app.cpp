@@ -386,6 +386,13 @@ void EditorApp::updateTerrainEditing(float dt) {
                 viewport_.clearGhostPreview();
             }
 
+            // Brush circle indicator for sculpt/paint/water modes
+            if (mode_ == EditorMode::Sculpt || mode_ == EditorMode::Paint || mode_ == EditorMode::Water) {
+                viewport_.setBrushIndicator(hitPos, terrainEditor_.brush().settings().radius, true);
+            } else {
+                viewport_.setBrushIndicator(hitPos, 0, false);
+            }
+
             if (painting_ && terrainEditor_.brush().settings().mode == BrushMode::Flatten) {
                 static bool flattenSet = false;
                 if (!flattenSet) {
@@ -396,6 +403,7 @@ void EditorApp::updateTerrainEditing(float dt) {
             }
         } else {
             terrainEditor_.brush().setActive(false);
+            viewport_.setBrushIndicator({}, 0, false);
             viewport_.clearGhostPreview();
         }
     }

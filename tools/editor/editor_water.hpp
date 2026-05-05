@@ -23,6 +23,8 @@ public:
     void render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet);
 
     void clear();
+    VkPipeline getPipeline() const { return pipeline_; }
+    VkPipelineLayout getPipelineLayout() const { return pipelineLayout_; }
 
 private:
     bool createPipeline();
