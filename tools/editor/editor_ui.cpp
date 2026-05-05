@@ -510,7 +510,16 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderInt("Octaves", &noiseOctaves, 1, 8);
             ImGui::InputInt("Seed", &noiseSeed);
             ImGui::SameLine();
-            if (ImGui::SmallButton("Random##seed")) noiseSeed = static_cast<int>(std::rand());
+            if (ImGui::SmallButton("Rnd")) noiseSeed = static_cast<int>(std::rand());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Randomize All")) {
+                noiseSeed = static_cast<int>(std::rand());
+                app.getTerrainEditor().resetToFlat();
+                app.getTerrainEditor().applyNoise(noiseFreq, noiseAmp, noiseOctaves,
+                                                   static_cast<uint32_t>(noiseSeed));
+                app.getTerrainEditor().smoothEntireTile(2);
+                app.showToast("Randomized (seed " + std::to_string(noiseSeed) + ")");
+            }
             static int noiseType = 0;
             ImGui::RadioButton("Value##nt", &noiseType, 0);
             ImGui::SameLine();
