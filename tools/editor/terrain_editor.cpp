@@ -860,6 +860,42 @@ void TerrainEditor::createHill(const glm::vec3& center, float radius, float heig
     dirty_ = true;
 }
 
+void TerrainEditor::thermalErosion(int iterations, float talusAngle) {
+    if (!terrain_) return;
+    float unitSize = CHUNK_SIZE / 8.0f;
+    float maxDelta = std::tan(talusAngle * 3.14159f / 180.0f) * unitSize;
+
+    for (int iter = 0; iter < iterations; iter++) {
+        for (int ci = 0; ci < 256; ci++) {
+            auto& chunk = terrain_->chunks[ci];
+            if (!chunk.hasHeightMap()) continue;
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                if (col > 8) continue;
+                float h = chunk.heightMap.heights[v];
+                int neighbors[] = {v - 17, v + 17, v - 1, v + 1};
+                for (int n : neighbors) {
+                    if (n < 0 || n >= 145) continue;
+                    int nRow = n / 17, nCol = n % 17;
+                    if (nCol > 8 || std::abs(nRow - row) > 1 || std::abs(nCol - col) > 1) continue;
+                    float nh = chunk.heightMap.heights[n];
+                    float delta = h - nh;
+                    if (delta > maxDelta) {
+                        float transfer = (delta - maxDelta) * 0.25f;
+                        chunk.heightMap.heights[v] -= transfer;
+                        chunk.heightMap.heights[n] += transfer;
+                    }
+                }
+            }
+        }
+    }
+    for (int ci = 0; ci < 256; ci++) {
+        stitchEdges(ci);
+        dirtyChunks_.push_back(ci);
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::terraceHeights(int steps) {
     if (!terrain_ || steps < 2) return;
 

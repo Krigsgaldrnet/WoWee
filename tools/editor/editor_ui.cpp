@@ -603,6 +603,19 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Thermal Erosion")) {
+            static int erosionIters = 10;
+            static float talusAngle = 40.0f;
+            ImGui::SliderInt("Iterations##therm", &erosionIters, 1, 50);
+            ImGui::SliderFloat("Talus Angle##therm", &talusAngle, 10.0f, 80.0f, "%.0f deg");
+            if (ImGui::Button("Apply Thermal Erosion", ImVec2(-1, 0))) {
+                app.getTerrainEditor().thermalErosion(erosionIters, talusAngle);
+                app.showToast("Thermal erosion applied");
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "Material slides downhill. Lower angle = more erosion.");
+        }
+
         if (ImGui::CollapsingHeader("Terrace / Steps")) {
             static int terraceSteps = 6;
             ImGui::SliderInt("Steps##terrace", &terraceSteps, 2, 20);

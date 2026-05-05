@@ -102,6 +102,9 @@ public:
     // Terrace/quantize heights into N steps
     void terraceHeights(int steps);
 
+    // Thermal erosion: material falls downhill based on angle of repose
+    void thermalErosion(int iterations, float talusAngle);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);
