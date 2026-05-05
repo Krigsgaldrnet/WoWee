@@ -8,6 +8,7 @@
 #include "rendering/camera.hpp"
 #include "audio/ambient_sound_manager.hpp"
 #include "core/coordinates.hpp"
+#include "pipeline/wowee_terrain_loader.hpp"
 #include "core/memory_monitor.hpp"
 #include "core/profiler.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -310,28 +311,53 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
     // Early-exit check — worker should bail fast during shutdown
     if (!workerRunning.load()) return nullptr;
 
-    // Load ADT file
-    std::string adtPath = getADTPath(coord);
-    auto adtData = assetManager->readFile(adtPath);
+    // Try Wowee Open Terrain format first (custom zones)
+    std::string wotBase = "custom_zones/" + mapName + "/" + mapName + "_" +
+                          std::to_string(coord.x) + "_" + std::to_string(coord.y);
+    auto terrainPtr = std::make_unique<pipeline::ADTTerrain>();
+    bool loadedFromWot = false;
 
-    if (adtData.empty()) {
-        logMissingAdtOnce(adtPath);
-        return nullptr;
+    if (pipeline::WoweeTerrainLoader::exists(wotBase)) {
+        if (pipeline::WoweeTerrainLoader::load(wotBase, *terrainPtr)) {
+            loadedFromWot = true;
+            LOG_INFO("Loaded custom zone terrain: ", wotBase);
+        }
     }
 
-    // Parse ADT — allocate on heap to avoid stack overflow on macOS
-    // (ADTTerrain contains std::array<MapChunk,256> ≈ 280 KB; macOS worker
-    //  threads default to 512 KB stack, so two on-stack copies would overflow)
-    auto terrainPtr = std::make_unique<pipeline::ADTTerrain>(pipeline::ADTLoader::load(adtData));
-    if (!terrainPtr->isLoaded()) {
-        LOG_ERROR("Failed to parse ADT terrain: ", adtPath);
-        return nullptr;
+    // Also check output directory (editor exports here)
+    if (!loadedFromWot) {
+        std::string outputBase = "output/" + mapName + "/" + mapName + "_" +
+                                 std::to_string(coord.x) + "_" + std::to_string(coord.y);
+        if (pipeline::WoweeTerrainLoader::exists(outputBase)) {
+            if (pipeline::WoweeTerrainLoader::load(outputBase, *terrainPtr)) {
+                loadedFromWot = true;
+                LOG_INFO("Loaded editor output terrain: ", outputBase);
+            }
+        }
+    }
+
+    // Fall back to ADT format
+    if (!loadedFromWot) {
+        std::string adtPath = getADTPath(coord);
+        auto adtData = assetManager->readFile(adtPath);
+
+        if (adtData.empty()) {
+            logMissingAdtOnce(adtPath);
+            return nullptr;
+        }
+
+        *terrainPtr = pipeline::ADTLoader::load(adtData);
+        if (!terrainPtr->isLoaded()) {
+            LOG_ERROR("Failed to parse ADT terrain: ", adtPath);
+            return nullptr;
+        }
     }
 
     if (!workerRunning.load()) return nullptr;
 
     // WotLK split ADTs can store placements in *_obj0.adt.
-    // Merge object chunks so doodads/WMOs (including ground clutter) are available.
+    // Only needed for ADT-loaded tiles, not for WOT custom zones.
+    if (!loadedFromWot) {
     std::string objPath = "World\\Maps\\" + mapName + "\\" + mapName + "_" +
                           std::to_string(coord.x) + "_" + std::to_string(coord.y) + "_obj0.adt";
     auto objData = assetManager->readFile(objPath);
@@ -386,6 +412,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             }
         }
     }
+    } // end if (!loadedFromWot) obj0 merge
 
     // Set tile coordinates so mesh knows where to position this tile in world
     terrainPtr->coord.x = x;
@@ -394,7 +421,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
     // Generate mesh
     pipeline::TerrainMesh mesh = pipeline::TerrainMeshGenerator::generate(*terrainPtr);
     if (mesh.validChunkCount == 0) {
-        LOG_ERROR("Failed to generate terrain mesh: ", adtPath);
+        LOG_ERROR("Failed to generate terrain mesh for tile [", x, ",", y, "]");
         return nullptr;
     }
 

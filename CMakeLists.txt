@@ -589,6 +589,7 @@ set(WOWEE_SOURCES
     src/pipeline/wmo_loader.cpp
     src/pipeline/adt_loader.cpp
     src/pipeline/wdt_loader.cpp
+    src/pipeline/wowee_terrain_loader.cpp
     src/pipeline/dbc_layout.cpp
 
     src/pipeline/terrain_mesh.cpp
@@ -1313,6 +1314,7 @@ add_executable(wowee_editor
     src/pipeline/wmo_loader.cpp
     src/pipeline/adt_loader.cpp
     src/pipeline/wdt_loader.cpp
+    src/pipeline/wowee_terrain_loader.cpp
     src/pipeline/terrain_mesh.cpp
 
     # Rendering core
