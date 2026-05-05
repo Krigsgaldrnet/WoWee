@@ -108,6 +108,9 @@ public:
     // Invert terrain (flip heights around midpoint)
     void invertHeights();
 
+    // Offset all heights by a constant
+    void offsetHeights(float amount);
+
     // Fill entire tile with water at a height
     void fillWater(float height, uint16_t liquidType);
 

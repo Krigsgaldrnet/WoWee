@@ -860,6 +860,18 @@ void TerrainEditor::createHill(const glm::vec3& center, float radius, float heig
     dirty_ = true;
 }
 
+void TerrainEditor::offsetHeights(float amount) {
+    if (!terrain_) return;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++)
+            chunk.heightMap.heights[v] += amount;
+        dirtyChunks_.push_back(ci);
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::invertHeights() {
     if (!terrain_) return;
     // Find midpoint

@@ -546,6 +546,13 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 app.getTerrainEditor().invertHeights();
                 app.showToast("Heights inverted");
             }
+            static float offsetAmt = 10.0f;
+            ImGui::SliderFloat("Offset##ht", &offsetAmt, -100.0f, 100.0f, "%.0f");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Apply##off")) {
+                app.getTerrainEditor().offsetHeights(offsetAmt);
+                app.showToast("Heights offset");
+            }
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
                 "Scale: exaggerate (>1) or flatten (<1) relief");
         }
