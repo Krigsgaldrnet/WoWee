@@ -764,6 +764,47 @@ void TerrainEditor::carveRiver(const glm::vec3& start, const glm::vec3& end,
     dirty_ = true;
 }
 
+void TerrainEditor::createCrater(const glm::vec3& center, float radius, float depth, float rimHeight) {
+    if (!terrain_) return;
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        bool modified = false;
+
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            float dist = glm::length(glm::vec2(pos.x - center.x, pos.y - center.y));
+            if (dist > radius * 1.3f) continue;
+
+            float t = dist / radius;
+            float delta = 0.0f;
+
+            if (t < 0.8f) {
+                // Bowl interior: parabolic depression
+                float bowlT = t / 0.8f;
+                delta = -depth * (1.0f - bowlT * bowlT);
+            } else if (t < 1.0f) {
+                // Rim: raised edge
+                float rimT = (t - 0.8f) / 0.2f;
+                delta = rimHeight * std::sin(rimT * 3.14159f);
+            } else if (t < 1.3f) {
+                // Outer falloff
+                float fallT = (t - 1.0f) / 0.3f;
+                delta = rimHeight * (1.0f - fallT) * 0.3f;
+            }
+
+            chunk.heightMap.heights[v] += delta;
+            modified = true;
+        }
+        if (modified) {
+            stitchEdges(ci);
+            dirtyChunks_.push_back(ci);
+        }
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::flattenRoad(const glm::vec3& start, const glm::vec3& end, float width) {
     if (!terrain_) return;
     glm::vec2 lineStart(start.x, start.y);

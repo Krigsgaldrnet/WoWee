@@ -551,6 +551,19 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Crater Generator")) {
+            static float craterRadius = 30.0f, craterDepth = 10.0f, craterRim = 3.0f;
+            ImGui::SliderFloat("Radius##crater", &craterRadius, 5.0f, 100.0f);
+            ImGui::SliderFloat("Depth##crater", &craterDepth, 2.0f, 50.0f);
+            ImGui::SliderFloat("Rim Height##crater", &craterRim, 0.0f, 15.0f);
+            auto& brush5 = app.getTerrainEditor().brush();
+            if (ImGui::Button("Create Crater at Cursor", ImVec2(-1, 0)) && brush5.isActive()) {
+                app.getTerrainEditor().createCrater(brush5.getPosition(), craterRadius, craterDepth, craterRim);
+                app.showToast("Crater created");
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Bowl with raised rim. Fill with water for a lake.");
+        }
+
         if (ImGui::CollapsingHeader("Flatten Platform")) {
             auto& brush3 = app.getTerrainEditor().brush();
             if (ImGui::Button("Create Flat Platform at Cursor", ImVec2(-1, 0)) && brush3.isActive()) {
