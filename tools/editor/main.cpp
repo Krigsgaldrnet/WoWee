@@ -1,6 +1,7 @@
 #include "editor_app.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/asset_manager.hpp"
+#include "pipeline/custom_zone_discovery.hpp"
 #include "core/logger.hpp"
 #include <string>
 #include <cstring>
@@ -29,6 +30,19 @@ int main(int argc, char* argv[]) {
             adtMap = argv[++i];
             adtX = std::atoi(argv[++i]);
             adtY = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--list-zones") == 0) {
+            auto zones = wowee::pipeline::CustomZoneDiscovery::scan({"custom_zones", "output"});
+            if (zones.empty()) {
+                LOG_INFO("No custom zones found in custom_zones/ or output/");
+            } else {
+                LOG_INFO("Custom zones found:");
+                for (const auto& z : zones) {
+                    LOG_INFO("  ", z.name, " — ", z.directory,
+                             z.hasCreatures ? " [NPCs]" : "",
+                             z.hasQuests ? " [Quests]" : "");
+                }
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--version") == 0 || std::strcmp(argv[i], "-v") == 0) {
             LOG_INFO("Wowee World Editor v1.0.0");
             LOG_INFO("Open formats: WOT/WHM/WOM/WOB/WCP (all novel, no Blizzard IP)");
