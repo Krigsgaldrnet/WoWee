@@ -219,6 +219,14 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("Right-click — context menu");
             ImGui::Separator();
             ImGui::Text("View:");
+            ImGui::Text("Modes:");
+            ImGui::BulletText("1 — Sculpt");
+            ImGui::BulletText("2 — Paint");
+            ImGui::BulletText("3 — Objects");
+            ImGui::BulletText("4 — Water");
+            ImGui::BulletText("5 — NPCs");
+            ImGui::Separator();
+            ImGui::Text("View:");
             ImGui::BulletText("F1 — this help");
             ImGui::BulletText("F3 — wireframe toggle");
             ImGui::BulletText("F5 — save camera bookmark");
