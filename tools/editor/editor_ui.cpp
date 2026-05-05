@@ -273,6 +273,11 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("5 — NPCs");
             ImGui::BulletText("6 — Quests");
             ImGui::Separator();
+            ImGui::Text("Quick Actions:");
+            ImGui::BulletText("Ctrl+N — new terrain");
+            ImGui::BulletText("Ctrl+O — load map tile");
+            ImGui::BulletText("Middle-drag — orbit camera");
+            ImGui::Separator();
             ImGui::Text("View:");
             ImGui::BulletText("F1 — this help");
             ImGui::BulletText("F3 — wireframe toggle");
