@@ -54,8 +54,6 @@ private:
     bool loadRequested_ = false;
 
     char savePathBuf_[512] = "";
-    bool saveAdtRequested_ = false;
-    bool saveWdtRequested_ = false;
 
     // Paint panel
     PaintMode paintMode_ = PaintMode::Paint;

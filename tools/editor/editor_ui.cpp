@@ -79,8 +79,6 @@ void EditorUI::processActions(EditorApp& app) {
         loadRequested_ = false;
         app.loadADT(loadMapNameBuf_, loadTileX_, loadTileY_);
     }
-    (void)saveAdtRequested_;
-    (void)saveWdtRequested_;
 }
 
 void EditorUI::renderMenuBar(EditorApp& app) {

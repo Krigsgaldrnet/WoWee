@@ -46,7 +46,6 @@ bool EditorViewport::initialize(rendering::VkContext* ctx, pipeline::AssetManage
     }
 
     waterRenderer_.initialize(ctx, ctx->getImGuiRenderPass(), perFrameSetLayout_);
-    markerRenderer_.initialize(ctx, ctx->getImGuiRenderPass(), perFrameSetLayout_);
     gizmo_.initialize(ctx, ctx->getImGuiRenderPass(), perFrameSetLayout_);
 
     LOG_INFO("Editor viewport initialized");
@@ -59,7 +58,6 @@ void EditorViewport::shutdown() {
 
     if (brushVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), brushVB_, brushVBAlloc_); brushVB_ = VK_NULL_HANDLE; }
     gizmo_.shutdown();
-    markerRenderer_.shutdown();
     waterRenderer_.shutdown();
 
     if (wmoRenderer_) { wmoRenderer_->shutdown(); wmoRenderer_.reset(); }
@@ -84,8 +82,7 @@ void EditorViewport::updateWater(const pipeline::ADTTerrain& terrain, int tileX,
     waterRenderer_.update(terrain, tileX, tileY);
 }
 
-void EditorViewport::updateMarkers(const std::vector<PlacedObject>& objects) {
-    markerRenderer_.update(objects);
+void EditorViewport::updateMarkers(const std::vector<PlacedObject>& /*objects*/) {
 }
 
 void EditorViewport::placeM2(const std::string& path, const glm::vec3& pos,
@@ -106,7 +103,6 @@ void EditorViewport::clearObjects() {
     if (wmoRenderer_) {
         wmoRenderer_->clearAll();
     }
-    markerRenderer_.clear();
 }
 
 void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
