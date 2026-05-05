@@ -14,7 +14,7 @@
 - Decompose TransportManager (1,200→500 LOC): extract TransportPathRepository, TransportClockSync, TransportAnimator; consolidate 7 duplicated spline parsers into `spline_packet.cpp` (PR #60)
 
 ### World Editor (tools/editor/)
-- Standalone world editor for creating custom WoW zones (14.1k+ lines, 57 files)
+- Standalone world editor for creating custom WoW zones (14.7k+ lines, 59 files)
 - 6 editing modes: Sculpt, Paint, Objects, Water, NPCs, Quests
 - 30+ terrain tools: procedural generators (hill, mesa, crater, canyon, island, ridge, dunes), thermal erosion, noise, mirror/rotate, stamp copy/paste with file persistence
 - Multi-select objects (Ctrl+Shift+Click), Select All (Ctrl+A), Select by Type (M2/WMO)
@@ -38,6 +38,8 @@
   waypoint_data, quest_template — ready-to-import .sql files)
 - Server module generator: one-click AzerothCore module with map registration,
   spawns, teleport command, zone flags, conf snippet, and admin README
+- Biome vegetation auto-population: one-click procedural placement of
+  trees, rocks, bushes, ferns per biome (10 biomes with density rules)
 - Live open format validation (0-7 score) in File menu
 
 ### Novel Open Formats (7/7 Blizzard format replacements)
