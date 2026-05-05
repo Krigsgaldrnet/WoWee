@@ -247,6 +247,105 @@ int WoweeTerrain::exportAlphaMaps(const pipeline::ADTTerrain& terrain,
     return exported;
 }
 
+bool WoweeTerrain::exportZoneMap(const pipeline::ADTTerrain& terrain,
+                                  const std::string& path, int resolution) {
+    namespace fs = std::filesystem;
+    fs::create_directories(fs::path(path).parent_path());
+
+    std::vector<uint8_t> pixels(resolution * resolution * 3, 0);
+
+    // Find height range
+    float minH = 1e30f, maxH = -1e30f;
+    for (int ci = 0; ci < 256; ci++) {
+        const auto& c = terrain.chunks[ci];
+        if (!c.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++) {
+            float h = c.position[2] + c.heightMap.heights[v];
+            minH = std::min(minH, h); maxH = std::max(maxH, h);
+        }
+    }
+    float range = std::max(maxH - minH, 1.0f);
+
+    // Render terrain colors
+    for (int py = 0; py < resolution; py++) {
+        for (int px = 0; px < resolution; px++) {
+            float u = static_cast<float>(px) / resolution;
+            float v = static_cast<float>(py) / resolution;
+
+            int cx = static_cast<int>(u * 16); cx = std::clamp(cx, 0, 15);
+            int cy = static_cast<int>(v * 16); cy = std::clamp(cy, 0, 15);
+            int ci = cy * 16 + cx;
+
+            const auto& chunk = terrain.chunks[ci];
+            if (!chunk.hasHeightMap()) continue;
+
+            float localU = (u * 16 - cx) * 8;
+            float localV = (v * 16 - cy) * 8;
+            int gx = std::clamp(static_cast<int>(localU), 0, 7);
+            int gy = std::clamp(static_cast<int>(localV), 0, 7);
+            float h = chunk.position[2] + chunk.heightMap.heights[gy * 17 + gx];
+            float t = (h - minH) / range;
+
+            // Terrain coloring: blue(low) -> green(mid) -> brown(high) -> white(peak)
+            float r, g, b;
+            if (t < 0.15f) {
+                r = 0.2f; g = 0.3f; b = 0.6f;
+            } else if (t < 0.4f) {
+                float tt = (t - 0.15f) / 0.25f;
+                r = 0.2f * (1-tt) + 0.3f * tt;
+                g = 0.3f * (1-tt) + 0.6f * tt;
+                b = 0.6f * (1-tt) + 0.2f * tt;
+            } else if (t < 0.7f) {
+                float tt = (t - 0.4f) / 0.3f;
+                r = 0.3f + tt * 0.4f; g = 0.6f - tt * 0.1f; b = 0.2f - tt * 0.1f;
+            } else {
+                float tt = (t - 0.7f) / 0.3f;
+                r = 0.7f + tt * 0.2f; g = 0.5f + tt * 0.3f; b = 0.1f + tt * 0.6f;
+            }
+
+            // Water overlay
+            if (terrain.waterData[ci].hasWater()) {
+                float wh = terrain.waterData[ci].layers[0].maxHeight;
+                if (h < wh) { r = 0.15f; g = 0.3f; b = 0.7f; }
+            }
+
+            // Hole overlay
+            if (chunk.holes) {
+                int hx = gx / 2, hy = gy / 2;
+                if (chunk.holes & (1 << (hy * 4 + hx))) {
+                    r = 0.1f; g = 0.1f; b = 0.1f;
+                }
+            }
+
+            int idx = (py * resolution + px) * 3;
+            pixels[idx]   = static_cast<uint8_t>(std::clamp(r, 0.0f, 1.0f) * 255);
+            pixels[idx+1] = static_cast<uint8_t>(std::clamp(g, 0.0f, 1.0f) * 255);
+            pixels[idx+2] = static_cast<uint8_t>(std::clamp(b, 0.0f, 1.0f) * 255);
+        }
+    }
+
+    // Draw doodad positions as yellow dots
+    float tileNW_X = (32.0f - terrain.coord.y) * 533.33333f;
+    float tileNW_Y = (32.0f - terrain.coord.x) * 533.33333f;
+    for (const auto& dp : terrain.doodadPlacements) {
+        float u = (tileNW_X - dp.position[1]) / 533.33333f;
+        float vv = (tileNW_Y - dp.position[0]) / 533.33333f;
+        int px = static_cast<int>(vv * resolution);
+        int py = static_cast<int>(u * resolution);
+        if (px >= 0 && px < resolution && py >= 0 && py < resolution) {
+            int idx = (py * resolution + px) * 3;
+            pixels[idx] = 255; pixels[idx+1] = 220; pixels[idx+2] = 50;
+        }
+    }
+
+    if (!stbi_write_png(path.c_str(), resolution, resolution, 3, pixels.data(), resolution * 3)) {
+        LOG_ERROR("Failed to write zone map: ", path);
+        return false;
+    }
+    LOG_INFO("Zone map exported: ", path, " (", resolution, "x", resolution, ")");
+    return true;
+}
+
 bool WoweeTerrain::importOpen(const std::string& basePath, pipeline::ADTTerrain& terrain) {
     return pipeline::WoweeTerrainLoader::load(basePath, terrain);
 }

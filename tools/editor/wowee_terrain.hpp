@@ -34,6 +34,10 @@ public:
     static bool exportHoleMask(const pipeline::ADTTerrain& terrain,
                                 const std::string& path);
 
+    // Export zone overview map as colored PNG (terrain + water + objects)
+    static bool exportZoneMap(const pipeline::ADTTerrain& terrain,
+                               const std::string& path, int resolution = 512);
+
     // Import terrain from open format back to ADTTerrain
     static bool importOpen(const std::string& basePath, pipeline::ADTTerrain& terrain);
 };

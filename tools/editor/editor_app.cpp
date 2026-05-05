@@ -968,6 +968,7 @@ void EditorApp::exportZone(const std::string& outputDir) {
     WoweeTerrain::exportHeightmapPreview(terrain_, openBase + "_heightmap.png");
     // Also save heightmap as zone thumbnail for content pack browsing
     WoweeTerrain::exportHeightmapPreview(terrain_, base + "/thumbnail.png");
+    WoweeTerrain::exportZoneMap(terrain_, base + "/zone_map.png", 512);
 
     // Write zone info README
     {

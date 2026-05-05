@@ -8,6 +8,7 @@
 #include "quest_editor.hpp"
 #include "pipeline/custom_zone_discovery.hpp"
 #include "content_pack.hpp"
+#include "wowee_terrain.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include <filesystem>
 #include "asset_browser.hpp"
@@ -424,6 +425,22 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                     else
                         app.showToast("Export failed");
                 }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Export Zone Map", app.hasTerrainLoaded())) {
+                static char mapPath[256] = "output/zone_map.png";
+                static int mapRes = 512;
+                ImGui::InputText("File##zonemap", mapPath, sizeof(mapPath));
+                ImGui::SliderInt("Resolution", &mapRes, 128, 2048);
+                if (ImGui::MenuItem("Export PNG")) {
+                    if (editor::WoweeTerrain::exportZoneMap(
+                            *app.getTerrainEditor().getTerrain(), mapPath, mapRes))
+                        app.showToast("Zone map exported: " + std::string(mapPath));
+                    else
+                        app.showToast("Export failed");
+                }
+                ImGui::TextColored(ImVec4(0.5f,0.5f,0.5f,1),
+                    "Top-down colored map with terrain, water, objects");
                 ImGui::EndMenu();
             }
             ImGui::Separator();
