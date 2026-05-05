@@ -2,6 +2,7 @@
 #include "core/logger.hpp"
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 namespace wowee {
 namespace editor {
@@ -318,6 +319,25 @@ void TexturePainter::gradientBlend(const std::string& tex1, const std::string& t
                 chunk.alphaMap[off + ty * 64 + tx] = static_cast<uint8_t>(t * 255.0f);
             }
         }
+    }
+}
+
+void TexturePainter::scatterPatches(const std::string& texturePath, int count,
+                                     float minRadius, float maxRadius, uint32_t seed) {
+    if (!terrain_ || texturePath.empty()) return;
+    uint32_t texId = ensureTextureInList(texturePath);
+
+    float tileNW_X = (32.0f - static_cast<float>(terrain_->coord.y)) * 533.33333f;
+    float tileNW_Y = (32.0f - static_cast<float>(terrain_->coord.x)) * 533.33333f;
+
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> distX(tileNW_X - 533.33333f, tileNW_X);
+    std::uniform_real_distribution<float> distY(tileNW_Y - 533.33333f, tileNW_Y);
+    std::uniform_real_distribution<float> distR(minRadius, maxRadius);
+
+    for (int p = 0; p < count; p++) {
+        float px = distX(rng), py = distY(rng), pr = distR(rng);
+        paint(glm::vec3(px, py, 0), pr, 0.8f, 0.5f);
     }
 }
 

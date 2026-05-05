@@ -31,6 +31,10 @@ public:
     // Gradient blend: transitions base texture from one to another across tile
     void gradientBlend(const std::string& tex1, const std::string& tex2, bool horizontal);
 
+    // Scatter random texture patches across the terrain
+    void scatterPatches(const std::string& texturePath, int count, float minRadius,
+                        float maxRadius, uint32_t seed);
+
     // Paint the active texture at the given world position
     // Returns list of modified chunk indices
     std::vector<int> paint(const glm::vec3& center, float radius, float strength, float falloff);

@@ -904,6 +904,28 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
                                selectedTexture_.c_str());
 
         // Auto-paint by height
+        if (ImGui::CollapsingHeader("Scatter Patches")) {
+            static int patchCount = 15;
+            static float patchMinR = 10.0f, patchMaxR = 30.0f;
+            static int patchSeed = 55;
+            ImGui::SliderInt("Count##patches", &patchCount, 5, 50);
+            ImGui::DragFloatRange2("Radius##patches", &patchMinR, &patchMaxR, 1.0f, 5.0f, 80.0f);
+            ImGui::InputInt("Seed##patches", &patchSeed);
+            if (ImGui::Button("Scatter Dirt Patches", ImVec2(-1, 0))) {
+                app.getTexturePainter().scatterPatches(
+                    "Tileset\\Elwynn\\ElwynnDirtBase.blp", patchCount, patchMinR, patchMaxR,
+                    static_cast<uint32_t>(patchSeed));
+                app.showToast("Patches scattered");
+            }
+            if (ImGui::Button("Scatter Rock Patches", ImVec2(-1, 0))) {
+                app.getTexturePainter().scatterPatches(
+                    "Tileset\\Barrens\\BarrensRock01.blp", patchCount, patchMinR, patchMaxR,
+                    static_cast<uint32_t>(patchSeed + 1));
+                app.showToast("Patches scattered");
+            }
+            ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1), "Random texture patches for variety");
+        }
+
         if (ImGui::CollapsingHeader("Gradient Blend")) {
             static int gradDir = 0;
             ImGui::RadioButton("Horizontal##grad", &gradDir, 0);
