@@ -136,7 +136,8 @@ public:
     const std::vector<Toast>& getToasts() const { return toasts_; }
     void updateToasts(float dt);
 private:
-    size_t lastObjectCount_ = 0;
+    size_t lastObjCount_ = 0;
+    size_t lastNpcCount_ = 0;
     EditorMode mode_ = EditorMode::Sculpt;
     float waterHeight_ = 100.0f;
     uint16_t waterType_ = 0;

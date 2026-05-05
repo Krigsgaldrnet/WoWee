@@ -98,19 +98,27 @@ void EditorApp::run() {
         // Refresh dirty terrain chunks
         refreshDirtyChunks();
 
-        // Update NPC markers (cheap — just vertex buffer, no M2 reload)
-        size_t objCount = objectPlacer_.objectCount() + npcSpawner_.spawnCount();
-        if (objectsDirty_ || objCount != lastObjectCount_) {
-            objectsDirty_ = false;
-            bool countChanged = (objCount != lastObjectCount_);
-            lastObjectCount_ = objCount;
-            // Only update NPC position markers (always cheap)
+        // Track object and NPC counts separately
+        size_t objCount = objectPlacer_.objectCount();
+        size_t npcCount = npcSpawner_.spawnCount();
+        bool objChanged = (objCount != lastObjCount_);
+        bool npcChanged = (npcCount != lastNpcCount_) || objectsDirty_;
+
+        if (npcChanged) {
+            // NPC markers are cheap — always update
             viewport_.updateNpcMarkers(npcSpawner_.getSpawns());
-            // Full M2 rebuild only when explicitly requested (not on every click)
-            if (countChanged && objCount > 0) {
+            lastNpcCount_ = npcCount;
+        }
+
+        if (objChanged || objectsDirty_) {
+            // Full M2 rebuild only when placed objects change
+            objectsDirty_ = false;
+            lastObjCount_ = objCount;
+            if (objCount > 0 || npcCount > 0) {
                 vkDeviceWaitIdle(vkCtx->getDevice());
                 viewport_.rebuildObjects(objectPlacer_.getObjects(), npcSpawner_.getSpawns());
             }
+            lastNpcCount_ = npcCount; // sync after rebuild
         }
 
         // Show gizmo arrows on selected object
@@ -622,7 +630,8 @@ void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tile
     loadedMap_ = mapName;
     loadedTileX_ = tileX;
     loadedTileY_ = tileY;
-    lastObjectCount_ = 0;
+    lastObjCount_ = 0;
+    lastNpcCount_ = 0;
     objectsDirty_ = false;
 
     float centerX = (32.0f - tileY) * 533.33333f - 8.0f * 533.33333f / 16.0f;
@@ -815,7 +824,8 @@ void EditorApp::clearAllObjects() {
     viewport_.clearObjects();
     viewport_.updateNpcMarkers({});
     terrainEditor_.history().clear();
-    lastObjectCount_ = 0;
+    lastObjCount_ = 0;
+    lastNpcCount_ = 0;
     objectsDirty_ = false;
     showToast("All objects and NPCs cleared");
 }
