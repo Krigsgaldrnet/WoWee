@@ -9,6 +9,7 @@
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wowee_collision.hpp"
 #include "pipeline/wmo_loader.hpp"
+#include "sql_exporter.hpp"
 #include "core/coordinates.hpp"
 #include <nlohmann/json.hpp>
 #include "rendering/vk_context.hpp"
@@ -875,8 +876,13 @@ void EditorApp::exportZone(const std::string& outputDir) {
         }
     }
 
-    // Update WDT with additional tiles from adjacent exports
-    // (future: scan output dir for existing ADTs and include all in WDT)
+    // Export SQL for private server integration (AzerothCore/TrinityCore)
+    if (npcSpawner_.spawnCount() > 0 || questEditor_.questCount() > 0) {
+        std::string sqlPath = base + "/spawns.sql";
+        SQLExporter::exportAll(npcSpawner_.getSpawns(),
+                               questEditor_.getQuests(),
+                               sqlPath, zoneManifest_.mapId);
+    }
 
     // Save placed objects
     if (objectPlacer_.objectCount() > 0) {

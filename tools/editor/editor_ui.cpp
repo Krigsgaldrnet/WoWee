@@ -8,6 +8,7 @@
 #include "quest_editor.hpp"
 #include "pipeline/custom_zone_discovery.hpp"
 #include "content_pack.hpp"
+#include "sql_exporter.hpp"
 #include "wowee_terrain.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include <filesystem>
@@ -363,6 +364,15 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 showSaveDialog_ = true;
             if (ImGui::MenuItem("Export Open Format (.wot/.whm)", nullptr, false, app.hasTerrainLoaded()))
                 app.exportOpenFormat("output");
+            if (ImGui::MenuItem("Export Server SQL", nullptr, false,
+                    app.getNpcSpawner().spawnCount() > 0 || app.getQuestEditor().questCount() > 0)) {
+                std::string sqlPath = "output/" + app.getLoadedMap() + "/spawns.sql";
+                editor::SQLExporter::exportAll(
+                    app.getNpcSpawner().getSpawns(),
+                    app.getQuestEditor().getQuests(),
+                    sqlPath, app.getZoneManifest().mapId);
+                app.showToast("SQL exported: " + sqlPath);
+            }
             if (ImGui::MenuItem("Export Content Pack (.wcp)", "Ctrl+Shift+E", false, app.hasTerrainLoaded())) {
                 std::string wcpPath = "output/" + app.getLoadedMap() + ".wcp";
                 app.exportContentPack(wcpPath);
