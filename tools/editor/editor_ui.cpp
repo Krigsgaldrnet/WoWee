@@ -904,6 +904,37 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
                                selectedTexture_.c_str());
 
         // Auto-paint by height
+        if (ImGui::CollapsingHeader("Quick Biome Paint")) {
+            const char* biomeNames[] = {"Grassland","Forest","Desert","Snow","Swamp","Barrens"};
+            static int quickBiome = 0;
+            ImGui::Combo("Biome##qbp", &quickBiome, biomeNames, 6);
+            if (ImGui::Button("Apply Full Biome", ImVec2(-1, 0))) {
+                const char* bases[][2] = {
+                    {"Tileset\\Elwynn\\ElwynnGrassBase.blp", "Tileset\\Elwynn\\ElwynnDirtBase.blp"},
+                    {"Tileset\\Ashenvale\\AshenvaleGrass.blp", "Tileset\\Ashenvale\\AshenvaleDirt.blp"},
+                    {"Tileset\\Tanaris\\TanarisSandBase01.blp", "Tileset\\Tanaris\\TanarisCrackedGround.blp"},
+                    {"Tileset\\Expansion02\\Dragonblight\\DragonblightFreshSmoothSnowA.blp", "Tileset\\Winterspring Grove\\WinterspringDirt.blp"},
+                    {"Tileset\\Wetlands\\WetlandsGrassDark01.blp", "Tileset\\Wetlands\\WetlandsDirtMoss01.blp"},
+                    {"Tileset\\Barrens\\BarrensBaseDirt.blp", "Tileset\\Barrens\\BarrensBaseGrassGold.blp"}
+                };
+                // Set base texture for all chunks
+                auto* t = app.getTerrainEditor().getTerrain();
+                if (t) {
+                    uint32_t baseId = 0;
+                    for (uint32_t i = 0; i < t->textures.size(); i++)
+                        if (t->textures[i] == bases[quickBiome][0]) { baseId = i; goto foundBase; }
+                    t->textures.push_back(bases[quickBiome][0]);
+                    baseId = static_cast<uint32_t>(t->textures.size() - 1);
+                    foundBase:
+                    for (int ci = 0; ci < 256; ci++)
+                        if (!t->chunks[ci].layers.empty()) t->chunks[ci].layers[0].textureId = baseId;
+                    // Scatter variation patches
+                    app.getTexturePainter().scatterPatches(bases[quickBiome][1], 20, 15.0f, 40.0f, 42);
+                    app.showToast("Biome applied: " + std::string(biomeNames[quickBiome]));
+                }
+            }
+        }
+
         if (ImGui::CollapsingHeader("Scatter Patches")) {
             static int patchCount = 15;
             static float patchMinR = 10.0f, patchMaxR = 30.0f;
