@@ -355,7 +355,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 showSaveDialog_ = true;
             if (ImGui::MenuItem("Export Open Format (.wot/.whm)", nullptr, false, app.hasTerrainLoaded()))
                 app.exportOpenFormat("output");
-            if (ImGui::MenuItem("Export Content Pack (.wcp)", nullptr, false, app.hasTerrainLoaded())) {
+            if (ImGui::MenuItem("Export Content Pack (.wcp)", "Ctrl+Shift+E", false, app.hasTerrainLoaded())) {
                 std::string wcpPath = "output/" + app.getLoadedMap() + ".wcp";
                 app.exportContentPack(wcpPath);
             }
@@ -524,7 +524,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
 
     // Help overlay
     if (showHelp_) {
-        ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(420, 500), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Keyboard Shortcuts", &showHelp_)) {
             ImGui::Text("Navigation:");
             ImGui::BulletText("WASD — fly camera");
@@ -575,11 +575,24 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("Scroll — zoom in/out");
             ImGui::BulletText("Shift+Scroll — adjust speed");
             ImGui::Separator();
+            ImGui::Text("Object Tools:");
+            ImGui::BulletText("Snap Ground — drop to terrain surface");
+            ImGui::BulletText("Align Slope — rotate to terrain normal");
+            ImGui::BulletText("Flatten Ground — level terrain around object");
+            ImGui::BulletText("Scatter — mass-place with auto-align option");
+            ImGui::BulletText("Select by Type — M2 models or WMO buildings");
+            ImGui::Separator();
             ImGui::Text("Terrain Tools:");
-            ImGui::BulletText("Noise → Smooth → Scale → Clamp → Auto-paint");
-            ImGui::BulletText("River/Road: Set Start → Set End");
-            ImGui::BulletText("Stamp: Copy → Paste");
-            ImGui::BulletText("Mirror X/Y for symmetric zones");
+            ImGui::BulletText("Generators: Hill/Mesa/Crater/Canyon/Island/Ridge/Dunes");
+            ImGui::BulletText("River/Road: click start → click end → Apply");
+            ImGui::BulletText("Stamp: Copy → Save/Load → Paste (cross-zone)");
+            ImGui::BulletText("Mirror X/Y, Rotate 90, Scale/Offset heights");
+            ImGui::BulletText("Auto-paint by height/slope, scatter patches");
+            ImGui::Separator();
+            ImGui::Text("Export:");
+            ImGui::BulletText("Ctrl+S — quick save (all formats)");
+            ImGui::BulletText("Ctrl+Shift+E — export content pack (.wcp)");
+            ImGui::BulletText("File → Batch Convert Assets (M2→WOM, WMO→WOB)");
         }
         ImGui::End();
     }

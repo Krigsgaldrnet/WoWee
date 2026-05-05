@@ -270,6 +270,12 @@ bool ObjectPlacer::loadFromFile(const std::string& path) {
             }
         }
 
+        // Restore active path from last loaded object for seamless placement
+        if (!objects_.empty()) {
+            activePath_ = objects_.back().path;
+            activeType_ = objects_.back().type;
+        }
+
         LOG_INFO("Objects loaded: ", path, " (", objects_.size(), " objects)");
         return true;
     } catch (const std::exception& e) {

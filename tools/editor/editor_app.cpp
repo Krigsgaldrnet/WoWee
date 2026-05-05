@@ -310,6 +310,10 @@ void EditorApp::processEvents() {
                 }
                 if (sc == SDL_SCANCODE_S && (event.key.keysym.mod & KMOD_CTRL))
                     quickSave();
+                if (sc == SDL_SCANCODE_E && (event.key.keysym.mod & KMOD_CTRL) &&
+                    (event.key.keysym.mod & KMOD_SHIFT) && terrain_.isLoaded()) {
+                    exportContentPack("output/" + loadedMap_ + ".wcp");
+                }
                 if (sc == SDL_SCANCODE_N && (event.key.keysym.mod & KMOD_CTRL))
                     ui_.openNewTerrainDialog();
                 if (sc == SDL_SCANCODE_O && (event.key.keysym.mod & KMOD_CTRL))
