@@ -666,6 +666,52 @@ void TerrainEditor::scaleHeights(float factor) {
     dirty_ = true;
 }
 
+void TerrainEditor::mirrorX() {
+    if (!terrain_) return;
+    for (int cy = 0; cy < 16; cy++) {
+        for (int cx = 0; cx < 8; cx++) {
+            int srcIdx = cy * 16 + cx;
+            int dstIdx = cy * 16 + (15 - cx);
+            auto& src = terrain_->chunks[srcIdx];
+            auto& dst = terrain_->chunks[dstIdx];
+            if (!src.hasHeightMap() || !dst.hasHeightMap()) continue;
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                if (col > 8) continue;
+                int mirrorCol = 8 - col;
+                int mirrorV = row * 17 + mirrorCol;
+                dst.heightMap.heights[mirrorV] = src.heightMap.heights[v];
+            }
+            dirtyChunks_.push_back(dstIdx);
+        }
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
+void TerrainEditor::mirrorY() {
+    if (!terrain_) return;
+    for (int cy = 0; cy < 8; cy++) {
+        for (int cx = 0; cx < 16; cx++) {
+            int srcIdx = cy * 16 + cx;
+            int dstIdx = (15 - cy) * 16 + cx;
+            auto& src = terrain_->chunks[srcIdx];
+            auto& dst = terrain_->chunks[dstIdx];
+            if (!src.hasHeightMap() || !dst.hasHeightMap()) continue;
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                if (col > 8) continue;
+                int mirrorRow = 8 - row;
+                int mirrorV = mirrorRow * 17 + col;
+                dst.heightMap.heights[mirrorV] = src.heightMap.heights[v];
+            }
+            dirtyChunks_.push_back(dstIdx);
+        }
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::copyStamp(const glm::vec3& center, float radius) {
     if (!terrain_) return;
     stampData_.clear();

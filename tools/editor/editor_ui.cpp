@@ -459,6 +459,17 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
         }
 
         ImGui::Separator();
+        if (ImGui::CollapsingHeader("Mirror Terrain")) {
+            if (ImGui::Button("Mirror X (Left<>Right)", ImVec2(-1, 0))) {
+                app.getTerrainEditor().mirrorX();
+                app.showToast("Terrain mirrored X");
+            }
+            if (ImGui::Button("Mirror Y (Top<>Bottom)", ImVec2(-1, 0))) {
+                app.getTerrainEditor().mirrorY();
+                app.showToast("Terrain mirrored Y");
+            }
+        }
+
         if (ImGui::CollapsingHeader("Stamp / Clone")) {
             auto& brush2 = app.getTerrainEditor().brush();
             if (ImGui::Button("Copy Stamp", ImVec2(120, 0)) && brush2.isActive())

@@ -68,6 +68,10 @@ public:
     void pasteStamp(const glm::vec3& center);
     bool hasStamp() const { return !stampData_.empty(); }
 
+    // Mirror terrain along X or Y axis through tile center
+    void mirrorX();
+    void mirrorY();
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);
