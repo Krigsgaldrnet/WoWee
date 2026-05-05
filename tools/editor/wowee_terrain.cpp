@@ -89,7 +89,9 @@ bool WoweeTerrain::exportOpen(const pipeline::ADTTerrain& terrain,
             if (ci < 255) f << ",";
             f << "\n";
         }
-        f << "  ]\n";
+        f << "  ],\n";
+        f << "  \"doodadCount\": " << terrain.doodadPlacements.size() << ",\n";
+        f << "  \"wmoCount\": " << terrain.wmoPlacements.size() << "\n";
         f << "}\n";
     }
 
