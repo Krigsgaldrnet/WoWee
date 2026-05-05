@@ -10,6 +10,7 @@
 #include "core/coordinates.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include "pipeline/wowee_model.hpp"
+#include "pipeline/wowee_building.hpp"
 #include "core/memory_monitor.hpp"
 #include "core/profiler.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -594,6 +595,22 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             if (placement.nameId >= pending->terrain.wmoNames.size()) continue;
 
             const std::string& wmoPath = pending->terrain.wmoNames[placement.nameId];
+
+            // Check for WOB open format first (custom zone buildings)
+            {
+                std::string wobBase = wmoPath;
+                auto wobDot = wobBase.rfind('.');
+                if (wobDot != std::string::npos) wobBase = wobBase.substr(0, wobDot);
+                std::replace(wobBase.begin(), wobBase.end(), '\\', '/');
+                std::vector<std::string> wobPrefixes = {"custom_zones/buildings/", "output/" + mapName + "/buildings/"};
+                for (const auto& prefix : wobPrefixes) {
+                    if (pipeline::WoweeBuildingLoader::exists(prefix + wobBase)) {
+                        LOG_INFO("WOB building found: ", prefix + wobBase, " (loading not yet implemented)");
+                        break;
+                    }
+                }
+            }
+
             std::vector<uint8_t> wmoData = assetManager->readFile(wmoPath);
             if (wmoData.empty()) continue;
 
