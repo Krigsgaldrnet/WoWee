@@ -660,6 +660,12 @@ void EditorApp::exportZone(const std::string& outputDir) {
         npcSpawner_.saveToFile(npcPath);
     }
 
+    // Save quests
+    if (questEditor_.questCount() > 0) {
+        std::string questPath = base + "/quests.json";
+        questEditor_.saveToFile(questPath);
+    }
+
     // Save placed objects
     if (objectPlacer_.objectCount() > 0) {
         std::string objPath = base + "/objects.json";

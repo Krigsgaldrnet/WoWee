@@ -31,6 +31,7 @@ private:
     void renderObjectPanel(EditorApp& app);
     void renderWaterPanel(EditorApp& app);
     void renderNpcPanel(EditorApp& app);
+    void renderQuestPanel(EditorApp& app);
     void renderContextMenu(EditorApp& app);
     void renderMinimap(EditorApp& app);
     void renderPropertiesPanel(EditorApp& app);

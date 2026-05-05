@@ -8,6 +8,7 @@
 #include "object_placer.hpp"
 #include "npc_spawner.hpp"
 #include "npc_presets.hpp"
+#include "quest_editor.hpp"
 #include "zone_manifest.hpp"
 #include "asset_browser.hpp"
 #include "core/window.hpp"
@@ -18,7 +19,7 @@
 namespace wowee {
 namespace editor {
 
-enum class EditorMode { Sculpt, Paint, PlaceObject, Water, NPC };
+enum class EditorMode { Sculpt, Paint, PlaceObject, Water, NPC, Quest };
 
 class EditorApp {
 public:
@@ -47,6 +48,7 @@ public:
     ObjectPlacer& getObjectPlacer() { return objectPlacer_; }
     NpcSpawner& getNpcSpawner() { return npcSpawner_; }
     NpcPresets& getNpcPresets() { return npcPresets_; }
+    QuestEditor& getQuestEditor() { return questEditor_; }
     AssetBrowser& getAssetBrowser() { return assetBrowser_; }
     rendering::TerrainRenderer* getTerrainRenderer();
     rendering::M2Renderer* getM2Renderer() { return viewport_.getM2Renderer(); }
@@ -110,6 +112,7 @@ private:
     ObjectPlacer objectPlacer_;
     NpcSpawner npcSpawner_;
     NpcPresets npcPresets_;
+    QuestEditor questEditor_;
     AssetBrowser assetBrowser_;
 
     pipeline::ADTTerrain terrain_;

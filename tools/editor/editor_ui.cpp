@@ -5,6 +5,7 @@
 #include "object_placer.hpp"
 #include "npc_spawner.hpp"
 #include "npc_presets.hpp"
+#include "quest_editor.hpp"
 #include "asset_browser.hpp"
 #include "transform_gizmo.hpp"
 #include "terrain_biomes.hpp"
@@ -42,6 +43,7 @@ void EditorUI::render(EditorApp& app) {
         case EditorMode::PlaceObject: renderObjectPanel(app); break;
         case EditorMode::Water: renderWaterPanel(app); break;
         case EditorMode::NPC: renderNpcPanel(app); break;
+        case EditorMode::Quest: renderQuestPanel(app); break;
     }
 
     renderContextMenu(app);
@@ -271,6 +273,7 @@ void EditorUI::renderToolbar(EditorApp& app) {
         modeButton("Objects", EditorMode::PlaceObject);
         modeButton("Water", EditorMode::Water);
         modeButton("NPCs", EditorMode::NPC);
+        modeButton("Quests", EditorMode::Quest);
     }
     ImGui::End();
     ImGui::PopStyleVar();
@@ -1010,6 +1013,94 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
     ImGui::End();
 }
 
+void EditorUI::renderQuestPanel(EditorApp& app) {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->Size.x - 400, 90), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(390, 600), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Quest Editor")) {
+        auto& qe = app.getQuestEditor();
+        auto& tmpl = qe.getTemplate();
+
+        if (ImGui::CollapsingHeader("New Quest", ImGuiTreeNodeFlags_DefaultOpen)) {
+            static char titleBuf[128] = "New Quest";
+            std::strncpy(titleBuf, tmpl.title.c_str(), sizeof(titleBuf) - 1);
+            if (ImGui::InputText("Title##q", titleBuf, sizeof(titleBuf)))
+                tmpl.title = titleBuf;
+
+            static char descBuf[512] = "";
+            std::strncpy(descBuf, tmpl.description.c_str(), sizeof(descBuf) - 1);
+            if (ImGui::InputTextMultiline("Description##q", descBuf, sizeof(descBuf), ImVec2(-1, 60)))
+                tmpl.description = descBuf;
+
+            int lvl = tmpl.requiredLevel;
+            if (ImGui::InputInt("Required Level", &lvl)) tmpl.requiredLevel = std::max(1, lvl);
+
+            int giver = tmpl.questGiverNpcId;
+            if (ImGui::InputInt("Giver NPC ID", &giver)) tmpl.questGiverNpcId = std::max(0, giver);
+            int turnin = tmpl.turnInNpcId;
+            if (ImGui::InputInt("Turn-in NPC ID", &turnin)) tmpl.turnInNpcId = std::max(0, turnin);
+
+            ImGui::Separator();
+            ImGui::Text("Objectives:");
+            if (tmpl.objectives.size() < 4 && ImGui::Button("Add Objective")) {
+                QuestObjective obj;
+                obj.description = "Kill 5 creatures";
+                tmpl.objectives.push_back(obj);
+            }
+            for (int oi = 0; oi < static_cast<int>(tmpl.objectives.size()); oi++) {
+                auto& obj = tmpl.objectives[oi];
+                ImGui::PushID(oi);
+                const char* types[] = {"Kill", "Collect", "Talk", "Explore", "Escort", "Use Object"};
+                int ti = static_cast<int>(obj.type);
+                ImGui::Combo("Type", &ti, types, 6);
+                obj.type = static_cast<QuestObjectiveType>(ti);
+                static char objDesc[128];
+                std::strncpy(objDesc, obj.description.c_str(), sizeof(objDesc) - 1);
+                if (ImGui::InputText("Desc", objDesc, sizeof(objDesc))) obj.description = objDesc;
+                int cnt = obj.targetCount;
+                if (ImGui::InputInt("Count", &cnt)) obj.targetCount = std::max(1, cnt);
+                if (ImGui::SmallButton("Remove")) tmpl.objectives.erase(tmpl.objectives.begin() + oi--);
+                ImGui::PopID();
+                ImGui::Separator();
+            }
+
+            ImGui::Text("Rewards:");
+            int xp = tmpl.reward.xp;
+            if (ImGui::InputInt("XP##qr", &xp)) tmpl.reward.xp = std::max(0, xp);
+            int gold = tmpl.reward.gold;
+            if (ImGui::InputInt("Gold##qr", &gold)) tmpl.reward.gold = std::max(0, gold);
+
+            if (ImGui::Button("Create Quest", ImVec2(-1, 0))) {
+                qe.addQuest(tmpl);
+                app.showToast("Quest created: " + tmpl.title);
+            }
+        }
+
+        ImGui::Separator();
+        if (ImGui::CollapsingHeader("Quest List", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("%zu quests", qe.questCount());
+            ImGui::BeginChild("QuestList", ImVec2(0, 120), true);
+            for (int i = 0; i < static_cast<int>(qe.questCount()); i++) {
+                auto* q = qe.getQuest(i);
+                char lbl[128];
+                std::snprintf(lbl, sizeof(lbl), "[%u] %s (Lv%u, %zu obj)",
+                              q->id, q->title.c_str(), q->requiredLevel, q->objectives.size());
+                if (ImGui::Selectable(lbl)) { /* select for editing */ }
+            }
+            ImGui::EndChild();
+        }
+
+        ImGui::Separator();
+        static char questPath[256] = "output/quests.json";
+        ImGui::InputText("File##quest", questPath, sizeof(questPath));
+        if (ImGui::Button("Save Quests", ImVec2(-1, 0))) {
+            qe.saveToFile(questPath);
+            app.showToast("Quests saved");
+        }
+    }
+    ImGui::End();
+}
+
 void EditorUI::renderWaterPanel(EditorApp& app) {
     ImGui::SetNextWindowPos(ImVec2(10, 90), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(280, 250), ImGuiCond_FirstUseEver);
@@ -1293,7 +1384,7 @@ void EditorUI::renderStatusBar(EditorApp& app) {
                              ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                              ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing;
     if (ImGui::Begin("##StatusBar", nullptr, flags)) {
-        const char* ms[] = {"Sculpt", "Paint", "Objects", "Water", "NPCs"};
+        const char* ms[] = {"Sculpt", "Paint", "Objects", "Water", "NPCs", "Quests"};
         const char* m = ms[static_cast<int>(app.getMode())];
         if (app.hasTerrainLoaded()) {
             ImGui::Text("[%s] %s [%d,%d]%s", m, app.getLoadedMap().c_str(),
