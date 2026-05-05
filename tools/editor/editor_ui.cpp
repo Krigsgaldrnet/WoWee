@@ -2076,6 +2076,14 @@ void EditorUI::renderContextMenu(EditorApp& app) {
         if (ImGui::MenuItem("Select All", "Ctrl+A")) {
             app.getObjectPlacer().selectAll();
         }
+        if (ImGui::MenuItem("Select All M2 Models")) {
+            app.getObjectPlacer().selectByType(PlaceableType::M2);
+            app.showToast("Selected " + std::to_string(app.getObjectPlacer().selectionCount()) + " M2 models");
+        }
+        if (ImGui::MenuItem("Select All WMO Buildings")) {
+            app.getObjectPlacer().selectByType(PlaceableType::WMO);
+            app.showToast("Selected " + std::to_string(app.getObjectPlacer().selectionCount()) + " WMO buildings");
+        }
         if (ImGui::MenuItem("Deselect")) {
             app.getObjectPlacer().clearSelection();
             app.getNpcSpawner().clearSelection();

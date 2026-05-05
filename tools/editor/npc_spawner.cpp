@@ -129,6 +129,7 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
 
         spawns_.clear();
         selectedIdx_ = -1;
+        idCounter_ = 1;
 
         for (const auto& js : arr) {
             CreatureSpawn s;

@@ -61,6 +61,7 @@ public:
     const std::vector<PlacedObject>& getObjects() const { return objects_; }
     std::vector<PlacedObject>& getObjects() { return objects_; }
     void selectAll();
+    void selectByType(PlaceableType type);
     void clearAll() { objects_.clear(); undoStack_.clear(); selectedIdx_ = -1; selectedIndices_.clear(); }
     size_t objectCount() const { return objects_.size(); }
 

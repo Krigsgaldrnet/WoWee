@@ -961,7 +961,7 @@ void EditorApp::exportZone(const std::string& outputDir) {
             readme << "Objects: " << objectPlacer_.objectCount() << "\n";
             readme << "NPCs: " << npcSpawner_.spawnCount() << "\n";
             readme << "Quests: " << questEditor_.questCount() << "\n";
-            readme << "Created with Wowee World Editor v0.8.0\n\n";
+            readme << "Created with Wowee World Editor v1.0.0\n\n";
             readme << "\nOpen Formats (no Blizzard IP):\n";
             readme << "  .wot/.whm  — Wowee Open Terrain (heightmap + metadata)\n";
             readme << "  .wom       — Wowee Open Model (static 3D models)\n";
@@ -1037,8 +1037,12 @@ void EditorApp::exportZone(const std::string& outputDir) {
         if (stats) stats << sj.dump(2) << "\n";
     }
 
-    showToast("Exported " + std::to_string(fileCount) + " files (" +
-              std::to_string(score) + "/6 open format)");
+    std::string summary = std::to_string(fileCount) + " files exported";
+    if (objectPlacer_.objectCount() > 0) summary += ", " + std::to_string(objectPlacer_.objectCount()) + " obj";
+    if (npcSpawner_.spawnCount() > 0) summary += ", " + std::to_string(npcSpawner_.spawnCount()) + " NPC";
+    if (questEditor_.questCount() > 0) summary += ", " + std::to_string(questEditor_.questCount()) + " quest";
+    summary += " (score " + std::to_string(score) + "/6)";
+    showToast(summary, 5.0f);
     LOG_INFO("=== Zone Export Summary ===");
     LOG_INFO("  Output: ", base);
     LOG_INFO("  Open format score: ", score, "/6");
@@ -1059,8 +1063,9 @@ void EditorApp::exportContentPack(const std::string& destPath) {
     // Pack into WCP
     ContentPackInfo info;
     info.name = loadedMap_;
-    info.author = "Kelsi Davis";
-    info.description = "Custom zone created with Wowee World Editor";
+    info.author = project_.author.empty() ? "Kelsi Davis" : project_.author;
+    info.description = project_.description.empty()
+        ? "Custom zone created with Wowee World Editor" : project_.description;
     info.mapId = 9000;
     if (ContentPacker::packZone(dir, loadedMap_, destPath, info))
         showToast("Content pack exported: " + destPath);
