@@ -21,6 +21,7 @@ bool ZoneManifest::save(const std::string& path) const {
     f << "  \"baseHeight\": " << baseHeight << ",\n";
     f << "  \"hasCreatures\": " << (hasCreatures ? "true" : "false") << ",\n";
     f << "  \"description\": \"" << description << "\",\n";
+    f << "  \"editorVersion\": \"0.2.0\",\n";
     f << "  \"tiles\": [";
     for (size_t i = 0; i < tiles.size(); i++) {
         f << "[" << tiles[i].first << "," << tiles[i].second << "]";
