@@ -1086,6 +1086,7 @@ void TerrainEditor::addDetailNoise(float amplitude, float frequency, uint32_t se
 void TerrainEditor::rampEdges(float targetHeight, float rampWidth) {
     if (!terrain_) return;
     float relTarget = targetHeight - terrain_->chunks[0].position[2];
+    // Note: only affects terrain heights, not water levels
 
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];

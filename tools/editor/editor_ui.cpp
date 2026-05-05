@@ -622,14 +622,18 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Width##path", &pathWidth, 2.0f, 50.0f);
             if (pathMode == 0) ImGui::SliderFloat("Depth##path", &pathDepth, 1.0f, 30.0f);
             auto& brush4 = app.getTerrainEditor().brush();
-            if (ImGui::Button("Set Start##path", ImVec2(120, 0)) && brush4.isActive()) {
-                pathStart = brush4.getPosition();
+            auto brushPos = brush4.getPosition();
+            ImGui::Text("Cursor: %.0f, %.0f, %.0f %s",
+                        brushPos.x, brushPos.y, brushPos.z,
+                        brush4.isActive() ? "" : "(off terrain)");
+            if (ImGui::Button("Set Start##path", ImVec2(120, 0))) {
+                pathStart = brushPos;
                 pathStartSet = true;
                 app.showToast("Path start set");
             }
             ImGui::SameLine();
-            if (ImGui::Button("Set End + Apply##path", ImVec2(140, 0)) && brush4.isActive() && pathStartSet) {
-                pathEnd = brush4.getPosition();
+            if (ImGui::Button("Set End + Apply##path", ImVec2(140, 0)) && pathStartSet) {
+                pathEnd = brushPos;
                 if (pathMode == 0) {
                     app.getTerrainEditor().carveRiver(pathStart, pathEnd, pathWidth, pathDepth);
                     app.getTexturePainter().paintAlongPath(pathStart, pathEnd, pathWidth * 1.5f,
