@@ -667,6 +667,9 @@ void EditorApp::exportZone(const std::string& outputDir) {
         questEditor_.saveToFile(questPath);
     }
 
+    // Update WDT with additional tiles from adjacent exports
+    // (future: scan output dir for existing ADTs and include all in WDT)
+
     // Save placed objects
     if (objectPlacer_.objectCount() > 0) {
         std::string objPath = base + "/objects.json";
