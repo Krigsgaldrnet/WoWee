@@ -27,22 +27,23 @@
 - Full undo/redo for ALL terrain operations (generators, transforms, paint)
 - Auto-save with configurable interval, unsaved changes quit confirmation
 - Zone rename, recent zones menu, adjacent tile export with edge stitching
-- Live open format validation (0-6 score) in File menu
+- Live open format validation (0-7 score) in File menu
 
-### Novel Open Formats (6/6 Blizzard format replacements)
+### Novel Open Formats (7/7 Blizzard format replacements)
 - ADT → WOT/WHM: terrain metadata + binary heightmap with alpha maps and doodad/WMO placements
 - WDT → zone.json: map definition with full placement arrays
 - BLP → PNG: texture override system
 - DBC → JSON: data tables via DBCFile::loadJSON()
 - M2 → WOM (WOM1): models with render batches, textures, materials
 - WMO → WOB (WOB1): buildings with material flags/shader/blendMode, doodad rotation
+- Collision → WOC (WOC1): walkability mesh with slope classification, hole support, water flags
 - WCP (WCP1): content pack archive with categorized file list
 - Terrain stamps: portable terrain features saved as JSON
 - All formats documented in FORMAT_SPEC.md v1.1
 - Client auto-loads open formats from custom_zones/ and output/ directories
 - Batch convert: M2→WOM and WMO→WOB from filesystem or asset manifest
 - WCP Import & Load: one-click unpack + auto-open for editing
-- 309 test assertions across 81 test cases (DBC binary+JSON, WOB, WHM, WOT)
+- 328 test assertions across 84 test cases (DBC binary+JSON, WOB, WHM, WOT, WOC)
 
 ### Features
 - Spell visual effects system with bone-tracked ribbons and particles (PR #58)
