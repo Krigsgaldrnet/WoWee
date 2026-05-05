@@ -1706,12 +1706,12 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
         auto& tmpl = qe.getTemplate();
 
         if (ImGui::CollapsingHeader("New Quest", ImGuiTreeNodeFlags_DefaultOpen)) {
-            static char titleBuf[128] = "New Quest";
+            char titleBuf[128] = {};
             std::strncpy(titleBuf, tmpl.title.c_str(), sizeof(titleBuf) - 1);
             if (ImGui::InputText("Title##q", titleBuf, sizeof(titleBuf)))
                 tmpl.title = titleBuf;
 
-            static char descBuf[512] = "";
+            char descBuf[512] = {};
             std::strncpy(descBuf, tmpl.description.c_str(), sizeof(descBuf) - 1);
             if (ImGui::InputTextMultiline("Description##q", descBuf, sizeof(descBuf), ImVec2(-1, 60)))
                 tmpl.description = descBuf;
@@ -1756,7 +1756,7 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
                 int ti = static_cast<int>(obj.type);
                 ImGui::Combo("Type", &ti, types, 6);
                 obj.type = static_cast<QuestObjectiveType>(ti);
-                static char objDesc[128];
+                char objDesc[128] = {};
                 std::strncpy(objDesc, obj.description.c_str(), sizeof(objDesc) - 1);
                 if (ImGui::InputText("Desc", objDesc, sizeof(objDesc))) obj.description = objDesc;
                 int cnt = obj.targetCount;
@@ -1786,7 +1786,7 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
                 ImGui::EndCombo();
             }
 
-            static char completeBuf[256] = "";
+            char completeBuf[256] = {};
             std::strncpy(completeBuf, tmpl.completionText.c_str(), sizeof(completeBuf) - 1);
             if (ImGui::InputTextMultiline("Completion Text##q", completeBuf, sizeof(completeBuf), ImVec2(-1, 40)))
                 tmpl.completionText = completeBuf;
@@ -1816,7 +1816,7 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
             if (selectedQuest >= 0 && selectedQuest < static_cast<int>(qe.questCount())) {
                 auto* sq = qe.getQuest(selectedQuest);
                 ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "Editing: [%u] %s", sq->id, sq->title.c_str());
-                static char etBuf[128];
+                char etBuf[128] = {};
                 std::strncpy(etBuf, sq->title.c_str(), sizeof(etBuf) - 1);
                 if (ImGui::InputText("Title##edit", etBuf, sizeof(etBuf))) sq->title = etBuf;
                 int elv = sq->requiredLevel;

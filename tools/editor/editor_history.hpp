@@ -11,6 +11,8 @@ namespace editor {
 struct ChunkSnapshot {
     int chunkIndex;
     std::array<float, 145> heights;
+    std::vector<uint8_t> alphaMap;
+    std::vector<pipeline::TextureLayer> layers;
 };
 
 struct EditCommand {
@@ -37,6 +39,10 @@ public:
     const std::vector<int>& lastAffectedChunks() const { return lastAffected_; }
 
 private:
+    static ChunkSnapshot captureChunk(const pipeline::ADTTerrain& terrain, int idx);
+    static void restoreChunk(pipeline::ADTTerrain& terrain, const ChunkSnapshot& snap);
+    static bool snapshotChanged(const ChunkSnapshot& a, const ChunkSnapshot& b);
+
     std::vector<EditCommand> undoStack_;
     std::vector<EditCommand> redoStack_;
     EditCommand pending_;

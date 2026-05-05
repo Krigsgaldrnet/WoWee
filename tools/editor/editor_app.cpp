@@ -400,12 +400,12 @@ void EditorApp::processEvents() {
                         }
                     } else {
                         painting_ = true;
-                        if (mode_ == EditorMode::Sculpt)
+                        if (mode_ == EditorMode::Sculpt || mode_ == EditorMode::Paint)
                             terrainEditor_.beginStroke();
                     }
                 } else if (event.type == SDL_MOUSEBUTTONUP) {
                     painting_ = false;
-                    if (mode_ == EditorMode::Sculpt)
+                    if (mode_ == EditorMode::Sculpt || mode_ == EditorMode::Paint)
                         terrainEditor_.endStroke();
                 }
             }

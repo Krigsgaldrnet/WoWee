@@ -1445,7 +1445,7 @@ void TerrainEditor::applyErode(float dt) {
             if (influence <= 0.0f) continue;
 
             float h = chunk.heightMap.heights[v];
-            int row = v / 17, col = v % 17;
+            int col = v % 17;
 
             // Find lowest neighbor (same chunk)
             float lowestH = h;
@@ -1505,8 +1505,6 @@ void TerrainEditor::applyNoise(float frequency, float amplitude, int octaves, ui
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
         if (!chunk.hasHeightMap()) continue;
-        int cx = ci % 16, cy = ci / 16;
-
         for (int v = 0; v < 145; v++) {
             glm::vec3 wpos = chunkVertexWorldPos(ci, v);
 
