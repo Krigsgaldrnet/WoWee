@@ -10,7 +10,9 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 ## WHM — Wowee HeightMap (binary)
 - Extension: `.whm`
 - Magic: `WHM1` (0x314D4857)
+- Version: 1 (embedded in magic — WHM2 for future revisions)
 - Layout: magic(4) + chunks(4) + vertsPerChunk(4) + [baseHeight(4) + heights[145](580)] × 256
+- Total size: 12 + 256 × 584 = 149,516 bytes
 
 ## WOM — Wowee Open Model (binary)
 - Extension: `.wom`
