@@ -678,12 +678,14 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
         auto adtData = assetManager_->readFile(path.str());
         if (adtData.empty()) {
             LOG_ERROR("ADT file not found: ", path.str());
+            showToast("Zone not found: " + mapName + " [" + std::to_string(tileX) + "," + std::to_string(tileY) + "]");
             return;
         }
 
         terrain_ = pipeline::ADTLoader::load(adtData);
         if (!terrain_.isLoaded()) {
             LOG_ERROR("Failed to parse ADT: ", path.str());
+            showToast("Failed to load zone (corrupt or unsupported format)");
             return;
         }
     }
@@ -1294,6 +1296,78 @@ void EditorApp::snapSelectedToGround() {
         sel->position.z = hitPos.z;
         objectsDirty_ = true;
     }
+}
+
+void EditorApp::alignSelectedToTerrain() {
+    auto& indices = objectPlacer_.getSelectedIndices();
+    auto& objects = objectPlacer_.getObjects();
+    int count = 0;
+    auto alignOne = [&](PlacedObject& obj) {
+        glm::vec3 normal = terrainEditor_.sampleTerrainNormal(obj.position);
+        float pitchDeg = glm::degrees(std::asin(-normal.x));
+        float rollDeg = glm::degrees(std::asin(normal.y));
+        obj.rotation.x = pitchDeg;
+        obj.rotation.z = rollDeg;
+        count++;
+    };
+    if (!indices.empty()) {
+        for (int idx : indices) alignOne(objects[idx]);
+    } else if (auto* sel = objectPlacer_.getSelected()) {
+        alignOne(*sel);
+    }
+    if (count > 0) {
+        objectsDirty_ = true;
+        showToast("Aligned " + std::to_string(count) + " object(s) to terrain");
+    }
+}
+
+int EditorApp::batchConvertAssets(const std::string& dataDir) {
+    namespace fs = std::filesystem;
+    if (!fs::exists(dataDir)) return 0;
+
+    int converted = 0;
+    for (auto& entry : fs::recursive_directory_iterator(dataDir)) {
+        if (!entry.is_regular_file()) continue;
+        std::string ext = entry.path().extension().string();
+        for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        std::string relPath = fs::relative(entry.path(), dataDir).string();
+
+        if (ext == ".m2") {
+            auto wom = pipeline::WoweeModelLoader::fromM2(relPath, assetManager_.get());
+            if (wom.isValid()) {
+                std::string outPath = relPath;
+                auto dot = outPath.rfind('.');
+                if (dot != std::string::npos) outPath = outPath.substr(0, dot);
+                pipeline::WoweeModelLoader::save(wom, "output/models/" + outPath);
+                converted++;
+            }
+        } else if (ext == ".wmo") {
+            auto wmoData = assetManager_->readFile(relPath);
+            if (!wmoData.empty()) {
+                auto wmoModel = pipeline::WMOLoader::load(wmoData);
+                if (wmoModel.nGroups > 0) {
+                    std::string wmoBase = relPath;
+                    if (wmoBase.size() > 4) wmoBase = wmoBase.substr(0, wmoBase.size() - 4);
+                    for (uint32_t gi = 0; gi < wmoModel.nGroups; gi++) {
+                        char suffix[16];
+                        snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+                        auto gd = assetManager_->readFile(wmoBase + suffix);
+                        if (!gd.empty()) pipeline::WMOLoader::loadGroup(gd, wmoModel, gi);
+                    }
+                }
+                auto wob = pipeline::WoweeBuildingLoader::fromWMO(wmoModel, relPath);
+                if (wob.isValid()) {
+                    std::string outPath = relPath;
+                    auto dot = outPath.rfind('.');
+                    if (dot != std::string::npos) outPath = outPath.substr(0, dot);
+                    pipeline::WoweeBuildingLoader::save(wob, "output/buildings/" + outPath);
+                    converted++;
+                }
+            }
+        }
+    }
+    LOG_INFO("Batch converted ", converted, " assets from ", dataDir);
+    return converted;
 }
 
 void EditorApp::resetCamera() {

@@ -30,6 +30,9 @@ public:
     // Raycast against terrain, returns true if hit
     bool raycastTerrain(const rendering::Ray& ray, glm::vec3& hitPos) const;
 
+    // Sample terrain normal at a world XY position (for object alignment)
+    glm::vec3 sampleTerrainNormal(const glm::vec3& worldPos) const;
+
     // Apply brush at current position (call per-frame while painting)
     void applyBrush(float deltaTime);
 

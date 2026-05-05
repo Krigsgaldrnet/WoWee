@@ -273,6 +273,22 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                     else
                         app.showToast("Import failed — check path");
                 }
+                if (ImGui::MenuItem("Import & Load")) {
+                    editor::ContentPackInfo info;
+                    if (editor::ContentPacker::readInfo(wcpImportPath, info) &&
+                        editor::ContentPacker::unpackZone(wcpImportPath, "custom_zones")) {
+                        app.showToast("Imported: " + info.name);
+                        auto zones = pipeline::CustomZoneDiscovery::scan({"custom_zones"});
+                        for (const auto& z : zones) {
+                            if (z.name == info.name && !z.tiles.empty()) {
+                                app.loadADT(z.name, z.tiles[0].first, z.tiles[0].second);
+                                break;
+                            }
+                        }
+                    } else {
+                        app.showToast("Import failed — check path");
+                    }
+                }
                 if (ImGui::MenuItem("Inspect Pack Info")) {
                     editor::ContentPackInfo info;
                     if (editor::ContentPacker::readInfo(wcpImportPath, info)) {
@@ -344,6 +360,17 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 fmt(val.hasCreatures, true, "creatures", "NPC spawns");
                 fmt(val.hasQuests, true, "quests", "quest data");
                 fmt(val.hasObjects, true, "objects", "placed objects");
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Batch Convert Assets")) {
+                static char batchDir[256] = "Data";
+                ImGui::InputText("Data Directory", batchDir, sizeof(batchDir));
+                ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1),
+                    "Recursively converts M2->WOM and WMO->WOB");
+                if (ImGui::MenuItem("Convert All")) {
+                    int n = app.batchConvertAssets(batchDir);
+                    app.showToast("Converted " + std::to_string(n) + " assets to open format");
+                }
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Add Adjacent Tile", app.hasTerrainLoaded())) {
@@ -1483,6 +1510,8 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
             if (ImGui::Button("Snap Ground", ImVec2(75, 0)))
                 app.snapSelectedToGround();
             ImGui::SameLine();
+            if (ImGui::Button("Align Slope", ImVec2(75, 0)))
+                app.alignSelectedToTerrain();
             if (ImGui::Button("Fly To", ImVec2(55, 0)))
                 app.flyToSelected();
             ImGui::SameLine();
@@ -2057,6 +2086,8 @@ void EditorUI::renderContextMenu(EditorApp& app) {
             ImGui::Separator();
             if (ImGui::MenuItem("Snap to Ground"))
                 app.snapSelectedToGround();
+            if (ImGui::MenuItem("Align to Slope"))
+                app.alignSelectedToTerrain();
             if (ImGui::MenuItem("Fly To"))
                 app.flyToSelected();
         }

@@ -89,7 +89,9 @@ public:
     void setGizmoAxis(TransformAxis axis);
     void setSkyPreset(int preset); // 0=day, 1=dusk, 2=night
     void snapSelectedToGround();
+    void alignSelectedToTerrain();
     void flyToSelected();
+    int batchConvertAssets(const std::string& dataDir);
     void clearAllObjects();
     void generateCompleteZone();
     void centerOnTerrain();

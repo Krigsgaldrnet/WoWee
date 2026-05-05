@@ -223,6 +223,32 @@ std::vector<int> TerrainEditor::getAffectedChunks(const glm::vec3& center, float
     return result;
 }
 
+glm::vec3 TerrainEditor::sampleTerrainNormal(const glm::vec3& worldPos) const {
+    if (!terrain_) return glm::vec3(0, 0, 1);
+
+    auto sampleH = [&](float x, float y) -> float {
+        rendering::Ray ray;
+        ray.origin = glm::vec3(x, y, 10000.0f);
+        ray.direction = glm::vec3(0, 0, -1);
+        glm::vec3 hit;
+        if (const_cast<TerrainEditor*>(this)->raycastTerrain(ray, hit))
+            return hit.z;
+        return worldPos.z;
+    };
+
+    float step = 2.0f;
+    float hL = sampleH(worldPos.x - step, worldPos.y);
+    float hR = sampleH(worldPos.x + step, worldPos.y);
+    float hD = sampleH(worldPos.x, worldPos.y - step);
+    float hU = sampleH(worldPos.x, worldPos.y + step);
+
+    glm::vec3 dx(2.0f * step, 0, hR - hL);
+    glm::vec3 dy(0, 2.0f * step, hU - hD);
+    glm::vec3 n = glm::normalize(glm::cross(dx, dy));
+    if (n.z < 0) n = -n;
+    return n;
+}
+
 void TerrainEditor::beginStroke() {
     if (!terrain_ || strokeActive_) return;
     strokeActive_ = true;
