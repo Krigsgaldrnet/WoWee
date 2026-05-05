@@ -460,8 +460,8 @@ void EditorUI::renderSaveDialog(EditorApp& app) {
 
 void EditorUI::renderBrushPanel(EditorApp& app) {
     ImGui::SetNextWindowPos(ImVec2(10, 90), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 260), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Sculpt Brush")) {
+    ImGui::SetNextWindowSize(ImVec2(290, 500), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Sculpt")) {
         if (!app.hasTerrainLoaded()) {
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Load or create terrain first");
             ImGui::End(); return;
