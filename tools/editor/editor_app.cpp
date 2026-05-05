@@ -5,6 +5,7 @@
 #include "wowee_terrain.hpp"
 #include "texture_exporter.hpp"
 #include "dbc_exporter.hpp"
+#include "pipeline/wowee_model.hpp"
 #include "core/coordinates.hpp"
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <chrono>
 #include <sstream>
+#include <unordered_set>
 
 namespace wowee {
 namespace editor {
@@ -731,6 +733,26 @@ void EditorApp::exportZone(const std::string& outputDir) {
     if (objectPlacer_.objectCount() > 0) {
         std::string objPath = base + "/objects.json";
         objectPlacer_.saveToFile(objPath);
+    }
+
+    // Convert placed M2 objects to WOM open format
+    if (objectPlacer_.objectCount() > 0) {
+        std::unordered_set<std::string> convertedModels;
+        for (const auto& obj : objectPlacer_.getObjects()) {
+            if (obj.type == PlaceableType::M2 && !convertedModels.count(obj.path)) {
+                auto wom = pipeline::WoweeModelLoader::fromM2(obj.path, assetManager_.get());
+                if (wom.isValid()) {
+                    std::string womPath = obj.path;
+                    std::replace(womPath.begin(), womPath.end(), '\\', '/');
+                    auto dot = womPath.rfind('.');
+                    if (dot != std::string::npos) womPath = womPath.substr(0, dot);
+                    pipeline::WoweeModelLoader::save(wom, base + "/models/" + womPath);
+                    convertedModels.insert(obj.path);
+                }
+            }
+        }
+        if (!convertedModels.empty())
+            LOG_INFO("Converted ", convertedModels.size(), " M2 models to WOM");
     }
 
     // Export used textures as PNG (open format replacement for BLP)
