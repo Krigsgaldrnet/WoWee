@@ -860,6 +860,56 @@ void TerrainEditor::createHill(const glm::vec3& center, float radius, float heig
     dirty_ = true;
 }
 
+void TerrainEditor::invertHeights() {
+    if (!terrain_) return;
+    // Find midpoint
+    float minH = 1e30f, maxH = -1e30f;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++) {
+            minH = std::min(minH, chunk.heightMap.heights[v]);
+            maxH = std::max(maxH, chunk.heightMap.heights[v]);
+        }
+    }
+    float mid = (minH + maxH) * 0.5f;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++)
+            chunk.heightMap.heights[v] = mid - (chunk.heightMap.heights[v] - mid);
+        dirtyChunks_.push_back(ci);
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
+void TerrainEditor::fillWater(float height, uint16_t liquidType) {
+    if (!terrain_) return;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& water = terrain_->waterData[ci];
+        if (water.layers.empty()) {
+            pipeline::ADTTerrain::WaterLayer wl;
+            wl.liquidType = liquidType;
+            wl.flags = 0;
+            wl.minHeight = height;
+            wl.maxHeight = height;
+            wl.x = 0; wl.y = 0; wl.width = 9; wl.height = 9;
+            wl.heights.assign(81, height);
+            wl.mask.assign(8, 0xFF);
+            water.layers.push_back(wl);
+        } else {
+            auto& wl = water.layers[0];
+            wl.liquidType = liquidType;
+            wl.minHeight = height;
+            wl.maxHeight = height;
+            std::fill(wl.heights.begin(), wl.heights.end(), height);
+        }
+        dirtyChunks_.push_back(ci);
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::thermalErosion(int iterations, float talusAngle) {
     if (!terrain_) return;
     float unitSize = CHUNK_SIZE / 8.0f;

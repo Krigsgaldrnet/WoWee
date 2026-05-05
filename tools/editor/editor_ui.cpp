@@ -1470,12 +1470,20 @@ void EditorUI::renderWaterPanel(EditorApp& app) {
             app.setWaterType(static_cast<uint16_t>(typeIdx));
 
         ImGui::Separator();
+        if (ImGui::Button("Fill Entire Tile with Water", ImVec2(-1, 0))) {
+            app.getTerrainEditor().fillWater(app.getWaterHeight(), app.getWaterType());
+            app.showToast("Tile filled with water");
+        }
         if (ImGui::Button("Remove Water Under Brush", ImVec2(-1, 0))) {
             auto& brush = app.getTerrainEditor().brush();
             if (brush.isActive()) {
                 app.getTerrainEditor().removeWater(brush.getPosition(), s.radius);
-                app.getEditorCamera(); // trigger dirty
             }
+        }
+        if (ImGui::Button("Remove ALL Water", ImVec2(-1, 0))) {
+            for (int ci = 0; ci < 256; ci++)
+                app.getTerrainEditor().getTerrain()->waterData[ci].layers.clear();
+            app.showToast("All water removed");
         }
 
         ImGui::Separator();

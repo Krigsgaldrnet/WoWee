@@ -105,6 +105,12 @@ public:
     // Thermal erosion: material falls downhill based on angle of repose
     void thermalErosion(int iterations, float talusAngle);
 
+    // Invert terrain (flip heights around midpoint)
+    void invertHeights();
+
+    // Fill entire tile with water at a height
+    void fillWater(float height, uint16_t liquidType);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);
