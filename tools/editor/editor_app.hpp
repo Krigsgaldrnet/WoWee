@@ -32,6 +32,8 @@ public:
     void createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome);
     void saveADT(const std::string& path);
     void saveWDT(const std::string& path);
+    void exportZone(const std::string& outputDir);
+    void quickSave();
 
     void requestQuit();
     void resetCamera();
@@ -96,6 +98,7 @@ private:
     bool painting_ = false;
     bool objectsDirty_ = false;
     bool openContextMenu_ = false;
+    std::string lastSavePath_;
     size_t lastObjectCount_ = 0;
     EditorMode mode_ = EditorMode::Sculpt;
     float waterHeight_ = 100.0f;

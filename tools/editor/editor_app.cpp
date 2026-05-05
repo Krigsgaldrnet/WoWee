@@ -211,6 +211,9 @@ void EditorApp::processEvents() {
                         objectsDirty_ = true;
                     }
                 }
+                if (sc == SDL_SCANCODE_S && (event.key.keysym.mod & KMOD_CTRL)) {
+                    quickSave();
+                }
                 if (sc == SDL_SCANCODE_Z && (event.key.keysym.mod & KMOD_CTRL)) {
                     if (mode_ == EditorMode::Sculpt) {
                         if (event.key.keysym.mod & KMOD_SHIFT)
@@ -542,6 +545,37 @@ void EditorApp::saveADT(const std::string& path) {
 void EditorApp::saveWDT(const std::string& path) {
     if (loadedMap_.empty()) return;
     ADTWriter::writeWDT(loadedMap_, loadedTileX_, loadedTileY_, path);
+}
+
+void EditorApp::exportZone(const std::string& outputDir) {
+    if (!terrain_.isLoaded() || loadedMap_.empty()) return;
+
+    std::string base = outputDir + "/" + loadedMap_;
+
+    // Save ADT
+    std::string adtPath = base + "/" + loadedMap_ + "_" +
+                          std::to_string(loadedTileX_) + "_" +
+                          std::to_string(loadedTileY_) + ".adt";
+    saveADT(adtPath);
+
+    // Save WDT
+    std::string wdtPath = base + "/" + loadedMap_ + ".wdt";
+    saveWDT(wdtPath);
+
+    // Save creature spawns
+    if (npcSpawner_.spawnCount() > 0) {
+        std::string npcPath = base + "/creatures.json";
+        npcSpawner_.saveToFile(npcPath);
+    }
+
+    lastSavePath_ = outputDir;
+    LOG_INFO("Zone exported to: ", base);
+}
+
+void EditorApp::quickSave() {
+    if (!terrain_.isLoaded()) return;
+    std::string dir = lastSavePath_.empty() ? "output" : lastSavePath_;
+    exportZone(dir);
 }
 
 void EditorApp::requestQuit() {

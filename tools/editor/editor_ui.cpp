@@ -59,14 +59,8 @@ void EditorUI::processActions(EditorApp& app) {
         loadRequested_ = false;
         app.loadADT(loadMapNameBuf_, loadTileX_, loadTileY_);
     }
-    if (saveAdtRequested_) {
-        saveAdtRequested_ = false;
-        app.saveADT(savePathBuf_);
-    }
-    if (saveWdtRequested_) {
-        saveWdtRequested_ = false;
-        app.saveWDT(std::string(savePathBuf_));
-    }
+    (void)saveAdtRequested_;
+    (void)saveWdtRequested_;
 }
 
 void EditorUI::renderMenuBar(EditorApp& app) {
@@ -75,7 +69,9 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             if (ImGui::MenuItem("New Terrain...", "Ctrl+N")) showNewDialog_ = true;
             if (ImGui::MenuItem("Load ADT...", "Ctrl+O")) showLoadDialog_ = true;
             ImGui::Separator();
-            if (ImGui::MenuItem("Save ADT...", "Ctrl+S", false, app.hasTerrainLoaded()))
+            if (ImGui::MenuItem("Quick Save", "Ctrl+S", false, app.hasTerrainLoaded()))
+                app.quickSave();
+            if (ImGui::MenuItem("Export Zone...", nullptr, false, app.hasTerrainLoaded()))
                 showSaveDialog_ = true;
             ImGui::Separator();
             if (ImGui::MenuItem("Quit", "Alt+F4")) app.requestQuit();
@@ -168,18 +164,18 @@ void EditorUI::renderLoadDialog(EditorApp& /*app*/) {
 }
 
 void EditorUI::renderSaveDialog(EditorApp& app) {
-    ImGui::SetNextWindowSize(ImVec2(500, 200), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Save", &showSaveDialog_)) {
+    ImGui::SetNextWindowSize(ImVec2(500, 220), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Export Zone", &showSaveDialog_)) {
         if (savePathBuf_[0] == '\0' && app.hasTerrainLoaded())
-            std::snprintf(savePathBuf_, sizeof(savePathBuf_), "output/%s/%s_%d_%d.adt",
-                          app.getLoadedMap().c_str(), app.getLoadedMap().c_str(),
-                          app.getLoadedTileX(), app.getLoadedTileY());
-        ImGui::InputText("Path", savePathBuf_, sizeof(savePathBuf_));
+            std::snprintf(savePathBuf_, sizeof(savePathBuf_), "output");
+        ImGui::InputText("Output Directory", savePathBuf_, sizeof(savePathBuf_));
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+            "Exports: ADT, WDT, and creature spawns to %s/%s/",
+            savePathBuf_, app.getLoadedMap().c_str());
         ImGui::Spacing();
-        if (ImGui::Button("Save ADT", ImVec2(140, 0))) { saveAdtRequested_ = true; showSaveDialog_ = false; }
-        ImGui::SameLine();
-        if (ImGui::Button("Save ADT + WDT", ImVec2(140, 0))) {
-            saveAdtRequested_ = true; saveWdtRequested_ = true; showSaveDialog_ = false;
+        if (ImGui::Button("Export All", ImVec2(140, 0))) {
+            app.exportZone(savePathBuf_);
+            showSaveDialog_ = false;
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(80, 0))) showSaveDialog_ = false;
@@ -639,14 +635,16 @@ void EditorUI::renderContextMenu(EditorApp& app) {
 void EditorUI::renderPropertiesPanel(EditorApp& app) {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(vp->Size.x - 280, 90), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(270, 180), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Properties")) {
+    ImGui::SetNextWindowSize(ImVec2(270, 220), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Info")) {
         auto* tr = app.getTerrainRenderer();
         if (tr && tr->getChunkCount() > 0) {
             ImGui::Text("Map: %s [%d, %d]", app.getLoadedMap().c_str(),
                         app.getLoadedTileX(), app.getLoadedTileY());
             ImGui::Text("Chunks: %d  Tris: %d", tr->getChunkCount(), tr->getTriangleCount());
-            ImGui::Text("Objects: %zu", app.getObjectPlacer().objectCount());
+            ImGui::Text("Objects: %zu  NPCs: %zu",
+                        app.getObjectPlacer().objectCount(),
+                        app.getNpcSpawner().spawnCount());
         } else {
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No terrain loaded");
         }
@@ -654,8 +652,19 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
         auto pos = app.getEditorCamera().getCamera().getPosition();
         ImGui::Text("Camera: %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
         ImGui::Text("Speed: %.0f (scroll)", app.getEditorCamera().getSpeed());
+
+        // Cursor world position
+        auto& brush = app.getTerrainEditor().brush();
+        if (brush.isActive()) {
+            auto bp = brush.getPosition();
+            ImGui::Text("Cursor: %.1f, %.1f, %.1f", bp.x, bp.y, bp.z);
+        }
+
+        ImGui::Separator();
         if (app.getTerrainEditor().hasUnsavedChanges())
-            ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "* Unsaved changes");
+            ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "* Unsaved (Ctrl+S to save)");
+        else
+            ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1), "Saved");
     }
     ImGui::End();
 }
