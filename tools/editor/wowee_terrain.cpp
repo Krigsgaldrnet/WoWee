@@ -53,6 +53,8 @@ bool WoweeTerrain::exportOpen(const pipeline::ADTTerrain& terrain,
             f << "\n";
         }
         f << "  ],\n";
+        f << "  \"tileSize\": 533.33333,\n";
+        f << "  \"chunkSize\": 33.33333,\n";
         f << "  \"chunkLayers\": [\n";
         for (int ci = 0; ci < 256; ci++) {
             const auto& chunk = terrain.chunks[ci];
