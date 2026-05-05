@@ -11,6 +11,7 @@
 #include "pipeline/wowee_terrain_loader.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
+#include "pipeline/wowee_collision.hpp"
 #include "core/memory_monitor.hpp"
 #include "core/profiler.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -323,6 +324,21 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
         if (pipeline::WoweeTerrainLoader::load(wotBase, *terrainPtr)) {
             loadedFromWot = true;
             LOG_INFO("Loaded custom zone terrain: ", wotBase);
+            // Load collision mesh if available
+            if (pipeline::WoweeCollisionBuilder::exists(wotBase)) {
+                auto woc = pipeline::WoweeCollisionBuilder::load(wotBase + ".woc");
+                if (woc.isValid()) {
+                    CollisionData cd;
+                    cd.triangles.reserve(woc.triangles.size());
+                    for (const auto& t : woc.triangles)
+                        cd.triangles.push_back({t.v0, t.v1, t.v2, t.flags});
+                    cd.boundsMin = woc.bounds.min;
+                    cd.boundsMax = woc.bounds.max;
+                    cd.loaded = true;
+                    collisionTiles_[tileKey(coord.x, coord.y)] = std::move(cd);
+                    LOG_INFO("Loaded WOC collision: ", woc.triangles.size(), " triangles");
+                }
+            }
         }
     }
 
@@ -334,6 +350,20 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             if (pipeline::WoweeTerrainLoader::load(outputBase, *terrainPtr)) {
                 loadedFromWot = true;
                 LOG_INFO("Loaded editor output terrain: ", outputBase);
+                if (pipeline::WoweeCollisionBuilder::exists(outputBase)) {
+                    auto woc = pipeline::WoweeCollisionBuilder::load(outputBase + ".woc");
+                    if (woc.isValid()) {
+                        CollisionData cd;
+                        cd.triangles.reserve(woc.triangles.size());
+                        for (const auto& t : woc.triangles)
+                            cd.triangles.push_back({t.v0, t.v1, t.v2, t.flags});
+                        cd.boundsMin = woc.bounds.min;
+                        cd.boundsMax = woc.bounds.max;
+                        cd.loaded = true;
+                        collisionTiles_[tileKey(coord.x, coord.y)] = std::move(cd);
+                        LOG_INFO("Loaded WOC collision: ", woc.triangles.size(), " triangles");
+                    }
+                }
             }
         }
     }
@@ -2530,6 +2560,34 @@ void TerrainManager::precacheTiles(const std::vector<std::pair<int, int>>& tiles
 
     // Notify workers to start loading
     queueCV.notify_all();
+}
+
+uint8_t TerrainManager::getCollisionFlags(float glX, float glY) const {
+    for (const auto& [key, cd] : collisionTiles_) {
+        if (!cd.loaded) continue;
+        if (glX < cd.boundsMin.x || glX > cd.boundsMax.x ||
+            glY < cd.boundsMin.y || glY > cd.boundsMax.y) continue;
+
+        for (const auto& tri : cd.triangles) {
+            // Barycentric point-in-triangle test (XY plane)
+            glm::vec2 p(glX, glY);
+            glm::vec2 a(tri.v0.x, tri.v0.y), b(tri.v1.x, tri.v1.y), c(tri.v2.x, tri.v2.y);
+            glm::vec2 v0 = c - a, v1 = b - a, v2 = p - a;
+            float d00 = glm::dot(v0, v0), d01 = glm::dot(v0, v1), d02 = glm::dot(v0, v2);
+            float d11 = glm::dot(v1, v1), d12 = glm::dot(v1, v2);
+            float inv = d00 * d11 - d01 * d01;
+            if (std::abs(inv) < 1e-10f) continue;
+            float u = (d11 * d02 - d01 * d12) / inv;
+            float v = (d00 * d12 - d01 * d02) / inv;
+            if (u >= 0 && v >= 0 && u + v <= 1)
+                return tri.flags;
+        }
+    }
+    return 0x01; // default walkable if no collision data
+}
+
+bool TerrainManager::isPositionWalkable(float glX, float glY) const {
+    return (getCollisionFlags(glX, glY) & 0x01) != 0;
 }
 
 } // namespace rendering
