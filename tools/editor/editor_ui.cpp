@@ -177,6 +177,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
         }
         if (ImGui::BeginPopup("AboutEditor")) {
             ImGui::Text("Wowee World Editor");
+            ImGui::Text("by Kelsi Davis");
             ImGui::Separator();
             ImGui::Text("Version: 0.1.0 (rough/WIP)");
             ImGui::Text("Standalone world editor for creating");
