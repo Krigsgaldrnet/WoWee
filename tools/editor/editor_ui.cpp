@@ -2254,8 +2254,10 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
             ImGui::SetNextItemWidth(140);
             if (ImGui::InputText("##mapname", renameBuf, sizeof(renameBuf),
                     ImGuiInputTextFlags_EnterReturnsTrue)) {
-                app.setMapName(renameBuf);
-                app.showToast("Zone renamed: " + std::string(renameBuf));
+                if (app.setMapName(renameBuf))
+                    app.showToast("Zone renamed: " + std::string(renameBuf));
+                else
+                    app.showToast("Invalid name (no slashes or special chars)");
             }
             ImGui::SameLine();
             ImGui::Text("[%d, %d]", app.getLoadedTileX(), app.getLoadedTileY());

@@ -244,6 +244,8 @@ bool ObjectPlacer::loadFromFile(const std::string& path) {
         objects_.clear();
         undoStack_.clear();
         selectedIdx_ = -1;
+        selectedIndices_.clear();
+        uniqueIdCounter_ = 1;
 
         for (const auto& jo : arr) {
             PlacedObject obj;
