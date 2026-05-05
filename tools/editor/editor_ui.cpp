@@ -517,7 +517,7 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Target Height", &s.flattenHeight, -500.0f, 1000.0f, "%.1f");
             ImGui::SameLine();
             auto& brush = app.getTerrainEditor().brush();
-            if (ImGui::SmallButton("Pick") && brush.isActive())
+            if (ImGui::SmallButton("Pick") )
                 s.flattenHeight = brush.getPosition().z;
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Set target height from cursor position");
@@ -864,10 +864,10 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
         ImGui::Separator();
         ImGui::Text("Terrain Holes (cave entrances):");
         auto& brush = app.getTerrainEditor().brush();
-        if (ImGui::Button("Punch Hole", ImVec2(120, 0)) && brush.isActive())
+        if (ImGui::Button("Punch Hole", ImVec2(120, 0)) )
             app.getTerrainEditor().punchHole(brush.getPosition(), s.radius);
         ImGui::SameLine();
-        if (ImGui::Button("Fill Hole", ImVec2(120, 0)) && brush.isActive())
+        if (ImGui::Button("Fill Hole", ImVec2(120, 0)) )
             app.getTerrainEditor().fillHole(brush.getPosition(), s.radius);
 
         ImGui::Separator();
@@ -1264,7 +1264,7 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
             static float bulkRadius = 50.0f;
             ImGui::SliderFloat("Radius##bulk", &bulkRadius, 10.0f, 200.0f);
             auto& brush = app.getTerrainEditor().brush();
-            if (ImGui::Button("Delete All in Radius", ImVec2(-1, 0)) && brush.isActive()) {
+            if (ImGui::Button("Delete All in Radius", ImVec2(-1, 0)) ) {
                 auto& objs = const_cast<std::vector<PlacedObject>&>(placer.getObjects());
                 glm::vec3 center = brush.getPosition();
                 objs.erase(std::remove_if(objs.begin(), objs.end(),
