@@ -302,6 +302,10 @@ void EditorApp::processEvents() {
                     ui_.openNewTerrainDialog();
                 if (sc == SDL_SCANCODE_O && (event.key.keysym.mod & KMOD_CTRL))
                     ui_.openLoadDialog();
+                if (sc == SDL_SCANCODE_A && (event.key.keysym.mod & KMOD_CTRL)) {
+                    objectPlacer_.selectAll();
+                    showToast("Selected " + std::to_string(objectPlacer_.selectionCount()) + " objects");
+                }
                 // Ctrl+Y = Redo (alternate binding)
                 if (sc == SDL_SCANCODE_Y && (event.key.keysym.mod & KMOD_CTRL)) {
                     if (terrainEditor_.history().canRedo()) {
@@ -698,6 +702,13 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     loadedMap_ = mapName;
     loadedTileX_ = tileX;
     loadedTileY_ = tileY;
+
+    // Track recent zones (deduplicate, max 8)
+    recentZones_.erase(std::remove_if(recentZones_.begin(), recentZones_.end(),
+        [&](const RecentZone& rz) { return rz.mapName == mapName && rz.tileX == tileX && rz.tileY == tileY; }),
+        recentZones_.end());
+    recentZones_.insert(recentZones_.begin(), {mapName, tileX, tileY});
+    if (recentZones_.size() > 8) recentZones_.resize(8);
 
     // Position camera at terrain center using actual chunk positions
     if (mesh.validChunkCount > 0) {

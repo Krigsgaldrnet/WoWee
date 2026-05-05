@@ -111,6 +111,15 @@ PlacedObject* ObjectPlacer::getSelected() {
     return &objects_[selectedIdx_];
 }
 
+void ObjectPlacer::selectAll() {
+    clearSelection();
+    for (int i = 0; i < static_cast<int>(objects_.size()); i++) {
+        objects_[i].selected = true;
+        selectedIndices_.push_back(i);
+    }
+    if (!objects_.empty()) selectedIdx_ = 0;
+}
+
 void ObjectPlacer::moveSelected(const glm::vec3& delta) {
     if (selectedIndices_.size() > 1) {
         for (int idx : selectedIndices_) objects_[idx].position += delta;

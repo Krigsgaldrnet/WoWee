@@ -254,6 +254,16 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Recent Zones", !app.getRecentZones().empty())) {
+                for (const auto& rz : app.getRecentZones()) {
+                    char label[128];
+                    std::snprintf(label, sizeof(label), "%s [%d, %d]",
+                                  rz.mapName.c_str(), rz.tileX, rz.tileY);
+                    if (ImGui::MenuItem(label))
+                        app.loadADT(rz.mapName, rz.tileX, rz.tileY);
+                }
+                ImGui::EndMenu();
+            }
             if (ImGui::BeginMenu("Content Packs (.wcp)")) {
                 static char wcpImportPath[256] = "content.wcp";
                 ImGui::InputText("Path##wcp", wcpImportPath, sizeof(wcpImportPath));
@@ -489,7 +499,9 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Text("Quick Actions:");
             ImGui::BulletText("Ctrl+N — new terrain");
             ImGui::BulletText("Ctrl+O — load map tile");
+            ImGui::BulletText("Ctrl+A — select all objects");
             ImGui::BulletText("Alt+Click — eyedropper (paint mode)");
+            ImGui::BulletText("Ctrl+Shift+Click — add to selection");
             ImGui::BulletText("Middle-drag — orbit camera");
             ImGui::Separator();
             ImGui::Text("View:");
@@ -2044,6 +2056,9 @@ void EditorUI::renderContextMenu(EditorApp& app) {
             else { app.getNpcSpawner().removeCreature(app.getNpcSpawner().getSelectedIndex()); }
             app.markObjectsDirty();
         }
+        if (ImGui::MenuItem("Select All", "Ctrl+A")) {
+            app.getObjectPlacer().selectAll();
+        }
         if (ImGui::MenuItem("Deselect")) {
             app.getObjectPlacer().clearSelection();
             app.getNpcSpawner().clearSelection();
@@ -2110,7 +2125,7 @@ void EditorUI::renderMinimap(EditorApp& app) {
             }
         }
 
-        // Draw objects as yellow dots
+        // Draw objects (yellow=normal, white+ring=selected)
         float tileNW_X = (32.0f - static_cast<float>(terrain->coord.y)) * 533.33333f;
         float tileNW_Y = (32.0f - static_cast<float>(terrain->coord.x)) * 533.33333f;
         for (const auto& obj : app.getObjectPlacer().getObjects()) {
@@ -2118,7 +2133,12 @@ void EditorUI::renderMinimap(EditorApp& app) {
             float v = (tileNW_Y - obj.position.y) / 533.33333f;
             if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
                 ImVec2 pt(origin.x + v * avail.x, origin.y + u * (16 * cellH));
-                dl->AddCircleFilled(pt, 2.0f, IM_COL32(255, 220, 50, 200));
+                if (obj.selected) {
+                    dl->AddCircleFilled(pt, 3.5f, IM_COL32(255, 255, 255, 230));
+                    dl->AddCircle(pt, 5.0f, IM_COL32(255, 200, 50, 200), 0, 1.5f);
+                } else {
+                    dl->AddCircleFilled(pt, 2.0f, IM_COL32(255, 220, 50, 200));
+                }
             }
         }
         // Draw NPCs as red dots

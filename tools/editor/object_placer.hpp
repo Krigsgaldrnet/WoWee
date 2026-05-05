@@ -60,7 +60,8 @@ public:
 
     const std::vector<PlacedObject>& getObjects() const { return objects_; }
     std::vector<PlacedObject>& getObjects() { return objects_; }
-    void clearAll() { objects_.clear(); undoStack_.clear(); selectedIdx_ = -1; }
+    void selectAll();
+    void clearAll() { objects_.clear(); undoStack_.clear(); selectedIdx_ = -1; selectedIndices_.clear(); }
     size_t objectCount() const { return objects_.size(); }
 
     float getPlacementRotationY() const { return placementRotY_; }

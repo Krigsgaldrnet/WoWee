@@ -138,12 +138,17 @@ private:
     bool autoSaveEnabled_ = true;
     bool showQuitConfirm_ = false;
 
+    // Recent zones
+    struct RecentZone { std::string mapName; int tileX; int tileY; };
+    std::vector<RecentZone> recentZones_;
+
     // Toast notifications
     struct Toast { std::string msg; float timer; };
     std::vector<Toast> toasts_;
 public:
     void showToast(const std::string& msg, float duration = 3.0f);
     const std::vector<Toast>& getToasts() const { return toasts_; }
+    const std::vector<RecentZone>& getRecentZones() const { return recentZones_; }
     void updateToasts(float dt);
 private:
     size_t lastObjCount_ = 0;
