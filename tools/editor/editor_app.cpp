@@ -382,7 +382,7 @@ void EditorApp::processEvents() {
         }
 
         if (event.type == SDL_MOUSEWHEEL && !io.WantCaptureMouse)
-            camera_.processMouseWheel(event.wheel.y);
+            camera_.processMouseWheel(event.wheel.y, (SDL_GetModState() & KMOD_SHIFT) != 0);
     }
 }
 

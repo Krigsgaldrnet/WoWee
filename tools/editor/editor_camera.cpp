@@ -43,8 +43,14 @@ void EditorCamera::processMouseMotion(int dx, int dy) {
     camera_.setRotation(yaw_, pitch_);
 }
 
-void EditorCamera::processMouseWheel(float delta) {
-    speed_ = std::clamp(speed_ + delta * 20.0f, 10.0f, 2000.0f);
+void EditorCamera::processMouseWheel(float delta, bool shiftHeld) {
+    if (shiftHeld) {
+        speed_ = std::clamp(speed_ + delta * 20.0f, 10.0f, 2000.0f);
+    } else {
+        glm::vec3 pos = camera_.getPosition();
+        pos += camera_.getForward() * delta * speed_ * 0.3f;
+        camera_.setPosition(pos);
+    }
 }
 
 void EditorCamera::processKeyEvent(const SDL_KeyboardEvent& event) {

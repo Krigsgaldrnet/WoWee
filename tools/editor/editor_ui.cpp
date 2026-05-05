@@ -1134,6 +1134,19 @@ void EditorUI::renderMinimap(EditorApp& app) {
         }
 
         ImGui::Dummy(ImVec2(avail.x, 16 * cellH));
+        // Click minimap to move camera
+        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(0)) {
+            ImVec2 mousePos = ImGui::GetMousePos();
+            float mu = (mousePos.y - origin.y) / (16 * cellH);
+            float mv = (mousePos.x - origin.x) / avail.x;
+            if (mu >= 0 && mu <= 1 && mv >= 0 && mv <= 1) {
+                float wx = tileNW_X - mu * 533.33333f;
+                float wy = tileNW_Y - mv * 533.33333f;
+                app.getEditorCamera().setPosition(glm::vec3(wx, wy,
+                    app.getEditorCamera().getCamera().getPosition().z));
+            }
+        }
+
         // Camera indicator as white cross
         auto camPos = app.getEditorCamera().getCamera().getPosition();
         float camU = (tileNW_X - camPos.x) / 533.33333f;

@@ -13,7 +13,7 @@ public:
 
     void update(float deltaTime);
     void processMouseMotion(int dx, int dy);
-    void processMouseWheel(float delta);
+    void processMouseWheel(float delta, bool shiftHeld);
     void processKeyEvent(const SDL_KeyboardEvent& event);
     void processMouseButton(const SDL_MouseButtonEvent& event);
 
