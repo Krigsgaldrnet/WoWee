@@ -1772,6 +1772,25 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
             int gold = tmpl.reward.gold;
             if (ImGui::InputInt("Gold##qr", &gold)) tmpl.reward.gold = std::max(0, gold);
 
+            // Quest chain link
+            ImGui::Text("Chain to next quest:");
+            if (ImGui::BeginCombo("Next Quest##chain",
+                    tmpl.nextQuestId > 0 ? std::to_string(tmpl.nextQuestId).c_str() : "None (end of chain)")) {
+                if (ImGui::Selectable("None")) tmpl.nextQuestId = 0;
+                for (int qi = 0; qi < static_cast<int>(qe.questCount()); qi++) {
+                    auto* eq = qe.getQuest(qi);
+                    char ql[128];
+                    std::snprintf(ql, sizeof(ql), "[%u] %s", eq->id, eq->title.c_str());
+                    if (ImGui::Selectable(ql)) tmpl.nextQuestId = eq->id;
+                }
+                ImGui::EndCombo();
+            }
+
+            static char completeBuf[256] = "";
+            std::strncpy(completeBuf, tmpl.completionText.c_str(), sizeof(completeBuf) - 1);
+            if (ImGui::InputTextMultiline("Completion Text##q", completeBuf, sizeof(completeBuf), ImVec2(-1, 40)))
+                tmpl.completionText = completeBuf;
+
             if (ImGui::Button("Create Quest", ImVec2(-1, 0))) {
                 qe.addQuest(tmpl);
                 app.showToast("Quest created: " + tmpl.title);
@@ -1781,23 +1800,59 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
         ImGui::Separator();
         if (ImGui::CollapsingHeader("Quest List", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Text("%zu quests", qe.questCount());
-            ImGui::BeginChild("QuestList", ImVec2(0, 120), true);
+            static int selectedQuest = -1;
+            ImGui::BeginChild("QuestList", ImVec2(0, 150), true);
             for (int i = 0; i < static_cast<int>(qe.questCount()); i++) {
                 auto* q = qe.getQuest(i);
                 char lbl[128];
-                std::snprintf(lbl, sizeof(lbl), "[%u] %s (Lv%u, %zu obj)",
-                              q->id, q->title.c_str(), q->requiredLevel, q->objectives.size());
-                if (ImGui::Selectable(lbl)) { /* select for editing */ }
+                std::snprintf(lbl, sizeof(lbl), "[%u] %s (Lv%u, %zu obj%s)",
+                              q->id, q->title.c_str(), q->requiredLevel, q->objectives.size(),
+                              q->nextQuestId ? " ->chain" : "");
+                if (ImGui::Selectable(lbl, selectedQuest == i))
+                    selectedQuest = i;
             }
             ImGui::EndChild();
+
+            if (selectedQuest >= 0 && selectedQuest < static_cast<int>(qe.questCount())) {
+                auto* sq = qe.getQuest(selectedQuest);
+                ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "Editing: [%u] %s", sq->id, sq->title.c_str());
+                static char etBuf[128];
+                std::strncpy(etBuf, sq->title.c_str(), sizeof(etBuf) - 1);
+                if (ImGui::InputText("Title##edit", etBuf, sizeof(etBuf))) sq->title = etBuf;
+                int elv = sq->requiredLevel;
+                if (ImGui::InputInt("Level##edit", &elv)) sq->requiredLevel = std::max(1, elv);
+                int exp = sq->reward.xp;
+                if (ImGui::InputInt("XP##edit", &exp)) sq->reward.xp = std::max(0, exp);
+                if (sq->nextQuestId > 0)
+                    ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1), "Chains to quest %u", sq->nextQuestId);
+                if (ImGui::SmallButton("Delete##quest")) {
+                    qe.removeQuest(selectedQuest);
+                    selectedQuest = -1;
+                }
+            }
+
+            // Chain validation
+            std::vector<std::string> chainErrors;
+            if (qe.questCount() > 0 && !qe.validateChains(chainErrors)) {
+                ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Chain issues:");
+                for (const auto& e : chainErrors)
+                    ImGui::BulletText("%s", e.c_str());
+            }
         }
 
         ImGui::Separator();
         static char questPath[256] = "output/quests.json";
         ImGui::InputText("File##quest", questPath, sizeof(questPath));
-        if (ImGui::Button("Save Quests", ImVec2(-1, 0))) {
+        if (ImGui::Button("Save Quests", ImVec2(180, 0))) {
             qe.saveToFile(questPath);
             app.showToast("Quests saved");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load Quests", ImVec2(-1, 0))) {
+            if (qe.loadFromFile(questPath))
+                app.showToast("Loaded " + std::to_string(qe.questCount()) + " quests");
+            else
+                app.showToast("Failed to load quests");
         }
     }
     ImGui::End();
