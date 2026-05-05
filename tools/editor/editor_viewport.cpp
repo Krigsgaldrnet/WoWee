@@ -97,6 +97,12 @@ void EditorViewport::placeWMO(const std::string& path, const glm::vec3& pos,
 }
 
 void EditorViewport::clearObjects() {
+    // Clear ghost state since the M2 renderer is about to be wiped
+    ghostActive_ = false;
+    ghostInstanceId_ = 0;
+    ghostModelId_ = 0;
+    ghostModelPath_.clear();
+
     if (m2Renderer_) {
         vkCtx_->waitAllUploads();
         m2Renderer_->clear();
@@ -406,8 +412,11 @@ void EditorViewport::setGhostPreview(const std::string& path, const glm::vec3& p
         if (!model.isValid()) return;
         if (model.boundRadius < 1.0f) model.boundRadius = 50.0f;
 
-        ghostModelId_ = 60000; // Use a high ID to avoid collision with placed objects
-        m2Renderer_->loadModel(model, ghostModelId_);
+        ghostModelId_ = 59999; // High ID to avoid collision with placed objects
+        if (!m2Renderer_->loadModel(model, ghostModelId_)) {
+            ghostModelId_ = 0;
+            return;
+        }
         vkCtx_->waitAllUploads();
         vkCtx_->pollUploadBatches();
         ghostModelPath_ = path;
