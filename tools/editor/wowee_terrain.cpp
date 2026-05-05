@@ -127,6 +127,44 @@ bool WoweeTerrain::exportNormalMap(const pipeline::ADTTerrain& terrain,
     return true;
 }
 
+bool WoweeTerrain::exportHeightmapPreview(const pipeline::ADTTerrain& terrain,
+                                           const std::string& path) {
+    constexpr int res = 129;
+    std::vector<uint8_t> pixels(res * res);
+
+    float minH = 1e30f, maxH = -1e30f;
+    for (int ci = 0; ci < 256; ci++) {
+        const auto& chunk = terrain.chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++) {
+            float h = chunk.position[2] + chunk.heightMap.heights[v];
+            minH = std::min(minH, h);
+            maxH = std::max(maxH, h);
+        }
+    }
+    float range = std::max(1.0f, maxH - minH);
+
+    for (int cy = 0; cy < 16; cy++) {
+        for (int cx = 0; cx < 16; cx++) {
+            const auto& chunk = terrain.chunks[cy * 16 + cx];
+            if (!chunk.hasHeightMap()) continue;
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                if (col > 8) continue;
+                int px = cx * 8 + col, py = cy * 8 + row;
+                if (px >= res || py >= res) continue;
+                float h = chunk.position[2] + chunk.heightMap.heights[v];
+                float t = (h - minH) / range;
+                pixels[py * res + px] = static_cast<uint8_t>(t * 255.0f);
+            }
+        }
+    }
+
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    stbi_write_png(path.c_str(), res, res, 1, pixels.data(), res);
+    return true;
+}
+
 int WoweeTerrain::exportAlphaMaps(const pipeline::ADTTerrain& terrain,
                                     const std::string& outputDir) {
     namespace fs = std::filesystem;

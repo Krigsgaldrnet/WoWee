@@ -22,6 +22,10 @@ public:
     static int exportAlphaMaps(const pipeline::ADTTerrain& terrain,
                                 const std::string& outputDir);
 
+    // Export heightmap as grayscale PNG preview (129x129)
+    static bool exportHeightmapPreview(const pipeline::ADTTerrain& terrain,
+                                        const std::string& path);
+
     // Import terrain from open format back to ADTTerrain
     static bool importOpen(const std::string& basePath, pipeline::ADTTerrain& terrain);
 };
