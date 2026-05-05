@@ -356,8 +356,9 @@ void EditorUI::renderLoadDialog(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.3f, 1), "Tile not found");
 
             ImGui::SameLine();
-            if (ImGui::SmallButton("Find Valid Tile")) {
+            if (ImGui::SmallButton("Find Tile")) {
                 bool found = false;
+                // Scan center range first (open world maps)
                 for (int x = 25; x < 45 && !found; x++) {
                     for (int y = 25; y < 45 && !found; y++) {
                         std::string tp = "world\\maps\\" + mapLower + "\\" + mapLower + "_" +
@@ -367,6 +368,7 @@ void EditorUI::renderLoadDialog(EditorApp& app) {
                         }
                     }
                 }
+                // Full scan for dungeons/instances
                 if (!found) {
                     for (int x = 0; x < 64 && !found; x++) {
                         for (int y = 0; y < 64 && !found; y++) {
@@ -378,8 +380,9 @@ void EditorUI::renderLoadDialog(EditorApp& app) {
                         }
                     }
                 }
+                if (!found) app.showToast("No ADT tiles found for this map");
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scans for the first available tile");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Auto-find first available tile");
         }
 
         ImGui::Spacing();

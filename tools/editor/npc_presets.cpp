@@ -154,6 +154,19 @@ void NpcPresets::initialize(pipeline::AssetManager* am) {
 
         std::string dirName = path.substr(firstSlash + 1, secondSlash - firstSlash - 1);
         if (seen.count(dirName)) continue;
+
+        // Skip known effect/particle models that cause vertex explosions
+        static const char* skipModels[] = {
+            "alliancebomb", "alliancebrasscannon", "blackhole", "bodyofkathune",
+            "band", "broom", "broommount", "carpet", "celestialhorse",
+            "bloodqueen", "arthaslichking", "arthasundead"
+        };
+        bool skip = false;
+        for (const char* s : skipModels) {
+            if (dirName == s) { skip = true; break; }
+        }
+        if (skip) continue;
+
         seen.insert(dirName);
 
         // Get the actual M2 file path
