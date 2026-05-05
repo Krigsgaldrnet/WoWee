@@ -860,6 +860,50 @@ void TerrainEditor::createHill(const glm::vec3& center, float radius, float heig
     dirty_ = true;
 }
 
+void TerrainEditor::createCanyon(float width, float depth, uint32_t seed) {
+    if (!terrain_) return;
+
+    float tileNW_X = (32.0f - static_cast<float>(terrain_->coord.y)) * TILE_SIZE;
+    float tileNW_Y = (32.0f - static_cast<float>(terrain_->coord.x)) * TILE_SIZE;
+    float tileCenter_X = tileNW_X - TILE_SIZE * 0.5f;
+    float tileCenter_Y = tileNW_Y - TILE_SIZE * 0.5f;
+
+    // Generate a winding path using sine waves
+    auto canyonPath = [&](float t) -> glm::vec2 {
+        float px = tileCenter_X + (t - 0.5f) * TILE_SIZE * 0.9f;
+        float py = tileCenter_Y + std::sin(t * 6.28f * 1.5f + seed * 0.1f) * TILE_SIZE * 0.2f
+                   + std::sin(t * 6.28f * 3.0f + seed * 0.3f) * TILE_SIZE * 0.05f;
+        return glm::vec2(px, py);
+    };
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        bool modified = false;
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 pos = chunkVertexWorldPos(ci, v);
+            glm::vec2 p(pos.x, pos.y);
+
+            // Find nearest point on canyon path
+            float bestDist = 1e30f;
+            for (float t = 0.0f; t <= 1.0f; t += 0.005f) {
+                glm::vec2 cp = canyonPath(t);
+                float d = glm::length(p - cp);
+                bestDist = std::min(bestDist, d);
+            }
+
+            if (bestDist < width) {
+                float falloff = 1.0f - (bestDist / width);
+                falloff = falloff * falloff;
+                chunk.heightMap.heights[v] -= depth * falloff;
+                modified = true;
+            }
+        }
+        if (modified) { stitchEdges(ci); dirtyChunks_.push_back(ci); }
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::createIsland(float centerHeight, float edgeDropoff) {
     if (!terrain_) return;
 

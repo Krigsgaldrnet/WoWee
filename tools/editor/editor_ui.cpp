@@ -603,6 +603,21 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Canyon Generator")) {
+            static float canyonWidth = 15.0f, canyonDepth = 20.0f;
+            static int canyonSeed = 1;
+            ImGui::SliderFloat("Width##canyon", &canyonWidth, 5.0f, 50.0f);
+            ImGui::SliderFloat("Depth##canyon", &canyonDepth, 5.0f, 60.0f);
+            ImGui::InputInt("Seed##canyon", &canyonSeed);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Rnd##cs")) canyonSeed = std::rand();
+            if (ImGui::Button("Create Canyon", ImVec2(-1, 0))) {
+                app.getTerrainEditor().createCanyon(canyonWidth, canyonDepth, static_cast<uint32_t>(canyonSeed));
+                app.showToast("Canyon carved");
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Winding canyon across tile. Fill with water for river.");
+        }
+
         if (ImGui::CollapsingHeader("Island Generator")) {
             static float islandHeight = 30.0f, islandDrop = 20.0f;
             ImGui::SliderFloat("Center Height##island", &islandHeight, 5.0f, 100.0f);
