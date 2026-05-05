@@ -962,6 +962,29 @@ void TerrainEditor::fillWater(float height, uint16_t liquidType) {
     dirty_ = true;
 }
 
+void TerrainEditor::smoothBeaches(float waterHeight, float beachWidth) {
+    if (!terrain_) return;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        bool modified = false;
+        for (int v = 0; v < 145; v++) {
+            float absH = chunk.position[2] + chunk.heightMap.heights[v];
+            float distToWater = std::abs(absH - waterHeight);
+            if (distToWater < beachWidth) {
+                // Smooth toward water level with gentle slope
+                float t = distToWater / beachWidth;
+                float target = waterHeight + (absH > waterHeight ? 1.0f : -1.0f) * beachWidth * t * t;
+                float relTarget = target - chunk.position[2];
+                chunk.heightMap.heights[v] = chunk.heightMap.heights[v] * 0.3f + relTarget * 0.7f;
+                modified = true;
+            }
+        }
+        if (modified) { stitchEdges(ci); dirtyChunks_.push_back(ci); }
+    }
+    dirty_ = true;
+}
+
 void TerrainEditor::thermalErosion(int iterations, float talusAngle) {
     if (!terrain_) return;
     float unitSize = CHUNK_SIZE / 8.0f;

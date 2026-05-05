@@ -117,6 +117,9 @@ public:
     // Fill entire tile with water at a height
     void fillWater(float height, uint16_t liquidType);
 
+    // Smooth terrain near water level to create natural beaches
+    void smoothBeaches(float waterHeight, float beachWidth);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);

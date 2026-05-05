@@ -1513,6 +1513,10 @@ void EditorUI::renderWaterPanel(EditorApp& app) {
                 app.getTerrainEditor().removeWater(brush.getPosition(), s.radius);
             }
         }
+        if (ImGui::Button("Smooth Beaches", ImVec2(-1, 0))) {
+            app.getTerrainEditor().smoothBeaches(app.getWaterHeight(), 15.0f);
+            app.showToast("Beaches smoothed");
+        }
         if (ImGui::Button("Remove ALL Water", ImVec2(-1, 0))) {
             for (int ci = 0; ci < 256; ci++)
                 app.getTerrainEditor().getTerrain()->waterData[ci].layers.clear();
