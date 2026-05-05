@@ -588,6 +588,70 @@ void TerrainEditor::removeWater(const glm::vec3& center, float radius) {
     }
 }
 
+void TerrainEditor::smoothEntireTile(int iterations) {
+    if (!terrain_) return;
+
+    for (int iter = 0; iter < iterations; iter++) {
+        // Snapshot all heights
+        std::array<std::array<float, 145>, 256> snap;
+        for (int ci = 0; ci < 256; ci++)
+            for (int v = 0; v < 145; v++)
+                snap[ci][v] = terrain_->chunks[ci].heightMap.heights[v];
+
+        for (int ci = 0; ci < 256; ci++) {
+            auto& chunk = terrain_->chunks[ci];
+            if (!chunk.hasHeightMap()) continue;
+            int cx = ci % 16, cy = ci / 16;
+
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                if (col > 8) continue; // smooth outer vertices only
+
+                float sum = snap[ci][v];
+                int count = 1;
+
+                // Same-chunk neighbors
+                if (col > 0) { sum += snap[ci][row * 17 + col - 1]; count++; }
+                if (col < 8) { sum += snap[ci][row * 17 + col + 1]; count++; }
+                if (row > 0) { sum += snap[ci][(row - 1) * 17 + col]; count++; }
+                if (row < 8) { sum += snap[ci][(row + 1) * 17 + col]; count++; }
+
+                // Cross-chunk neighbors at edges
+                if (col == 0 && cx > 0) { sum += snap[cy * 16 + cx - 1][row * 17 + 8]; count++; }
+                if (col == 8 && cx < 15) { sum += snap[cy * 16 + cx + 1][row * 17 + 0]; count++; }
+                if (row == 0 && cy > 0) { sum += snap[(cy - 1) * 16 + cx][8 * 17 + col]; count++; }
+                if (row == 8 && cy < 15) { sum += snap[(cy + 1) * 16 + cx][0 * 17 + col]; count++; }
+
+                chunk.heightMap.heights[v] = sum / static_cast<float>(count);
+            }
+
+            // Update inner vertices from smoothed outer vertices
+            for (int v = 0; v < 145; v++) {
+                int row = v / 17, col = v % 17;
+                if (col <= 8) continue;
+                int innerCol = col - 9;
+                // Average of 4 surrounding outer vertices
+                int tl = row * 17 + innerCol;
+                int tr = row * 17 + innerCol + 1;
+                int bl = (row + 1) * 17 + innerCol;
+                int br = (row + 1) * 17 + innerCol + 1;
+                if (tl < 145 && tr < 145 && bl < 145 && br < 145)
+                    chunk.heightMap.heights[v] = (chunk.heightMap.heights[tl] +
+                        chunk.heightMap.heights[tr] + chunk.heightMap.heights[bl] +
+                        chunk.heightMap.heights[br]) * 0.25f;
+            }
+        }
+
+        // Stitch all edges
+        for (int ci = 0; ci < 256; ci++)
+            stitchEdges(ci);
+    }
+
+    for (int ci = 0; ci < 256; ci++)
+        dirtyChunks_.push_back(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::applyErode(float dt) {
     float factor = std::min(1.0f, brush_.settings().strength * dt * 0.3f);
 

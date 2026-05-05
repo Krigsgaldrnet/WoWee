@@ -58,6 +58,8 @@ public:
     void setPlacementScale(float s) { placementScale_ = s; }
     bool getRandomRotation() const { return randomRotation_; }
     void setRandomRotation(bool v) { randomRotation_ = v; }
+    bool getSnapToGround() const { return snapToGround_; }
+    void setSnapToGround(bool v) { snapToGround_ = v; }
 
     // Undo last placement
     bool canUndoPlace() const { return !undoStack_.empty(); }
@@ -81,6 +83,7 @@ private:
     float placementRotY_ = 0.0f;
     float placementScale_ = 1.0f;
     bool randomRotation_ = false;
+    bool snapToGround_ = true;
 };
 
 } // namespace editor

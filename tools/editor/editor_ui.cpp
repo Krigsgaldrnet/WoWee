@@ -336,9 +336,16 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             if (ImGui::Button("Apply Noise", ImVec2(-1, 0))) {
                 app.getTerrainEditor().applyNoise(noiseFreq, noiseAmp, noiseOctaves,
                                                    static_cast<uint32_t>(noiseSeed));
+                app.showToast("Noise applied");
+            }
+            static int smoothPasses = 2;
+            ImGui::SliderInt("Smooth Passes", &smoothPasses, 1, 10);
+            if (ImGui::Button("Smooth Entire Tile", ImVec2(-1, 0))) {
+                app.getTerrainEditor().smoothEntireTile(smoothPasses);
+                app.showToast("Tile smoothed");
             }
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
-                "Adds procedural hills/valleys to entire tile");
+                "Generate terrain, then smooth for natural look");
         }
 
         ImGui::Separator();
@@ -466,6 +473,10 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         bool randRot = placer.getRandomRotation();
         if (ImGui::Checkbox("Random Rotation", &randRot))
             placer.setRandomRotation(randRot);
+        ImGui::SameLine();
+        bool snap = placer.getSnapToGround();
+        if (ImGui::Checkbox("Snap Ground", &snap))
+            placer.setSnapToGround(snap);
         float scale = placer.getPlacementScale();
         if (ImGui::SliderFloat("Scale", &scale, 0.1f, 10.0f, "%.2f"))
             placer.setPlacementScale(scale);

@@ -54,6 +54,9 @@ public:
     // Noise generator: applies procedural height noise to the terrain
     void applyNoise(float frequency, float amplitude, int octaves, uint32_t seed);
 
+    // Global smooth pass across entire tile (N iterations)
+    void smoothEntireTile(int iterations);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);
