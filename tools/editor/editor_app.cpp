@@ -810,8 +810,13 @@ void EditorApp::exportZone(const std::string& outputDir) {
     if (npcSpawner_.spawnCount() > 0) fileCount++;
     if (questEditor_.questCount() > 0) fileCount++;
 
-    showToast("Exported " + std::to_string(fileCount) + " files to " + base);
-    LOG_INFO("Zone exported to: ", base, " (", fileCount, " files)");
+    // Validate open format completeness
+    auto validation = ContentPacker::validateZone(base);
+    int score = validation.openFormatScore();
+    showToast("Exported " + std::to_string(fileCount) + " files (" +
+              std::to_string(score) + "/5 open format)");
+    LOG_INFO("Zone exported to: ", base, " (", fileCount, " files, open score: ",
+             score, "/5 — ", validation.summary(), ")");
 }
 
 void EditorApp::exportContentPack(const std::string& destPath) {
