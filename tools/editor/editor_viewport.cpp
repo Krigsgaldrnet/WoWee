@@ -258,25 +258,41 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
         struct MV { float pos[3]; float color[4]; };
         std::vector<MV> verts;
         for (const auto& npc : npcs) {
-            float s = 3.0f * npc.scale;
-            float x = npc.position.x, y = npc.position.y, z = npc.position.z + 0.5f;
-            float r = npc.hostile ? 0.9f : 0.2f;
-            float g = npc.hostile ? 0.2f : 0.8f;
-            float b = 0.2f, a = 0.85f;
-            // Flat diamond on ground
+            float s = 5.0f;
+            float x = npc.position.x, y = npc.position.y, z = npc.position.z;
+            float r = npc.hostile ? 1.0f : 0.1f;
+            float g = npc.hostile ? 0.15f : 0.9f;
+            float b = 0.1f, a = 0.9f;
+
+            // Large base circle (8 triangles forming octagon)
             MV v; v.color[0]=r; v.color[1]=g; v.color[2]=b; v.color[3]=a;
-            v.pos[0]=x+s; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x; v.pos[1]=y+s; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x-s; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x+s; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x-s; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x; v.pos[1]=y-s; v.pos[2]=z; verts.push_back(v);
-            // Vertical pillar
-            float h = s * 3.0f;
-            v.color[3] = 0.6f;
-            v.pos[0]=x-0.5f; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x+0.5f; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
-            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+h; verts.push_back(v);
+            for (int seg = 0; seg < 8; seg++) {
+                float a0 = seg * 0.7854f, a1 = (seg+1) * 0.7854f;
+                v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+0.3f; verts.push_back(v);
+                v.pos[0]=x+std::cos(a0)*s; v.pos[1]=y+std::sin(a0)*s; v.pos[2]=z+0.3f; verts.push_back(v);
+                v.pos[0]=x+std::cos(a1)*s; v.pos[1]=y+std::sin(a1)*s; v.pos[2]=z+0.3f; verts.push_back(v);
+            }
+
+            // Tall pole (2 triangles forming thin quad, 30 units high)
+            float pw = 0.8f, ph = 30.0f;
+            v.color[3] = 0.8f;
+            v.pos[0]=x-pw; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x+pw; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+ph; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y-pw; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y+pw; v.pos[2]=z; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+ph; verts.push_back(v);
+
+            // Top diamond (visible from above)
+            float ts = 3.0f;
+            float tz = z + ph;
+            v.color[0]=1; v.color[1]=1; v.color[2]=0.3f; v.color[3]=0.95f;
+            v.pos[0]=x+ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y+ts; v.pos[2]=tz; verts.push_back(v);
+            v.pos[0]=x-ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
+            v.pos[0]=x+ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
+            v.pos[0]=x-ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y-ts; v.pos[2]=tz; verts.push_back(v);
         }
         npcMarkerVertCount_ = static_cast<uint32_t>(verts.size());
         LOG_INFO("NPC markers: ", npcs.size(), " npcs -> ", npcMarkerVertCount_, " verts");
