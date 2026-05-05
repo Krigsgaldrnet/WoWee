@@ -838,11 +838,14 @@ void EditorApp::exportZone(const std::string& outputDir) {
     // Count exported files
     int fileCount = 2; // ADT + WDT always
     fileCount += 2; // WOT + WHM always
+    fileCount += 3; // heightmap + normals + watermask PNGs
+    fileCount += 1; // thumbnail PNG
     fileCount += 1; // zone.json always
     fileCount += 1; // README always
-    if (objectPlacer_.objectCount() > 0) fileCount++;
-    if (npcSpawner_.spawnCount() > 0) fileCount++;
-    if (questEditor_.questCount() > 0) fileCount++;
+    if (!usedTextures.empty()) fileCount += static_cast<int>(usedTextures.size()); // PNG textures
+    if (objectPlacer_.objectCount() > 0) fileCount++; // objects.json
+    if (npcSpawner_.spawnCount() > 0) fileCount++; // creatures.json
+    if (questEditor_.questCount() > 0) fileCount++; // quests.json
 
     // Validate open format completeness
     auto validation = ContentPacker::validateZone(base);
