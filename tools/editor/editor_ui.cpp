@@ -603,6 +603,16 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Terrace / Steps")) {
+            static int terraceSteps = 6;
+            ImGui::SliderInt("Steps##terrace", &terraceSteps, 2, 20);
+            if (ImGui::Button("Apply Terracing", ImVec2(-1, 0))) {
+                app.getTerrainEditor().terraceHeights(terraceSteps);
+                app.showToast("Terrain terraced");
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Quantizes heights into flat shelves");
+        }
+
         if (ImGui::CollapsingHeader("Canyon Generator")) {
             static float canyonWidth = 15.0f, canyonDepth = 20.0f;
             static int canyonSeed = 1;

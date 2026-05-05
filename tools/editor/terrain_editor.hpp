@@ -99,6 +99,9 @@ public:
     // Create a winding canyon across the tile
     void createCanyon(float width, float depth, uint32_t seed);
 
+    // Terrace/quantize heights into N steps
+    void terraceHeights(int steps);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);

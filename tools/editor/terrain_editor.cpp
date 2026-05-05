@@ -860,6 +860,38 @@ void TerrainEditor::createHill(const glm::vec3& center, float radius, float heig
     dirty_ = true;
 }
 
+void TerrainEditor::terraceHeights(int steps) {
+    if (!terrain_ || steps < 2) return;
+
+    // Find height range
+    float minH = 1e30f, maxH = -1e30f;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++) {
+            float h = chunk.position[2] + chunk.heightMap.heights[v];
+            minH = std::min(minH, h);
+            maxH = std::max(maxH, h);
+        }
+    }
+    float range = maxH - minH;
+    if (range < 1.0f) return;
+    float stepSize = range / steps;
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++) {
+            float absH = chunk.position[2] + chunk.heightMap.heights[v];
+            float quantized = std::floor((absH - minH) / stepSize) * stepSize + minH;
+            chunk.heightMap.heights[v] = quantized - chunk.position[2];
+        }
+        dirtyChunks_.push_back(ci);
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::createCanyon(float width, float depth, uint32_t seed) {
     if (!terrain_) return;
 
