@@ -17,6 +17,13 @@ struct ZoneManifest {
     bool hasCreatures = false;
     std::string description;
 
+    // Audio configuration
+    std::string musicTrack;         // Background music file path
+    std::string ambienceDay;        // Daytime ambient sound
+    std::string ambienceNight;      // Nighttime ambient sound
+    float musicVolume = 0.7f;
+    float ambienceVolume = 0.5f;
+
     bool save(const std::string& path) const;
     bool load(const std::string& path);
 };

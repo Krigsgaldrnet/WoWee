@@ -997,7 +997,7 @@ void EditorApp::exportZone(const std::string& outputDir) {
 
     // Write zone manifest (for client loading)
     // Scan output directory for all exported tiles (includes adjacent tiles)
-    ZoneManifest manifest;
+    ZoneManifest& manifest = zoneManifest_;
     manifest.mapName = loadedMap_;
     manifest.displayName = loadedMap_;
     manifest.tiles.push_back({loadedTileX_, loadedTileY_});

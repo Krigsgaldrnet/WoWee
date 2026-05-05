@@ -2473,6 +2473,51 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
                 ImGui::Text("Height: %.0f-%.0f (avg %.0f)", minH, maxH, sumH / count);
         }
 
+        // Zone audio configuration
+        if (app.hasTerrainLoaded() && ImGui::CollapsingHeader("Zone Audio")) {
+            auto& manifest = app.getZoneManifest();
+            static char musicBuf[256] = {};
+            static char ambDayBuf[256] = {};
+            static char ambNightBuf[256] = {};
+            std::strncpy(musicBuf, manifest.musicTrack.c_str(), sizeof(musicBuf) - 1);
+            std::strncpy(ambDayBuf, manifest.ambienceDay.c_str(), sizeof(ambDayBuf) - 1);
+            std::strncpy(ambNightBuf, manifest.ambienceNight.c_str(), sizeof(ambNightBuf) - 1);
+
+            if (ImGui::InputText("Music##audio", musicBuf, sizeof(musicBuf)))
+                manifest.musicTrack = musicBuf;
+            if (ImGui::InputText("Ambience (Day)##audio", ambDayBuf, sizeof(ambDayBuf)))
+                manifest.ambienceDay = ambDayBuf;
+            if (ImGui::InputText("Ambience (Night)##audio", ambNightBuf, sizeof(ambNightBuf)))
+                manifest.ambienceNight = ambNightBuf;
+            ImGui::SliderFloat("Music Vol", &manifest.musicVolume, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Ambience Vol", &manifest.ambienceVolume, 0.0f, 1.0f, "%.2f");
+
+            if (ImGui::BeginCombo("Presets##audioPreset", "Select...")) {
+                if (ImGui::Selectable("Elwynn Forest")) {
+                    manifest.musicTrack = "Sound\\Music\\ZoneMusic\\Forest\\ForestDay.mp3";
+                    manifest.ambienceDay = "Sound\\Ambience\\GlueScreenAmbience.wav";
+                }
+                if (ImGui::Selectable("Durotar")) {
+                    manifest.musicTrack = "Sound\\Music\\ZoneMusic\\Barrens\\BarrensDay.mp3";
+                    manifest.ambienceDay = "Sound\\Ambience\\GlueScreenAmbience.wav";
+                }
+                if (ImGui::Selectable("Darkshore")) {
+                    manifest.musicTrack = "Sound\\Music\\ZoneMusic\\Darkshore\\DarkshoreDay.mp3";
+                    manifest.ambienceDay = "Sound\\Ambience\\GlueScreenAmbience.wav";
+                }
+                if (ImGui::Selectable("Dungeon")) {
+                    manifest.musicTrack = "Sound\\Music\\ZoneMusic\\Dungeon\\DungeonAmbience.mp3";
+                    manifest.ambienceDay = "";
+                }
+                if (ImGui::Selectable("None (silent)")) {
+                    manifest.musicTrack = "";
+                    manifest.ambienceDay = "";
+                    manifest.ambienceNight = "";
+                }
+                ImGui::EndCombo();
+            }
+        }
+
         if (app.getTerrainEditor().hasUnsavedChanges())
             ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "* Unsaved (Ctrl+S to save)");
         else

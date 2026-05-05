@@ -44,6 +44,17 @@ bool ZoneManifest::save(const std::string& path) const {
     if (hasCreatures) files["creatures"] = "creatures.json";
     j["files"] = files;
 
+    // Audio configuration
+    if (!musicTrack.empty() || !ambienceDay.empty()) {
+        nlohmann::json audio;
+        if (!musicTrack.empty()) audio["music"] = musicTrack;
+        if (!ambienceDay.empty()) audio["ambienceDay"] = ambienceDay;
+        if (!ambienceNight.empty()) audio["ambienceNight"] = ambienceNight;
+        audio["musicVolume"] = musicVolume;
+        audio["ambienceVolume"] = ambienceVolume;
+        j["audio"] = audio;
+    }
+
     std::ofstream f(path);
     if (!f) { LOG_ERROR("Failed to write zone manifest: ", path); return false; }
     f << j.dump(2) << "\n";
@@ -74,6 +85,16 @@ bool ZoneManifest::load(const std::string& path) {
                 if (t.is_array() && t.size() >= 2)
                     tiles.push_back({t[0].get<int>(), t[1].get<int>()});
             }
+        }
+
+        // Audio configuration
+        if (j.contains("audio")) {
+            const auto& a = j["audio"];
+            musicTrack = a.value("music", "");
+            ambienceDay = a.value("ambienceDay", "");
+            ambienceNight = a.value("ambienceNight", "");
+            musicVolume = a.value("musicVolume", 0.7f);
+            ambienceVolume = a.value("ambienceVolume", 0.5f);
         }
 
         return !mapName.empty();

@@ -150,6 +150,7 @@ private:
     float autoSaveInterval_ = 300.0f;
     bool autoSaveEnabled_ = true;
     bool showQuitConfirm_ = false;
+    ZoneManifest zoneManifest_;
 
     // Recent zones
     struct RecentZone { std::string mapName; int tileX; int tileY; };
@@ -162,6 +163,7 @@ public:
     void showToast(const std::string& msg, float duration = 3.0f);
     const std::vector<Toast>& getToasts() const { return toasts_; }
     const std::vector<RecentZone>& getRecentZones() const { return recentZones_; }
+    ZoneManifest& getZoneManifest() { return zoneManifest_; }
     bool isAutoSaveEnabled() const { return autoSaveEnabled_; }
     void setAutoSaveEnabled(bool v) { autoSaveEnabled_ = v; }
     float getAutoSaveInterval() const { return autoSaveInterval_; }
