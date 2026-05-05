@@ -129,6 +129,39 @@ void EditorUI::processActions(EditorApp& app) {
 void EditorUI::renderMenuBar(EditorApp& app) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
+            if (ImGui::BeginMenu("Project")) {
+                static char projPathBuf[256] = "projects/MyExpansion/project.json";
+                if (ImGui::MenuItem("New Project...")) {
+                    app.getProject().name = "MyExpansion";
+                    app.getProject().author = "Kelsi Davis";
+                    app.getProject().zones.clear();
+                    app.showToast("New project created");
+                }
+                if (ImGui::MenuItem("Save Project")) {
+                    app.getProject().save(projPathBuf);
+                    app.showToast("Project saved");
+                }
+                if (ImGui::MenuItem("Load Project")) {
+                    if (app.getProject().load(projPathBuf))
+                        app.showToast("Project loaded: " + app.getProject().name);
+                    else
+                        app.showToast("Failed to load project");
+                }
+                if (ImGui::MenuItem("Add Current Zone to Project") && app.hasTerrainLoaded()) {
+                    ProjectZone pz;
+                    pz.mapName = app.getLoadedMap();
+                    pz.tileX = app.getLoadedTileX();
+                    pz.tileY = app.getLoadedTileY();
+                    app.getProject().zones.push_back(pz);
+                    app.showToast("Zone added to project (" +
+                                  std::to_string(app.getProject().zones.size()) + " zones)");
+                }
+                ImGui::Separator();
+                ImGui::InputText("Path##proj", projPathBuf, sizeof(projPathBuf));
+                ImGui::Text("Zones: %zu", app.getProject().zones.size());
+                ImGui::EndMenu();
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("New Terrain...", "Ctrl+N")) showNewDialog_ = true;
             if (ImGui::MenuItem("Load ADT...", "Ctrl+O")) showLoadDialog_ = true;
             if (ImGui::BeginMenu("Import Heightmap", app.hasTerrainLoaded())) {

@@ -9,6 +9,7 @@
 #include "npc_spawner.hpp"
 #include "npc_presets.hpp"
 #include "quest_editor.hpp"
+#include "editor_project.hpp"
 #include "zone_manifest.hpp"
 #include "asset_browser.hpp"
 #include "core/window.hpp"
@@ -117,6 +118,10 @@ private:
     NpcSpawner npcSpawner_;
     NpcPresets npcPresets_;
     QuestEditor questEditor_;
+    EditorProject project_;
+public:
+    EditorProject& getProject() { return project_; }
+private:
     AssetBrowser assetBrowser_;
 
     pipeline::ADTTerrain terrain_;
