@@ -1,6 +1,7 @@
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "core/logger.hpp"
+#include <glm/gtc/quaternion.hpp>
 #include <fstream>
 #include <filesystem>
 #include <cstring>
@@ -226,13 +227,19 @@ WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::strin
             wobGroup.indices.push_back(static_cast<uint32_t>(idx));
 
         for (const auto& mat : wmo.materials) {
+            WoweeBuilding::Material wobMat;
+            wobMat.flags = mat.flags;
+            wobMat.shader = mat.shader;
+            wobMat.blendMode = mat.blendMode;
             if (mat.texture1 < wmo.textures.size()) {
                 std::string texPath = wmo.textures[mat.texture1];
                 auto dot = texPath.rfind('.');
                 if (dot != std::string::npos)
                     texPath = texPath.substr(0, dot) + ".png";
+                wobMat.texturePath = texPath;
                 wobGroup.texturePaths.push_back(texPath);
             }
+            wobGroup.materials.push_back(wobMat);
         }
 
         bld.groups.push_back(std::move(wobGroup));
@@ -250,7 +257,10 @@ WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::strin
         if (dot != std::string::npos)
             dp.modelPath = dp.modelPath.substr(0, dot) + ".wom";
         dp.position = doodad.position;
-        dp.rotation = glm::vec3(0.0f);
+        // Convert quaternion rotation to euler angles
+        glm::quat q(doodad.rotation.w, doodad.rotation.x,
+                     doodad.rotation.y, doodad.rotation.z);
+        dp.rotation = glm::degrees(glm::eulerAngles(q));
         dp.scale = doodad.scale;
         bld.doodads.push_back(dp);
     }

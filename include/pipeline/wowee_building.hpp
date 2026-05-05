@@ -18,11 +18,19 @@ struct WoweeBuilding {
         glm::vec4 color; // vertex color/lighting
     };
 
+    struct Material {
+        std::string texturePath;
+        uint32_t flags = 0;
+        uint32_t shader = 0;
+        uint32_t blendMode = 0;
+    };
+
     struct Group {
         std::string name;
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
         std::vector<std::string> texturePaths;
+        std::vector<Material> materials;
         glm::vec3 boundMin{0}, boundMax{0};
         bool isOutdoor = false;
     };

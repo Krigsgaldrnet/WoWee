@@ -133,8 +133,54 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
             }
         }
 
+        // Parse doodad placements
+        if (j.contains("doodadNames") && j["doodadNames"].is_array()) {
+            for (const auto& n : j["doodadNames"])
+                terrain.doodadNames.push_back(n.get<std::string>());
+        }
+        if (j.contains("doodads") && j["doodads"].is_array()) {
+            for (const auto& jd : j["doodads"]) {
+                ADTTerrain::DoodadPlacement dp{};
+                dp.nameId = jd.value("nameId", 0u);
+                dp.uniqueId = jd.value("uniqueId", 0u);
+                if (jd.contains("pos") && jd["pos"].size() >= 3) {
+                    dp.position[0] = jd["pos"][0]; dp.position[1] = jd["pos"][1]; dp.position[2] = jd["pos"][2];
+                }
+                if (jd.contains("rot") && jd["rot"].size() >= 3) {
+                    dp.rotation[0] = jd["rot"][0]; dp.rotation[1] = jd["rot"][1]; dp.rotation[2] = jd["rot"][2];
+                }
+                dp.scale = jd.value("scale", 1024);
+                dp.flags = jd.value("flags", 0);
+                terrain.doodadPlacements.push_back(dp);
+            }
+        }
+
+        // Parse WMO placements
+        if (j.contains("wmoNames") && j["wmoNames"].is_array()) {
+            for (const auto& n : j["wmoNames"])
+                terrain.wmoNames.push_back(n.get<std::string>());
+        }
+        if (j.contains("wmos") && j["wmos"].is_array()) {
+            for (const auto& jw : j["wmos"]) {
+                ADTTerrain::WMOPlacement wp{};
+                wp.nameId = jw.value("nameId", 0u);
+                wp.uniqueId = jw.value("uniqueId", 0u);
+                if (jw.contains("pos") && jw["pos"].size() >= 3) {
+                    wp.position[0] = jw["pos"][0]; wp.position[1] = jw["pos"][1]; wp.position[2] = jw["pos"][2];
+                }
+                if (jw.contains("rot") && jw["rot"].size() >= 3) {
+                    wp.rotation[0] = jw["rot"][0]; wp.rotation[1] = jw["rot"][1]; wp.rotation[2] = jw["rot"][2];
+                }
+                wp.flags = jw.value("flags", 0);
+                wp.doodadSet = jw.value("doodadSet", 0);
+                terrain.wmoPlacements.push_back(wp);
+            }
+        }
+
         LOG_INFO("WOT loaded: ", wotPath, " (tile [", terrain.coord.x, ",", terrain.coord.y,
-                 "], ", terrain.textures.size(), " textures)");
+                 "], ", terrain.textures.size(), " textures, ",
+                 terrain.doodadPlacements.size(), " doodads, ",
+                 terrain.wmoPlacements.size(), " WMOs)");
         return true;
     } catch (const std::exception& e) {
         LOG_ERROR("Failed to parse WOT: ", e.what());
