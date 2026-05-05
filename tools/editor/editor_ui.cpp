@@ -645,6 +645,18 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
         }
 
+        if (ImGui::CollapsingHeader("Edge Ramp (Multi-tile)")) {
+            static float rampTarget = 100.0f, rampWidth = 20.0f;
+            ImGui::SliderFloat("Target Height##ramp", &rampTarget, 0.0f, 500.0f);
+            ImGui::SliderFloat("Ramp Width##ramp", &rampWidth, 5.0f, 60.0f);
+            if (ImGui::Button("Ramp Tile Edges", ImVec2(-1, 0))) {
+                app.getTerrainEditor().rampEdges(rampTarget, rampWidth);
+                app.showToast("Edges ramped");
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "Smoothly transitions tile borders to target height\nfor seamless multi-tile connections");
+        }
+
         if (ImGui::CollapsingHeader("Thermal Erosion")) {
             static int erosionIters = 10;
             static float talusAngle = 40.0f;

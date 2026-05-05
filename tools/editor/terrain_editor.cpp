@@ -985,6 +985,40 @@ void TerrainEditor::smoothBeaches(float waterHeight, float beachWidth) {
     dirty_ = true;
 }
 
+void TerrainEditor::rampEdges(float targetHeight, float rampWidth) {
+    if (!terrain_) return;
+    float relTarget = targetHeight - terrain_->chunks[0].position[2];
+
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        int cx = ci % 16, cy = ci / 16;
+
+        for (int v = 0; v < 145; v++) {
+            int row = v / 17, col = v % 17;
+            if (col > 8) continue;
+
+            // Distance to nearest tile edge (in chunk units)
+            float edgeDistX = std::min(static_cast<float>(cx * 8 + col),
+                                        static_cast<float>(128 - cx * 8 - col)) / 128.0f;
+            float edgeDistY = std::min(static_cast<float>(cy * 8 + row),
+                                        static_cast<float>(128 - cy * 8 - row)) / 128.0f;
+            float edgeDist = std::min(edgeDistX, edgeDistY);
+            float rampNorm = rampWidth / 128.0f;
+
+            if (edgeDist < rampNorm) {
+                float t = edgeDist / rampNorm;
+                float blend = t * t; // smooth start
+                chunk.heightMap.heights[v] = chunk.heightMap.heights[v] * blend +
+                                              relTarget * (1.0f - blend);
+            }
+        }
+        dirtyChunks_.push_back(ci);
+    }
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::thermalErosion(int iterations, float talusAngle) {
     if (!terrain_) return;
     float unitSize = CHUNK_SIZE / 8.0f;

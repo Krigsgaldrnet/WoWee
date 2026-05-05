@@ -120,6 +120,9 @@ public:
     // Smooth terrain near water level to create natural beaches
     void smoothBeaches(float waterHeight, float beachWidth);
 
+    // Ramp tile edges to a target height for seamless multi-tile joins
+    void rampEdges(float targetHeight, float rampWidth);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);
