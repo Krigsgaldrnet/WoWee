@@ -503,6 +503,12 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Load or create terrain first");
             ImGui::End(); return;
         }
+        // Show cursor height at top of panel for quick reference
+        auto& cursorBrush = app.getTerrainEditor().brush();
+        auto cp = cursorBrush.getPosition();
+        ImGui::TextColored(ImVec4(0.7f, 0.8f, 1.0f, 1.0f),
+            "Height: %.1f  (%.0f, %.0f)", cp.z, cp.x, cp.y);
+        ImGui::Separator();
         auto& s = app.getTerrainEditor().brush().settings();
         const char* modes[] = {"Raise", "Lower", "Smooth", "Flatten", "Level", "Erode"};
         int idx = static_cast<int>(s.mode);
