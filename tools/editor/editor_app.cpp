@@ -791,6 +791,7 @@ void EditorApp::exportZone(const std::string& outputDir) {
     std::string openBase = base + "/" + loadedMap_ + "_" +
                            std::to_string(loadedTileX_) + "_" + std::to_string(loadedTileY_);
     WoweeTerrain::exportOpen(terrain_, openBase, loadedTileX_, loadedTileY_);
+    WoweeTerrain::exportNormalMap(terrain_, openBase + "_normals.png");
 
     // Write zone info README
     {
