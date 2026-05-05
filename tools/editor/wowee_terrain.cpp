@@ -41,6 +41,7 @@ bool WoweeTerrain::exportOpen(const pipeline::ADTTerrain& terrain,
         if (!f) return false;
         f << "{\n";
         f << "  \"format\": \"wot-1.0\",\n";
+        f << "  \"editor\": \"wowee-editor-0.8.0\",\n";
         f << "  \"tileX\": " << tileX << ",\n";
         f << "  \"tileY\": " << tileY << ",\n";
         f << "  \"chunkGrid\": [16, 16],\n";
