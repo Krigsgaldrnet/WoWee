@@ -852,6 +852,9 @@ void EditorApp::generateCompleteZone() {
     // Step 6: Add detail roughness
     terrainEditor_.addDetailNoise(1.5f, 0.08f, 77);
 
+    // Step 6b: Final normal recalculation after detail noise
+    terrainEditor_.recalcNormals(allChunks);
+
     // Step 7: Fill low areas with water and smooth beaches
     float waterLevel = terrain_.chunks[0].position[2] + 5.0f;
     terrainEditor_.fillWater(waterLevel, 0);
