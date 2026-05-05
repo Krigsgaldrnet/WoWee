@@ -45,6 +45,7 @@ void EditorUI::render(EditorApp& app) {
     }
 
     renderContextMenu(app);
+    renderMinimap(app);
     renderPropertiesPanel(app);
     renderStatusBar(app);
 }
@@ -220,8 +221,15 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
         ImGui::SliderFloat("Radius", &s.radius, 5.0f, 200.0f, "%.0f");
         ImGui::SliderFloat("Strength", &s.strength, 0.5f, 50.0f, "%.1f");
         ImGui::SliderFloat("Falloff", &s.falloff, 0.0f, 1.0f, "%.2f");
-        if (s.mode == BrushMode::Flatten || s.mode == BrushMode::Level)
+        if (s.mode == BrushMode::Flatten || s.mode == BrushMode::Level) {
             ImGui::SliderFloat("Target Height", &s.flattenHeight, -500.0f, 1000.0f, "%.1f");
+            ImGui::SameLine();
+            auto& brush = app.getTerrainEditor().brush();
+            if (ImGui::SmallButton("Pick") && brush.isActive())
+                s.flattenHeight = brush.getPosition().z;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Set target height from cursor position");
+        }
         ImGui::Separator();
         auto& hist = app.getTerrainEditor().history();
         ImGui::Text("Undo: %zu  Redo: %zu", hist.undoCount(), hist.redoCount());
@@ -580,6 +588,39 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             int bi2 = static_cast<int>(sel->behavior);
             if (ImGui::Combo("AI##s", &bi2, beh2, 4)) sel->behavior = static_cast<CreatureBehavior>(bi2);
 
+            // Patrol path editing
+            if (sel->behavior == CreatureBehavior::Patrol) {
+                ImGui::Text("Patrol Points: %zu", sel->patrolPath.size());
+                auto& brush = app.getTerrainEditor().brush();
+                if (ImGui::Button("Add Point at Cursor##patrol", ImVec2(-1, 0))) {
+                    if (brush.isActive()) {
+                        PatrolPoint pp;
+                        pp.position = brush.getPosition();
+                        pp.waitTimeMs = 2000.0f;
+                        sel->patrolPath.push_back(pp);
+                    }
+                }
+                if (!sel->patrolPath.empty()) {
+                    ImGui::BeginChild("PatrolList", ImVec2(0, 80), true);
+                    for (int pi = 0; pi < static_cast<int>(sel->patrolPath.size()); pi++) {
+                        auto& pp = sel->patrolPath[pi];
+                        char lbl[64];
+                        std::snprintf(lbl, sizeof(lbl), "P%d (%.0f,%.0f,%.0f) %.1fs",
+                                      pi, pp.position.x, pp.position.y, pp.position.z,
+                                      pp.waitTimeMs / 1000.0f);
+                        ImGui::Text("%s", lbl);
+                        ImGui::SameLine();
+                        char delBtn[16]; std::snprintf(delBtn, sizeof(delBtn), "X##p%d", pi);
+                        if (ImGui::SmallButton(delBtn))
+                            sel->patrolPath.erase(sel->patrolPath.begin() + pi--);
+                    }
+                    ImGui::EndChild();
+                    if (ImGui::Button("Clear Path##patrol"))
+                        sel->patrolPath.clear();
+                }
+            }
+
+            ImGui::Separator();
             if (ImGui::Button("Delete##npc")) spawner.removeCreature(spawner.getSelectedIndex());
             ImGui::SameLine();
             if (ImGui::Button("Deselect##npc")) spawner.clearSelection();
@@ -697,6 +738,70 @@ void EditorUI::renderContextMenu(EditorApp& app) {
 
         ImGui::EndPopup();
     }
+}
+
+void EditorUI::renderMinimap(EditorApp& app) {
+    if (!app.hasTerrainLoaded()) return;
+    auto* terrain = app.getTerrainEditor().getTerrain();
+    if (!terrain) return;
+
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->Size.x - 185, vp->Size.y - 210), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(175, 185), ImGuiCond_FirstUseEver);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
+    if (ImGui::Begin("Minimap", nullptr, ImGuiWindowFlags_NoScrollbar)) {
+        ImVec2 avail = ImGui::GetContentRegionAvail();
+        float cellW = avail.x / 16.0f;
+        float cellH = (avail.y - 14) / 16.0f;
+        ImVec2 origin = ImGui::GetCursorScreenPos();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+        // Find height range
+        float minH = 1e30f, maxH = -1e30f;
+        for (int i = 0; i < 256; i++) {
+            auto& c = terrain->chunks[i];
+            if (!c.hasHeightMap()) continue;
+            for (int v = 0; v < 145; v++) {
+                float h = c.position[2] + c.heightMap.heights[v];
+                minH = std::min(minH, h); maxH = std::max(maxH, h);
+            }
+        }
+        float range = std::max(1.0f, maxH - minH);
+
+        for (int cy = 0; cy < 16; cy++) {
+            for (int cx = 0; cx < 16; cx++) {
+                auto& c = terrain->chunks[cy * 16 + cx];
+                float avgH = c.position[2];
+                if (c.hasHeightMap()) {
+                    float sum = 0;
+                    for (int v = 0; v < 145; v++) sum += c.heightMap.heights[v];
+                    avgH += sum / 145.0f;
+                }
+                float t = (avgH - minH) / range;
+
+                // Color: low=blue, mid=green, high=brown/white
+                float r, g, b;
+                if (t < 0.3f) { r = 0.1f; g = 0.2f + t; b = 0.5f - t; }
+                else if (t < 0.7f) { float tt = (t - 0.3f) / 0.4f; r = 0.1f + tt * 0.4f; g = 0.5f + tt * 0.2f; b = 0.1f; }
+                else { float tt = (t - 0.7f) / 0.3f; r = 0.5f + tt * 0.3f; g = 0.7f - tt * 0.2f; b = 0.1f + tt * 0.5f; }
+
+                ImVec2 p0(origin.x + cx * cellW, origin.y + cy * cellH);
+                ImVec2 p1(p0.x + cellW - 1, p0.y + cellH - 1);
+                dl->AddRectFilled(p0, p1, IM_COL32(
+                    static_cast<int>(r*255), static_cast<int>(g*255),
+                    static_cast<int>(b*255), 200));
+
+                // Water indicator
+                if (terrain->waterData[cy * 16 + cx].hasWater())
+                    dl->AddRectFilled(p0, p1, IM_COL32(50, 100, 200, 100));
+            }
+        }
+
+        ImGui::Dummy(ImVec2(avail.x, 16 * cellH));
+        ImGui::Text("Height: %.0f - %.0f", minH, maxH);
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 void EditorUI::renderPropertiesPanel(EditorApp& app) {

@@ -32,6 +32,7 @@ private:
     void renderWaterPanel(EditorApp& app);
     void renderNpcPanel(EditorApp& app);
     void renderContextMenu(EditorApp& app);
+    void renderMinimap(EditorApp& app);
     void renderPropertiesPanel(EditorApp& app);
     void renderStatusBar(EditorApp& app);
 
