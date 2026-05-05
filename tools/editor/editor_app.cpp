@@ -851,6 +851,23 @@ void EditorApp::exportZone(const std::string& outputDir) {
     // Validate open format completeness
     auto validation = ContentPacker::validateZone(base);
     int score = validation.openFormatScore();
+    // Write zone statistics JSON
+    {
+        std::ofstream stats(base + "/stats.json");
+        if (stats) {
+            stats << "{\n";
+            stats << "  \"map\": \"" << loadedMap_ << "\",\n";
+            stats << "  \"tile\": [" << loadedTileX_ << "," << loadedTileY_ << "],\n";
+            stats << "  \"objects\": " << objectPlacer_.objectCount() << ",\n";
+            stats << "  \"npcs\": " << npcSpawner_.spawnCount() << ",\n";
+            stats << "  \"quests\": " << questEditor_.questCount() << ",\n";
+            stats << "  \"textures\": " << usedTextures.size() << ",\n";
+            stats << "  \"openFormatScore\": " << score << ",\n";
+            stats << "  \"formats\": \"" << validation.summary() << "\"\n";
+            stats << "}\n";
+        }
+    }
+
     showToast("Exported " + std::to_string(fileCount) + " files (" +
               std::to_string(score) + "/5 open format)");
     LOG_INFO("=== Zone Export Summary ===");
