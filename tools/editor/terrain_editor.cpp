@@ -1,7 +1,9 @@
 #include "terrain_editor.hpp"
 #include "core/logger.hpp"
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <numeric>
 #include <random>
@@ -1484,6 +1486,50 @@ void TerrainEditor::pasteStamp(const glm::vec3& center) {
     for (int ci : dirtyChunks_) stitchEdges(ci);
     dirty_ = true;
     LOG_INFO("Stamp pasted at (", center.x, ",", center.y, ")");
+}
+
+bool TerrainEditor::saveStamp(const std::string& path) const {
+    if (stampData_.empty()) return false;
+    nlohmann::json j;
+    j["format"] = "wowee-stamp-1.0";
+    j["vertexCount"] = stampData_.size();
+    nlohmann::json verts = nlohmann::json::array();
+    for (const auto& sv : stampData_)
+        verts.push_back({sv.dx, sv.dy, sv.height});
+    j["vertices"] = verts;
+
+    namespace fs = std::filesystem;
+    fs::create_directories(fs::path(path).parent_path());
+    std::ofstream f(path);
+    if (!f) return false;
+    f << j.dump(2) << "\n";
+    LOG_INFO("Stamp saved: ", path, " (", stampData_.size(), " vertices)");
+    return true;
+}
+
+bool TerrainEditor::loadStamp(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) return false;
+    try {
+        auto j = nlohmann::json::parse(f);
+        if (!j.contains("vertices") || !j["vertices"].is_array()) return false;
+
+        stampData_.clear();
+        for (const auto& v : j["vertices"]) {
+            if (!v.is_array() || v.size() < 3) continue;
+            StampVertex sv;
+            sv.dx = v[0].get<float>();
+            sv.dy = v[1].get<float>();
+            sv.height = v[2].get<float>();
+            stampData_.push_back(sv);
+        }
+        stampCenter_ = glm::vec3(0);
+        LOG_INFO("Stamp loaded: ", path, " (", stampData_.size(), " vertices)");
+        return !stampData_.empty();
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to load stamp: ", e.what());
+        return false;
+    }
 }
 
 void TerrainEditor::clampHeights(float minH, float maxH) {

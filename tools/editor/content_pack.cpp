@@ -159,6 +159,26 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
         info.version = j.value("version", "");
         info.format = j.value("format", "");
         info.mapId = j.value("mapId", 9000u);
+        info.files.clear();
+        if (j.contains("files") && j["files"].is_array()) {
+            for (const auto& jf : j["files"]) {
+                ContentPackInfo::FileEntry fe;
+                fe.path = jf.value("path", "");
+                fe.size = jf.value("size", 0ULL);
+                auto dot = fe.path.rfind('.');
+                if (dot != std::string::npos) {
+                    std::string ext = fe.path.substr(dot);
+                    if (ext == ".wot" || ext == ".whm") fe.category = "terrain";
+                    else if (ext == ".wom") fe.category = "model";
+                    else if (ext == ".wob") fe.category = "building";
+                    else if (ext == ".png") fe.category = "texture";
+                    else if (ext == ".json") fe.category = "data";
+                    else if (ext == ".adt" || ext == ".wdt") fe.category = "legacy";
+                    else fe.category = "other";
+                }
+                info.files.push_back(fe);
+            }
+        }
     } catch (...) {
         return false;
     }

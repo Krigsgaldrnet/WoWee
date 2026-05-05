@@ -77,6 +77,8 @@ public:
     // Terrain stamp: copy heights from source area, paste at destination
     void copyStamp(const glm::vec3& center, float radius);
     void pasteStamp(const glm::vec3& center);
+    bool saveStamp(const std::string& path) const;
+    bool loadStamp(const std::string& path);
     bool hasStamp() const { return !stampData_.empty(); }
 
     // Mirror terrain along X or Y axis through tile center

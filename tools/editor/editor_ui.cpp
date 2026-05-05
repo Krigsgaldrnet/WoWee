@@ -236,8 +236,11 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                                     auto lastU = base.rfind('_');
                                     auto prevU = base.rfind('_', lastU - 1);
                                     if (lastU != std::string::npos && prevU != std::string::npos) {
-                                        int tx = std::stoi(base.substr(prevU + 1, lastU - prevU - 1));
-                                        int ty = std::stoi(base.substr(lastU + 1));
+                                        int tx = 0, ty = 0;
+                                        try {
+                                            tx = std::stoi(base.substr(prevU + 1, lastU - prevU - 1));
+                                            ty = std::stoi(base.substr(lastU + 1));
+                                        } catch (...) { break; }
                                         app.createNewTerrain(z.name, tx, ty, 100.0f, Biome::Grassland);
                                         // Load the WOT/WHM data
                                         std::string wotBase = entry.path().parent_path().string() + "/" + base;
@@ -289,16 +292,37 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                         app.showToast("Import failed — check path");
                     }
                 }
-                if (ImGui::MenuItem("Inspect Pack Info")) {
+                if (ImGui::BeginMenu("Inspect Pack Info")) {
                     editor::ContentPackInfo info;
                     if (editor::ContentPacker::readInfo(wcpImportPath, info)) {
-                        std::string msg = info.name + " v" + info.version;
-                        if (!info.author.empty()) msg += " by " + info.author;
-                        msg += " (" + info.format + ")";
-                        app.showToast(msg);
+                        ImGui::TextColored(ImVec4(1, 0.9f, 0.3f, 1), "%s v%s",
+                            info.name.c_str(), info.version.c_str());
+                        if (!info.author.empty())
+                            ImGui::Text("By: %s", info.author.c_str());
+                        if (!info.description.empty())
+                            ImGui::TextWrapped("%s", info.description.c_str());
+                        ImGui::Text("Map ID: %u, Files: %zu", info.mapId, info.files.size());
+                        if (!info.files.empty()) {
+                            ImGui::Separator();
+                            int terrain = 0, models = 0, buildings = 0, textures = 0, data = 0;
+                            uint64_t totalSize = 0;
+                            for (const auto& fe : info.files) {
+                                totalSize += fe.size;
+                                if (fe.category == "terrain") terrain++;
+                                else if (fe.category == "model") models++;
+                                else if (fe.category == "building") buildings++;
+                                else if (fe.category == "texture") textures++;
+                                else if (fe.category == "data") data++;
+                            }
+                            ImGui::Text("Terrain: %d  Models: %d  Buildings: %d",
+                                terrain, models, buildings);
+                            ImGui::Text("Textures: %d  Data: %d  Total: %.1f KB",
+                                textures, data, totalSize / 1024.0f);
+                        }
                     } else {
-                        app.showToast("Cannot read pack — check path");
+                        ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Cannot read pack");
                     }
+                    ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
             }
@@ -959,10 +983,18 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             if (ImGui::Button("Paste Stamp", ImVec2(120, 0))  &&
                 app.getTerrainEditor().hasStamp())
                 app.getTerrainEditor().pasteStamp(brush2.getPosition());
-            if (app.getTerrainEditor().hasStamp())
+            if (app.getTerrainEditor().hasStamp()) {
                 ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1), "Stamp ready");
-            else
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Save##stamp"))
+                    if (app.getTerrainEditor().saveStamp("output/stamps/terrain_stamp.json"))
+                        app.showToast("Stamp saved");
+            } else {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
+            }
+            if (ImGui::SmallButton("Load##stamp"))
+                if (app.getTerrainEditor().loadStamp("output/stamps/terrain_stamp.json"))
+                    app.showToast("Stamp loaded");
         }
 
         if (ImGui::CollapsingHeader("Detail Noise")) {

@@ -1040,6 +1040,13 @@ void EditorApp::exportZone(const std::string& outputDir) {
         sj["textures"] = usedTextures.size();
         sj["openFormatScore"] = score;
         sj["formats"] = validation.summary();
+        sj["tiles"] = static_cast<int>(manifest.tiles.size());
+        auto* tr = viewport_.getTerrainRenderer();
+        if (tr) {
+            sj["chunks"] = tr->getChunkCount();
+            sj["triangles"] = tr->getTriangleCount();
+        }
+        sj["editorVersion"] = "1.0.0";
         std::ofstream stats(base + "/stats.json");
         if (stats) stats << sj.dump(2) << "\n";
     }
