@@ -1668,6 +1668,34 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
             }
         }
 
+        if (ImGui::CollapsingHeader("Auto-Populate Biome")) {
+            static int popBiome = 0;
+            static uint32_t popSeed = 42;
+            const char* biomeNames[] = {"Grassland", "Forest", "Jungle", "Desert",
+                "Barrens", "Snow", "Swamp", "Rocky", "Beach", "Volcanic"};
+            ImGui::Combo("Biome##pop", &popBiome, biomeNames, 10);
+            int seed = static_cast<int>(popSeed);
+            if (ImGui::InputInt("Seed##pop", &seed)) popSeed = static_cast<uint32_t>(seed);
+
+            auto veg = getBiomeVegetation(static_cast<Biome>(popBiome));
+            ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1), "%zu asset types, density-based",
+                veg.assets.size());
+
+            if (ImGui::Button("Populate Zone", ImVec2(-1, 0)) && app.hasTerrainLoaded()) {
+                auto* t = app.getTerrainEditor().getTerrain();
+                float tileSize = 533.33333f;
+                glm::vec3 origin(
+                    (32.0f - t->coord.y) * tileSize,
+                    (32.0f - t->coord.x) * tileSize, 0);
+                int n = placer.populateBiome(veg, tileSize, origin, popSeed);
+                app.markObjectsDirty();
+                app.showToast("Populated " + std::string(biomeNames[popBiome]) +
+                    ": " + std::to_string(n) + " objects");
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Auto-place trees, rocks, bushes based on biome rules");
+        }
+
         ImGui::Separator();
         // Bulk operations
         if (ImGui::CollapsingHeader("Bulk Operations")) {

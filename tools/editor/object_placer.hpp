@@ -82,6 +82,11 @@ public:
     void scatter(const glm::vec3& center, float radius, int count,
                  float minScale, float maxScale);
 
+    // Procedural biome population: auto-place vegetation based on rules
+    int populateBiome(const struct BiomeVegetation& vegetation,
+                       float tileSize, const glm::vec3& tileOrigin,
+                       uint32_t seed = 42);
+
 private:
     uint32_t nextUniqueId();
 

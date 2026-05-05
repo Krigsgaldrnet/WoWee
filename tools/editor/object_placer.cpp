@@ -1,4 +1,5 @@
 #include "object_placer.hpp"
+#include "terrain_biomes.hpp"
 #include "core/logger.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -197,6 +198,45 @@ void ObjectPlacer::scatter(const glm::vec3& center, float radius, int count,
         objects_.push_back(obj);
     }
     LOG_INFO("Scattered ", count, " objects in radius ", radius);
+}
+
+int ObjectPlacer::populateBiome(const BiomeVegetation& vegetation,
+                                float tileSize, const glm::vec3& tileOrigin,
+                                uint32_t seed) {
+    int placed = 0;
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> distPos(0.0f, 1.0f);
+    std::uniform_real_distribution<float> distRot(0.0f, 360.0f);
+
+    for (const auto& asset : vegetation.assets) {
+        // Calculate object count from density (per 100x100 area)
+        float areaFactor = (tileSize * tileSize) / 10000.0f;
+        int count = static_cast<int>(asset.density * areaFactor);
+
+        std::uniform_real_distribution<float> distScale(asset.minScale, asset.maxScale);
+
+        for (int i = 0; i < count; i++) {
+            float u = distPos(rng);
+            float v = distPos(rng);
+            glm::vec3 pos = tileOrigin + glm::vec3(
+                -u * tileSize, -v * tileSize, 0.0f);
+
+            PlacedObject obj;
+            obj.type = PlaceableType::M2;
+            obj.path = asset.path;
+            obj.nameId = 0;
+            obj.uniqueId = nextUniqueId();
+            obj.position = pos;
+            obj.rotation = glm::vec3(0.0f, distRot(rng), 0.0f);
+            obj.scale = distScale(rng);
+            obj.selected = false;
+            objects_.push_back(obj);
+            placed++;
+        }
+    }
+
+    LOG_INFO("Biome populated: ", vegetation.name, " — ", placed, " objects placed");
+    return placed;
 }
 
 void ObjectPlacer::undoLastPlace() {
