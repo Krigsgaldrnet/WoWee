@@ -309,6 +309,33 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 std::string wcpPath = "output/" + app.getLoadedMap() + ".wcp";
                 app.exportContentPack(wcpPath);
             }
+            if (ImGui::BeginMenu("Validate Open Formats", app.hasTerrainLoaded())) {
+                std::string zoneDir = "output/" + app.getLoadedMap();
+                auto val = editor::ContentPacker::validateZone(zoneDir);
+                int score = val.openFormatScore();
+                ImVec4 scoreColor = score >= 5 ? ImVec4(0.3f, 1, 0.3f, 1) :
+                                    score >= 3 ? ImVec4(1, 1, 0.3f, 1) :
+                                                 ImVec4(1, 0.3f, 0.3f, 1);
+                ImGui::TextColored(scoreColor, "Open Format Score: %d/6", score);
+                ImGui::Separator();
+                auto fmt = [](bool has, bool valid, const char* name, const char* desc) {
+                    ImVec4 c = has ? (valid ? ImVec4(0.3f,1,0.3f,1) : ImVec4(1,0.7f,0.3f,1))
+                                  : ImVec4(0.5f,0.5f,0.5f,1);
+                    ImGui::TextColored(c, "%s %s — %s",
+                        has ? (valid ? "[OK]" : "[!!]") : "[--]", name, desc);
+                };
+                fmt(val.hasWot, true, "WOT", "terrain metadata");
+                fmt(val.hasWhm, val.whmValid, "WHM", "heightmap binary");
+                fmt(val.hasZoneJson, true, "zone.json", "map definition");
+                fmt(val.hasPng, true, "PNG", "textures");
+                fmt(val.hasWom, val.womValid, "WOM", "models");
+                fmt(val.hasWob, val.wobValid, "WOB", "buildings");
+                ImGui::Separator();
+                fmt(val.hasCreatures, true, "creatures", "NPC spawns");
+                fmt(val.hasQuests, true, "quests", "quest data");
+                fmt(val.hasObjects, true, "objects", "placed objects");
+                ImGui::EndMenu();
+            }
             if (ImGui::BeginMenu("Add Adjacent Tile", app.hasTerrainLoaded())) {
                 if (ImGui::MenuItem("North (+X)")) app.addAdjacentTile(1, 0);
                 if (ImGui::MenuItem("South (-X)")) app.addAdjacentTile(-1, 0);
@@ -385,19 +412,28 @@ void EditorUI::renderMenuBar(EditorApp& app) {
     if (showAbout_) {
         ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("About Wowee World Editor", &showAbout_)) {
-            ImGui::Text("Wowee World Editor");
+            ImGui::TextColored(ImVec4(1, 0.85f, 0.3f, 1), "Wowee World Editor v1.0.0");
             ImGui::Text("by Kelsi Davis");
             ImGui::Separator();
-            ImGui::Text("Version: 1.0.0");
-            ImGui::Text("Standalone world editor for creating");
-            ImGui::Text("custom WoW zones for the wowee client.");
+            ImGui::Text("Standalone world editor for creating custom");
+            ImGui::Text("WoW zones with novel open format exports.");
             ImGui::Separator();
-            ImGui::Text("6 modes, 30+ terrain tools, 3 noise types");
-            ImGui::Text("All 6 Blizzard formats replaced with open alternatives");
-            ImGui::Text("Export: ADT + WDT + JSON (zone manifest)");
-            ImGui::Text("11k+ lines, 6 novel open formats");
-            ImGui::Text("WOT/WHM/WOM/WOB/WCP + PNG/JSON");
-            ImGui::Text("Built with SDL2 / Vulkan / ImGui");
+            ImGui::TextColored(ImVec4(0.6f, 0.9f, 0.6f, 1), "Features:");
+            ImGui::BulletText("6 editing modes (Sculpt/Paint/Objects/Water/NPCs/Quests)");
+            ImGui::BulletText("30+ terrain tools with procedural generators");
+            ImGui::BulletText("Quest chains with circular reference detection");
+            ImGui::BulletText("631 creature presets across 8 categories");
+            ImGui::BulletText("Full undo/redo for terrain + texture painting");
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1), "Open Format Replacements (6/6):");
+            ImGui::BulletText("ADT -> WOT/WHM (terrain + heightmap)");
+            ImGui::BulletText("WDT -> zone.json (map definition)");
+            ImGui::BulletText("BLP -> PNG (textures)");
+            ImGui::BulletText("DBC -> JSON (data tables)");
+            ImGui::BulletText("M2  -> WOM (models)");
+            ImGui::BulletText("WMO -> WOB (buildings)");
+            ImGui::Separator();
+            ImGui::Text("Built with SDL2 / Vulkan / ImGui / nlohmann-json");
         }
         ImGui::End();
     }
@@ -2210,10 +2246,16 @@ void EditorUI::renderStatusBar(EditorApp& app) {
             ImGui::Text("[%s] %s [%d,%d]%s", m, app.getLoadedMap().c_str(),
                         app.getLoadedTileX(), app.getLoadedTileY(),
                         app.getTerrainEditor().hasUnsavedChanges() ? " *" : "");
-            ImGui::SameLine(vp->Size.x * 0.4f);
-            ImGui::Text("Obj:%zu NPC:%zu",
+            ImGui::SameLine(vp->Size.x * 0.35f);
+            ImGui::Text("Obj:%zu NPC:%zu Q:%zu",
                         app.getObjectPlacer().objectCount(),
-                        app.getNpcSpawner().spawnCount());
+                        app.getNpcSpawner().spawnCount(),
+                        app.getQuestEditor().questCount());
+            ImGui::SameLine(vp->Size.x * 0.6f);
+            auto& hist = app.getTerrainEditor().history();
+            if (hist.undoCount() > 0 || hist.redoCount() > 0)
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                    "Undo:%zu Redo:%zu", hist.undoCount(), hist.redoCount());
         } else {
             ImGui::Text("[%s] Wowee World Editor", m);
         }
