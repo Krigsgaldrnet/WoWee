@@ -299,7 +299,10 @@ void EditorUI::renderNewTerrainDialog(EditorApp& /*app*/) {
         };
         ImGui::Combo("Biome", &newBiomeIdx_, biomeNames, 10);
         const auto& bt = getBiomeTextures(static_cast<Biome>(newBiomeIdx_));
-        ImGui::TextColored(ImVec4(0.5f, 0.7f, 0.5f, 1.0f), "%s", bt.base);
+        ImGui::TextColored(ImVec4(0.5f, 0.7f, 0.5f, 1.0f), "Base: %s", bt.base);
+        ImGui::TextColored(ImVec4(0.5f, 0.6f, 0.5f, 1.0f), "  + %s", bt.secondary);
+        ImGui::TextColored(ImVec4(0.5f, 0.6f, 0.5f, 1.0f), "  + %s", bt.accent);
+        ImGui::TextColored(ImVec4(0.5f, 0.6f, 0.5f, 1.0f), "  + %s", bt.detail);
 
         ImGui::Spacing();
         if (ImGui::Button("Create", ImVec2(120, 0))) { newRequested_ = true; showNewDialog_ = false; }
