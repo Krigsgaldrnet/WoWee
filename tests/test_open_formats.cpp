@@ -168,6 +168,90 @@ TEST_CASE("WHM rejects invalid magic", "[whm]") {
     std::filesystem::remove(path);
 }
 
+TEST_CASE("WOT metadata round-trip with placements", "[wot]") {
+    ensureTestDir();
+    std::string wotPath = TEST_DIR + "/test_terrain.wot";
+
+    // Write a WOT JSON with textures, layers, water, doodads, and WMOs
+    {
+        std::ofstream f(wotPath);
+        f << R"({
+  "format": "wot-1.0",
+  "tileX": 32, "tileY": 48,
+  "textures": ["Tileset\\Elwynn\\ElwynnGrass01.blp", "Tileset\\Elwynn\\ElwynnDirt01.blp"],
+  "chunkLayers": [
+    {"layers": [0, 1], "holes": 5}
+  ],
+  "water": [
+    {"chunk": 0, "type": 5, "height": 50.0},
+    null
+  ],
+  "doodadNames": ["World\\Doodad\\Tree01.m2", "World\\Doodad\\Rock03.m2"],
+  "doodads": [
+    {"nameId": 0, "uniqueId": 100, "pos": [1000.0, 2000.0, 50.0], "rot": [0.0, 45.0, 0.0], "scale": 1024, "flags": 0},
+    {"nameId": 1, "uniqueId": 101, "pos": [1100.0, 2100.0, 55.0], "rot": [10.0, 0.0, 5.0], "scale": 512, "flags": 2}
+  ],
+  "wmoNames": ["World\\WMO\\House01.wmo"],
+  "wmos": [
+    {"nameId": 0, "uniqueId": 200, "pos": [1200.0, 2200.0, 60.0], "rot": [0.0, 90.0, 0.0], "flags": 1, "doodadSet": 0}
+  ]
+})";
+    }
+
+    ADTTerrain terrain{};
+    terrain.loaded = true;
+    for (int i = 0; i < 256; i++) {
+        terrain.chunks[i].heightMap.loaded = true;
+        terrain.chunks[i].position[2] = 100.0f;
+    }
+
+    REQUIRE(WoweeTerrainLoader::loadMetadata(wotPath, terrain));
+
+    // Tile coordinates
+    REQUIRE(terrain.coord.x == 32);
+    REQUIRE(terrain.coord.y == 48);
+
+    // Textures
+    REQUIRE(terrain.textures.size() == 2);
+    REQUIRE(terrain.textures[0] == "Tileset\\Elwynn\\ElwynnGrass01.blp");
+
+    // Chunk layers
+    REQUIRE(terrain.chunks[0].layers.size() == 2);
+    REQUIRE(terrain.chunks[0].layers[0].textureId == 0);
+    REQUIRE(terrain.chunks[0].layers[1].textureId == 1);
+    REQUIRE(terrain.chunks[0].holes == 5);
+
+    // Water
+    REQUIRE(terrain.waterData[0].hasWater());
+    REQUIRE(terrain.waterData[0].layers[0].liquidType == 5);
+    REQUIRE(terrain.waterData[0].layers[0].maxHeight == Catch::Approx(50.0f));
+
+    // Doodad names and placements
+    REQUIRE(terrain.doodadNames.size() == 2);
+    REQUIRE(terrain.doodadNames[0] == "World\\Doodad\\Tree01.m2");
+    REQUIRE(terrain.doodadPlacements.size() == 2);
+    REQUIRE(terrain.doodadPlacements[0].nameId == 0);
+    REQUIRE(terrain.doodadPlacements[0].uniqueId == 100);
+    REQUIRE(terrain.doodadPlacements[0].position[0] == Catch::Approx(1000.0f));
+    REQUIRE(terrain.doodadPlacements[0].rotation[1] == Catch::Approx(45.0f));
+    REQUIRE(terrain.doodadPlacements[0].scale == 1024);
+    REQUIRE(terrain.doodadPlacements[1].nameId == 1);
+    REQUIRE(terrain.doodadPlacements[1].flags == 2);
+
+    // WMO names and placements
+    REQUIRE(terrain.wmoNames.size() == 1);
+    REQUIRE(terrain.wmoNames[0] == "World\\WMO\\House01.wmo");
+    REQUIRE(terrain.wmoPlacements.size() == 1);
+    REQUIRE(terrain.wmoPlacements[0].nameId == 0);
+    REQUIRE(terrain.wmoPlacements[0].uniqueId == 200);
+    REQUIRE(terrain.wmoPlacements[0].position[0] == Catch::Approx(1200.0f));
+    REQUIRE(terrain.wmoPlacements[0].rotation[1] == Catch::Approx(90.0f));
+    REQUIRE(terrain.wmoPlacements[0].flags == 1);
+    REQUIRE(terrain.wmoPlacements[0].doodadSet == 0);
+
+    std::filesystem::remove(wotPath);
+}
+
 TEST_CASE("WOB rejects missing file", "[wob]") {
     REQUIRE_FALSE(WoweeBuildingLoader::exists("nonexistent_path"));
 }
