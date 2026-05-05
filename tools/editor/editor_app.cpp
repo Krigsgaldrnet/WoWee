@@ -849,6 +849,11 @@ void EditorApp::generateCompleteZone() {
     // Step 5: Slope paint (rock on cliffs)
     texturePainter_.autoPaintBySlope(0.4f, "Tileset\\Desolace\\DesolaceRock01.blp");
 
+    // Step 6: Fill low areas with water and smooth beaches
+    float waterLevel = terrain_.chunks[0].position[2] + 5.0f;
+    terrainEditor_.fillWater(waterLevel, 0);
+    terrainEditor_.smoothBeaches(waterLevel, 12.0f);
+
     // Refresh
     auto mesh = terrainEditor_.regenerateMesh();
     viewport_.clearTerrain();
