@@ -611,6 +611,37 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         }
 
         ImGui::Separator();
+        // Bulk operations
+        if (ImGui::CollapsingHeader("Bulk Operations")) {
+            static float bulkRadius = 50.0f;
+            ImGui::SliderFloat("Radius##bulk", &bulkRadius, 10.0f, 200.0f);
+            auto& brush = app.getTerrainEditor().brush();
+            if (ImGui::Button("Delete All in Radius", ImVec2(-1, 0)) && brush.isActive()) {
+                auto& objs = const_cast<std::vector<PlacedObject>&>(placer.getObjects());
+                glm::vec3 center = brush.getPosition();
+                objs.erase(std::remove_if(objs.begin(), objs.end(),
+                    [&](const PlacedObject& o) {
+                        return glm::length(glm::vec2(o.position.x - center.x,
+                                                     o.position.y - center.y)) < bulkRadius;
+                    }), objs.end());
+                app.markObjectsDirty();
+                app.showToast("Deleted objects in radius");
+            }
+            if (ImGui::Button("Snap All to Ground", ImVec2(-1, 0))) {
+                for (auto& o : const_cast<std::vector<PlacedObject>&>(placer.getObjects())) {
+                    rendering::Ray r;
+                    r.origin = o.position + glm::vec3(0, 0, 500);
+                    r.direction = glm::vec3(0, 0, -1);
+                    glm::vec3 hit;
+                    if (app.getTerrainEditor().raycastTerrain(r, hit))
+                        o.position.z = hit.z;
+                }
+                app.markObjectsDirty();
+                app.showToast("All objects snapped to ground");
+            }
+        }
+
+        ImGui::Separator();
         ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1), "Left-click: place | Ctrl+click: select");
         ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1), "G: move | R: rotate | T: scale | Del: remove");
     }
@@ -1036,13 +1067,24 @@ void EditorUI::renderMinimap(EditorApp& app) {
         }
 
         ImGui::Dummy(ImVec2(avail.x, 16 * cellH));
+        // Camera indicator as white cross
+        auto camPos = app.getEditorCamera().getCamera().getPosition();
+        float camU = (tileNW_X - camPos.x) / 533.33333f;
+        float camV = (tileNW_Y - camPos.y) / 533.33333f;
+        if (camU >= 0 && camU <= 1 && camV >= 0 && camV <= 1) {
+            ImVec2 cp(origin.x + camV * avail.x, origin.y + camU * (16 * cellH));
+            dl->AddLine(ImVec2(cp.x - 3, cp.y), ImVec2(cp.x + 3, cp.y), IM_COL32(255,255,255,220), 2);
+            dl->AddLine(ImVec2(cp.x, cp.y - 3), ImVec2(cp.x, cp.y + 3), IM_COL32(255,255,255,220), 2);
+        }
+
+        ImGui::Dummy(ImVec2(avail.x, 16 * cellH));
         // Legend
         ImDrawList* dl2 = ImGui::GetWindowDrawList();
         ImVec2 legPos = ImGui::GetCursorScreenPos();
         dl2->AddCircleFilled(ImVec2(legPos.x + 5, legPos.y + 5), 3, IM_COL32(255, 220, 50, 200));
         dl2->AddCircleFilled(ImVec2(legPos.x + 45, legPos.y + 5), 3, IM_COL32(255, 60, 60, 200));
         dl2->AddCircleFilled(ImVec2(legPos.x + 100, legPos.y + 5), 3, IM_COL32(60, 200, 60, 200));
-        ImGui::Text("   Obj      Hostile   Friendly");
+        ImGui::Text("   Obj      Hostile   Friendly  + Cam");
     }
     ImGui::End();
     ImGui::PopStyleVar();
