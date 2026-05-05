@@ -765,8 +765,18 @@ void EditorApp::exportZone(const std::string& outputDir) {
     manifest.save(base + "/zone.json");
 
     lastSavePath_ = outputDir;
-    showToast("Zone exported to " + base);
-    LOG_INFO("Zone exported to: ", base);
+
+    // Count exported files
+    int fileCount = 2; // ADT + WDT always
+    fileCount += 2; // WOT + WHM always
+    fileCount += 1; // zone.json always
+    fileCount += 1; // README always
+    if (objectPlacer_.objectCount() > 0) fileCount++;
+    if (npcSpawner_.spawnCount() > 0) fileCount++;
+    if (questEditor_.questCount() > 0) fileCount++;
+
+    showToast("Exported " + std::to_string(fileCount) + " files to " + base);
+    LOG_INFO("Zone exported to: ", base, " (", fileCount, " files)");
 }
 
 void EditorApp::exportContentPack(const std::string& destPath) {
