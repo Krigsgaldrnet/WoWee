@@ -100,6 +100,42 @@ bool EditorProject::load(const std::string& path) {
     return true;
 }
 
+bool EditorProject::initGitRepo() const {
+    if (projectDir.empty()) return false;
+    int ret = std::system(("cd \"" + projectDir + "\" && git init && git add -A && "
+                           "git commit -m \"Initial project commit\"").c_str());
+    return ret == 0;
+}
+
+bool EditorProject::gitCommit(const std::string& message) const {
+    if (projectDir.empty()) return false;
+    int ret = std::system(("cd \"" + projectDir + "\" && git add -A && "
+                           "git commit -m \"" + message + "\"").c_str());
+    return ret == 0;
+}
+
+bool EditorProject::gitPush() const {
+    if (projectDir.empty()) return false;
+    return std::system(("cd \"" + projectDir + "\" && git push").c_str()) == 0;
+}
+
+bool EditorProject::gitPull() const {
+    if (projectDir.empty()) return false;
+    return std::system(("cd \"" + projectDir + "\" && git pull").c_str()) == 0;
+}
+
+std::string EditorProject::gitStatus() const {
+    if (projectDir.empty()) return "No project directory";
+    std::string cmd = "cd \"" + projectDir + "\" && git status --short 2>&1";
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return "git not available";
+    char buf[256];
+    std::string result;
+    while (fgets(buf, sizeof(buf), pipe)) result += buf;
+    pclose(pipe);
+    return result.empty() ? "Clean (no changes)" : result;
+}
+
 std::string EditorProject::getZoneOutputDir(int zoneIdx) const {
     if (zoneIdx < 0 || zoneIdx >= static_cast<int>(zones.size())) return "";
     return projectDir + "/" + zones[zoneIdx].mapName;

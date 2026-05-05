@@ -26,6 +26,13 @@ struct EditorProject {
     bool save(const std::string& path) const;
     bool load(const std::string& path);
     std::string getZoneOutputDir(int zoneIdx) const;
+
+    // Git integration for collaborative expansion development
+    bool initGitRepo() const;
+    bool gitCommit(const std::string& message) const;
+    bool gitPush() const;
+    bool gitPull() const;
+    std::string gitStatus() const;
 };
 
 } // namespace editor

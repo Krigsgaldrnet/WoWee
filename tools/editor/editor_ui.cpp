@@ -172,6 +172,27 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                     }
                     ImGui::EndMenu();
                 }
+                ImGui::Separator();
+                if (ImGui::BeginMenu("Git (Collaboration)")) {
+                    if (ImGui::MenuItem("Init Git Repo")) {
+                        if (app.getProject().initGitRepo())
+                            app.showToast("Git repo initialized");
+                        else
+                            app.showToast("Git init failed");
+                    }
+                    if (ImGui::MenuItem("Commit Changes")) {
+                        app.quickSave();
+                        if (app.getProject().gitCommit("Editor save"))
+                            app.showToast("Changes committed");
+                    }
+                    if (ImGui::MenuItem("Push to Remote"))
+                        app.getProject().gitPush() ? app.showToast("Pushed") : app.showToast("Push failed");
+                    if (ImGui::MenuItem("Pull from Remote"))
+                        app.getProject().gitPull() ? app.showToast("Pulled") : app.showToast("Pull failed");
+                    ImGui::Separator();
+                    ImGui::TextWrapped("%s", app.getProject().gitStatus().c_str());
+                    ImGui::EndMenu();
+                }
                 ImGui::Text("Project: %s (%zu zones)",
                             app.getProject().name.c_str(),
                             app.getProject().zones.size());
