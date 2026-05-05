@@ -704,7 +704,8 @@ void EditorApp::exportZone(const std::string& outputDir) {
             readme << "Tile: [" << loadedTileX_ << ", " << loadedTileY_ << "]\n";
             readme << "Objects: " << objectPlacer_.objectCount() << "\n";
             readme << "NPCs: " << npcSpawner_.spawnCount() << "\n";
-            readme << "Created with Wowee World Editor\n\n";
+            readme << "Quests: " << questEditor_.questCount() << "\n";
+            readme << "Created with Wowee World Editor v0.3.0\n\n";
             readme << "Files:\n";
             readme << "  zone.json       - Zone manifest (for client)\n";
             readme << "  " << loadedMap_ << ".wdt   - Map definition\n";
