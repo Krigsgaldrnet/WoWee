@@ -36,6 +36,8 @@
 - Zone map image export: colored top-down PNG with terrain, water, objects
 - SQL spawn export for AzerothCore/TrinityCore (creature_template, creature,
   waypoint_data, quest_template — ready-to-import .sql files)
+- Server module generator: one-click AzerothCore module with map registration,
+  spawns, teleport command, zone flags, conf snippet, and admin README
 - Live open format validation (0-7 score) in File menu
 
 ### Novel Open Formats (7/7 Blizzard format replacements)

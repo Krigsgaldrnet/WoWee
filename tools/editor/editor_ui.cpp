@@ -638,6 +638,7 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("Ctrl+S — quick save (all formats + collision)");
             ImGui::BulletText("Ctrl+Shift+E — export content pack (.wcp)");
             ImGui::BulletText("File → Batch Convert Assets (M2→WOM, WMO→WOB)");
+            ImGui::BulletText("File → Generate Server Module (AzerothCore SQL)");
             ImGui::BulletText("Minimap: toggle slope overlay for collision preview");
         }
         ImGui::End();

@@ -51,6 +51,8 @@ cmake --build build --target wowee_editor
 
 Exported zones auto-load in the wowee client from `custom_zones/` or `output/` directories.
 
+**AzerothCore integration**: File > Generate Server Module creates a ready-to-import module with SQL spawn tables, map registration, teleport commands, zone flags, and a server admin README.
+
 ## Features
 
 ### Rendering Engine
