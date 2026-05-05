@@ -809,7 +809,7 @@ void EditorApp::exportZone(const std::string& outputDir) {
             readme << "NPCs: " << npcSpawner_.spawnCount() << "\n";
             readme << "Quests: " << questEditor_.questCount() << "\n";
             readme << "Created with Wowee World Editor v0.8.0\n\n";
-            readme << "Open Formats (no Blizzard IP):\n";
+            readme << "\nOpen Formats (no Blizzard IP):\n";
             readme << "  .wot/.whm  — Wowee Open Terrain (heightmap + metadata)\n";
             readme << "  .wom       — Wowee Open Model (static 3D models)\n";
             readme << "  .wob       — Wowee Open Building (multi-group buildings)\n";
