@@ -35,4 +35,10 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 - Replaces WDT
 - Contains: mapName, mapId, tiles, biome, file references
 
+## zone.json Fields
+- `mapName`, `displayName`, `mapId`, `biome`, `baseHeight`
+- `hasCreatures`, `description`, `tiles` array, `files` map
+- `editorVersion` for compatibility tracking
+
 ## All formats are novel, portable, and open for redistribution.
+## No Blizzard intellectual property is used in any format definition.
