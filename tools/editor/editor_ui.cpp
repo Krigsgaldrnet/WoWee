@@ -1201,7 +1201,7 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
         ImGui::Separator();
         auto pos = app.getEditorCamera().getCamera().getPosition();
         ImGui::Text("Camera: %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
-        ImGui::Text("Speed: %.0f (scroll)", app.getEditorCamera().getSpeed());
+        ImGui::Text("Speed: %.0f (Shift+scroll)", app.getEditorCamera().getSpeed());
 
         // Cursor world position
         auto& brush = app.getTerrainEditor().brush();
