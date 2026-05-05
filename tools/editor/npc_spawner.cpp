@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <cmath>
+#include <random>
 #include <algorithm>
 #include <filesystem>
 
@@ -100,6 +101,23 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
 
     LOG_INFO("NPC spawns saved: ", path, " (", spawns_.size(), " creatures)");
     return true;
+}
+
+void NpcSpawner::scatter(const CreatureSpawn& base, const glm::vec3& center,
+                          float radius, int count) {
+    std::mt19937 rng(static_cast<uint32_t>(center.x * 100 + center.y * 37));
+    std::uniform_real_distribution<float> distAngle(0.0f, 6.2831853f);
+    std::uniform_real_distribution<float> distDist(0.0f, radius);
+    std::uniform_real_distribution<float> distRot(0.0f, 360.0f);
+
+    for (int i = 0; i < count; i++) {
+        float angle = distAngle(rng);
+        float dist = std::sqrt(distDist(rng) / radius) * radius;
+        CreatureSpawn s = base;
+        s.position = center + glm::vec3(std::cos(angle) * dist, std::sin(angle) * dist, 0.0f);
+        s.orientation = distRot(rng);
+        placeCreature(s);
+    }
 }
 
 bool NpcSpawner::loadFromFile(const std::string& path) {

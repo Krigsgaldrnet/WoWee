@@ -73,6 +73,13 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 app.quickSave();
             if (ImGui::MenuItem("Export Zone...", nullptr, false, app.hasTerrainLoaded()))
                 showSaveDialog_ = true;
+            if (ImGui::BeginMenu("Add Adjacent Tile", app.hasTerrainLoaded())) {
+                if (ImGui::MenuItem("North (+X)")) app.addAdjacentTile(1, 0);
+                if (ImGui::MenuItem("South (-X)")) app.addAdjacentTile(-1, 0);
+                if (ImGui::MenuItem("East (+Y)")) app.addAdjacentTile(0, 1);
+                if (ImGui::MenuItem("West (-Y)")) app.addAdjacentTile(0, -1);
+                ImGui::EndMenu();
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Quit", "Alt+F4")) app.requestQuit();
             ImGui::EndMenu();
@@ -535,6 +542,25 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             if (ImGui::Button("Delete##npc")) spawner.removeCreature(spawner.getSelectedIndex());
             ImGui::SameLine();
             if (ImGui::Button("Deselect##npc")) spawner.clearSelection();
+        }
+
+        ImGui::Separator();
+
+        // Scatter tool
+        if (ImGui::CollapsingHeader("Scatter Tool")) {
+            static int scatterCount = 5;
+            static float scatterRadius = 50.0f;
+            ImGui::SliderInt("Count", &scatterCount, 1, 30);
+            ImGui::SliderFloat("Radius##scatter", &scatterRadius, 10.0f, 200.0f);
+            auto& brush = app.getTerrainEditor().brush();
+            if (ImGui::Button("Scatter at Cursor", ImVec2(-1, 0))) {
+                if (brush.isActive() && !tmpl.modelPath.empty()) {
+                    spawner.scatter(tmpl, brush.getPosition(), scatterRadius, scatterCount);
+                    app.markObjectsDirty();
+                }
+            }
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "Places %d copies in %.0f radius", scatterCount, scatterRadius);
         }
 
         ImGui::Separator();

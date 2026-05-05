@@ -603,6 +603,22 @@ void EditorApp::setGizmoAxis(TransformAxis axis) {
         viewport_.getGizmo().setTarget(sel->position, sel->scale);
 }
 
+void EditorApp::addAdjacentTile(int offsetX, int offsetY) {
+    if (!terrain_.isLoaded()) return;
+    int newX = loadedTileX_ + offsetX;
+    int newY = loadedTileY_ + offsetY;
+    if (newX < 0 || newX > 63 || newY < 0 || newY > 63) return;
+
+    // Create a blank tile adjacent to current
+    auto adj = TerrainEditor::createBlankTerrain(newX, newY, terrain_.chunks[0].position[2],
+                                                  Biome::Grassland);
+    // Stitch edges: copy border heights from current terrain to adjacent
+    // (This is a simplified version — full multi-tile needs a different architecture)
+    LOG_INFO("Adjacent tile created at [", newX, ",", newY, "] (not yet rendered in viewport)");
+    ADTWriter::write(adj, "output/" + loadedMap_ + "/" + loadedMap_ + "_" +
+                     std::to_string(newX) + "_" + std::to_string(newY) + ".adt");
+}
+
 void EditorApp::snapSelectedToGround() {
     auto* sel = objectPlacer_.getSelected();
     if (!sel || !terrain_.isLoaded()) return;

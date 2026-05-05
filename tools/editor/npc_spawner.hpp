@@ -81,6 +81,10 @@ public:
     // Template creature for placement
     CreatureSpawn& getTemplate() { return template_; }
 
+    // Scatter: place multiple copies in a radius around a point
+    void scatter(const CreatureSpawn& base, const glm::vec3& center,
+                 float radius, int count);
+
 private:
     uint32_t nextId();
     std::vector<CreatureSpawn> spawns_;

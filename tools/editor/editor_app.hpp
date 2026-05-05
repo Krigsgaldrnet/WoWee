@@ -64,6 +64,9 @@ public:
     void startGizmoMode(TransformMode mode);
     void setGizmoAxis(TransformAxis axis);
     void snapSelectedToGround();
+
+    // Multi-tile support
+    void addAdjacentTile(int offsetX, int offsetY);
     TransformGizmo& getGizmo() { return viewport_.getGizmo(); }
     bool shouldOpenContextMenu() const { return openContextMenu_; }
     void clearContextMenuFlag() { openContextMenu_ = false; }
