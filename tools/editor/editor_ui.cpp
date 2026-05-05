@@ -158,7 +158,23 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 }
                 ImGui::Separator();
                 ImGui::InputText("Path##proj", projPathBuf, sizeof(projPathBuf));
-                ImGui::Text("Zones: %zu", app.getProject().zones.size());
+                if (!app.getProject().zones.empty() && ImGui::BeginMenu("Switch Zone")) {
+                    for (int i = 0; i < static_cast<int>(app.getProject().zones.size()); i++) {
+                        auto& z = app.getProject().zones[i];
+                        char label[128];
+                        std::snprintf(label, sizeof(label), "%s [%d,%d]",
+                                      z.mapName.c_str(), z.tileX, z.tileY);
+                        if (ImGui::MenuItem(label)) {
+                            // Save current zone first, then load the selected one
+                            app.quickSave();
+                            app.loadADT(z.mapName, z.tileX, z.tileY);
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
+                ImGui::Text("Project: %s (%zu zones)",
+                            app.getProject().name.c_str(),
+                            app.getProject().zones.size());
                 ImGui::EndMenu();
             }
             ImGui::Separator();
