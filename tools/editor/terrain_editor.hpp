@@ -60,6 +60,9 @@ public:
     // Clamp all heights to a min/max range
     void clampHeights(float minH, float maxH);
 
+    // Scale all heights by a factor (useful for exaggerating or flattening)
+    void scaleHeights(float factor);
+
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);

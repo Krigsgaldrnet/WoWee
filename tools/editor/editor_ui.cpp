@@ -404,8 +404,15 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                 app.getTerrainEditor().clampHeights(clampMin, clampMax);
                 app.showToast("Heights clamped");
             }
+            ImGui::Separator();
+            static float hScale = 1.5f;
+            ImGui::SliderFloat("Height Scale", &hScale, 0.1f, 5.0f, "%.2f");
+            if (ImGui::Button("Scale Heights", ImVec2(-1, 0))) {
+                app.getTerrainEditor().scaleHeights(hScale);
+                app.showToast("Heights scaled");
+            }
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
-                "Generate, smooth, then clamp for controlled range");
+                "Exaggerate (>1) or flatten (<1) terrain relief");
         }
 
         ImGui::Separator();

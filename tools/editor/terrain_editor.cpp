@@ -652,6 +652,20 @@ void TerrainEditor::smoothEntireTile(int iterations) {
     dirty_ = true;
 }
 
+void TerrainEditor::scaleHeights(float factor) {
+    if (!terrain_) return;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        for (int v = 0; v < 145; v++)
+            chunk.heightMap.heights[v] *= factor;
+        dirtyChunks_.push_back(ci);
+    }
+    // Re-stitch all edges after scaling
+    for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
+    dirty_ = true;
+}
+
 void TerrainEditor::clampHeights(float minH, float maxH) {
     if (!terrain_) return;
     for (int ci = 0; ci < 256; ci++) {
