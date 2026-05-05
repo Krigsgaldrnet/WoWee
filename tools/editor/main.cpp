@@ -16,7 +16,7 @@ static void printUsage(const char* argv0) {
     LOG_INFO("  --list-zones           List discovered custom zones and exit");
     LOG_INFO("  --version              Show version and format info");
     LOG_INFO("");
-    LOG_INFO("Wowee World Editor v0.8.0 — by Kelsi Davis");
+    LOG_INFO("Wowee World Editor v1.0.0 — by Kelsi Davis");
     LOG_INFO("Novel open formats: WOT/WHM/WOM/WOB/WCP");
 }
 
