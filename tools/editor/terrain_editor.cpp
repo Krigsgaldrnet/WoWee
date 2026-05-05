@@ -680,6 +680,7 @@ void TerrainEditor::resetToFlat() {
 
 void TerrainEditor::scaleHeights(float factor) {
     if (!terrain_) return;
+    recordGeneratorUndo();
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
         if (!chunk.hasHeightMap()) continue;
@@ -690,10 +691,12 @@ void TerrainEditor::scaleHeights(float factor) {
     // Re-stitch all edges after scaling
     for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::mirrorX() {
     if (!terrain_) return;
+    recordGeneratorUndo();
     for (int cy = 0; cy < 16; cy++) {
         for (int cx = 0; cx < 8; cx++) {
             int srcIdx = cy * 16 + cx;
@@ -713,10 +716,12 @@ void TerrainEditor::mirrorX() {
     }
     for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::mirrorY() {
     if (!terrain_) return;
+    recordGeneratorUndo();
     for (int cy = 0; cy < 8; cy++) {
         for (int cx = 0; cx < 16; cx++) {
             int srcIdx = cy * 16 + cx;
@@ -736,6 +741,7 @@ void TerrainEditor::mirrorY() {
     }
     for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::carveRiver(const glm::vec3& start, const glm::vec3& end,
@@ -957,6 +963,7 @@ void TerrainEditor::createDunes(float wavelength, float amplitude, float directi
 
 void TerrainEditor::rotateTerrain90() {
     if (!terrain_) return;
+    recordGeneratorUndo();
     // Snapshot all outer vertex heights into a 129x129 grid
     std::array<std::array<float, 129>, 129> grid{};
     for (int cy = 0; cy < 16; cy++) {
@@ -998,10 +1005,12 @@ void TerrainEditor::rotateTerrain90() {
     }
     for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::offsetHeights(float amount) {
     if (!terrain_) return;
+    recordGeneratorUndo();
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
         if (!chunk.hasHeightMap()) continue;
@@ -1010,10 +1019,12 @@ void TerrainEditor::offsetHeights(float amount) {
         dirtyChunks_.push_back(ci);
     }
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::invertHeights() {
     if (!terrain_) return;
+    recordGeneratorUndo();
     // Find midpoint
     float minH = 1e30f, maxH = -1e30f;
     for (int ci = 0; ci < 256; ci++) {
@@ -1034,6 +1045,7 @@ void TerrainEditor::invertHeights() {
     }
     for (int ci = 0; ci < 256; ci++) stitchEdges(ci);
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::fillWater(float height, uint16_t liquidType) {
@@ -1064,6 +1076,7 @@ void TerrainEditor::fillWater(float height, uint16_t liquidType) {
 
 void TerrainEditor::smoothBeaches(float waterHeight, float beachWidth) {
     if (!terrain_) return;
+    recordGeneratorUndo();
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
         if (!chunk.hasHeightMap()) continue;
@@ -1083,6 +1096,7 @@ void TerrainEditor::smoothBeaches(float waterHeight, float beachWidth) {
         if (modified) { stitchEdges(ci); dirtyChunks_.push_back(ci); }
     }
     dirty_ = true;
+    commitGeneratorUndo();
 }
 
 void TerrainEditor::addDetailNoise(float amplitude, float frequency, uint32_t seed) {

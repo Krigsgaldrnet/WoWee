@@ -537,6 +537,17 @@ void EditorApp::updateTerrainEditing(float dt) {
             viewport_.setBrushIndicator({}, 0, false);
             viewport_.clearGhostPreview();
         }
+
+        // Path preview for river/road tool
+        if (ui_.getPathCapture() == EditorUI::PathCapture::WaitingEnd ||
+            ui_.isPathReady()) {
+            glm::vec3 endPt = ui_.isPathReady() ? ui_.getPathEnd()
+                                                : terrainEditor_.brush().getPosition();
+            viewport_.setPathPreview(ui_.getPathStart(), endPt,
+                ui_.getPathWidth(), true);
+        } else {
+            viewport_.setPathPreview({}, {}, 0, false);
+        }
     }
 
     if (painting_ && terrainEditor_.brush().isActive()) {

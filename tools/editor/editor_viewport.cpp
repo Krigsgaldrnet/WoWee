@@ -58,6 +58,7 @@ void EditorViewport::shutdown() {
 
     if (npcMarkerVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), npcMarkerVB_, npcMarkerVBAlloc_); npcMarkerVB_ = VK_NULL_HANDLE; }
     if (brushVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), brushVB_, brushVBAlloc_); brushVB_ = VK_NULL_HANDLE; }
+    if (pathVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), pathVB_, pathVBAlloc_); pathVB_ = VK_NULL_HANDLE; }
     gizmo_.shutdown();
     waterRenderer_.shutdown();
 
@@ -332,6 +333,64 @@ void EditorViewport::setBrushIndicator(const glm::vec3& center, float radius, bo
     }
 }
 
+void EditorViewport::setPathPreview(const glm::vec3& start, const glm::vec3& end,
+                                     float width, bool visible) {
+    pathVisible_ = visible;
+    if (pathVB_) {
+        vmaDestroyBuffer(vkCtx_->getAllocator(), pathVB_, pathVBAlloc_);
+        pathVB_ = VK_NULL_HANDLE;
+        pathVertCount_ = 0;
+    }
+    if (!visible) return;
+
+    struct BV { float pos[3]; float color[4]; };
+    std::vector<BV> verts;
+
+    glm::vec2 dir = glm::normalize(glm::vec2(end.x - start.x, end.y - start.y));
+    glm::vec2 perp(-dir.y, dir.x);
+    float z0 = start.z + 2.0f;
+    float z1 = end.z + 2.0f;
+    float hw = width * 0.5f;
+
+    // Path ribbon (semi-transparent)
+    BV v;
+    v.color[0] = 0.3f; v.color[1] = 0.6f; v.color[2] = 1.0f; v.color[3] = 0.35f;
+    v.pos[0] = start.x - perp.x*hw; v.pos[1] = start.y - perp.y*hw; v.pos[2] = z0; verts.push_back(v);
+    v.pos[0] = start.x + perp.x*hw; v.pos[1] = start.y + perp.y*hw; v.pos[2] = z0; verts.push_back(v);
+    v.pos[0] = end.x - perp.x*hw;   v.pos[1] = end.y - perp.y*hw;   v.pos[2] = z1; verts.push_back(v);
+    v.pos[0] = end.x - perp.x*hw;   v.pos[1] = end.y - perp.y*hw;   v.pos[2] = z1; verts.push_back(v);
+    v.pos[0] = start.x + perp.x*hw; v.pos[1] = start.y + perp.y*hw; v.pos[2] = z0; verts.push_back(v);
+    v.pos[0] = end.x + perp.x*hw;   v.pos[1] = end.y + perp.y*hw;   v.pos[2] = z1; verts.push_back(v);
+
+    // Edge lines (brighter)
+    float lw = 0.8f;
+    v.color[0] = 0.4f; v.color[1] = 0.8f; v.color[2] = 1.0f; v.color[3] = 0.8f;
+    for (int side = -1; side <= 1; side += 2) {
+        float s = static_cast<float>(side);
+        glm::vec2 offset = perp * hw * s;
+        glm::vec2 linePerp = perp * lw * s;
+        v.pos[0] = start.x + offset.x - linePerp.x; v.pos[1] = start.y + offset.y - linePerp.y; v.pos[2] = z0; verts.push_back(v);
+        v.pos[0] = start.x + offset.x + linePerp.x; v.pos[1] = start.y + offset.y + linePerp.y; v.pos[2] = z0; verts.push_back(v);
+        v.pos[0] = end.x + offset.x - linePerp.x;   v.pos[1] = end.y + offset.y - linePerp.y;   v.pos[2] = z1; verts.push_back(v);
+        v.pos[0] = end.x + offset.x - linePerp.x;   v.pos[1] = end.y + offset.y - linePerp.y;   v.pos[2] = z1; verts.push_back(v);
+        v.pos[0] = start.x + offset.x + linePerp.x; v.pos[1] = start.y + offset.y + linePerp.y; v.pos[2] = z0; verts.push_back(v);
+        v.pos[0] = end.x + offset.x + linePerp.x;   v.pos[1] = end.y + offset.y + linePerp.y;   v.pos[2] = z1; verts.push_back(v);
+    }
+
+    pathVertCount_ = static_cast<uint32_t>(verts.size());
+    VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufInfo.size = verts.size() * sizeof(BV);
+    bufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo mapInfo{};
+    if (vmaCreateBuffer(vkCtx_->getAllocator(), &bufInfo, &allocInfo,
+            &pathVB_, &pathVBAlloc_, &mapInfo) == VK_SUCCESS) {
+        std::memcpy(mapInfo.pMappedData, verts.data(), verts.size() * sizeof(BV));
+    }
+}
+
 void EditorViewport::updateNpcMarkers(const std::vector<CreatureSpawn>& npcs) {
     if (npcMarkerVB_) {
         vmaDestroyBuffer(vkCtx_->getAllocator(), npcMarkerVB_, npcMarkerVBAlloc_);
@@ -488,6 +547,20 @@ void EditorViewport::render(VkCommandBuffer cmd) {
             VkDeviceSize off = 0;
             vkCmdBindVertexBuffers(cmd, 0, 1, &brushVB_, &off);
             vkCmdDraw(cmd, brushVertCount_, 1, 0, 0);
+        }
+    }
+
+    // Path preview line (river/road tool)
+    if (pathVisible_ && pathVB_ && pathVertCount_ > 0) {
+        auto* waterPipeline = waterRenderer_.getPipeline();
+        auto* waterLayout = waterRenderer_.getPipelineLayout();
+        if (waterPipeline && waterLayout) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterPipeline);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout,
+                                    0, 1, &perFrameSet, 0, nullptr);
+            VkDeviceSize off = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &pathVB_, &off);
+            vkCmdDraw(cmd, pathVertCount_, 1, 0, 0);
         }
     }
 

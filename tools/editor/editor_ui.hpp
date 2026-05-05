@@ -31,6 +31,7 @@ public:
     glm::vec3 getPathStart() const { return pathStart_; }
     glm::vec3 getPathEnd() const { return pathEnd_; }
     bool isPathReady() const { return pathStartSet_ && pathEndSet_; }
+    float getPathWidth() const { return pathWidth_; }
     void clearPath() { pathStartSet_ = false; pathEndSet_ = false; pathCapture_ = PathCapture::None; }
 
 private:

@@ -52,6 +52,7 @@ public:
 
     TransformGizmo& getGizmo() { return gizmo_; }
     void setBrushIndicator(const glm::vec3& center, float radius, bool active);
+    void setPathPreview(const glm::vec3& start, const glm::vec3& end, float width, bool visible);
 
     void setWireframe(bool enabled);
     bool isWireframe() const { return wireframe_; }
@@ -111,6 +112,12 @@ private:
     VkBuffer npcMarkerVB_ = VK_NULL_HANDLE;
     VmaAllocation npcMarkerVBAlloc_ = VK_NULL_HANDLE;
     uint32_t npcMarkerVertCount_ = 0;
+
+    // Path preview line
+    VkBuffer pathVB_ = VK_NULL_HANDLE;
+    VmaAllocation pathVBAlloc_ = VK_NULL_HANDLE;
+    uint32_t pathVertCount_ = 0;
+    bool pathVisible_ = false;
 };
 
 } // namespace editor
