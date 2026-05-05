@@ -512,6 +512,9 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::InputInt("Seed", &noiseSeed);
             ImGui::SameLine();
             if (ImGui::SmallButton("Rnd")) noiseSeed = static_cast<int>(std::rand());
+            if (ImGui::SmallButton("<<")) noiseSeed = std::max(0, noiseSeed - 1);
+            ImGui::SameLine();
+            if (ImGui::SmallButton(">>")) noiseSeed++;
             ImGui::SameLine();
             if (ImGui::SmallButton("Randomize All")) {
                 noiseSeed = static_cast<int>(std::rand());
