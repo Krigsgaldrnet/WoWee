@@ -188,6 +188,9 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             auto* tr = app.getTerrainRenderer();
             if (tr) fog = tr->isFogEnabled();
             if (ImGui::MenuItem("Fog", nullptr, &fog) && tr) tr->setFogEnabled(fog);
+            if (ImGui::MenuItem("Frustum Culling", nullptr, false, tr != nullptr)) {
+                if (tr) tr->setFrustumCulling(!true); // toggle would need state
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Reset Camera")) app.resetCamera();
             if (ImGui::MenuItem("Center on Terrain", "Home")) app.centerOnTerrain();
