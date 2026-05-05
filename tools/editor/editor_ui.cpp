@@ -147,8 +147,12 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             }
             if (ImGui::MenuItem("Generate Complete Zone", nullptr, false, app.hasTerrainLoaded()))
                 app.generateCompleteZone();
-            if (ImGui::MenuItem("Clear All Objects/NPCs", nullptr, false, app.hasTerrainLoaded()))
-                app.clearAllObjects();
+            if (ImGui::MenuItem("Clear All Objects/NPCs", nullptr, false, app.hasTerrainLoaded())) {
+                if (app.getObjectPlacer().objectCount() > 0 || app.getNpcSpawner().spawnCount() > 0)
+                    app.clearAllObjects();
+                else
+                    app.showToast("Nothing to clear");
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Quick Save", "Ctrl+S", false, app.hasTerrainLoaded()))
                 app.quickSave();
