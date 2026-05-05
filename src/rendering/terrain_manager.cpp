@@ -605,7 +605,14 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                 std::vector<std::string> wobPrefixes = {"custom_zones/buildings/", "output/" + mapName + "/buildings/"};
                 for (const auto& prefix : wobPrefixes) {
                     if (pipeline::WoweeBuildingLoader::exists(prefix + wobBase)) {
-                        LOG_INFO("WOB building found: ", prefix + wobBase, " (loading not yet implemented)");
+                        auto wob = pipeline::WoweeBuildingLoader::load(prefix + wobBase);
+                        if (wob.isValid()) {
+                            pipeline::WMOModel wobAsWmo;
+                            if (pipeline::WoweeBuildingLoader::toWMOModel(wob, wobAsWmo)) {
+                                LOG_INFO("Loaded WOB building: ", prefix + wobBase);
+                                // TODO: feed wobAsWmo into the WMO render pipeline
+                            }
+                        }
                         break;
                     }
                 }

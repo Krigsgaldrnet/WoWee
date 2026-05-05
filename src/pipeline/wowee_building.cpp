@@ -1,4 +1,5 @@
 #include "pipeline/wowee_building.hpp"
+#include "pipeline/wmo_loader.hpp"
 #include "core/logger.hpp"
 #include <fstream>
 #include <filesystem>
@@ -158,6 +159,40 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
     }
 
     LOG_INFO("WOB saved: ", basePath, ".wob (", gc, " groups)");
+    return true;
+}
+
+bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& outModel) {
+    if (building.groups.empty()) return false;
+
+    outModel.nGroups = static_cast<uint32_t>(building.groups.size());
+    outModel.groups.clear();
+
+    for (const auto& grp : building.groups) {
+        WMOGroup wmoGroup;
+        wmoGroup.name = grp.name;
+
+        // Convert vertices
+        wmoGroup.vertices.reserve(grp.vertices.size());
+        for (const auto& v : grp.vertices) {
+            WMOVertex wv;
+            wv.position = v.position;
+            wv.normal = v.normal;
+            wv.texCoord = v.texCoord;
+            wv.color = v.color;
+            wmoGroup.vertices.push_back(wv);
+        }
+
+        // Convert indices
+        wmoGroup.indices.reserve(grp.indices.size());
+        for (uint32_t idx : grp.indices)
+            wmoGroup.indices.push_back(static_cast<uint16_t>(idx));
+
+        outModel.groups.push_back(std::move(wmoGroup));
+    }
+
+    // WMOModel uses isValid() = nGroups > 0 && !groups.empty()
+    // Both are now set, so isValid() will return true
     return true;
 }
 

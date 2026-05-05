@@ -53,6 +53,9 @@ public:
     static WoweeBuilding load(const std::string& basePath);
     static bool save(const WoweeBuilding& building, const std::string& basePath);
     static bool exists(const std::string& basePath);
+
+    // Convert WOB to WMOModel for the client's WMO renderer
+    static bool toWMOModel(const WoweeBuilding& building, class WMOModel& outModel);
 };
 
 } // namespace pipeline
