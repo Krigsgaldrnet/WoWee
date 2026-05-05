@@ -4,6 +4,7 @@
 #include "content_pack.hpp"
 #include "wowee_terrain.hpp"
 #include "texture_exporter.hpp"
+#include "dbc_exporter.hpp"
 #include "core/coordinates.hpp"
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
@@ -739,6 +740,9 @@ void EditorApp::exportZone(const std::string& outputDir) {
             assetManager_.get(), usedTextures, base + "/textures");
         LOG_INFO("Exported ", exported, " textures as PNG");
     }
+
+    // Export zone-relevant DBCs as JSON (open format replacement for DBC)
+    DBCExporter::exportZoneDBCs(assetManager_.get(), base + "/data");
 
     // Export open terrain format alongside ADT
     std::string openBase = base + "/" + loadedMap_ + "_" +

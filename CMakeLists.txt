@@ -1300,6 +1300,7 @@ add_executable(wowee_editor
     tools/editor/wowee_terrain.cpp
     tools/editor/editor_project.cpp
     tools/editor/texture_exporter.cpp
+    tools/editor/dbc_exporter.cpp
     tools/editor/asset_browser.cpp
     tools/editor/editor_water.cpp
     tools/editor/editor_markers.cpp
