@@ -62,6 +62,12 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
 
     uint16_t nameLen;
     f.read(reinterpret_cast<char*>(&nameLen), 2);
+    // Save caps name at 1024; reject anything longer to keep load
+    // alignment with future-version files predictable.
+    if (nameLen > 1024) {
+        LOG_ERROR("WOM name length rejected (", nameLen, "): ", basePath);
+        return WoweeModel{};
+    }
     model.name.resize(nameLen);
     f.read(model.name.data(), nameLen);
 
@@ -109,8 +115,14 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
     for (uint32_t i = 0; i < texCount; i++) {
         uint16_t pathLen;
         f.read(reinterpret_cast<char*>(&pathLen), 2);
-        // Reject absurd path lengths (corrupted/truncated file).
-        if (pathLen > 1024) { pathLen = 0; }
+        // Same desync risk as elsewhere — pathLen=0 with the actual
+        // bytes still on disk would shift every subsequent length+data
+        // pair. Reject the whole load instead of silently dropping.
+        if (pathLen > 1024) {
+            LOG_ERROR("WOM texture path ", i, " length rejected (",
+                      pathLen, "): ", basePath);
+            return WoweeModel{};
+        }
         std::string path(pathLen, '\0');
         f.read(path.data(), pathLen);
         // Reject path-traversal — texture paths from a hostile WOM are fed
