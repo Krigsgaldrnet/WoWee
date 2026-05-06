@@ -1113,7 +1113,7 @@ void WMORenderer::clearAll() {
     textureBudgetRejectWarnings_ = 0;
     precomputedFloorGrid.clear();
 
-    LOG_WARNING("Cleared all WMO models, instances, and texture cache");
+    LOG_INFO("Cleared all WMO models, instances, and texture cache");
 }
 
 void WMORenderer::setCollisionFocus(const glm::vec3& worldPos, float radius) {
