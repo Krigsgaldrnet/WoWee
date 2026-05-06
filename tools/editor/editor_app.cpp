@@ -859,6 +859,10 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     questEditor_.clear();
     ui_.clearPath();
     viewport_.clearTerrain();
+    // Reset the zone manifest so previous zone's mapId/displayName/tiles
+    // don't bleed into the new export. zone.json on disk (if any) will be
+    // re-loaded later in this function.
+    zoneManifest_ = {};
 
     // Prefer open format (WOT/WHM) if available
     for (const char* dir : {"custom_zones", "output"}) {
@@ -998,7 +1002,7 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 
     LOG_INFO("ADT loaded: ", mapName, " [", tileX, ",", tileY, "]");
 
-    // Try loading objects/NPCs/quests from zone directories
+    // Try loading objects/NPCs/quests/manifest from zone directories
     for (const char* dir : {"output", "custom_zones"}) {
         std::string zoneBase = std::string(dir) + "/" + mapName;
         if (objectPlacer_.objectCount() == 0)
@@ -1010,7 +1014,15 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
         if (questEditor_.questCount() == 0)
             if (questEditor_.loadFromFile(zoneBase + "/quests.json"))
                 showToast("Loaded " + std::to_string(questEditor_.questCount()) + " quests");
+        // Restore the previously-saved zone manifest (mapId, displayName,
+        // flags, audio, etc.) so user-customized metadata persists across
+        // editor sessions.
+        if (zoneManifest_.mapName.empty())
+            zoneManifest_.load(zoneBase + "/zone.json");
     }
+    // Always set mapName from the loaded ADT in case zone.json was absent
+    // or stale.
+    if (zoneManifest_.mapName.empty()) zoneManifest_.mapName = mapName;
     if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0)
         objectsDirty_ = true; autoSavePendingChanges_ = true;
 }
