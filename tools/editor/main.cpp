@@ -49,7 +49,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-creatures <p>   Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-objects <p>     Print objects.json summary (counts, types, scale range) and exit\n");
     std::printf("  --info-quests <p>      Print quests.json summary (counts, rewards, chain errors) and exit\n");
-    std::printf("  --info-wcp <wcp-path>  Print WCP archive metadata (name, files) and exit\n");
+    std::printf("  --info-wcp <wcp-path> [--json]\n");
+    std::printf("                         Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
     std::printf("  --diff-wcp <a> <b>     Compare two WCPs file-by-file; exit 0 if identical, 1 otherwise\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
@@ -473,10 +474,38 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (std::strcmp(argv[i], "--info-wcp") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
+            // Optional --json after the path for machine-readable output.
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             wowee::editor::ContentPackInfo info;
             if (!wowee::editor::ContentPacker::readInfo(path, info)) {
                 std::fprintf(stderr, "Failed to read WCP: %s\n", path.c_str());
                 return 1;
+            }
+            // Per-category file totals
+            std::unordered_map<std::string, size_t> byCat;
+            uint64_t totalSize = 0;
+            for (const auto& f : info.files) {
+                byCat[f.category]++;
+                totalSize += f.size;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["wcp"] = path;
+                j["name"] = info.name;
+                j["author"] = info.author;
+                j["description"] = info.description;
+                j["version"] = info.version;
+                j["format"] = info.format;
+                j["mapId"] = info.mapId;
+                j["fileCount"] = info.files.size();
+                j["totalBytes"] = totalSize;
+                nlohmann::json categories = nlohmann::json::object();
+                for (const auto& [cat, count] : byCat) categories[cat] = count;
+                j["categories"] = categories;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
             }
             std::printf("WCP: %s\n", path.c_str());
             std::printf("  name        : %s\n", info.name.c_str());
@@ -486,13 +515,6 @@ int main(int argc, char* argv[]) {
             std::printf("  format      : %s\n", info.format.c_str());
             std::printf("  mapId       : %u\n", info.mapId);
             std::printf("  files       : %zu\n", info.files.size());
-            // Per-category file totals
-            std::unordered_map<std::string, size_t> byCat;
-            uint64_t totalSize = 0;
-            for (const auto& f : info.files) {
-                byCat[f.category]++;
-                totalSize += f.size;
-            }
             for (const auto& [cat, count] : byCat) {
                 std::printf("    %-10s : %zu\n", cat.c_str(), count);
             }
