@@ -233,12 +233,16 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
                         if (!std::isfinite(pp.position.x) || !std::isfinite(pp.position.y) ||
                             !std::isfinite(pp.position.z))
                             continue;
-                        pp.waitTimeMs = pt[3].get<uint32_t>();
-                        // Cap wait time at 10 minutes to keep AzerothCore
-                        // happy and prevent obvious data-entry typos that
-                        // would produce a creature that effectively never
-                        // moves (e.g. 24h = 86400000).
-                        if (pp.waitTimeMs > 600000) pp.waitTimeMs = 600000;
+                        // Read waitTime as int64 then clamp to uint32_t range.
+                        // pt[3].get<uint32_t> would throw json::type_error on
+                        // a negative or out-of-range integer and abort the
+                        // whole NPC file load on a single bad waypoint.
+                        int64_t rawWait = pt[3].is_number_float()
+                            ? static_cast<int64_t>(pt[3].get<double>())
+                            : pt[3].get<int64_t>();
+                        if (rawWait < 0) rawWait = 0;
+                        if (rawWait > 600000) rawWait = 600000;  // 10-min cap
+                        pp.waitTimeMs = static_cast<uint32_t>(rawWait);
                         s.patrolPath.push_back(pp);
                     }
                 }
