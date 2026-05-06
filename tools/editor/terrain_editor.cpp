@@ -1528,9 +1528,12 @@ bool TerrainEditor::saveStamp(const std::string& path) const {
     nlohmann::json j;
     j["format"] = "wowee-stamp-1.0";
     j["vertexCount"] = stampData_.size();
+    // Scrub NaN samples on save — nlohmann::json throws on non-finite
+    // serialization, which would abort the entire save.
+    auto san = [](float x) { return std::isfinite(x) ? x : 0.0f; };
     nlohmann::json verts = nlohmann::json::array();
     for (const auto& sv : stampData_)
-        verts.push_back({sv.dx, sv.dy, sv.height});
+        verts.push_back({san(sv.dx), san(sv.dy), san(sv.height)});
     j["vertices"] = verts;
 
     namespace fs = std::filesystem;
