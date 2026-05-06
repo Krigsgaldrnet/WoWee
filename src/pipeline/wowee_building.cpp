@@ -206,12 +206,21 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
     // Build a global texture index from per-material texturePath strings.
     // First-group materials become the WMO material list; each unique texture
     // gets one entry in outModel.textures.
+
+    // Reverse the .blp -> .png conversion that fromWMO did, since the WMO
+    // renderer's PNG override system only triggers when the requested texture
+    // path ends in .blp (it then probes for a .png next to the cache file).
     auto textureIndex = [&](const std::string& path) -> uint32_t {
-        if (path.empty()) return 0;
-        for (uint32_t i = 0; i < outModel.textures.size(); i++) {
-            if (outModel.textures[i] == path) return i;
+        std::string p = path;
+        if (p.size() >= 4) {
+            std::string ext = p.substr(p.size() - 4);
+            if (ext == ".png" || ext == ".PNG") p = p.substr(0, p.size() - 4) + ".blp";
         }
-        outModel.textures.push_back(path);
+        if (p.empty()) return 0;
+        for (uint32_t i = 0; i < outModel.textures.size(); i++) {
+            if (outModel.textures[i] == p) return i;
+        }
+        outModel.textures.push_back(p);
         return static_cast<uint32_t>(outModel.textures.size() - 1);
     };
 
