@@ -1,6 +1,10 @@
 #include "open_format_emitter.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "pipeline/dbc_loader.hpp"
+#include "pipeline/wowee_model.hpp"
+#include "pipeline/wowee_building.hpp"
+#include "pipeline/m2_loader.hpp"
+#include "pipeline/wmo_loader.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -93,11 +97,50 @@ bool emitJsonFromDbc(const std::string& dbcPath, const std::string& jsonPath) {
     return true;
 }
 
+bool emitWomFromM2(const std::string& m2Path, const std::string& womBase) {
+    auto m2Bytes = readBytes(m2Path);
+    if (m2Bytes.empty()) return false;
+    // WotLK+ M2s store the actual geometry in <base>00.skin; merge it if
+    // it sits next to the .m2 (usual case after extraction).
+    std::vector<uint8_t> skinBytes;
+    {
+        std::string skinPath = m2Path;
+        auto dot = skinPath.rfind('.');
+        if (dot != std::string::npos)
+            skinPath = skinPath.substr(0, dot) + "00.skin";
+        skinBytes = readBytes(skinPath);
+    }
+    auto wom = pipeline::WoweeModelLoader::fromM2Bytes(m2Bytes, skinBytes);
+    if (!wom.isValid()) return false;
+    return pipeline::WoweeModelLoader::save(wom, womBase);
+}
+
+bool emitWobFromWmo(const std::string& wmoPath, const std::string& wobBase) {
+    auto rootBytes = readBytes(wmoPath);
+    if (rootBytes.empty()) return false;
+    auto wmo = pipeline::WMOLoader::load(rootBytes);
+    if (wmo.nGroups == 0) return false;
+    // Merge group files <base>_NNN.wmo for groups that have them.
+    std::string base = wmoPath;
+    if (base.size() > 4) base = base.substr(0, base.size() - 4);
+    for (uint32_t gi = 0; gi < wmo.nGroups; ++gi) {
+        char suffix[16];
+        std::snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+        auto gd = readBytes(base + suffix);
+        if (!gd.empty()) pipeline::WMOLoader::loadGroup(gd, wmo, gi);
+    }
+    auto bld = pipeline::WoweeBuildingLoader::fromWMO(
+        wmo, fs::path(wmoPath).stem().string());
+    if (!bld.isValid()) return false;
+    return pipeline::WoweeBuildingLoader::save(bld, wobBase);
+}
+
 void emitOpenFormats(const std::string& rootDir,
                      bool emitPng, bool emitJsonDbc,
+                     bool emitWom, bool emitWob,
                      OpenFormatStats& stats) {
     if (!fs::exists(rootDir)) return;
-    if (!emitPng && !emitJsonDbc) return;
+    if (!emitPng && !emitJsonDbc && !emitWom && !emitWob) return;
 
     auto lower = [](std::string s) {
         std::transform(s.begin(), s.end(), s.begin(),
@@ -123,6 +166,20 @@ void emitOpenFormats(const std::string& rootDir,
                 stats.jsonDbcOk++;
             } else {
                 stats.jsonDbcFail++;
+            }
+        } else if (emitWom && ext == ".m2") {
+            if (emitWomFromM2(entry.path().string(), base)) stats.womOk++;
+            else stats.womFail++;
+        } else if (emitWob && ext == ".wmo") {
+            // Skip group sub-files (<base>_NNN.wmo) — those get merged
+            // into the root WMO during conversion.
+            std::string fname = entry.path().filename().string();
+            auto under = fname.rfind('_');
+            bool isGroup = (under != std::string::npos &&
+                            fname.size() - under == 8); // "_NNN.wmo" suffix
+            if (!isGroup) {
+                if (emitWobFromWmo(entry.path().string(), base)) stats.wobOk++;
+                else stats.wobFail++;
             }
         }
     }

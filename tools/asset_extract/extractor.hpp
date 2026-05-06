@@ -34,6 +34,8 @@ public:
         // private servers (AzerothCore/TrinityCore) read from.
         bool emitPng = false;          // BLP → PNG side-files
         bool emitJsonDbc = false;      // DBC → JSON side-files
+        bool emitWom = false;          // M2 (+skin) → WOM side-files
+        bool emitWob = false;          // WMO (+groups) → WOB side-files
     };
 
     struct Stats {

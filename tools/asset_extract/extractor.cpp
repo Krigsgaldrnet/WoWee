@@ -979,10 +979,11 @@ bool Extractor::run(const Options& opts) {
     // Open-format emission: walk the extracted tree and write
     // wowee-format side-files (PNG / JSON DBC) next to each .blp/.dbc.
     // Originals are left untouched so private servers continue to work.
-    if (opts.emitPng || opts.emitJsonDbc) {
+    if (opts.emitPng || opts.emitJsonDbc || opts.emitWom || opts.emitWob) {
         std::cout << "Emitting wowee open-format side-files...\n";
         OpenFormatStats ofs;
-        emitOpenFormats(effectiveOutputDir, opts.emitPng, opts.emitJsonDbc, ofs);
+        emitOpenFormats(effectiveOutputDir, opts.emitPng, opts.emitJsonDbc,
+                        opts.emitWom, opts.emitWob, ofs);
         if (opts.emitPng) {
             std::cout << "  PNG (BLP→PNG)     : " << ofs.pngOk << " ok";
             if (ofs.pngFail) std::cout << ", " << ofs.pngFail << " failed";
@@ -991,6 +992,16 @@ bool Extractor::run(const Options& opts) {
         if (opts.emitJsonDbc) {
             std::cout << "  JSON (DBC→JSON)   : " << ofs.jsonDbcOk << " ok";
             if (ofs.jsonDbcFail) std::cout << ", " << ofs.jsonDbcFail << " failed";
+            std::cout << "\n";
+        }
+        if (opts.emitWom) {
+            std::cout << "  WOM (M2→WOM)      : " << ofs.womOk << " ok";
+            if (ofs.womFail) std::cout << ", " << ofs.womFail << " failed";
+            std::cout << "\n";
+        }
+        if (opts.emitWob) {
+            std::cout << "  WOB (WMO→WOB)     : " << ofs.wobOk << " ok";
+            if (ofs.wobFail) std::cout << ", " << ofs.wobFail << " failed";
             std::cout << "\n";
         }
     }

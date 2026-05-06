@@ -26,7 +26,9 @@ static void printUsage(const char* prog) {
               << "  --dbc-csv-out <dir> Write CSV DBCs into <dir> (overrides default output path)\n"
               << "  --emit-png          Emit foo.png next to every extracted foo.blp\n"
               << "  --emit-json-dbc     Emit foo.json next to every extracted foo.dbc\n"
-              << "  --emit-open         Shortcut: enable every open-format emitter (png+json)\n"
+              << "  --emit-wom          Emit foo.wom next to every extracted foo.m2 (+skin)\n"
+              << "  --emit-wob          Emit foo.wob next to every extracted foo.wmo (+groups)\n"
+              << "  --emit-open         Shortcut: enable every open-format emitter (png+json+wom+wob)\n"
               << "  --verify            CRC32 verify all extracted files\n"
               << "  --threads <N>       Number of extraction threads (default: auto)\n"
               << "  --verbose           Verbose output\n"
@@ -59,10 +61,16 @@ int main(int argc, char** argv) {
             opts.emitPng = true;
         } else if (std::strcmp(argv[i], "--emit-json-dbc") == 0) {
             opts.emitJsonDbc = true;
+        } else if (std::strcmp(argv[i], "--emit-wom") == 0) {
+            opts.emitWom = true;
+        } else if (std::strcmp(argv[i], "--emit-wob") == 0) {
+            opts.emitWob = true;
         } else if (std::strcmp(argv[i], "--emit-open") == 0) {
             // Meta-flag: turn on every available open-format emitter.
             opts.emitPng = true;
             opts.emitJsonDbc = true;
+            opts.emitWom = true;
+            opts.emitWob = true;
         } else if (std::strcmp(argv[i], "--dbc-csv-out") == 0 && i + 1 < argc) {
             opts.dbcCsvOutputDir = argv[++i];
         } else if (std::strcmp(argv[i], "--listfile") == 0 && i + 1 < argc) {

@@ -81,6 +81,12 @@ public:
     // Convert an M2 model to WoweeModel (static geometry only, no animation)
     static WoweeModel fromM2(const std::string& m2Path, class AssetManager* am);
 
+    // Same as fromM2() but takes parsed M2 bytes + optional skin bytes
+    // directly. Lets the asset extractor convert during MPQ→loose-files
+    // without standing up an AssetManager.
+    static WoweeModel fromM2Bytes(const std::vector<uint8_t>& m2Data,
+                                   const std::vector<uint8_t>& skinData = {});
+
     // Check if a .wom exists
     static bool exists(const std::string& basePath);
 

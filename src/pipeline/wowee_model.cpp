@@ -438,30 +438,28 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
     return true;
 }
 
-WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am) {
+// Internal helper: convert a parsed M2Model (already merged with skin if
+// applicable) into a WoweeModel. Shared by fromM2 (AssetManager path)
+// and fromM2Bytes (extractor path).
+static WoweeModel convertM2ToWom(const M2Model& m2);
+
+// fromM2(path, am) lives in wowee_model_fromm2.cpp so the asset extractor
+// can link wowee_model.cpp without pulling in the AssetManager dependency.
+// convertM2ToWom() (defined below) is the shared conversion body.
+WoweeModel convertM2ToWomShared(const M2Model& m2) { return convertM2ToWom(m2); }
+
+WoweeModel WoweeModelLoader::fromM2Bytes(const std::vector<uint8_t>& m2Data,
+                                          const std::vector<uint8_t>& skinData) {
     WoweeModel model;
-    if (!am) return model;
-
-    auto data = am->readFile(m2Path);
-    if (data.empty()) return model;
-
-    auto m2 = M2Loader::load(data);
-
-    // WotLK+ M2s store header in .m2 but geometry in .skin — always merge the
-    // skin file when present so we get vertices/indices/batches even for M2s
-    // that already report isValid() (older expansions).
-    {
-        std::string skinPath = m2Path;
-        auto dotPos = skinPath.rfind('.');
-        if (dotPos != std::string::npos)
-            skinPath = skinPath.substr(0, dotPos) + "00.skin";
-        auto skinData = am->readFile(skinPath);
-        if (!skinData.empty())
-            M2Loader::loadSkin(skinData, m2);
-    }
-
+    if (m2Data.empty()) return model;
+    auto m2 = M2Loader::load(m2Data);
+    if (!skinData.empty()) M2Loader::loadSkin(skinData, m2);
     if (!m2.isValid()) return model;
+    return convertM2ToWom(m2);
+}
 
+static WoweeModel convertM2ToWom(const M2Model& m2) {
+    WoweeModel model;
     model.name = m2.name;
     model.boundRadius = m2.boundRadius;
 

@@ -18,6 +18,8 @@ namespace tools {
 struct OpenFormatStats {
     uint32_t pngOk = 0, pngFail = 0;
     uint32_t jsonDbcOk = 0, jsonDbcFail = 0;
+    uint32_t womOk = 0, womFail = 0;
+    uint32_t wobOk = 0, wobFail = 0;
 };
 
 // Convert one BLP file on disk to a PNG side-file.
@@ -30,10 +32,19 @@ bool emitPngFromBlp(const std::string& blpPath, const std::string& pngPath);
 // the output drops into custom_zones/<zone>/data/ directly.
 bool emitJsonFromDbc(const std::string& dbcPath, const std::string& jsonPath);
 
+// Convert one M2 file on disk to a WOM side-file. Auto-locates and merges
+// the matching <base>00.skin if present (WotLK+ models store geometry there).
+bool emitWomFromM2(const std::string& m2Path, const std::string& womBase);
+
+// Convert one WMO file on disk to a WOB side-file. Auto-locates and merges
+// matching <base>_NNN.wmo group files if present.
+bool emitWobFromWmo(const std::string& wmoPath, const std::string& wobBase);
+
 // Walk an extracted-asset directory and emit open-format side-files for
-// every BLP and/or DBC found. Counts are accumulated into stats.
+// every requested format. Counts accumulated into stats.
 void emitOpenFormats(const std::string& rootDir,
                      bool emitPng, bool emitJsonDbc,
+                     bool emitWom, bool emitWob,
                      OpenFormatStats& stats);
 
 } // namespace tools
