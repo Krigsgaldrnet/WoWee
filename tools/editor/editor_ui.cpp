@@ -609,9 +609,15 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("Ctrl+N — new terrain");
             ImGui::BulletText("Ctrl+O — load map tile");
             ImGui::BulletText("Ctrl+A — select all objects");
+            ImGui::BulletText("Ctrl+D — duplicate selected (objects + NPCs)");
+            ImGui::BulletText("Ctrl+Wheel — rotate placement preview (Shift = fine)");
             ImGui::BulletText("Alt+Click — eyedropper (paint mode)");
             ImGui::BulletText("Ctrl+Shift+Click — add to selection");
             ImGui::BulletText("Middle-drag — orbit camera");
+            ImGui::Separator();
+            ImGui::Text("NPC Mode:");
+            ImGui::BulletText("Click NPC marker — select (Shift+click forces placement)");
+            ImGui::BulletText("W — add patrol waypoint at cursor (selected NPC must use Patrol behavior)");
             ImGui::Separator();
             ImGui::Text("View:");
             ImGui::BulletText("F1 — this help");
