@@ -13,21 +13,21 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 ## WHM — Wowee HeightMap (binary)
 - Extension: `.whm`
 - Magic: `WHM1` (0x314D4857)
-- Layout: magic(4) + chunks(4) + vertsPerChunk(4) + per-chunk data × 256
-- Per-chunk: baseHeight(4) + heights[145](580) + alphaSize(4) + alphaData(alphaSize)
+- Layout: magic(4) + chunkCount(4=256) + vertsPerChunk(4=145) + per-chunk data × 256
+- Per-chunk: baseHeight(4 float) + heights[145](580 = 145 floats) + alphaSize(4) + alphaData(alphaSize bytes)
 - Alpha data: raw alpha blend maps for texture layers (same format as ADT MCAL)
 - Backward compatible: older WHM files without alpha data still load (alphaSize=0)
 
 ## WOM — Wowee Open Model (binary)
 - Extension: `.wom`
 - Magic: `WOM1` (0x314D4F57) static, `WOM2` (0x324D4F57) animated, `WOM3` (0x334D4F57) multi-batch
-- Layout: magic(4) + vertCount(4) + indexCount(4) + texCount(4) + bounds(28) + name + vertices + indices + texPaths
-- WOM1 Vertex: position(vec3) + normal(vec3) + texCoord(vec2) = 32 bytes
+- Layout: magic(4) + vertCount(4) + indexCount(4) + texCount(4) + boundRadius(4) + boundMin(12) + boundMax(12) + nameLen(2) + name + vertices + indices(uint32 each) + [pathLen(2) + path] × texCount
+- WOM1 Vertex: position(vec3=12) + normal(vec3=12) + texCoord(vec2=8) = 32 bytes
 - WOM2/WOM3 Vertex: + boneWeights(4) + boneIndices(4) = 40 bytes
-- WOM2/WOM3 Bones: boneCount(4) + [keyBoneId(4) + parentBone(2) + pivot(12) + flags(4)] × N
-- WOM2/WOM3 Animations: animCount(4) + [id(4) + duration(4) + speed(4) + per-bone keyframes] × N
+- WOM2/WOM3 trailing block: boneCount(4) + [keyBoneId(4) + parentBone(2) + pivot(12) + flags(4)] × bones
+  + animCount(4) + [id(4) + duration(4) + speed(4) + per-bone-keyframe-block] × anims
 - Keyframe: timeMs(4) + translation(12) + rotation(16) + scale(12) = 44 bytes
-- WOM3 Batches: batchCount(4) + [indexStart(4) + indexCount(4) + textureIndex(4) + blendMode(2) + flags(2)] × N
+- WOM3 Batches (after WOM2 trailing block): batchCount(4) + [indexStart(4) + indexCount(4) + textureIndex(4) + blendMode(2) + flags(2)] × N
 - WOM3 blendMode: 0=opaque, 1=alpha-test, 2=alpha, 3=add, 4=mod, 5=mod2x, 6=blendAdd, 7=screen
 - WOM3 flags: bit 0 = unlit, bit 1 = two-sided, bit 2 = no z-write
 - Backward compatible: WOM1 files load without bone/animation data; WOM3 falls back to single-batch when batches block missing
