@@ -32,6 +32,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --list-zones           List discovered custom zones and exit\n");
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
+    std::printf("  --export-png <wot-base> Render heightmap, normal-map, and zone-map PNG previews\n");
     std::printf("  --validate <zoneDir>   Score zone open-format completeness and exit\n");
     std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
@@ -60,7 +61,7 @@ int main(int argc, char* argv[]) {
         "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-wcp", "--list-wcp", "--unpack-wcp", "--pack-wcp",
-        "--validate", "--scaffold-zone", "--build-woc",
+        "--validate", "--scaffold-zone", "--build-woc", "--export-png",
         "--convert-m2", "--convert-wmo",
     };
     for (int i = 1; i < argc; i++) {
@@ -376,6 +377,31 @@ int main(int argc, char* argv[]) {
             std::printf("  quests.json           : %s\n", v.hasQuests ? "yes" : "no");
             std::printf("  objects.json          : %s\n", v.hasObjects ? "yes" : "no");
             return score == 7 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--export-png") == 0 && i + 1 < argc) {
+            // Render heightmap, normal-map, and zone-map PNG previews for a
+            // terrain. Useful for portfolio screenshots, ground-truth map
+            // comparison, and quick visual validation without launching GUI.
+            std::string base = argv[++i];
+            for (const char* ext : {".wot", ".whm"}) {
+                if (base.size() >= 4 && base.substr(base.size() - 4) == ext) {
+                    base = base.substr(0, base.size() - 4);
+                    break;
+                }
+            }
+            if (!wowee::pipeline::WoweeTerrainLoader::exists(base)) {
+                std::fprintf(stderr, "WOT/WHM not found at base: %s\n", base.c_str());
+                return 1;
+            }
+            wowee::pipeline::ADTTerrain terrain;
+            if (!wowee::pipeline::WoweeTerrainLoader::load(base, terrain)) {
+                std::fprintf(stderr, "Failed to load terrain: %s\n", base.c_str());
+                return 1;
+            }
+            wowee::editor::WoweeTerrain::exportHeightmapPreview(terrain, base + "_heightmap.png");
+            wowee::editor::WoweeTerrain::exportNormalMap(terrain, base + "_normals.png");
+            wowee::editor::WoweeTerrain::exportZoneMap(terrain, base + "_zone.png", 512);
+            std::printf("Exported PNGs: %s_{heightmap,normals,zone}.png\n", base.c_str());
+            return 0;
         } else if (std::strcmp(argv[i], "--build-woc") == 0 && i + 1 < argc) {
             // Generate a WOC collision mesh from a WHM/WOT terrain pair.
             // Uses terrain triangles only (no WMO overlays); useful as a
