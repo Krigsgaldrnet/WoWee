@@ -1,6 +1,7 @@
 #include "extractor.hpp"
 #include "path_mapper.hpp"
 #include "manifest_writer.hpp"
+#include "open_format_emitter.hpp"
 
 #include <StormLib.h>
 
@@ -972,6 +973,25 @@ bool Extractor::run(const Options& opts) {
         if (fail > 0) {
             std::cerr << "DBC CSV conversion failed for some files\n";
             return false;
+        }
+    }
+
+    // Open-format emission: walk the extracted tree and write
+    // wowee-format side-files (PNG / JSON DBC) next to each .blp/.dbc.
+    // Originals are left untouched so private servers continue to work.
+    if (opts.emitPng || opts.emitJsonDbc) {
+        std::cout << "Emitting wowee open-format side-files...\n";
+        OpenFormatStats ofs;
+        emitOpenFormats(effectiveOutputDir, opts.emitPng, opts.emitJsonDbc, ofs);
+        if (opts.emitPng) {
+            std::cout << "  PNG (BLP→PNG)     : " << ofs.pngOk << " ok";
+            if (ofs.pngFail) std::cout << ", " << ofs.pngFail << " failed";
+            std::cout << "\n";
+        }
+        if (opts.emitJsonDbc) {
+            std::cout << "  JSON (DBC→JSON)   : " << ofs.jsonDbcOk << " ok";
+            if (ofs.jsonDbcFail) std::cout << ", " << ofs.jsonDbcFail << " failed";
+            std::cout << "\n";
         }
     }
 

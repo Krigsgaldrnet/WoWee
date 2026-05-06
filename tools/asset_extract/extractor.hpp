@@ -27,6 +27,13 @@ public:
         std::string dbcCsvOutputDir; // When set, write CSVs into this directory instead of outputDir/expansions/<exp>/db
         std::string referenceManifest; // If set, only extract files NOT in this manifest (delta extraction)
         std::string listFile;         // External listfile for MPQ enumeration (resolves unnamed hash entries)
+        // Open-format emission: post-extract pass that writes wowee
+        // open-format side-files (e.g. foo.blp → foo.png) without
+        // touching the original. Lets wowee's runtime/editor consume
+        // the open formats while keeping the proprietary copies that
+        // private servers (AzerothCore/TrinityCore) read from.
+        bool emitPng = false;          // BLP → PNG side-files
+        bool emitJsonDbc = false;      // DBC → JSON side-files
     };
 
     struct Stats {
