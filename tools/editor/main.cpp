@@ -10,6 +10,7 @@
 #include <string>
 #include <cstdio>
 #include <cstring>
+#include <unordered_map>
 
 static void printUsage(const char* argv0) {
     std::printf("Usage: %s --data <path> [options]\n\n", argv0);
@@ -23,6 +24,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
+    std::printf("  --info-wcp <wcp-path>  Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
     std::printf("Novel open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON\n");
@@ -87,6 +89,33 @@ int main(int argc, char* argv[]) {
             std::printf("  total verts : %zu\n", totalVerts);
             std::printf("  total tris  : %zu\n", totalIdx / 3);
             std::printf("  total mats  : %zu (across all groups)\n", totalMats);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-wcp") == 0 && i + 1 < argc) {
+            std::string path = argv[++i];
+            wowee::editor::ContentPackInfo info;
+            if (!wowee::editor::ContentPacker::readInfo(path, info)) {
+                std::fprintf(stderr, "Failed to read WCP: %s\n", path.c_str());
+                return 1;
+            }
+            std::printf("WCP: %s\n", path.c_str());
+            std::printf("  name        : %s\n", info.name.c_str());
+            std::printf("  author      : %s\n", info.author.c_str());
+            std::printf("  description : %s\n", info.description.c_str());
+            std::printf("  version     : %s\n", info.version.c_str());
+            std::printf("  format      : %s\n", info.format.c_str());
+            std::printf("  mapId       : %u\n", info.mapId);
+            std::printf("  files       : %zu\n", info.files.size());
+            // Per-category file totals
+            std::unordered_map<std::string, size_t> byCat;
+            uint64_t totalSize = 0;
+            for (const auto& f : info.files) {
+                byCat[f.category]++;
+                totalSize += f.size;
+            }
+            for (const auto& [cat, count] : byCat) {
+                std::printf("    %-10s : %zu\n", cat.c_str(), count);
+            }
+            std::printf("  total bytes : %.2f MB\n", totalSize / (1024.0 * 1024.0));
             return 0;
         } else if (std::strcmp(argv[i], "--info-woc") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
