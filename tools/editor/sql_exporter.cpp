@@ -116,7 +116,9 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
           << wowX << ", " << wowY << ", " << wowZ << ", "
           << orientRad << ", "
           << (s.respawnTimeMs / 1000) << ", "
-          << s.wanderRadius << ", "
+          // wander_distance only meaningful for Wander behaviour; Patrol uses
+          // waypoint_data and Stationary doesn't move at all.
+          << (s.behavior == CreatureBehavior::Wander ? s.wanderRadius : 0.0f) << ", "
           << static_cast<int>(movementType)
           << ") ON DUPLICATE KEY UPDATE `position_x`=" << wowX << ";\n";
     }
