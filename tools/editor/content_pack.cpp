@@ -4,6 +4,7 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <algorithm>
 
 namespace wowee {
 namespace editor {
@@ -26,11 +27,33 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
         return false;
     }
 
-    // Collect all files
+    // Collect all files. Normalize path separators to '/' so packs created
+    // on Windows are readable on Linux/macOS and vice versa — the unpack
+    // path-traversal check rejects '\' as an absolute prefix, so a Windows
+    // path leaks would silently fail to extract.
+    //
+    // Cap total file count at the unpack-side limit (1M) so a runaway
+    // recursive_directory_iterator on a hostile symlink loop or a giant
+    // accidental subdirectory doesn't produce an unpackable archive.
+    constexpr size_t kMaxFiles = 1'000'000;
     std::vector<std::pair<std::string, std::string>> files; // relative path, full path
     for (auto& entry : fs::recursive_directory_iterator(srcDir)) {
         if (!entry.is_regular_file()) continue;
+        if (files.size() >= kMaxFiles) {
+            LOG_WARNING("WCP file count cap reached (", kMaxFiles,
+                        "); remaining files in ", srcDir, " omitted");
+            break;
+        }
         std::string rel = fs::relative(entry.path(), srcDir).string();
+        std::replace(rel.begin(), rel.end(), '\\', '/');
+        // fs::relative can return "../foo" when srcDir is a symlink that
+        // resolves outside the pack root; reject those before they're
+        // baked into a WCP that the unpacker will then refuse wholesale.
+        if (rel.find("..") != std::string::npos ||
+            (!rel.empty() && rel[0] == '/')) {
+            LOG_WARNING("WCP skipping out-of-tree file: ", entry.path().string());
+            continue;
+        }
         files.push_back({rel, entry.path().string()});
     }
 
@@ -39,13 +62,19 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
         return false;
     }
 
-    // Build info JSON
+    // Build info JSON. Cap string lengths so a stray gigantic field can't
+    // bloat the info JSON past the 16MB unpack cap (which would then make
+    // the pack unreadable via readInfo / unpackZone).
+    auto cap = [](std::string s, size_t n) {
+        if (s.size() > n) s.resize(n);
+        return s;
+    };
     nlohmann::json infoObj;
-    infoObj["format"] = info.format;
-    infoObj["name"] = info.name;
-    infoObj["author"] = info.author;
-    infoObj["description"] = info.description;
-    infoObj["version"] = info.version;
+    infoObj["format"] = cap(info.format, 64);
+    infoObj["name"] = cap(info.name, 100);
+    infoObj["author"] = cap(info.author, 100);
+    infoObj["description"] = cap(info.description, 4096);
+    infoObj["version"] = cap(info.version, 32);
     infoObj["mapId"] = info.mapId;
     infoObj["fileCount"] = files.size();
     nlohmann::json fileArr = nlohmann::json::array();
@@ -82,8 +111,13 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
 
         std::ifstream fin(full, std::ios::binary | std::ios::ate);
         std::streamsize sz = fin.tellg();
-        if (sz < 0 || static_cast<uint64_t>(sz) > 0xFFFFFFFFull) {
-            LOG_ERROR("WCP skipped file (size out of range): ", rel);
+        // Cap at the unpack-side per-file limit (256MB) so we never write
+        // a pack the loader will reject as a whole. Files that big are
+        // almost certainly an authoring mistake — log + skip the body
+        // instead of producing an unpackable archive.
+        constexpr uint64_t kMaxFileBytes = 256ull * 1024 * 1024;
+        if (sz < 0 || static_cast<uint64_t>(sz) > kMaxFileBytes) {
+            LOG_ERROR("WCP skipped file (size ", sz, " > 256MB cap): ", rel);
             uint32_t zero = 0;
             out.write(reinterpret_cast<const char*>(&zero), 4);
             continue;
@@ -137,8 +171,26 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
         zoneName = info.value("name", "");
     } catch (...) {}
 
+    // The zone name becomes a directory name. A malicious WCP could carry a
+    // name with traversal sequences ("../etc") or an absolute path
+    // ("/etc/passwd") that would write outside destDir. Strip to a safe
+    // identifier — same alphabet as the server module slug.
+    std::string safeZoneName;
+    for (char c : zoneName) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '_' || c == '-') {
+            safeZoneName += c;
+        } else if (c == ' ') {
+            safeZoneName += '_';
+        }
+    }
+    if (safeZoneName != zoneName && !zoneName.empty()) {
+        LOG_WARNING("WCP zone name sanitized: '", zoneName, "' -> '",
+                    safeZoneName, "'");
+    }
+
     namespace fs = std::filesystem;
-    std::string zoneDir = zoneName.empty() ? destDir : destDir + "/" + zoneName;
+    std::string zoneDir = safeZoneName.empty() ? destDir : destDir + "/" + safeZoneName;
     fs::create_directories(zoneDir);
 
     for (uint32_t i = 0; i < fileCount; i++) {
@@ -152,6 +204,12 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
         }
         std::string path(pathLen, '\0');
         in.read(path.data(), pathLen);
+        // Normalize separators in case this WCP was packed before the
+        // pack-side normalization was added (older builds emitted '\' on
+        // Windows). Backslash translation must happen BEFORE the
+        // traversal check so the absolute-path rule catches Windows
+        // drive letters consistently.
+        std::replace(path.begin(), path.end(), '\\', '/');
 
         uint32_t dataSize;
         in.read(reinterpret_cast<char*>(&dataSize), 4);
@@ -163,9 +221,9 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
         }
         // Reject path-traversal attempts. Files like "../../etc/passwd" would
         // write outside destDir/<zoneName>/ and clobber system files.
-        // Also catch Windows-style backslash traversal and absolute paths.
+        // (Backslashes are already normalized to '/' above.)
         if (path.find("..") != std::string::npos ||
-            (!path.empty() && (path[0] == '/' || path[0] == '\\')) ||
+            (!path.empty() && path[0] == '/') ||
             (path.size() >= 2 && path[1] == ':')) {  // C:\... drive prefix
             LOG_ERROR("WCP rejected suspicious path: ", path);
             return false;
@@ -173,10 +231,24 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
 
         std::vector<char> data(dataSize);
         in.read(data.data(), dataSize);
+        // Detect short reads — indicates the WCP was truncated mid-file.
+        // gcount() reflects the actual bytes read; if it's less than dataSize
+        // we'd write a partial file silently and the consumer would think
+        // the zone is intact.
+        auto bytesRead = in.gcount();
+        if (bytesRead != static_cast<std::streamsize>(dataSize)) {
+            LOG_ERROR("WCP file ", path, " truncated: expected ", dataSize,
+                      " got ", bytesRead);
+            return false;
+        }
 
         std::string fullPath = zoneDir + "/" + path;
         fs::create_directories(fs::path(fullPath).parent_path());
         std::ofstream fout(fullPath, std::ios::binary);
+        if (!fout) {
+            LOG_ERROR("WCP could not open output file: ", fullPath);
+            return false;
+        }
         fout.write(data.data(), dataSize);
     }
 
@@ -195,6 +267,13 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
     uint32_t fileCount, infoSize;
     in.read(reinterpret_cast<char*>(&fileCount), 4);
     in.read(reinterpret_cast<char*>(&infoSize), 4);
+    // Same sanity bounds as unpack — refuse to allocate or read absurd
+    // info JSON on a malicious header.
+    if (fileCount > 1'000'000 || infoSize > 16 * 1024 * 1024) {
+        LOG_ERROR("WCP readInfo header rejected (fileCount=", fileCount,
+                  " infoSize=", infoSize, "): ", wcpPath);
+        return false;
+    }
 
     std::string jsonStr(infoSize, '\0');
     in.read(jsonStr.data(), infoSize);
@@ -209,7 +288,12 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
         info.mapId = j.value("mapId", 9000u);
         info.files.clear();
         if (j.contains("files") && j["files"].is_array()) {
+            // Same cap as the header fileCount — info JSON could declare
+            // more entries than the header, so this defends both readInfo
+            // callers and the listing CLI from runaway memory use.
+            constexpr size_t kMaxFiles = 1'000'000;
             for (const auto& jf : j["files"]) {
+                if (info.files.size() >= kMaxFiles) break;
                 ContentPackInfo::FileEntry fe;
                 fe.path = jf.value("path", "");
                 fe.size = jf.value("size", 0ULL);
@@ -219,6 +303,7 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
                     if (ext == ".wot" || ext == ".whm") fe.category = "terrain";
                     else if (ext == ".wom") fe.category = "model";
                     else if (ext == ".wob") fe.category = "building";
+                    else if (ext == ".woc") fe.category = "collision";
                     else if (ext == ".png") fe.category = "texture";
                     else if (ext == ".json") fe.category = "data";
                     else if (ext == ".adt" || ext == ".wdt") fe.category = "legacy";
@@ -237,6 +322,13 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
 static bool checkMagic(const std::string& path, uint32_t expectedMagic) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return false;
+    // Require minimum body bytes after the 4-byte magic. A 4-byte file
+    // with only the right magic is not a valid asset; the format-specific
+    // load routines would reject it but the magic-only check would pass.
+    f.seekg(0, std::ios::end);
+    auto fileSize = f.tellg();
+    if (fileSize < 8) return false;
+    f.seekg(0, std::ios::beg);
     uint32_t magic = 0;
     f.read(reinterpret_cast<char*>(&magic), 4);
     return magic == expectedMagic;
@@ -247,6 +339,9 @@ static bool checkAnyMagic(const std::string& path,
                            std::initializer_list<uint32_t> expected) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return false;
+    f.seekg(0, std::ios::end);
+    if (f.tellg() < 8) return false;
+    f.seekg(0, std::ios::beg);
     uint32_t magic = 0;
     f.read(reinterpret_cast<char*>(&magic), 4);
     for (uint32_t e : expected) if (magic == e) return true;
@@ -269,25 +364,28 @@ ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& z
         if (!entry.is_regular_file()) continue;
         std::string ext = entry.path().extension().string();
         std::string fname = entry.path().filename().string();
-        if (ext == ".wot") r.hasWot = true;
+        if (ext == ".wot") { r.hasWot = true; r.wotCount++; }
         if (ext == ".whm") {
-            r.hasWhm = true;
+            r.hasWhm = true; r.whmCount++;
             if (checkMagic(entry.path().string(), WHM_MAGIC)) r.whmValid = true;
         }
         if (ext == ".wom") {
-            r.hasWom = true;
+            r.hasWom = true; r.womCount++;
             if (checkAnyMagic(entry.path().string(), {WOM_MAGIC, WOM2_MAGIC, WOM3_MAGIC}))
                 r.womValid = true;
+            else r.womInvalidCount++;
         }
         if (ext == ".wob") {
-            r.hasWob = true;
+            r.hasWob = true; r.wobCount++;
             if (checkMagic(entry.path().string(), WOB_MAGIC)) r.wobValid = true;
+            else r.wobInvalidCount++;
         }
         if (ext == ".woc") {
-            r.hasWoc = true;
+            r.hasWoc = true; r.wocCount++;
             if (checkMagic(entry.path().string(), WOC_MAGIC)) r.wocValid = true;
+            else r.wocInvalidCount++;
         }
-        if (ext == ".png") r.hasPng = true;
+        if (ext == ".png") { r.hasPng = true; r.pngCount++; }
         if (fname == "zone.json") r.hasZoneJson = true;
         if (fname == "creatures.json") r.hasCreatures = true;
         if (fname == "quests.json") r.hasQuests = true;

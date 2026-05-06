@@ -39,12 +39,20 @@ glm::vec3 Camera::getForward() const {
 }
 
 glm::vec3 Camera::getRight() const {
-    // Use Z-up for WoW coordinate system
-    return glm::normalize(glm::cross(getForward(), glm::vec3(0.0f, 0.0f, 1.0f)));
+    // Use Z-up for WoW coordinate system. If forward is parallel to the up
+    // axis (camera staring straight up/down), cross is zero and normalize
+    // returns NaN — fall back to world +X so view/proj stay finite.
+    glm::vec3 c = glm::cross(getForward(), glm::vec3(0.0f, 0.0f, 1.0f));
+    float len = glm::length(c);
+    if (len < 1e-6f) return glm::vec3(1.0f, 0.0f, 0.0f);
+    return c / len;
 }
 
 glm::vec3 Camera::getUp() const {
-    return glm::normalize(glm::cross(getRight(), getForward()));
+    glm::vec3 c = glm::cross(getRight(), getForward());
+    float len = glm::length(c);
+    if (len < 1e-6f) return glm::vec3(0.0f, 0.0f, 1.0f);
+    return c / len;
 }
 
 void Camera::setJitter(float jx, float jy) {

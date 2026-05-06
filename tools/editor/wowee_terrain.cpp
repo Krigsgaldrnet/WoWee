@@ -107,12 +107,15 @@ bool WoweeTerrain::exportOpen(const pipeline::ADTTerrain& terrain,
         for (const auto& n : terrain.doodadNames) doodadNames.push_back(n);
         j["doodadNames"] = doodadNames;
 
+        // nlohmann::json throws on NaN/inf serialization; scrub before
+        // emit so a stale in-memory NaN doesn't kill the whole WOT save.
+        auto san = [](float x) { return std::isfinite(x) ? x : 0.0f; };
         nlohmann::json doodads = nlohmann::json::array();
         for (const auto& dp : terrain.doodadPlacements) {
             doodads.push_back({
                 {"nameId", dp.nameId}, {"uniqueId", dp.uniqueId},
-                {"pos", {dp.position[0], dp.position[1], dp.position[2]}},
-                {"rot", {dp.rotation[0], dp.rotation[1], dp.rotation[2]}},
+                {"pos", {san(dp.position[0]), san(dp.position[1]), san(dp.position[2])}},
+                {"rot", {san(dp.rotation[0]), san(dp.rotation[1]), san(dp.rotation[2])}},
                 {"scale", dp.scale}, {"flags", dp.flags}
             });
         }
@@ -127,8 +130,8 @@ bool WoweeTerrain::exportOpen(const pipeline::ADTTerrain& terrain,
         for (const auto& wp : terrain.wmoPlacements) {
             wmos.push_back({
                 {"nameId", wp.nameId}, {"uniqueId", wp.uniqueId},
-                {"pos", {wp.position[0], wp.position[1], wp.position[2]}},
-                {"rot", {wp.rotation[0], wp.rotation[1], wp.rotation[2]}},
+                {"pos", {san(wp.position[0]), san(wp.position[1]), san(wp.position[2])}},
+                {"rot", {san(wp.rotation[0]), san(wp.rotation[1]), san(wp.rotation[2])}},
                 {"flags", wp.flags}, {"doodadSet", wp.doodadSet}
             });
         }

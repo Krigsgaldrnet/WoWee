@@ -6,6 +6,7 @@
 #include <ctime>
 #include <chrono>
 #include <unordered_map>
+#include <cmath>
 
 namespace wowee {
 namespace editor {
@@ -14,9 +15,22 @@ std::string SQLExporter::escape(const std::string& s) {
     std::string out;
     out.reserve(s.size());
     for (char c : s) {
-        if (c == '\'') out += "''";
-        else if (c == '\\') out += "\\\\";
-        else out += c;
+        // MySQL/MariaDB string-literal escape rules. The backslash sequences
+        // are the canonical way; doubled single quote works inside single-
+        // quoted strings either way (matches AzerothCore's import scripts).
+        // Stripping NUL prevents premature string termination in clients
+        // that don't fully respect length-prefixed strings; \r/\n keep
+        // each INSERT on its own line for human-readable export files.
+        switch (c) {
+            case '\'': out += "''"; break;
+            case '\\': out += "\\\\"; break;
+            case '\0': /* drop NUL */ break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            case 26:   out += "\\Z"; break; // Ctrl-Z
+            default:   out += c; break;
+        }
     }
     return out;
 }
@@ -99,13 +113,24 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
         uint32_t entry = startEntry + static_cast<uint32_t>(i);
         uint32_t guid = startEntry + static_cast<uint32_t>(i);
 
+        // movementType: 0=stationary, 1=wander, 2=waypoint (patrol).
+        // Patrol with no waypoints or Wander with zero radius would either
+        // log an error or spawn a creature that pretends to wander but
+        // never moves. Downgrade to stationary in both cases.
         uint8_t movementType = 0;
-        if (s.behavior == CreatureBehavior::Wander) movementType = 1;
-        if (s.behavior == CreatureBehavior::Patrol) movementType = 2;
+        if (s.behavior == CreatureBehavior::Wander && s.wanderRadius > 0.01f)
+            movementType = 1;
+        if (s.behavior == CreatureBehavior::Patrol && !s.patrolPath.empty())
+            movementType = 2;
 
         // Editor stores positions in render coords; AzerothCore expects WoW
         // canonical (X=north, Y=west). renderToCanonical handles the swap.
-        const glm::vec3 wow = core::coords::renderToCanonical(s.position);
+        // Sanitize each component — ostream prints NaN as "nan" which
+        // AzerothCore's SQL import will reject.
+        glm::vec3 wow = core::coords::renderToCanonical(s.position);
+        if (!std::isfinite(wow.x)) wow.x = 0.0f;
+        if (!std::isfinite(wow.y)) wow.y = 0.0f;
+        if (!std::isfinite(wow.z)) wow.z = 0.0f;
         const float wowX = wow.x;
         const float wowY = wow.y;
         const float wowZ = wow.z;
@@ -113,7 +138,8 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
         // orientation is in degrees from +renderX (west). Convert via:
         //   wowYaw = π/2 - editorYaw
         constexpr float kPi = 3.14159265358979323846f;
-        const float editorYawRad = s.orientation * kPi / 180.0f;
+        float orientation = std::isfinite(s.orientation) ? s.orientation : 0.0f;
+        const float editorYawRad = orientation * kPi / 180.0f;
         float orientRad = kPi * 0.5f - editorYawRad;
         while (orientRad < 0.0f) orientRad += 2.0f * kPi;
         while (orientRad >= 2.0f * kPi) orientRad -= 2.0f * kPi;
@@ -153,7 +179,10 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
 
             for (size_t pi = 0; pi < s.patrolPath.size(); pi++) {
                 const auto& wp = s.patrolPath[pi];
-                const glm::vec3 wpWow = core::coords::renderToCanonical(wp.position);
+                glm::vec3 wpWow = core::coords::renderToCanonical(wp.position);
+                if (!std::isfinite(wpWow.x)) wpWow.x = 0.0f;
+                if (!std::isfinite(wpWow.y)) wpWow.y = 0.0f;
+                if (!std::isfinite(wpWow.z)) wpWow.z = 0.0f;
                 const float wpWowX = wpWow.x;
                 const float wpWowY = wpWow.y;
                 const float wpWowZ = wpWow.z;
@@ -202,6 +231,27 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
     f << "-- quest_template (quest definitions)\n";
     f << "-- =============================================\n\n";
 
+    // Pre-scan for unsupported objective types and emit a single header
+    // comment so users know which quests will need manual server-side
+    // scripting after import.
+    bool hasUnsupportedObj = false;
+    for (const auto& q : quests) {
+        for (const auto& obj : q.objectives) {
+            if (obj.type == QuestObjectiveType::ExploreArea ||
+                obj.type == QuestObjectiveType::EscortNPC ||
+                obj.type == QuestObjectiveType::UseObject) {
+                hasUnsupportedObj = true;
+                break;
+            }
+        }
+        if (hasUnsupportedObj) break;
+    }
+    if (hasUnsupportedObj) {
+        f << "-- NOTE: some quests use objective types (ExploreArea, EscortNPC,\n"
+          << "--       UseObject) that have no direct quest_template column.\n"
+          << "--       Implement them via AzerothCore script_quest hooks.\n\n";
+    }
+
     for (const auto& q : quests) {
         uint32_t entry = startEntry + q.id;
         uint32_t rewardMoney = q.reward.gold * 10000 + q.reward.silver * 100 + q.reward.copper;
@@ -225,16 +275,43 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
                 reqNpcOrGo[npcSlot] = resolveCreatureEntry(id);
                 reqNpcOrGoCount[npcSlot] = obj.targetCount;
                 npcSlot++;
+            } else if (obj.type == QuestObjectiveType::TalkToNPC && npcSlot < 4) {
+                // AzerothCore reuses RequiredNpcOrGo for talk objectives —
+                // count=1 indicates an interaction rather than a kill.
+                reqNpcOrGo[npcSlot] = resolveCreatureEntry(id);
+                reqNpcOrGoCount[npcSlot] = 1;
+                npcSlot++;
             } else if (obj.type == QuestObjectiveType::CollectItem && itemSlot < 6) {
                 reqItemId[itemSlot] = id;
                 reqItemCount[itemSlot] = obj.targetCount;
                 itemSlot++;
             }
+            // ExploreArea / EscortNPC / UseObject have no direct
+            // quest_template column; they need server scripts. Silently
+            // skipped here (validateChains warns if a quest has no SQL-
+            // representable objectives).
         }
+
+        // Reward items — itemRewards entries are item IDs as strings;
+        // try to parse as numeric. Anything unparseable becomes 0 and is
+        // skipped by the count=0 check below.
+        uint32_t rewardItemId[4] = {0, 0, 0, 0};
+        uint32_t rewardItemCount[4] = {0, 0, 0, 0};
+        for (size_t k = 0; k < q.reward.itemRewards.size() && k < 4; k++) {
+            try {
+                rewardItemId[k] = static_cast<uint32_t>(std::stoul(q.reward.itemRewards[k]));
+                if (rewardItemId[k] != 0) rewardItemCount[k] = 1;
+            } catch (...) { /* leave as 0 */ }
+        }
+
+        // Resolve quest-chain link to the matching SQL quest entry.
+        // q.nextQuestId is editor-relative; the SQL row id is startEntry + id.
+        uint32_t nextQuestSqlId = q.nextQuestId != 0
+            ? startEntry + q.nextQuestId : 0;
 
         f << "INSERT INTO `quest_template` "
           << "(`ID`, `LogTitle`, `LogDescription`, `QuestCompletionLog`, "
-          << "`MinLevel`, `RewardXP`, `RewardMoney`, "
+          << "`MinLevel`, `RewardXP`, `RewardMoney`, `NextQuestInChain`, "
           << "`RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, "
           << "`RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, "
           << "`RequiredNpcOrGo3`, `RequiredNpcOrGoCount3`, "
@@ -244,15 +321,20 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
           << "`RequiredItemId3`, `RequiredItemCount3`, "
           << "`RequiredItemId4`, `RequiredItemCount4`, "
           << "`RequiredItemId5`, `RequiredItemCount5`, "
-          << "`RequiredItemId6`, `RequiredItemCount6`) VALUES ("
+          << "`RequiredItemId6`, `RequiredItemCount6`, "
+          << "`RewardItem1`, `RewardItemCount1`, "
+          << "`RewardItem2`, `RewardItemCount2`, "
+          << "`RewardItem3`, `RewardItemCount3`, "
+          << "`RewardItem4`, `RewardItemCount4`) VALUES ("
           << entry << ", "
           << "'" << escapeSql(q.title) << "', "
           << "'" << escapeSql(q.description) << "', "
           << "'" << escapeSql(q.completionText) << "', "
           << q.requiredLevel << ", "
-          << q.reward.xp << ", " << rewardMoney;
+          << q.reward.xp << ", " << rewardMoney << ", " << nextQuestSqlId;
         for (int k = 0; k < 4; k++) f << ", " << reqNpcOrGo[k] << ", " << reqNpcOrGoCount[k];
         for (int k = 0; k < 6; k++) f << ", " << reqItemId[k] << ", " << reqItemCount[k];
+        for (int k = 0; k < 4; k++) f << ", " << rewardItemId[k] << ", " << rewardItemCount[k];
         f << ") ON DUPLICATE KEY UPDATE `LogTitle`='" << escapeSql(q.title) << "';\n";
     }
 

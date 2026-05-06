@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <fstream>
 #include <cstring>
+#include <limits>
+#include <cmath>
 
 using namespace wowee::pipeline;
 
@@ -336,7 +338,7 @@ TEST_CASE("WOT metadata round-trip with placements", "[wot]") {
     {"layers": [0, 1], "holes": 5}
   ],
   "water": [
-    {"chunk": 0, "type": 5, "height": 50.0},
+    {"chunk": 0, "type": 3, "height": 50.0},
     null
   ],
   "doodadNames": ["World\\Doodad\\Tree01.m2", "World\\Doodad\\Rock03.m2"],
@@ -376,7 +378,7 @@ TEST_CASE("WOT metadata round-trip with placements", "[wot]") {
 
     // Water
     REQUIRE(terrain.waterData[0].hasWater());
-    REQUIRE(terrain.waterData[0].layers[0].liquidType == 5);
+    REQUIRE(terrain.waterData[0].layers[0].liquidType == 3); // 3=slime, in valid 0..3 range
     REQUIRE(terrain.waterData[0].layers[0].maxHeight == Catch::Approx(50.0f));
 
     // Doodad names and placements
@@ -510,4 +512,351 @@ TEST_CASE("WOC holes skip triangles", "[woc]") {
 
 TEST_CASE("WOB rejects missing file", "[wob]") {
     REQUIRE_FALSE(WoweeBuildingLoader::exists("nonexistent_path"));
+}
+
+// ============== Defensive hardening tests ==============
+
+TEST_CASE("WOT clamps out-of-range tile coords on load", "[wot][hardening]") {
+    ensureTestDir();
+    std::string wotPath = TEST_DIR + "/oor_tiles.wot";
+    {
+        std::ofstream f(wotPath);
+        f << R"({"format":"wot-1.0","tileX":200,"tileY":-5})";
+    }
+
+    ADTTerrain terrain{};
+    terrain.loaded = true;
+    REQUIRE(WoweeTerrainLoader::loadMetadata(wotPath, terrain));
+    // Out-of-range coords should fall back to 32 (map center).
+    REQUIRE(terrain.coord.x == 32);
+    REQUIRE(terrain.coord.y == 32);
+    std::filesystem::remove(wotPath);
+}
+
+TEST_CASE("WOT clamps out-of-range water liquid type", "[wot][hardening]") {
+    ensureTestDir();
+    std::string wotPath = TEST_DIR + "/oor_water.wot";
+    {
+        std::ofstream f(wotPath);
+        f << R"({"format":"wot-1.0","tileX":32,"tileY":32,
+            "water":[{"chunk":0,"type":99,"height":10.0}]})";
+    }
+
+    ADTTerrain terrain{};
+    terrain.loaded = true;
+    for (int i = 0; i < 256; i++) terrain.chunks[i].heightMap.loaded = true;
+    REQUIRE(WoweeTerrainLoader::loadMetadata(wotPath, terrain));
+    REQUIRE(terrain.waterData[0].hasWater());
+    // type=99 is unknown; loader maps to 0 (plain water).
+    REQUIRE(terrain.waterData[0].layers[0].liquidType == 0);
+    std::filesystem::remove(wotPath);
+}
+
+TEST_CASE("WOC load skips degenerate triangles", "[woc][hardening]") {
+    ensureTestDir();
+    std::string path = TEST_DIR + "/degen.woc";
+    {
+        // Hand-write a WOC with one valid triangle and one degenerate.
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31434F57; // "WOC1"
+        uint32_t triCount = 2;
+        uint32_t tx = 32, ty = 32;
+        glm::vec3 bmin(-1), bmax(1);
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&triCount), 4);
+        f.write(reinterpret_cast<const char*>(&tx), 4);
+        f.write(reinterpret_cast<const char*>(&ty), 4);
+        f.write(reinterpret_cast<const char*>(&bmin), 12);
+        f.write(reinterpret_cast<const char*>(&bmax), 12);
+        // Valid triangle
+        glm::vec3 v0(0, 0, 0), v1(1, 0, 0), v2(0, 1, 0);
+        uint8_t flags = 0x01;
+        f.write(reinterpret_cast<const char*>(&v0), 12);
+        f.write(reinterpret_cast<const char*>(&v1), 12);
+        f.write(reinterpret_cast<const char*>(&v2), 12);
+        f.write(reinterpret_cast<const char*>(&flags), 1);
+        // Degenerate triangle (all three vertices coincident)
+        glm::vec3 d(5, 5, 5);
+        f.write(reinterpret_cast<const char*>(&d), 12);
+        f.write(reinterpret_cast<const char*>(&d), 12);
+        f.write(reinterpret_cast<const char*>(&d), 12);
+        f.write(reinterpret_cast<const char*>(&flags), 1);
+    }
+
+    auto col = WoweeCollisionBuilder::load(path);
+    REQUIRE(col.isValid());
+    // Only the non-degenerate triangle should survive.
+    REQUIRE(col.triangles.size() == 1);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WOC rejects absurdly large triangle counts", "[woc][hardening]") {
+    ensureTestDir();
+    std::string path = TEST_DIR + "/huge_woc.woc";
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31434F57;
+        uint32_t triCount = 10'000'000; // > 2M cap
+        uint32_t tx = 32, ty = 32;
+        glm::vec3 bmin(0), bmax(0);
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&triCount), 4);
+        f.write(reinterpret_cast<const char*>(&tx), 4);
+        f.write(reinterpret_cast<const char*>(&ty), 4);
+        f.write(reinterpret_cast<const char*>(&bmin), 12);
+        f.write(reinterpret_cast<const char*>(&bmax), 12);
+    }
+
+    auto col = WoweeCollisionBuilder::load(path);
+    // 10M triangle WOC rejected — returns empty (isValid false).
+    REQUIRE_FALSE(col.isValid());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WOB scrubs NaN doodad transform on load", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/nan_doodad";
+    std::string path = base + ".wob";
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31424F57; // "WOB1"
+        uint32_t gc = 0, pc = 0, dc = 1;
+        float boundRadius = 5.0f;
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&gc), 4);
+        f.write(reinterpret_cast<const char*>(&pc), 4);
+        f.write(reinterpret_cast<const char*>(&dc), 4);
+        f.write(reinterpret_cast<const char*>(&boundRadius), 4);
+        // Empty name string
+        uint16_t nameLen = 0;
+        f.write(reinterpret_cast<const char*>(&nameLen), 2);
+        // Doodad with NaN position/rotation/scale
+        std::string mp = "Tree.wom";
+        uint16_t mpLen = static_cast<uint16_t>(mp.size());
+        f.write(reinterpret_cast<const char*>(&mpLen), 2);
+        f.write(mp.data(), mpLen);
+        float nan = std::numeric_limits<float>::quiet_NaN();
+        glm::vec3 nanv(nan, nan, nan);
+        f.write(reinterpret_cast<const char*>(&nanv), 12);
+        f.write(reinterpret_cast<const char*>(&nanv), 12);
+        f.write(reinterpret_cast<const char*>(&nan), 4);
+    }
+
+    auto bld = WoweeBuildingLoader::load(base);
+    // isValid requires a group — we deliberately wrote 0 groups to keep
+    // the test fixture small. Just check the doodad got loaded + scrubbed.
+    REQUIRE(bld.doodads.size() == 1);
+    REQUIRE(std::isfinite(bld.doodads[0].position.x));
+    REQUIRE(bld.doodads[0].position == glm::vec3(0, 0, 0));
+    REQUIRE(bld.doodads[0].rotation == glm::vec3(0, 0, 0));
+    REQUIRE(bld.doodads[0].scale == 1.0f);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WOC clamps out-of-range tile coords on load", "[woc][hardening]") {
+    ensureTestDir();
+    std::string path = TEST_DIR + "/oor_tile_woc.woc";
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31434F57;
+        uint32_t triCount = 0;
+        uint32_t tx = 200, ty = 200; // out of 0..63
+        glm::vec3 bmin(0), bmax(0);
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&triCount), 4);
+        f.write(reinterpret_cast<const char*>(&tx), 4);
+        f.write(reinterpret_cast<const char*>(&ty), 4);
+        f.write(reinterpret_cast<const char*>(&bmin), 12);
+        f.write(reinterpret_cast<const char*>(&bmax), 12);
+    }
+
+    auto col = WoweeCollisionBuilder::load(path);
+    // Out-of-range coords reclamped to 32 (map center).
+    REQUIRE(col.tileX == 32);
+    REQUIRE(col.tileY == 32);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WOB save scrubs NaN portal vertices and group indices", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/nan_portal";
+
+    WoweeBuilding bld;
+    bld.name = "NaNPortal";
+    bld.boundRadius = 5.0f;
+
+    WoweeBuilding::Group g;
+    g.name = "G";
+    g.vertices.push_back({{0, 0, 0}, {0, 0, 1}, {0, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{1, 0, 0}, {0, 0, 1}, {1, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{0, 1, 0}, {0, 0, 1}, {0, 1}, {1, 1, 1, 1}});
+    g.indices = {0, 1, 2};
+    bld.groups.push_back(g);
+
+    // Portal with NaN vertices and out-of-range groupA/groupB
+    WoweeBuilding::Portal p;
+    p.groupA = 99;  // out of range (only 1 group)
+    p.groupB = 99;
+    float nan = std::numeric_limits<float>::quiet_NaN();
+    p.vertices.push_back(glm::vec3(nan, nan, nan));
+    p.vertices.push_back(glm::vec3(0, 0, 0));
+    p.vertices.push_back(glm::vec3(1, 0, 0));
+    bld.portals.push_back(p);
+
+    REQUIRE(WoweeBuildingLoader::save(bld, base));
+
+    auto reloaded = WoweeBuildingLoader::load(base);
+    REQUIRE(reloaded.isValid());
+    REQUIRE(reloaded.portals.size() == 1);
+    // NaN vertex should have been scrubbed to 0
+    const auto& v = reloaded.portals[0].vertices[0];
+    REQUIRE(std::isfinite(v.x));
+    REQUIRE(std::isfinite(v.y));
+    REQUIRE(std::isfinite(v.z));
+    REQUIRE(v == glm::vec3(0, 0, 0));
+    // Out-of-range group indices clamped to -1
+    REQUIRE(reloaded.portals[0].groupA == -1);
+    REQUIRE(reloaded.portals[0].groupB == -1);
+    std::filesystem::remove(base + ".wob");
+}
+
+TEST_CASE("WOB save scrubs NaN group bounds and vertex positions", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/nan_group";
+
+    WoweeBuilding bld;
+    bld.name = "NaNVerts";
+    bld.boundRadius = std::numeric_limits<float>::quiet_NaN();  // bad source
+
+    WoweeBuilding::Group g;
+    g.name = "G";
+    float nan = std::numeric_limits<float>::quiet_NaN();
+    g.boundMin = glm::vec3(nan);
+    g.boundMax = glm::vec3(nan);
+    g.vertices.push_back({{nan, nan, nan}, {nan, nan, nan}, {0, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{1, 0, 0}, {0, 0, 1}, {1, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{0, 1, 0}, {0, 0, 1}, {0, 1}, {1, 1, 1, 1}});
+    g.indices = {0, 1, 2};
+    bld.groups.push_back(g);
+
+    REQUIRE(WoweeBuildingLoader::save(bld, base));
+    auto reloaded = WoweeBuildingLoader::load(base);
+    REQUIRE(reloaded.isValid());
+    // boundRadius defaulted to 1.0
+    REQUIRE(reloaded.boundRadius == 1.0f);
+    // Vertex 0 was all-NaN — scrubbed to zero/up-axis defaults
+    const auto& v = reloaded.groups[0].vertices[0];
+    REQUIRE(std::isfinite(v.position.x));
+    REQUIRE(v.position == glm::vec3(0, 0, 0));
+    // Normal default fallback is (0,0,1)
+    REQUIRE(v.normal == glm::vec3(0, 0, 1));
+    std::filesystem::remove(base + ".wob");
+}
+
+TEST_CASE("WOB save caps texture-path count to 1024 on round-trip", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/cap_textures";
+
+    WoweeBuilding bld;
+    bld.name = "ManyTex";
+    bld.boundRadius = 1.0f;
+    WoweeBuilding::Group g;
+    g.name = "G";
+    g.vertices.push_back({{0, 0, 0}, {0, 0, 1}, {0, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{1, 0, 0}, {0, 0, 1}, {1, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{0, 1, 0}, {0, 0, 1}, {0, 1}, {1, 1, 1, 1}});
+    g.indices = {0, 1, 2};
+    // Push more textures than the load limit (1024) — save should cap.
+    for (int i = 0; i < 1500; i++) {
+        g.texturePaths.push_back("tex" + std::to_string(i) + ".png");
+    }
+    bld.groups.push_back(g);
+
+    REQUIRE(WoweeBuildingLoader::save(bld, base));
+    auto reloaded = WoweeBuildingLoader::load(base);
+    REQUIRE(reloaded.isValid());
+    REQUIRE(reloaded.groups.size() == 1);
+    // Capped at 1024 on save → loader sees only 1024 entries.
+    REQUIRE(reloaded.groups[0].texturePaths.size() == 1024);
+    // First and last (capped) entries match what was written.
+    REQUIRE(reloaded.groups[0].texturePaths.front() == "tex0.png");
+    REQUIRE(reloaded.groups[0].texturePaths.back() == "tex1023.png");
+    std::filesystem::remove(base + ".wob");
+}
+
+TEST_CASE("WoweeCollision save caps tri count and clamps tile coords", "[woc][hardening]") {
+    ensureTestDir();
+    std::string path = TEST_DIR + "/cap_woc.woc";
+    WoweeCollision col;
+    col.tileX = 200;  // out of range — should clamp to 32 on save
+    col.tileY = 200;
+    // Add a few real triangles so the file isn't empty.
+    for (int i = 0; i < 5; i++) {
+        WoweeCollision::Triangle t;
+        t.v0 = glm::vec3(static_cast<float>(i), 0, 0);
+        t.v1 = glm::vec3(static_cast<float>(i + 1), 0, 0);
+        t.v2 = glm::vec3(static_cast<float>(i), 1, 0);
+        t.flags = 0x01;
+        col.triangles.push_back(t);
+    }
+    REQUIRE(WoweeCollisionBuilder::save(col, path));
+    auto reloaded = WoweeCollisionBuilder::load(path);
+    REQUIRE(reloaded.isValid());
+    REQUIRE(reloaded.tileX == 32);  // clamped from 200
+    REQUIRE(reloaded.tileY == 32);
+    REQUIRE(reloaded.triangles.size() == 5);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WOB rejects load on overlong building name", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/bad_name";
+    std::string path = base + ".wob";
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31424F57; // WOB1
+        uint32_t gc = 1, pc = 0, dc = 0;
+        float boundRadius = 1.0f;
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&gc), 4);
+        f.write(reinterpret_cast<const char*>(&pc), 4);
+        f.write(reinterpret_cast<const char*>(&dc), 4);
+        f.write(reinterpret_cast<const char*>(&boundRadius), 4);
+        // Overlong building name length (5000 > 1024 cap)
+        uint16_t nameLen = 5000;
+        f.write(reinterpret_cast<const char*>(&nameLen), 2);
+    }
+    auto bld = WoweeBuildingLoader::load(base);
+    // Without the reject, the loader would silently set nameLen=0 and the
+    // 5000 stale bytes after would be misread as the next group's name+
+    // counts. With the fix the load returns an empty WoweeBuilding.
+    REQUIRE_FALSE(bld.isValid());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WOB rejects load on overlong group name", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/bad_grp_name";
+    std::string path = base + ".wob";
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31424F57; // WOB1
+        uint32_t gc = 1, pc = 0, dc = 0;
+        float boundRadius = 1.0f;
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&gc), 4);
+        f.write(reinterpret_cast<const char*>(&pc), 4);
+        f.write(reinterpret_cast<const char*>(&dc), 4);
+        f.write(reinterpret_cast<const char*>(&boundRadius), 4);
+        // Valid building name
+        uint16_t nameLen = 4;
+        f.write(reinterpret_cast<const char*>(&nameLen), 2);
+        f.write("Test", 4);
+        // Overlong group name length
+        uint16_t gnLen = 9999;
+        f.write(reinterpret_cast<const char*>(&gnLen), 2);
+    }
+    auto bld = WoweeBuildingLoader::load(base);
+    REQUIRE_FALSE(bld.isValid());
+    std::filesystem::remove(path);
 }

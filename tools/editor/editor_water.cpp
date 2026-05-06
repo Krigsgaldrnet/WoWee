@@ -3,6 +3,7 @@
 #include "rendering/vk_shader.hpp"
 #include "core/logger.hpp"
 #include <cstring>
+#include <cmath>
 
 namespace wowee {
 namespace editor {
@@ -61,6 +62,10 @@ void EditorWater::update(const pipeline::ADTTerrain& terrain, int tileX, int til
             float y1 = y0 - CHUNK_SIZE;
 
             float h = water.layers[0].maxHeight;
+            // NaN water height would produce NaN vertex positions and
+            // Vulkan would drop the whole water mesh. WOT load already
+            // scrubs but defending here is cheap insurance.
+            if (!std::isfinite(h)) continue;
 
             // Water color by type
             float r = 0.1f, g = 0.3f, b = 0.7f, a = 0.45f;

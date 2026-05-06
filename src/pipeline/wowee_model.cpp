@@ -62,6 +62,12 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
 
     uint16_t nameLen;
     f.read(reinterpret_cast<char*>(&nameLen), 2);
+    // Save caps name at 1024; reject anything longer to keep load
+    // alignment with future-version files predictable.
+    if (nameLen > 1024) {
+        LOG_ERROR("WOM name length rejected (", nameLen, "): ", basePath);
+        return WoweeModel{};
+    }
     model.name.resize(nameLen);
     f.read(model.name.data(), nameLen);
 
@@ -109,8 +115,14 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
     for (uint32_t i = 0; i < texCount; i++) {
         uint16_t pathLen;
         f.read(reinterpret_cast<char*>(&pathLen), 2);
-        // Reject absurd path lengths (corrupted/truncated file).
-        if (pathLen > 1024) { pathLen = 0; }
+        // Same desync risk as elsewhere — pathLen=0 with the actual
+        // bytes still on disk would shift every subsequent length+data
+        // pair. Reject the whole load instead of silently dropping.
+        if (pathLen > 1024) {
+            LOG_ERROR("WOM texture path ", i, " length rejected (",
+                      pathLen, "): ", basePath);
+            return WoweeModel{};
+        }
         std::string path(pathLen, '\0');
         f.read(path.data(), pathLen);
         // Reject path-traversal — texture paths from a hostile WOM are fed
@@ -255,9 +267,14 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
     uint32_t magic = hasBatches ? WOM3_MAGIC : (hasAnim ? WOM2_MAGIC : WOM_MAGIC);
     f.write(reinterpret_cast<const char*>(&magic), 4);
 
-    uint32_t vertCount = static_cast<uint32_t>(model.vertices.size());
-    uint32_t indexCount = static_cast<uint32_t>(model.indices.size());
-    uint32_t texCount = static_cast<uint32_t>(model.texturePaths.size());
+    // Cap top-level counts at the load-side limits so a pathological
+    // model can't write a file the loader rejects whole.
+    uint32_t vertCount = static_cast<uint32_t>(
+        std::min<size_t>(model.vertices.size(), 1'000'000));
+    uint32_t indexCount = static_cast<uint32_t>(
+        std::min<size_t>(model.indices.size(), 4'000'000));
+    uint32_t texCount = static_cast<uint32_t>(
+        std::min<size_t>(model.texturePaths.size(), 1024));
     f.write(reinterpret_cast<const char*>(&vertCount), 4);
     f.write(reinterpret_cast<const char*>(&indexCount), 4);
     f.write(reinterpret_cast<const char*>(&texCount), 4);
@@ -291,55 +308,122 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
         f.write(reinterpret_cast<const char*>(model.vertices.data()),
                 vertCount * sizeof(WoweeModel::Vertex));
     } else {
-        for (const auto& v : model.vertices) {
+        // WOM1: write only the capped vertCount entries so the body
+        // matches the header.
+        for (uint32_t vi = 0; vi < vertCount; vi++) {
+            const auto& v = model.vertices[vi];
             f.write(reinterpret_cast<const char*>(&v.position), 12);
             f.write(reinterpret_cast<const char*>(&v.normal), 12);
             f.write(reinterpret_cast<const char*>(&v.texCoord), 8);
         }
     }
 
-    f.write(reinterpret_cast<const char*>(model.indices.data()), indexCount * 4);
+    // Clamp out-of-range indices on save too — symmetric with the load
+    // guard. Avoids writing index values that the renderer would refuse
+    // and that the load-time guard would have to clean up later.
+    {
+        const uint32_t vMax = vertCount > 0 ? vertCount - 1 : 0;
+        std::vector<uint32_t> sanIdx = model.indices;
+        for (auto& idx : sanIdx) if (idx > vMax) idx = 0;
+        f.write(reinterpret_cast<const char*>(sanIdx.data()), indexCount * 4);
+    }
 
-    for (const auto& path : model.texturePaths) writeStr(path);
+    // Match header texCount on round-trip.
+    for (uint32_t ti = 0; ti < texCount; ti++) writeStr(model.texturePaths[ti]);
 
     // WOM2/WOM3: write bones and animations (always, even if empty for WOM3)
     if (hasAnim || hasBatches) {
-        uint32_t boneCount = static_cast<uint32_t>(model.bones.size());
+        // Cap counts at the load-side limits (512 bones, 1024 anims). Raw
+        // size() would let a pathological in-memory model write a file the
+        // loader silently rejects, leaving the post-truncation bytes to be
+        // misread as the next section.
+        uint32_t boneCount = static_cast<uint32_t>(
+            std::min<size_t>(model.bones.size(), 512));
         f.write(reinterpret_cast<const char*>(&boneCount), 4);
-        for (const auto& bone : model.bones) {
+        for (uint32_t bi = 0; bi < boneCount; bi++) {
+            const auto& bone = model.bones[bi];
+            // Symmetric scrub with load — pivot NaN propagates through
+            // skeleton matrices to every child bone; parent indices outside
+            // bone array would walk off the end during matrix evaluation.
+            glm::vec3 pivot = bone.pivot;
+            if (!std::isfinite(pivot.x)) pivot.x = 0.0f;
+            if (!std::isfinite(pivot.y)) pivot.y = 0.0f;
+            if (!std::isfinite(pivot.z)) pivot.z = 0.0f;
+            int16_t parent = bone.parentBone;
+            if (parent >= 0 && static_cast<uint32_t>(parent) >= boneCount)
+                parent = -1;
             f.write(reinterpret_cast<const char*>(&bone.keyBoneId), 4);
-            f.write(reinterpret_cast<const char*>(&bone.parentBone), 2);
-            f.write(reinterpret_cast<const char*>(&bone.pivot), 12);
+            f.write(reinterpret_cast<const char*>(&parent), 2);
+            f.write(reinterpret_cast<const char*>(&pivot), 12);
             f.write(reinterpret_cast<const char*>(&bone.flags), 4);
         }
 
-        uint32_t animCount = static_cast<uint32_t>(model.animations.size());
+        uint32_t animCount = static_cast<uint32_t>(
+            std::min<size_t>(model.animations.size(), 1024));
         f.write(reinterpret_cast<const char*>(&animCount), 4);
-        for (const auto& anim : model.animations) {
+        // Same NaN scrub as load — keyframes can carry corrupt source data
+        // straight through fromM2 without ever round-tripping a load, so the
+        // save side has to defend independently.
+        auto sanV3 = [](glm::vec3 v, float def) {
+            if (!std::isfinite(v.x)) v.x = def;
+            if (!std::isfinite(v.y)) v.y = def;
+            if (!std::isfinite(v.z)) v.z = def;
+            return v;
+        };
+        for (uint32_t ai = 0; ai < animCount; ai++) {
+            const auto& anim = model.animations[ai];
             f.write(reinterpret_cast<const char*>(&anim.id), 4);
             f.write(reinterpret_cast<const char*>(&anim.durationMs), 4);
-            f.write(reinterpret_cast<const char*>(&anim.movingSpeed), 4);
+            float movingSpeed = std::isfinite(anim.movingSpeed) ? anim.movingSpeed : 0.0f;
+            f.write(reinterpret_cast<const char*>(&movingSpeed), 4);
 
-            for (size_t bi = 0; bi < model.bones.size(); bi++) {
+            // Iterate bones using the *capped* boneCount so the per-bone
+            // keyframe block stays aligned with what load expects to read.
+            for (size_t bi = 0; bi < boneCount; bi++) {
                 uint32_t kfCount = (bi < anim.boneKeyframes.size())
                     ? static_cast<uint32_t>(anim.boneKeyframes[bi].size()) : 0;
                 f.write(reinterpret_cast<const char*>(&kfCount), 4);
                 for (uint32_t ki = 0; ki < kfCount; ki++) {
                     const auto& kf = anim.boneKeyframes[bi][ki];
+                    glm::vec3 t = sanV3(kf.translation, 0.0f);
+                    glm::vec3 s = sanV3(kf.scale, 1.0f);
+                    glm::quat q = kf.rotation;
+                    if (!std::isfinite(q.x)) q.x = 0.0f;
+                    if (!std::isfinite(q.y)) q.y = 0.0f;
+                    if (!std::isfinite(q.z)) q.z = 0.0f;
+                    if (!std::isfinite(q.w)) q.w = 1.0f;
                     f.write(reinterpret_cast<const char*>(&kf.timeMs), 4);
-                    f.write(reinterpret_cast<const char*>(&kf.translation), 12);
-                    f.write(reinterpret_cast<const char*>(&kf.rotation), 16);
-                    f.write(reinterpret_cast<const char*>(&kf.scale), 12);
+                    f.write(reinterpret_cast<const char*>(&t), 12);
+                    f.write(reinterpret_cast<const char*>(&q), 16);
+                    f.write(reinterpret_cast<const char*>(&s), 12);
                 }
             }
         }
     }
 
-    // WOM3: write batches
+    // WOM3: write batches. Drop batches that reference invalid index ranges
+    // or texture slots — load would do the same drop and log a warning, but
+    // skipping at save time keeps the file small and deterministic.
     if (hasBatches) {
-        uint32_t batchCount = static_cast<uint32_t>(model.batches.size());
-        f.write(reinterpret_cast<const char*>(&batchCount), 4);
+        const uint32_t totalIdx = static_cast<uint32_t>(model.indices.size());
+        const uint32_t totalTex = static_cast<uint32_t>(model.texturePaths.size());
+        std::vector<WoweeModel::Batch> validBatches;
+        validBatches.reserve(model.batches.size());
         for (const auto& b : model.batches) {
+            if (b.indexCount == 0) continue;
+            if (b.indexStart > totalIdx) continue;
+            if (b.indexStart + b.indexCount > totalIdx) continue;
+            if (totalTex > 0 && b.textureIndex >= totalTex) continue;
+            validBatches.push_back(b);
+        }
+        // Cap batches at the load limit (4096). validBatches has already
+        // dropped invalid entries; this trims the head if the model has
+        // more than the loader will accept.
+        uint32_t batchCount = static_cast<uint32_t>(
+            std::min<size_t>(validBatches.size(), 4096));
+        f.write(reinterpret_cast<const char*>(&batchCount), 4);
+        for (uint32_t bi = 0; bi < batchCount; bi++) {
+            const auto& b = validBatches[bi];
             f.write(reinterpret_cast<const char*>(&b.indexStart), 4);
             f.write(reinterpret_cast<const char*>(&b.indexCount), 4);
             f.write(reinterpret_cast<const char*>(&b.textureIndex), 4);
@@ -354,30 +438,28 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
     return true;
 }
 
-WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am) {
+// Internal helper: convert a parsed M2Model (already merged with skin if
+// applicable) into a WoweeModel. Shared by fromM2 (AssetManager path)
+// and fromM2Bytes (extractor path).
+static WoweeModel convertM2ToWom(const M2Model& m2);
+
+// fromM2(path, am) lives in wowee_model_fromm2.cpp so the asset extractor
+// can link wowee_model.cpp without pulling in the AssetManager dependency.
+// convertM2ToWom() (defined below) is the shared conversion body.
+WoweeModel convertM2ToWomShared(const M2Model& m2) { return convertM2ToWom(m2); }
+
+WoweeModel WoweeModelLoader::fromM2Bytes(const std::vector<uint8_t>& m2Data,
+                                          const std::vector<uint8_t>& skinData) {
     WoweeModel model;
-    if (!am) return model;
-
-    auto data = am->readFile(m2Path);
-    if (data.empty()) return model;
-
-    auto m2 = M2Loader::load(data);
-
-    // WotLK+ M2s store header in .m2 but geometry in .skin — always merge the
-    // skin file when present so we get vertices/indices/batches even for M2s
-    // that already report isValid() (older expansions).
-    {
-        std::string skinPath = m2Path;
-        auto dotPos = skinPath.rfind('.');
-        if (dotPos != std::string::npos)
-            skinPath = skinPath.substr(0, dotPos) + "00.skin";
-        auto skinData = am->readFile(skinPath);
-        if (!skinData.empty())
-            M2Loader::loadSkin(skinData, m2);
-    }
-
+    if (m2Data.empty()) return model;
+    auto m2 = M2Loader::load(m2Data);
+    if (!skinData.empty()) M2Loader::loadSkin(skinData, m2);
     if (!m2.isValid()) return model;
+    return convertM2ToWom(m2);
+}
 
+static WoweeModel convertM2ToWom(const M2Model& m2) {
+    WoweeModel model;
     model.name = m2.name;
     model.boundRadius = m2.boundRadius;
 

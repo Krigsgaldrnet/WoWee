@@ -436,7 +436,13 @@ void EditorViewport::setPathPreview(const glm::vec3& start, const glm::vec3& end
     struct BV { float pos[3]; float color[4]; };
     std::vector<BV> verts;
 
-    glm::vec2 dir = glm::normalize(glm::vec2(end.x - start.x, end.y - start.y));
+    glm::vec2 delta(end.x - start.x, end.y - start.y);
+    float dlen = glm::length(delta);
+    // start == end would produce NaN dir/perp from glm::normalize and then
+    // NaN positions in the path ribbon — Vulkan would either drop the draw
+    // or crash on validation. Hide the preview instead.
+    if (dlen < 1e-4f) { pathVisible_ = false; return; }
+    glm::vec2 dir = delta / dlen;
     glm::vec2 perp(-dir.y, dir.x);
     float z0 = start.z + 2.0f;
     float z1 = end.z + 2.0f;
@@ -494,9 +500,13 @@ void EditorViewport::setPatrolPath(const std::vector<glm::vec3>& points, float w
     verts.reserve(points.size() * 24);
 
     auto addRibbon = [&](const glm::vec3& a, const glm::vec3& b, float r, float g, float bl, float al) {
+        // NaN endpoints would short-circuit the len < 0.001f check (NaN
+        // comparisons return false) and propagate NaN through dir.
+        if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(a.z) ||
+            !std::isfinite(b.x) || !std::isfinite(b.y) || !std::isfinite(b.z)) return;
         glm::vec2 dir = glm::vec2(b.x - a.x, b.y - a.y);
         float len = glm::length(dir);
-        if (len < 0.001f) return;
+        if (!std::isfinite(len) || len < 0.001f) return;
         dir /= len;
         glm::vec2 perp(-dir.y, dir.x);
         float hw = width * 0.5f;
@@ -577,6 +587,10 @@ void EditorViewport::updateNpcMarkers(const std::vector<CreatureSpawn>& npcs) {
     struct MV { float pos[3]; float color[4]; };
     std::vector<MV> verts;
     for (const auto& npc : npcs) {
+        // Skip NPCs with non-finite position — would produce NaN vertices
+        // in the marker mesh (Vulkan validation drops the whole batch).
+        if (!std::isfinite(npc.position.x) || !std::isfinite(npc.position.y) ||
+            !std::isfinite(npc.position.z)) continue;
         // Selected NPC: larger marker in cyan-yellow so it pops out among
         // hostile/friendly markers without losing the hostile colour signal.
         float s = npc.selected ? 2.5f : 1.5f;
@@ -644,6 +658,14 @@ void EditorViewport::update(float deltaTime) {
 void EditorViewport::setGhostPreview(const std::string& path, const glm::vec3& pos,
                                       const glm::vec3& rotDeg, float scale) {
     if (!m2Renderer_) return;
+    // Reject NaN inputs — would propagate into the M2 renderer transform
+    // and either crash on the GPU or silently render at the origin.
+    if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z) ||
+        !std::isfinite(rotDeg.x) || !std::isfinite(rotDeg.y) || !std::isfinite(rotDeg.z) ||
+        !std::isfinite(scale) || scale <= 0.0f) {
+        clearGhostPreview();
+        return;
+    }
 
     // Load model if path changed
     if (path != ghostModelPath_ || ghostModelId_ == 0) {

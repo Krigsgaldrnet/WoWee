@@ -49,11 +49,25 @@ void ObjectPlacer::placeObject(const glm::vec3& position) {
 
 int ObjectPlacer::selectAt(const rendering::Ray& ray, float maxDist) {
     clearSelection();
+    // Reject NaN ray — without this every disc < 0 short-circuit returns
+    // false and we'd 'hit' every object with garbage t values.
+    if (!std::isfinite(ray.origin.x) || !std::isfinite(ray.origin.y) ||
+        !std::isfinite(ray.origin.z) || !std::isfinite(ray.direction.x) ||
+        !std::isfinite(ray.direction.y) || !std::isfinite(ray.direction.z) ||
+        !std::isfinite(maxDist)) {
+        return -1;
+    }
 
     float bestDist = maxDist;
     int bestIdx = -1;
 
     for (int i = 0; i < static_cast<int>(objects_.size()); i++) {
+        // Skip objects with NaN position/scale — would feed NaN into the
+        // sphere test (NaN comparisons short-circuit to false → "hit").
+        if (!std::isfinite(objects_[i].position.x) ||
+            !std::isfinite(objects_[i].position.y) ||
+            !std::isfinite(objects_[i].position.z) ||
+            !std::isfinite(objects_[i].scale)) continue;
         // Simple sphere test (radius based on scale)
         float radius = 5.0f * objects_[i].scale;
         glm::vec3 oc = ray.origin - objects_[i].position;
@@ -134,6 +148,10 @@ void ObjectPlacer::selectByType(PlaceableType type) {
 }
 
 void ObjectPlacer::moveSelected(const glm::vec3& delta) {
+    // NaN delta would poison every selected position permanently —
+    // the renderer would then produce NaN model matrices.
+    if (!std::isfinite(delta.x) || !std::isfinite(delta.y) ||
+        !std::isfinite(delta.z)) return;
     if (selectedIndices_.size() > 1) {
         for (int idx : selectedIndices_) objects_[idx].position += delta;
     } else if (auto* obj = getSelected()) {
@@ -142,6 +160,8 @@ void ObjectPlacer::moveSelected(const glm::vec3& delta) {
 }
 
 void ObjectPlacer::rotateSelected(const glm::vec3& deltaDeg) {
+    if (!std::isfinite(deltaDeg.x) || !std::isfinite(deltaDeg.y) ||
+        !std::isfinite(deltaDeg.z)) return;
     if (selectedIndices_.size() > 1) {
         for (int idx : selectedIndices_) objects_[idx].rotation += deltaDeg;
     } else if (auto* obj = getSelected()) {
@@ -150,6 +170,7 @@ void ObjectPlacer::rotateSelected(const glm::vec3& deltaDeg) {
 }
 
 void ObjectPlacer::scaleSelected(float delta) {
+    if (!std::isfinite(delta)) return;
     if (selectedIndices_.size() > 1) {
         for (int idx : selectedIndices_)
             objects_[idx].scale = std::max(0.1f, objects_[idx].scale + delta);
@@ -279,14 +300,18 @@ void ObjectPlacer::undoLastPlace() {
 bool ObjectPlacer::saveToFile(const std::string& path) const {
     std::filesystem::create_directories(std::filesystem::path(path).parent_path());
 
+    // nlohmann::json throws on NaN/inf serialization. Scrub on the way
+    // out so a bad in-memory transform can't kill the whole save.
+    auto san = [](float x) { return std::isfinite(x) ? x : 0.0f; };
+    auto sanScale = [](float x) { return (std::isfinite(x) && x > 0.0f) ? x : 1.0f; };
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& o : objects_) {
         arr.push_back({
             {"type", static_cast<int>(o.type)},
             {"path", o.path},
-            {"pos", {o.position.x, o.position.y, o.position.z}},
-            {"rot", {o.rotation.x, o.rotation.y, o.rotation.z}},
-            {"scale", o.scale},
+            {"pos", {san(o.position.x), san(o.position.y), san(o.position.z)}},
+            {"rot", {san(o.rotation.x), san(o.rotation.y), san(o.rotation.z)}},
+            {"scale", sanScale(o.scale)},
             {"uniqueId", o.uniqueId}
         });
     }
@@ -312,7 +337,17 @@ bool ObjectPlacer::loadFromFile(const std::string& path) {
         selectedIndices_.clear();
         uniqueIdCounter_ = 1;
 
+        // Cap object count — a stale autosave or biome-populate runaway
+        // could produce 100k+ entries that bloat the renderer instance
+        // SSBO and drag the editor framerate to single digits.
+        constexpr size_t kMaxObjects = 100'000;
+
         for (const auto& jo : arr) {
+            if (objects_.size() >= kMaxObjects) {
+                LOG_WARNING("Object cap reached (", kMaxObjects,
+                            ") — remaining entries dropped");
+                break;
+            }
             PlacedObject obj;
             obj.type = static_cast<PlaceableType>(jo.value("type", 0));
             obj.path = jo.value("path", "");

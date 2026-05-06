@@ -217,9 +217,14 @@ std::vector<TerrainVertex> TerrainMeshGenerator::generateVertices(const MapChunk
         // Position in render space:
         //   MCVT rows (offsetY) go west→east = renderX decreasing
         //   MCVT columns (offsetX) go north→south = renderY decreasing
+        // NaN heights are clamped — WHM load scrubs but mid-edit terrain
+        // can briefly carry NaN before stitchEdges runs, and a single NaN
+        // vertex would propagate into normal computations and crash culling.
+        float h = heightMap.heights[index];
+        if (!std::isfinite(h)) h = 0.0f;
         vertex.position[0] = chunkBaseX - (offsetY * unitSize);  // renderX (row = west→east)
         vertex.position[1] = chunkBaseY - (offsetX * unitSize);  // renderY (col = north→south)
-        vertex.position[2] = chunkBaseZ + heightMap.heights[index];  // renderZ
+        vertex.position[2] = chunkBaseZ + h;                      // renderZ
 
         // Normal
         if (index * 3 + 2 < static_cast<int>(chunk.normals.size())) {

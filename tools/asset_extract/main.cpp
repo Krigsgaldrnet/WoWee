@@ -1,4 +1,7 @@
 #include "extractor.hpp"
+#include "open_format_emitter.hpp"
+#include <nlohmann/json.hpp>
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -24,6 +27,22 @@ static void printUsage(const char* prog) {
               << "  --reference-manifest <path>\n"
               << "                      Only extract files NOT in this manifest (delta extraction)\n"
               << "  --dbc-csv-out <dir> Write CSV DBCs into <dir> (overrides default output path)\n"
+              << "  --emit-png          Emit foo.png next to every extracted foo.blp\n"
+              << "  --emit-json-dbc     Emit foo.json next to every extracted foo.dbc\n"
+              << "  --emit-wom          Emit foo.wom next to every extracted foo.m2 (+skin)\n"
+              << "  --emit-wob          Emit foo.wob next to every extracted foo.wmo (+groups)\n"
+              << "  --emit-terrain      Emit foo.whm + foo.wot + foo.woc next to every foo.adt\n"
+              << "  --emit-open         Shortcut: enable every open-format emitter (png+json+wom+wob+terrain)\n"
+              << "  --upgrade-extract <dir> [--json]\n"
+              << "                      Standalone post-extract pass on an existing tree —\n"
+              << "                      writes open-format sidecars without re-running MPQ extract\n"
+              << "                      --json emits a structured summary instead of text\n"
+              << "  --purge-proprietary <dir> [--json]\n"
+              << "                      Walk tree and dry-run report which proprietary files have\n"
+              << "                      an open-format sidecar; add --confirm-purge to actually delete\n"
+              << "  --confirm-purge     Required to actually delete files in --purge-proprietary mode\n"
+              << "  --json              Emit machine-readable summary in --upgrade-extract /\n"
+              << "                      --purge-proprietary modes\n"
               << "  --verify            CRC32 verify all extracted files\n"
               << "  --threads <N>       Number of extraction threads (default: auto)\n"
               << "  --verbose           Verbose output\n"
@@ -34,6 +53,19 @@ int main(int argc, char** argv) {
     wowee::tools::Extractor::Options opts;
     std::string expansion;
     std::string locale;
+    // Standalone open-format emit mode: skip MPQ enumeration entirely
+    // and just walk an existing extracted tree, writing sidecars in
+    // place. Useful for upgrading an old extraction without re-running
+    // it from MPQ. Triggered by --upgrade-extract <dir>.
+    std::string upgradeDir;
+    bool jsonOutput = false;  // --json after upgrade-extract
+
+    // Purge proprietary files when their open-format sidecar is present
+    // and at least as new. Dry-run by default; --confirm-purge actually
+    // deletes. Lets users free disk after dual-format extraction when
+    // they only need wowee runtime (no private server).
+    std::string purgeDir;
+    bool confirmPurge = false;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--mpq-dir") == 0 && i + 1 < argc) {
@@ -52,6 +84,23 @@ int main(int argc, char** argv) {
             opts.skipDbcExtraction = true;
         } else if (std::strcmp(argv[i], "--dbc-csv") == 0) {
             opts.generateDbcCsv = true;
+        } else if (std::strcmp(argv[i], "--emit-png") == 0) {
+            opts.emitPng = true;
+        } else if (std::strcmp(argv[i], "--emit-json-dbc") == 0) {
+            opts.emitJsonDbc = true;
+        } else if (std::strcmp(argv[i], "--emit-wom") == 0) {
+            opts.emitWom = true;
+        } else if (std::strcmp(argv[i], "--emit-wob") == 0) {
+            opts.emitWob = true;
+        } else if (std::strcmp(argv[i], "--emit-terrain") == 0) {
+            opts.emitTerrain = true;
+        } else if (std::strcmp(argv[i], "--emit-open") == 0) {
+            // Meta-flag: turn on every available open-format emitter.
+            opts.emitPng = true;
+            opts.emitJsonDbc = true;
+            opts.emitWom = true;
+            opts.emitWob = true;
+            opts.emitTerrain = true;
         } else if (std::strcmp(argv[i], "--dbc-csv-out") == 0 && i + 1 < argc) {
             opts.dbcCsvOutputDir = argv[++i];
         } else if (std::strcmp(argv[i], "--listfile") == 0 && i + 1 < argc) {
@@ -62,6 +111,20 @@ int main(int argc, char** argv) {
             opts.verify = true;
         } else if (std::strcmp(argv[i], "--verbose") == 0) {
             opts.verbose = true;
+        } else if (std::strcmp(argv[i], "--purge-proprietary") == 0 && i + 1 < argc) {
+            purgeDir = argv[++i];
+        } else if (std::strcmp(argv[i], "--confirm-purge") == 0) {
+            confirmPurge = true;
+        } else if (std::strcmp(argv[i], "--json") == 0) {
+            jsonOutput = true;
+        } else if (std::strcmp(argv[i], "--upgrade-extract") == 0 && i + 1 < argc) {
+            upgradeDir = argv[++i];
+            // Implies --emit-open if no individual emit flag was set.
+            if (!opts.emitPng && !opts.emitJsonDbc && !opts.emitWom &&
+                !opts.emitWob && !opts.emitTerrain) {
+                opts.emitPng = opts.emitJsonDbc = opts.emitWom =
+                    opts.emitWob = opts.emitTerrain = true;
+            }
         } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
             printUsage(argv[0]);
             return 0;
@@ -70,6 +133,155 @@ int main(int argc, char** argv) {
             printUsage(argv[0]);
             return 1;
         }
+    }
+
+    // --purge-proprietary: walk a tree and (dry-run unless --confirm-purge)
+    // remove every .blp/.dbc/.m2/.skin/.wmo/.adt that has a confirmed
+    // open-format sidecar at least as new. Useful after a dual-format
+    // extraction when the user only wants the open-format files (no
+    // private-server compatibility needed).
+    if (!purgeDir.empty()) {
+        if (!std::filesystem::exists(purgeDir)) {
+            std::cerr << "purge-proprietary: " << purgeDir << " does not exist\n";
+            return 1;
+        }
+        if (!jsonOutput) {
+            std::cout << (confirmPurge ? "Purging" : "Dry-run: would purge")
+                      << " proprietary files under " << purgeDir
+                      << " where open-format sidecar exists...\n";
+        }
+        // (proprietary ext, sidecar ext) pairs. .skin pairs with the
+        // matching foo.m2's foo.wom (skin gets purged when WOM exists
+        // because WOM stores merged geometry). Group .wmo (foo_NNN.wmo)
+        // pair with the parent's .wob.
+        struct Pair { const char* propExt; const char* sidecarExt; };
+        const Pair pairs[] = {
+            {".blp", ".png"},
+            {".dbc", ".json"},
+            {".m2",  ".wom"},
+            {".wmo", ".wob"},  // root WMO sidecar; group handling below
+            {".adt", ".whm"},
+        };
+        uint64_t toRemove = 0, removed = 0, totalBytes = 0;
+        namespace fs = std::filesystem;
+        for (auto& entry : fs::recursive_directory_iterator(purgeDir)) {
+            if (!entry.is_regular_file()) continue;
+            std::string p = entry.path().string();
+            std::string ext = entry.path().extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            std::string base = p.substr(0, p.size() - ext.size());
+
+            // Skin file shares its WOM sidecar with the parent .m2.
+            std::string sidecar;
+            if (ext == ".skin") {
+                // foo00.skin → foo.wom check
+                if (base.size() >= 2 && base.substr(base.size() - 2) == "00") {
+                    sidecar = base.substr(0, base.size() - 2) + ".wom";
+                }
+            } else if (ext == ".wmo") {
+                // Group sub-files purge if the parent root WMO has WOB.
+                std::string fname = entry.path().filename().string();
+                auto under = fname.rfind('_');
+                bool isGroup = (under != std::string::npos &&
+                                fname.size() - under == 8);
+                if (isGroup) {
+                    auto last = base.rfind('_');
+                    if (last != std::string::npos)
+                        sidecar = base.substr(0, last) + ".wob";
+                } else {
+                    sidecar = base + ".wob";
+                }
+            } else {
+                for (const auto& pr : pairs) {
+                    if (ext == pr.propExt) { sidecar = base + pr.sidecarExt; break; }
+                }
+            }
+            if (sidecar.empty() || !fs::exists(sidecar)) continue;
+
+            std::error_code ec;
+            auto srcMtime  = fs::last_write_time(p, ec);
+            auto sideMtime = fs::last_write_time(sidecar, ec);
+            if (ec || sideMtime < srcMtime) continue;
+
+            toRemove++;
+            totalBytes += entry.file_size();
+            if (confirmPurge) {
+                std::error_code rmEc;
+                if (fs::remove(p, rmEc)) removed++;
+            }
+        }
+        if (jsonOutput) {
+            nlohmann::json j;
+            j["dir"] = purgeDir;
+            j["confirmed"] = confirmPurge;
+            j["candidates"] = toRemove;
+            j["removed"] = removed;
+            j["totalBytes"] = totalBytes;
+            std::cout << j.dump(2) << "\n";
+            return 0;
+        }
+        std::cout << (confirmPurge ? "  removed: " : "  would remove: ")
+                  << toRemove << " files (" << (totalBytes / (1024.0 * 1024.0))
+                  << " MB)\n";
+        if (!confirmPurge) {
+            std::cout << "  (re-run with --confirm-purge to actually delete)\n";
+        }
+        return 0;
+    }
+
+    // --upgrade-extract: standalone post-extract pass on an existing tree.
+    if (!upgradeDir.empty()) {
+        if (!std::filesystem::exists(upgradeDir)) {
+            std::cerr << "upgrade-extract: " << upgradeDir << " does not exist\n";
+            return 1;
+        }
+        if (!jsonOutput) {
+            std::cout << "Walking " << upgradeDir
+                      << " for open-format upgrades...\n";
+        }
+        auto t0 = std::chrono::steady_clock::now();
+        wowee::tools::OpenFormatStats stats;
+        unsigned int t = opts.threads > 0 ? static_cast<unsigned int>(opts.threads) : 0;
+        wowee::tools::emitOpenFormats(upgradeDir,
+                                       opts.emitPng, opts.emitJsonDbc,
+                                       opts.emitWom, opts.emitWob,
+                                       opts.emitTerrain, stats, t,
+                                       /*incremental=*/true);
+        auto secs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - t0).count() / 1000.0;
+        if (jsonOutput) {
+            // Schema mirrors the wowee_editor --info-extract --json layout
+            // so CI scripts can use one jq filter for both.
+            nlohmann::json j;
+            j["dir"] = upgradeDir;
+            j["elapsedSeconds"] = secs;
+            j["skipped"] = stats.skipped;
+            auto fmt = [](uint32_t ok, uint32_t fail) {
+                return nlohmann::json{{"ok", ok}, {"failed", fail}};
+            };
+            j["png"]      = fmt(stats.pngOk,     stats.pngFail);
+            j["jsonDbc"]  = fmt(stats.jsonDbcOk, stats.jsonDbcFail);
+            j["wom"]      = fmt(stats.womOk,     stats.womFail);
+            j["wob"]      = fmt(stats.wobOk,     stats.wobFail);
+            j["terrain"]  = fmt(stats.whmOk,     stats.whmFail);
+            std::cout << j.dump(2) << "\n";
+            return 0;
+        }
+        std::cout << "  elapsed           : " << secs << " s\n";
+        if (stats.skipped > 0)
+            std::cout << "  up-to-date (skip) : " << stats.skipped << "\n";
+        std::cout << "  PNG (BLP→PNG)     : " << stats.pngOk     << " ok"
+                  << (stats.pngFail     ? ", " + std::to_string(stats.pngFail)     + " failed" : "") << "\n";
+        std::cout << "  JSON (DBC→JSON)   : " << stats.jsonDbcOk << " ok"
+                  << (stats.jsonDbcFail ? ", " + std::to_string(stats.jsonDbcFail) + " failed" : "") << "\n";
+        std::cout << "  WOM (M2→WOM)      : " << stats.womOk     << " ok"
+                  << (stats.womFail     ? ", " + std::to_string(stats.womFail)     + " failed" : "") << "\n";
+        std::cout << "  WOB (WMO→WOB)     : " << stats.wobOk     << " ok"
+                  << (stats.wobFail     ? ", " + std::to_string(stats.wobFail)     + " failed" : "") << "\n";
+        std::cout << "  WHM/WOT/WOC (ADT) : " << stats.whmOk     << " ok"
+                  << (stats.whmFail     ? ", " + std::to_string(stats.whmFail)     + " failed" : "") << "\n";
+        return 0;
     }
 
     if (opts.mpqDir.empty() || opts.outputDir.empty()) {

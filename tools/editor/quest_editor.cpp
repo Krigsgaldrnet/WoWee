@@ -4,6 +4,7 @@
 #include <fstream>
 #include <filesystem>
 #include <unordered_set>
+#include <unordered_map>
 
 namespace wowee {
 namespace editor {
@@ -76,12 +77,30 @@ bool QuestEditor::loadFromFile(const std::string& path) {
         quests_.clear();
         uint32_t maxId = 0;
 
+        // Cap total quest count — a stale autosave or hand-edited file
+        // could carry thousands of empty quests, each emitting a
+        // quest_template INSERT (and queststarter/questender + chain
+        // walks) on export. 4096 covers any realistic zone.
+        constexpr size_t kMaxQuests = 4096;
+
         for (const auto& jq : arr) {
+            if (quests_.size() >= kMaxQuests) {
+                LOG_WARNING("Quest cap reached (", kMaxQuests,
+                            ") — remaining entries dropped");
+                break;
+            }
             Quest q;
             q.id = jq.value("id", 0u);
             q.title = jq.value("title", "Untitled");
             q.description = jq.value("description", "");
             q.completionText = jq.value("completionText", "");
+            // AzerothCore quest_template.LogTitle is varchar(200); the
+            // Description/QuestCompletionLog are text but practically capped.
+            // Truncate edited values so SQL writes don't get rejected by
+            // length constraints or bloat the export.
+            if (q.title.size() > 200) q.title.resize(200);
+            if (q.description.size() > 8192) q.description.resize(8192);
+            if (q.completionText.size() > 8192) q.completionText.resize(8192);
             q.requiredLevel = jq.value("requiredLevel", 1u);
             // WoW levels 1-80 (WotLK). Cap to keep AzerothCore happy and
             // catch obvious typos like "999".
@@ -149,7 +168,11 @@ bool QuestEditor::loadFromFile(const std::string& path) {
 bool QuestEditor::validateChains(std::vector<std::string>& errors) const {
     errors.clear();
     std::unordered_set<uint32_t> validIds;
-    for (const auto& q : quests_) validIds.insert(q.id);
+    std::unordered_map<uint32_t, uint32_t> nextById; // id -> nextId
+    for (const auto& q : quests_) {
+        validIds.insert(q.id);
+        nextById[q.id] = q.nextQuestId;
+    }
 
     for (const auto& q : quests_) {
         if (q.nextQuestId != 0 && validIds.find(q.nextQuestId) == validIds.end()) {
@@ -157,7 +180,16 @@ bool QuestEditor::validateChains(std::vector<std::string>& errors) const {
                            "\" chains to non-existent quest " + std::to_string(q.nextQuestId));
         }
 
-        // Circular chain detection
+        // Quest with no questgiver and no turn-in is unreachable in-game.
+        // Common authoring mistake — flag it so the player isn't stuck
+        // wondering why a quest never appears.
+        if (q.questGiverNpcId == 0 && q.turnInNpcId == 0) {
+            errors.push_back("Quest [" + std::to_string(q.id) + "] \"" + q.title +
+                           "\" has no questgiver or turn-in NPC (unreachable)");
+        }
+
+        // Circular chain detection. Use the precomputed map so the inner
+        // lookup is O(1) instead of O(n) — was O(n²) per starting quest.
         if (q.nextQuestId != 0) {
             std::unordered_set<uint32_t> visited;
             uint32_t current = q.id;
@@ -167,11 +199,8 @@ bool QuestEditor::validateChains(std::vector<std::string>& errors) const {
                                    std::to_string(q.id) + "] \"" + q.title + "\"");
                     break;
                 }
-                uint32_t next = 0;
-                for (const auto& other : quests_) {
-                    if (other.id == current) { next = other.nextQuestId; break; }
-                }
-                current = next;
+                auto it = nextById.find(current);
+                current = (it != nextById.end()) ? it->second : 0;
             }
         }
     }

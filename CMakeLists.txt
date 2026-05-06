@@ -591,6 +591,7 @@ set(WOWEE_SOURCES
     src/pipeline/wdt_loader.cpp
     src/pipeline/wowee_terrain_loader.cpp
     src/pipeline/wowee_model.cpp
+    src/pipeline/wowee_model_fromm2.cpp
     src/pipeline/wowee_building.cpp
     src/pipeline/wowee_collision.cpp
     src/pipeline/custom_zone_discovery.cpp
@@ -1174,7 +1175,15 @@ if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR)
         tools/asset_extract/extractor.cpp
         tools/asset_extract/path_mapper.cpp
         tools/asset_extract/manifest_writer.cpp
+        tools/asset_extract/open_format_emitter.cpp
         src/pipeline/dbc_loader.cpp
+        src/pipeline/blp_loader.cpp
+        src/pipeline/m2_loader.cpp
+        src/pipeline/wmo_loader.cpp
+        src/pipeline/adt_loader.cpp
+        src/pipeline/wowee_model.cpp
+        src/pipeline/wowee_building.cpp
+        src/pipeline/wowee_collision.cpp
         src/core/logger.cpp
     )
     target_include_directories(asset_extract PRIVATE
@@ -1328,6 +1337,7 @@ add_executable(wowee_editor
     src/pipeline/wdt_loader.cpp
     src/pipeline/wowee_terrain_loader.cpp
     src/pipeline/wowee_model.cpp
+    src/pipeline/wowee_model_fromm2.cpp
     src/pipeline/wowee_building.cpp
     src/pipeline/wowee_collision.cpp
     src/pipeline/custom_zone_discovery.cpp

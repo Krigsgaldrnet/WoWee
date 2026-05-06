@@ -31,6 +31,14 @@ void TransformGizmo::shutdown() {
 }
 
 void TransformGizmo::setTarget(const glm::vec3& position, float scale) {
+    // Hide the gizmo on a NaN target. updateBuffers calls glm::normalize on
+    // axis offsets — non-finite targetPos_ would propagate NaN into the
+    // gizmo geometry and Vulkan validation would drop the whole batch.
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(position.z) || !std::isfinite(scale) || scale <= 0.0f) {
+        visible_ = false;
+        return;
+    }
     targetPos_ = position;
     targetScale_ = scale;
     visible_ = true;

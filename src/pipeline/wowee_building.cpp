@@ -42,7 +42,13 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
 
     uint16_t nameLen;
     f.read(reinterpret_cast<char*>(&nameLen), 2);
-    if (nameLen > 1024) nameLen = 0;
+    // Same desync risk as material texture paths: overlong length
+    // means the actual bytes are still on disk and reading 0 bytes
+    // would shift every subsequent length+data pair.
+    if (nameLen > 1024) {
+        LOG_ERROR("WOB name length rejected (", nameLen, "): ", basePath);
+        return WoweeBuilding{};
+    }
     bld.name.resize(nameLen);
     f.read(bld.name.data(), nameLen);
 
@@ -50,7 +56,11 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         WoweeBuilding::Group grp;
         uint16_t gnLen;
         f.read(reinterpret_cast<char*>(&gnLen), 2);
-        if (gnLen > 1024) gnLen = 0;
+        if (gnLen > 1024) {
+            LOG_ERROR("WOB group ", gi, " name length rejected (",
+                      gnLen, "): ", basePath);
+            return WoweeBuilding{};
+        }
         grp.name.resize(gnLen);
         f.read(grp.name.data(), gnLen);
 
@@ -108,21 +118,44 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         for (uint32_t ti = 0; ti < tc; ti++) {
             uint16_t tl;
             f.read(reinterpret_cast<char*>(&tl), 2);
-            if (tl > 1024) tl = 0;
+            // tl > 1024 means we'd previously zero-out tl and skip the
+            // read — but the original bytes are still on disk, so the
+            // next iteration would read garbage as the next length+path.
+            // Reject the whole load instead of silently desyncing.
+            if (tl > 1024) {
+                LOG_ERROR("WOB group ", gi, " texture path length rejected (",
+                          tl, "): ", basePath);
+                return WoweeBuilding{};
+            }
             std::string tp(tl, '\0');
             f.read(tp.data(), tl);
             rejectTraversal(tp, "group texture");
             grp.texturePaths.push_back(tp);
         }
 
-        // Read material data (v1.1+)
+        // Read material data (v1.1+). Reject the whole load on a count
+        // overflow rather than silently dropping the materials and leaving
+        // the file pointer misaligned (next group's name would read
+        // material bytes as garbage).
         uint32_t mc = 0;
-        if (f.read(reinterpret_cast<char*>(&mc), 4) && mc > 0 && mc <= 256) {
+        if (f.read(reinterpret_cast<char*>(&mc), 4) && mc > 0) {
+            if (mc > 256) {
+                LOG_ERROR("WOB group ", gi, " material count rejected (",
+                          mc, "): ", basePath);
+                return WoweeBuilding{};
+            }
             for (uint32_t mi = 0; mi < mc; mi++) {
                 WoweeBuilding::Material mat;
                 uint16_t pl;
                 f.read(reinterpret_cast<char*>(&pl), 2);
-                if (pl > 1024) pl = 0;
+                // Same load-desync risk as group texture paths above —
+                // overlong path means stale on-disk bytes would become
+                // the next material's length+data. Reject the load.
+                if (pl > 1024) {
+                    LOG_ERROR("WOB group ", gi, " material ", mi,
+                              " texture path length rejected (", pl, "): ", basePath);
+                    return WoweeBuilding{};
+                }
                 mat.texturePath.resize(pl);
                 f.read(mat.texturePath.data(), pl);
                 rejectTraversal(mat.texturePath, "material texture");
@@ -149,6 +182,18 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         }
         portal.vertices.resize(pvCount);
         f.read(reinterpret_cast<char*>(portal.vertices.data()), pvCount * 12);
+        // Sanitize vertex floats — NaN portal vertices break the WMO
+        // portal-frustum cull and would draw the whole interior every frame.
+        for (auto& v : portal.vertices) {
+            if (!std::isfinite(v.x)) v.x = 0.0f;
+            if (!std::isfinite(v.y)) v.y = 0.0f;
+            if (!std::isfinite(v.z)) v.z = 0.0f;
+        }
+        // Validate group indices are in range — out-of-range groupA/groupB
+        // would index past wmo.groups during cull and segfault.
+        const int32_t maxGroup = static_cast<int32_t>(groupCount);
+        if (portal.groupA >= maxGroup) portal.groupA = -1;
+        if (portal.groupB >= maxGroup) portal.groupB = -1;
         bld.portals.push_back(portal);
     }
 
@@ -156,7 +201,11 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         WoweeBuilding::DoodadPlacement dp;
         uint16_t pl;
         f.read(reinterpret_cast<char*>(&pl), 2);
-        if (pl > 1024) pl = 0;
+        if (pl > 1024) {
+            LOG_ERROR("WOB doodad ", di, " model path length rejected (",
+                      pl, "): ", basePath);
+            return WoweeBuilding{};
+        }
         dp.modelPath.resize(pl);
         f.read(dp.modelPath.data(), pl);
         // Reject path-traversal in doodad model paths — these end up in
@@ -176,6 +225,12 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         // the field, or NaNs from a partial write). The renderer would
         // collapse the doodad to a point with scale 0.
         if (!std::isfinite(dp.scale) || dp.scale <= 0.0001f) dp.scale = 1.0f;
+        // Same NaN scrub for position/rotation — doodads with non-finite
+        // transforms produce NaN model matrices and crash the GPU.
+        for (int k = 0; k < 3; k++) {
+            if (!std::isfinite(dp.position[k])) dp.position[k] = 0.0f;
+            if (!std::isfinite(dp.rotation[k])) dp.rotation[k] = 0.0f;
+        }
         bld.doodads.push_back(dp);
     }
 
@@ -192,9 +247,12 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
     if (!f) return false;
 
     f.write(reinterpret_cast<const char*>(&WOB_MAGIC), 4);
-    uint32_t gc = static_cast<uint32_t>(bld.groups.size());
-    uint32_t pc = static_cast<uint32_t>(bld.portals.size());
-    uint32_t dc = static_cast<uint32_t>(bld.doodads.size());
+    // Cap header counts at the load-side limits so a pathological build
+    // can't write a file the loader rejects whole. Same caps the load
+    // bounds-check uses (4096 groups / 8192 portals / 65536 doodads).
+    uint32_t gc = static_cast<uint32_t>(std::min<size_t>(bld.groups.size(), 4096));
+    uint32_t pc = static_cast<uint32_t>(std::min<size_t>(bld.portals.size(), 8192));
+    uint32_t dc = static_cast<uint32_t>(std::min<size_t>(bld.doodads.size(), 65536));
     f.write(reinterpret_cast<const char*>(&gc), 4);
     f.write(reinterpret_cast<const char*>(&pc), 4);
     f.write(reinterpret_cast<const char*>(&dc), 4);
@@ -214,12 +272,17 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
     };
     writeStr(bld.name);
 
-    for (const auto& grp : bld.groups) {
+    // Iterate using the capped counts so the body matches the header.
+    for (uint32_t gi = 0; gi < gc; gi++) {
+        const auto& grp = bld.groups[gi];
         writeStr(grp.name);
 
-        uint32_t vc = static_cast<uint32_t>(grp.vertices.size());
-        uint32_t ic = static_cast<uint32_t>(grp.indices.size());
-        uint32_t tc = static_cast<uint32_t>(grp.texturePaths.size());
+        // Per-group counts capped at the load-side limits (1M verts /
+        // 4M indices / 1024 texture paths). Without these caps a huge
+        // group would write a header the loader rejects, leaking data.
+        uint32_t vc = static_cast<uint32_t>(std::min<size_t>(grp.vertices.size(), 1'000'000));
+        uint32_t ic = static_cast<uint32_t>(std::min<size_t>(grp.indices.size(), 4'000'000));
+        uint32_t tc = static_cast<uint32_t>(std::min<size_t>(grp.texturePaths.size(), 1024));
         f.write(reinterpret_cast<const char*>(&vc), 4);
         f.write(reinterpret_cast<const char*>(&ic), 4);
         f.write(reinterpret_cast<const char*>(&tc), 4);
@@ -234,16 +297,43 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         f.write(reinterpret_cast<const char*>(&bMin), 12);
         f.write(reinterpret_cast<const char*>(&bMax), 12);
 
-        f.write(reinterpret_cast<const char*>(grp.vertices.data()),
+        // Sanitize vertices on the way out — same scrub the load side does.
+        // Without this, a manually-constructed WoweeBuilding with NaN-laced
+        // vertices would persist them into the file and have the load-time
+        // guard clean up forever after.
+        std::vector<WoweeBuilding::Vertex> sanVerts = grp.vertices;
+        for (auto& v : sanVerts) {
+            if (!std::isfinite(v.position.x)) v.position.x = 0.0f;
+            if (!std::isfinite(v.position.y)) v.position.y = 0.0f;
+            if (!std::isfinite(v.position.z)) v.position.z = 0.0f;
+            if (!std::isfinite(v.normal.x)) v.normal.x = 0.0f;
+            if (!std::isfinite(v.normal.y)) v.normal.y = 0.0f;
+            if (!std::isfinite(v.normal.z)) v.normal.z = 1.0f;
+            if (!std::isfinite(v.texCoord.x)) v.texCoord.x = 0.0f;
+            if (!std::isfinite(v.texCoord.y)) v.texCoord.y = 0.0f;
+            for (int c = 0; c < 4; c++)
+                if (!std::isfinite(v.color[c])) v.color[c] = 1.0f;
+        }
+        f.write(reinterpret_cast<const char*>(sanVerts.data()),
                 vc * sizeof(WoweeBuilding::Vertex));
-        f.write(reinterpret_cast<const char*>(grp.indices.data()), ic * 4);
+        // Clamp out-of-range indices on save too — symmetric with load.
+        const uint32_t vMax = vc > 0 ? vc - 1 : 0;
+        std::vector<uint32_t> sanIdx = grp.indices;
+        for (auto& idx : sanIdx) if (idx > vMax) idx = 0;
+        f.write(reinterpret_cast<const char*>(sanIdx.data()), ic * 4);
 
-        for (const auto& tp : grp.texturePaths) writeStr(tp);
+        // Write only the capped number of texture paths so the body
+        // matches the header (tc) on round-trip.
+        for (uint32_t ti = 0; ti < tc; ti++) writeStr(grp.texturePaths[ti]);
 
-        // Write material data
-        uint32_t mc = static_cast<uint32_t>(grp.materials.size());
+        // Write material data — cap at 256 to match load-side limit so a
+        // pathological in-memory count can't write a file the loader will
+        // reject and produce a partially-zero build on round-trip.
+        uint32_t mc = static_cast<uint32_t>(
+            std::min<size_t>(grp.materials.size(), 256));
         f.write(reinterpret_cast<const char*>(&mc), 4);
-        for (const auto& mat : grp.materials) {
+        for (uint32_t mi = 0; mi < mc; mi++) {
+            const auto& mat = grp.materials[mi];
             writeStr(mat.texturePath);
             f.write(reinterpret_cast<const char*>(&mat.flags), 4);
             f.write(reinterpret_cast<const char*>(&mat.shader), 4);
@@ -251,19 +341,40 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         }
     }
 
-    for (const auto& portal : bld.portals) {
+    for (uint32_t pi = 0; pi < pc; pi++) {
+        const auto& portal = bld.portals[pi];
         f.write(reinterpret_cast<const char*>(&portal.groupA), 4);
         f.write(reinterpret_cast<const char*>(&portal.groupB), 4);
-        uint32_t pvCount = static_cast<uint32_t>(portal.vertices.size());
+        // Cap per-portal vertex count at the load limit (4096). Real
+        // portals are 4-12 verts; >4096 would be rejected on round-trip.
+        uint32_t pvCount = static_cast<uint32_t>(
+            std::min<size_t>(portal.vertices.size(), 4096));
         f.write(reinterpret_cast<const char*>(&pvCount), 4);
-        f.write(reinterpret_cast<const char*>(portal.vertices.data()), pvCount * 12);
+        // Sanitize vertices on the way out — NaN portal vertices break
+        // the WMO portal-frustum cull and fail-back to drawing the entire
+        // building, defeating the indoor optimization.
+        std::vector<glm::vec3> sanPortal(portal.vertices.begin(),
+                                          portal.vertices.begin() + pvCount);
+        for (auto& v : sanPortal) {
+            if (!std::isfinite(v.x)) v.x = 0.0f;
+            if (!std::isfinite(v.y)) v.y = 0.0f;
+            if (!std::isfinite(v.z)) v.z = 0.0f;
+        }
+        f.write(reinterpret_cast<const char*>(sanPortal.data()), pvCount * 12);
     }
 
-    for (const auto& dp : bld.doodads) {
+    for (uint32_t di = 0; di < dc; di++) {
+        const auto& dp = bld.doodads[di];
         writeStr(dp.modelPath);
-        f.write(reinterpret_cast<const char*>(&dp.position), 12);
-        f.write(reinterpret_cast<const char*>(&dp.rotation), 12);
-        f.write(reinterpret_cast<const char*>(&dp.scale), 4);
+        glm::vec3 pos = dp.position, rot = dp.rotation;
+        for (int k = 0; k < 3; k++) {
+            if (!std::isfinite(pos[k])) pos[k] = 0.0f;
+            if (!std::isfinite(rot[k])) rot[k] = 0.0f;
+        }
+        float scale = (std::isfinite(dp.scale) && dp.scale > 0.0001f) ? dp.scale : 1.0f;
+        f.write(reinterpret_cast<const char*>(&pos), 12);
+        f.write(reinterpret_cast<const char*>(&rot), 12);
+        f.write(reinterpret_cast<const char*>(&scale), 4);
     }
 
     LOG_INFO("WOB saved: ", basePath, ".wob (", gc, " groups)");
@@ -346,8 +457,22 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
         }
 
         wmoGroup.indices.reserve(grp.indices.size());
-        for (uint32_t idx : grp.indices)
-            wmoGroup.indices.push_back(static_cast<uint16_t>(idx));
+        // WMO format uses uint16 indices, so each group must stay under 65k
+        // verts. WoB allows uint32 — log + clamp instead of silently
+        // wrapping and producing garbage triangles in the renderer.
+        bool warnedTrunc = false;
+        for (uint32_t idx : grp.indices) {
+            if (idx > 0xFFFF) {
+                if (!warnedTrunc) {
+                    LOG_WARNING("toWMOModel: group '", grp.name,
+                                "' has index > 65535 (clamping to 0)");
+                    warnedTrunc = true;
+                }
+                wmoGroup.indices.push_back(0);
+            } else {
+                wmoGroup.indices.push_back(static_cast<uint16_t>(idx));
+            }
+        }
 
         outModel.groups.push_back(std::move(wmoGroup));
     }
@@ -507,11 +632,21 @@ WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::strin
         if (dot != std::string::npos)
             dp.modelPath = dp.modelPath.substr(0, dot) + ".wom";
         dp.position = doodad.position;
-        // Convert quaternion rotation to euler angles
+        // Sanitize position before euler conversion. NaN in the source
+        // quaternion would propagate to NaN euler angles and ruin the
+        // doodad transform forever after; same for the position floats.
+        for (int k = 0; k < 3; k++)
+            if (!std::isfinite(dp.position[k])) dp.position[k] = 0.0f;
         glm::quat q(doodad.rotation.w, doodad.rotation.x,
                      doodad.rotation.y, doodad.rotation.z);
+        if (!std::isfinite(q.w) || !std::isfinite(q.x) ||
+            !std::isfinite(q.y) || !std::isfinite(q.z))
+            q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // identity
         dp.rotation = glm::degrees(glm::eulerAngles(q));
-        dp.scale = doodad.scale;
+        for (int k = 0; k < 3; k++)
+            if (!std::isfinite(dp.rotation[k])) dp.rotation[k] = 0.0f;
+        dp.scale = (std::isfinite(doodad.scale) && doodad.scale > 0.0001f)
+                       ? doodad.scale : 1.0f;
         bld.doodads.push_back(dp);
     }
 

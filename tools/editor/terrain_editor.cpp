@@ -129,6 +129,13 @@ void TerrainEditor::setVertexHeight(int chunkIdx, int vertIdx, float height) {
 
 bool TerrainEditor::raycastTerrain(const rendering::Ray& ray, glm::vec3& hitPos) const {
     if (!terrain_) return false;
+    // Reject NaN ray. The AABB test divides by ray.direction[i], so NaN
+    // would propagate through tmin/tmax and the result would be undefined.
+    if (!std::isfinite(ray.origin.x) || !std::isfinite(ray.origin.y) ||
+        !std::isfinite(ray.origin.z) || !std::isfinite(ray.direction.x) ||
+        !std::isfinite(ray.direction.y) || !std::isfinite(ray.direction.z)) {
+        return false;
+    }
 
     float bestT = 1e30f;
     bool hit = false;
@@ -289,8 +296,17 @@ void TerrainEditor::commitGeneratorUndo() {
 
 void TerrainEditor::applyBrush(float deltaTime) {
     if (!terrain_ || !brush_.isActive()) return;
+    // Reject NaN brush position / non-positive radius / NaN strength.
+    // dist = length(pos - center) goes NaN if center has NaN, and
+    // brush_.getInfluence(NaN) returns full strength on every vertex
+    // because NaN comparisons always return false.
+    const auto& bs = brush_.settings();
+    auto bp = brush_.getPosition();
+    if (!std::isfinite(bp.x) || !std::isfinite(bp.y) || !std::isfinite(bp.z) ||
+        !std::isfinite(bs.radius) || bs.radius <= 0.0f ||
+        !std::isfinite(bs.strength)) return;
 
-    switch (brush_.settings().mode) {
+    switch (bs.mode) {
         case BrushMode::Raise: applyRaise(deltaTime); break;
         case BrushMode::Lower: applyRaise(deltaTime); break;
         case BrushMode::Smooth: applySmooth(deltaTime); break;
@@ -776,11 +792,16 @@ void TerrainEditor::mirrorY() {
 void TerrainEditor::carveRiver(const glm::vec3& start, const glm::vec3& end,
                                 float width, float depth) {
     if (!terrain_) return;
+    if (!std::isfinite(start.x) || !std::isfinite(start.y) ||
+        !std::isfinite(end.x) || !std::isfinite(end.y) ||
+        !std::isfinite(width) || width <= 0.0f ||
+        !std::isfinite(depth)) return;
     recordGeneratorUndo();
     glm::vec2 lineStart(start.x, start.y);
     glm::vec2 lineEnd(end.x, end.y);
-    glm::vec2 lineDir = glm::normalize(lineEnd - lineStart);
     float lineLen = glm::length(lineEnd - lineStart);
+    if (lineLen < 1e-4f) return;
+    glm::vec2 lineDir = (lineEnd - lineStart) / lineLen;
 
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
@@ -817,6 +838,9 @@ void TerrainEditor::carveRiver(const glm::vec3& start, const glm::vec3& end,
 
 void TerrainEditor::createCrater(const glm::vec3& center, float radius, float depth, float rimHeight) {
     if (!terrain_) return;
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
+        !std::isfinite(radius) || radius <= 0.0f ||
+        !std::isfinite(depth) || !std::isfinite(rimHeight)) return;
     recordGeneratorUndo();
 
     for (int ci = 0; ci < 256; ci++) {
@@ -860,6 +884,9 @@ void TerrainEditor::createCrater(const glm::vec3& center, float radius, float de
 
 void TerrainEditor::createMesa(const glm::vec3& center, float radius, float height, float edgeSteepness) {
     if (!terrain_) return;
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
+        !std::isfinite(radius) || radius <= 0.0f ||
+        !std::isfinite(height) || !std::isfinite(edgeSteepness)) return;
     recordGeneratorUndo();
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
@@ -896,6 +923,9 @@ void TerrainEditor::createMesa(const glm::vec3& center, float radius, float heig
 
 void TerrainEditor::createHill(const glm::vec3& center, float radius, float height) {
     if (!terrain_) return;
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
+        !std::isfinite(radius) || radius <= 0.0f ||
+        !std::isfinite(height)) return;
     recordGeneratorUndo();
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
@@ -1352,11 +1382,16 @@ void TerrainEditor::createIsland(float centerHeight, float edgeDropoff) {
 void TerrainEditor::createRidge(const glm::vec3& start, const glm::vec3& end,
                                  float width, float height) {
     if (!terrain_) return;
+    if (!std::isfinite(start.x) || !std::isfinite(start.y) ||
+        !std::isfinite(end.x) || !std::isfinite(end.y) ||
+        !std::isfinite(width) || width <= 0.0f ||
+        !std::isfinite(height)) return;
     recordGeneratorUndo();
     glm::vec2 lineStart(start.x, start.y);
     glm::vec2 lineEnd(end.x, end.y);
-    glm::vec2 lineDir = glm::normalize(lineEnd - lineStart);
     float lineLen = glm::length(lineEnd - lineStart);
+    if (lineLen < 1e-4f) return;
+    glm::vec2 lineDir = (lineEnd - lineStart) / lineLen;
 
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
@@ -1388,11 +1423,17 @@ void TerrainEditor::createRidge(const glm::vec3& start, const glm::vec3& end,
 
 void TerrainEditor::flattenRoad(const glm::vec3& start, const glm::vec3& end, float width) {
     if (!terrain_) return;
+    if (!std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(start.z) ||
+        !std::isfinite(end.x) || !std::isfinite(end.y) || !std::isfinite(end.z) ||
+        !std::isfinite(width) || width <= 0.0f) return;
     recordGeneratorUndo();
     glm::vec2 lineStart(start.x, start.y);
     glm::vec2 lineEnd(end.x, end.y);
-    glm::vec2 lineDir = glm::normalize(lineEnd - lineStart);
     float lineLen = glm::length(lineEnd - lineStart);
+    // Zero-length road would normalize to NaN and propagate NaN through
+    // every dist comparison — paint the height delta on every vertex.
+    if (lineLen < 1e-4f) return;
+    glm::vec2 lineDir = (lineEnd - lineStart) / lineLen;
 
     // Interpolate height along the path
     auto heightAtT = [&](float t) -> float {
@@ -1494,9 +1535,12 @@ bool TerrainEditor::saveStamp(const std::string& path) const {
     nlohmann::json j;
     j["format"] = "wowee-stamp-1.0";
     j["vertexCount"] = stampData_.size();
+    // Scrub NaN samples on save — nlohmann::json throws on non-finite
+    // serialization, which would abort the entire save.
+    auto san = [](float x) { return std::isfinite(x) ? x : 0.0f; };
     nlohmann::json verts = nlohmann::json::array();
     for (const auto& sv : stampData_)
-        verts.push_back({sv.dx, sv.dy, sv.height});
+        verts.push_back({san(sv.dx), san(sv.dy), san(sv.height)});
     j["vertices"] = verts;
 
     namespace fs = std::filesystem;

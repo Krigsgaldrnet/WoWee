@@ -43,6 +43,11 @@ void EditorMarkers::update(const std::vector<PlacedObject>& objects) {
     std::vector<MarkerVertex> verts;
 
     for (const auto& obj : objects) {
+        // Skip markers for objects with non-finite transform — would
+        // produce NaN vertex positions and trip Vulkan validation or
+        // collapse the entire vertex buffer to garbage.
+        if (!std::isfinite(obj.position.x) || !std::isfinite(obj.position.y) ||
+            !std::isfinite(obj.position.z) || !std::isfinite(obj.scale)) continue;
         float s = 3.0f * obj.scale;
         float x = obj.position.x;
         float y = obj.position.y;

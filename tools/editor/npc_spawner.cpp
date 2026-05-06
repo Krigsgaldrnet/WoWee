@@ -31,10 +31,14 @@ void NpcSpawner::removeCreature(int index) {
 
 int NpcSpawner::selectAt(const glm::vec3& worldPos, float maxDist) {
     clearSelection();
+    if (!std::isfinite(worldPos.x) || !std::isfinite(worldPos.y) ||
+        !std::isfinite(worldPos.z) || !std::isfinite(maxDist)) return -1;
     float bestDist = maxDist;
     int bestIdx = -1;
     for (int i = 0; i < static_cast<int>(spawns_.size()); i++) {
-        float dist = glm::length(spawns_[i].position - worldPos);
+        const auto& p = spawns_[i].position;
+        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) continue;
+        float dist = glm::length(p - worldPos);
         if (dist < bestDist) { bestDist = dist; bestIdx = i; }
     }
     if (bestIdx >= 0) {
@@ -59,6 +63,10 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
     auto dir = std::filesystem::path(path).parent_path();
     if (!dir.empty()) std::filesystem::create_directories(dir);
 
+    // nlohmann::json throws on NaN/inf serialization. Scrub on the way
+    // out so a stale in-memory state can't take down the whole save.
+    auto san = [](float x) { return std::isfinite(x) ? x : 0.0f; };
+    auto sanPos = [&](float x, float def) { return std::isfinite(x) ? x : def; };
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& s : spawns_) {
         nlohmann::json js;
@@ -66,9 +74,9 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
         js["name"] = s.name;
         js["model"] = s.modelPath;
         js["displayId"] = s.displayId;
-        js["position"] = {s.position.x, s.position.y, s.position.z};
-        js["orientation"] = s.orientation;
-        js["scale"] = s.scale;
+        js["position"] = {san(s.position.x), san(s.position.y), san(s.position.z)};
+        js["orientation"] = san(s.orientation);
+        js["scale"] = sanPos(s.scale, 1.0f);
         js["level"] = s.level;
         js["health"] = s.health;
         js["mana"] = s.mana;
@@ -77,9 +85,9 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
         js["armor"] = s.armor;
         js["faction"] = s.faction;
         js["behavior"] = static_cast<int>(s.behavior);
-        js["wanderRadius"] = s.wanderRadius;
-        js["aggroRadius"] = s.aggroRadius;
-        js["leashRadius"] = s.leashRadius;
+        js["wanderRadius"] = san(s.wanderRadius);
+        js["aggroRadius"] = san(s.aggroRadius);
+        js["leashRadius"] = san(s.leashRadius);
         js["respawnTimeMs"] = s.respawnTimeMs;
         js["hostile"] = s.hostile;
         js["questgiver"] = s.questgiver;
@@ -93,7 +101,8 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
 
         nlohmann::json patrol = nlohmann::json::array();
         for (const auto& p : s.patrolPath) {
-            patrol.push_back({p.position.x, p.position.y, p.position.z, p.waitTimeMs});
+            patrol.push_back({san(p.position.x), san(p.position.y),
+                              san(p.position.z), sanPos(p.waitTimeMs, 2000.0f)});
         }
         js["patrol"] = patrol;
         arr.push_back(js);
@@ -145,10 +154,24 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
         selectedIdx_ = -1;
         idCounter_ = 1;
 
+        // Cap NPC count — same defense pattern as QuestEditor / ObjectPlacer.
+        // 50k creatures is generous; each emits a creature_template +
+        // creature INSERT, plus optional addon/waypoint rows.
+        constexpr size_t kMaxSpawns = 50'000;
+
         for (const auto& js : arr) {
+            if (spawns_.size() >= kMaxSpawns) {
+                LOG_WARNING("NPC cap reached (", kMaxSpawns,
+                            ") — remaining entries dropped");
+                break;
+            }
             CreatureSpawn s;
             s.name = js.value("name", "");
             s.modelPath = js.value("model", "");
+            // creature_template.name is varchar(100); modelPath is internal
+            // but capped to keep export sane. Trim instead of dropping.
+            if (s.name.size() > 100) s.name.resize(100);
+            if (s.modelPath.size() > 1024) s.modelPath.resize(1024);
             s.displayId = js.value("displayId", 0u);
             s.orientation = js.value("orientation", 0.0f);
             // Normalise orientation to [0, 360) for consistent gizmo behaviour.
@@ -211,7 +234,12 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
             }
 
             if (js.contains("patrol") && js["patrol"].is_array()) {
+                // Cap patrol size at 256 waypoints — covers any realistic
+                // route and keeps SQL export size bounded for malformed
+                // input (a stale autosave that grew unbounded).
+                constexpr size_t kMaxPatrolPoints = 256;
                 for (const auto& pt : js["patrol"]) {
+                    if (s.patrolPath.size() >= kMaxPatrolPoints) break;
                     if (pt.is_array() && pt.size() >= 4) {
                         PatrolPoint pp;
                         pp.position = glm::vec3(pt[0].get<float>(), pt[1].get<float>(), pt[2].get<float>());
@@ -220,12 +248,16 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
                         if (!std::isfinite(pp.position.x) || !std::isfinite(pp.position.y) ||
                             !std::isfinite(pp.position.z))
                             continue;
-                        pp.waitTimeMs = pt[3].get<uint32_t>();
-                        // Cap wait time at 10 minutes to keep AzerothCore
-                        // happy and prevent obvious data-entry typos that
-                        // would produce a creature that effectively never
-                        // moves (e.g. 24h = 86400000).
-                        if (pp.waitTimeMs > 600000) pp.waitTimeMs = 600000;
+                        // Read waitTime as int64 then clamp to uint32_t range.
+                        // pt[3].get<uint32_t> would throw json::type_error on
+                        // a negative or out-of-range integer and abort the
+                        // whole NPC file load on a single bad waypoint.
+                        int64_t rawWait = pt[3].is_number_float()
+                            ? static_cast<int64_t>(pt[3].get<double>())
+                            : pt[3].get<int64_t>();
+                        if (rawWait < 0) rawWait = 0;
+                        if (rawWait > 600000) rawWait = 600000;  // 10-min cap
+                        pp.waitTimeMs = static_cast<uint32_t>(rawWait);
                         s.patrolPath.push_back(pp);
                     }
                 }

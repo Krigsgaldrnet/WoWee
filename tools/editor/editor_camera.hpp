@@ -3,6 +3,7 @@
 #include "rendering/camera.hpp"
 #include <SDL2/SDL.h>
 #include <glm/glm.hpp>
+#include <cmath>
 
 namespace wowee {
 namespace editor {
@@ -22,7 +23,12 @@ public:
     const rendering::Camera& getCamera() const { return camera_; }
 
     float getSpeed() const { return speed_; }
-    void setSpeed(float s) { speed_ = s; }
+    void setSpeed(float s) {
+        // Match the wheel-zoom clamp range. NaN/inf would propagate
+        // into camera position via update(); the cap also matches what
+        // the user can set via the wheel UI.
+        if (std::isfinite(s) && s >= 10.0f && s <= 2000.0f) speed_ = s;
+    }
     void setPosition(const glm::vec3& pos);
     void setYawPitch(float yaw, float pitch);
 

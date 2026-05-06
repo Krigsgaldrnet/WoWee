@@ -855,6 +855,14 @@ bool EditorApp::loadWMOInstance(const std::string& mapName) {
 }
 
 void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
+    // WoW tile grid is 64x64 — out-of-range coords would compute paths
+    // like "World\Maps\Foo\Foo_-1_-1.adt" that the asset manager refuses,
+    // and would also poison the manifest.tiles entries on save.
+    if (tileX < 0 || tileX > 63 || tileY < 0 || tileY > 63) {
+        LOG_ERROR("loadADT rejected: tile (", tileX, ",", tileY,
+                  ") out of valid 0..63 range");
+        return;
+    }
     // Clear previous state before loading new tile
     clearAllObjects();
     questEditor_.clear();
@@ -1030,6 +1038,12 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 }
 
 void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome) {
+    if (tileX < 0 || tileX > 63 || tileY < 0 || tileY > 63) {
+        LOG_ERROR("createNewTerrain rejected: tile (", tileX, ",", tileY,
+                  ") out of valid 0..63 range");
+        return;
+    }
+    if (!std::isfinite(baseHeight)) baseHeight = 0.0f;
     terrain_ = TerrainEditor::createBlankTerrain(tileX, tileY, baseHeight, biome);
     // Clear all previous state
     clearAllObjects();
@@ -1500,7 +1514,11 @@ void EditorApp::addAdjacentTile(int offsetX, int offsetY) {
     int newY = loadedTileY_ + offsetY;
     if (newX < 0 || newX > 63 || newY < 0 || newY > 63) return;
 
-    auto adj = TerrainEditor::createBlankTerrain(newX, newY, terrain_.chunks[0].position[2],
+    // Source base height could be NaN if mid-edit terrain hadn't stitched —
+    // fall back to a safe default so the new tile starts clean.
+    float baseHeight = terrain_.chunks[0].position[2];
+    if (!std::isfinite(baseHeight)) baseHeight = 100.0f;
+    auto adj = TerrainEditor::createBlankTerrain(newX, newY, baseHeight,
                                                   Biome::Grassland);
 
     // Stitch edge heights from current tile to adjacent tile
@@ -1564,8 +1582,15 @@ void EditorApp::flyToSelected() {
     // both for tight spawn lists and for far-flung WMOs.
     glm::vec3 fwd = camera_.getCamera().getForward();
     if (glm::length(fwd) < 0.001f) fwd = glm::vec3(1, 0, 0);
-    glm::vec3 back = -glm::normalize(glm::vec3(fwd.x, fwd.y, 0.0f));
-    if (glm::length(back) < 0.001f) back = glm::vec3(-1, 0, 0);
+    // Project onto XY before normalizing — but if the camera is looking
+    // straight up/down, the projection is zero and glm::normalize returns
+    // NaN. NaN length < 0.001f is false (NaN comparisons return false), so
+    // the original fallback didn't catch the case. Length-check the source
+    // vector explicitly.
+    glm::vec3 fwdXY(fwd.x, fwd.y, 0.0f);
+    glm::vec3 back = (glm::length(fwdXY) < 0.001f)
+                         ? glm::vec3(-1, 0, 0)
+                         : -glm::normalize(fwdXY);
 
     glm::vec3 cam = target + back * 25.0f + glm::vec3(0, 0, 15);
     camera_.setPosition(cam);
@@ -1689,6 +1714,9 @@ void EditorApp::snapSelectedToGround() {
 void EditorApp::flattenAroundSelected(float radius) {
     auto* sel = objectPlacer_.getSelected();
     if (!sel || !terrain_.isLoaded()) return;
+    if (!std::isfinite(radius) || radius <= 0.0f ||
+        !std::isfinite(sel->position.x) || !std::isfinite(sel->position.y) ||
+        !std::isfinite(sel->position.z)) return;
 
     terrainEditor_.beginGeneratorUndo();
     float targetHeight = sel->position.z;

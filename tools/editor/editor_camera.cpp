@@ -1,6 +1,7 @@
 #include "editor_camera.hpp"
 #include <glm/gtc/constants.hpp>
 #include <algorithm>
+#include <cmath>
 
 namespace wowee {
 namespace editor {
@@ -84,20 +85,29 @@ void EditorCamera::processMiddleMouseMotion(int dx, int dy, const glm::vec3& piv
     pitch_ = std::clamp(pitch_, -89.0f, 89.0f);
     camera_.setRotation(yaw_, pitch_);
 
-    // Orbit: maintain distance from pivot
+    // Orbit: maintain distance from pivot. Reject NaN pivot — would
+    // poison the camera position permanently and the next frame would
+    // produce NaN view/proj matrices.
+    if (!std::isfinite(pivotPoint.x) || !std::isfinite(pivotPoint.y) ||
+        !std::isfinite(pivotPoint.z)) return;
     glm::vec3 toPivot = pivotPoint - camera_.getPosition();
     float dist = glm::length(toPivot);
+    if (!std::isfinite(dist)) return;
     glm::vec3 newPos = pivotPoint - camera_.getForward() * dist;
     camera_.setPosition(newPos);
 }
 
 void EditorCamera::setPosition(const glm::vec3& pos) {
+    if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) return;
     camera_.setPosition(pos);
 }
 
 void EditorCamera::setYawPitch(float yaw, float pitch) {
+    if (!std::isfinite(yaw) || !std::isfinite(pitch)) return;
     yaw_ = yaw;
-    pitch_ = pitch;
+    // Match the mouse-motion clamp so out-of-range pitch from a saved
+    // bookmark doesn't roll the camera upside down.
+    pitch_ = std::clamp(pitch, -89.0f, 89.0f);
     camera_.setRotation(yaw_, pitch_);
 }
 

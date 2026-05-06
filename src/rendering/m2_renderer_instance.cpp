@@ -33,6 +33,8 @@ thread_local std::vector<uint32_t> tl_m2_collisionTriScratch;
 } // namespace m2_internal
 
 void M2Renderer::setInstancePosition(uint32_t instanceId, const glm::vec3& position) {
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(position.z)) return;
     auto idxIt = instanceIndexById.find(instanceId);
     if (idxIt == instanceIndexById.end()) return;
     auto& inst = instances[idxIt->second];
@@ -132,6 +134,12 @@ float M2Renderer::getInstanceAnimDuration(uint32_t instanceId) const {
 void M2Renderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& transform) {
     auto idxIt = instanceIndexById.find(instanceId);
     if (idxIt == instanceIndexById.end()) return;
+    // Reject NaN matrix — would propagate into the model matrix uniform
+    // and the spatial-grid bounds, leaving stale grid cells pointing at
+    // a NaN-bounded instance.
+    for (int c = 0; c < 4; c++)
+        for (int r = 0; r < 4; r++)
+            if (!std::isfinite(transform[c][r])) return;
     auto& inst = instances[idxIt->second];
 
     // Remove old grid cells before updating bounds
@@ -757,8 +765,12 @@ std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ,
                 if (nLen > 0.001f) {
                     localN /= nLen;
                     if (localN.z < 0.0f) localN = -localN;
-                    worldN = glm::normalize(
-                        glm::vec3(instance.modelMatrix * glm::vec4(localN, 0.0f)));
+                    glm::vec3 transformedN = glm::vec3(
+                        instance.modelMatrix * glm::vec4(localN, 0.0f));
+                    float wnLen = glm::length(transformedN);
+                    if (wnLen > 0.001f) {
+                        worldN = transformedN / wnLen;
+                    } // else: keep worldN = (0,0,1) flat default
                     if (std::abs(worldN.z) < 0.35f) continue; // too steep (~70° max slope)
                 }
 

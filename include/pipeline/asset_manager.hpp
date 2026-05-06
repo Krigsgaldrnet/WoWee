@@ -147,6 +147,16 @@ public:
      */
     size_t purgeExtractedAssets();
 
+    /**
+     * Resolve a normalized WoW path to its on-disk location. Checks the
+     * override directory first, then the manifest, then the base-fallback
+     * manifest. Public so callers (e.g. terrain_manager probing for
+     * sidecar files like .whm/.wot/.woc next to a .adt) can locate the
+     * extracted file's directory without reading it.
+     * @return absolute or relative fs path, or "" if not found
+     */
+    std::string resolveFile(const std::string& normalizedPath) const;
+
 private:
     bool initialized = false;
     std::string dataPath;
@@ -162,11 +172,7 @@ private:
     std::string    baseFallbackDataPath_;
     AssetManifest  baseFallbackManifest_;
 
-    /**
-     * Resolve filesystem path: check override dir first, then base manifest.
-     * Returns empty string if not found.
-     */
-    std::string resolveFile(const std::string& normalizedPath) const;
+    // (resolveFile moved to public — declaration above.)
 
     // Guards fileCache, dbcCache, fileCacheTotalBytes, fileCacheAccessCounter, and
     // fileCacheBudget.  Shared lock for read-only cache lookups (readFile cache hit,

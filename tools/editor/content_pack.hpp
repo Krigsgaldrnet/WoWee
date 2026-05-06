@@ -41,6 +41,14 @@ public:
         bool hasPng = false, hasWom = false, hasWob = false, hasWoc = false;
         bool hasCreatures = false, hasQuests = false, hasObjects = false;
         bool whmValid = false, womValid = false, wobValid = false, wocValid = false;
+        // Counts of each format file (the has* booleans only tell whether
+        // at least one exists; counts are useful for the --validate report).
+        int wotCount = 0, whmCount = 0, womCount = 0, wobCount = 0;
+        int wocCount = 0, pngCount = 0;
+        // Counts of files that failed magic validation. A non-zero count
+        // means the zone has at least one corrupted file; a player would
+        // see missing geometry on load.
+        int womInvalidCount = 0, wobInvalidCount = 0, wocInvalidCount = 0;
         int openFormatScore() const;
         std::string summary() const;
     };

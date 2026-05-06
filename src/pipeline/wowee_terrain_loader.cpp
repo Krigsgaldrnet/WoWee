@@ -58,9 +58,17 @@ bool WoweeTerrainLoader::loadHeightmap(const std::string& whmPath, ADTTerrain& t
             if (!std::isfinite(h)) h = 0.0f;
         }
 
-        // Read alpha map data (may not be present in older WHM files)
+        // Read alpha map data (may not be present in older WHM files).
+        // Reject overlong alphaSize to keep the per-chunk block alignment —
+        // skipping a 100MB alpha block would leave the next chunk's
+        // baseHeight read parsing alpha bytes as floats.
         uint32_t alphaSize = 0;
-        if (f.read(reinterpret_cast<char*>(&alphaSize), 4) && alphaSize > 0 && alphaSize <= 65536) {
+        if (f.read(reinterpret_cast<char*>(&alphaSize), 4) && alphaSize > 0) {
+            if (alphaSize > 65536) {
+                LOG_ERROR("WHM chunk ", ci, " alphaSize rejected (",
+                          alphaSize, "): ", whmPath);
+                return false;
+            }
             chunk.alphaMap.resize(alphaSize);
             f.read(reinterpret_cast<char*>(chunk.alphaMap.data()), alphaSize);
         }
@@ -103,29 +111,41 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
             }
         }
 
-        // Parse textures
+        // Parse textures (cap at 1024 — far above any realistic ADT)
         if (j.contains("textures") && j["textures"].is_array()) {
+            constexpr size_t kMaxTextures = 1024;
             for (const auto& tex : j["textures"]) {
+                if (terrain.textures.size() >= kMaxTextures) break;
                 if (tex.is_string() && !tex.get<std::string>().empty())
                     terrain.textures.push_back(tex.get<std::string>());
             }
         }
 
-        // Parse chunk layers
+        // Parse chunk layers — WoW ADT supports max 4 layers per chunk;
+        // cap to 8 to allow some headroom without unbounded growth.
         if (j.contains("chunkLayers") && j["chunkLayers"].is_array()) {
             const auto& layers = j["chunkLayers"];
             for (int ci = 0; ci < std::min(256, static_cast<int>(layers.size())); ci++) {
                 const auto& cl = layers[ci];
                 if (cl.contains("layers") && cl["layers"].is_array()) {
                     for (const auto& texId : cl["layers"]) {
+                        if (terrain.chunks[ci].layers.size() >= 8) break;
                         TextureLayer layer{};
-                        layer.textureId = texId.get<uint32_t>();
+                        // Range-check: get<uint32_t> throws on negative/oversize.
+                        int64_t raw = texId.is_number_integer()
+                            ? texId.get<int64_t>() : 0;
+                        if (raw < 0 || raw > 0xFFFFFFFFll) raw = 0;
+                        layer.textureId = static_cast<uint32_t>(raw);
                         layer.flags = terrain.chunks[ci].layers.empty() ? 0 : 0x100;
                         terrain.chunks[ci].layers.push_back(layer);
                     }
                 }
-                if (cl.contains("holes"))
-                    terrain.chunks[ci].holes = cl["holes"].get<uint16_t>();
+                if (cl.contains("holes")) {
+                    int64_t raw = cl["holes"].is_number_integer()
+                        ? cl["holes"].get<int64_t>() : 0;
+                    if (raw < 0 || raw > 0xFFFF) raw = 0;
+                    terrain.chunks[ci].holes = static_cast<uint16_t>(raw);
+                }
             }
         }
 
@@ -137,7 +157,14 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
                 if (wci < 0 || wci >= 256) continue;
                 ADTTerrain::WaterLayer wl;
                 wl.liquidType = w.value("type", 0u);
+                // Known WoW liquid types: 0=water, 1=ocean, 2=magma, 3=slime.
+                // Out-of-range values would default to plain water in render
+                // but might break server-side liquid behaviour.
+                if (wl.liquidType > 3) wl.liquidType = 0;
                 wl.maxHeight = w.value("height", 0.0f);
+                // NaN water height would produce NaN vertex positions and
+                // a degenerate GPU draw, or crash the water mesh build.
+                if (!std::isfinite(wl.maxHeight)) wl.maxHeight = 0.0f;
                 wl.minHeight = wl.maxHeight;
                 wl.x = 0; wl.y = 0; wl.width = 9; wl.height = 9;
                 wl.heights.assign(81, wl.maxHeight);
@@ -146,10 +173,15 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
             }
         }
 
-        // Parse doodad placements
+        // Parse doodad placements. n.get<std::string> throws on non-string
+        // entries — guard with is_string and cap the list at 65536 (uint32
+        // nameId range is far larger but real zones top out around ~5k).
         if (j.contains("doodadNames") && j["doodadNames"].is_array()) {
-            for (const auto& n : j["doodadNames"])
-                terrain.doodadNames.push_back(n.get<std::string>());
+            constexpr size_t kMaxNames = 65536;
+            for (const auto& n : j["doodadNames"]) {
+                if (terrain.doodadNames.size() >= kMaxNames) break;
+                if (n.is_string()) terrain.doodadNames.push_back(n.get<std::string>());
+            }
         }
         // Helper used by both doodad and WMO loaders below.
         auto san3 = [](float& a, float& b, float& c) {
@@ -157,8 +189,13 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
             if (!std::isfinite(b)) b = 0.0f;
             if (!std::isfinite(c)) c = 0.0f;
         };
+        // Caps match the editor-side ObjectPlacer (100k for objects). Per-
+        // tile, real ADTs cap at ~64k MDDF entries (uint32 indices) and
+        // far fewer in practice (~5k for dense zones).
+        constexpr size_t kMaxPlacements = 100'000;
         if (j.contains("doodads") && j["doodads"].is_array()) {
             for (const auto& jd : j["doodads"]) {
+                if (terrain.doodadPlacements.size() >= kMaxPlacements) break;
                 ADTTerrain::DoodadPlacement dp{};
                 dp.nameId = jd.value("nameId", 0u);
                 dp.uniqueId = jd.value("uniqueId", 0u);
@@ -176,13 +213,17 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
             }
         }
 
-        // Parse WMO placements
+        // Parse WMO placements (same guards as doodadNames above).
         if (j.contains("wmoNames") && j["wmoNames"].is_array()) {
-            for (const auto& n : j["wmoNames"])
-                terrain.wmoNames.push_back(n.get<std::string>());
+            constexpr size_t kMaxWmoNames = 65536;
+            for (const auto& n : j["wmoNames"]) {
+                if (terrain.wmoNames.size() >= kMaxWmoNames) break;
+                if (n.is_string()) terrain.wmoNames.push_back(n.get<std::string>());
+            }
         }
         if (j.contains("wmos") && j["wmos"].is_array()) {
             for (const auto& jw : j["wmos"]) {
+                if (terrain.wmoPlacements.size() >= kMaxPlacements) break;
                 ADTTerrain::WMOPlacement wp{};
                 wp.nameId = jw.value("nameId", 0u);
                 wp.uniqueId = jw.value("uniqueId", 0u);

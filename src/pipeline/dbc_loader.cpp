@@ -68,8 +68,25 @@ bool DBCFile::load(const std::vector<uint8_t>& dbcData) {
     recordSize = header.recordSize;
     stringBlockSize = header.stringBlockSize;
 
-    // Validate sizes
-    uint32_t expectedSize = sizeof(DBCHeader) + (recordCount * recordSize) + stringBlockSize;
+    // Reject absurd header values up front. Real DBCs cap at ~1M records
+    // and 1024 fields; large stringBlockSize is up to ~64MB. Multiplying
+    // these without bounds risks uint32 overflow on the totalRecordSize
+    // computation below — the resize would be tiny but the memcpy would
+    // read TB of memory.
+    if (recordCount > 10'000'000 || fieldCount > 1024 ||
+        recordSize > 1024 * 4 ||
+        stringBlockSize > 256u * 1024 * 1024) {
+        LOG_ERROR("DBC header rejected: recordCount=", recordCount,
+                  " fieldCount=", fieldCount, " recordSize=", recordSize,
+                  " stringBlockSize=", stringBlockSize);
+        return false;
+    }
+
+    // Validate sizes — use uint64 for the product so the overflow check
+    // above is the only path that allows a large recordCount * recordSize.
+    uint64_t expectedSize = sizeof(DBCHeader) +
+                            static_cast<uint64_t>(recordCount) * recordSize +
+                            stringBlockSize;
     if (dbcData.size() < expectedSize) {
         LOG_ERROR("DBC file truncated: expected ", expectedSize, " bytes, got ", dbcData.size());
         return false;
@@ -86,9 +103,10 @@ bool DBCFile::load(const std::vector<uint8_t>& dbcData) {
               fieldCount, " fields, ", recordSize, " bytes/record, ",
               stringBlockSize, " string bytes");
 
-    // Copy record data
+    // Copy record data. Use size_t for the product so it matches the
+    // header-validated 64-bit expectedSize math above.
     const uint8_t* recordStart = dbcData.data() + sizeof(DBCHeader);
-    uint32_t totalRecordSize = recordCount * recordSize;
+    size_t totalRecordSize = static_cast<size_t>(recordCount) * recordSize;
     recordData.resize(totalRecordSize);
     if (totalRecordSize > 0) {
         std::memcpy(recordData.data(), recordStart, totalRecordSize);
@@ -423,6 +441,11 @@ bool DBCFile::loadJSON(const std::vector<uint8_t>& jsonData) {
 
         for (uint32_t i = 0; i < recordCount; i++) {
             const auto& row = records[i];
+            // Skip non-array rows (object, string, etc.) — row[col] throws
+            // on a non-array, which the outer try-catch would treat as a
+            // hard load failure for the whole file. Empty record stays
+            // zero-initialized from the resize() above.
+            if (!row.is_array()) continue;
             uint32_t* fields = reinterpret_cast<uint32_t*>(
                 recordData.data() + static_cast<size_t>(i) * recordSize);
 
@@ -449,7 +472,12 @@ bool DBCFile::loadJSON(const std::vector<uint8_t>& jsonData) {
                     if (!std::isfinite(f)) f = 0.0f;
                     std::memcpy(&fields[col], &f, 4);
                 } else if (val.is_number_integer()) {
-                    fields[col] = val.get<uint32_t>();
+                    // Range-check: nlohmann throws on out-of-range get<uint32_t>
+                    // (negative or > UINT32_MAX). Catching at the field level
+                    // keeps a single bad cell from killing the whole DBC load.
+                    int64_t raw = val.get<int64_t>();
+                    if (raw < 0 || raw > 0xFFFFFFFFll) raw = 0;
+                    fields[col] = static_cast<uint32_t>(raw);
                 }
             }
         }

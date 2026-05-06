@@ -278,3 +278,43 @@ TEST_CASE("JSON DBC findRecordById", "[dbc][json]") {
     REQUIRE(dbc.findRecordById(30) == 2);
     REQUIRE(dbc.findRecordById(99) == -1);
 }
+
+// ============== Hardening tests for the recent overflow guards ==============
+
+TEST_CASE("DBCFile::load rejects absurd recordCount header", "[dbc][hardening]") {
+    // Hand-build a DBC header that would overflow the recordCount * recordSize
+    // multiplication if we used uint32 — recordCount=1B, recordSize=1024.
+    // Without the bounds check the resize would be tiny but the memcpy would
+    // read TB of memory.
+    using namespace wowee::pipeline;
+    std::vector<uint8_t> data(20);
+    std::memcpy(data.data(), "WDBC", 4);
+    uint32_t recordCount = 1'000'000'000;
+    uint32_t fieldCount = 256;
+    uint32_t recordSize = 1024;
+    uint32_t stringBlockSize = 0;
+    std::memcpy(data.data() + 4, &recordCount, 4);
+    std::memcpy(data.data() + 8, &fieldCount, 4);
+    std::memcpy(data.data() + 12, &recordSize, 4);
+    std::memcpy(data.data() + 16, &stringBlockSize, 4);
+
+    DBCFile dbc;
+    REQUIRE_FALSE(dbc.load(data));
+}
+
+TEST_CASE("DBCFile::load rejects absurd fieldCount header", "[dbc][hardening]") {
+    using namespace wowee::pipeline;
+    std::vector<uint8_t> data(20);
+    std::memcpy(data.data(), "WDBC", 4);
+    uint32_t recordCount = 10;
+    uint32_t fieldCount = 65535;  // > 1024 cap
+    uint32_t recordSize = fieldCount * 4;
+    uint32_t stringBlockSize = 0;
+    std::memcpy(data.data() + 4, &recordCount, 4);
+    std::memcpy(data.data() + 8, &fieldCount, 4);
+    std::memcpy(data.data() + 12, &recordSize, 4);
+    std::memcpy(data.data() + 16, &stringBlockSize, 4);
+
+    DBCFile dbc;
+    REQUIRE_FALSE(dbc.load(data));
+}

@@ -368,6 +368,37 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
         }
     }
 
+    // Try WHM/WOT sidecar from the asset tree (asset_extract --emit-terrain
+    // writes one alongside the ADT). This lets the runtime use the open
+    // format without copying anything into custom_zones/.
+    if (!loadedFromWot) {
+        std::string adtPath = getADTPath(coord);
+        std::string adtFsPath = assetManager->resolveFile(adtPath);
+        if (!adtFsPath.empty() && adtFsPath.size() >= 4) {
+            std::string sidecarBase = adtFsPath.substr(0, adtFsPath.size() - 4);
+            if (pipeline::WoweeTerrainLoader::exists(sidecarBase) &&
+                pipeline::WoweeTerrainLoader::load(sidecarBase, *terrainPtr)) {
+                loadedFromWot = true;
+                LOG_INFO("Loaded asset-tree WHM/WOT sidecar: ", sidecarBase);
+                if (pipeline::WoweeCollisionBuilder::exists(sidecarBase)) {
+                    auto woc = pipeline::WoweeCollisionBuilder::load(sidecarBase + ".woc");
+                    if (woc.isValid()) {
+                        CollisionData cd;
+                        cd.triangles.reserve(woc.triangles.size());
+                        for (const auto& t : woc.triangles)
+                            cd.triangles.push_back({t.v0, t.v1, t.v2, t.flags});
+                        cd.boundsMin = woc.bounds.min;
+                        cd.boundsMax = woc.bounds.max;
+                        cd.loaded = true;
+                        collisionTiles_[tileKey(coord.x, coord.y)] = std::move(cd);
+                        LOG_INFO("Loaded sidecar WOC collision: ",
+                                 woc.triangles.size(), " triangles");
+                    }
+                }
+            }
+        }
+    }
+
     // Fall back to ADT format
     if (!loadedFromWot) {
         std::string adtPath = getADTPath(coord);
@@ -490,6 +521,13 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                 "output/" + mapName + "/models/",
                 "custom_zones/" + mapName + "/models/",
             };
+            // Asset extractor's --emit-wom writes WOM sidecars next to the
+            // M2 in the asset tree (e.g. <data>/world/maps/foo/foo.wom).
+            // Add the data path as a prefix so the runtime picks them up
+            // without needing to copy them into custom_zones/.
+            if (assetManager && !assetManager->getDataPath().empty()) {
+                extraPrefixes.push_back(assetManager->getDataPath() + "/");
+            }
             auto wom = pipeline::WoweeModelLoader::tryLoadByGamePath(m2Path, extraPrefixes);
             if (wom.isValid()) {
                 auto m2Model = pipeline::WoweeModelLoader::toM2(wom);
@@ -619,6 +657,12 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                     "output/" + mapName + "/buildings/",
                     "custom_zones/" + mapName + "/buildings/",
                 };
+                // asset_extract --emit-wob writes WOB next to the WMO in
+                // the asset tree; add the data path so the runtime picks
+                // them up there too.
+                if (assetManager && !assetManager->getDataPath().empty()) {
+                    extraPrefixes.push_back(assetManager->getDataPath() + "/");
+                }
                 auto wob = pipeline::WoweeBuildingLoader::tryLoadByGamePath(
                     wmoPath, extraPrefixes);
                 if (wob.isValid() &&
