@@ -134,6 +134,10 @@ void ObjectPlacer::selectByType(PlaceableType type) {
 }
 
 void ObjectPlacer::moveSelected(const glm::vec3& delta) {
+    // NaN delta would poison every selected position permanently —
+    // the renderer would then produce NaN model matrices.
+    if (!std::isfinite(delta.x) || !std::isfinite(delta.y) ||
+        !std::isfinite(delta.z)) return;
     if (selectedIndices_.size() > 1) {
         for (int idx : selectedIndices_) objects_[idx].position += delta;
     } else if (auto* obj = getSelected()) {
@@ -142,6 +146,8 @@ void ObjectPlacer::moveSelected(const glm::vec3& delta) {
 }
 
 void ObjectPlacer::rotateSelected(const glm::vec3& deltaDeg) {
+    if (!std::isfinite(deltaDeg.x) || !std::isfinite(deltaDeg.y) ||
+        !std::isfinite(deltaDeg.z)) return;
     if (selectedIndices_.size() > 1) {
         for (int idx : selectedIndices_) objects_[idx].rotation += deltaDeg;
     } else if (auto* obj = getSelected()) {
@@ -150,6 +156,7 @@ void ObjectPlacer::rotateSelected(const glm::vec3& deltaDeg) {
 }
 
 void ObjectPlacer::scaleSelected(float delta) {
+    if (!std::isfinite(delta)) return;
     if (selectedIndices_.size() > 1) {
         for (int idx : selectedIndices_)
             objects_[idx].scale = std::max(0.1f, objects_[idx].scale + delta);
