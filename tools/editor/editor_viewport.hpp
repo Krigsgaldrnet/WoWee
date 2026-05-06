@@ -13,6 +13,8 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
@@ -113,6 +115,12 @@ private:
     glm::vec3 fogColor_ = glm::vec3(0.6f, 0.7f, 0.8f);
     float fogNear_ = 5000.0f, fogFar_ = 10000.0f;
     float timeOfDay_ = 12.0f;
+
+    // Persistent path -> renderer model ID maps. Keeping these across rebuilds
+    // lets the renderer skip re-uploading models that are still in its cache.
+    std::unordered_map<std::string, uint32_t> persistentM2ModelIds_;
+    std::unordered_map<std::string, uint32_t> persistentWMOModelIds_;
+    uint32_t nextPersistentModelId_ = 1;
 
     // Ghost preview state
     std::string ghostModelPath_;

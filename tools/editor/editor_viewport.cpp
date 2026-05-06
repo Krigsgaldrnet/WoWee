@@ -80,6 +80,13 @@ bool EditorViewport::loadTerrain(const pipeline::TerrainMesh& mesh,
 
 void EditorViewport::clearTerrain() {
     if (terrainRenderer_) terrainRenderer_->clear();
+    // Loading a different zone invalidates the cached models; flush them so
+    // their slots can be reused without leaking GPU memory across zones.
+    persistentM2ModelIds_.clear();
+    persistentWMOModelIds_.clear();
+    nextPersistentModelId_ = 1;
+    if (m2Renderer_) m2Renderer_->clear();
+    if (wmoRenderer_) wmoRenderer_->clearAll();
 }
 
 void EditorViewport::updateWater(const pipeline::ADTTerrain& terrain, int tileX, int tileY) {
@@ -106,12 +113,16 @@ void EditorViewport::clearObjects() {
     ghostModelId_ = 0;
     ghostModelPath_.clear();
 
+    // Drop instances but keep models cached on the GPU. The editor's rebuild
+    // path destroys-and-recreates instances every time the placement set
+    // changes; preserving model GPU buffers makes that path much cheaper for
+    // large NPC populations using shared models.
     if (m2Renderer_) {
         vkCtx_->waitAllUploads();
-        m2Renderer_->clear();
+        m2Renderer_->clearInstances();
     }
     if (wmoRenderer_) {
-        wmoRenderer_->clearAll();
+        wmoRenderer_->clearInstances();
     }
 }
 
@@ -120,9 +131,11 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
     clearObjects();
     if (objects.empty() && npcs.empty()) return;
 
-    // Don't call beginUploadBatch here — loadModel starts its own batch
-    uint32_t nextModelId = 1;
-    std::unordered_map<std::string, uint32_t> m2ModelIds, wmoModelIds;
+    // Don't call beginUploadBatch here — loadModel starts its own batch.
+    // Use the persistent model-id maps so models stay cached across rebuilds.
+    auto& m2ModelIds = persistentM2ModelIds_;
+    auto& wmoModelIds = persistentWMOModelIds_;
+    uint32_t& nextModelId = nextPersistentModelId_;
 
     for (const auto& obj : objects) {
         if (obj.type == PlaceableType::M2 && m2Renderer_) {

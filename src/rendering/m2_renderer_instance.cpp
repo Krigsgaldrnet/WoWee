@@ -377,6 +377,22 @@ void M2Renderer::clear() {
     textureBudgetRejectWarnings_ = 0;
 }
 
+void M2Renderer::clearInstances() {
+    if (vkCtx_) vkDeviceWaitIdle(vkCtx_->getDevice());
+    for (auto& inst : instances) destroyInstanceBones(inst);
+    instances.clear();
+    spatialGrid.clear();
+    instanceIndexById.clear();
+    instanceDedupMap_.clear();
+    smokeInstanceIndices_.clear();
+    portalInstanceIndices_.clear();
+    animatedInstanceIndices_.clear();
+    particleOnlyInstanceIndices_.clear();
+    particleInstanceIndices_.clear();
+    smokeParticles.clear();
+    smokeEmitAccum = 0.0f;
+}
+
 void M2Renderer::setCollisionFocus(const glm::vec3& worldPos, float radius) {
     collisionFocusEnabled = (radius > 0.0f);
     collisionFocusPos = worldPos;

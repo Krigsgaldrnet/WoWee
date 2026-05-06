@@ -357,6 +357,9 @@ public:
     void removeInstances(const std::vector<uint32_t>& instanceIds);
     void setSkipCollision(uint32_t instanceId, bool skip);
     void clear();
+    /** Drop all instances but keep models in GPU memory. Cheap path for the
+     *  editor's rebuild loop where the same model is re-instanced repeatedly. */
+    void clearInstances();
     void cleanupUnusedModels();
 
     bool checkCollision(const glm::vec3& from, const glm::vec3& to,
