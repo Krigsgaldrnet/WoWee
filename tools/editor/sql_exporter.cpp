@@ -50,11 +50,16 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
         const auto& s = spawns[i];
         uint32_t entry = startEntry + static_cast<uint32_t>(i);
 
+        // AzerothCore creature_template.npcflag bits.
         uint32_t npcFlags = 0;
         if (s.questgiver) npcFlags |= 0x02;
+        if (s.trainer) npcFlags |= 0x10;
         if (s.vendor) npcFlags |= 0x80;
-        if (s.flightmaster) npcFlags |= 0x02000000;
+        if (s.repair) npcFlags |= 0x1000;
         if (s.innkeeper) npcFlags |= 0x10000;
+        if (s.banker) npcFlags |= 0x20000;
+        if (s.auctioneer) npcFlags |= 0x200000;
+        if (s.flightmaster) npcFlags |= 0x02000000;
 
         uint32_t unitFlags = 0;
         if (!s.hostile) unitFlags |= 0x02; // NON_ATTACKABLE

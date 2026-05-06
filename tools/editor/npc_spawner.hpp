@@ -56,6 +56,10 @@ struct CreatureSpawn {
     bool vendor = false;
     bool flightmaster = false;
     bool innkeeper = false;
+    bool trainer = false;       // class/profession trainer (SQL npcflag 0x10)
+    bool auctioneer = false;    // (SQL npcflag 0x200000)
+    bool banker = false;        // (SQL npcflag 0x20000)
+    bool repair = false;        // (SQL npcflag 0x1000)
 
     bool selected = false;
 };

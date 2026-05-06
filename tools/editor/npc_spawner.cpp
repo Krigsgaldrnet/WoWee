@@ -85,6 +85,10 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
         js["vendor"] = s.vendor;
         js["flightmaster"] = s.flightmaster;
         js["innkeeper"] = s.innkeeper;
+        js["trainer"] = s.trainer;
+        js["auctioneer"] = s.auctioneer;
+        js["banker"] = s.banker;
+        js["repair"] = s.repair;
 
         nlohmann::json patrol = nlohmann::json::array();
         for (const auto& p : s.patrolPath) {
@@ -156,6 +160,10 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
             s.vendor = js.value("vendor", false);
             s.flightmaster = js.value("flightmaster", false);
             s.innkeeper = js.value("innkeeper", false);
+            s.trainer = js.value("trainer", false);
+            s.auctioneer = js.value("auctioneer", false);
+            s.banker = js.value("banker", false);
+            s.repair = js.value("repair", false);
 
             if (js.contains("position") && js["position"].is_array() && js["position"].size() >= 3) {
                 s.position = glm::vec3(js["position"][0].get<float>(),

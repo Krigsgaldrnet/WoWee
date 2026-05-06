@@ -1919,6 +1919,11 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             ImGui::SameLine(); ImGui::Checkbox("Questgiver", &tmpl.questgiver);
             ImGui::Checkbox("Vendor", &tmpl.vendor);
             ImGui::SameLine(); ImGui::Checkbox("Innkeeper", &tmpl.innkeeper);
+            ImGui::Checkbox("Trainer", &tmpl.trainer);
+            ImGui::SameLine(); ImGui::Checkbox("Banker", &tmpl.banker);
+            ImGui::Checkbox("Auctioneer", &tmpl.auctioneer);
+            ImGui::SameLine(); ImGui::Checkbox("Repair", &tmpl.repair);
+            ImGui::SameLine(); ImGui::Checkbox("Flightmaster", &tmpl.flightmaster);
 
             // Update nameBuf when preset selection changes it
             if (tmpl.name.c_str() != std::string(nameBuf))
