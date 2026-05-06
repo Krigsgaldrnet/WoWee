@@ -240,9 +240,12 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         const auto& grp = bld.groups[gi];
         writeStr(grp.name);
 
-        uint32_t vc = static_cast<uint32_t>(grp.vertices.size());
-        uint32_t ic = static_cast<uint32_t>(grp.indices.size());
-        uint32_t tc = static_cast<uint32_t>(grp.texturePaths.size());
+        // Per-group counts capped at the load-side limits (1M verts /
+        // 4M indices / 1024 texture paths). Without these caps a huge
+        // group would write a header the loader rejects, leaking data.
+        uint32_t vc = static_cast<uint32_t>(std::min<size_t>(grp.vertices.size(), 1'000'000));
+        uint32_t ic = static_cast<uint32_t>(std::min<size_t>(grp.indices.size(), 4'000'000));
+        uint32_t tc = static_cast<uint32_t>(std::min<size_t>(grp.texturePaths.size(), 1024));
         f.write(reinterpret_cast<const char*>(&vc), 4);
         f.write(reinterpret_cast<const char*>(&ic), 4);
         f.write(reinterpret_cast<const char*>(&tc), 4);
@@ -282,7 +285,9 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         for (auto& idx : sanIdx) if (idx > vMax) idx = 0;
         f.write(reinterpret_cast<const char*>(sanIdx.data()), ic * 4);
 
-        for (const auto& tp : grp.texturePaths) writeStr(tp);
+        // Write only the capped number of texture paths so the body
+        // matches the header (tc) on round-trip.
+        for (uint32_t ti = 0; ti < tc; ti++) writeStr(grp.texturePaths[ti]);
 
         // Write material data — cap at 256 to match load-side limit so a
         // pathological in-memory count can't write a file the loader will
