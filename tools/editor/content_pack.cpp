@@ -294,6 +294,13 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
 static bool checkMagic(const std::string& path, uint32_t expectedMagic) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return false;
+    // Require minimum body bytes after the 4-byte magic. A 4-byte file
+    // with only the right magic is not a valid asset; the format-specific
+    // load routines would reject it but the magic-only check would pass.
+    f.seekg(0, std::ios::end);
+    auto fileSize = f.tellg();
+    if (fileSize < 8) return false;
+    f.seekg(0, std::ios::beg);
     uint32_t magic = 0;
     f.read(reinterpret_cast<char*>(&magic), 4);
     return magic == expectedMagic;
@@ -304,6 +311,9 @@ static bool checkAnyMagic(const std::string& path,
                            std::initializer_list<uint32_t> expected) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return false;
+    f.seekg(0, std::ios::end);
+    if (f.tellg() < 8) return false;
+    f.seekg(0, std::ios::beg);
     uint32_t magic = 0;
     f.read(reinterpret_cast<char*>(&magic), 4);
     for (uint32_t e : expected) if (magic == e) return true;
