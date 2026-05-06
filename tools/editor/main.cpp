@@ -502,6 +502,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         List every object with index, type, path, position\n");
     std::printf("  --list-quests <p> [--json]\n");
     std::printf("                         List every quest with index, title, giver, XP\n");
+    std::printf("  --list-quest-objectives <p> <questIdx> [--json]\n");
+    std::printf("                         List every objective on a quest (for --remove-quest-objective)\n");
+    std::printf("  --list-quest-rewards <p> <questIdx> [--json]\n");
+    std::printf("                         List XP/coin/item rewards on a quest\n");
     std::printf("  --info-wcp <wcp-path> [--json]\n");
     std::printf("                         Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
@@ -530,6 +534,7 @@ int main(int argc, char* argv[]) {
         "--info-png", "--info-jsondbc",
         "--info-zone", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
+        "--list-quest-objectives", "--list-quest-rewards",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--zone-summary",
@@ -1412,6 +1417,124 @@ int main(int argc, char* argv[]) {
                             k, q.requiredLevel, q.questGiverNpcId, q.turnInNpcId,
                             q.reward.xp, q.title.c_str(),
                             q.nextQuestId ? " [chained]" : "");
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-quest-objectives") == 0 && i + 2 < argc) {
+            // Per-quest objective listing — pairs with --remove-quest-objective
+            // (which takes objIdx). Tabulates type, target, count, description.
+            std::string path = argv[++i];
+            std::string idxStr = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            int qIdx;
+            try { qIdx = std::stoi(idxStr); }
+            catch (...) {
+                std::fprintf(stderr, "list-quest-objectives: bad questIdx '%s'\n", idxStr.c_str());
+                return 1;
+            }
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr, "list-quest-objectives: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            if (qIdx < 0 || qIdx >= static_cast<int>(qe.questCount())) {
+                std::fprintf(stderr,
+                    "list-quest-objectives: questIdx %d out of range [0, %zu)\n",
+                    qIdx, qe.questCount());
+                return 1;
+            }
+            const auto& q = qe.getQuests()[qIdx];
+            using OT = wowee::editor::QuestObjectiveType;
+            auto typeName = [](OT t) {
+                switch (t) {
+                    case OT::KillCreature: return "kill";
+                    case OT::CollectItem:  return "collect";
+                    case OT::TalkToNPC:    return "talk";
+                    case OT::ExploreArea:  return "explore";
+                    case OT::EscortNPC:    return "escort";
+                    case OT::UseObject:    return "use";
+                }
+                return "?";
+            };
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["questIdx"] = qIdx;
+                j["title"] = q.title;
+                j["count"] = q.objectives.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (size_t o = 0; o < q.objectives.size(); ++o) {
+                    const auto& ob = q.objectives[o];
+                    arr.push_back({
+                        {"index", o},
+                        {"type", typeName(ob.type)},
+                        {"target", ob.targetName},
+                        {"count", ob.targetCount},
+                        {"description", ob.description},
+                    });
+                }
+                j["objectives"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Quest %d ('%s'): %zu objective(s)\n",
+                        qIdx, q.title.c_str(), q.objectives.size());
+            std::printf("  idx  type     count  target              description\n");
+            for (size_t o = 0; o < q.objectives.size(); ++o) {
+                const auto& ob = q.objectives[o];
+                std::printf("  %3zu  %-7s  %5u  %-18s  %s\n",
+                            o, typeName(ob.type), ob.targetCount,
+                            ob.targetName.substr(0, 18).c_str(),
+                            ob.description.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-quest-rewards") == 0 && i + 2 < argc) {
+            // Per-quest reward listing. Shows XP/coin breakdown plus the
+            // full itemRewards list (which --info-quests only counts).
+            std::string path = argv[++i];
+            std::string idxStr = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            int qIdx;
+            try { qIdx = std::stoi(idxStr); }
+            catch (...) {
+                std::fprintf(stderr, "list-quest-rewards: bad questIdx '%s'\n", idxStr.c_str());
+                return 1;
+            }
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr, "list-quest-rewards: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            if (qIdx < 0 || qIdx >= static_cast<int>(qe.questCount())) {
+                std::fprintf(stderr,
+                    "list-quest-rewards: questIdx %d out of range [0, %zu)\n",
+                    qIdx, qe.questCount());
+                return 1;
+            }
+            const auto& q = qe.getQuests()[qIdx];
+            const auto& r = q.reward;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["questIdx"] = qIdx;
+                j["title"] = q.title;
+                j["xp"] = r.xp;
+                j["gold"] = r.gold;
+                j["silver"] = r.silver;
+                j["copper"] = r.copper;
+                j["items"] = r.itemRewards;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Quest %d ('%s') rewards:\n", qIdx, q.title.c_str());
+            std::printf("  xp     : %u\n", r.xp);
+            std::printf("  coin   : %ug %us %uc\n", r.gold, r.silver, r.copper);
+            std::printf("  items  : %zu\n", r.itemRewards.size());
+            for (size_t k = 0; k < r.itemRewards.size(); ++k) {
+                std::printf("    [%zu] %s\n", k, r.itemRewards[k].c_str());
             }
             return 0;
         } else if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 < argc) {
