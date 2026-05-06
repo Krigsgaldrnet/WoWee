@@ -490,6 +490,13 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                 "output/" + mapName + "/models/",
                 "custom_zones/" + mapName + "/models/",
             };
+            // Asset extractor's --emit-wom writes WOM sidecars next to the
+            // M2 in the asset tree (e.g. <data>/world/maps/foo/foo.wom).
+            // Add the data path as a prefix so the runtime picks them up
+            // without needing to copy them into custom_zones/.
+            if (assetManager && !assetManager->getDataPath().empty()) {
+                extraPrefixes.push_back(assetManager->getDataPath() + "/");
+            }
             auto wom = pipeline::WoweeModelLoader::tryLoadByGamePath(m2Path, extraPrefixes);
             if (wom.isValid()) {
                 auto m2Model = pipeline::WoweeModelLoader::toM2(wom);
@@ -619,6 +626,12 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                     "output/" + mapName + "/buildings/",
                     "custom_zones/" + mapName + "/buildings/",
                 };
+                // asset_extract --emit-wob writes WOB next to the WMO in
+                // the asset tree; add the data path so the runtime picks
+                // them up there too.
+                if (assetManager && !assetManager->getDataPath().empty()) {
+                    extraPrefixes.push_back(assetManager->getDataPath() + "/");
+                }
                 auto wob = pipeline::WoweeBuildingLoader::tryLoadByGamePath(
                     wmoPath, extraPrefixes);
                 if (wob.isValid() &&
