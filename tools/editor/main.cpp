@@ -591,6 +591,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         List every objective on a quest (for --remove-quest-objective)\n");
     std::printf("  --list-quest-rewards <p> <questIdx> [--json]\n");
     std::printf("                         List XP/coin/item rewards on a quest\n");
+    std::printf("  --info-creature <p> <idx> [--json]\n");
+    std::printf("                         Print every field for one creature spawn (stats, behavior, AI, flags)\n");
+    std::printf("  --info-quest <p> <idx> [--json]\n");
+    std::printf("                         Print every field for one quest (objectives + reward + chain in one shot)\n");
     std::printf("  --info-wcp <wcp-path> [--json]\n");
     std::printf("                         Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
@@ -631,6 +635,7 @@ int main(int argc, char* argv[]) {
         "--info-zone", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
         "--list-quest-objectives", "--list-quest-rewards",
+        "--info-creature", "--info-quest",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
@@ -2494,6 +2499,194 @@ int main(int argc, char* argv[]) {
             std::printf("  items  : %zu\n", r.itemRewards.size());
             for (size_t k = 0; k < r.itemRewards.size(); ++k) {
                 std::printf("    [%zu] %s\n", k, r.itemRewards[k].c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-creature") == 0 && i + 2 < argc) {
+            // Single-creature deep dive — every CreatureSpawn field for
+            // one entry. Companion to --list-creatures (which is a
+            // table view); useful for digging into 'why is this NPC
+            // not behaving like I expect?'.
+            std::string path = argv[++i];
+            std::string idxStr = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            int idx;
+            try { idx = std::stoi(idxStr); }
+            catch (...) {
+                std::fprintf(stderr, "info-creature: bad idx '%s'\n", idxStr.c_str());
+                return 1;
+            }
+            wowee::editor::NpcSpawner sp;
+            if (!sp.loadFromFile(path)) {
+                std::fprintf(stderr, "info-creature: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            if (idx < 0 || idx >= static_cast<int>(sp.spawnCount())) {
+                std::fprintf(stderr,
+                    "info-creature: idx %d out of range [0, %zu)\n",
+                    idx, sp.spawnCount());
+                return 1;
+            }
+            const auto& s = sp.getSpawns()[idx];
+            using B = wowee::editor::CreatureBehavior;
+            const char* behavior =
+                s.behavior == B::Patrol ? "patrol" :
+                s.behavior == B::Wander ? "wander" : "stationary";
+            if (jsonOut) {
+                nlohmann::json j;
+                j["index"] = idx;
+                j["id"] = s.id;
+                j["name"] = s.name;
+                j["modelPath"] = s.modelPath;
+                j["displayId"] = s.displayId;
+                j["position"] = {s.position.x, s.position.y, s.position.z};
+                j["orientation"] = s.orientation;
+                j["level"] = s.level;
+                j["health"] = s.health;
+                j["mana"] = s.mana;
+                j["minDamage"] = s.minDamage;
+                j["maxDamage"] = s.maxDamage;
+                j["armor"] = s.armor;
+                j["faction"] = s.faction;
+                j["scale"] = s.scale;
+                j["behavior"] = behavior;
+                j["wanderRadius"] = s.wanderRadius;
+                j["aggroRadius"] = s.aggroRadius;
+                j["leashRadius"] = s.leashRadius;
+                j["respawnTimeMs"] = s.respawnTimeMs;
+                j["patrolPoints"] = s.patrolPath.size();
+                j["hostile"] = s.hostile;
+                j["questgiver"] = s.questgiver;
+                j["vendor"] = s.vendor;
+                j["trainer"] = s.trainer;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Creature [%d] '%s'\n", idx, s.name.c_str());
+            std::printf("  id            : %u\n", s.id);
+            std::printf("  displayId     : %u\n", s.displayId);
+            std::printf("  modelPath     : %s\n",
+                        s.modelPath.empty() ? "(uses displayId)" : s.modelPath.c_str());
+            std::printf("  position      : (%.2f, %.2f, %.2f)\n",
+                        s.position.x, s.position.y, s.position.z);
+            std::printf("  orientation   : %.2f deg\n", s.orientation);
+            std::printf("  scale         : %.2f\n", s.scale);
+            std::printf("  level         : %u\n", s.level);
+            std::printf("  health/mana   : %u / %u\n", s.health, s.mana);
+            std::printf("  damage        : %u-%u\n", s.minDamage, s.maxDamage);
+            std::printf("  armor         : %u\n", s.armor);
+            std::printf("  faction       : %u\n", s.faction);
+            std::printf("  behavior      : %s\n", behavior);
+            std::printf("  wander rad    : %.1f\n", s.wanderRadius);
+            std::printf("  aggro rad     : %.1f\n", s.aggroRadius);
+            std::printf("  leash rad     : %.1f\n", s.leashRadius);
+            std::printf("  respawn ms    : %u\n", s.respawnTimeMs);
+            std::printf("  patrol points : %zu\n", s.patrolPath.size());
+            std::printf("  flags         : %s%s%s%s\n",
+                        s.hostile ? "hostile " : "",
+                        s.questgiver ? "questgiver " : "",
+                        s.vendor ? "vendor " : "",
+                        s.trainer ? "trainer " : "");
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-quest") == 0 && i + 2 < argc) {
+            // Single-quest deep dive — combines what --list-quest-objectives
+            // and --list-quest-rewards show into one view, plus the chain
+            // pointer + descriptions that neither covers.
+            std::string path = argv[++i];
+            std::string idxStr = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            int idx;
+            try { idx = std::stoi(idxStr); }
+            catch (...) {
+                std::fprintf(stderr, "info-quest: bad idx '%s'\n", idxStr.c_str());
+                return 1;
+            }
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr, "info-quest: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            if (idx < 0 || idx >= static_cast<int>(qe.questCount())) {
+                std::fprintf(stderr,
+                    "info-quest: idx %d out of range [0, %zu)\n",
+                    idx, qe.questCount());
+                return 1;
+            }
+            const auto& q = qe.getQuests()[idx];
+            using OT = wowee::editor::QuestObjectiveType;
+            auto typeName = [](OT t) {
+                switch (t) {
+                    case OT::KillCreature: return "kill";
+                    case OT::CollectItem:  return "collect";
+                    case OT::TalkToNPC:    return "talk";
+                    case OT::ExploreArea:  return "explore";
+                    case OT::EscortNPC:    return "escort";
+                    case OT::UseObject:    return "use";
+                }
+                return "?";
+            };
+            if (jsonOut) {
+                nlohmann::json j;
+                j["index"] = idx;
+                j["id"] = q.id;
+                j["title"] = q.title;
+                j["description"] = q.description;
+                j["completionText"] = q.completionText;
+                j["requiredLevel"] = q.requiredLevel;
+                j["questGiverNpcId"] = q.questGiverNpcId;
+                j["turnInNpcId"] = q.turnInNpcId;
+                j["nextQuestId"] = q.nextQuestId;
+                j["reward"] = {
+                    {"xp", q.reward.xp},
+                    {"gold", q.reward.gold},
+                    {"silver", q.reward.silver},
+                    {"copper", q.reward.copper},
+                    {"items", q.reward.itemRewards}
+                };
+                nlohmann::json objs = nlohmann::json::array();
+                for (const auto& obj : q.objectives) {
+                    objs.push_back({
+                        {"type", typeName(obj.type)},
+                        {"target", obj.targetName},
+                        {"count", obj.targetCount},
+                        {"description", obj.description}
+                    });
+                }
+                j["objectives"] = objs;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Quest [%d] '%s'\n", idx, q.title.c_str());
+            std::printf("  id              : %u\n", q.id);
+            std::printf("  required level  : %u\n", q.requiredLevel);
+            std::printf("  giver NPC id    : %u\n", q.questGiverNpcId);
+            std::printf("  turn-in NPC id  : %u\n", q.turnInNpcId);
+            std::printf("  next quest id   : %u%s\n", q.nextQuestId,
+                        q.nextQuestId == 0 ? " (terminal)" : "");
+            if (!q.description.empty()) {
+                std::printf("  description     : %s\n", q.description.c_str());
+            }
+            if (!q.completionText.empty()) {
+                std::printf("  completion text : %s\n", q.completionText.c_str());
+            }
+            std::printf("  reward          : %u XP, %ug %us %uc, %zu item(s)\n",
+                        q.reward.xp, q.reward.gold, q.reward.silver,
+                        q.reward.copper, q.reward.itemRewards.size());
+            for (size_t k = 0; k < q.reward.itemRewards.size(); ++k) {
+                std::printf("    item[%zu]      : %s\n", k,
+                            q.reward.itemRewards[k].c_str());
+            }
+            std::printf("  objectives      : %zu\n", q.objectives.size());
+            for (size_t k = 0; k < q.objectives.size(); ++k) {
+                const auto& o = q.objectives[k];
+                std::printf("    [%zu] %-7s ×%u  %s%s%s\n",
+                            k, typeName(o.type), o.targetCount,
+                            o.targetName.c_str(),
+                            o.description.empty() ? "" : "  — ",
+                            o.description.c_str());
             }
             return 0;
         } else if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 < argc) {
