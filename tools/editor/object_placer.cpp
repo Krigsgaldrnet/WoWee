@@ -263,7 +263,8 @@ bool ObjectPlacer::saveToFile(const std::string& path) const {
             {"path", o.path},
             {"pos", {o.position.x, o.position.y, o.position.z}},
             {"rot", {o.rotation.x, o.rotation.y, o.rotation.z}},
-            {"scale", o.scale}
+            {"scale", o.scale},
+            {"uniqueId", o.uniqueId}
         });
     }
 
@@ -306,7 +307,16 @@ bool ObjectPlacer::loadFromFile(const std::string& path) {
             }
 
             if (!obj.path.empty()) {
-                obj.uniqueId = nextUniqueId();
+                // Preserve original uniqueId from JSON if present so ADT round-trip
+                // is stable. Bump uniqueIdCounter_ past any loaded value to avoid
+                // collisions with future placements.
+                if (jo.contains("uniqueId")) {
+                    obj.uniqueId = jo["uniqueId"].get<uint32_t>();
+                    if (obj.uniqueId >= uniqueIdCounter_)
+                        uniqueIdCounter_ = obj.uniqueId + 1;
+                } else {
+                    obj.uniqueId = nextUniqueId();
+                }
                 objects_.push_back(obj);
             }
         }
