@@ -240,7 +240,24 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         f.write(reinterpret_cast<const char*>(&bMin), 12);
         f.write(reinterpret_cast<const char*>(&bMax), 12);
 
-        f.write(reinterpret_cast<const char*>(grp.vertices.data()),
+        // Sanitize vertices on the way out — same scrub the load side does.
+        // Without this, a manually-constructed WoweeBuilding with NaN-laced
+        // vertices would persist them into the file and have the load-time
+        // guard clean up forever after.
+        std::vector<WoweeBuilding::Vertex> sanVerts = grp.vertices;
+        for (auto& v : sanVerts) {
+            if (!std::isfinite(v.position.x)) v.position.x = 0.0f;
+            if (!std::isfinite(v.position.y)) v.position.y = 0.0f;
+            if (!std::isfinite(v.position.z)) v.position.z = 0.0f;
+            if (!std::isfinite(v.normal.x)) v.normal.x = 0.0f;
+            if (!std::isfinite(v.normal.y)) v.normal.y = 0.0f;
+            if (!std::isfinite(v.normal.z)) v.normal.z = 1.0f;
+            if (!std::isfinite(v.texCoord.x)) v.texCoord.x = 0.0f;
+            if (!std::isfinite(v.texCoord.y)) v.texCoord.y = 0.0f;
+            for (int c = 0; c < 4; c++)
+                if (!std::isfinite(v.color[c])) v.color[c] = 1.0f;
+        }
+        f.write(reinterpret_cast<const char*>(sanVerts.data()),
                 vc * sizeof(WoweeBuilding::Vertex));
         f.write(reinterpret_cast<const char*>(grp.indices.data()), ic * 4);
 
