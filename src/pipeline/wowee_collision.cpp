@@ -170,16 +170,25 @@ bool WoweeCollisionBuilder::save(const WoweeCollision& collision, const std::str
         if (!std::isfinite(v.z)) v.z = 0.0f;
         return v;
     };
-    uint32_t triCount = static_cast<uint32_t>(collision.triangles.size());
+    // Cap triangle count at the load-side limit (2M). Save previously
+    // wrote raw size() so a >2M-tri collision (theoretical, addMesh on
+    // huge geometry) would be silently rejected on round-trip.
+    uint32_t triCount = static_cast<uint32_t>(
+        std::min<size_t>(collision.triangles.size(), 2'000'000));
     f.write(reinterpret_cast<const char*>(&triCount), 4);
-    f.write(reinterpret_cast<const char*>(&collision.tileX), 4);
-    f.write(reinterpret_cast<const char*>(&collision.tileY), 4);
+    // Sanitize tile coords too — out-of-range would be clamped on load
+    // anyway but writing a clean file means no warning on every reload.
+    uint32_t tileX = collision.tileX > 63 ? 32 : collision.tileX;
+    uint32_t tileY = collision.tileY > 63 ? 32 : collision.tileY;
+    f.write(reinterpret_cast<const char*>(&tileX), 4);
+    f.write(reinterpret_cast<const char*>(&tileY), 4);
     glm::vec3 bmin = sanVec(collision.bounds.min);
     glm::vec3 bmax = sanVec(collision.bounds.max);
     f.write(reinterpret_cast<const char*>(&bmin), 12);
     f.write(reinterpret_cast<const char*>(&bmax), 12);
 
-    for (const auto& tri : collision.triangles) {
+    for (uint32_t ti = 0; ti < triCount; ti++) {
+        const auto& tri = collision.triangles[ti];
         glm::vec3 v0 = sanVec(tri.v0), v1 = sanVec(tri.v1), v2 = sanVec(tri.v2);
         f.write(reinterpret_cast<const char*>(&v0), 12);
         f.write(reinterpret_cast<const char*>(&v1), 12);
