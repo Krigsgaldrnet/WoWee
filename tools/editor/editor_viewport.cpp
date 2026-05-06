@@ -210,21 +210,10 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 bool loaded = false;
 
                 // Try WOB open format first (replaces proprietary WMO when available)
-                {
-                    std::string wobBase = obj.path;
-                    auto wobDot = wobBase.rfind('.');
-                    if (wobDot != std::string::npos) wobBase = wobBase.substr(0, wobDot);
-                    std::replace(wobBase.begin(), wobBase.end(), '\\', '/');
-                    for (const char* prefix : {"custom_zones/buildings/", "output/buildings/"}) {
-                        if (pipeline::WoweeBuildingLoader::exists(std::string(prefix) + wobBase)) {
-                            auto wob = pipeline::WoweeBuildingLoader::load(std::string(prefix) + wobBase);
-                            if (wob.isValid() &&
-                                pipeline::WoweeBuildingLoader::toWMOModel(wob, model)) {
-                                loaded = true;
-                                break;
-                            }
-                        }
-                    }
+                if (auto wob = pipeline::WoweeBuildingLoader::tryLoadByGamePath(obj.path);
+                    wob.isValid() &&
+                    pipeline::WoweeBuildingLoader::toWMOModel(wob, model)) {
+                    loaded = true;
                 }
 
                 if (!loaded) {

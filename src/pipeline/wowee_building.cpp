@@ -431,5 +431,29 @@ WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::strin
     return bld;
 }
 
+WoweeBuilding WoweeBuildingLoader::tryLoadByGamePath(
+    const std::string& gamePath,
+    const std::vector<std::string>& extraPrefixes) {
+    std::string base = gamePath;
+    auto dot = base.rfind('.');
+    if (dot != std::string::npos) base = base.substr(0, dot);
+    std::replace(base.begin(), base.end(), '\\', '/');
+    auto tryPrefix = [&](const std::string& prefix) -> WoweeBuilding {
+        std::string full = prefix + base;
+        if (exists(full)) {
+            auto wob = load(full);
+            if (wob.isValid()) return wob;
+        }
+        return {};
+    };
+    for (const auto& p : extraPrefixes) {
+        if (auto w = tryPrefix(p); w.isValid()) return w;
+    }
+    for (const char* p : {"custom_zones/buildings/", "output/buildings/"}) {
+        if (auto w = tryPrefix(p); w.isValid()) return w;
+    }
+    return {};
+}
+
 } // namespace pipeline
 } // namespace wowee

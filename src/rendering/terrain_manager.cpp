@@ -614,22 +614,17 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             bool wobLoaded = false;
             pipeline::WMOModel wmoModel;
             {
-                std::string wobBase = wmoPath;
-                auto wobDot = wobBase.rfind('.');
-                if (wobDot != std::string::npos) wobBase = wobBase.substr(0, wobDot);
-                std::replace(wobBase.begin(), wobBase.end(), '\\', '/');
-                std::vector<std::string> wobPrefixes = {"custom_zones/buildings/", "output/" + mapName + "/buildings/"};
-                for (const auto& prefix : wobPrefixes) {
-                    if (pipeline::WoweeBuildingLoader::exists(prefix + wobBase)) {
-                        auto wob = pipeline::WoweeBuildingLoader::load(prefix + wobBase);
-                        if (wob.isValid()) {
-                            if (pipeline::WoweeBuildingLoader::toWMOModel(wob, wmoModel)) {
-                                LOG_INFO("Loaded WOB building: ", prefix + wobBase);
-                                wobLoaded = true;
-                            }
-                        }
-                        break;
-                    }
+                // Per-zone overrides win over global custom_zones/ overrides.
+                std::vector<std::string> extraPrefixes = {
+                    "output/" + mapName + "/buildings/",
+                    "custom_zones/" + mapName + "/buildings/",
+                };
+                auto wob = pipeline::WoweeBuildingLoader::tryLoadByGamePath(
+                    wmoPath, extraPrefixes);
+                if (wob.isValid() &&
+                    pipeline::WoweeBuildingLoader::toWMOModel(wob, wmoModel)) {
+                    LOG_INFO("Loaded WOB building: ", wmoPath);
+                    wobLoaded = true;
                 }
             }
 
