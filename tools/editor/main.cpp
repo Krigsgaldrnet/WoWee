@@ -500,6 +500,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Recursively run all per-format validators on every file\n");
     std::printf("  --validate-glb <path> [--json]\n");
     std::printf("                         Verify a glTF 2.0 binary's structure (magic, chunks, JSON, accessors)\n");
+    std::printf("  --validate-jsondbc <path> [--json]\n");
+    std::printf("                         Verify a JSON DBC sidecar's full schema (per-cell types, row width, format tag)\n");
     std::printf("  --info-glb <path> [--json]\n");
     std::printf("                         Print glTF 2.0 binary metadata (chunks, mesh/primitive counts, accessors)\n");
     std::printf("  --zone-summary <zoneDir> [--json]\n");
@@ -602,6 +604,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
+        "--validate-jsondbc",
         "--zone-summary",
         "--export-zone-summary-md", "--export-quest-graph",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
@@ -3681,6 +3684,152 @@ int main(int argc, char* argv[]) {
             std::printf("  FAILED — %d error(s):\n", errorCount);
             for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
             return isValidate ? 1 : 0;
+        } else if (std::strcmp(argv[i], "--validate-jsondbc") == 0 && i + 1 < argc) {
+            // Strict schema validator for JSON DBC sidecars. --info-jsondbc
+            // checks that header recordCount matches the actual records[]
+            // length; this goes deeper:
+            //   - format tag is the wowee 1.0 string
+            //   - source field present (so re-import knows which DBC slot)
+            //   - recordCount + fieldCount are non-negative integers
+            //   - records is an array
+            //   - each record is an array exactly fieldCount long
+            //   - each cell is string|number|bool|null (no objects/arrays)
+            // Catches the kind of corruption that load() might silently
+            // tolerate (missing fields default to 0/empty), letting the
+            // editor's runtime DBC loader downstream-fail in confusing
+            // ways.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path);
+            if (!in) {
+                std::fprintf(stderr,
+                    "validate-jsondbc: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            std::vector<std::string> errors;
+            try {
+                in >> doc;
+            } catch (const std::exception& e) {
+                errors.push_back(std::string("JSON parse error: ") + e.what());
+            }
+            std::string format, source;
+            uint32_t recordCount = 0, fieldCount = 0;
+            uint32_t actualRecs = 0;
+            int badRowWidths = 0, badCellTypes = 0;
+            if (errors.empty()) {
+                if (!doc.is_object()) {
+                    errors.push_back("top-level value is not a JSON object");
+                } else {
+                    if (!doc.contains("format")) {
+                        errors.push_back("missing 'format' field");
+                    } else if (!doc["format"].is_string()) {
+                        errors.push_back("'format' field is not a string");
+                    } else {
+                        format = doc["format"].get<std::string>();
+                        if (format != "wowee-dbc-json-1.0") {
+                            errors.push_back("'format' is '" + format +
+                                             "', expected 'wowee-dbc-json-1.0'");
+                        }
+                    }
+                    if (!doc.contains("source")) {
+                        errors.push_back("missing 'source' field (re-import needs it)");
+                    } else {
+                        source = doc.value("source", std::string{});
+                    }
+                    if (!doc.contains("recordCount") ||
+                        !doc["recordCount"].is_number_integer()) {
+                        errors.push_back("'recordCount' missing or not an integer");
+                    } else {
+                        recordCount = doc["recordCount"].get<uint32_t>();
+                    }
+                    if (!doc.contains("fieldCount") ||
+                        !doc["fieldCount"].is_number_integer()) {
+                        errors.push_back("'fieldCount' missing or not an integer");
+                    } else {
+                        fieldCount = doc["fieldCount"].get<uint32_t>();
+                    }
+                    if (!doc.contains("records") || !doc["records"].is_array()) {
+                        errors.push_back("'records' missing or not an array");
+                    } else {
+                        const auto& records = doc["records"];
+                        actualRecs = static_cast<uint32_t>(records.size());
+                        if (actualRecs != recordCount) {
+                            errors.push_back("recordCount " + std::to_string(recordCount) +
+                                             " != actual records " +
+                                             std::to_string(actualRecs));
+                        }
+                        for (size_t r = 0; r < records.size(); ++r) {
+                            const auto& row = records[r];
+                            if (!row.is_array()) {
+                                errors.push_back("record[" + std::to_string(r) +
+                                                 "] is not an array");
+                                continue;
+                            }
+                            if (row.size() != fieldCount) {
+                                badRowWidths++;
+                                if (badRowWidths <= 3) {
+                                    errors.push_back("record[" + std::to_string(r) +
+                                                     "] has " + std::to_string(row.size()) +
+                                                     " cells, expected " +
+                                                     std::to_string(fieldCount));
+                                }
+                            }
+                            for (size_t c = 0; c < row.size(); ++c) {
+                                const auto& cell = row[c];
+                                bool ok = cell.is_string() || cell.is_number() ||
+                                          cell.is_boolean() || cell.is_null();
+                                if (!ok) {
+                                    badCellTypes++;
+                                    if (badCellTypes <= 3) {
+                                        errors.push_back("record[" + std::to_string(r) +
+                                                         "][" + std::to_string(c) +
+                                                         "] has invalid type (objects/arrays not allowed)");
+                                    }
+                                }
+                            }
+                        }
+                        if (badRowWidths > 3) {
+                            errors.push_back("... and " + std::to_string(badRowWidths - 3) +
+                                             " more rows with wrong cell count");
+                        }
+                        if (badCellTypes > 3) {
+                            errors.push_back("... and " + std::to_string(badCellTypes - 3) +
+                                             " more cells with invalid types");
+                        }
+                    }
+                }
+            }
+            int errorCount = static_cast<int>(errors.size());
+            if (jsonOut) {
+                nlohmann::json j;
+                j["jsondbc"] = path;
+                j["format"] = format;
+                j["source"] = source;
+                j["recordCount"] = recordCount;
+                j["fieldCount"] = fieldCount;
+                j["actualRecords"] = actualRecs;
+                j["errorCount"] = errorCount;
+                j["errors"] = errors;
+                j["passed"] = errors.empty();
+                std::printf("%s\n", j.dump(2).c_str());
+                return errors.empty() ? 0 : 1;
+            }
+            std::printf("JSON DBC: %s\n", path.c_str());
+            std::printf("  format    : %s\n", format.empty() ? "?" : format.c_str());
+            std::printf("  source    : %s\n", source.empty() ? "?" : source.c_str());
+            std::printf("  records   : %u (header) / %u (actual)\n",
+                        recordCount, actualRecs);
+            std::printf("  fields    : %u\n", fieldCount);
+            if (errors.empty()) {
+                std::printf("  PASSED\n");
+                return 0;
+            }
+            std::printf("  FAILED — %d error(s):\n", errorCount);
+            for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return 1;
         } else if (std::strcmp(argv[i], "--export-obj") == 0 && i + 1 < argc) {
             // Convert WOM (our open M2 replacement) to Wavefront OBJ — a
             // universally supported text format that opens directly in
