@@ -45,6 +45,27 @@ int main(int argc, char* argv[]) {
     std::string adtMap;
     int adtX = -1, adtY = -1;
 
+    // Detect non-GUI options that are missing their argument and bail out
+    // with a helpful message instead of silently dropping into the GUI.
+    static const char* kArgRequired[] = {
+        "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
+        "--info-creatures", "--info-objects", "--info-quests",
+        "--info-wcp", "--list-wcp", "--validate",
+        "--convert-m2", "--convert-wmo",
+    };
+    for (int i = 1; i < argc; i++) {
+        for (const char* opt : kArgRequired) {
+            if (std::strcmp(argv[i], opt) == 0 && i + 1 >= argc) {
+                std::fprintf(stderr, "%s requires an argument\n", opt);
+                return 1;
+            }
+        }
+        if (std::strcmp(argv[i], "--adt") == 0 && i + 3 >= argc) {
+            std::fprintf(stderr, "--adt requires <map> <x> <y>\n");
+            return 1;
+        }
+    }
+
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--data") == 0 && i + 1 < argc) {
             dataPath = argv[++i];
