@@ -62,6 +62,7 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& s : spawns_) {
         nlohmann::json js;
+        js["id"] = s.id;
         js["name"] = s.name;
         js["model"] = s.modelPath;
         js["displayId"] = s.displayId;
@@ -183,7 +184,16 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
             }
 
             if (!s.name.empty()) {
-                s.id = nextId();
+                // Preserve original id from JSON if present so quest hooks
+                // (questGiverNpcId, turnInNpcId, KillCreature targetName)
+                // remain stable across save/load. Bump idCounter past any
+                // loaded value to avoid collisions with future placements.
+                if (js.contains("id")) {
+                    s.id = js["id"].get<uint32_t>();
+                    if (s.id >= idCounter_) idCounter_ = s.id + 1;
+                } else {
+                    s.id = nextId();
+                }
                 spawns_.push_back(s);
             }
         }
