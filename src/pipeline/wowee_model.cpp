@@ -112,18 +112,30 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
         }
     }
 
-    // WOM3: read batches (multi-material support)
+    // WOM3: read batches (multi-material support).
+    // Validate each batch references a real slice of the index buffer and a
+    // real texture so a corrupted file can't crash the renderer.
     if (isV3) {
         uint32_t batchCount = 0;
         if (f.read(reinterpret_cast<char*>(&batchCount), 4) && batchCount > 0 && batchCount <= 4096) {
-            model.batches.resize(batchCount);
+            model.batches.reserve(batchCount);
             for (uint32_t i = 0; i < batchCount; i++) {
-                auto& b = model.batches[i];
+                WoweeModel::Batch b;
                 f.read(reinterpret_cast<char*>(&b.indexStart), 4);
                 f.read(reinterpret_cast<char*>(&b.indexCount), 4);
                 f.read(reinterpret_cast<char*>(&b.textureIndex), 4);
                 f.read(reinterpret_cast<char*>(&b.blendMode), 2);
                 f.read(reinterpret_cast<char*>(&b.flags), 2);
+                if (b.indexCount == 0 ||
+                    static_cast<uint64_t>(b.indexStart) + b.indexCount > model.indices.size() ||
+                    (b.textureIndex >= model.texturePaths.size() && !model.texturePaths.empty())) {
+                    LOG_WARNING("WOM3 batch ", i, " out of range (start=", b.indexStart,
+                                " count=", b.indexCount, " tex=", b.textureIndex,
+                                " maxIdx=", model.indices.size(),
+                                " maxTex=", model.texturePaths.size(), ") — dropping");
+                    continue;
+                }
+                model.batches.push_back(b);
             }
         }
     }
