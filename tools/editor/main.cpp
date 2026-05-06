@@ -435,6 +435,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert a Wavefront OBJ back into WOM (round-trips with --export-obj)\n");
     std::printf("  --export-wob-obj <wob-base> [out.obj]\n");
     std::printf("                         Convert a WOB building to Wavefront OBJ (one group per WOB group)\n");
+    std::printf("  --import-wob-obj <obj-path> [wob-base]\n");
+    std::printf("                         Convert a Wavefront OBJ back into WOB (round-trips with --export-wob-obj)\n");
     std::printf("  --validate <zoneDir> [--json]\n");
     std::printf("                         Score zone open-format completeness and exit\n");
     std::printf("  --validate-wom <wom-base> [--json]\n");
@@ -515,7 +517,8 @@ int main(int argc, char* argv[]) {
         "--remove-creature", "--remove-object", "--remove-quest",
         "--copy-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
-        "--export-png", "--export-obj", "--import-obj", "--export-wob-obj",
+        "--export-png", "--export-obj", "--import-obj",
+        "--export-wob-obj", "--import-wob-obj",
         "--convert-m2", "--convert-wmo",
     };
     for (int i = 1; i < argc; i++) {
@@ -2363,6 +2366,240 @@ int main(int argc, char* argv[]) {
             std::printf("  %zu groups, %zu verts, %zu tris, %zu doodad placements\n",
                         bld.groups.size(), totalV, totalI / 3,
                         bld.doodads.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--import-wob-obj") == 0 && i + 1 < argc) {
+            // Round-trip companion to --export-wob-obj. Each OBJ 'g' block
+            // becomes one WoweeBuilding::Group; geometry under that group
+            // is deduped into the group's local vertex array. Faces
+            // before any 'g' directive land in a default 'imported' group.
+            // Doodad placements written as # comment lines by --export-wob-obj
+            // ARE recognized and re-instanced into bld.doodads.
+            std::string objPath = argv[++i];
+            std::string wobBase;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                wobBase = argv[++i];
+            }
+            if (!std::filesystem::exists(objPath)) {
+                std::fprintf(stderr, "OBJ not found: %s\n", objPath.c_str());
+                return 1;
+            }
+            if (wobBase.empty()) {
+                wobBase = objPath;
+                if (wobBase.size() >= 4 &&
+                    wobBase.substr(wobBase.size() - 4) == ".obj") {
+                    wobBase = wobBase.substr(0, wobBase.size() - 4);
+                }
+            }
+            std::ifstream in(objPath);
+            if (!in) {
+                std::fprintf(stderr, "Failed to open OBJ: %s\n", objPath.c_str());
+                return 1;
+            }
+            // Global pools (OBJ vertex/uv/normal indices reference these
+            // across all groups).
+            std::vector<glm::vec3> positions;
+            std::vector<glm::vec2> texcoords;
+            std::vector<glm::vec3> normals;
+            wowee::pipeline::WoweeBuilding bld;
+            // Active group bookkeeping: dedupe table is per-group since
+            // each WOB group has its own local vertex buffer.
+            std::string activeGroup = "imported";
+            std::unordered_map<std::string, uint32_t> groupDedupe;
+            int activeGroupIdx = -1;
+            int badFaces = 0;
+            int triangulatedNgons = 0;
+            std::string objectName;
+            auto ensureActiveGroup = [&]() {
+                if (activeGroupIdx >= 0) return;
+                wowee::pipeline::WoweeBuilding::Group g;
+                g.name = activeGroup;
+                if (g.name.size() >= 8 &&
+                    g.name.substr(g.name.size() - 8) == "_outdoor") {
+                    g.name = g.name.substr(0, g.name.size() - 8);
+                    g.isOutdoor = true;
+                }
+                bld.groups.push_back(g);
+                activeGroupIdx = static_cast<int>(bld.groups.size()) - 1;
+                groupDedupe.clear();
+            };
+            auto resolveCorner = [&](const std::string& token) -> int {
+                int v = 0, t = 0, n = 0;
+                {
+                    const char* p = token.c_str();
+                    char* endp = nullptr;
+                    v = std::strtol(p, &endp, 10);
+                    if (*endp == '/') {
+                        ++endp;
+                        if (*endp != '/') t = std::strtol(endp, &endp, 10);
+                        if (*endp == '/') {
+                            ++endp;
+                            n = std::strtol(endp, &endp, 10);
+                        }
+                    }
+                }
+                auto absIdx = [](int idx, size_t pool) {
+                    if (idx < 0) return static_cast<int>(pool) + idx;
+                    return idx - 1;
+                };
+                int vi = absIdx(v, positions.size());
+                int ti = (t == 0) ? -1 : absIdx(t, texcoords.size());
+                int ni = (n == 0) ? -1 : absIdx(n, normals.size());
+                if (vi < 0 || vi >= static_cast<int>(positions.size())) return -1;
+                ensureActiveGroup();
+                std::string key = std::to_string(vi) + "/" +
+                                  std::to_string(ti) + "/" +
+                                  std::to_string(ni);
+                auto it = groupDedupe.find(key);
+                if (it != groupDedupe.end()) return static_cast<int>(it->second);
+                wowee::pipeline::WoweeBuilding::Vertex vert;
+                vert.position = positions[vi];
+                if (ti >= 0 && ti < static_cast<int>(texcoords.size())) {
+                    vert.texCoord = texcoords[ti];
+                    // Reverse the V-flip from --export-wob-obj.
+                    vert.texCoord.y = 1.0f - vert.texCoord.y;
+                } else {
+                    vert.texCoord = {0, 0};
+                }
+                if (ni >= 0 && ni < static_cast<int>(normals.size())) {
+                    vert.normal = normals[ni];
+                } else {
+                    vert.normal = {0, 0, 1};
+                }
+                vert.color = {1, 1, 1, 1};
+                auto& grp = bld.groups[activeGroupIdx];
+                uint32_t newIdx = static_cast<uint32_t>(grp.vertices.size());
+                grp.vertices.push_back(vert);
+                groupDedupe[key] = newIdx;
+                return static_cast<int>(newIdx);
+            };
+            std::string line;
+            while (std::getline(in, line)) {
+                while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
+                    line.pop_back();
+                if (line.empty()) continue;
+                // Recognize doodad placement comment lines emitted by
+                // --export-wob-obj so the round-trip preserves them.
+                if (line[0] == '#') {
+                    if (line.find("# doodad ") == 0) {
+                        std::istringstream ss(line);
+                        std::string hash, doodadKw, modelPath, posKw, posStr,
+                                    rotKw, rotStr, scaleKw;
+                        float scale = 1.0f;
+                        ss >> hash >> doodadKw >> modelPath
+                           >> posKw >> posStr
+                           >> rotKw >> rotStr
+                           >> scaleKw >> scale;
+                        auto parse3 = [](const std::string& s, glm::vec3& out) {
+                            int got = std::sscanf(s.c_str(), "%f,%f,%f",
+                                                  &out.x, &out.y, &out.z);
+                            return got == 3;
+                        };
+                        wowee::pipeline::WoweeBuilding::DoodadPlacement d;
+                        d.modelPath = modelPath;
+                        if (parse3(posStr, d.position) &&
+                            parse3(rotStr, d.rotation) &&
+                            std::isfinite(scale) && scale > 0.0f) {
+                            d.scale = scale;
+                            bld.doodads.push_back(d);
+                        }
+                    }
+                    continue;
+                }
+                std::istringstream ss(line);
+                std::string tag;
+                ss >> tag;
+                if (tag == "v") {
+                    glm::vec3 p; ss >> p.x >> p.y >> p.z;
+                    positions.push_back(p);
+                } else if (tag == "vt") {
+                    glm::vec2 t; ss >> t.x >> t.y;
+                    texcoords.push_back(t);
+                } else if (tag == "vn") {
+                    glm::vec3 n; ss >> n.x >> n.y >> n.z;
+                    normals.push_back(n);
+                } else if (tag == "o") {
+                    if (objectName.empty()) ss >> objectName;
+                } else if (tag == "g") {
+                    // New group — flush dedupe table so the next batch of
+                    // verts is local to this group.
+                    std::string name;
+                    ss >> name;
+                    activeGroup = name.empty() ? "group" : name;
+                    activeGroupIdx = -1;
+                    groupDedupe.clear();
+                } else if (tag == "f") {
+                    std::vector<std::string> corners;
+                    std::string c;
+                    while (ss >> c) corners.push_back(c);
+                    if (corners.size() < 3) { badFaces++; continue; }
+                    std::vector<int> resolved;
+                    resolved.reserve(corners.size());
+                    bool ok = true;
+                    for (const auto& cc : corners) {
+                        int idx = resolveCorner(cc);
+                        if (idx < 0) { ok = false; break; }
+                        resolved.push_back(idx);
+                    }
+                    if (!ok) { badFaces++; continue; }
+                    if (resolved.size() > 3) triangulatedNgons++;
+                    auto& grp = bld.groups[activeGroupIdx];
+                    for (size_t k = 1; k + 1 < resolved.size(); ++k) {
+                        grp.indices.push_back(static_cast<uint32_t>(resolved[0]));
+                        grp.indices.push_back(static_cast<uint32_t>(resolved[k]));
+                        grp.indices.push_back(static_cast<uint32_t>(resolved[k + 1]));
+                    }
+                }
+                // mtllib/usemtl/s lines silently skipped.
+            }
+            // Compute per-group bounds + global building bound.
+            if (bld.groups.empty()) {
+                std::fprintf(stderr, "import-wob-obj: no geometry found in %s\n",
+                             objPath.c_str());
+                return 1;
+            }
+            glm::vec3 bMin{1e30f}, bMax{-1e30f};
+            for (auto& grp : bld.groups) {
+                if (grp.vertices.empty()) continue;
+                grp.boundMin = grp.vertices[0].position;
+                grp.boundMax = grp.boundMin;
+                for (const auto& v : grp.vertices) {
+                    grp.boundMin = glm::min(grp.boundMin, v.position);
+                    grp.boundMax = glm::max(grp.boundMax, v.position);
+                }
+                bMin = glm::min(bMin, grp.boundMin);
+                bMax = glm::max(bMax, grp.boundMax);
+            }
+            glm::vec3 center = (bMin + bMax) * 0.5f;
+            float r2 = 0;
+            for (const auto& grp : bld.groups) {
+                for (const auto& v : grp.vertices) {
+                    glm::vec3 d = v.position - center;
+                    r2 = std::max(r2, glm::dot(d, d));
+                }
+            }
+            bld.boundRadius = std::sqrt(r2);
+            bld.name = objectName.empty()
+                ? std::filesystem::path(objPath).stem().string()
+                : objectName;
+            if (!wowee::pipeline::WoweeBuildingLoader::save(bld, wobBase)) {
+                std::fprintf(stderr, "import-wob-obj: failed to write %s.wob\n",
+                             wobBase.c_str());
+                return 1;
+            }
+            size_t totalV = 0, totalI = 0;
+            for (const auto& g : bld.groups) {
+                totalV += g.vertices.size();
+                totalI += g.indices.size();
+            }
+            std::printf("Imported %s -> %s.wob\n", objPath.c_str(), wobBase.c_str());
+            std::printf("  %zu groups, %zu verts, %zu tris, %zu doodad placements\n",
+                        bld.groups.size(), totalV, totalI / 3, bld.doodads.size());
+            if (triangulatedNgons > 0) {
+                std::printf("  fan-triangulated %d n-gon(s)\n", triangulatedNgons);
+            }
+            if (badFaces > 0) {
+                std::printf("  warning: skipped %d malformed face(s)\n", badFaces);
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--import-obj") == 0 && i + 1 < argc) {
             // Convert a Wavefront OBJ back into WOM. Round-trips with
