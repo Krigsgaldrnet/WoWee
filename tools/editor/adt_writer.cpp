@@ -3,6 +3,7 @@
 #include <fstream>
 #include <cstring>
 #include <filesystem>
+#include <cmath>
 
 namespace wowee {
 namespace editor {
@@ -42,6 +43,9 @@ void ADTWriter::writeU16(std::vector<uint8_t>& buf, uint16_t val) {
 }
 
 void ADTWriter::writeFloat(std::vector<uint8_t>& buf, float val) {
+    // Reject NaN/inf — would silently turn into invisible terrain or
+    // off-map placements after the next ADT load.
+    if (!std::isfinite(val)) val = 0.0f;
     uint32_t bits;
     std::memcpy(&bits, &val, 4);
     writeU32(buf, bits);
