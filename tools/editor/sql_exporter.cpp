@@ -225,6 +225,27 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
     f << "-- quest_template (quest definitions)\n";
     f << "-- =============================================\n\n";
 
+    // Pre-scan for unsupported objective types and emit a single header
+    // comment so users know which quests will need manual server-side
+    // scripting after import.
+    bool hasUnsupportedObj = false;
+    for (const auto& q : quests) {
+        for (const auto& obj : q.objectives) {
+            if (obj.type == QuestObjectiveType::ExploreArea ||
+                obj.type == QuestObjectiveType::EscortNPC ||
+                obj.type == QuestObjectiveType::UseObject) {
+                hasUnsupportedObj = true;
+                break;
+            }
+        }
+        if (hasUnsupportedObj) break;
+    }
+    if (hasUnsupportedObj) {
+        f << "-- NOTE: some quests use objective types (ExploreArea, EscortNPC,\n"
+          << "--       UseObject) that have no direct quest_template column.\n"
+          << "--       Implement them via AzerothCore script_quest hooks.\n\n";
+    }
+
     for (const auto& q : quests) {
         uint32_t entry = startEntry + q.id;
         uint32_t rewardMoney = q.reward.gold * 10000 + q.reward.silver * 100 + q.reward.copper;
