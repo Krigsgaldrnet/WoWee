@@ -289,7 +289,8 @@ void emitOpenFormats(const std::string& rootDir,
                      bool emitPng, bool emitJsonDbc,
                      bool emitWom, bool emitWob,
                      bool emitTerrain,
-                     OpenFormatStats& stats) {
+                     OpenFormatStats& stats,
+                     unsigned int threadCount) {
     if (!fs::exists(rootDir)) return;
     if (!emitPng && !emitJsonDbc && !emitWom && !emitWob && !emitTerrain) return;
 
@@ -368,7 +369,8 @@ void emitOpenFormats(const std::string& rootDir,
         }
     };
 
-    unsigned int threadCount = std::max(1u, std::thread::hardware_concurrency());
+    if (threadCount == 0) threadCount = std::thread::hardware_concurrency();
+    if (threadCount == 0) threadCount = 1;
     std::vector<std::thread> pool;
     pool.reserve(threadCount);
     for (unsigned int t = 0; t < threadCount; t++) pool.emplace_back(worker);

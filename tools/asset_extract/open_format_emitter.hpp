@@ -50,11 +50,13 @@ bool emitTerrainFromAdt(const std::string& adtPath, const std::string& outBase);
 
 // Walk an extracted-asset directory and emit open-format side-files for
 // every requested format. Counts accumulated into stats.
+// `threadCount` 0 = auto-detect from hardware_concurrency().
 void emitOpenFormats(const std::string& rootDir,
                      bool emitPng, bool emitJsonDbc,
                      bool emitWom, bool emitWob,
                      bool emitTerrain,
-                     OpenFormatStats& stats);
+                     OpenFormatStats& stats,
+                     unsigned int threadCount = 0);
 
 } // namespace tools
 } // namespace wowee

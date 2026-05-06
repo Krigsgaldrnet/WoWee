@@ -1,5 +1,6 @@
 #include "extractor.hpp"
 #include "open_format_emitter.hpp"
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -120,11 +121,17 @@ int main(int argc, char** argv) {
         }
         std::cout << "Walking " << upgradeDir
                   << " for open-format upgrades...\n";
+        auto t0 = std::chrono::steady_clock::now();
         wowee::tools::OpenFormatStats stats;
+        // Pass 0 to auto-detect threads (or honor user --threads override).
+        unsigned int t = opts.threads > 0 ? static_cast<unsigned int>(opts.threads) : 0;
         wowee::tools::emitOpenFormats(upgradeDir,
                                        opts.emitPng, opts.emitJsonDbc,
                                        opts.emitWom, opts.emitWob,
-                                       opts.emitTerrain, stats);
+                                       opts.emitTerrain, stats, t);
+        auto secs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - t0).count() / 1000.0;
+        std::cout << "  elapsed           : " << secs << " s\n";
         std::cout << "  PNG (BLP→PNG)     : " << stats.pngOk     << " ok"
                   << (stats.pngFail     ? ", " + std::to_string(stats.pngFail)     + " failed" : "") << "\n";
         std::cout << "  JSON (DBC→JSON)   : " << stats.jsonDbcOk << " ok"
