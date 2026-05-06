@@ -1,4 +1,4 @@
-# Wowee Open Format Specification v1.1
+# Wowee Open Format Specification v1.2
 
 Novel file formats for custom WoW zone content. No Blizzard IP.
 
@@ -74,6 +74,9 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 - Flags: 0x01=walkable, 0x02=water, 0x04=steep, 0x08=indoor
 - Generated from terrain heightmap with slope classification (50 deg threshold)
 - Respects terrain holes (skips triangles in hole regions)
+- WoweeCollisionBuilder::addMesh appends placed WMO group geometry
+  (transformed into world space, slope-classified) so collision covers
+  buildings as well as terrain.
 
 ## Terrain Stamps (.json)
 - Portable terrain feature snapshots (mountains, craters, etc.)
@@ -88,6 +91,19 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 5. WOM models with valid magic
 6. WOB buildings with valid magic
 7. WOC collision mesh with valid magic
+
+## SQL Server Export
+- AzerothCore-flavored INSERT statements for: `creature_template`, `creature`,
+  `creature_addon`, `waypoint_data`, `quest_template`, `creature_queststarter`,
+  `creature_questender`.
+- Coordinates: editor render coords are converted to WoW canonical via
+  `core::coords::renderToCanonical` (X/Y swap) before write.
+- Orientation: editor degrees from +renderX (west) → WoW radians from +X (north).
+  Conversion: `wowYaw = π/2 - editorYaw` then normalised to [0, 2π).
+- Quest objectives: KillCreature targets fill RequiredNpcOrGo[1..4]; CollectItem
+  targets fill RequiredItemId[1..6]. Target ID parsed from objective.targetName.
+- Quest givers/turn-in NPCs: written as `creature_queststarter` /
+  `creature_questender` rows linking npc.id ↔ quest.id.
 
 ## All formats are novel, portable, and open for redistribution.
 ## No Blizzard intellectual property is used in any format definition.
