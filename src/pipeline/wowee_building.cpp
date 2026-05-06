@@ -267,9 +267,15 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
 
     for (const auto& dp : bld.doodads) {
         writeStr(dp.modelPath);
-        f.write(reinterpret_cast<const char*>(&dp.position), 12);
-        f.write(reinterpret_cast<const char*>(&dp.rotation), 12);
-        f.write(reinterpret_cast<const char*>(&dp.scale), 4);
+        glm::vec3 pos = dp.position, rot = dp.rotation;
+        for (int k = 0; k < 3; k++) {
+            if (!std::isfinite(pos[k])) pos[k] = 0.0f;
+            if (!std::isfinite(rot[k])) rot[k] = 0.0f;
+        }
+        float scale = (std::isfinite(dp.scale) && dp.scale > 0.0001f) ? dp.scale : 1.0f;
+        f.write(reinterpret_cast<const char*>(&pos), 12);
+        f.write(reinterpret_cast<const char*>(&rot), 12);
+        f.write(reinterpret_cast<const char*>(&scale), 4);
     }
 
     LOG_INFO("WOB saved: ", basePath, ".wob (", gc, " groups)");
