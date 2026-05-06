@@ -1,5 +1,6 @@
 #include "editor_app.hpp"
 #include "content_pack.hpp"
+#include "npc_spawner.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wowee_collision.hpp"
@@ -26,6 +27,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
     std::printf("  --info-wot <wot-base>  Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
+    std::printf("  --info-creatures <p>   Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-wcp <wcp-path>  Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
@@ -91,6 +93,38 @@ int main(int argc, char* argv[]) {
             std::printf("  total verts : %zu\n", totalVerts);
             std::printf("  total tris  : %zu\n", totalIdx / 3);
             std::printf("  total mats  : %zu (across all groups)\n", totalMats);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-creatures") == 0 && i + 1 < argc) {
+            std::string path = argv[++i];
+            wowee::editor::NpcSpawner spawner;
+            if (!spawner.loadFromFile(path)) {
+                std::fprintf(stderr, "Failed to load creatures.json: %s\n", path.c_str());
+                return 1;
+            }
+            const auto& spawns = spawner.getSpawns();
+            int hostile = 0, vendor = 0, questgiver = 0, trainer = 0;
+            int patrol = 0, wander = 0, stationary = 0;
+            std::unordered_map<uint32_t, int> displayIdHist;
+            for (const auto& s : spawns) {
+                if (s.hostile) hostile++;
+                if (s.vendor) vendor++;
+                if (s.questgiver) questgiver++;
+                if (s.trainer) trainer++;
+                using B = wowee::editor::CreatureBehavior;
+                if (s.behavior == B::Patrol) patrol++;
+                else if (s.behavior == B::Wander) wander++;
+                else if (s.behavior == B::Stationary) stationary++;
+                displayIdHist[s.displayId]++;
+            }
+            std::printf("creatures.json: %s\n", path.c_str());
+            std::printf("  total       : %zu\n", spawns.size());
+            std::printf("  hostile     : %d\n", hostile);
+            std::printf("  questgiver  : %d\n", questgiver);
+            std::printf("  vendor      : %d\n", vendor);
+            std::printf("  trainer     : %d\n", trainer);
+            std::printf("  behavior    : %d stationary, %d wander, %d patrol\n",
+                        stationary, wander, patrol);
+            std::printf("  unique displayIds: %zu\n", displayIdHist.size());
             return 0;
         } else if (std::strcmp(argv[i], "--info-wcp") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
