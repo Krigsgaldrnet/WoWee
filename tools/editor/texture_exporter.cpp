@@ -117,6 +117,14 @@ int TextureExporter::exportTexturesAsPng(pipeline::AssetManager* am,
         if (dotPos != std::string::npos)
             outPath = outPath.substr(0, dotPos) + ".png";
 
+        // Reject path-traversal attempts in the source path. Texture paths
+        // come from M2/WMO files which a malicious zone could craft.
+        if (outPath.find("..") != std::string::npos ||
+            (!outPath.empty() && (outPath[0] == '/' || outPath[0] == '\\'))) {
+            LOG_WARNING("Texture path rejected (traversal attempt): ", texPath);
+            continue;
+        }
+
         std::string fullPath = outputDir + "/" + outPath;
         fs::create_directories(fs::path(fullPath).parent_path());
 
