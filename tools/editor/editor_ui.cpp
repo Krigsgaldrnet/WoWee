@@ -1937,6 +1937,7 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
 
             ImGui::DragFloat3("Pos##npc", &sel->position.x, 1.0f);
             ImGui::SliderFloat("Facing", &sel->orientation, 0.0f, 360.0f, "%.0f");
+            ImGui::DragFloat("Scale##s", &sel->scale, 0.05f, 0.1f, 50.0f, "%.2f");
             int hp2 = sel->health; if (ImGui::InputInt("HP##s", &hp2)) sel->health = std::max(1, hp2);
             int lv2 = sel->level; if (ImGui::InputInt("Lv##s", &lv2)) sel->level = std::max(1, lv2);
 
