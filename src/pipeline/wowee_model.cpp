@@ -438,8 +438,12 @@ M2Model WoweeModelLoader::toM2(const WoweeModel& wom) {
             batch.indexCount = wb.indexCount;
             batch.vertexCount = static_cast<uint32_t>(m.vertices.size());
             batch.textureCount = 1;
-            batch.textureIndex = static_cast<uint16_t>(
-                std::min<uint32_t>(wb.textureIndex, m.textureLookup.size() - 1));
+            // textureLookup may be empty when the WOM has no textures at all;
+            // in that case the renderer falls back to its white default.
+            uint16_t safeTexIdx = m.textureLookup.empty()
+                ? 0
+                : static_cast<uint16_t>(std::min<uint32_t>(wb.textureIndex, m.textureLookup.size() - 1));
+            batch.textureIndex = safeTexIdx;
             batch.materialIndex = static_cast<uint16_t>(m.materials.size());
             m.batches.push_back(batch);
             M2Material mat;
