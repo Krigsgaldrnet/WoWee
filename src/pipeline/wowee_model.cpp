@@ -330,7 +330,10 @@ WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am)
     model.name = m2.name;
     model.boundRadius = m2.boundRadius;
 
-    // Convert vertices with bone data
+    // Convert vertices with bone data. Sanitize at conversion time so a
+    // corrupt source M2 (mangled MPQ block, partial extraction) doesn't
+    // silently produce a NaN-laced WOM that the load-time guard then has
+    // to clean up on every load.
     model.vertices.reserve(m2.vertices.size());
     for (const auto& v : m2.vertices) {
         WoweeModel::Vertex wv;
@@ -339,10 +342,18 @@ WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am)
         wv.texCoord = v.texCoords[0];
         std::memcpy(wv.boneWeights, v.boneWeights, 4);
         std::memcpy(wv.boneIndices, v.boneIndices, 4);
+        if (!std::isfinite(wv.position.x)) wv.position.x = 0.0f;
+        if (!std::isfinite(wv.position.y)) wv.position.y = 0.0f;
+        if (!std::isfinite(wv.position.z)) wv.position.z = 0.0f;
+        if (!std::isfinite(wv.normal.x)) wv.normal.x = 0.0f;
+        if (!std::isfinite(wv.normal.y)) wv.normal.y = 0.0f;
+        if (!std::isfinite(wv.normal.z)) wv.normal.z = 1.0f;
+        if (!std::isfinite(wv.texCoord.x)) wv.texCoord.x = 0.0f;
+        if (!std::isfinite(wv.texCoord.y)) wv.texCoord.y = 0.0f;
         model.vertices.push_back(wv);
 
-        model.boundMin = glm::min(model.boundMin, v.position);
-        model.boundMax = glm::max(model.boundMax, v.position);
+        model.boundMin = glm::min(model.boundMin, wv.position);
+        model.boundMax = glm::max(model.boundMax, wv.position);
     }
 
     model.indices.reserve(m2.indices.size());
