@@ -112,6 +112,7 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
                 WoweeBuilding::Material mat;
                 uint16_t pl;
                 f.read(reinterpret_cast<char*>(&pl), 2);
+                if (pl > 1024) pl = 0;
                 mat.texturePath.resize(pl);
                 f.read(mat.texturePath.data(), pl);
                 f.read(reinterpret_cast<char*>(&mat.flags), 4);
@@ -130,6 +131,11 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         f.read(reinterpret_cast<char*>(&portal.groupB), 4);
         uint32_t pvCount;
         f.read(reinterpret_cast<char*>(&pvCount), 4);
+        // Real portals are 4-12 vertices; >4096 is corrupt.
+        if (pvCount > 4096) {
+            LOG_ERROR("WOB portal ", pi, " vertex count rejected (", pvCount, "): ", basePath);
+            return WoweeBuilding{};
+        }
         portal.vertices.resize(pvCount);
         f.read(reinterpret_cast<char*>(portal.vertices.data()), pvCount * 12);
         bld.portals.push_back(portal);
@@ -139,6 +145,7 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         WoweeBuilding::DoodadPlacement dp;
         uint16_t pl;
         f.read(reinterpret_cast<char*>(&pl), 2);
+        if (pl > 1024) pl = 0;
         dp.modelPath.resize(pl);
         f.read(dp.modelPath.data(), pl);
         f.read(reinterpret_cast<char*>(&dp.position), 12);
