@@ -653,6 +653,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
     std::printf("  --info-cli-stats [--json]\n");
     std::printf("                         Meta-stats on the CLI surface (command count by category prefix)\n");
+    std::printf("  --info-cli-help <pattern>\n");
+    std::printf("                         Substring-search the help text and print matching command lines\n");
     std::printf("  --gen-completion <bash|zsh>\n");
     std::printf("                         Print a shell-completion script for wowee_editor (source it from your rc file)\n");
     std::printf("  --version              Show version and format info\n\n");
@@ -10923,6 +10925,63 @@ int main(int argc, char* argv[]) {
             for (const auto& [verb, count] : sorted) {
                 std::printf("    --%-12s %4d\n", verb.c_str(), count);
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-cli-help") == 0 && i + 1 < argc) {
+            // Substring search through the help text. With 130+ commands,
+            // 'is there a thing for X?' is a common ask — this answers it
+            // without making the user scroll the full --help output:
+            //
+            //   wowee_editor --info-cli-help quest
+            //   wowee_editor --info-cli-help validate
+            //   wowee_editor --info-cli-help glb
+            std::string pattern = argv[++i];
+            // Lowercase the pattern for case-insensitive match.
+            std::string patLower = pattern;
+            for (auto& c : patLower) c = std::tolower(static_cast<unsigned char>(c));
+            // Capture printUsage stdout, walk line-by-line, print every
+            // line containing the pattern (case-insensitive). Continuation
+            // lines (the indented description on the line after a flag)
+            // are emitted along with the flag line for context.
+            FILE* old = stdout;
+            FILE* tmp = std::tmpfile();
+            if (!tmp) {
+                std::fprintf(stderr, "info-cli-help: tmpfile failed\n"); return 1;
+            }
+            stdout = tmp;
+            printUsage(argv[0]);
+            stdout = old;
+            std::fseek(tmp, 0, SEEK_SET);
+            std::vector<std::string> lines;
+            char buf[1024];
+            while (std::fgets(buf, sizeof(buf), tmp)) {
+                std::string s = buf;
+                if (!s.empty() && s.back() == '\n') s.pop_back();
+                lines.push_back(std::move(s));
+            }
+            std::fclose(tmp);
+            int matches = 0;
+            for (size_t k = 0; k < lines.size(); ++k) {
+                std::string lower = lines[k];
+                for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+                if (lower.find(patLower) == std::string::npos) continue;
+                std::printf("%s\n", lines[k].c_str());
+                // Look ahead for a continuation line (indented and not
+                // starting with '--'). Print it for context.
+                if (k + 1 < lines.size()) {
+                    const auto& next = lines[k + 1];
+                    if (!next.empty() && next[0] == ' ' &&
+                        next.find("--") == std::string::npos) {
+                        std::printf("%s\n", next.c_str());
+                    }
+                }
+                matches++;
+            }
+            if (matches == 0) {
+                std::fprintf(stderr, "info-cli-help: no matches for '%s'\n",
+                             pattern.c_str());
+                return 1;
+            }
+            std::fprintf(stderr, "\n%d line(s) matched '%s'\n", matches, pattern.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--gen-completion") == 0 && i + 1 < argc) {
             // Emit a bash or zsh completion script. Re-execs the editor's
