@@ -765,8 +765,12 @@ std::optional<float> M2Renderer::getFloorHeight(float glX, float glY, float glZ,
                 if (nLen > 0.001f) {
                     localN /= nLen;
                     if (localN.z < 0.0f) localN = -localN;
-                    worldN = glm::normalize(
-                        glm::vec3(instance.modelMatrix * glm::vec4(localN, 0.0f)));
+                    glm::vec3 transformedN = glm::vec3(
+                        instance.modelMatrix * glm::vec4(localN, 0.0f));
+                    float wnLen = glm::length(transformedN);
+                    if (wnLen > 0.001f) {
+                        worldN = transformedN / wnLen;
+                    } // else: keep worldN = (0,0,1) flat default
                     if (std::abs(worldN.z) < 0.35f) continue; // too steep (~70° max slope)
                 }
 
