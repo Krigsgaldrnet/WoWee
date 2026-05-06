@@ -1514,9 +1514,11 @@ void EditorApp::flyToSelected() {
     glm::vec3 cam = target + back * 25.0f + glm::vec3(0, 0, 15);
     camera_.setPosition(cam);
 
-    // Aim at target — yaw is atan2(toX, toY) in editor convention; pitch from height delta.
+    // Aim at target. Camera::getForward = (cos(yaw), sin(yaw), sin(pitch)),
+    // so to make it parallel to `to` we use atan2(to.y, to.x), not (x, y).
+    // The previous swap pointed the camera 90deg off from the target.
     glm::vec3 to = target - cam;
-    float yaw = glm::degrees(std::atan2(to.x, to.y));
+    float yaw = glm::degrees(std::atan2(to.y, to.x));
     float horiz = std::sqrt(to.x * to.x + to.y * to.y);
     float pitch = glm::degrees(std::atan2(to.z, horiz));
     camera_.setYawPitch(yaw, pitch);
