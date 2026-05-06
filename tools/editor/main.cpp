@@ -496,6 +496,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print WOM file metadata (version, counts) and exit\n");
     std::printf("  --info-batches <wom-base> [--json]\n");
     std::printf("                         Per-batch breakdown of a WOM3 (index range, texture, blend mode, flags)\n");
+    std::printf("  --info-textures <wom-base> [--json]\n");
+    std::printf("                         List every texture path referenced by a WOM (with on-disk presence)\n");
+    std::printf("  --info-doodads <wob-base> [--json]\n");
+    std::printf("                         List every doodad placement in a WOB (model path, position, rotation, scale)\n");
     std::printf("  --info-wob <wob-base> [--json]\n");
     std::printf("                         Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path> [--json]\n");
@@ -558,7 +562,8 @@ int main(int argc, char* argv[]) {
     // Detect non-GUI options that are missing their argument and bail out
     // with a helpful message instead of silently dropping into the GUI.
     static const char* kArgRequired[] = {
-        "--data", "--info", "--info-batches", "--info-wob", "--info-woc", "--info-wot",
+        "--data", "--info", "--info-batches", "--info-textures", "--info-doodads",
+        "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--list-missing-sidecars",
         "--info-png", "--info-jsondbc", "--info-blp",
@@ -820,6 +825,135 @@ int main(int argc, char* argv[]) {
                             blendName(b.blendMode),
                             flagsStr(b.flags).c_str(),
                             tex.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-textures") == 0 && i + 1 < argc) {
+            // List every texture path a WOM references, with on-disk
+            // presence for both BLP (proprietary) and PNG (sidecar)
+            // forms. Useful for tracking which textures are missing
+            // before --pack-wcp would fail at runtime.
+            std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                std::fprintf(stderr, "WOM not found: %s.wom\n", base.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            namespace fs = std::filesystem;
+            // Texture paths in WOMs are usually game-relative
+            // ('World/Generic/Tree.blp'); resolve them against the
+            // common Data/ root for the on-disk presence check. Skip
+            // the check when the path doesn't exist as either an
+            // absolute or relative file (avoids false 'missing'
+            // reports when the user runs from outside the data root).
+            auto checkBlp = [&](const std::string& p) {
+                if (fs::exists(p)) return true;
+                std::string lower = p;
+                for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+                if (lower.size() < 4 || lower.substr(lower.size() - 4) != ".blp") {
+                    lower += ".blp";
+                }
+                return fs::exists("Data/" + lower);
+            };
+            auto sidecarPng = [&](const std::string& p) {
+                std::string base = p;
+                if (base.size() >= 4 &&
+                    (base.substr(base.size() - 4) == ".blp" ||
+                     base.substr(base.size() - 4) == ".BLP")) {
+                    base = base.substr(0, base.size() - 4);
+                }
+                std::string png = base + ".png";
+                if (fs::exists(png)) return true;
+                std::string lower = png;
+                for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+                return fs::exists("Data/" + lower);
+            };
+            if (jsonOut) {
+                nlohmann::json j;
+                j["wom"] = base + ".wom";
+                j["textureCount"] = wom.texturePaths.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (size_t k = 0; k < wom.texturePaths.size(); ++k) {
+                    const auto& p = wom.texturePaths[k];
+                    arr.push_back({
+                        {"index", k},
+                        {"path", p},
+                        {"blpPresent", checkBlp(p)},
+                        {"pngPresent", sidecarPng(p)},
+                    });
+                }
+                j["textures"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("WOM textures: %s.wom (%zu textures)\n",
+                        base.c_str(), wom.texturePaths.size());
+            if (wom.texturePaths.empty()) {
+                std::printf("  *no texture references*\n");
+                return 0;
+            }
+            std::printf("  idx  blp  png  path\n");
+            for (size_t k = 0; k < wom.texturePaths.size(); ++k) {
+                const auto& p = wom.texturePaths[k];
+                std::printf("  %3zu   %s    %s   %s\n",
+                            k,
+                            checkBlp(p) ? "y" : "-",
+                            sidecarPng(p) ? "y" : "-",
+                            p.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-doodads") == 0 && i + 1 < argc) {
+            // List every doodad placement in a WOB (M2 instances inside
+            // a building). Companion to --info-textures: where one
+            // tracks GPU resources, this tracks scene composition.
+            std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wob")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeBuildingLoader::exists(base)) {
+                std::fprintf(stderr, "WOB not found: %s.wob\n", base.c_str());
+                return 1;
+            }
+            auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["wob"] = base + ".wob";
+                j["count"] = bld.doodads.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (size_t k = 0; k < bld.doodads.size(); ++k) {
+                    const auto& d = bld.doodads[k];
+                    arr.push_back({
+                        {"index", k},
+                        {"modelPath", d.modelPath},
+                        {"position", {d.position.x, d.position.y, d.position.z}},
+                        {"rotation", {d.rotation.x, d.rotation.y, d.rotation.z}},
+                        {"scale", d.scale},
+                    });
+                }
+                j["doodads"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("WOB doodads: %s.wob (%zu placements)\n",
+                        base.c_str(), bld.doodads.size());
+            if (bld.doodads.empty()) {
+                std::printf("  *no doodad placements*\n");
+                return 0;
+            }
+            std::printf("  idx  scale  pos (x, y, z)             rot (x, y, z)             model\n");
+            for (size_t k = 0; k < bld.doodads.size(); ++k) {
+                const auto& d = bld.doodads[k];
+                std::printf("  %3zu  %5.2f  (%6.1f, %6.1f, %6.1f)  (%6.1f, %6.1f, %6.1f)  %s\n",
+                            k, d.scale,
+                            d.position.x, d.position.y, d.position.z,
+                            d.rotation.x, d.rotation.y, d.rotation.z,
+                            d.modelPath.c_str());
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-wob") == 0 && i + 1 < argc) {
