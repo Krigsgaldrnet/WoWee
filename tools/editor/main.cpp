@@ -531,6 +531,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Verify an ASCII STL's structure (solid framing, facet/vertex shape, no NaN)\n");
     std::printf("  --validate-png <path> [--json]\n");
     std::printf("                         Verify a PNG's structure (signature, chunks, CRC, IHDR/IDAT/IEND order)\n");
+    std::printf("  --validate-blp <path> [--json]\n");
+    std::printf("                         Verify a BLP texture (magic, dimensions, mip offsets within file)\n");
     std::printf("  --validate-jsondbc <path> [--json]\n");
     std::printf("                         Verify a JSON DBC sidecar's full schema (per-cell types, row width, format tag)\n");
     std::printf("  --info-glb <path> [--json]\n");
@@ -671,7 +673,7 @@ int main(int argc, char* argv[]) {
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
         "--info-glb-tree",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
-        "--validate-png",
+        "--validate-png", "--validate-blp",
         "--zone-summary", "--info-zone-tree", "--info-zone-bytes",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
@@ -5712,6 +5714,124 @@ int main(int argc, char* argv[]) {
             std::printf("  bit depth  : %u (color type %u)\n", bitDepth, colorType);
             std::printf("  chunks     : %d (%d CRC mismatches)\n",
                         chunkCount, badCrcs);
+            std::printf("  file bytes : %zu\n", bytes.size());
+            if (errors.empty()) {
+                std::printf("  PASSED\n");
+                return 0;
+            }
+            std::printf("  FAILED — %zu error(s):\n", errors.size());
+            for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-blp") == 0 && i + 1 < argc) {
+            // BLP structural validator. --info-blp shows header fields
+            // (full decode); this checks structural invariants without
+            // decoding pixels — useful for spot-checking thousands of
+            // BLPs in an extract dir without paying the DXT decompress
+            // cost on each.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr,
+                    "validate-blp: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            std::vector<std::string> errors;
+            uint32_t width = 0, height = 0;
+            std::string magic;
+            int validMips = 0;
+            // BLP1 and BLP2 share magic 'BLP1' / 'BLP2' at byte 0; both
+            // have 16 mipOffset slots + 16 mipSize slots after the
+            // initial header (offsets vary by version).
+            if (bytes.size() < 8) {
+                errors.push_back("file too short to be a BLP");
+            } else {
+                magic.assign(bytes.begin(), bytes.begin() + 4);
+                if (magic != "BLP1" && magic != "BLP2") {
+                    errors.push_back("magic is '" + magic + "', expected 'BLP1' or 'BLP2'");
+                }
+            }
+            // BLP1 layout (post-magic):
+            //   compression(4) + alphaBits(4) + width(4) + height(4) +
+            //   extra(4) + hasMips(4) + mipOffsets[16](64) + mipSizes[16](64) +
+            //   palette[256](1024)  [palette only present if compression==1]
+            // BLP2 layout (post-magic):
+            //   version(4) + compression(1) + alphaDepth(1) +
+            //   alphaEncoding(1) + hasMips(1) + width(4) + height(4) +
+            //   mipOffsets[16](64) + mipSizes[16](64) + palette[256](1024)
+            uint32_t mipOffPos = 0, mipSzPos = 0;
+            if (errors.empty()) {
+                auto le32 = [&](size_t off) {
+                    uint32_t v = 0;
+                    if (off + 4 <= bytes.size()) std::memcpy(&v, &bytes[off], 4);
+                    return v;
+                };
+                if (magic == "BLP1") {
+                    width  = le32(4 + 8);   // skip magic + comp + alphaBits
+                    height = le32(4 + 12);
+                    mipOffPos = 4 + 24;     // after extra + hasMips
+                    mipSzPos  = 4 + 24 + 64;
+                } else {
+                    width  = le32(4 + 8);   // BLP2: skip magic + version + 4 bytes
+                    height = le32(4 + 12);
+                    mipOffPos = 4 + 16;
+                    mipSzPos  = 4 + 16 + 64;
+                }
+                if (width == 0 || height == 0) {
+                    errors.push_back("zero width or height in header");
+                }
+                if (width > 8192 || height > 8192) {
+                    errors.push_back("dimensions " + std::to_string(width) +
+                                     "x" + std::to_string(height) +
+                                     " exceed 8192 (rejected by texture exporter)");
+                }
+                // Walk the mipOffset/mipSize tables and verify each
+                // mip's data range is within the file. Stops at the
+                // first zero offset (BLP convention for unused slots).
+                if (mipSzPos + 64 <= bytes.size()) {
+                    for (int m = 0; m < 16; ++m) {
+                        uint32_t off = le32(mipOffPos + m * 4);
+                        uint32_t sz  = le32(mipSzPos  + m * 4);
+                        if (off == 0 && sz == 0) break;  // unused slot
+                        if (off == 0 || sz == 0) {
+                            errors.push_back("mip " + std::to_string(m) +
+                                             " has off=0 but size=" +
+                                             std::to_string(sz) + " (or vice versa)");
+                            continue;
+                        }
+                        if (uint64_t(off) + sz > bytes.size()) {
+                            errors.push_back("mip " + std::to_string(m) +
+                                             " range [" + std::to_string(off) +
+                                             ", " + std::to_string(off + sz) +
+                                             ") past file end " +
+                                             std::to_string(bytes.size()));
+                        } else {
+                            validMips++;
+                        }
+                    }
+                }
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["blp"] = path;
+                j["magic"] = magic;
+                j["width"] = width;
+                j["height"] = height;
+                j["validMips"] = validMips;
+                j["fileSize"] = bytes.size();
+                j["errors"] = errors;
+                j["passed"] = errors.empty();
+                std::printf("%s\n", j.dump(2).c_str());
+                return errors.empty() ? 0 : 1;
+            }
+            std::printf("BLP: %s\n", path.c_str());
+            std::printf("  magic      : %s\n", magic.empty() ? "(none)" : magic.c_str());
+            std::printf("  size       : %u x %u\n", width, height);
+            std::printf("  valid mips : %d\n", validMips);
             std::printf("  file bytes : %zu\n", bytes.size());
             if (errors.empty()) {
                 std::printf("  PASSED\n");
