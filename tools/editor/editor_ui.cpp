@@ -1527,6 +1527,7 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         float rot = placer.getPlacementRotationY();
         if (ImGui::SliderFloat("Y Rotation", &rot, 0.0f, 360.0f, "%.0f deg"))
             placer.setPlacementRotationY(rot);
+        ImGui::TextDisabled("Tip: Ctrl+Wheel rotates while placing (Shift = fine)");
         bool randRot = placer.getRandomRotation();
         if (ImGui::Checkbox("Random Rotation", &randRot))
             placer.setRandomRotation(randRot);

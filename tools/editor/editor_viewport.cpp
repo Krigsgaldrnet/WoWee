@@ -552,6 +552,17 @@ void EditorViewport::updateNpcMarkers(const std::vector<CreatureSpawn>& npcs) {
         v.pos[0]=x+ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
         v.pos[0]=x-ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y-ts; v.pos[2]=tz; verts.push_back(v);
+
+        // Facing arrow on the ground: triangle pointing in the orientation direction.
+        // Helps users see which way each NPC faces without selecting it.
+        float yaw = glm::radians(npc.orientation);
+        float fx = std::cos(yaw), fy = std::sin(yaw);
+        float perpX = -fy, perpY = fx;
+        float arrowLen = s * 2.5f, arrowHalfW = s * 0.8f;
+        v.color[0]=1.0f; v.color[1]=0.9f; v.color[2]=0.2f; v.color[3]=0.85f;
+        v.pos[0]=x + fx*arrowLen; v.pos[1]=y + fy*arrowLen; v.pos[2]=z+0.25f; verts.push_back(v);
+        v.pos[0]=x + perpX*arrowHalfW; v.pos[1]=y + perpY*arrowHalfW; v.pos[2]=z+0.25f; verts.push_back(v);
+        v.pos[0]=x - perpX*arrowHalfW; v.pos[1]=y - perpY*arrowHalfW; v.pos[2]=z+0.25f; verts.push_back(v);
     }
     npcMarkerVertCount_ = static_cast<uint32_t>(verts.size());
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
