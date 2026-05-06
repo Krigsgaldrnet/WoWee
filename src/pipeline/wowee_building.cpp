@@ -279,10 +279,14 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
 
         for (const auto& tp : grp.texturePaths) writeStr(tp);
 
-        // Write material data
-        uint32_t mc = static_cast<uint32_t>(grp.materials.size());
+        // Write material data — cap at 256 to match load-side limit so a
+        // pathological in-memory count can't write a file the loader will
+        // reject and produce a partially-zero build on round-trip.
+        uint32_t mc = static_cast<uint32_t>(
+            std::min<size_t>(grp.materials.size(), 256));
         f.write(reinterpret_cast<const char*>(&mc), 4);
-        for (const auto& mat : grp.materials) {
+        for (uint32_t mi = 0; mi < mc; mi++) {
+            const auto& mat = grp.materials[mi];
             writeStr(mat.texturePath);
             f.write(reinterpret_cast<const char*>(&mat.flags), 4);
             f.write(reinterpret_cast<const char*>(&mat.shader), 4);
