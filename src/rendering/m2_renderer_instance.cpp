@@ -33,6 +33,8 @@ thread_local std::vector<uint32_t> tl_m2_collisionTriScratch;
 } // namespace m2_internal
 
 void M2Renderer::setInstancePosition(uint32_t instanceId, const glm::vec3& position) {
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(position.z)) return;
     auto idxIt = instanceIndexById.find(instanceId);
     if (idxIt == instanceIndexById.end()) return;
     auto& inst = instances[idxIt->second];
@@ -132,6 +134,12 @@ float M2Renderer::getInstanceAnimDuration(uint32_t instanceId) const {
 void M2Renderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& transform) {
     auto idxIt = instanceIndexById.find(instanceId);
     if (idxIt == instanceIndexById.end()) return;
+    // Reject NaN matrix — would propagate into the model matrix uniform
+    // and the spatial-grid bounds, leaving stale grid cells pointing at
+    // a NaN-bounded instance.
+    for (int c = 0; c < 4; c++)
+        for (int r = 0; r < 4; r++)
+            if (!std::isfinite(transform[c][r])) return;
     auto& inst = instances[idxIt->second];
 
     // Remove old grid cells before updating bounds
