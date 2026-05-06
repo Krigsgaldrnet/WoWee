@@ -1,5 +1,6 @@
 #include "extractor.hpp"
 #include "open_format_emitter.hpp"
+#include <nlohmann/json.hpp>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -32,9 +33,10 @@ static void printUsage(const char* prog) {
               << "  --emit-wob          Emit foo.wob next to every extracted foo.wmo (+groups)\n"
               << "  --emit-terrain      Emit foo.whm + foo.wot + foo.woc next to every foo.adt\n"
               << "  --emit-open         Shortcut: enable every open-format emitter (png+json+wom+wob+terrain)\n"
-              << "  --upgrade-extract <dir>\n"
+              << "  --upgrade-extract <dir> [--json]\n"
               << "                      Standalone post-extract pass on an existing tree —\n"
               << "                      writes open-format sidecars without re-running MPQ extract\n"
+              << "                      --json emits a structured summary instead of text\n"
               << "  --purge-proprietary <dir>\n"
               << "                      Walk tree and dry-run report which proprietary files have\n"
               << "                      an open-format sidecar; add --confirm-purge to actually delete\n"
@@ -54,6 +56,7 @@ int main(int argc, char** argv) {
     // place. Useful for upgrading an old extraction without re-running
     // it from MPQ. Triggered by --upgrade-extract <dir>.
     std::string upgradeDir;
+    bool jsonOutput = false;  // --json after upgrade-extract
 
     // Purge proprietary files when their open-format sidecar is present
     // and at least as new. Dry-run by default; --confirm-purge actually
@@ -110,6 +113,8 @@ int main(int argc, char** argv) {
             purgeDir = argv[++i];
         } else if (std::strcmp(argv[i], "--confirm-purge") == 0) {
             confirmPurge = true;
+        } else if (std::strcmp(argv[i], "--json") == 0) {
+            jsonOutput = true;
         } else if (std::strcmp(argv[i], "--upgrade-extract") == 0 && i + 1 < argc) {
             upgradeDir = argv[++i];
             // Implies --emit-open if no individual emit flag was set.
@@ -217,14 +222,13 @@ int main(int argc, char** argv) {
             std::cerr << "upgrade-extract: " << upgradeDir << " does not exist\n";
             return 1;
         }
-        std::cout << "Walking " << upgradeDir
-                  << " for open-format upgrades...\n";
+        if (!jsonOutput) {
+            std::cout << "Walking " << upgradeDir
+                      << " for open-format upgrades...\n";
+        }
         auto t0 = std::chrono::steady_clock::now();
         wowee::tools::OpenFormatStats stats;
-        // Pass 0 to auto-detect threads (or honor user --threads override).
         unsigned int t = opts.threads > 0 ? static_cast<unsigned int>(opts.threads) : 0;
-        // upgrade-extract is always incremental — skip files whose sidecar
-        // is already up to date so re-runs are cheap.
         wowee::tools::emitOpenFormats(upgradeDir,
                                        opts.emitPng, opts.emitJsonDbc,
                                        opts.emitWom, opts.emitWob,
@@ -232,6 +236,24 @@ int main(int argc, char** argv) {
                                        /*incremental=*/true);
         auto secs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - t0).count() / 1000.0;
+        if (jsonOutput) {
+            // Schema mirrors the wowee_editor --info-extract --json layout
+            // so CI scripts can use one jq filter for both.
+            nlohmann::json j;
+            j["dir"] = upgradeDir;
+            j["elapsedSeconds"] = secs;
+            j["skipped"] = stats.skipped;
+            auto fmt = [](uint32_t ok, uint32_t fail) {
+                return nlohmann::json{{"ok", ok}, {"failed", fail}};
+            };
+            j["png"]      = fmt(stats.pngOk,     stats.pngFail);
+            j["jsonDbc"]  = fmt(stats.jsonDbcOk, stats.jsonDbcFail);
+            j["wom"]      = fmt(stats.womOk,     stats.womFail);
+            j["wob"]      = fmt(stats.wobOk,     stats.wobFail);
+            j["terrain"]  = fmt(stats.whmOk,     stats.whmFail);
+            std::cout << j.dump(2) << "\n";
+            return 0;
+        }
         std::cout << "  elapsed           : " << secs << " s\n";
         if (stats.skipped > 0)
             std::cout << "  up-to-date (skip) : " << stats.skipped << "\n";
