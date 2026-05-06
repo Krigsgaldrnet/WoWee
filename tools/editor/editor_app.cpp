@@ -12,6 +12,7 @@
 #include "sql_exporter.hpp"
 #include "server_module_gen.hpp"
 #include "core/coordinates.hpp"
+#include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
@@ -1196,8 +1197,44 @@ void EditorApp::exportZone(const std::string& outputDir) {
     WoweeTerrain::exportOpen(terrain_, openBase, loadedTileX_, loadedTileY_);
     WoweeTerrain::exportNormalMap(terrain_, openBase + "_normals.png");
 
-    // Export collision mesh (.woc)
+    // Export collision mesh (.woc) — terrain plus placed WMO/M2 meshes so that
+    // movement queries on the exported zone respect buildings and large props.
     auto collision = pipeline::WoweeCollisionBuilder::fromTerrain(terrain_);
+    {
+        std::unordered_set<std::string> visitedWMOcol;
+        std::unordered_set<std::string> visitedM2col;
+        for (const auto& obj : objectPlacer_.getObjects()) {
+            if (obj.type == PlaceableType::WMO && visitedWMOcol.insert(obj.path).second) {
+                auto data = assetManager_->readFile(obj.path);
+                if (data.empty()) continue;
+                auto wmo = pipeline::WMOLoader::load(data);
+                std::string wmoBase = obj.path;
+                if (wmoBase.size() > 4) wmoBase = wmoBase.substr(0, wmoBase.size() - 4);
+                for (uint32_t gi = 0; gi < wmo.nGroups; gi++) {
+                    char suffix[16];
+                    std::snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+                    auto gd = assetManager_->readFile(wmoBase + suffix);
+                    if (!gd.empty()) pipeline::WMOLoader::loadGroup(gd, wmo, gi);
+                }
+                glm::mat4 t = glm::translate(glm::mat4(1.0f), obj.position);
+                glm::vec3 r = glm::radians(obj.rotation);
+                t = glm::rotate(t, r.x, glm::vec3(1, 0, 0));
+                t = glm::rotate(t, r.y, glm::vec3(0, 1, 0));
+                t = glm::rotate(t, r.z, glm::vec3(0, 0, 1));
+                t = glm::scale(t, glm::vec3(obj.scale));
+                for (const auto& g : wmo.groups) {
+                    std::vector<glm::vec3> verts;
+                    verts.reserve(g.vertices.size());
+                    for (const auto& v : g.vertices) verts.push_back(v.position);
+                    std::vector<uint32_t> idx;
+                    idx.reserve(g.indices.size());
+                    for (uint16_t i : g.indices) idx.push_back(i);
+                    uint8_t flags = (g.flags & 0x08) ? 0 : 0x08; // indoor flag
+                    pipeline::WoweeCollisionBuilder::addMesh(collision, verts, idx, t, flags);
+                }
+            }
+        }
+    }
     if (collision.isValid())
         pipeline::WoweeCollisionBuilder::save(collision, openBase + ".woc");
     WoweeTerrain::exportAlphaMaps(terrain_, base + "/alphamaps");

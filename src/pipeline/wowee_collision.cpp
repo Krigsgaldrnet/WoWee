@@ -113,6 +113,41 @@ WoweeCollision WoweeCollisionBuilder::fromTerrain(const ADTTerrain& terrain,
     return col;
 }
 
+void WoweeCollisionBuilder::addMesh(WoweeCollision& collision,
+                                     const std::vector<glm::vec3>& vertices,
+                                     const std::vector<uint32_t>& indices,
+                                     const glm::mat4& transform,
+                                     uint8_t extraFlags,
+                                     float steepAngle) {
+    if (vertices.empty() || indices.size() < 3) return;
+    const float steepCos = std::cos(glm::radians(steepAngle));
+
+    collision.triangles.reserve(collision.triangles.size() + indices.size() / 3);
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        uint32_t i0 = indices[i], i1 = indices[i + 1], i2 = indices[i + 2];
+        if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) continue;
+
+        WoweeCollision::Triangle tri;
+        tri.v0 = glm::vec3(transform * glm::vec4(vertices[i0], 1.0f));
+        tri.v1 = glm::vec3(transform * glm::vec4(vertices[i1], 1.0f));
+        tri.v2 = glm::vec3(transform * glm::vec4(vertices[i2], 1.0f));
+
+        glm::vec3 n = glm::cross(tri.v1 - tri.v0, tri.v2 - tri.v0);
+        float len = glm::length(n);
+        tri.flags = extraFlags;
+        if (len > 1e-6f) {
+            float nz = n.z / len;
+            if (nz >= steepCos) tri.flags |= 0x01;       // walkable
+            else if (nz < 0.0f) tri.flags |= 0x04;       // steep / facing-down
+        }
+
+        collision.bounds.expand(tri.v0);
+        collision.bounds.expand(tri.v1);
+        collision.bounds.expand(tri.v2);
+        collision.triangles.push_back(tri);
+    }
+}
+
 bool WoweeCollisionBuilder::save(const WoweeCollision& collision, const std::string& path) {
     namespace fs = std::filesystem;
     fs::create_directories(fs::path(path).parent_path());
