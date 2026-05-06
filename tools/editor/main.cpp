@@ -26,6 +26,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <map>
+#include <set>
+#include <cctype>
+#include <cstdio>
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include "stb_image_write.h"
@@ -589,6 +592,9 @@ static void printUsage(const char* argv0) {
     std::printf("                         Compare two glTF 2.0 binaries structurally; exit 0 if identical\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
+    std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
+    std::printf("  --gen-completion <bash|zsh>\n");
+    std::printf("                         Print a shell-completion script for wowee_editor (source it from your rc file)\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
     std::printf("Novel open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON\n");
@@ -7737,6 +7743,103 @@ int main(int argc, char* argv[]) {
             std::printf("Wowee World Editor v1.0.0\n");
             std::printf("Open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON (all novel)\n");
             std::printf("By Kelsi Davis\n");
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-commands") == 0) {
+            // Capture printUsage's stdout and grep for '--flag' tokens at
+            // the start of each line. This auto-tracks the help text as
+            // commands are added — no parallel list to maintain. Result
+            // is a sorted, deduped, one-per-line list of recognized flags.
+            FILE* old = stdout;
+            // Temp file lets us read printUsage's output back. fmemopen
+            // would be cleaner but isn't available on Windows; tmpfile is
+            // portable.
+            FILE* tmp = std::tmpfile();
+            if (!tmp) { std::fprintf(stderr, "list-commands: tmpfile failed\n"); return 1; }
+            stdout = tmp;
+            printUsage(argv[0]);
+            stdout = old;
+            std::fseek(tmp, 0, SEEK_SET);
+            std::set<std::string> commands;
+            char line[512];
+            while (std::fgets(line, sizeof(line), tmp)) {
+                // Match leading whitespace then '--' then [a-z-]+
+                const char* p = line;
+                while (*p == ' ' || *p == '\t') ++p;
+                if (p[0] != '-' || p[1] != '-') continue;
+                std::string flag;
+                while (*p && (std::isalnum(static_cast<unsigned char>(*p)) ||
+                              *p == '-' || *p == '_')) {
+                    flag += *p++;
+                }
+                if (flag.size() > 2) commands.insert(flag);
+            }
+            std::fclose(tmp);
+            // Always include the meta-flags that printUsage describes
+            // alongside others (-h/-v aliases) since the regex above only
+            // captures double-dash forms.
+            commands.insert("--help");
+            commands.insert("--version");
+            for (const auto& c : commands) std::printf("%s\n", c.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-completion") == 0 && i + 1 < argc) {
+            // Emit a bash or zsh completion script. Re-execs the editor's
+            // own --list-commands at completion time so newly-added flags
+            // light up automatically without regenerating the script.
+            std::string shell = argv[++i];
+            if (shell != "bash" && shell != "zsh") {
+                std::fprintf(stderr,
+                    "gen-completion: shell must be 'bash' or 'zsh', got '%s'\n",
+                    shell.c_str());
+                return 1;
+            }
+            // Use argv[0] as the binary name in the completion so it
+            // works whether the user installed it as 'wowee_editor' or
+            // a custom alias. Strip directory components for the
+            // completion-name registration (bash 'complete -F' expects
+            // a basename).
+            std::string self = argv[0];
+            auto slash = self.find_last_of('/');
+            std::string baseName = (slash != std::string::npos)
+                ? self.substr(slash + 1)
+                : self;
+            if (shell == "bash") {
+                std::printf(
+                    "# wowee_editor bash completion — source from ~/.bashrc:\n"
+                    "#   source <(%s --gen-completion bash)\n"
+                    "_wowee_editor_complete() {\n"
+                    "  local cur prev cmds\n"
+                    "  COMPREPLY=()\n"
+                    "  cur=\"${COMP_WORDS[COMP_CWORD]}\"\n"
+                    "  prev=\"${COMP_WORDS[COMP_CWORD-1]}\"\n"
+                    "  # Cache the command list per shell session.\n"
+                    "  if [[ -z \"$_WOWEE_EDITOR_CMDS\" ]]; then\n"
+                    "    _WOWEE_EDITOR_CMDS=$(%s --list-commands 2>/dev/null)\n"
+                    "  fi\n"
+                    "  if [[ \"$cur\" == --* ]]; then\n"
+                    "    COMPREPLY=( $(compgen -W \"$_WOWEE_EDITOR_CMDS\" -- \"$cur\") )\n"
+                    "    return 0\n"
+                    "  fi\n"
+                    "  # Default: complete file paths for arg slots.\n"
+                    "  COMPREPLY=( $(compgen -f -- \"$cur\") )\n"
+                    "}\n"
+                    "complete -F _wowee_editor_complete %s\n",
+                    self.c_str(), self.c_str(), baseName.c_str());
+            } else {
+                // zsh — simpler descriptor-based completion.
+                std::printf(
+                    "# wowee_editor zsh completion — source from ~/.zshrc:\n"
+                    "#   source <(%s --gen-completion zsh)\n"
+                    "_wowee_editor_complete() {\n"
+                    "  local -a cmds\n"
+                    "  if [[ -z \"$_WOWEE_EDITOR_CMDS\" ]]; then\n"
+                    "    export _WOWEE_EDITOR_CMDS=$(%s --list-commands 2>/dev/null)\n"
+                    "  fi\n"
+                    "  cmds=( ${(f)_WOWEE_EDITOR_CMDS} )\n"
+                    "  _arguments \"*: :($cmds)\"\n"
+                    "}\n"
+                    "compdef _wowee_editor_complete %s\n",
+                    self.c_str(), self.c_str(), baseName.c_str());
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
             printUsage(argv[0]);
