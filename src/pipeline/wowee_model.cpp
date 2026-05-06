@@ -109,6 +109,18 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
                 f.read(reinterpret_cast<char*>(&bone.parentBone), 2);
                 f.read(reinterpret_cast<char*>(&bone.pivot), 12);
                 f.read(reinterpret_cast<char*>(&bone.flags), 4);
+                // Sanitize pivot — bones with NaN pivots produce broken
+                // skeleton matrices that ripple into every child bone.
+                if (!std::isfinite(bone.pivot.x)) bone.pivot.x = 0.0f;
+                if (!std::isfinite(bone.pivot.y)) bone.pivot.y = 0.0f;
+                if (!std::isfinite(bone.pivot.z)) bone.pivot.z = 0.0f;
+                // parentBone must be < boneCount (or -1) — out-of-range
+                // parents would cause a use-after-free during bone-matrix
+                // computation that walks the parent chain.
+                if (bone.parentBone >= 0 &&
+                    static_cast<uint32_t>(bone.parentBone) >= boneCount) {
+                    bone.parentBone = -1;
+                }
             }
         }
 
