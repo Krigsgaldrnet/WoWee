@@ -82,6 +82,12 @@ glm::vec2 TexturePainter::worldToChunkUV(int chunkIdx, const glm::vec3& worldPos
 
 void TexturePainter::modifyAlpha(int chunkIdx, int layerIdx, const glm::vec3& center,
                                   float radius, float strength, float falloff, bool erasing) {
+    // Reject NaN center / non-positive radius up front. Without this, every
+    // dist comparison below becomes NaN-vs-finite (which returns false), so
+    // the falloff path falls through and paints full strength on every
+    // texel in the chunk — the opposite of what was asked.
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
+        !std::isfinite(radius) || radius <= 0.0f) return;
     auto& chunk = terrain_->chunks[chunkIdx];
     auto& layer = chunk.layers[layerIdx];
 
