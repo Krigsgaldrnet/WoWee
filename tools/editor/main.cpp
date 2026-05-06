@@ -48,6 +48,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Score zone open-format completeness and exit\n");
     std::printf("  --validate-wom <wom-base> [--json]\n");
     std::printf("                         Deep-check a WOM file for index/bone/batch/bound invariants\n");
+    std::printf("  --validate-wob <wob-base> [--json]\n");
+    std::printf("                         Deep-check a WOB file for group/portal/doodad invariants\n");
     std::printf("  --zone-summary <zoneDir> [--json]\n");
     std::printf("                         One-shot validate + creature/object/quest counts and exit\n");
     std::printf("  --info <wom-base> [--json]\n");
@@ -92,7 +94,7 @@ int main(int argc, char* argv[]) {
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--info-zone", "--info-wcp", "--list-wcp",
         "--unpack-wcp", "--pack-wcp",
-        "--validate", "--validate-wom", "--zone-summary",
+        "--validate", "--validate-wom", "--validate-wob", "--zone-summary",
         "--scaffold-zone", "--add-creature", "--add-object", "--add-quest",
         "--copy-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
@@ -1130,6 +1132,147 @@ int main(int argc, char* argv[]) {
                             wom.vertices.size(), wom.indices.size(),
                             wom.bones.size(), wom.animations.size(),
                             wom.batches.size());
+                return 0;
+            }
+            std::printf("  FAILED — %zu error(s):\n", errors.size());
+            for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-wob") == 0 && i + 1 < argc) {
+            // Deep consistency check on a single WOB. Like --validate-wom
+            // but covering buildings: per-group index/material refs, portal
+            // group references, doodad scales, and bounds.
+            std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wob")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeBuildingLoader::exists(base)) {
+                std::fprintf(stderr, "WOB not found: %s.wob\n", base.c_str());
+                return 1;
+            }
+            auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+            std::vector<std::string> errors;
+            if (!bld.isValid()) errors.push_back("empty building (no groups)");
+            // Per-group cross-refs.
+            int oobIdxTotal = 0, badTriCount = 0, badMatTexCount = 0;
+            for (size_t g = 0; g < bld.groups.size(); ++g) {
+                const auto& grp = bld.groups[g];
+                if (grp.indices.size() % 3 != 0) {
+                    badTriCount++;
+                    errors.push_back("group " + std::to_string(g) +
+                                     " indices.size()=" + std::to_string(grp.indices.size()) +
+                                     " not divisible by 3");
+                }
+                int oobIdx = 0;
+                for (uint32_t idx : grp.indices) {
+                    if (idx >= grp.vertices.size()) ++oobIdx;
+                }
+                if (oobIdx > 0) {
+                    oobIdxTotal += oobIdx;
+                    errors.push_back("group " + std::to_string(g) + " has " +
+                                     std::to_string(oobIdx) +
+                                     " indices out of range (vertCount=" +
+                                     std::to_string(grp.vertices.size()) + ")");
+                }
+                // Material texture paths can be raw (not in texturePaths)
+                // — only flag completely empty entries.
+                for (size_t m = 0; m < grp.materials.size(); ++m) {
+                    if (grp.materials[m].texturePath.empty()) {
+                        badMatTexCount++;
+                        if (badMatTexCount <= 3) {
+                            errors.push_back("group " + std::to_string(g) +
+                                             " material " + std::to_string(m) +
+                                             " has empty texturePath");
+                        }
+                    }
+                }
+                // Group bounds.
+                if (grp.boundMin.x > grp.boundMax.x ||
+                    grp.boundMin.y > grp.boundMax.y ||
+                    grp.boundMin.z > grp.boundMax.z) {
+                    errors.push_back("group " + std::to_string(g) +
+                                     " boundMin > boundMax on at least one axis");
+                }
+            }
+            if (badMatTexCount > 3) {
+                errors.push_back("... and " + std::to_string(badMatTexCount - 3) +
+                                 " more empty material textures");
+            }
+            // Portals reference real groups, polygon has >=3 verts.
+            int badPortal = 0;
+            for (size_t p = 0; p < bld.portals.size(); ++p) {
+                const auto& portal = bld.portals[p];
+                auto inRange = [&](int g) {
+                    return g == -1 ||
+                           (g >= 0 && g < static_cast<int>(bld.groups.size()));
+                };
+                if (!inRange(portal.groupA) || !inRange(portal.groupB)) {
+                    if (++badPortal <= 3) {
+                        errors.push_back("portal " + std::to_string(p) +
+                                         " refs out-of-range groups (" +
+                                         std::to_string(portal.groupA) + ", " +
+                                         std::to_string(portal.groupB) + ")");
+                    }
+                }
+                if (portal.vertices.size() < 3) {
+                    if (++badPortal <= 3) {
+                        errors.push_back("portal " + std::to_string(p) +
+                                         " has only " +
+                                         std::to_string(portal.vertices.size()) +
+                                         " verts (need >= 3 for a polygon)");
+                    }
+                }
+            }
+            if (badPortal > 3) {
+                errors.push_back("... and " + std::to_string(badPortal - 3) +
+                                 " more bad portal entries");
+            }
+            // Doodads.
+            int badDoodad = 0;
+            for (size_t d = 0; d < bld.doodads.size(); ++d) {
+                const auto& doodad = bld.doodads[d];
+                if (doodad.modelPath.empty()) {
+                    if (++badDoodad <= 3) {
+                        errors.push_back("doodad " + std::to_string(d) +
+                                         " has empty modelPath");
+                    }
+                }
+                if (!std::isfinite(doodad.scale) || doodad.scale <= 0.0f) {
+                    if (++badDoodad <= 3) {
+                        errors.push_back("doodad " + std::to_string(d) +
+                                         " has non-positive scale " +
+                                         std::to_string(doodad.scale));
+                    }
+                }
+            }
+            if (badDoodad > 3) {
+                errors.push_back("... and " + std::to_string(badDoodad - 3) +
+                                 " more bad doodad entries");
+            }
+            // Building bounds.
+            if (bld.boundRadius < 0.0f) {
+                errors.push_back("boundRadius=" + std::to_string(bld.boundRadius) +
+                                 " is negative");
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["wob"] = base + ".wob";
+                j["name"] = bld.name;
+                j["groups"] = bld.groups.size();
+                j["portals"] = bld.portals.size();
+                j["doodads"] = bld.doodads.size();
+                j["errorCount"] = errors.size();
+                j["errors"] = errors;
+                j["passed"] = errors.empty();
+                std::printf("%s\n", j.dump(2).c_str());
+                return errors.empty() ? 0 : 1;
+            }
+            std::printf("WOB: %s.wob\n", base.c_str());
+            std::printf("  name      : %s\n", bld.name.c_str());
+            if (errors.empty()) {
+                std::printf("  PASSED — %zu groups, %zu portals, %zu doodads\n",
+                            bld.groups.size(), bld.portals.size(), bld.doodads.size());
                 return 0;
             }
             std::printf("  FAILED — %zu error(s):\n", errors.size());
