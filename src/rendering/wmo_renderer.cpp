@@ -1869,7 +1869,16 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
         }
 
         for (size_t i = 0; i < vertices.size(); i++) {
-            glm::vec3 n = glm::normalize(vertices[i].normal);
+            // Vertex normals from corrupt WMO data could be zero-length or
+            // NaN. glm::normalize on either returns NaN that contaminates
+            // the entire Gram-Schmidt tangent below; fall back to up-axis.
+            glm::vec3 n;
+            float normLen = glm::length(vertices[i].normal);
+            if (std::isfinite(normLen) && normLen > 1e-6f) {
+                n = vertices[i].normal / normLen;
+            } else {
+                n = glm::vec3(0, 0, 1);
+            }
             glm::vec3 t = tan1[i];
 
             if (glm::dot(t, t) < 1e-8f) {
