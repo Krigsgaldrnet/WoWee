@@ -32,6 +32,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
     std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
+    std::printf("  --add-creature <zoneDir> <name> <x> <y> <z> [displayId] [level]\n");
+    std::printf("                         Append one creature spawn to <zoneDir>/creatures.json and exit\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
     std::printf("  --regen-collision <zoneDir>  Rebuild every WOC under a zone dir and exit\n");
     std::printf("  --fix-zone <zoneDir>   Re-parse + re-save zone JSONs to apply latest scrubs/caps and exit\n");
@@ -83,7 +85,8 @@ int main(int argc, char* argv[]) {
         "--info-extract", "--info-zone", "--info-wcp", "--list-wcp",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--zone-summary",
-        "--scaffold-zone", "--build-woc", "--regen-collision", "--fix-zone",
+        "--scaffold-zone", "--add-creature",
+        "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png",
         "--convert-m2", "--convert-wmo",
     };
@@ -100,6 +103,11 @@ int main(int argc, char* argv[]) {
         }
         if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 >= argc) {
             std::fprintf(stderr, "--diff-wcp requires two paths\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--add-creature") == 0 && i + 5 >= argc) {
+            std::fprintf(stderr,
+                "--add-creature requires <zoneDir> <name> <x> <y> <z>\n");
             return 1;
         }
     }
@@ -1092,6 +1100,52 @@ int main(int argc, char* argv[]) {
             std::printf("WOC built: %s (%zu triangles, %zu walkable, %zu steep)\n",
                         outPath.c_str(),
                         col.triangles.size(), col.walkableCount(), col.steepCount());
+            return 0;
+        } else if (std::strcmp(argv[i], "--add-creature") == 0 && i + 4 < argc) {
+            // Append a single creature spawn to a zone's creatures.json.
+            // Args: <zoneDir> <name> <x> <y> <z> [displayId] [level]
+            // Useful for batch-populating zones via shell script without
+            // launching the GUI placement tool.
+            std::string zoneDir = argv[++i];
+            std::string name = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr, "add-creature: zone '%s' does not exist\n",
+                             zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::CreatureSpawn s;
+            s.name = name;
+            try {
+                s.position.x = std::stof(argv[++i]);
+                s.position.y = std::stof(argv[++i]);
+                s.position.z = std::stof(argv[++i]);
+            } catch (const std::exception& e) {
+                std::fprintf(stderr, "add-creature: bad coordinate (%s)\n", e.what());
+                return 1;
+            }
+            // Optional displayId (positional, after coordinates).
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try {
+                    s.displayId = static_cast<uint32_t>(std::stoul(argv[++i]));
+                } catch (...) { /* leave 0 → SQL exporter substitutes 11707 */ }
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try {
+                    s.level = static_cast<uint32_t>(std::stoul(argv[++i]));
+                } catch (...) { /* leave default 1 */ }
+            }
+            // Load existing spawns (if any), append, save.
+            wowee::editor::NpcSpawner spawner;
+            std::string path = zoneDir + "/creatures.json";
+            if (fs::exists(path)) spawner.loadFromFile(path);
+            spawner.placeCreature(s);
+            if (!spawner.saveToFile(path)) {
+                std::fprintf(stderr, "add-creature: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            std::printf("Added creature '%s' to %s (now %zu total)\n",
+                        name.c_str(), path.c_str(), spawner.spawnCount());
             return 0;
         } else if (std::strcmp(argv[i], "--scaffold-zone") == 0 && i + 1 < argc) {
             // Generate a minimal valid empty zone — useful for kickstarting
