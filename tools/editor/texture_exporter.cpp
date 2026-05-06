@@ -128,6 +128,20 @@ int TextureExporter::exportTexturesAsPng(pipeline::AssetManager* am,
         std::string fullPath = outputDir + "/" + outPath;
         fs::create_directories(fs::path(fullPath).parent_path());
 
+        // Validate the loaded image before passing to stbi_write_png. A
+        // corrupt BLP could produce mismatched dimensions vs data length,
+        // and the data buffer needs to be at least width * height * 4 bytes.
+        const size_t expectedBytes =
+            static_cast<size_t>(blpImage.width) * blpImage.height * 4;
+        if (blpImage.width <= 0 || blpImage.height <= 0 ||
+            blpImage.width > 8192 || blpImage.height > 8192 ||
+            blpImage.data.size() < expectedBytes) {
+            LOG_WARNING("PNG export skipped — invalid image (",
+                        blpImage.width, "x", blpImage.height,
+                        " data=", blpImage.data.size(), "): ", texPath);
+            continue;
+        }
+
         // Write RGBA data as PNG
         if (stbi_write_png(fullPath.c_str(), blpImage.width, blpImage.height, 4,
                            blpImage.data.data(), blpImage.width * 4)) {
