@@ -1455,15 +1455,34 @@ void EditorApp::addAdjacentTile(int offsetX, int offsetY) {
 }
 
 void EditorApp::flyToSelected() {
-    auto* sel = objectPlacer_.getSelected();
-    if (sel) {
-        camera_.setPosition(sel->position + glm::vec3(0, 0, 30));
-        return;
+    glm::vec3 target;
+    bool have = false;
+    if (auto* sel = objectPlacer_.getSelected()) {
+        target = sel->position;
+        have = true;
+    } else if (auto* npc = npcSpawner_.getSelected()) {
+        target = npc->position;
+        have = true;
     }
-    auto* npc = npcSpawner_.getSelected();
-    if (npc) {
-        camera_.setPosition(npc->position + glm::vec3(0, 0, 30));
-    }
+    if (!have) return;
+
+    // Place camera back-and-up from the target along the current view direction
+    // and aim it at the target. Distance scales with camera speed so it works
+    // both for tight spawn lists and for far-flung WMOs.
+    glm::vec3 fwd = camera_.getCamera().getForward();
+    if (glm::length(fwd) < 0.001f) fwd = glm::vec3(1, 0, 0);
+    glm::vec3 back = -glm::normalize(glm::vec3(fwd.x, fwd.y, 0.0f));
+    if (glm::length(back) < 0.001f) back = glm::vec3(-1, 0, 0);
+
+    glm::vec3 cam = target + back * 25.0f + glm::vec3(0, 0, 15);
+    camera_.setPosition(cam);
+
+    // Aim at target — yaw is atan2(toX, toY) in editor convention; pitch from height delta.
+    glm::vec3 to = target - cam;
+    float yaw = glm::degrees(std::atan2(to.x, to.y));
+    float horiz = std::sqrt(to.x * to.x + to.y * to.y);
+    float pitch = glm::degrees(std::atan2(to.z, horiz));
+    camera_.setYawPitch(yaw, pitch);
 }
 
 void EditorApp::generateCompleteZone() {
