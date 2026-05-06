@@ -111,29 +111,41 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
             }
         }
 
-        // Parse textures
+        // Parse textures (cap at 1024 — far above any realistic ADT)
         if (j.contains("textures") && j["textures"].is_array()) {
+            constexpr size_t kMaxTextures = 1024;
             for (const auto& tex : j["textures"]) {
+                if (terrain.textures.size() >= kMaxTextures) break;
                 if (tex.is_string() && !tex.get<std::string>().empty())
                     terrain.textures.push_back(tex.get<std::string>());
             }
         }
 
-        // Parse chunk layers
+        // Parse chunk layers — WoW ADT supports max 4 layers per chunk;
+        // cap to 8 to allow some headroom without unbounded growth.
         if (j.contains("chunkLayers") && j["chunkLayers"].is_array()) {
             const auto& layers = j["chunkLayers"];
             for (int ci = 0; ci < std::min(256, static_cast<int>(layers.size())); ci++) {
                 const auto& cl = layers[ci];
                 if (cl.contains("layers") && cl["layers"].is_array()) {
                     for (const auto& texId : cl["layers"]) {
+                        if (terrain.chunks[ci].layers.size() >= 8) break;
                         TextureLayer layer{};
-                        layer.textureId = texId.get<uint32_t>();
+                        // Range-check: get<uint32_t> throws on negative/oversize.
+                        int64_t raw = texId.is_number_integer()
+                            ? texId.get<int64_t>() : 0;
+                        if (raw < 0 || raw > 0xFFFFFFFFll) raw = 0;
+                        layer.textureId = static_cast<uint32_t>(raw);
                         layer.flags = terrain.chunks[ci].layers.empty() ? 0 : 0x100;
                         terrain.chunks[ci].layers.push_back(layer);
                     }
                 }
-                if (cl.contains("holes"))
-                    terrain.chunks[ci].holes = cl["holes"].get<uint16_t>();
+                if (cl.contains("holes")) {
+                    int64_t raw = cl["holes"].is_number_integer()
+                        ? cl["holes"].get<int64_t>() : 0;
+                    if (raw < 0 || raw > 0xFFFF) raw = 0;
+                    terrain.chunks[ci].holes = static_cast<uint16_t>(raw);
+                }
             }
         }
 
