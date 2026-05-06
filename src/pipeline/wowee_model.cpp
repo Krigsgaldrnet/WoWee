@@ -395,9 +395,14 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
             if (totalTex > 0 && b.textureIndex >= totalTex) continue;
             validBatches.push_back(b);
         }
-        uint32_t batchCount = static_cast<uint32_t>(validBatches.size());
+        // Cap batches at the load limit (4096). validBatches has already
+        // dropped invalid entries; this trims the head if the model has
+        // more than the loader will accept.
+        uint32_t batchCount = static_cast<uint32_t>(
+            std::min<size_t>(validBatches.size(), 4096));
         f.write(reinterpret_cast<const char*>(&batchCount), 4);
-        for (const auto& b : validBatches) {
+        for (uint32_t bi = 0; bi < batchCount; bi++) {
+            const auto& b = validBatches[bi];
             f.write(reinterpret_cast<const char*>(&b.indexStart), 4);
             f.write(reinterpret_cast<const char*>(&b.indexCount), 4);
             f.write(reinterpret_cast<const char*>(&b.textureIndex), 4);
