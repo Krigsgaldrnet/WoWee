@@ -455,6 +455,12 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print objects.json summary (counts, types, scale range) and exit\n");
     std::printf("  --info-quests <p> [--json]\n");
     std::printf("                         Print quests.json summary (counts, rewards, chain errors) and exit\n");
+    std::printf("  --list-creatures <p> [--json]\n");
+    std::printf("                         List every creature with index, name, position, level (for --remove-creature)\n");
+    std::printf("  --list-objects <p> [--json]\n");
+    std::printf("                         List every object with index, type, path, position\n");
+    std::printf("  --list-quests <p> [--json]\n");
+    std::printf("                         List every quest with index, title, giver, XP\n");
     std::printf("  --info-wcp <wcp-path> [--json]\n");
     std::printf("                         Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
@@ -479,6 +485,7 @@ int main(int argc, char* argv[]) {
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--list-missing-sidecars",
         "--info-zone", "--info-wcp", "--list-wcp",
+        "--list-creatures", "--list-objects", "--list-quests",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--zone-summary",
@@ -1055,6 +1062,135 @@ int main(int argc, char* argv[]) {
             std::printf("  behavior    : %d stationary, %d wander, %d patrol\n",
                         stationary, wander, patrol);
             std::printf("  unique displayIds: %zu\n", displayIdHist.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-creatures") == 0 && i + 1 < argc) {
+            // Verbose enumeration of every spawn — needed because
+            // --remove-creature takes a 0-based index but --info-creatures
+            // only shows aggregate counts.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::NpcSpawner spawner;
+            if (!spawner.loadFromFile(path)) {
+                std::fprintf(stderr, "Failed to load creatures.json: %s\n", path.c_str());
+                return 1;
+            }
+            const auto& spawns = spawner.getSpawns();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["total"] = spawns.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (size_t k = 0; k < spawns.size(); ++k) {
+                    const auto& s = spawns[k];
+                    arr.push_back({
+                        {"index", k},
+                        {"name", s.name},
+                        {"displayId", s.displayId},
+                        {"level", s.level},
+                        {"position", {s.position.x, s.position.y, s.position.z}},
+                        {"hostile", s.hostile},
+                    });
+                }
+                j["spawns"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("creatures.json: %s (%zu total)\n", path.c_str(), spawns.size());
+            std::printf("  idx  name                            lvl  display  pos (x, y, z)\n");
+            for (size_t k = 0; k < spawns.size(); ++k) {
+                const auto& s = spawns[k];
+                std::printf("  %3zu  %-30s %3u  %7u  (%.1f, %.1f, %.1f)%s\n",
+                            k, s.name.substr(0, 30).c_str(), s.level, s.displayId,
+                            s.position.x, s.position.y, s.position.z,
+                            s.hostile ? " [hostile]" : "");
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-objects") == 0 && i + 1 < argc) {
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::ObjectPlacer placer;
+            if (!placer.loadFromFile(path)) {
+                std::fprintf(stderr, "Failed to load objects.json: %s\n", path.c_str());
+                return 1;
+            }
+            const auto& objs = placer.getObjects();
+            auto typeStr = [](wowee::editor::PlaceableType t) {
+                return t == wowee::editor::PlaceableType::M2 ? "m2" : "wmo";
+            };
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["total"] = objs.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (size_t k = 0; k < objs.size(); ++k) {
+                    const auto& o = objs[k];
+                    arr.push_back({
+                        {"index", k},
+                        {"type", typeStr(o.type)},
+                        {"path", o.path},
+                        {"position", {o.position.x, o.position.y, o.position.z}},
+                        {"scale", o.scale},
+                    });
+                }
+                j["objects"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("objects.json: %s (%zu total)\n", path.c_str(), objs.size());
+            std::printf("  idx  type  scale  path                                    pos (x, y, z)\n");
+            for (size_t k = 0; k < objs.size(); ++k) {
+                const auto& o = objs[k];
+                std::printf("  %3zu  %-4s  %5.2f  %-38s  (%.1f, %.1f, %.1f)\n",
+                            k, typeStr(o.type), o.scale,
+                            o.path.substr(0, 38).c_str(),
+                            o.position.x, o.position.y, o.position.z);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-quests") == 0 && i + 1 < argc) {
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr, "Failed to load quests.json: %s\n", path.c_str());
+                return 1;
+            }
+            const auto& quests = qe.getQuests();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["total"] = quests.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (size_t k = 0; k < quests.size(); ++k) {
+                    const auto& q = quests[k];
+                    arr.push_back({
+                        {"index", k},
+                        {"title", q.title},
+                        {"giver", q.questGiverNpcId},
+                        {"turnIn", q.turnInNpcId},
+                        {"requiredLevel", q.requiredLevel},
+                        {"xp", q.reward.xp},
+                        {"nextQuestId", q.nextQuestId},
+                    });
+                }
+                j["quests"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("quests.json: %s (%zu total)\n", path.c_str(), quests.size());
+            std::printf("  idx  lvl  giver    turnIn   xp     title\n");
+            for (size_t k = 0; k < quests.size(); ++k) {
+                const auto& q = quests[k];
+                std::printf("  %3zu  %3u  %7u  %7u  %5u  %s%s\n",
+                            k, q.requiredLevel, q.questGiverNpcId, q.turnInNpcId,
+                            q.reward.xp, q.title.c_str(),
+                            q.nextQuestId ? " [chained]" : "");
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 < argc) {
             // Print which files differ between two WCP archives. Useful
