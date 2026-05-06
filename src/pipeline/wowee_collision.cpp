@@ -74,10 +74,16 @@ WoweeCollision WoweeCollisionBuilder::fromTerrain(const ADTTerrain& terrain,
                 glm::vec3 v01 = vtx(i01), v11 = vtx(i11);
 
                 auto classifyTri = [&](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
+                    // Skip degenerate triangles — would produce NaN normals
+                    // and crash collision intersection tests downstream.
+                    glm::vec3 cross = glm::cross(b - a, c - a);
+                    float crossLen = glm::length(cross);
+                    if (crossLen < 1e-8f) return;
+
                     WoweeCollision::Triangle tri;
                     tri.v0 = a; tri.v1 = b; tri.v2 = c;
 
-                    glm::vec3 normal = glm::normalize(glm::cross(b - a, c - a));
+                    glm::vec3 normal = cross / crossLen;
                     float nz = std::abs(normal.z);
 
                     tri.flags = 0;
