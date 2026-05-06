@@ -30,7 +30,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --adt <map> <x> <y>    Load an ADT tile on startup\n");
     std::printf("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)\n");
     std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
-    std::printf("  --list-zones           List discovered custom zones and exit\n");
+    std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
     std::printf("  --regen-collision <zoneDir>  Rebuild every WOC under a zone dir and exit\n");
@@ -1000,7 +1000,30 @@ int main(int argc, char* argv[]) {
             std::printf("WCP unpacked to: %s\n", destDir.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--list-zones") == 0) {
+            // Optional --json after the flag for machine-readable output.
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             auto zones = wowee::pipeline::CustomZoneDiscovery::scan({"custom_zones", "output"});
+            if (jsonOut) {
+                nlohmann::json j = nlohmann::json::array();
+                for (const auto& z : zones) {
+                    nlohmann::json zoneObj;
+                    zoneObj["name"] = z.name;
+                    zoneObj["directory"] = z.directory;
+                    zoneObj["mapId"] = z.mapId;
+                    zoneObj["author"] = z.author;
+                    zoneObj["description"] = z.description;
+                    zoneObj["hasCreatures"] = z.hasCreatures;
+                    zoneObj["hasQuests"] = z.hasQuests;
+                    nlohmann::json tiles = nlohmann::json::array();
+                    for (const auto& t : z.tiles) tiles.push_back({t.first, t.second});
+                    zoneObj["tiles"] = tiles;
+                    j.push_back(std::move(zoneObj));
+                }
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
             if (zones.empty()) {
                 std::printf("No custom zones found in custom_zones/ or output/\n");
             } else {
