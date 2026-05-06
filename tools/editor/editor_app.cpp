@@ -348,6 +348,20 @@ void EditorApp::processEvents() {
                     objectPlacer_.selectAll();
                     showToast("Selected " + std::to_string(objectPlacer_.selectionCount()) + " objects");
                 }
+                // W: add patrol waypoint at cursor for the selected NPC (no modifiers,
+                // editor must be in NPC mode and an NPC must be selected with Patrol behavior).
+                if (sc == SDL_SCANCODE_W && mode_ == EditorMode::NPC &&
+                    !(event.key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_SHIFT))) {
+                    auto* sel = npcSpawner_.getSelected();
+                    if (sel && sel->behavior == CreatureBehavior::Patrol &&
+                        terrainEditor_.brush().isActive()) {
+                        PatrolPoint pp;
+                        pp.position = terrainEditor_.brush().getPosition();
+                        pp.waitTimeMs = 2000.0f;
+                        sel->patrolPath.push_back(pp);
+                        showToast("Added patrol waypoint #" + std::to_string(sel->patrolPath.size()));
+                    }
+                }
                 // Ctrl+Y = Redo (alternate binding)
                 if (sc == SDL_SCANCODE_Y && (event.key.keysym.mod & KMOD_CTRL)) {
                     if (terrainEditor_.history().canRedo()) {
