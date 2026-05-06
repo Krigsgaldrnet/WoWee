@@ -3,6 +3,11 @@
 #include "npc_spawner.hpp"
 #include "object_placer.hpp"
 #include "quest_editor.hpp"
+#include "wowee_terrain.hpp"
+#include "zone_manifest.hpp"
+#include "terrain_editor.hpp"
+#include "terrain_biomes.hpp"
+#include <filesystem>
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wowee_collision.hpp"
@@ -25,6 +30,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)\n");
     std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
     std::printf("  --list-zones           List discovered custom zones and exit\n");
+    std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
     std::printf("  --validate <zoneDir>   Score zone open-format completeness and exit\n");
     std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
@@ -50,7 +56,7 @@ int main(int argc, char* argv[]) {
     static const char* kArgRequired[] = {
         "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
-        "--info-wcp", "--list-wcp", "--validate",
+        "--info-wcp", "--list-wcp", "--validate", "--scaffold-zone",
         "--convert-m2", "--convert-wmo",
     };
     for (int i = 1; i < argc; i++) {
@@ -366,6 +372,66 @@ int main(int argc, char* argv[]) {
             std::printf("  quests.json           : %s\n", v.hasQuests ? "yes" : "no");
             std::printf("  objects.json          : %s\n", v.hasObjects ? "yes" : "no");
             return score == 7 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--scaffold-zone") == 0 && i + 1 < argc) {
+            // Generate a minimal valid empty zone — useful for kickstarting
+            // a new authoring session without needing to launch the GUI.
+            std::string rawName = argv[++i];
+            int sx = 32, sy = 32;
+            if (i + 2 < argc) {
+                int parsedX = std::atoi(argv[i + 1]);
+                int parsedY = std::atoi(argv[i + 2]);
+                if (parsedX >= 0 && parsedX <= 63 &&
+                    parsedY >= 0 && parsedY <= 63) {
+                    sx = parsedX; sy = parsedY;
+                    i += 2;
+                }
+            }
+            // Slugify name to match unpackZone / server module rules.
+            std::string slug;
+            for (char c : rawName) {
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') || c == '_' || c == '-') {
+                    slug += c;
+                } else if (c == ' ') {
+                    slug += '_';
+                }
+            }
+            if (slug.empty()) {
+                std::fprintf(stderr, "--scaffold-zone: name '%s' has no valid characters\n",
+                             rawName.c_str());
+                return 1;
+            }
+            namespace fs = std::filesystem;
+            std::string dir = "custom_zones/" + slug;
+            if (fs::exists(dir)) {
+                std::fprintf(stderr, "--scaffold-zone: directory already exists: %s\n",
+                             dir.c_str());
+                return 1;
+            }
+            fs::create_directories(dir);
+
+            // Blank flat terrain at the requested tile.
+            auto terrain = wowee::editor::TerrainEditor::createBlankTerrain(
+                sx, sy, 100.0f, wowee::editor::Biome::Grassland);
+            std::string base = dir + "/" + slug + "_" +
+                               std::to_string(sx) + "_" + std::to_string(sy);
+            wowee::editor::WoweeTerrain::exportOpen(terrain, base, sx, sy);
+
+            // Minimal zone.json
+            wowee::editor::ZoneManifest manifest;
+            manifest.mapName = slug;
+            manifest.displayName = rawName;
+            manifest.mapId = 9000;
+            manifest.baseHeight = 100.0f;
+            manifest.tiles.push_back({sx, sy});
+            manifest.save(dir + "/zone.json");
+
+            std::printf("Scaffolded zone: %s\n", dir.c_str());
+            std::printf("  tile     : (%d, %d)\n", sx, sy);
+            std::printf("  files    : %s.wot, %s.whm, zone.json\n",
+                        slug.c_str(), slug.c_str());
+            std::printf("  next step: run editor without args, then File → Open Zone\n");
+            return 0;
         } else if (std::strcmp(argv[i], "--list-zones") == 0) {
             auto zones = wowee::pipeline::CustomZoneDiscovery::scan({"custom_zones", "output"});
             if (zones.empty()) {
