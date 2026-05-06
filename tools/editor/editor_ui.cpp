@@ -1866,7 +1866,7 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             if (ImGui::InputText("Name##tmpl", nameBuf, sizeof(nameBuf)))
                 tmpl.name = nameBuf;
 
-            ImGui::SliderFloat("Scale", &tmpl.scale, 0.5f, 10.0f, "%.1f");
+            ImGui::DragFloat("Scale", &tmpl.scale, 0.05f, 0.1f, 50.0f, "%.2f");
             ImGui::SliderFloat("Facing", &tmpl.orientation, 0.0f, 360.0f, "%.0f deg");
             ImGui::SameLine();
             if (ImGui::SmallButton("Random##face")) {
