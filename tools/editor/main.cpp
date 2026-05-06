@@ -46,10 +46,12 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path> [--json]\n");
     std::printf("                         Print WOC collision metadata (triangle counts, bounds) and exit\n");
-    std::printf("  --info-wot <wot-base>  Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
+    std::printf("  --info-wot <wot-base> [--json]\n");
+    std::printf("                         Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-extract <dir> [--json]\n");
     std::printf("                         Walk extracted asset tree and report open-format coverage and exit\n");
-    std::printf("  --info-zone <dir|json> Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
+    std::printf("  --info-zone <dir|json> [--json]\n");
+    std::printf("                         Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
     std::printf("  --info-creatures <p> [--json]\n");
     std::printf("                         Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-objects <p> [--json]\n");
@@ -420,6 +422,9 @@ int main(int argc, char* argv[]) {
             // diffing two zones or auditing the audio/flag setup before
             // packing into a WCP.
             std::string zonePath = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             namespace fs = std::filesystem;
             // Accept either a directory or the zone.json itself.
             if (fs::is_directory(zonePath)) zonePath += "/zone.json";
@@ -427,6 +432,41 @@ int main(int argc, char* argv[]) {
             if (!manifest.load(zonePath)) {
                 std::fprintf(stderr, "Failed to load zone.json: %s\n", zonePath.c_str());
                 return 1;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = zonePath;
+                j["mapName"] = manifest.mapName;
+                j["displayName"] = manifest.displayName;
+                j["mapId"] = manifest.mapId;
+                j["biome"] = manifest.biome;
+                j["baseHeight"] = manifest.baseHeight;
+                j["hasCreatures"] = manifest.hasCreatures;
+                j["description"] = manifest.description;
+                nlohmann::json tilesArr = nlohmann::json::array();
+                for (const auto& t : manifest.tiles)
+                    tilesArr.push_back({t.first, t.second});
+                j["tiles"] = tilesArr;
+                j["flags"] = {{"allowFlying", manifest.allowFlying},
+                               {"pvpEnabled", manifest.pvpEnabled},
+                               {"isIndoor", manifest.isIndoor},
+                               {"isSanctuary", manifest.isSanctuary}};
+                if (!manifest.musicTrack.empty() || !manifest.ambienceDay.empty()) {
+                    nlohmann::json audio;
+                    if (!manifest.musicTrack.empty()) {
+                        audio["music"] = manifest.musicTrack;
+                        audio["musicVolume"] = manifest.musicVolume;
+                    }
+                    if (!manifest.ambienceDay.empty()) {
+                        audio["ambienceDay"] = manifest.ambienceDay;
+                        audio["ambienceVolume"] = manifest.ambienceVolume;
+                    }
+                    if (!manifest.ambienceNight.empty())
+                        audio["ambienceNight"] = manifest.ambienceNight;
+                    j["audio"] = audio;
+                }
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
             }
             std::printf("zone.json: %s\n", zonePath.c_str());
             std::printf("  mapName     : %s\n", manifest.mapName.c_str());
@@ -652,6 +692,9 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (std::strcmp(argv[i], "--info-wot") == 0 && i + 1 < argc) {
             std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             // Accept "/path/file.wot", "/path/file.whm", or "/path/file"; the
             // loader pairs both extensions from the same base path.
             for (const char* ext : {".wot", ".whm"}) {
@@ -683,6 +726,24 @@ int main(int argc, char* argv[]) {
                 }
                 if (!c.layers.empty()) chunksWithLayers++;
                 if (terrain.waterData[ci].hasWater()) chunksWithWater++;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["base"] = base;
+                j["tileX"] = terrain.coord.x;
+                j["tileY"] = terrain.coord.y;
+                j["chunks"] = {{"withHeightmap", chunksWithHeights},
+                                {"withLayers", chunksWithLayers},
+                                {"withWater", chunksWithWater}};
+                j["textures"] = terrain.textures.size();
+                j["doodads"] = terrain.doodadPlacements.size();
+                j["wmos"] = terrain.wmoPlacements.size();
+                if (chunksWithHeights > 0) {
+                    j["heightMin"] = minH;
+                    j["heightMax"] = maxH;
+                }
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
             }
             std::printf("WOT/WHM: %s\n", base.c_str());
             std::printf("  tile         : (%d, %d)\n", terrain.coord.x, terrain.coord.y);
