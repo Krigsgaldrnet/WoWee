@@ -664,6 +664,12 @@ void EditorApp::refreshDirtyChunks() {
 }
 
 void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
+    // Clear previous state before loading new tile
+    clearAllObjects();
+    questEditor_.clear();
+    ui_.clearPath();
+    viewport_.clearTerrain();
+
     // Prefer open format (WOT/WHM) if available
     for (const char* dir : {"custom_zones", "output"}) {
         std::string wotBase = std::string(dir) + "/" + mapName + "/" + mapName + "_" +
@@ -761,13 +767,16 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 
     // Import doodad/WMO placements from the ADT itself
     // ADT positions are in ADT coordinate space — convert to render coords
+    // Import doodad placements — convert ADT rotation to render rotation
+    // ADT stores rotation as degrees [rotX, rotY, rotZ] in WoW space
+    // Render space: rX = -adtRotZ, rY = -adtRotX, rZ = adtRotY + 180
     for (const auto& dp : terrain_.doodadPlacements) {
         if (dp.nameId < terrain_.doodadNames.size()) {
             PlacedObject obj;
             obj.type = PlaceableType::M2;
             obj.path = terrain_.doodadNames[dp.nameId];
             obj.position = core::coords::adtToWorld(dp.position[0], dp.position[1], dp.position[2]);
-            obj.rotation = glm::vec3(dp.rotation[0], dp.rotation[1], dp.rotation[2]);
+            obj.rotation = glm::vec3(-dp.rotation[2], -dp.rotation[0], dp.rotation[1] + 180.0f);
             obj.scale = static_cast<float>(dp.scale) / 1024.0f;
             obj.uniqueId = dp.uniqueId;
             objectPlacer_.getObjects().push_back(obj);
@@ -779,7 +788,7 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
             obj.type = PlaceableType::WMO;
             obj.path = terrain_.wmoNames[wp.nameId];
             obj.position = core::coords::adtToWorld(wp.position[0], wp.position[1], wp.position[2]);
-            obj.rotation = glm::vec3(wp.rotation[0], wp.rotation[1], wp.rotation[2]);
+            obj.rotation = glm::vec3(-wp.rotation[2], -wp.rotation[0], wp.rotation[1] + 180.0f);
             obj.scale = 1.0f;
             obj.uniqueId = wp.uniqueId;
             objectPlacer_.getObjects().push_back(obj);
