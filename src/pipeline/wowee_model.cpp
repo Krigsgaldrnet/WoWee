@@ -265,9 +265,14 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
     f.write(reinterpret_cast<const char*>(&model.boundMin), 12);
     f.write(reinterpret_cast<const char*>(&model.boundMax), 12);
 
-    uint16_t nameLen = static_cast<uint16_t>(model.name.size());
-    f.write(reinterpret_cast<const char*>(&nameLen), 2);
-    f.write(model.name.data(), nameLen);
+    // Same writeStr pattern as WoB: truncate to 1KB so the u16 length doesn't
+    // wrap and corrupt the rest of the file.
+    auto writeStr = [&](const std::string& s, size_t maxLen = 1024) {
+        uint16_t len = static_cast<uint16_t>(std::min<size_t>(s.size(), maxLen));
+        f.write(reinterpret_cast<const char*>(&len), 2);
+        f.write(s.data(), len);
+    };
+    writeStr(model.name);
 
     // WOM2/WOM3 write full vertex with bone data; WOM1 writes 32-byte vertex
     if (hasAnim || hasBatches) {
@@ -283,11 +288,7 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
 
     f.write(reinterpret_cast<const char*>(model.indices.data()), indexCount * 4);
 
-    for (const auto& path : model.texturePaths) {
-        uint16_t pathLen = static_cast<uint16_t>(path.size());
-        f.write(reinterpret_cast<const char*>(&pathLen), 2);
-        f.write(path.data(), pathLen);
-    }
+    for (const auto& path : model.texturePaths) writeStr(path);
 
     // WOM2/WOM3: write bones and animations (always, even if empty for WOM3)
     if (hasAnim || hasBatches) {
