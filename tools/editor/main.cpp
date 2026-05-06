@@ -414,6 +414,10 @@ static void printUsage(const char* argv0) {
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
     std::printf("  --add-tile <zoneDir> <tx> <ty> [baseHeight]\n");
     std::printf("                         Add a new ADT tile to an existing zone (extends the manifest's tiles list)\n");
+    std::printf("  --remove-tile <zoneDir> <tx> <ty>\n");
+    std::printf("                         Remove a tile from a zone (drops manifest entry + deletes WHM/WOT/WOC files)\n");
+    std::printf("  --list-tiles <zoneDir> [--json]\n");
+    std::printf("                         List every tile in a zone manifest with on-disk file presence\n");
     std::printf("  --add-creature <zoneDir> <name> <x> <y> <z> [displayId] [level]\n");
     std::printf("                         Append one creature spawn to <zoneDir>/creatures.json and exit\n");
     std::printf("  --add-object <zoneDir> <m2|wmo> <gamePath> <x> <y> <z> [scale]\n");
@@ -529,7 +533,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--zone-summary",
-        "--scaffold-zone", "--add-tile",
+        "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective",
@@ -600,6 +604,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--add-tile") == 0 && i + 3 >= argc) {
             std::fprintf(stderr,
                 "--add-tile requires <zoneDir> <tx> <ty>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--remove-tile") == 0 && i + 3 >= argc) {
+            std::fprintf(stderr,
+                "--remove-tile requires <zoneDir> <tx> <ty>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--copy-zone") == 0 && i + 2 >= argc) {
@@ -3768,6 +3777,119 @@ int main(int argc, char* argv[]) {
                         (zm.mapName + "_" + std::to_string(tx) + "_" + std::to_string(ty)).c_str(),
                         (zm.mapName + "_" + std::to_string(tx) + "_" + std::to_string(ty)).c_str());
             std::printf("  tiles now : %zu total\n", zm.tiles.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--remove-tile") == 0 && i + 3 < argc) {
+            // Symmetric counterpart to --add-tile. Drops the entry from
+            // ZoneManifest::tiles AND deletes the WHM/WOT/WOC files on
+            // disk so the zone is left consistent (no orphan sidecars).
+            std::string zoneDir = argv[++i];
+            int tx, ty;
+            try {
+                tx = std::stoi(argv[++i]);
+                ty = std::stoi(argv[++i]);
+            } catch (...) {
+                std::fprintf(stderr, "remove-tile: bad coordinates\n");
+                return 1;
+            }
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr, "remove-tile: %s has no zone.json — not a zone dir\n",
+                             zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr, "remove-tile: failed to parse %s\n", manifestPath.c_str());
+                return 1;
+            }
+            auto it = std::find_if(zm.tiles.begin(), zm.tiles.end(),
+                [&](const std::pair<int,int>& p) { return p.first == tx && p.second == ty; });
+            if (it == zm.tiles.end()) {
+                std::fprintf(stderr,
+                    "remove-tile: tile (%d, %d) not in manifest\n", tx, ty);
+                return 1;
+            }
+            // Don't strand a zone with zero tiles — server module gen and
+            // pack-wcp both expect at least one. The user can --rename-zone
+            // or rm -rf if they want the zone gone entirely.
+            if (zm.tiles.size() == 1) {
+                std::fprintf(stderr,
+                    "remove-tile: refusing to remove last tile (zone would be empty)\n");
+                return 1;
+            }
+            zm.tiles.erase(it);
+            // Delete the slug-prefixed files for this tile. Use error_code
+            // so we don't throw on missing files — partial removal from
+            // earlier failures shouldn't block cleanup of what's left.
+            std::string base = zoneDir + "/" + zm.mapName + "_" +
+                               std::to_string(tx) + "_" + std::to_string(ty);
+            int deleted = 0;
+            std::error_code ec;
+            for (const char* ext : {".whm", ".wot", ".woc"}) {
+                if (fs::remove(base + ext, ec)) deleted++;
+            }
+            if (!zm.save(manifestPath)) {
+                std::fprintf(stderr, "remove-tile: failed to save %s\n", manifestPath.c_str());
+                return 1;
+            }
+            std::printf("Removed tile (%d, %d) from %s\n", tx, ty, zoneDir.c_str());
+            std::printf("  deleted   : %d file(s) (.whm/.wot/.woc)\n", deleted);
+            std::printf("  tiles now : %zu remaining\n", zm.tiles.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-tiles") == 0 && i + 1 < argc) {
+            // Enumerate every tile in the zone manifest with on-disk
+            // file presence — useful for spotting missing/orphan files
+            // before pack-wcp would fail.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr, "list-tiles: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr, "list-tiles: failed to parse %s\n", manifestPath.c_str());
+                return 1;
+            }
+            auto baseFor = [&](int tx, int ty) {
+                return zoneDir + "/" + zm.mapName + "_" +
+                       std::to_string(tx) + "_" + std::to_string(ty);
+            };
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["mapName"] = zm.mapName;
+                j["count"] = zm.tiles.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& [tx, ty] : zm.tiles) {
+                    std::string b = baseFor(tx, ty);
+                    arr.push_back({
+                        {"x", tx}, {"y", ty},
+                        {"whm", fs::exists(b + ".whm")},
+                        {"wot", fs::exists(b + ".wot")},
+                        {"woc", fs::exists(b + ".woc")},
+                    });
+                }
+                j["tiles"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone: %s (%s, %zu tile(s))\n",
+                        zoneDir.c_str(), zm.mapName.c_str(), zm.tiles.size());
+            std::printf("   tx   ty   whm  wot  woc\n");
+            for (const auto& [tx, ty] : zm.tiles) {
+                std::string b = baseFor(tx, ty);
+                std::printf("  %3d  %3d   %s    %s    %s\n",
+                            tx, ty,
+                            fs::exists(b + ".whm") ? "y" : "-",
+                            fs::exists(b + ".wot") ? "y" : "-",
+                            fs::exists(b + ".woc") ? "y" : "-");
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--copy-zone") == 0 && i + 2 < argc) {
             // Duplicate a zone — copy every file then rename slug-prefixed
