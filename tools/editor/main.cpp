@@ -40,9 +40,12 @@ static void printUsage(const char* argv0) {
     std::printf("                         Score zone open-format completeness and exit\n");
     std::printf("  --zone-summary <zoneDir> [--json]\n");
     std::printf("                         One-shot validate + creature/object/quest counts and exit\n");
-    std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
-    std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
-    std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
+    std::printf("  --info <wom-base> [--json]\n");
+    std::printf("                         Print WOM file metadata (version, counts) and exit\n");
+    std::printf("  --info-wob <wob-base> [--json]\n");
+    std::printf("                         Print WOB building metadata (groups, portals, doodads) and exit\n");
+    std::printf("  --info-woc <woc-path> [--json]\n");
+    std::printf("                         Print WOC collision metadata (triangle counts, bounds) and exit\n");
     std::printf("  --info-wot <wot-base>  Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-extract <dir> [--json]\n");
     std::printf("                         Walk extracted asset tree and report open-format coverage and exit\n");
@@ -108,6 +111,9 @@ int main(int argc, char* argv[]) {
             adtY = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--info") == 0 && i + 1 < argc) {
             std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             // Allow either "/path/to/file.wom" or "/path/to/file"; load() expects no extension.
             if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
                 base = base.substr(0, base.size() - 4);
@@ -116,6 +122,22 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["wom"] = base + ".wom";
+                j["version"] = wom.version;
+                j["name"] = wom.name;
+                j["vertices"] = wom.vertices.size();
+                j["indices"] = wom.indices.size();
+                j["triangles"] = wom.indices.size() / 3;
+                j["textures"] = wom.texturePaths.size();
+                j["bones"] = wom.bones.size();
+                j["animations"] = wom.animations.size();
+                j["batches"] = wom.batches.size();
+                j["boundRadius"] = wom.boundRadius;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
             std::printf("WOM: %s.wom\n", base.c_str());
             std::printf("  version    : %u%s\n", wom.version,
                         wom.version == 3 ? " (multi-batch)" :
@@ -131,6 +153,9 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (std::strcmp(argv[i], "--info-wob") == 0 && i + 1 < argc) {
             std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             if (base.size() >= 4 && base.substr(base.size() - 4) == ".wob")
                 base = base.substr(0, base.size() - 4);
             if (!wowee::pipeline::WoweeBuildingLoader::exists(base)) {
@@ -138,18 +163,32 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
-            std::printf("WOB: %s.wob\n", base.c_str());
-            std::printf("  name        : %s\n", bld.name.c_str());
-            std::printf("  groups      : %zu\n", bld.groups.size());
-            std::printf("  portals     : %zu\n", bld.portals.size());
-            std::printf("  doodads     : %zu\n", bld.doodads.size());
-            std::printf("  boundRadius : %.2f\n", bld.boundRadius);
             size_t totalVerts = 0, totalIdx = 0, totalMats = 0;
             for (const auto& g : bld.groups) {
                 totalVerts += g.vertices.size();
                 totalIdx += g.indices.size();
                 totalMats += g.materials.size();
             }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["wob"] = base + ".wob";
+                j["name"] = bld.name;
+                j["groups"] = bld.groups.size();
+                j["portals"] = bld.portals.size();
+                j["doodads"] = bld.doodads.size();
+                j["boundRadius"] = bld.boundRadius;
+                j["totalVerts"] = totalVerts;
+                j["totalTris"] = totalIdx / 3;
+                j["totalMats"] = totalMats;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("WOB: %s.wob\n", base.c_str());
+            std::printf("  name        : %s\n", bld.name.c_str());
+            std::printf("  groups      : %zu\n", bld.groups.size());
+            std::printf("  portals     : %zu\n", bld.portals.size());
+            std::printf("  doodads     : %zu\n", bld.doodads.size());
+            std::printf("  boundRadius : %.2f\n", bld.boundRadius);
             std::printf("  total verts : %zu\n", totalVerts);
             std::printf("  total tris  : %zu\n", totalIdx / 3);
             std::printf("  total mats  : %zu (across all groups)\n", totalMats);
@@ -659,12 +698,28 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (std::strcmp(argv[i], "--info-woc") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             if (path.size() < 4 || path.substr(path.size() - 4) != ".woc")
                 path += ".woc";
             auto col = wowee::pipeline::WoweeCollisionBuilder::load(path);
             if (!col.isValid()) {
                 std::fprintf(stderr, "WOC not found or invalid: %s\n", path.c_str());
                 return 1;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["woc"] = path;
+                j["tileX"] = col.tileX;
+                j["tileY"] = col.tileY;
+                j["triangles"] = col.triangles.size();
+                j["walkable"] = col.walkableCount();
+                j["steep"] = col.steepCount();
+                j["boundsMin"] = {col.bounds.min.x, col.bounds.min.y, col.bounds.min.z};
+                j["boundsMax"] = {col.bounds.max.x, col.bounds.max.y, col.bounds.max.z};
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
             }
             std::printf("WOC: %s\n", path.c_str());
             std::printf("  tile        : (%u, %u)\n", col.tileX, col.tileY);
