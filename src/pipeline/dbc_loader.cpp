@@ -467,7 +467,12 @@ bool DBCFile::loadJSON(const std::vector<uint8_t>& jsonData) {
                     if (!std::isfinite(f)) f = 0.0f;
                     std::memcpy(&fields[col], &f, 4);
                 } else if (val.is_number_integer()) {
-                    fields[col] = val.get<uint32_t>();
+                    // Range-check: nlohmann throws on out-of-range get<uint32_t>
+                    // (negative or > UINT32_MAX). Catching at the field level
+                    // keeps a single bad cell from killing the whole DBC load.
+                    int64_t raw = val.get<int64_t>();
+                    if (raw < 0 || raw > 0xFFFFFFFFll) raw = 0;
+                    fields[col] = static_cast<uint32_t>(raw);
                 }
             }
         }
