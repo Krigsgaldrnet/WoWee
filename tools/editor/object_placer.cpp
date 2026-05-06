@@ -216,6 +216,7 @@ int ObjectPlacer::populateBiome(const BiomeVegetation& vegetation,
                                 float tileSize, const glm::vec3& tileOrigin,
                                 uint32_t seed) {
     int placed = 0;
+    if (!std::isfinite(tileSize) || tileSize <= 0.0f) return 0;
     std::mt19937 rng(seed);
     std::uniform_real_distribution<float> distPos(0.0f, 1.0f);
     std::uniform_real_distribution<float> distRot(0.0f, 360.0f);
@@ -224,8 +225,19 @@ int ObjectPlacer::populateBiome(const BiomeVegetation& vegetation,
         // Calculate object count from density (per 100x100 area)
         float areaFactor = (tileSize * tileSize) / 10000.0f;
         int count = static_cast<int>(asset.density * areaFactor);
+        // Cap per-asset count — a runaway density value would freeze the
+        // editor and exceed sensible vertex/draw limits for the tile.
+        if (count > 50'000) count = 50'000;
+        if (count <= 0) continue;
 
-        std::uniform_real_distribution<float> distScale(asset.minScale, asset.maxScale);
+        // Ensure the scale distribution preconditions hold (a < b, both
+        // positive). Asset definitions are normally edited in code but we
+        // also load them from JSON in some setups.
+        float minS = std::isfinite(asset.minScale) ? asset.minScale : 1.0f;
+        float maxS = std::isfinite(asset.maxScale) ? asset.maxScale : minS + 0.01f;
+        if (minS <= 0.0f) minS = 0.01f;
+        if (maxS < minS) maxS = minS + 0.01f;
+        std::uniform_real_distribution<float> distScale(minS, maxS);
 
         for (int i = 0; i < count; i++) {
             float u = distPos(rng);
