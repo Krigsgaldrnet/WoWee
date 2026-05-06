@@ -36,6 +36,15 @@ namespace rendering {
 
 uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
                                      const glm::vec3& rotation, float scale) {
+    // Reject NaN inputs at the boundary — std::round of NaN is implementation-
+    // defined and a NaN instance position propagates into the GPU model matrix,
+    // either tripping Vulkan validation or rendering at the world origin.
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(position.z) || !std::isfinite(rotation.x) ||
+        !std::isfinite(rotation.y) || !std::isfinite(rotation.z) ||
+        !std::isfinite(scale) || scale <= 0.0f) {
+        return 0;
+    }
     auto modelIt = models.find(modelId);
     if (modelIt == models.end()) {
         LOG_WARNING("Cannot create instance: model ", modelId, " not loaded");
