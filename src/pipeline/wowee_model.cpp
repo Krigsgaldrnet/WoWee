@@ -39,6 +39,14 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
     f.read(reinterpret_cast<char*>(&model.boundRadius), 4);
     f.read(reinterpret_cast<char*>(&model.boundMin), 12);
     f.read(reinterpret_cast<char*>(&model.boundMax), 12);
+    // Sanity bounds. Real M2 models cap at 65k vertices (uint16 indices) and
+    // typically 64 textures. Reject obviously corrupted counts before we
+    // try to allocate huge vertex/index buffers.
+    if (vertCount > 1'000'000 || indexCount > 4'000'000 || texCount > 1024) {
+        LOG_ERROR("WOM header rejected (verts=", vertCount,
+                  " indices=", indexCount, " textures=", texCount, "): ", basePath);
+        return WoweeModel{};
+    }
 
     // Bound sanity — radius drives M2 culling, min/max drive collision AABBs.
     // NaN/inf would either cull-out the model or crash the cull math.

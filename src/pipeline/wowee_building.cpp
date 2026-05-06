@@ -31,9 +31,18 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
     f.read(reinterpret_cast<char*>(&portalCount), 4);
     f.read(reinterpret_cast<char*>(&doodadCount), 4);
     f.read(reinterpret_cast<char*>(&bld.boundRadius), 4);
+    // Sanity bounds. Real WMOs are usually 1-50 groups; >4096 indicates a
+    // corrupted header that would OOM us when we resize() vectors.
+    if (groupCount > 4096 || portalCount > 8192 || doodadCount > 65536) {
+        LOG_ERROR("WOB header rejected (groups=", groupCount,
+                  " portals=", portalCount, " doodads=", doodadCount, "): ", basePath);
+        return WoweeBuilding{};
+    }
+    if (!std::isfinite(bld.boundRadius) || bld.boundRadius < 0.0f) bld.boundRadius = 1.0f;
 
     uint16_t nameLen;
     f.read(reinterpret_cast<char*>(&nameLen), 2);
+    if (nameLen > 1024) nameLen = 0;
     bld.name.resize(nameLen);
     f.read(bld.name.data(), nameLen);
 
