@@ -14,9 +14,22 @@ std::string SQLExporter::escape(const std::string& s) {
     std::string out;
     out.reserve(s.size());
     for (char c : s) {
-        if (c == '\'') out += "''";
-        else if (c == '\\') out += "\\\\";
-        else out += c;
+        // MySQL/MariaDB string-literal escape rules. The backslash sequences
+        // are the canonical way; doubled single quote works inside single-
+        // quoted strings either way (matches AzerothCore's import scripts).
+        // Stripping NUL prevents premature string termination in clients
+        // that don't fully respect length-prefixed strings; \r/\n keep
+        // each INSERT on its own line for human-readable export files.
+        switch (c) {
+            case '\'': out += "''"; break;
+            case '\\': out += "\\\\"; break;
+            case '\0': /* drop NUL */ break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            case 26:   out += "\\Z"; break; // Ctrl-Z
+            default:   out += c; break;
+        }
     }
     return out;
 }
