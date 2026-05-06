@@ -14,9 +14,12 @@
 #include "stb_image_write.h"
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
+#include <thread>
 
 namespace wowee {
 namespace tools {
@@ -296,49 +299,87 @@ void emitOpenFormats(const std::string& rootDir,
         return s;
     };
 
+    // Per-job kind so the worker can dispatch without re-checking extensions.
+    enum class Kind { Png, JsonDbc, Wom, Wob, Terrain };
+    struct Job { std::string path; std::string base; Kind kind; };
+    std::vector<Job> jobs;
+    jobs.reserve(4096);
+
     for (auto& entry : fs::recursive_directory_iterator(rootDir)) {
         if (!entry.is_regular_file()) continue;
         std::string ext = lower(entry.path().extension().string());
         std::string base = entry.path().string();
         if (base.size() > ext.size())
             base = base.substr(0, base.size() - ext.size());
+        std::string p = entry.path().string();
 
-        if (emitPng && ext == ".blp") {
-            if (emitPngFromBlp(entry.path().string(), base + ".png")) {
-                stats.pngOk++;
-            } else {
-                stats.pngFail++;
-            }
-        } else if (emitJsonDbc && ext == ".dbc") {
-            if (emitJsonFromDbc(entry.path().string(), base + ".json")) {
-                stats.jsonDbcOk++;
-            } else {
-                stats.jsonDbcFail++;
-            }
-        } else if (emitWom && ext == ".m2") {
-            if (emitWomFromM2(entry.path().string(), base)) stats.womOk++;
-            else stats.womFail++;
-        } else if (emitWob && ext == ".wmo") {
-            // Skip group sub-files (<base>_NNN.wmo) — those get merged
-            // into the root WMO during conversion.
+        if      (emitPng     && ext == ".blp") jobs.push_back({p, base, Kind::Png});
+        else if (emitJsonDbc && ext == ".dbc") jobs.push_back({p, base, Kind::JsonDbc});
+        else if (emitWom     && ext == ".m2")  jobs.push_back({p, base, Kind::Wom});
+        else if (emitWob     && ext == ".wmo") {
+            // Skip group sub-files (<base>_NNN.wmo) — merged into root WMO.
             std::string fname = entry.path().filename().string();
             auto under = fname.rfind('_');
             bool isGroup = (under != std::string::npos &&
-                            fname.size() - under == 8); // "_NNN.wmo" suffix
-            if (!isGroup) {
-                if (emitWobFromWmo(entry.path().string(), base)) stats.wobOk++;
-                else stats.wobFail++;
-            }
-        } else if (emitTerrain && ext == ".adt") {
-            if (emitTerrainFromAdt(entry.path().string(), base)) {
-                stats.whmOk++;
-                stats.wocOk++;
-            } else {
-                stats.whmFail++;
-                stats.wocFail++;
+                            fname.size() - under == 8);
+            if (!isGroup) jobs.push_back({p, base, Kind::Wob});
+        }
+        else if (emitTerrain && ext == ".adt") jobs.push_back({p, base, Kind::Terrain});
+    }
+    if (jobs.empty()) return;
+
+    // Parallel worker pool. Conversions are CPU-bound (BLP decode,
+    // M2/WMO parse + WOM/WOB serialize) so scaling with cores gives a
+    // big speedup on full-tree upgrades (~30k files).
+    std::atomic<size_t> nextIdx{0};
+    std::atomic<uint32_t> pngOk{0}, pngFail{0};
+    std::atomic<uint32_t> jsonOk{0}, jsonFail{0};
+    std::atomic<uint32_t> womOk{0}, womFail{0};
+    std::atomic<uint32_t> wobOk{0}, wobFail{0};
+    std::atomic<uint32_t> whmOk{0}, whmFail{0};
+
+    auto worker = [&]() {
+        for (;;) {
+            size_t i = nextIdx.fetch_add(1);
+            if (i >= jobs.size()) break;
+            const auto& job = jobs[i];
+            switch (job.kind) {
+                case Kind::Png:
+                    if (emitPngFromBlp(job.path, job.base + ".png")) pngOk++;
+                    else pngFail++;
+                    break;
+                case Kind::JsonDbc:
+                    if (emitJsonFromDbc(job.path, job.base + ".json")) jsonOk++;
+                    else jsonFail++;
+                    break;
+                case Kind::Wom:
+                    if (emitWomFromM2(job.path, job.base)) womOk++;
+                    else womFail++;
+                    break;
+                case Kind::Wob:
+                    if (emitWobFromWmo(job.path, job.base)) wobOk++;
+                    else wobFail++;
+                    break;
+                case Kind::Terrain:
+                    if (emitTerrainFromAdt(job.path, job.base)) whmOk++;
+                    else whmFail++;
+                    break;
             }
         }
-    }
+    };
+
+    unsigned int threadCount = std::max(1u, std::thread::hardware_concurrency());
+    std::vector<std::thread> pool;
+    pool.reserve(threadCount);
+    for (unsigned int t = 0; t < threadCount; t++) pool.emplace_back(worker);
+    for (auto& th : pool) th.join();
+
+    stats.pngOk       += pngOk;        stats.pngFail      += pngFail;
+    stats.jsonDbcOk   += jsonOk;       stats.jsonDbcFail  += jsonFail;
+    stats.womOk       += womOk;        stats.womFail      += womFail;
+    stats.wobOk       += wobOk;        stats.wobFail      += wobFail;
+    stats.whmOk       += whmOk;        stats.whmFail      += whmFail;
+    stats.wocOk       += whmOk;        stats.wocFail      += whmFail;
 }
 
 } // namespace tools
