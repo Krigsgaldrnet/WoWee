@@ -1170,8 +1170,19 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
         tightMin = glm::vec3(std::numeric_limits<float>::max());
         tightMax = glm::vec3(-std::numeric_limits<float>::max());
         for (const auto& v : model.vertices) {
+            // Skip NaN-positioned vertices — would corrupt the bounds
+            // (glm::min on NaN is implementation-defined) and feed NaN
+            // into the camera-occlusion / culling AABB.
+            if (!std::isfinite(v.position.x) || !std::isfinite(v.position.y) ||
+                !std::isfinite(v.position.z)) continue;
             tightMin = glm::min(tightMin, v.position);
             tightMax = glm::max(tightMax, v.position);
+        }
+        // If all vertices were NaN (very unlikely after the loader scrub
+        // but defense in depth), fall back to a unit box around origin.
+        if (tightMin.x > tightMax.x) {
+            tightMin = glm::vec3(-1.0f);
+            tightMax = glm::vec3(1.0f);
         }
     }
 
