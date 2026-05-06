@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <fstream>
 #include <cstring>
+#include <limits>
+#include <cmath>
 
 using namespace wowee::pipeline;
 
@@ -608,6 +610,46 @@ TEST_CASE("WOC rejects absurdly large triangle counts", "[woc][hardening]") {
     auto col = WoweeCollisionBuilder::load(path);
     // 10M triangle WOC rejected — returns empty (isValid false).
     REQUIRE_FALSE(col.isValid());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WOB scrubs NaN doodad transform on load", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/nan_doodad";
+    std::string path = base + ".wob";
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31424F57; // "WOB1"
+        uint32_t gc = 0, pc = 0, dc = 1;
+        float boundRadius = 5.0f;
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&gc), 4);
+        f.write(reinterpret_cast<const char*>(&pc), 4);
+        f.write(reinterpret_cast<const char*>(&dc), 4);
+        f.write(reinterpret_cast<const char*>(&boundRadius), 4);
+        // Empty name string
+        uint16_t nameLen = 0;
+        f.write(reinterpret_cast<const char*>(&nameLen), 2);
+        // Doodad with NaN position/rotation/scale
+        std::string mp = "Tree.wom";
+        uint16_t mpLen = static_cast<uint16_t>(mp.size());
+        f.write(reinterpret_cast<const char*>(&mpLen), 2);
+        f.write(mp.data(), mpLen);
+        float nan = std::numeric_limits<float>::quiet_NaN();
+        glm::vec3 nanv(nan, nan, nan);
+        f.write(reinterpret_cast<const char*>(&nanv), 12);
+        f.write(reinterpret_cast<const char*>(&nanv), 12);
+        f.write(reinterpret_cast<const char*>(&nan), 4);
+    }
+
+    auto bld = WoweeBuildingLoader::load(base);
+    // isValid requires a group — we deliberately wrote 0 groups to keep
+    // the test fixture small. Just check the doodad got loaded + scrubbed.
+    REQUIRE(bld.doodads.size() == 1);
+    REQUIRE(std::isfinite(bld.doodads[0].position.x));
+    REQUIRE(bld.doodads[0].position == glm::vec3(0, 0, 0));
+    REQUIRE(bld.doodads[0].rotation == glm::vec3(0, 0, 0));
+    REQUIRE(bld.doodads[0].scale == 1.0f);
     std::filesystem::remove(path);
 }
 
