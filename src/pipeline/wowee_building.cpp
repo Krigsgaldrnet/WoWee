@@ -197,12 +197,47 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
 
     outModel.nGroups = static_cast<uint32_t>(building.groups.size());
     outModel.groups.clear();
+    outModel.textures.clear();
+    outModel.materials.clear();
+    outModel.portals.clear();
+    outModel.portalVertices.clear();
+    outModel.portalRefs.clear();
+
+    // Build a global texture index from per-material texturePath strings.
+    // First-group materials become the WMO material list; each unique texture
+    // gets one entry in outModel.textures.
+    auto textureIndex = [&](const std::string& path) -> uint32_t {
+        if (path.empty()) return 0;
+        for (uint32_t i = 0; i < outModel.textures.size(); i++) {
+            if (outModel.textures[i] == path) return i;
+        }
+        outModel.textures.push_back(path);
+        return static_cast<uint32_t>(outModel.textures.size() - 1);
+    };
+
+    if (!building.groups.empty()) {
+        for (const auto& mat : building.groups[0].materials) {
+            WMOMaterial wm{};
+            wm.flags = mat.flags;
+            wm.shader = mat.shader;
+            wm.blendMode = mat.blendMode;
+            wm.texture1 = textureIndex(mat.texturePath);
+            wm.color1 = 0;
+            wm.texture2 = 0;
+            wm.color2 = 0;
+            wm.texture3 = 0;
+            wm.color3 = 0;
+            outModel.materials.push_back(wm);
+        }
+    }
 
     for (const auto& grp : building.groups) {
         WMOGroup wmoGroup;
         wmoGroup.name = grp.name;
+        wmoGroup.boundingBoxMin = grp.boundMin;
+        wmoGroup.boundingBoxMax = grp.boundMax;
+        if (grp.isOutdoor) wmoGroup.flags |= 0x08;
 
-        // Convert vertices
         wmoGroup.vertices.reserve(grp.vertices.size());
         for (const auto& v : grp.vertices) {
             WMOVertex wv;
@@ -213,7 +248,6 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
             wmoGroup.vertices.push_back(wv);
         }
 
-        // Convert indices
         wmoGroup.indices.reserve(grp.indices.size());
         for (uint32_t idx : grp.indices)
             wmoGroup.indices.push_back(static_cast<uint16_t>(idx));
@@ -221,8 +255,23 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
         outModel.groups.push_back(std::move(wmoGroup));
     }
 
-    // WMOModel uses isValid() = nGroups > 0 && !groups.empty()
-    // Both are now set, so isValid() will return true
+    // Reconstruct portal vertices + refs from WoB's higher-level portal struct.
+    for (const auto& wp : building.portals) {
+        WMOPortal portal{};
+        portal.startVertex = static_cast<uint16_t>(outModel.portalVertices.size());
+        portal.vertexCount = static_cast<uint16_t>(wp.vertices.size());
+        portal.planeIndex = 0;
+        for (const auto& v : wp.vertices) outModel.portalVertices.push_back(v);
+        uint16_t portalIdx = static_cast<uint16_t>(outModel.portals.size());
+        outModel.portals.push_back(portal);
+        if (wp.groupA >= 0) {
+            outModel.portalRefs.push_back({portalIdx, static_cast<uint16_t>(wp.groupA), -1, 0});
+        }
+        if (wp.groupB >= 0) {
+            outModel.portalRefs.push_back({portalIdx, static_cast<uint16_t>(wp.groupB), 1, 0});
+        }
+    }
+
     return true;
 }
 
