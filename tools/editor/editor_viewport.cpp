@@ -215,8 +215,6 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                     LOG_WARNING("M2 failed to upload to GPU: ", obj.path);
                     continue;
                 }
-                vkCtx_->waitAllUploads();
-                vkCtx_->pollUploadBatches();
                 LOG_INFO("M2 loaded: ", obj.path, " (modelId=", modelId, ", ",
                          model.vertices.size(), " verts)");
                 m2ModelIds[obj.path] = modelId;
@@ -262,8 +260,6 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                     LOG_WARNING("WMO failed to upload to GPU: ", obj.path);
                     continue;
                 }
-                vkCtx_->waitAllUploads();
-                vkCtx_->pollUploadBatches();
                 LOG_INFO("WMO loaded: ", obj.path, " (modelId=", modelId, ", ",
                          model.groups.size(), " groups)");
                 wmoModelIds[obj.path] = modelId;
@@ -370,8 +366,6 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                                model.batches.size(), "b)");
                     continue;
                 }
-                vkCtx_->waitAllUploads();
-                vkCtx_->pollUploadBatches();
                 m2ModelIds[npc.modelPath] = modelId;
             }
             glm::vec3 rotRad = glm::radians(glm::vec3(0, 0, npc.orientation));
