@@ -20,6 +20,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --list-zones           List discovered custom zones and exit\n");
     std::printf("  --validate <zoneDir>   Score zone open-format completeness and exit\n");
     std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
+    std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
     std::printf("Novel open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON\n");
@@ -59,6 +60,31 @@ int main(int argc, char* argv[]) {
             std::printf("  animations : %zu\n", wom.animations.size());
             std::printf("  batches    : %zu\n", wom.batches.size());
             std::printf("  boundRadius: %.2f\n", wom.boundRadius);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-wob") == 0 && i + 1 < argc) {
+            std::string base = argv[++i];
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wob")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeBuildingLoader::exists(base)) {
+                std::fprintf(stderr, "WOB not found: %s.wob\n", base.c_str());
+                return 1;
+            }
+            auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+            std::printf("WOB: %s.wob\n", base.c_str());
+            std::printf("  name        : %s\n", bld.name.c_str());
+            std::printf("  groups      : %zu\n", bld.groups.size());
+            std::printf("  portals     : %zu\n", bld.portals.size());
+            std::printf("  doodads     : %zu\n", bld.doodads.size());
+            std::printf("  boundRadius : %.2f\n", bld.boundRadius);
+            size_t totalVerts = 0, totalIdx = 0, totalMats = 0;
+            for (const auto& g : bld.groups) {
+                totalVerts += g.vertices.size();
+                totalIdx += g.indices.size();
+                totalMats += g.materials.size();
+            }
+            std::printf("  total verts : %zu\n", totalVerts);
+            std::printf("  total tris  : %zu\n", totalIdx / 3);
+            std::printf("  total mats  : %zu (across all groups)\n", totalMats);
             return 0;
         } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
             std::string zoneDir = argv[++i];
