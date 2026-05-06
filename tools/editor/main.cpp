@@ -1,6 +1,7 @@
 #include "editor_app.hpp"
 #include "content_pack.hpp"
 #include "npc_spawner.hpp"
+#include "object_placer.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wowee_collision.hpp"
@@ -28,6 +29,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
     std::printf("  --info-wot <wot-base>  Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-creatures <p>   Print creatures.json summary (counts, behaviors) and exit\n");
+    std::printf("  --info-objects <p>     Print objects.json summary (counts, types, scale range) and exit\n");
     std::printf("  --info-wcp <wcp-path>  Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
@@ -93,6 +95,33 @@ int main(int argc, char* argv[]) {
             std::printf("  total verts : %zu\n", totalVerts);
             std::printf("  total tris  : %zu\n", totalIdx / 3);
             std::printf("  total mats  : %zu (across all groups)\n", totalMats);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-objects") == 0 && i + 1 < argc) {
+            std::string path = argv[++i];
+            wowee::editor::ObjectPlacer placer;
+            if (!placer.loadFromFile(path)) {
+                std::fprintf(stderr, "Failed to load objects.json: %s\n", path.c_str());
+                return 1;
+            }
+            const auto& objs = placer.getObjects();
+            int m2Count = 0, wmoCount = 0;
+            std::unordered_map<std::string, int> pathHist;
+            float minScale = 1e30f, maxScale = -1e30f;
+            for (const auto& o : objs) {
+                if (o.type == wowee::editor::PlaceableType::M2) m2Count++;
+                else if (o.type == wowee::editor::PlaceableType::WMO) wmoCount++;
+                pathHist[o.path]++;
+                if (o.scale < minScale) minScale = o.scale;
+                if (o.scale > maxScale) maxScale = o.scale;
+            }
+            std::printf("objects.json: %s\n", path.c_str());
+            std::printf("  total       : %zu\n", objs.size());
+            std::printf("  M2 doodads  : %d\n", m2Count);
+            std::printf("  WMO buildings: %d\n", wmoCount);
+            std::printf("  unique paths: %zu\n", pathHist.size());
+            if (!objs.empty()) {
+                std::printf("  scale range : [%.2f, %.2f]\n", minScale, maxScale);
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--info-creatures") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
