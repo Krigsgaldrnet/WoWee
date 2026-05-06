@@ -411,6 +411,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Append one object placement to <zoneDir>/objects.json and exit\n");
     std::printf("  --add-quest <zoneDir> <title> [giverId] [turnInId] [xp] [level]\n");
     std::printf("                         Append one quest to <zoneDir>/quests.json and exit\n");
+    std::printf("  --add-quest-objective <zoneDir> <questIdx> <kill|collect|talk|explore|escort|use> <targetName> [count]\n");
+    std::printf("                         Append one objective to a quest by index\n");
     std::printf("  --remove-creature <zoneDir> <index>\n");
     std::printf("                         Remove creature at given 0-based index from <zoneDir>/creatures.json\n");
     std::printf("  --remove-object <zoneDir> <index>\n");
@@ -498,6 +500,7 @@ int main(int argc, char* argv[]) {
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--zone-summary",
         "--scaffold-zone", "--add-creature", "--add-object", "--add-quest",
+        "--add-quest-objective",
         "--remove-creature", "--remove-object", "--remove-quest",
         "--copy-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
@@ -537,6 +540,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--add-quest") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--add-quest requires <zoneDir> <title>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--add-quest-objective") == 0 && i + 4 >= argc) {
+            std::fprintf(stderr,
+                "--add-quest-objective requires <zoneDir> <questIdx> <type> <targetName>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--copy-zone") == 0 && i + 2 >= argc) {
@@ -2462,6 +2470,95 @@ int main(int argc, char* argv[]) {
             }
             std::printf("Added quest '%s' to %s (now %zu total)\n",
                         title.c_str(), path.c_str(), qe.questCount());
+            return 0;
+        } else if (std::strcmp(argv[i], "--add-quest-objective") == 0 && i + 4 < argc) {
+            // Append a single objective to an existing quest. The quest
+            // must already exist (use --add-quest first); index is 0-based
+            // and matches --list-quests output.
+            std::string zoneDir = argv[++i];
+            std::string idxStr = argv[++i];
+            std::string typeStr = argv[++i];
+            std::string targetName = argv[++i];
+            std::string path = zoneDir + "/quests.json";
+            if (!std::filesystem::exists(path)) {
+                std::fprintf(stderr, "add-quest-objective: %s not found — run --add-quest first\n",
+                             path.c_str());
+                return 1;
+            }
+            int idx;
+            try { idx = std::stoi(idxStr); }
+            catch (...) {
+                std::fprintf(stderr, "add-quest-objective: bad questIdx '%s'\n", idxStr.c_str());
+                return 1;
+            }
+            using OT = wowee::editor::QuestObjectiveType;
+            OT type;
+            if      (typeStr == "kill")    type = OT::KillCreature;
+            else if (typeStr == "collect") type = OT::CollectItem;
+            else if (typeStr == "talk")    type = OT::TalkToNPC;
+            else if (typeStr == "explore") type = OT::ExploreArea;
+            else if (typeStr == "escort")  type = OT::EscortNPC;
+            else if (typeStr == "use")     type = OT::UseObject;
+            else {
+                std::fprintf(stderr,
+                    "add-quest-objective: type must be kill/collect/talk/explore/escort/use, got '%s'\n",
+                    typeStr.c_str());
+                return 1;
+            }
+            uint32_t count = 1;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try {
+                    count = static_cast<uint32_t>(std::stoul(argv[++i]));
+                    if (count == 0) count = 1;
+                } catch (...) {}
+            }
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr, "add-quest-objective: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            if (idx < 0 || idx >= static_cast<int>(qe.questCount())) {
+                std::fprintf(stderr,
+                    "add-quest-objective: questIdx %d out of range [0, %zu)\n",
+                    idx, qe.questCount());
+                return 1;
+            }
+            wowee::editor::QuestObjective obj;
+            obj.type = type;
+            obj.targetName = targetName;
+            obj.targetCount = count;
+            // Auto-generate a description from type+name+count so addons
+            // and tooltips have something useful by default. The user can
+            // edit quests.json directly if they want bespoke prose.
+            const char* verb = "complete";
+            switch (type) {
+                case OT::KillCreature: verb = "Slay"; break;
+                case OT::CollectItem:  verb = "Collect"; break;
+                case OT::TalkToNPC:    verb = "Talk to"; break;
+                case OT::ExploreArea:  verb = "Explore"; break;
+                case OT::EscortNPC:    verb = "Escort"; break;
+                case OT::UseObject:    verb = "Use"; break;
+            }
+            obj.description = std::string(verb) + " " +
+                              (count > 1 ? std::to_string(count) + " " : "") +
+                              targetName;
+            // Quest is stored by value in the editor's vector; mutate via
+            // the non-const getter, which gives us a pointer we can write
+            // through.
+            wowee::editor::Quest* q = qe.getQuest(idx);
+            if (!q) {
+                std::fprintf(stderr, "add-quest-objective: getQuest(%d) returned null\n", idx);
+                return 1;
+            }
+            q->objectives.push_back(obj);
+            if (!qe.saveToFile(path)) {
+                std::fprintf(stderr, "add-quest-objective: failed to write %s\n",
+                             path.c_str());
+                return 1;
+            }
+            std::printf("Added objective '%s' to quest %d ('%s'), now %zu objective(s)\n",
+                        obj.description.c_str(), idx, q->title.c_str(),
+                        q->objectives.size());
             return 0;
         } else if (std::strcmp(argv[i], "--remove-creature") == 0 && i + 2 < argc) {
             // Remove a creature spawn by 0-based index. Pair with
