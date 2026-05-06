@@ -219,8 +219,6 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                          model.vertices.size(), " verts)");
                 m2ModelIds[obj.path] = modelId;
             }
-            glm::vec3 rotRad = glm::radians(obj.rotation);
-            m2Renderer_->createInstance(modelId, obj.position, rotRad, obj.scale);
 
         } else if (obj.type == PlaceableType::WMO && wmoRenderer_) {
             uint32_t modelId;
@@ -368,13 +366,29 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 }
                 m2ModelIds[npc.modelPath] = modelId;
             }
-            glm::vec3 rotRad = glm::radians(glm::vec3(0, 0, npc.orientation));
-            m2Renderer_->createInstance(modelId, npc.position, rotRad, npc.scale);
         }
     }
 
+    // Finalize all GPU uploads BEFORE creating instances
+    // (vertex buffers must be valid for isValid() check in createInstance)
     vkCtx_->waitAllUploads();
     vkCtx_->pollUploadBatches();
+
+    // Now create instances (vertex buffers are finalized)
+    for (const auto& obj : objects) {
+        if (obj.type == PlaceableType::M2) {
+            auto it = m2ModelIds.find(obj.path);
+            if (it == m2ModelIds.end()) continue;
+            glm::vec3 rotRad = glm::radians(obj.rotation);
+            m2Renderer_->createInstance(it->second, obj.position, rotRad, obj.scale);
+        }
+    }
+    for (const auto& npc : npcs) {
+        auto it = m2ModelIds.find(npc.modelPath);
+        if (it == m2ModelIds.end()) continue;
+        glm::vec3 rotRad = glm::radians(glm::vec3(0, 0, npc.orientation));
+        m2Renderer_->createInstance(it->second, npc.position, rotRad, npc.scale);
+    }
 
     // Update NPC markers via dedicated method
     updateNpcMarkers(npcs);
