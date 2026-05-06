@@ -210,9 +210,12 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
     if (!f) return false;
 
     f.write(reinterpret_cast<const char*>(&WOB_MAGIC), 4);
-    uint32_t gc = static_cast<uint32_t>(bld.groups.size());
-    uint32_t pc = static_cast<uint32_t>(bld.portals.size());
-    uint32_t dc = static_cast<uint32_t>(bld.doodads.size());
+    // Cap header counts at the load-side limits so a pathological build
+    // can't write a file the loader rejects whole. Same caps the load
+    // bounds-check uses (4096 groups / 8192 portals / 65536 doodads).
+    uint32_t gc = static_cast<uint32_t>(std::min<size_t>(bld.groups.size(), 4096));
+    uint32_t pc = static_cast<uint32_t>(std::min<size_t>(bld.portals.size(), 8192));
+    uint32_t dc = static_cast<uint32_t>(std::min<size_t>(bld.doodads.size(), 65536));
     f.write(reinterpret_cast<const char*>(&gc), 4);
     f.write(reinterpret_cast<const char*>(&pc), 4);
     f.write(reinterpret_cast<const char*>(&dc), 4);
@@ -232,7 +235,9 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
     };
     writeStr(bld.name);
 
-    for (const auto& grp : bld.groups) {
+    // Iterate using the capped counts so the body matches the header.
+    for (uint32_t gi = 0; gi < gc; gi++) {
+        const auto& grp = bld.groups[gi];
         writeStr(grp.name);
 
         uint32_t vc = static_cast<uint32_t>(grp.vertices.size());
@@ -294,7 +299,8 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         }
     }
 
-    for (const auto& portal : bld.portals) {
+    for (uint32_t pi = 0; pi < pc; pi++) {
+        const auto& portal = bld.portals[pi];
         f.write(reinterpret_cast<const char*>(&portal.groupA), 4);
         f.write(reinterpret_cast<const char*>(&portal.groupB), 4);
         uint32_t pvCount = static_cast<uint32_t>(portal.vertices.size());
@@ -311,7 +317,8 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         f.write(reinterpret_cast<const char*>(sanPortal.data()), pvCount * 12);
     }
 
-    for (const auto& dp : bld.doodads) {
+    for (uint32_t di = 0; di < dc; di++) {
+        const auto& dp = bld.doodads[di];
         writeStr(dp.modelPath);
         glm::vec3 pos = dp.position, rot = dp.rotation;
         for (int k = 0; k < 3; k++) {
