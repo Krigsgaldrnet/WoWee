@@ -33,6 +33,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
     std::printf("  --regen-collision <zoneDir>  Rebuild every WOC under a zone dir and exit\n");
+    std::printf("  --fix-zone <zoneDir>   Re-parse + re-save zone JSONs to apply latest scrubs/caps and exit\n");
     std::printf("  --export-png <wot-base> Render heightmap, normal-map, and zone-map PNG previews\n");
     std::printf("  --validate <zoneDir>   Score zone open-format completeness and exit\n");
     std::printf("  --zone-summary <zoneDir>  One-shot validate + creature/object/quest counts and exit\n");
@@ -66,7 +67,8 @@ int main(int argc, char* argv[]) {
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-zone", "--info-wcp", "--list-wcp", "--unpack-wcp", "--pack-wcp",
         "--validate", "--zone-summary",
-        "--scaffold-zone", "--build-woc", "--regen-collision", "--export-png",
+        "--scaffold-zone", "--build-woc", "--regen-collision", "--fix-zone",
+        "--export-png",
         "--convert-m2", "--convert-wmo",
     };
     for (int i = 1; i < argc; i++) {
@@ -552,6 +554,48 @@ int main(int argc, char* argv[]) {
             wowee::editor::WoweeTerrain::exportNormalMap(terrain, base + "_normals.png");
             wowee::editor::WoweeTerrain::exportZoneMap(terrain, base + "_zone.png", 512);
             std::printf("Exported PNGs: %s_{heightmap,normals,zone}.png\n", base.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--fix-zone") == 0 && i + 1 < argc) {
+            // Re-parse + re-save every JSON/binary file in a zone to apply
+            // the editor's load-time scrubs and save-time caps. Useful when
+            // an old zone was created before recent hardening — running
+            // this once cleans up NaN/oversize fields without touching
+            // the editor GUI.
+            std::string zoneDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr, "fix-zone: %s does not exist\n", zoneDir.c_str());
+                return 1;
+            }
+            int touched = 0;
+            // zone.json
+            {
+                wowee::editor::ZoneManifest m;
+                std::string p = zoneDir + "/zone.json";
+                if (fs::exists(p) && m.load(p) && m.save(p)) touched++;
+            }
+            // creatures.json
+            {
+                wowee::editor::NpcSpawner sp;
+                std::string p = zoneDir + "/creatures.json";
+                if (fs::exists(p) && sp.loadFromFile(p) && sp.saveToFile(p)) touched++;
+            }
+            // objects.json
+            {
+                wowee::editor::ObjectPlacer op;
+                std::string p = zoneDir + "/objects.json";
+                if (fs::exists(p) && op.loadFromFile(p) && op.saveToFile(p)) touched++;
+            }
+            // quests.json
+            {
+                wowee::editor::QuestEditor qe;
+                std::string p = zoneDir + "/quests.json";
+                if (fs::exists(p) && qe.loadFromFile(p) && qe.saveToFile(p)) touched++;
+            }
+            // WHM/WOT pairs and WoB files would need full pipeline access;
+            // skip them — the editor opens them on next zone load anyway,
+            // and the load-time scrubs run then.
+            std::printf("fix-zone: cleaned %d files in %s\n", touched, zoneDir.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--regen-collision") == 0 && i + 1 < argc) {
             // Find all WHM/WOT pairs under a zone dir and rebuild WOC for each.
