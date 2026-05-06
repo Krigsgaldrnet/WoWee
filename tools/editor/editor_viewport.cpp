@@ -500,9 +500,13 @@ void EditorViewport::setPatrolPath(const std::vector<glm::vec3>& points, float w
     verts.reserve(points.size() * 24);
 
     auto addRibbon = [&](const glm::vec3& a, const glm::vec3& b, float r, float g, float bl, float al) {
+        // NaN endpoints would short-circuit the len < 0.001f check (NaN
+        // comparisons return false) and propagate NaN through dir.
+        if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(a.z) ||
+            !std::isfinite(b.x) || !std::isfinite(b.y) || !std::isfinite(b.z)) return;
         glm::vec2 dir = glm::vec2(b.x - a.x, b.y - a.y);
         float len = glm::length(dir);
-        if (len < 0.001f) return;
+        if (!std::isfinite(len) || len < 0.001f) return;
         dir /= len;
         glm::vec2 perp(-dir.y, dir.x);
         float hw = width * 0.5f;
