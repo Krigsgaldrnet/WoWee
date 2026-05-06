@@ -2300,10 +2300,19 @@ void EditorUI::renderContextMenu(EditorApp& app) {
         if (npcSel) {
             if (ImGui::MenuItem("Fly To"))
                 app.flyToSelected();
-            if (ImGui::MenuItem("Duplicate")) {
+            if (ImGui::MenuItem("Snap to Ground"))
+                app.snapSelectedToGround();
+            if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
                 CreatureSpawn copy = *npcSel;
                 copy.position += glm::vec3(10, 10, 0);
                 app.getNpcSpawner().placeCreature(copy);
+                app.markObjectsDirty();
+            }
+            if (ImGui::MenuItem("Face Camera")) {
+                glm::vec3 cam = app.getEditorCamera().getCamera().getPosition();
+                glm::vec3 to = cam - npcSel->position;
+                npcSel->orientation = glm::degrees(std::atan2(to.y, to.x));
+                if (npcSel->orientation < 0.0f) npcSel->orientation += 360.0f;
                 app.markObjectsDirty();
             }
         }
