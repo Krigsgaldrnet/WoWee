@@ -277,7 +277,10 @@ void EditorApp::processEvents() {
         ImGui_ImplSDL2_ProcessEvent(&event);
 
         if (event.type == SDL_QUIT) {
-            if (terrain_.isLoaded() && terrainEditor_.hasUnsavedChanges()) {
+            // Confirm-on-quit fires for any unsaved change — terrain edits OR
+            // object/NPC/quest changes (autoSavePendingChanges_).
+            bool dirty = terrainEditor_.hasUnsavedChanges() || autoSavePendingChanges_;
+            if (terrain_.isLoaded() && dirty) {
                 showQuitConfirm_ = true;
             } else {
                 window_->setShouldClose(true);
