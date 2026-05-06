@@ -749,8 +749,18 @@ bool WMORenderer::loadModel(const pipeline::WMOModel& model, uint32_t id) {
             glm::vec3 v0 = model.portalVertices[portal.startVertex];
             glm::vec3 v1 = model.portalVertices[portal.startVertex + 1];
             glm::vec3 v2 = model.portalVertices[portal.startVertex + 2];
-            pd.normal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
-            pd.distance = glm::dot(pd.normal, v0);
+            // Degenerate portal (collinear or coincident verts) → cross is
+            // zero → normalize returns NaN. Fall back to up-axis instead of
+            // poisoning the portal-frustum cull.
+            glm::vec3 cross = glm::cross(v1 - v0, v2 - v0);
+            float crossLen = glm::length(cross);
+            if (crossLen > 1e-6f) {
+                pd.normal = cross / crossLen;
+                pd.distance = glm::dot(pd.normal, v0);
+            } else {
+                pd.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+                pd.distance = 0.0f;
+            }
         } else {
             pd.normal = glm::vec3(0.0f, 0.0f, 1.0f);
             pd.distance = 0.0f;
