@@ -1333,10 +1333,12 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
         std::transform(filter.begin(), filter.end(), filter.begin(),
                        [](unsigned char c) { return std::tolower(c); });
 
+        const auto& textures = browser.getTextures();
+        ImGui::TextDisabled("Pool: %zu textures across %zu dirs",
+                            textures.size(), dirs.size());
         float listHeight = ImGui::GetContentRegionAvail().y - 60;
         ImGui::BeginChild("TexList", ImVec2(0, listHeight), true);
 
-        const auto& textures = browser.getTextures();
         int shown = 0;
         for (const auto& tex : textures) {
             if (texDirIdx_ >= 0 && tex.directory != dirs[texDirIdx_]) continue;
