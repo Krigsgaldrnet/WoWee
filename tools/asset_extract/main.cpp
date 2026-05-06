@@ -35,6 +35,10 @@ static void printUsage(const char* prog) {
               << "  --upgrade-extract <dir>\n"
               << "                      Standalone post-extract pass on an existing tree —\n"
               << "                      writes open-format sidecars without re-running MPQ extract\n"
+              << "  --purge-proprietary <dir>\n"
+              << "                      Walk tree and dry-run report which proprietary files have\n"
+              << "                      an open-format sidecar; add --confirm-purge to actually delete\n"
+              << "  --confirm-purge     Required to actually delete files in --purge-proprietary mode\n"
               << "  --verify            CRC32 verify all extracted files\n"
               << "  --threads <N>       Number of extraction threads (default: auto)\n"
               << "  --verbose           Verbose output\n"
@@ -50,6 +54,13 @@ int main(int argc, char** argv) {
     // place. Useful for upgrading an old extraction without re-running
     // it from MPQ. Triggered by --upgrade-extract <dir>.
     std::string upgradeDir;
+
+    // Purge proprietary files when their open-format sidecar is present
+    // and at least as new. Dry-run by default; --confirm-purge actually
+    // deletes. Lets users free disk after dual-format extraction when
+    // they only need wowee runtime (no private server).
+    std::string purgeDir;
+    bool confirmPurge = false;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--mpq-dir") == 0 && i + 1 < argc) {
@@ -95,6 +106,10 @@ int main(int argc, char** argv) {
             opts.verify = true;
         } else if (std::strcmp(argv[i], "--verbose") == 0) {
             opts.verbose = true;
+        } else if (std::strcmp(argv[i], "--purge-proprietary") == 0 && i + 1 < argc) {
+            purgeDir = argv[++i];
+        } else if (std::strcmp(argv[i], "--confirm-purge") == 0) {
+            confirmPurge = true;
         } else if (std::strcmp(argv[i], "--upgrade-extract") == 0 && i + 1 < argc) {
             upgradeDir = argv[++i];
             // Implies --emit-open if no individual emit flag was set.
@@ -111,6 +126,89 @@ int main(int argc, char** argv) {
             printUsage(argv[0]);
             return 1;
         }
+    }
+
+    // --purge-proprietary: walk a tree and (dry-run unless --confirm-purge)
+    // remove every .blp/.dbc/.m2/.skin/.wmo/.adt that has a confirmed
+    // open-format sidecar at least as new. Useful after a dual-format
+    // extraction when the user only wants the open-format files (no
+    // private-server compatibility needed).
+    if (!purgeDir.empty()) {
+        if (!std::filesystem::exists(purgeDir)) {
+            std::cerr << "purge-proprietary: " << purgeDir << " does not exist\n";
+            return 1;
+        }
+        std::cout << (confirmPurge ? "Purging" : "Dry-run: would purge")
+                  << " proprietary files under " << purgeDir
+                  << " where open-format sidecar exists...\n";
+        // (proprietary ext, sidecar ext) pairs. .skin pairs with the
+        // matching foo.m2's foo.wom (skin gets purged when WOM exists
+        // because WOM stores merged geometry). Group .wmo (foo_NNN.wmo)
+        // pair with the parent's .wob.
+        struct Pair { const char* propExt; const char* sidecarExt; };
+        const Pair pairs[] = {
+            {".blp", ".png"},
+            {".dbc", ".json"},
+            {".m2",  ".wom"},
+            {".wmo", ".wob"},  // root WMO sidecar; group handling below
+            {".adt", ".whm"},
+        };
+        uint64_t toRemove = 0, removed = 0, totalBytes = 0;
+        namespace fs = std::filesystem;
+        for (auto& entry : fs::recursive_directory_iterator(purgeDir)) {
+            if (!entry.is_regular_file()) continue;
+            std::string p = entry.path().string();
+            std::string ext = entry.path().extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            std::string base = p.substr(0, p.size() - ext.size());
+
+            // Skin file shares its WOM sidecar with the parent .m2.
+            std::string sidecar;
+            if (ext == ".skin") {
+                // foo00.skin → foo.wom check
+                if (base.size() >= 2 && base.substr(base.size() - 2) == "00") {
+                    sidecar = base.substr(0, base.size() - 2) + ".wom";
+                }
+            } else if (ext == ".wmo") {
+                // Group sub-files purge if the parent root WMO has WOB.
+                std::string fname = entry.path().filename().string();
+                auto under = fname.rfind('_');
+                bool isGroup = (under != std::string::npos &&
+                                fname.size() - under == 8);
+                if (isGroup) {
+                    auto last = base.rfind('_');
+                    if (last != std::string::npos)
+                        sidecar = base.substr(0, last) + ".wob";
+                } else {
+                    sidecar = base + ".wob";
+                }
+            } else {
+                for (const auto& pr : pairs) {
+                    if (ext == pr.propExt) { sidecar = base + pr.sidecarExt; break; }
+                }
+            }
+            if (sidecar.empty() || !fs::exists(sidecar)) continue;
+
+            std::error_code ec;
+            auto srcMtime  = fs::last_write_time(p, ec);
+            auto sideMtime = fs::last_write_time(sidecar, ec);
+            if (ec || sideMtime < srcMtime) continue;
+
+            toRemove++;
+            totalBytes += entry.file_size();
+            if (confirmPurge) {
+                std::error_code rmEc;
+                if (fs::remove(p, rmEc)) removed++;
+            }
+        }
+        std::cout << (confirmPurge ? "  removed: " : "  would remove: ")
+                  << toRemove << " files (" << (totalBytes / (1024.0 * 1024.0))
+                  << " MB)\n";
+        if (!confirmPurge) {
+            std::cout << "  (re-run with --confirm-purge to actually delete)\n";
+        }
+        return 0;
     }
 
     // --upgrade-extract: standalone post-extract pass on an existing tree.
