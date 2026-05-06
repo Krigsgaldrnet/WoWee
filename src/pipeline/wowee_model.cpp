@@ -89,10 +89,20 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
 
     model.indices.resize(indexCount);
     f.read(reinterpret_cast<char*>(model.indices.data()), indexCount * 4);
+    // Clamp out-of-range indices — these would index past the vertex buffer
+    // and crash the GPU vertex shader. Replace with 0 rather than drop, so
+    // triangle counts stay aligned (a degenerate triangle is harmless,
+    // an off-by-one indexing the wrong vertex is silent corruption).
+    const uint32_t vMax = vertCount > 0 ? vertCount - 1 : 0;
+    for (auto& idx : model.indices) {
+        if (idx > vMax) idx = 0;
+    }
 
     for (uint32_t i = 0; i < texCount; i++) {
         uint16_t pathLen;
         f.read(reinterpret_cast<char*>(&pathLen), 2);
+        // Reject absurd path lengths (corrupted/truncated file).
+        if (pathLen > 1024) { pathLen = 0; }
         std::string path(pathLen, '\0');
         f.read(path.data(), pathLen);
         model.texturePaths.push_back(path);
