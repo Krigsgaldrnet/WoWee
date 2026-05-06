@@ -73,6 +73,17 @@ std::vector<std::string> TextureExporter::collectWMOTextures(pipeline::AssetMana
                        [](unsigned char c) { return std::tolower(c); });
         unique.insert(p);
     }
+
+    // WMO doodads (props inside the building) are M2 models — their textures
+    // also need to ship with the zone or the building will render with missing
+    // chairs/decorations.
+    std::unordered_set<std::string> seenDoodadM2;
+    for (const auto& [offset, name] : wmo.doodadNames) {
+        (void)offset;
+        if (name.empty() || !seenDoodadM2.insert(name).second) continue;
+        for (auto& t : collectM2Textures(am, name)) unique.insert(std::move(t));
+    }
+
     out.assign(unique.begin(), unique.end());
     std::sort(out.begin(), out.end());
     return out;
