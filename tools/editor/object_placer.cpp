@@ -294,6 +294,8 @@ bool ObjectPlacer::loadFromFile(const std::string& path) {
             obj.type = static_cast<PlaceableType>(jo.value("type", 0));
             obj.path = jo.value("path", "");
             obj.scale = jo.value("scale", 1.0f);
+            // Guard against corrupted/partial-write JSON: clamp invalid scale.
+            if (!std::isfinite(obj.scale) || obj.scale <= 0.0001f) obj.scale = 1.0f;
 
             if (jo.contains("pos") && jo["pos"].is_array() && jo["pos"].size() >= 3) {
                 obj.position = glm::vec3(jo["pos"][0].get<float>(),
