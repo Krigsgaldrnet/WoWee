@@ -1703,6 +1703,9 @@ void EditorApp::snapSelectedToGround() {
 void EditorApp::flattenAroundSelected(float radius) {
     auto* sel = objectPlacer_.getSelected();
     if (!sel || !terrain_.isLoaded()) return;
+    if (!std::isfinite(radius) || radius <= 0.0f ||
+        !std::isfinite(sel->position.x) || !std::isfinite(sel->position.y) ||
+        !std::isfinite(sel->position.z)) return;
 
     terrainEditor_.beginGeneratorUndo();
     float targetHeight = sel->position.z;

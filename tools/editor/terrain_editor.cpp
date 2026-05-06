@@ -905,6 +905,9 @@ void TerrainEditor::createMesa(const glm::vec3& center, float radius, float heig
 
 void TerrainEditor::createHill(const glm::vec3& center, float radius, float height) {
     if (!terrain_) return;
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
+        !std::isfinite(radius) || radius <= 0.0f ||
+        !std::isfinite(height)) return;
     recordGeneratorUndo();
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
