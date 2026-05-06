@@ -255,9 +255,14 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
     uint32_t magic = hasBatches ? WOM3_MAGIC : (hasAnim ? WOM2_MAGIC : WOM_MAGIC);
     f.write(reinterpret_cast<const char*>(&magic), 4);
 
-    uint32_t vertCount = static_cast<uint32_t>(model.vertices.size());
-    uint32_t indexCount = static_cast<uint32_t>(model.indices.size());
-    uint32_t texCount = static_cast<uint32_t>(model.texturePaths.size());
+    // Cap top-level counts at the load-side limits so a pathological
+    // model can't write a file the loader rejects whole.
+    uint32_t vertCount = static_cast<uint32_t>(
+        std::min<size_t>(model.vertices.size(), 1'000'000));
+    uint32_t indexCount = static_cast<uint32_t>(
+        std::min<size_t>(model.indices.size(), 4'000'000));
+    uint32_t texCount = static_cast<uint32_t>(
+        std::min<size_t>(model.texturePaths.size(), 1024));
     f.write(reinterpret_cast<const char*>(&vertCount), 4);
     f.write(reinterpret_cast<const char*>(&indexCount), 4);
     f.write(reinterpret_cast<const char*>(&texCount), 4);
@@ -291,7 +296,10 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
         f.write(reinterpret_cast<const char*>(model.vertices.data()),
                 vertCount * sizeof(WoweeModel::Vertex));
     } else {
-        for (const auto& v : model.vertices) {
+        // WOM1: write only the capped vertCount entries so the body
+        // matches the header.
+        for (uint32_t vi = 0; vi < vertCount; vi++) {
+            const auto& v = model.vertices[vi];
             f.write(reinterpret_cast<const char*>(&v.position), 12);
             f.write(reinterpret_cast<const char*>(&v.normal), 12);
             f.write(reinterpret_cast<const char*>(&v.texCoord), 8);
@@ -308,7 +316,8 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
         f.write(reinterpret_cast<const char*>(sanIdx.data()), indexCount * 4);
     }
 
-    for (const auto& path : model.texturePaths) writeStr(path);
+    // Match header texCount on round-trip.
+    for (uint32_t ti = 0; ti < texCount; ti++) writeStr(model.texturePaths[ti]);
 
     // WOM2/WOM3: write bones and animations (always, even if empty for WOM3)
     if (hasAnim || hasBatches) {
