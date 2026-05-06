@@ -219,3 +219,61 @@ TEST_CASE("WCP unpack rejects bad magic", "[wcp]") {
                                               "test_wcp_out/dest"));
     fs::remove_all("test_wcp_out");
 }
+
+// ============== EditorBrush::getInfluence tests ==============
+
+#include "editor_brush.hpp"
+#include <cmath>
+#include <limits>
+
+TEST_CASE("EditorBrush::getInfluence is full inside the inner radius", "[brush]") {
+    EditorBrush b;
+    b.settings().radius = 10.0f;
+    b.settings().falloff = 0.5f; // inner radius = 5
+    REQUIRE(b.getInfluence(0.0f) == 1.0f);
+    REQUIRE(b.getInfluence(4.0f) == 1.0f);
+    REQUIRE(b.getInfluence(5.0f) == 1.0f);
+}
+
+TEST_CASE("EditorBrush::getInfluence is zero at or beyond radius", "[brush]") {
+    EditorBrush b;
+    b.settings().radius = 10.0f;
+    b.settings().falloff = 0.5f;
+    REQUIRE(b.getInfluence(10.0f) == 0.0f);
+    REQUIRE(b.getInfluence(20.0f) == 0.0f);
+}
+
+TEST_CASE("EditorBrush::getInfluence smoothly falls off in the rim", "[brush]") {
+    EditorBrush b;
+    b.settings().radius = 10.0f;
+    b.settings().falloff = 1.0f; // inner radius = 0
+    // At t=0.5 the falloff should be 1 - 0.5^2 = 0.75
+    REQUIRE(b.getInfluence(5.0f) == Catch::Approx(0.75f).margin(0.001f));
+}
+
+TEST_CASE("EditorBrush::getInfluence rejects NaN distance", "[brush]") {
+    EditorBrush b;
+    b.settings().radius = 10.0f;
+    b.settings().falloff = 0.5f;
+    REQUIRE(b.getInfluence(std::numeric_limits<float>::quiet_NaN()) == 0.0f);
+    REQUIRE(b.getInfluence(std::numeric_limits<float>::infinity()) == 0.0f);
+}
+
+TEST_CASE("EditorBrush::getInfluence rejects non-positive radius", "[brush]") {
+    EditorBrush b;
+    b.settings().radius = 0.0f;
+    REQUIRE(b.getInfluence(5.0f) == 0.0f);
+    b.settings().radius = -10.0f;
+    REQUIRE(b.getInfluence(5.0f) == 0.0f);
+    b.settings().radius = std::numeric_limits<float>::quiet_NaN();
+    REQUIRE(b.getInfluence(5.0f) == 0.0f);
+}
+
+TEST_CASE("EditorBrush::getInfluence handles zero falloff (hard edge)", "[brush]") {
+    EditorBrush b;
+    b.settings().radius = 10.0f;
+    b.settings().falloff = 0.0f;
+    REQUIRE(b.getInfluence(0.0f) == 1.0f);
+    REQUIRE(b.getInfluence(9.99f) == 1.0f);
+    REQUIRE(b.getInfluence(10.0f) == 0.0f);
+}
