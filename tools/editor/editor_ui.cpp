@@ -2015,12 +2015,26 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
         if (ImGui::CollapsingHeader("Scatter Tool")) {
             static int scatterCount = 5;
             static float scatterRadius = 50.0f;
+            static bool scatterSnap = true;
             ImGui::SliderInt("Count", &scatterCount, 1, 30);
             ImGui::SliderFloat("Radius##scatter", &scatterRadius, 10.0f, 200.0f);
+            ImGui::Checkbox("Snap to Ground##scatter", &scatterSnap);
             auto& brush = app.getTerrainEditor().brush();
             if (ImGui::Button("Scatter at Cursor", ImVec2(-1, 0))) {
                 if (brush.isActive() && !tmpl.modelPath.empty()) {
+                    size_t before = spawner.spawnCount();
                     spawner.scatter(tmpl, brush.getPosition(), scatterRadius, scatterCount);
+                    if (scatterSnap) {
+                        auto& tEd = app.getTerrainEditor();
+                        for (size_t i = before; i < spawner.spawnCount(); i++) {
+                            auto& s = spawner.getSpawns()[i];
+                            rendering::Ray ray;
+                            ray.origin = s.position + glm::vec3(0, 0, 500);
+                            ray.direction = glm::vec3(0, 0, -1);
+                            glm::vec3 hit;
+                            if (tEd.raycastTerrain(ray, hit)) s.position.z = hit.z;
+                        }
+                    }
                     app.markObjectsDirty();
                 }
             }
