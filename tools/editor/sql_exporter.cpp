@@ -67,6 +67,11 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
         uint32_t unitFlags = 0;
         if (!s.hostile) unitFlags |= 0x02; // NON_ATTACKABLE
 
+        // displayId=0 results in an invisible NPC in-game. Fall back to
+        // 11707 (a generic humanoid) so the export is at least usable;
+        // the user can fix it after if they meant something else.
+        uint32_t displayId = s.displayId == 0 ? 11707 : s.displayId;
+
         f << "INSERT INTO `creature_template` "
           << "(`entry`, `name`, `minlevel`, `maxlevel`, `minhealth`, `maxhealth`, "
           << "`mana`, `armor`, `mindmg`, `maxdmg`, `faction`, `npcflag`, "
@@ -79,7 +84,7 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
           << s.minDamage << ", " << s.maxDamage << ", "
           << s.faction << ", " << npcFlags << ", "
           << unitFlags << ", "
-          << s.displayId << ", "
+          << displayId << ", "
           << s.scale
           << ") ON DUPLICATE KEY UPDATE `name`='" << escapeSql(s.name) << "';\n";
     }
