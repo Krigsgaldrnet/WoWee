@@ -23,6 +23,213 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 
+// ─── Open-format consistency checks ─────────────────────────────
+// Both validators are called from the per-file CLI commands AND
+// from --validate-all which walks a zone dir. Returning a vector
+// of error strings (empty == passed) keeps callers simple.
+static std::vector<std::string> validateWomErrors(
+        const wowee::pipeline::WoweeModel& wom) {
+    std::vector<std::string> errors;
+    if (wom.version < 1 || wom.version > 3) {
+        errors.push_back("version " + std::to_string(wom.version) +
+                         " outside [1,3]");
+    }
+    if (!wom.isValid()) errors.push_back("empty geometry (no verts/indices)");
+    if (wom.indices.size() % 3 != 0) {
+        errors.push_back("indices.size()=" + std::to_string(wom.indices.size()) +
+                         " not divisible by 3");
+    }
+    int oobIdx = 0;
+    for (uint32_t idx : wom.indices) {
+        if (idx >= wom.vertices.size()) {
+            if (++oobIdx <= 3) {
+                errors.push_back("index " + std::to_string(idx) +
+                                 " >= vertexCount " +
+                                 std::to_string(wom.vertices.size()));
+            }
+        }
+    }
+    if (oobIdx > 3) {
+        errors.push_back("... and " + std::to_string(oobIdx - 3) +
+                         " more out-of-range indices");
+    }
+    for (size_t b = 0; b < wom.bones.size(); ++b) {
+        int16_t p = wom.bones[b].parentBone;
+        if (p == -1) continue;
+        if (p < 0 || p >= static_cast<int16_t>(wom.bones.size())) {
+            errors.push_back("bone " + std::to_string(b) +
+                             " parent=" + std::to_string(p) +
+                             " out of range");
+        } else if (p >= static_cast<int16_t>(b)) {
+            errors.push_back("bone " + std::to_string(b) +
+                             " parent=" + std::to_string(p) +
+                             " not strictly less (DAG order)");
+        }
+    }
+    int oobVB = 0;
+    for (size_t v = 0; v < wom.vertices.size() && !wom.bones.empty(); ++v) {
+        const auto& vert = wom.vertices[v];
+        for (int k = 0; k < 4; ++k) {
+            if (vert.boneWeights[k] == 0) continue;
+            if (vert.boneIndices[k] >= wom.bones.size()) {
+                if (++oobVB <= 3) {
+                    errors.push_back("vertex " + std::to_string(v) +
+                                     " boneIndex[" + std::to_string(k) +
+                                     "]=" + std::to_string(vert.boneIndices[k]) +
+                                     " >= boneCount " +
+                                     std::to_string(wom.bones.size()));
+                }
+            }
+        }
+    }
+    if (oobVB > 3) {
+        errors.push_back("... and " + std::to_string(oobVB - 3) +
+                         " more out-of-range vertex bone refs");
+    }
+    for (size_t a = 0; a < wom.animations.size(); ++a) {
+        const auto& anim = wom.animations[a];
+        if (!anim.boneKeyframes.empty() &&
+            anim.boneKeyframes.size() != wom.bones.size()) {
+            errors.push_back("animation " + std::to_string(a) +
+                             " boneKeyframes.size()=" +
+                             std::to_string(anim.boneKeyframes.size()) +
+                             " != boneCount " +
+                             std::to_string(wom.bones.size()));
+        }
+    }
+    for (size_t b = 0; b < wom.batches.size(); ++b) {
+        const auto& batch = wom.batches[b];
+        uint64_t end = uint64_t(batch.indexStart) + batch.indexCount;
+        if (end > wom.indices.size()) {
+            errors.push_back("batch " + std::to_string(b) +
+                             " indexStart+Count=" + std::to_string(end) +
+                             " > indexCount " +
+                             std::to_string(wom.indices.size()));
+        }
+        if (batch.indexCount % 3 != 0) {
+            errors.push_back("batch " + std::to_string(b) +
+                             " indexCount=" + std::to_string(batch.indexCount) +
+                             " not divisible by 3");
+        }
+        if (!wom.texturePaths.empty() &&
+            batch.textureIndex >= wom.texturePaths.size()) {
+            errors.push_back("batch " + std::to_string(b) +
+                             " textureIndex=" + std::to_string(batch.textureIndex) +
+                             " >= textureCount " +
+                             std::to_string(wom.texturePaths.size()));
+        }
+    }
+    if (wom.boundMin.x > wom.boundMax.x ||
+        wom.boundMin.y > wom.boundMax.y ||
+        wom.boundMin.z > wom.boundMax.z) {
+        errors.push_back("boundMin > boundMax on at least one axis");
+    }
+    if (wom.boundRadius < 0.0f) {
+        errors.push_back("boundRadius=" + std::to_string(wom.boundRadius) +
+                         " is negative");
+    }
+    return errors;
+}
+
+static std::vector<std::string> validateWobErrors(
+        const wowee::pipeline::WoweeBuilding& bld) {
+    std::vector<std::string> errors;
+    if (!bld.isValid()) errors.push_back("empty building (no groups)");
+    int badMatTexCount = 0;
+    for (size_t g = 0; g < bld.groups.size(); ++g) {
+        const auto& grp = bld.groups[g];
+        if (grp.indices.size() % 3 != 0) {
+            errors.push_back("group " + std::to_string(g) +
+                             " indices.size()=" + std::to_string(grp.indices.size()) +
+                             " not divisible by 3");
+        }
+        int oobIdx = 0;
+        for (uint32_t idx : grp.indices) {
+            if (idx >= grp.vertices.size()) ++oobIdx;
+        }
+        if (oobIdx > 0) {
+            errors.push_back("group " + std::to_string(g) + " has " +
+                             std::to_string(oobIdx) +
+                             " indices out of range (vertCount=" +
+                             std::to_string(grp.vertices.size()) + ")");
+        }
+        for (size_t m = 0; m < grp.materials.size(); ++m) {
+            if (grp.materials[m].texturePath.empty()) {
+                badMatTexCount++;
+                if (badMatTexCount <= 3) {
+                    errors.push_back("group " + std::to_string(g) +
+                                     " material " + std::to_string(m) +
+                                     " has empty texturePath");
+                }
+            }
+        }
+        if (grp.boundMin.x > grp.boundMax.x ||
+            grp.boundMin.y > grp.boundMax.y ||
+            grp.boundMin.z > grp.boundMax.z) {
+            errors.push_back("group " + std::to_string(g) +
+                             " boundMin > boundMax on at least one axis");
+        }
+    }
+    if (badMatTexCount > 3) {
+        errors.push_back("... and " + std::to_string(badMatTexCount - 3) +
+                         " more empty material textures");
+    }
+    int badPortal = 0;
+    for (size_t p = 0; p < bld.portals.size(); ++p) {
+        const auto& portal = bld.portals[p];
+        auto inRange = [&](int g) {
+            return g == -1 ||
+                   (g >= 0 && g < static_cast<int>(bld.groups.size()));
+        };
+        if (!inRange(portal.groupA) || !inRange(portal.groupB)) {
+            if (++badPortal <= 3) {
+                errors.push_back("portal " + std::to_string(p) +
+                                 " refs out-of-range groups (" +
+                                 std::to_string(portal.groupA) + ", " +
+                                 std::to_string(portal.groupB) + ")");
+            }
+        }
+        if (portal.vertices.size() < 3) {
+            if (++badPortal <= 3) {
+                errors.push_back("portal " + std::to_string(p) +
+                                 " has only " +
+                                 std::to_string(portal.vertices.size()) +
+                                 " verts (need >= 3 for a polygon)");
+            }
+        }
+    }
+    if (badPortal > 3) {
+        errors.push_back("... and " + std::to_string(badPortal - 3) +
+                         " more bad portal entries");
+    }
+    int badDoodad = 0;
+    for (size_t d = 0; d < bld.doodads.size(); ++d) {
+        const auto& doodad = bld.doodads[d];
+        if (doodad.modelPath.empty()) {
+            if (++badDoodad <= 3) {
+                errors.push_back("doodad " + std::to_string(d) +
+                                 " has empty modelPath");
+            }
+        }
+        if (!std::isfinite(doodad.scale) || doodad.scale <= 0.0f) {
+            if (++badDoodad <= 3) {
+                errors.push_back("doodad " + std::to_string(d) +
+                                 " has non-positive scale " +
+                                 std::to_string(doodad.scale));
+            }
+        }
+    }
+    if (badDoodad > 3) {
+        errors.push_back("... and " + std::to_string(badDoodad - 3) +
+                         " more bad doodad entries");
+    }
+    if (bld.boundRadius < 0.0f) {
+        errors.push_back("boundRadius=" + std::to_string(bld.boundRadius) +
+                         " is negative");
+    }
+    return errors;
+}
+
 static void printUsage(const char* argv0) {
     std::printf("Usage: %s --data <path> [options]\n\n", argv0);
     std::printf("Options:\n");
@@ -50,6 +257,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Deep-check a WOM file for index/bone/batch/bound invariants\n");
     std::printf("  --validate-wob <wob-base> [--json]\n");
     std::printf("                         Deep-check a WOB file for group/portal/doodad invariants\n");
+    std::printf("  --validate-all <dir> [--json]\n");
+    std::printf("                         Recursively run --validate-wom + --validate-wob on every file\n");
     std::printf("  --zone-summary <zoneDir> [--json]\n");
     std::printf("                         One-shot validate + creature/object/quest counts and exit\n");
     std::printf("  --info <wom-base> [--json]\n");
@@ -94,7 +303,8 @@ int main(int argc, char* argv[]) {
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--info-zone", "--info-wcp", "--list-wcp",
         "--unpack-wcp", "--pack-wcp",
-        "--validate", "--validate-wom", "--validate-wob", "--zone-summary",
+        "--validate", "--validate-wom", "--validate-wob", "--validate-all",
+        "--zone-summary",
         "--scaffold-zone", "--add-creature", "--add-object", "--add-quest",
         "--copy-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
@@ -1010,112 +1220,7 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             auto wom = wowee::pipeline::WoweeModelLoader::load(base);
-            std::vector<std::string> errors;
-            // Header sanity.
-            if (wom.version < 1 || wom.version > 3) {
-                errors.push_back("version " + std::to_string(wom.version) +
-                                 " outside [1,3]");
-            }
-            if (!wom.isValid()) errors.push_back("empty geometry (no verts/indices)");
-            if (wom.indices.size() % 3 != 0) {
-                errors.push_back("indices.size()=" + std::to_string(wom.indices.size()) +
-                                 " not divisible by 3");
-            }
-            // Indices must point at real vertices.
-            int oobIdx = 0;
-            for (uint32_t idx : wom.indices) {
-                if (idx >= wom.vertices.size()) {
-                    if (++oobIdx <= 3) {
-                        errors.push_back("index " + std::to_string(idx) +
-                                         " >= vertexCount " +
-                                         std::to_string(wom.vertices.size()));
-                    }
-                }
-            }
-            if (oobIdx > 3) {
-                errors.push_back("... and " + std::to_string(oobIdx - 3) +
-                                 " more out-of-range indices");
-            }
-            // Bone tree: parent must be -1 or earlier index (DAG order).
-            for (size_t b = 0; b < wom.bones.size(); ++b) {
-                int16_t p = wom.bones[b].parentBone;
-                if (p == -1) continue;
-                if (p < 0 || p >= static_cast<int16_t>(wom.bones.size())) {
-                    errors.push_back("bone " + std::to_string(b) +
-                                     " parent=" + std::to_string(p) +
-                                     " out of range");
-                } else if (p >= static_cast<int16_t>(b)) {
-                    errors.push_back("bone " + std::to_string(b) +
-                                     " parent=" + std::to_string(p) +
-                                     " not strictly less (DAG order)");
-                }
-            }
-            // Vertex bone refs (only when boneWeights nonzero).
-            int oobVB = 0;
-            for (size_t v = 0; v < wom.vertices.size() && !wom.bones.empty(); ++v) {
-                const auto& vert = wom.vertices[v];
-                for (int k = 0; k < 4; ++k) {
-                    if (vert.boneWeights[k] == 0) continue;
-                    if (vert.boneIndices[k] >= wom.bones.size()) {
-                        if (++oobVB <= 3) {
-                            errors.push_back("vertex " + std::to_string(v) +
-                                             " boneIndex[" + std::to_string(k) +
-                                             "]=" + std::to_string(vert.boneIndices[k]) +
-                                             " >= boneCount " +
-                                             std::to_string(wom.bones.size()));
-                        }
-                    }
-                }
-            }
-            if (oobVB > 3) {
-                errors.push_back("... and " + std::to_string(oobVB - 3) +
-                                 " more out-of-range vertex bone refs");
-            }
-            // Animations: per-bone keyframe vector must match bone count.
-            for (size_t a = 0; a < wom.animations.size(); ++a) {
-                const auto& anim = wom.animations[a];
-                if (!anim.boneKeyframes.empty() &&
-                    anim.boneKeyframes.size() != wom.bones.size()) {
-                    errors.push_back("animation " + std::to_string(a) +
-                                     " boneKeyframes.size()=" +
-                                     std::to_string(anim.boneKeyframes.size()) +
-                                     " != boneCount " +
-                                     std::to_string(wom.bones.size()));
-                }
-            }
-            // Batches must reference valid index slices and textures.
-            for (size_t b = 0; b < wom.batches.size(); ++b) {
-                const auto& batch = wom.batches[b];
-                uint64_t end = uint64_t(batch.indexStart) + batch.indexCount;
-                if (end > wom.indices.size()) {
-                    errors.push_back("batch " + std::to_string(b) +
-                                     " indexStart+Count=" + std::to_string(end) +
-                                     " > indexCount " +
-                                     std::to_string(wom.indices.size()));
-                }
-                if (batch.indexCount % 3 != 0) {
-                    errors.push_back("batch " + std::to_string(b) +
-                                     " indexCount=" + std::to_string(batch.indexCount) +
-                                     " not divisible by 3");
-                }
-                if (!wom.texturePaths.empty() &&
-                    batch.textureIndex >= wom.texturePaths.size()) {
-                    errors.push_back("batch " + std::to_string(b) +
-                                     " textureIndex=" + std::to_string(batch.textureIndex) +
-                                     " >= textureCount " +
-                                     std::to_string(wom.texturePaths.size()));
-                }
-            }
-            // Bounds.
-            if (wom.boundMin.x > wom.boundMax.x ||
-                wom.boundMin.y > wom.boundMax.y ||
-                wom.boundMin.z > wom.boundMax.z) {
-                errors.push_back("boundMin > boundMax on at least one axis");
-            }
-            if (wom.boundRadius < 0.0f) {
-                errors.push_back("boundRadius=" + std::to_string(wom.boundRadius) +
-                                 " is negative");
-            }
+            auto errors = validateWomErrors(wom);
             if (jsonOut) {
                 nlohmann::json j;
                 j["wom"] = base + ".wom";
@@ -1152,109 +1257,7 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
-            std::vector<std::string> errors;
-            if (!bld.isValid()) errors.push_back("empty building (no groups)");
-            // Per-group cross-refs.
-            int oobIdxTotal = 0, badTriCount = 0, badMatTexCount = 0;
-            for (size_t g = 0; g < bld.groups.size(); ++g) {
-                const auto& grp = bld.groups[g];
-                if (grp.indices.size() % 3 != 0) {
-                    badTriCount++;
-                    errors.push_back("group " + std::to_string(g) +
-                                     " indices.size()=" + std::to_string(grp.indices.size()) +
-                                     " not divisible by 3");
-                }
-                int oobIdx = 0;
-                for (uint32_t idx : grp.indices) {
-                    if (idx >= grp.vertices.size()) ++oobIdx;
-                }
-                if (oobIdx > 0) {
-                    oobIdxTotal += oobIdx;
-                    errors.push_back("group " + std::to_string(g) + " has " +
-                                     std::to_string(oobIdx) +
-                                     " indices out of range (vertCount=" +
-                                     std::to_string(grp.vertices.size()) + ")");
-                }
-                // Material texture paths can be raw (not in texturePaths)
-                // — only flag completely empty entries.
-                for (size_t m = 0; m < grp.materials.size(); ++m) {
-                    if (grp.materials[m].texturePath.empty()) {
-                        badMatTexCount++;
-                        if (badMatTexCount <= 3) {
-                            errors.push_back("group " + std::to_string(g) +
-                                             " material " + std::to_string(m) +
-                                             " has empty texturePath");
-                        }
-                    }
-                }
-                // Group bounds.
-                if (grp.boundMin.x > grp.boundMax.x ||
-                    grp.boundMin.y > grp.boundMax.y ||
-                    grp.boundMin.z > grp.boundMax.z) {
-                    errors.push_back("group " + std::to_string(g) +
-                                     " boundMin > boundMax on at least one axis");
-                }
-            }
-            if (badMatTexCount > 3) {
-                errors.push_back("... and " + std::to_string(badMatTexCount - 3) +
-                                 " more empty material textures");
-            }
-            // Portals reference real groups, polygon has >=3 verts.
-            int badPortal = 0;
-            for (size_t p = 0; p < bld.portals.size(); ++p) {
-                const auto& portal = bld.portals[p];
-                auto inRange = [&](int g) {
-                    return g == -1 ||
-                           (g >= 0 && g < static_cast<int>(bld.groups.size()));
-                };
-                if (!inRange(portal.groupA) || !inRange(portal.groupB)) {
-                    if (++badPortal <= 3) {
-                        errors.push_back("portal " + std::to_string(p) +
-                                         " refs out-of-range groups (" +
-                                         std::to_string(portal.groupA) + ", " +
-                                         std::to_string(portal.groupB) + ")");
-                    }
-                }
-                if (portal.vertices.size() < 3) {
-                    if (++badPortal <= 3) {
-                        errors.push_back("portal " + std::to_string(p) +
-                                         " has only " +
-                                         std::to_string(portal.vertices.size()) +
-                                         " verts (need >= 3 for a polygon)");
-                    }
-                }
-            }
-            if (badPortal > 3) {
-                errors.push_back("... and " + std::to_string(badPortal - 3) +
-                                 " more bad portal entries");
-            }
-            // Doodads.
-            int badDoodad = 0;
-            for (size_t d = 0; d < bld.doodads.size(); ++d) {
-                const auto& doodad = bld.doodads[d];
-                if (doodad.modelPath.empty()) {
-                    if (++badDoodad <= 3) {
-                        errors.push_back("doodad " + std::to_string(d) +
-                                         " has empty modelPath");
-                    }
-                }
-                if (!std::isfinite(doodad.scale) || doodad.scale <= 0.0f) {
-                    if (++badDoodad <= 3) {
-                        errors.push_back("doodad " + std::to_string(d) +
-                                         " has non-positive scale " +
-                                         std::to_string(doodad.scale));
-                    }
-                }
-            }
-            if (badDoodad > 3) {
-                errors.push_back("... and " + std::to_string(badDoodad - 3) +
-                                 " more bad doodad entries");
-            }
-            // Building bounds.
-            if (bld.boundRadius < 0.0f) {
-                errors.push_back("boundRadius=" + std::to_string(bld.boundRadius) +
-                                 " is negative");
-            }
+            auto errors = validateWobErrors(bld);
             if (jsonOut) {
                 nlohmann::json j;
                 j["wob"] = base + ".wob";
@@ -1277,6 +1280,82 @@ int main(int argc, char* argv[]) {
             }
             std::printf("  FAILED — %zu error(s):\n", errors.size());
             for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-all") == 0 && i + 1 < argc) {
+            // CI gate: walk a directory, run validate-wom on every .wom and
+            // validate-wob on every .wob. Aggregate counts for fast triage.
+            // Per-file errors are reported (capped) so the user knows which
+            // file to drill into with --validate-wom/-wob individually.
+            std::string root = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(root)) {
+                std::fprintf(stderr, "validate-all: not found: %s\n", root.c_str());
+                return 1;
+            }
+            int womTotal = 0, womFail = 0, wobTotal = 0, wobFail = 0;
+            int totalErrors = 0;
+            std::vector<std::pair<std::string, std::vector<std::string>>> failures;
+            for (const auto& entry : fs::recursive_directory_iterator(root)) {
+                if (!entry.is_regular_file()) continue;
+                std::string ext = entry.path().extension().string();
+                std::string base = entry.path().string();
+                base = base.substr(0, base.size() - ext.size());
+                if (ext == ".wom") {
+                    womTotal++;
+                    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                    auto errs = validateWomErrors(wom);
+                    if (!errs.empty()) {
+                        womFail++;
+                        totalErrors += errs.size();
+                        if (failures.size() < 20) {
+                            failures.push_back({entry.path().string(), errs});
+                        }
+                    }
+                } else if (ext == ".wob") {
+                    wobTotal++;
+                    auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+                    auto errs = validateWobErrors(bld);
+                    if (!errs.empty()) {
+                        wobFail++;
+                        totalErrors += errs.size();
+                        if (failures.size() < 20) {
+                            failures.push_back({entry.path().string(), errs});
+                        }
+                    }
+                }
+            }
+            int allPassed = (womFail == 0 && wobFail == 0);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["root"] = root;
+                j["wom"] = {{"total", womTotal}, {"failed", womFail}};
+                j["wob"] = {{"total", wobTotal}, {"failed", wobFail}};
+                j["totalErrors"] = totalErrors;
+                j["passed"] = bool(allPassed);
+                nlohmann::json failArr = nlohmann::json::array();
+                for (const auto& [path, errs] : failures) {
+                    failArr.push_back({{"file", path}, {"errors", errs}});
+                }
+                j["failures"] = failArr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return allPassed ? 0 : 1;
+            }
+            std::printf("validate-all: %s\n", root.c_str());
+            std::printf("  WOM: %d total, %d failed\n", womTotal, womFail);
+            std::printf("  WOB: %d total, %d failed\n", wobTotal, wobFail);
+            if (allPassed) {
+                std::printf("  PASSED — all %d file(s) clean\n", womTotal + wobTotal);
+                return 0;
+            }
+            std::printf("  FAILED — %d total error(s) across %zu file(s):\n",
+                        totalErrors, failures.size());
+            for (const auto& [path, errs] : failures) {
+                std::printf("  %s:\n", path.c_str());
+                for (const auto& e : errs) std::printf("    - %s\n", e.c_str());
+            }
             return 1;
         } else if (std::strcmp(argv[i], "--export-png") == 0 && i + 1 < argc) {
             // Render heightmap, normal-map, and zone-map PNG previews for a
