@@ -585,6 +585,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Compare two WCPs file-by-file; exit 0 if identical, 1 otherwise\n");
     std::printf("  --diff-zone <a> <b> [--json]\n");
     std::printf("                         Compare two zone dirs (creatures/objects/quests/manifest); exit 0 if identical\n");
+    std::printf("  --diff-glb <a> <b> [--json]\n");
+    std::printf("                         Compare two glTF 2.0 binaries structurally; exit 0 if identical\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
@@ -650,6 +652,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--diff-zone") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--diff-zone requires <zoneA> <zoneB>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--diff-glb") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--diff-glb requires <a.glb> <b.glb>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 >= argc) {
@@ -2676,6 +2683,128 @@ int main(int argc, char* argv[]) {
                         aQuests.size(), bQuests.size());
             for (const auto& s : questOnlyA) std::printf("    - %s\n", s.c_str());
             for (const auto& s : questOnlyB) std::printf("    + %s\n", s.c_str());
+            return 1;
+        } else if (std::strcmp(argv[i], "--diff-glb") == 0 && i + 2 < argc) {
+            // Structural compare of two .glb files. Useful for confirming
+            // that an alternate export path produces equivalent output
+            // (e.g. --bake-zone-glb vs concatenated --export-whm-glbs)
+            // or that a re-export of the same source is byte-equivalent.
+            // Compares structure (mesh/primitive/accessor counts +
+            // chunk sizes), NOT byte-level — JSON key ordering can vary.
+            std::string aPath = argv[++i];
+            std::string bPath = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            // Reuse the parser from --info-glb. Inline here since it's
+            // small and the alternative is a 3-way handler refactor.
+            auto loadGlb = [](const std::string& path,
+                              uint32_t& outJsonLen, uint32_t& outBinLen,
+                              std::string& outJsonStr) -> bool {
+                std::ifstream in(path, std::ios::binary);
+                if (!in) return false;
+                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                            std::istreambuf_iterator<char>());
+                if (bytes.size() < 20) return false;
+                uint32_t magic, version, totalLen;
+                std::memcpy(&magic,    &bytes[0], 4);
+                std::memcpy(&version,  &bytes[4], 4);
+                std::memcpy(&totalLen, &bytes[8], 4);
+                if (magic != 0x46546C67 || version != 2) return false;
+                std::memcpy(&outJsonLen, &bytes[12], 4);
+                if (20 + outJsonLen > bytes.size()) return false;
+                outJsonStr.assign(bytes.begin() + 20,
+                                   bytes.begin() + 20 + outJsonLen);
+                size_t binOff = 20 + outJsonLen;
+                if (binOff + 8 <= bytes.size()) {
+                    std::memcpy(&outBinLen, &bytes[binOff], 4);
+                } else {
+                    outBinLen = 0;
+                }
+                return true;
+            };
+            uint32_t aJsonLen = 0, aBinLen = 0;
+            uint32_t bJsonLen = 0, bBinLen = 0;
+            std::string aJsonStr, bJsonStr;
+            if (!loadGlb(aPath, aJsonLen, aBinLen, aJsonStr)) {
+                std::fprintf(stderr, "diff-glb: failed to read %s\n", aPath.c_str());
+                return 1;
+            }
+            if (!loadGlb(bPath, bJsonLen, bBinLen, bJsonStr)) {
+                std::fprintf(stderr, "diff-glb: failed to read %s\n", bPath.c_str());
+                return 1;
+            }
+            // Pull structural counts from JSON. Skip if parse fails on
+            // either side — diff is meaningless then.
+            auto countOf = [](const nlohmann::json& j, const char* key) {
+                if (j.contains(key) && j[key].is_array()) {
+                    return static_cast<int>(j[key].size());
+                }
+                return 0;
+            };
+            int aMesh = 0, aPrim = 0, aAcc = 0, aBV = 0, aBuf = 0;
+            int bMesh = 0, bPrim = 0, bAcc = 0, bBV = 0, bBuf = 0;
+            try {
+                auto aj = nlohmann::json::parse(aJsonStr);
+                auto bj = nlohmann::json::parse(bJsonStr);
+                aMesh = countOf(aj, "meshes");
+                bMesh = countOf(bj, "meshes");
+                if (aj.contains("meshes") && aj["meshes"].is_array()) {
+                    for (const auto& m : aj["meshes"]) {
+                        if (m.contains("primitives") && m["primitives"].is_array()) {
+                            aPrim += static_cast<int>(m["primitives"].size());
+                        }
+                    }
+                }
+                if (bj.contains("meshes") && bj["meshes"].is_array()) {
+                    for (const auto& m : bj["meshes"]) {
+                        if (m.contains("primitives") && m["primitives"].is_array()) {
+                            bPrim += static_cast<int>(m["primitives"].size());
+                        }
+                    }
+                }
+                aAcc = countOf(aj, "accessors"); bAcc = countOf(bj, "accessors");
+                aBV  = countOf(aj, "bufferViews"); bBV  = countOf(bj, "bufferViews");
+                aBuf = countOf(aj, "buffers");   bBuf = countOf(bj, "buffers");
+            } catch (const std::exception&) {
+                std::fprintf(stderr, "diff-glb: JSON parse failed on one side\n");
+                return 1;
+            }
+            int diffs = (aMesh != bMesh) + (aPrim != bPrim) + (aAcc != bAcc) +
+                        (aBV != bBV) + (aBuf != bBuf) +
+                        (aBinLen != bBinLen);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["a"] = aPath; j["b"] = bPath;
+                j["meshes"]      = {{"a", aMesh},  {"b", bMesh}};
+                j["primitives"]  = {{"a", aPrim},  {"b", bPrim}};
+                j["accessors"]   = {{"a", aAcc},   {"b", bAcc}};
+                j["bufferViews"] = {{"a", aBV},    {"b", bBV}};
+                j["buffers"]     = {{"a", aBuf},   {"b", bBuf}};
+                j["binBytes"]    = {{"a", aBinLen},{"b", bBinLen}};
+                j["jsonBytes"]   = {{"a", aJsonLen},{"b", bJsonLen}};
+                j["totalDiffs"]  = diffs;
+                j["identical"]   = (diffs == 0);
+                std::printf("%s\n", j.dump(2).c_str());
+                return diffs == 0 ? 0 : 1;
+            }
+            auto cmp = [](const char* name, int a, int b) {
+                std::printf("  %-12s: %6d %6d  %s\n", name, a, b,
+                            a == b ? "" : "DIFF");
+            };
+            std::printf("Diff: %s vs %s\n", aPath.c_str(), bPath.c_str());
+            std::printf("                       a      b\n");
+            cmp("meshes",      aMesh, bMesh);
+            cmp("primitives",  aPrim, bPrim);
+            cmp("accessors",   aAcc,  bAcc);
+            cmp("bufferViews", aBV,   bBV);
+            cmp("buffers",     aBuf,  bBuf);
+            cmp("BIN bytes",   static_cast<int>(aBinLen),
+                                static_cast<int>(bBinLen));
+            if (diffs == 0) {
+                std::printf("  IDENTICAL\n");
+                return 0;
+            }
             return 1;
         } else if (std::strcmp(argv[i], "--list-wcp") == 0 && i + 1 < argc) {
             // Like --info-wcp but prints every file path. Useful for spotting
