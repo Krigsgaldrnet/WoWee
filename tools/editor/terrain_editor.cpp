@@ -129,6 +129,13 @@ void TerrainEditor::setVertexHeight(int chunkIdx, int vertIdx, float height) {
 
 bool TerrainEditor::raycastTerrain(const rendering::Ray& ray, glm::vec3& hitPos) const {
     if (!terrain_) return false;
+    // Reject NaN ray. The AABB test divides by ray.direction[i], so NaN
+    // would propagate through tmin/tmax and the result would be undefined.
+    if (!std::isfinite(ray.origin.x) || !std::isfinite(ray.origin.y) ||
+        !std::isfinite(ray.origin.z) || !std::isfinite(ray.direction.x) ||
+        !std::isfinite(ray.direction.y) || !std::isfinite(ray.direction.z)) {
+        return false;
+    }
 
     float bestT = 1e30f;
     bool hit = false;
