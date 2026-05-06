@@ -455,6 +455,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-extract <dir> [--json]\n");
     std::printf("                         Walk extracted asset tree and report open-format coverage and exit\n");
+    std::printf("  --info-png <path> [--json]\n");
+    std::printf("                         Print PNG header (width, height, channels, bit depth) and exit\n");
+    std::printf("  --info-jsondbc <path> [--json]\n");
+    std::printf("                         Print JSON DBC sidecar metadata (records, fields, source) and exit\n");
     std::printf("  --list-missing-sidecars <dir> [--json]\n");
     std::printf("                         List proprietary files lacking open-format sidecars (one per line)\n");
     std::printf("  --info-zone <dir|json> [--json]\n");
@@ -496,6 +500,7 @@ int main(int argc, char* argv[]) {
         "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--list-missing-sidecars",
+        "--info-png", "--info-jsondbc",
         "--info-zone", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
         "--unpack-wcp", "--pack-wcp",
@@ -957,6 +962,138 @@ int main(int argc, char* argv[]) {
                 total, missingPng.size(), missingJson.size(),
                 missingWom.size(), missingWob.size(), missingWhm.size());
             return total == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--info-png") == 0 && i + 1 < argc) {
+            // Inspect a PNG sidecar — width, height, channels, bit depth.
+            // Reads only the IHDR chunk (16 bytes after the 8-byte
+            // signature) so it works on huge files instantly without
+            // decoding pixels. Useful for verifying that the BLP→PNG
+            // emitter produced the expected dimensions.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr, "info-png: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            uint8_t buf[24];
+            in.read(reinterpret_cast<char*>(buf), 24);
+            if (!in || in.gcount() < 24) {
+                std::fprintf(stderr, "info-png: %s too short to be a PNG\n", path.c_str());
+                return 1;
+            }
+            // Validate the 8-byte PNG signature: 89 50 4E 47 0D 0A 1A 0A
+            static const uint8_t kSig[8] = {0x89, 0x50, 0x4E, 0x47,
+                                             0x0D, 0x0A, 0x1A, 0x0A};
+            if (std::memcmp(buf, kSig, 8) != 0) {
+                std::fprintf(stderr, "info-png: %s missing PNG signature\n", path.c_str());
+                return 1;
+            }
+            // IHDR chunk follows: 4-byte length, 4-byte type ('IHDR'),
+            // then 13-byte payload (width:4, height:4, bitDepth:1,
+            // colorType:1, compression:1, filter:1, interlace:1).
+            // All multi-byte ints in PNG are big-endian.
+            auto be32 = [](const uint8_t* p) {
+                return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) |
+                       (uint32_t(p[2]) << 8)  |  uint32_t(p[3]);
+            };
+            uint32_t width  = be32(buf + 16);
+            uint32_t height = be32(buf + 20);
+            // Need bit depth + color type — read the next 5 bytes.
+            uint8_t extra[5];
+            in.read(reinterpret_cast<char*>(extra), 5);
+            uint8_t bitDepth  = extra[0];
+            uint8_t colorType = extra[1];
+            // Channel count derives from color type (PNG spec table 11.1).
+            int channels = 0;
+            const char* colorName = "?";
+            switch (colorType) {
+                case 0: channels = 1; colorName = "grayscale"; break;
+                case 2: channels = 3; colorName = "rgb"; break;
+                case 3: channels = 1; colorName = "palette"; break;
+                case 4: channels = 2; colorName = "grayscale+alpha"; break;
+                case 6: channels = 4; colorName = "rgba"; break;
+            }
+            // File size for a quick sanity check — a 1024x1024 RGBA PNG
+            // shouldn't be 12 bytes, that would mean truncation.
+            std::error_code ec;
+            uint64_t fsz = std::filesystem::file_size(path, ec);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["png"] = path;
+                j["width"] = width;
+                j["height"] = height;
+                j["bitDepth"] = bitDepth;
+                j["channels"] = channels;
+                j["colorType"] = colorType;
+                j["colorTypeName"] = colorName;
+                j["fileSize"] = fsz;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("PNG: %s\n", path.c_str());
+            std::printf("  size      : %u x %u\n", width, height);
+            std::printf("  bit depth : %u\n", bitDepth);
+            std::printf("  color     : %s (%d channel%s)\n",
+                        colorName, channels, channels == 1 ? "" : "s");
+            std::printf("  file bytes: %llu\n", static_cast<unsigned long long>(fsz));
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-jsondbc") == 0 && i + 1 < argc) {
+            // Inspect a JSON DBC sidecar (the JSON output of asset_extract
+            // --emit-json-dbc). Reports recordCount, fieldCount, source
+            // filename, and format version — useful for verifying the
+            // sidecar tracks the proprietary file's row count.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path);
+            if (!in) {
+                std::fprintf(stderr, "info-jsondbc: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                in >> doc;
+            } catch (const std::exception& e) {
+                std::fprintf(stderr, "info-jsondbc: bad JSON in %s (%s)\n",
+                             path.c_str(), e.what());
+                return 1;
+            }
+            // The wowee JSON DBC schema (from open_format_emitter.cpp):
+            // {format, source, recordCount, fieldCount, records:[[...], ...]}.
+            // Tolerate missing fields rather than crashing — old sidecars
+            // may predate a field addition.
+            std::string format = doc.value("format", std::string{});
+            std::string source = doc.value("source", std::string{});
+            uint32_t recordCount = doc.value("recordCount", 0u);
+            uint32_t fieldCount  = doc.value("fieldCount",  0u);
+            uint32_t actualRecs = 0;
+            if (doc.contains("records") && doc["records"].is_array()) {
+                actualRecs = static_cast<uint32_t>(doc["records"].size());
+            }
+            bool countMismatch = (recordCount != actualRecs);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["jsondbc"] = path;
+                j["format"] = format;
+                j["source"] = source;
+                j["recordCount"] = recordCount;
+                j["fieldCount"] = fieldCount;
+                j["actualRecords"] = actualRecs;
+                j["countMismatch"] = countMismatch;
+                std::printf("%s\n", j.dump(2).c_str());
+                return countMismatch ? 1 : 0;
+            }
+            std::printf("JSON DBC: %s\n", path.c_str());
+            std::printf("  format    : %s\n", format.empty() ? "?" : format.c_str());
+            std::printf("  source    : %s\n", source.empty() ? "?" : source.c_str());
+            std::printf("  records   : %u (header) / %u (actual)%s\n",
+                        recordCount, actualRecs,
+                        countMismatch ? " [MISMATCH]" : "");
+            std::printf("  fields    : %u\n", fieldCount);
+            return countMismatch ? 1 : 0;
         } else if (std::strcmp(argv[i], "--info-zone") == 0 && i + 1 < argc) {
             // Parse a zone.json and print every manifest field. Useful when
             // diffing two zones or auditing the audio/flag setup before
