@@ -420,6 +420,7 @@ add_executable(test_editor_units
     ${CMAKE_SOURCE_DIR}/tools/editor/sql_exporter.cpp
     ${CMAKE_SOURCE_DIR}/tools/editor/npc_spawner.cpp
     ${CMAKE_SOURCE_DIR}/tools/editor/quest_editor.cpp
+    ${CMAKE_SOURCE_DIR}/tools/editor/content_pack.cpp
     ${CMAKE_SOURCE_DIR}/src/core/logger.cpp
 )
 target_include_directories(test_editor_units PRIVATE

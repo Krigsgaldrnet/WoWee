@@ -2,9 +2,14 @@
 //   - SQLExporter::escape — ensures user-provided strings can't produce
 //     malformed SQL when emitted into INSERT statements.
 //   - QuestEditor::validateChains — orphan/cycle detection.
+//   - ContentPacker::unpackZone — security guards (path traversal,
+//     header bounds, name sanitization).
 #include <catch_amalgamated.hpp>
 #include "sql_exporter.hpp"
 #include "quest_editor.hpp"
+#include "content_pack.hpp"
+#include <fstream>
+#include <filesystem>
 
 using namespace wowee::editor;
 
@@ -104,4 +109,113 @@ TEST_CASE("Quest::validateChains detects circular chain", "[quest]") {
         if (e.find("Circular") != std::string::npos) foundCycle = true;
     }
     REQUIRE(foundCycle);
+}
+
+// ============== ContentPacker::unpackZone security tests ==============
+
+namespace { // helpers used only by the WCP tests below
+
+constexpr uint32_t kWCP_MAGIC = 0x31504357; // "WCP1"
+
+// Hand-write a minimal WCP with given header values and a single file
+// entry. Used to exercise the loader's defensive bounds without standing
+// up the full packZone path.
+void writeMalformedWcp(const std::string& path,
+                       uint32_t fileCount,
+                       uint32_t infoSize,
+                       const std::string& infoJson,
+                       const std::string& filePath = "",
+                       uint32_t fileDataSize = 0) {
+    std::ofstream f(path, std::ios::binary);
+    f.write(reinterpret_cast<const char*>(&kWCP_MAGIC), 4);
+    f.write(reinterpret_cast<const char*>(&fileCount), 4);
+    f.write(reinterpret_cast<const char*>(&infoSize), 4);
+    if (!infoJson.empty())
+        f.write(infoJson.data(), std::min<size_t>(infoSize, infoJson.size()));
+    if (!filePath.empty()) {
+        uint16_t pathLen = static_cast<uint16_t>(filePath.size());
+        f.write(reinterpret_cast<const char*>(&pathLen), 2);
+        f.write(filePath.data(), pathLen);
+        f.write(reinterpret_cast<const char*>(&fileDataSize), 4);
+        std::string data(fileDataSize, 'X');
+        f.write(data.data(), fileDataSize);
+    }
+}
+
+} // namespace
+
+TEST_CASE("WCP unpack rejects absurd fileCount", "[wcp]") {
+    namespace fs = std::filesystem;
+    fs::create_directories("test_wcp_out");
+    writeMalformedWcp("test_wcp_out/huge.wcp", 10'000'000, 16, "{\"name\":\"x\"}");
+    REQUIRE_FALSE(ContentPacker::unpackZone("test_wcp_out/huge.wcp", "test_wcp_out/dest"));
+    fs::remove_all("test_wcp_out");
+}
+
+TEST_CASE("WCP unpack rejects absurd infoSize", "[wcp]") {
+    namespace fs = std::filesystem;
+    fs::create_directories("test_wcp_out");
+    // 32MB infoSize — past the 16MB cap.
+    writeMalformedWcp("test_wcp_out/big_info.wcp", 1, 32 * 1024 * 1024, "{}");
+    REQUIRE_FALSE(ContentPacker::unpackZone("test_wcp_out/big_info.wcp",
+                                              "test_wcp_out/dest"));
+    fs::remove_all("test_wcp_out");
+}
+
+TEST_CASE("WCP unpack rejects path traversal entries", "[wcp]") {
+    namespace fs = std::filesystem;
+    fs::create_directories("test_wcp_out");
+    std::string info = R"({"name":"safe"})";
+    writeMalformedWcp("test_wcp_out/trav.wcp",
+                      /*fileCount*/ 1,
+                      /*infoSize*/ static_cast<uint32_t>(info.size()),
+                      info,
+                      /*path*/ "../../etc/passwd_clone",
+                      /*dataSize*/ 4);
+    REQUIRE_FALSE(ContentPacker::unpackZone("test_wcp_out/trav.wcp",
+                                              "test_wcp_out/dest"));
+    // Confirm the file did NOT escape the test dir
+    REQUIRE_FALSE(fs::exists("test_wcp_out/etc/passwd_clone"));
+    fs::remove_all("test_wcp_out");
+}
+
+TEST_CASE("WCP unpack rejects absolute paths", "[wcp]") {
+    namespace fs = std::filesystem;
+    fs::create_directories("test_wcp_out");
+    std::string info = R"({"name":"safe"})";
+    writeMalformedWcp("test_wcp_out/abs.wcp",
+                      1, static_cast<uint32_t>(info.size()), info,
+                      "/tmp/wowee_should_not_appear", 4);
+    REQUIRE_FALSE(ContentPacker::unpackZone("test_wcp_out/abs.wcp",
+                                              "test_wcp_out/dest"));
+    REQUIRE_FALSE(fs::exists("/tmp/wowee_should_not_appear"));
+    fs::remove_all("test_wcp_out");
+}
+
+TEST_CASE("WCP unpack sanitizes zone name", "[wcp]") {
+    namespace fs = std::filesystem;
+    fs::create_directories("test_wcp_out");
+    std::string info = R"({"name":"../escape_attempt"})";
+    writeMalformedWcp("test_wcp_out/badname.wcp",
+                      1, static_cast<uint32_t>(info.size()), info,
+                      "good.txt", 4);
+    REQUIRE(ContentPacker::unpackZone("test_wcp_out/badname.wcp",
+                                       "test_wcp_out/dest"));
+    // The file should land under the slugified name, not under "../"
+    REQUIRE(fs::exists("test_wcp_out/dest/escape_attempt/good.txt"));
+    REQUIRE_FALSE(fs::exists("test_wcp_out/escape_attempt/good.txt"));
+    fs::remove_all("test_wcp_out");
+}
+
+TEST_CASE("WCP unpack rejects bad magic", "[wcp]") {
+    namespace fs = std::filesystem;
+    fs::create_directories("test_wcp_out");
+    {
+        std::ofstream f("test_wcp_out/bad.wcp", std::ios::binary);
+        uint32_t bad = 0xDEADBEEF;
+        f.write(reinterpret_cast<const char*>(&bad), 4);
+    }
+    REQUIRE_FALSE(ContentPacker::unpackZone("test_wcp_out/bad.wcp",
+                                              "test_wcp_out/dest"));
+    fs::remove_all("test_wcp_out");
 }
