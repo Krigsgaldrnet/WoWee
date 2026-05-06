@@ -2003,6 +2003,9 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             if (sel->displayId == 0)
                 ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.3f, 1),
                     "Display ID 0 = invisible in game; set for SQL export");
+            int facSel = static_cast<int>(sel->faction);
+            if (ImGui::InputInt("Faction##s", &facSel))
+                sel->faction = static_cast<uint32_t>(std::max(0, facSel));
 
             const char* beh2[] = {"Stationary", "Patrol", "Wander", "Scripted"};
             int bi2 = static_cast<int>(sel->behavior);
