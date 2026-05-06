@@ -3,15 +3,37 @@
 namespace wowee {
 namespace editor {
 
+ChunkSnapshot EditorHistory::captureChunk(const pipeline::ADTTerrain& terrain, int idx) {
+    ChunkSnapshot snap;
+    snap.chunkIndex = idx;
+    snap.heights = terrain.chunks[idx].heightMap.heights;
+    snap.alphaMap = terrain.chunks[idx].alphaMap;
+    snap.layers = terrain.chunks[idx].layers;
+    return snap;
+}
+
+void EditorHistory::restoreChunk(pipeline::ADTTerrain& terrain, const ChunkSnapshot& snap) {
+    terrain.chunks[snap.chunkIndex].heightMap.heights = snap.heights;
+    terrain.chunks[snap.chunkIndex].alphaMap = snap.alphaMap;
+    terrain.chunks[snap.chunkIndex].layers = snap.layers;
+}
+
+bool EditorHistory::snapshotChanged(const ChunkSnapshot& a, const ChunkSnapshot& b) {
+    if (a.heights != b.heights) return true;
+    if (a.alphaMap != b.alphaMap) return true;
+    if (a.layers.size() != b.layers.size()) return true;
+    for (size_t i = 0; i < a.layers.size(); i++) {
+        if (a.layers[i].textureId != b.layers[i].textureId) return true;
+    }
+    return false;
+}
+
 void EditorHistory::beginEdit(const pipeline::ADTTerrain& terrain,
                                const std::vector<int>& affectedChunks) {
     pending_ = {};
     pending_.before.reserve(affectedChunks.size());
     for (int idx : affectedChunks) {
-        ChunkSnapshot snap;
-        snap.chunkIndex = idx;
-        snap.heights = terrain.chunks[idx].heightMap.heights;
-        pending_.before.push_back(snap);
+        pending_.before.push_back(captureChunk(terrain, idx));
     }
 }
 
@@ -19,17 +41,13 @@ void EditorHistory::endEdit(const pipeline::ADTTerrain& terrain) {
     pending_.after.reserve(pending_.before.size());
     lastAffected_.clear();
     for (const auto& snap : pending_.before) {
-        ChunkSnapshot after;
-        after.chunkIndex = snap.chunkIndex;
-        after.heights = terrain.chunks[snap.chunkIndex].heightMap.heights;
-        pending_.after.push_back(after);
+        pending_.after.push_back(captureChunk(terrain, snap.chunkIndex));
         lastAffected_.push_back(snap.chunkIndex);
     }
 
-    // Only push if something actually changed
     bool changed = false;
     for (size_t i = 0; i < pending_.before.size(); i++) {
-        if (pending_.before[i].heights != pending_.after[i].heights) {
+        if (snapshotChanged(pending_.before[i], pending_.after[i])) {
             changed = true;
             break;
         }
@@ -51,7 +69,7 @@ void EditorHistory::undo(pipeline::ADTTerrain& terrain) {
 
     lastAffected_.clear();
     for (const auto& snap : cmd.before) {
-        terrain.chunks[snap.chunkIndex].heightMap.heights = snap.heights;
+        restoreChunk(terrain, snap);
         lastAffected_.push_back(snap.chunkIndex);
     }
 
@@ -66,7 +84,7 @@ void EditorHistory::redo(pipeline::ADTTerrain& terrain) {
 
     lastAffected_.clear();
     for (const auto& snap : cmd.after) {
-        terrain.chunks[snap.chunkIndex].heightMap.heights = snap.heights;
+        restoreChunk(terrain, snap);
         lastAffected_.push_back(snap.chunkIndex);
     }
 

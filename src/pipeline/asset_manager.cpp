@@ -312,23 +312,30 @@ std::shared_ptr<DBCFile> AssetManager::loadDBC(const std::string& name) {
     }
 
     // Check for JSON DBC from custom zones (wowee open format)
-    // JSON DBCs exported by the editor contain the same record data
-    // but the DBCFile::load() only handles binary — so JSON overrides
-    // are logged for now and will need a JSON→DBC converter in future.
     if (dbcData.empty()) {
         std::string baseName = name;
         auto dot = baseName.rfind('.');
         if (dot != std::string::npos) baseName = baseName.substr(0, dot);
-        for (const std::string& dir : {"custom_zones", "output"}) {
+        for (const char* dir : {"custom_zones", "output"}) {
             if (!std::filesystem::exists(dir)) continue;
             for (auto& entry : std::filesystem::directory_iterator(dir)) {
                 if (!entry.is_directory()) continue;
                 std::string jsonPath = entry.path().string() + "/data/" + baseName + ".json";
                 if (std::filesystem::exists(jsonPath)) {
-                    LOG_DEBUG("JSON DBC available (not yet loaded): ", jsonPath);
+                    std::ifstream jf(jsonPath, std::ios::binary | std::ios::ate);
+                    if (jf) {
+                        auto sz = jf.tellg();
+                        if (sz > 0) {
+                            dbcData.resize(static_cast<size_t>(sz));
+                            jf.seekg(0);
+                            jf.read(reinterpret_cast<char*>(dbcData.data()), sz);
+                            LOG_INFO("Loading JSON DBC override: ", jsonPath);
+                        }
+                    }
                     break;
                 }
             }
+            if (!dbcData.empty()) break;
         }
     }
 

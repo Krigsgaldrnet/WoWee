@@ -1,7 +1,9 @@
 #include "quest_editor.hpp"
 #include "core/logger.hpp"
+#include <nlohmann/json.hpp>
 #include <fstream>
 #include <filesystem>
+#include <unordered_set>
 
 namespace wowee {
 namespace editor {
@@ -27,41 +29,130 @@ bool QuestEditor::saveToFile(const std::string& path) const {
     auto dir = std::filesystem::path(path).parent_path();
     if (!dir.empty()) std::filesystem::create_directories(dir);
 
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& q : quests_) {
+        nlohmann::json jq;
+        jq["id"] = q.id;
+        jq["title"] = q.title;
+        jq["description"] = q.description;
+        jq["completionText"] = q.completionText;
+        jq["requiredLevel"] = q.requiredLevel;
+        jq["questGiverNpcId"] = q.questGiverNpcId;
+        jq["turnInNpcId"] = q.turnInNpcId;
+        jq["nextQuestId"] = q.nextQuestId;
+        jq["reward"] = {{"xp", q.reward.xp}, {"gold", q.reward.gold},
+                        {"silver", q.reward.silver}, {"copper", q.reward.copper}};
+        nlohmann::json items = nlohmann::json::array();
+        for (const auto& item : q.reward.itemRewards) items.push_back(item);
+        jq["reward"]["items"] = items;
+
+        nlohmann::json objs = nlohmann::json::array();
+        for (const auto& obj : q.objectives) {
+            objs.push_back({{"type", static_cast<int>(obj.type)},
+                            {"desc", obj.description},
+                            {"target", obj.targetName},
+                            {"count", obj.targetCount}});
+        }
+        jq["objectives"] = objs;
+        arr.push_back(jq);
+    }
+
     std::ofstream f(path);
     if (!f) return false;
-
-    f << "[\n";
-    for (size_t i = 0; i < quests_.size(); i++) {
-        const auto& q = quests_[i];
-        f << "  {\n";
-        f << "    \"id\": " << q.id << ",\n";
-        f << "    \"title\": \"" << q.title << "\",\n";
-        f << "    \"description\": \"" << q.description << "\",\n";
-        f << "    \"completionText\": \"" << q.completionText << "\",\n";
-        f << "    \"requiredLevel\": " << q.requiredLevel << ",\n";
-        f << "    \"questGiverNpcId\": " << q.questGiverNpcId << ",\n";
-        f << "    \"turnInNpcId\": " << q.turnInNpcId << ",\n";
-        f << "    \"nextQuestId\": " << q.nextQuestId << ",\n";
-        f << "    \"reward\": {\"xp\":" << q.reward.xp
-          << ",\"gold\":" << q.reward.gold
-          << ",\"silver\":" << q.reward.silver
-          << ",\"copper\":" << q.reward.copper << "},\n";
-        f << "    \"objectives\": [";
-        for (size_t j = 0; j < q.objectives.size(); j++) {
-            const auto& obj = q.objectives[j];
-            f << "{\"type\":" << static_cast<int>(obj.type)
-              << ",\"desc\":\"" << obj.description << "\""
-              << ",\"target\":\"" << obj.targetName << "\""
-              << ",\"count\":" << obj.targetCount << "}";
-            if (j + 1 < q.objectives.size()) f << ",";
-        }
-        f << "]\n";
-        f << "  }" << (i + 1 < quests_.size() ? "," : "") << "\n";
-    }
-    f << "]\n";
+    f << arr.dump(2) << "\n";
 
     LOG_INFO("Quests saved: ", path, " (", quests_.size(), " quests)");
     return true;
+}
+
+bool QuestEditor::loadFromFile(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) return false;
+
+    try {
+        nlohmann::json arr = nlohmann::json::parse(f);
+        if (!arr.is_array()) return false;
+
+        quests_.clear();
+        uint32_t maxId = 0;
+
+        for (const auto& jq : arr) {
+            Quest q;
+            q.id = jq.value("id", 0u);
+            q.title = jq.value("title", "Untitled");
+            q.description = jq.value("description", "");
+            q.completionText = jq.value("completionText", "");
+            q.requiredLevel = jq.value("requiredLevel", 1u);
+            q.questGiverNpcId = jq.value("questGiverNpcId", 0u);
+            q.turnInNpcId = jq.value("turnInNpcId", 0u);
+            q.nextQuestId = jq.value("nextQuestId", 0u);
+
+            if (jq.contains("reward")) {
+                const auto& jr = jq["reward"];
+                q.reward.xp = jr.value("xp", 100u);
+                q.reward.gold = jr.value("gold", 0u);
+                q.reward.silver = jr.value("silver", 0u);
+                q.reward.copper = jr.value("copper", 0u);
+                if (jr.contains("items") && jr["items"].is_array()) {
+                    for (const auto& item : jr["items"])
+                        q.reward.itemRewards.push_back(item.get<std::string>());
+                }
+            }
+
+            if (jq.contains("objectives") && jq["objectives"].is_array()) {
+                for (const auto& jo : jq["objectives"]) {
+                    QuestObjective obj;
+                    obj.type = static_cast<QuestObjectiveType>(jo.value("type", 0));
+                    obj.description = jo.value("desc", "");
+                    obj.targetName = jo.value("target", "");
+                    obj.targetCount = jo.value("count", 1u);
+                    q.objectives.push_back(obj);
+                }
+            }
+
+            if (q.id > maxId) maxId = q.id;
+            quests_.push_back(q);
+        }
+
+        nextId_ = maxId + 1;
+        LOG_INFO("Quests loaded: ", path, " (", quests_.size(), " quests)");
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to load quests from ", path, ": ", e.what());
+        return false;
+    }
+}
+
+bool QuestEditor::validateChains(std::vector<std::string>& errors) const {
+    errors.clear();
+    std::unordered_set<uint32_t> validIds;
+    for (const auto& q : quests_) validIds.insert(q.id);
+
+    for (const auto& q : quests_) {
+        if (q.nextQuestId != 0 && validIds.find(q.nextQuestId) == validIds.end()) {
+            errors.push_back("Quest [" + std::to_string(q.id) + "] \"" + q.title +
+                           "\" chains to non-existent quest " + std::to_string(q.nextQuestId));
+        }
+
+        // Circular chain detection
+        if (q.nextQuestId != 0) {
+            std::unordered_set<uint32_t> visited;
+            uint32_t current = q.id;
+            while (current != 0) {
+                if (!visited.insert(current).second) {
+                    errors.push_back("Circular quest chain detected starting from quest [" +
+                                   std::to_string(q.id) + "] \"" + q.title + "\"");
+                    break;
+                }
+                uint32_t next = 0;
+                for (const auto& other : quests_) {
+                    if (other.id == current) { next = other.nextQuestId; break; }
+                }
+                current = next;
+            }
+        }
+    }
+    return errors.empty();
 }
 
 } // namespace editor

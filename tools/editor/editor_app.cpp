@@ -7,7 +7,12 @@
 #include "dbc_exporter.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
+#include "pipeline/wowee_collision.hpp"
+#include "pipeline/wmo_loader.hpp"
+#include "sql_exporter.hpp"
+#include "server_module_gen.hpp"
 #include "core/coordinates.hpp"
+#include <nlohmann/json.hpp>
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
 #include "pipeline/terrain_mesh.hpp"
@@ -99,6 +104,7 @@ void EditorApp::run() {
             if (autoSaveTimer_ >= autoSaveInterval_) {
                 autoSaveTimer_ = 0.0f;
                 quickSave();
+                showToast("Auto-saved", 2.0f);
                 LOG_INFO("Auto-saved zone");
             }
         }
@@ -149,6 +155,30 @@ void EditorApp::run() {
         ImGui::NewFrame();
 
         ui_.render(*this);
+
+        if (showQuitConfirm_) {
+            ImGui::OpenPopup("Unsaved Changes");
+            if (ImGui::BeginPopupModal("Unsaved Changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("You have unsaved changes. Save before quitting?");
+                ImGui::Separator();
+                if (ImGui::Button("Save & Quit", ImVec2(120, 0))) {
+                    quickSave();
+                    window_->setShouldClose(true);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Quit", ImVec2(80, 0))) {
+                    window_->setShouldClose(true);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+                    showQuitConfirm_ = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+        }
 
         ImGui::Render();
 
@@ -210,8 +240,12 @@ void EditorApp::processEvents() {
         ImGui_ImplSDL2_ProcessEvent(&event);
 
         if (event.type == SDL_QUIT) {
-            window_->setShouldClose(true);
-            return;
+            if (terrain_.isLoaded() && terrainEditor_.hasUnsavedChanges()) {
+                showQuitConfirm_ = true;
+            } else {
+                window_->setShouldClose(true);
+                return;
+            }
         }
 
         if (event.type == SDL_WINDOWEVENT) {
@@ -237,8 +271,20 @@ void EditorApp::processEvents() {
                     if (sc == SDL_SCANCODE_4) setMode(EditorMode::Water);
                     if (sc == SDL_SCANCODE_5) setMode(EditorMode::NPC);
                     if (sc == SDL_SCANCODE_6) setMode(EditorMode::Quest);
+                    // Bracket keys adjust brush size
+                    if (sc == SDL_SCANCODE_LEFTBRACKET) {
+                        auto& bs = terrainEditor_.brush().settings();
+                        bs.radius = std::max(5.0f, bs.radius - 10.0f);
+                    }
+                    if (sc == SDL_SCANCODE_RIGHTBRACKET) {
+                        auto& bs = terrainEditor_.brush().settings();
+                        bs.radius = std::min(200.0f, bs.radius + 10.0f);
+                    }
                 }
                 // F1 handled by UI (showHelp_ toggle)
+                // F1 = toggle help
+                if (sc == SDL_SCANCODE_F1 && !io.WantCaptureKeyboard)
+                    ui_.toggleHelp();
                 // Transform shortcuts (Blender-style)
                 if (objectPlacer_.getSelected()) {
                     if (sc == SDL_SCANCODE_G) startGizmoMode(TransformMode::Move);
@@ -246,10 +292,14 @@ void EditorApp::processEvents() {
                     if (sc == SDL_SCANCODE_T) startGizmoMode(TransformMode::Scale);
                     if (sc == SDL_SCANCODE_X) setGizmoAxis(TransformAxis::X);
                     if (sc == SDL_SCANCODE_Y) setGizmoAxis(TransformAxis::Y);
+                    if (sc == SDL_SCANCODE_Z && !(event.key.keysym.mod & KMOD_CTRL))
+                        setGizmoAxis(TransformAxis::Z);
                     if (sc == SDL_SCANCODE_ESCAPE) {
                         viewport_.getGizmo().endDrag();
                         viewport_.getGizmo().setMode(TransformMode::None);
                         objectPlacer_.clearSelection();
+                        npcSpawner_.clearSelection();
+                        ui_.clearPath();
                     }
                 }
                 if (sc == SDL_SCANCODE_DELETE) {
@@ -263,14 +313,28 @@ void EditorApp::processEvents() {
                 }
                 if (sc == SDL_SCANCODE_S && (event.key.keysym.mod & KMOD_CTRL))
                     quickSave();
+                if (sc == SDL_SCANCODE_E && (event.key.keysym.mod & KMOD_CTRL) &&
+                    (event.key.keysym.mod & KMOD_SHIFT) && terrain_.isLoaded()) {
+                    exportContentPack("output/" + loadedMap_ + ".wcp");
+                }
                 if (sc == SDL_SCANCODE_N && (event.key.keysym.mod & KMOD_CTRL))
                     ui_.openNewTerrainDialog();
                 if (sc == SDL_SCANCODE_O && (event.key.keysym.mod & KMOD_CTRL))
                     ui_.openLoadDialog();
+                if (sc == SDL_SCANCODE_A && (event.key.keysym.mod & KMOD_CTRL)) {
+                    objectPlacer_.selectAll();
+                    showToast("Selected " + std::to_string(objectPlacer_.selectionCount()) + " objects");
+                }
+                // Ctrl+Y = Redo (alternate binding)
+                if (sc == SDL_SCANCODE_Y && (event.key.keysym.mod & KMOD_CTRL)) {
+                    if (terrainEditor_.history().canRedo()) {
+                        terrainEditor_.redo();
+                        showToast("Redo");
+                    }
+                }
                 if (sc == SDL_SCANCODE_Z && (event.key.keysym.mod & KMOD_CTRL)) {
                     bool isRedo = (event.key.keysym.mod & KMOD_SHIFT) != 0;
                     if (isRedo) {
-                        // Ctrl+Shift+Z = Redo (sculpt only for now)
                         if (terrainEditor_.history().canRedo()) {
                             terrainEditor_.redo();
                             showToast("Redo");
@@ -359,15 +423,53 @@ void EditorApp::processEvents() {
                     giz.endDrag();
                     giz.setMode(TransformMode::None);
                 } else if (event.type == SDL_MOUSEBUTTONDOWN) {
-                    // Ctrl+click = select object (any mode)
-                    if ((event.key.keysym.mod & KMOD_CTRL) || (SDL_GetModState() & KMOD_CTRL)) {
+                    // Path point capture (river/road tool)
+                    // Alt+click eyedropper in paint mode
+                    if (mode_ == EditorMode::Paint && (SDL_GetModState() & KMOD_ALT)) {
+                        if (terrainEditor_.brush().isActive()) {
+                            std::string picked = texturePainter_.pickTextureAt(
+                                terrainEditor_.brush().getPosition());
+                            if (!picked.empty()) {
+                                texturePainter_.setActiveTexture(picked);
+                                showToast("Picked: " + picked.substr(picked.rfind('\\') + 1));
+                            }
+                        }
+                    }
+                    else if (ui_.getPathCapture() != EditorUI::PathCapture::None) {
                         auto ext = window_->getVkContext()->getSwapchainExtent();
                         rendering::Ray ray = camera_.getCamera().screenToWorldRay(
                             static_cast<float>(event.button.x),
                             static_cast<float>(event.button.y),
                             static_cast<float>(ext.width),
                             static_cast<float>(ext.height));
-                        objectPlacer_.selectAt(ray, 200.0f);
+                        glm::vec3 hitPos;
+                        if (terrainEditor_.raycastTerrain(ray, hitPos)) {
+                            ui_.setPathPoint(hitPos);
+                            if (ui_.getPathCapture() == EditorUI::PathCapture::None && ui_.isPathReady())
+                                showToast("Both points set — click Apply Path");
+                            else if (ui_.getPathCapture() == EditorUI::PathCapture::WaitingEnd)
+                                showToast("Start point set — click terrain for end");
+                        }
+                    }
+                    // Ctrl+click = select (Ctrl+Shift+click = add to selection)
+                    else if ((event.key.keysym.mod & KMOD_CTRL) || (SDL_GetModState() & KMOD_CTRL)) {
+                        bool additive = (SDL_GetModState() & KMOD_SHIFT) != 0;
+                        auto ext = window_->getVkContext()->getSwapchainExtent();
+                        rendering::Ray ray = camera_.getCamera().screenToWorldRay(
+                            static_cast<float>(event.button.x),
+                            static_cast<float>(event.button.y),
+                            static_cast<float>(ext.width),
+                            static_cast<float>(ext.height));
+                        if (additive) {
+                            int prevSel = objectPlacer_.getSelectedIndex();
+                            int hit = objectPlacer_.selectAt(ray, 200.0f);
+                            if (hit >= 0) {
+                                if (prevSel >= 0) objectPlacer_.addToSelection(prevSel);
+                                objectPlacer_.addToSelection(hit);
+                            }
+                        } else {
+                            objectPlacer_.selectAt(ray, 200.0f);
+                        }
                     } else if (mode_ == EditorMode::NPC) {
                         auto ext = window_->getVkContext()->getSwapchainExtent();
                         rendering::Ray ray = camera_.getCamera().screenToWorldRay(
@@ -399,12 +501,12 @@ void EditorApp::processEvents() {
                         }
                     } else {
                         painting_ = true;
-                        if (mode_ == EditorMode::Sculpt)
+                        if (mode_ == EditorMode::Sculpt || mode_ == EditorMode::Paint)
                             terrainEditor_.beginStroke();
                     }
                 } else if (event.type == SDL_MOUSEBUTTONUP) {
                     painting_ = false;
-                    if (mode_ == EditorMode::Sculpt)
+                    if (mode_ == EditorMode::Sculpt || mode_ == EditorMode::Paint)
                         terrainEditor_.endStroke();
                 }
             }
@@ -479,6 +581,17 @@ void EditorApp::updateTerrainEditing(float dt) {
             viewport_.setBrushIndicator({}, 0, false);
             viewport_.clearGhostPreview();
         }
+
+        // Path preview for river/road tool
+        if (ui_.getPathCapture() == EditorUI::PathCapture::WaitingEnd ||
+            ui_.isPathReady()) {
+            glm::vec3 endPt = ui_.isPathReady() ? ui_.getPathEnd()
+                                                : terrainEditor_.brush().getPosition();
+            viewport_.setPathPreview(ui_.getPathStart(), endPt,
+                ui_.getPathWidth(), true);
+        } else {
+            viewport_.setPathPreview({}, {}, 0, false);
+        }
     }
 
     if (painting_ && terrainEditor_.brush().isActive()) {
@@ -551,23 +664,39 @@ void EditorApp::refreshDirtyChunks() {
 }
 
 void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
-    std::ostringstream path;
-    path << "World\\Maps\\" << mapName << "\\" << mapName
-         << "_" << tileX << "_" << tileY << ".adt";
-
-    LOG_INFO("Loading ADT: ", path.str());
-
-    auto adtData = assetManager_->readFile(path.str());
-    if (adtData.empty()) {
-        LOG_ERROR("ADT file not found: ", path.str());
-        return;
+    // Prefer open format (WOT/WHM) if available
+    for (const char* dir : {"custom_zones", "output"}) {
+        std::string wotBase = std::string(dir) + "/" + mapName + "/" + mapName + "_" +
+                              std::to_string(tileX) + "_" + std::to_string(tileY);
+        if (WoweeTerrain::importOpen(wotBase, terrain_) && terrain_.isLoaded()) {
+            LOG_INFO("Loaded open format terrain: ", wotBase);
+            showToast("Loaded WOT/WHM: " + mapName);
+            goto terrainReady;
+        }
     }
 
-    terrain_ = pipeline::ADTLoader::load(adtData);
-    if (!terrain_.isLoaded()) {
-        LOG_ERROR("Failed to parse ADT: ", path.str());
-        return;
+    {
+        std::ostringstream path;
+        path << "World\\Maps\\" << mapName << "\\" << mapName
+             << "_" << tileX << "_" << tileY << ".adt";
+
+        LOG_INFO("Loading ADT: ", path.str());
+
+        auto adtData = assetManager_->readFile(path.str());
+        if (adtData.empty()) {
+            LOG_ERROR("ADT file not found: ", path.str());
+            showToast("Zone not found: " + mapName + " [" + std::to_string(tileX) + "," + std::to_string(tileY) + "]");
+            return;
+        }
+
+        terrain_ = pipeline::ADTLoader::load(adtData);
+        if (!terrain_.isLoaded()) {
+            LOG_ERROR("Failed to parse ADT: ", path.str());
+            showToast("Failed to load zone (corrupt or unsupported format)");
+            return;
+        }
     }
+    terrainReady:
 
     // Override internal coords with what we know from the filename
     // (instanced maps have arbitrary internal coord values)
@@ -594,6 +723,13 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     loadedMap_ = mapName;
     loadedTileX_ = tileX;
     loadedTileY_ = tileY;
+
+    // Track recent zones (deduplicate, max 8)
+    recentZones_.erase(std::remove_if(recentZones_.begin(), recentZones_.end(),
+        [&](const RecentZone& rz) { return rz.mapName == mapName && rz.tileX == tileX && rz.tileY == tileY; }),
+        recentZones_.end());
+    recentZones_.insert(recentZones_.begin(), {mapName, tileX, tileY});
+    if (recentZones_.size() > 8) recentZones_.resize(8);
 
     // Position camera at terrain center using actual chunk positions
     if (mesh.validChunkCount > 0) {
@@ -646,20 +782,29 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 
     LOG_INFO("ADT loaded: ", mapName, " [", tileX, ",", tileY, "]");
 
-    // Try loading objects/NPCs from output directory if they exist
-    std::string outBase = "output/" + mapName;
-    if (objectPlacer_.loadFromFile(outBase + "/objects.json"))
-        showToast("Loaded " + std::to_string(objectPlacer_.objectCount()) + " objects");
-    if (npcSpawner_.loadFromFile(outBase + "/creatures.json"))
-        showToast("Loaded " + std::to_string(npcSpawner_.spawnCount()) + " NPCs");
+    // Try loading objects/NPCs/quests from zone directories
+    for (const char* dir : {"output", "custom_zones"}) {
+        std::string zoneBase = std::string(dir) + "/" + mapName;
+        if (objectPlacer_.objectCount() == 0)
+            if (objectPlacer_.loadFromFile(zoneBase + "/objects.json"))
+                showToast("Loaded " + std::to_string(objectPlacer_.objectCount()) + " objects");
+        if (npcSpawner_.spawnCount() == 0)
+            if (npcSpawner_.loadFromFile(zoneBase + "/creatures.json"))
+                showToast("Loaded " + std::to_string(npcSpawner_.spawnCount()) + " NPCs");
+        if (questEditor_.questCount() == 0)
+            if (questEditor_.loadFromFile(zoneBase + "/quests.json"))
+                showToast("Loaded " + std::to_string(questEditor_.questCount()) + " quests");
+    }
     if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0)
         objectsDirty_ = true;
 }
 
 void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome) {
     terrain_ = TerrainEditor::createBlankTerrain(tileX, tileY, baseHeight, biome);
-    // Clear previous state
+    // Clear all previous state
     clearAllObjects();
+    questEditor_.clear();
+    ui_.clearPath();
 
     terrainEditor_.setTerrain(&terrain_);
     terrainEditor_.history().clear();
@@ -725,10 +870,20 @@ void EditorApp::exportZone(const std::string& outputDir) {
     if (questEditor_.questCount() > 0) {
         std::string questPath = base + "/quests.json";
         questEditor_.saveToFile(questPath);
+        std::vector<std::string> chainErrors;
+        if (!questEditor_.validateChains(chainErrors)) {
+            for (const auto& err : chainErrors)
+                LOG_WARNING("Quest chain issue: ", err);
+        }
     }
 
-    // Update WDT with additional tiles from adjacent exports
-    // (future: scan output dir for existing ADTs and include all in WDT)
+    // Export SQL for private server integration (AzerothCore/TrinityCore)
+    if (npcSpawner_.spawnCount() > 0 || questEditor_.questCount() > 0) {
+        std::string sqlPath = base + "/spawns.sql";
+        SQLExporter::exportAll(npcSpawner_.getSpawns(),
+                               questEditor_.getQuests(),
+                               sqlPath, zoneManifest_.mapId);
+    }
 
     // Save placed objects
     if (objectPlacer_.objectCount() > 0) {
@@ -761,19 +916,36 @@ void EditorApp::exportZone(const std::string& outputDir) {
         std::unordered_set<std::string> convertedWMOs;
         for (const auto& obj : objectPlacer_.getObjects()) {
             if (obj.type == PlaceableType::WMO && !convertedWMOs.count(obj.path)) {
-                // Create a placeholder WOB (full WMO→WOB conversion needs group loading)
-                pipeline::WoweeBuilding bld;
-                bld.name = obj.path;
                 std::string wobPath = obj.path;
                 std::replace(wobPath.begin(), wobPath.end(), '\\', '/');
                 auto dot = wobPath.rfind('.');
                 if (dot != std::string::npos) wobPath = wobPath.substr(0, dot);
-                pipeline::WoweeBuildingLoader::save(bld, base + "/buildings/" + wobPath);
+
+                auto wmoData = assetManager_->readFile(obj.path);
+                if (!wmoData.empty()) {
+                    auto wmoModel = pipeline::WMOLoader::load(wmoData);
+                    if (wmoModel.nGroups > 0) {
+                        std::string wmoBase = obj.path;
+                        if (wmoBase.size() > 4) wmoBase = wmoBase.substr(0, wmoBase.size() - 4);
+                        for (uint32_t gi = 0; gi < wmoModel.nGroups; gi++) {
+                            char suffix[16];
+                            snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+                            auto gd = assetManager_->readFile(wmoBase + suffix);
+                            if (!gd.empty()) pipeline::WMOLoader::loadGroup(gd, wmoModel, gi);
+                        }
+                    }
+                    auto bld = pipeline::WoweeBuildingLoader::fromWMO(wmoModel, obj.path);
+                    pipeline::WoweeBuildingLoader::save(bld, base + "/buildings/" + wobPath);
+                } else {
+                    pipeline::WoweeBuilding bld;
+                    bld.name = obj.path;
+                    pipeline::WoweeBuildingLoader::save(bld, base + "/buildings/" + wobPath);
+                }
                 convertedWMOs.insert(obj.path);
             }
         }
         if (!convertedWMOs.empty())
-            LOG_INFO("Created ", convertedWMOs.size(), " WOB building placeholders");
+            LOG_INFO("Converted ", convertedWMOs.size(), " WMO buildings to WOB");
     }
 
     // Export used textures as PNG (open format replacement for BLP)
@@ -792,12 +964,18 @@ void EditorApp::exportZone(const std::string& outputDir) {
                            std::to_string(loadedTileX_) + "_" + std::to_string(loadedTileY_);
     WoweeTerrain::exportOpen(terrain_, openBase, loadedTileX_, loadedTileY_);
     WoweeTerrain::exportNormalMap(terrain_, openBase + "_normals.png");
+
+    // Export collision mesh (.woc)
+    auto collision = pipeline::WoweeCollisionBuilder::fromTerrain(terrain_);
+    if (collision.isValid())
+        pipeline::WoweeCollisionBuilder::save(collision, openBase + ".woc");
     WoweeTerrain::exportAlphaMaps(terrain_, base + "/alphamaps");
     WoweeTerrain::exportWaterMask(terrain_, openBase + "_watermask.png");
     WoweeTerrain::exportHoleMask(terrain_, openBase + "_holemask.png");
     WoweeTerrain::exportHeightmapPreview(terrain_, openBase + "_heightmap.png");
     // Also save heightmap as zone thumbnail for content pack browsing
     WoweeTerrain::exportHeightmapPreview(terrain_, base + "/thumbnail.png");
+    WoweeTerrain::exportZoneMap(terrain_, base + "/zone_map.png", 512);
 
     // Write zone info README
     {
@@ -808,7 +986,7 @@ void EditorApp::exportZone(const std::string& outputDir) {
             readme << "Objects: " << objectPlacer_.objectCount() << "\n";
             readme << "NPCs: " << npcSpawner_.spawnCount() << "\n";
             readme << "Quests: " << questEditor_.questCount() << "\n";
-            readme << "Created with Wowee World Editor v0.8.0\n\n";
+            readme << "Created with Wowee World Editor v1.0.0\n\n";
             readme << "\nOpen Formats (no Blizzard IP):\n";
             readme << "  .wot/.whm  — Wowee Open Terrain (heightmap + metadata)\n";
             readme << "  .wom       — Wowee Open Model (static 3D models)\n";
@@ -826,10 +1004,28 @@ void EditorApp::exportZone(const std::string& outputDir) {
     }
 
     // Write zone manifest (for client loading)
-    ZoneManifest manifest;
+    // Scan output directory for all exported tiles (includes adjacent tiles)
+    ZoneManifest& manifest = zoneManifest_;
     manifest.mapName = loadedMap_;
     manifest.displayName = loadedMap_;
     manifest.tiles.push_back({loadedTileX_, loadedTileY_});
+    namespace fs = std::filesystem;
+    if (fs::exists(base)) {
+        for (auto& entry : fs::directory_iterator(base)) {
+            if (entry.path().extension() != ".adt") continue;
+            std::string stem = entry.path().stem().string();
+            auto lastU = stem.rfind('_');
+            auto prevU = stem.rfind('_', lastU - 1);
+            if (lastU != std::string::npos && prevU != std::string::npos) {
+                try {
+                    int tx = std::stoi(stem.substr(prevU + 1, lastU - prevU - 1));
+                    int ty = std::stoi(stem.substr(lastU + 1));
+                    if (tx == loadedTileX_ && ty == loadedTileY_) continue;
+                    manifest.tiles.push_back({tx, ty});
+                } catch (...) {}
+            }
+        }
+    }
     manifest.hasCreatures = (npcSpawner_.spawnCount() > 0);
     manifest.baseHeight = terrain_.chunks[0].position[2];
     manifest.save(base + "/zone.json");
@@ -853,26 +1049,35 @@ void EditorApp::exportZone(const std::string& outputDir) {
     int score = validation.openFormatScore();
     // Write zone statistics JSON
     {
-        std::ofstream stats(base + "/stats.json");
-        if (stats) {
-            stats << "{\n";
-            stats << "  \"map\": \"" << loadedMap_ << "\",\n";
-            stats << "  \"tile\": [" << loadedTileX_ << "," << loadedTileY_ << "],\n";
-            stats << "  \"objects\": " << objectPlacer_.objectCount() << ",\n";
-            stats << "  \"npcs\": " << npcSpawner_.spawnCount() << ",\n";
-            stats << "  \"quests\": " << questEditor_.questCount() << ",\n";
-            stats << "  \"textures\": " << usedTextures.size() << ",\n";
-            stats << "  \"openFormatScore\": " << score << ",\n";
-            stats << "  \"formats\": \"" << validation.summary() << "\"\n";
-            stats << "}\n";
+        nlohmann::json sj;
+        sj["map"] = loadedMap_;
+        sj["tile"] = {loadedTileX_, loadedTileY_};
+        sj["objects"] = objectPlacer_.objectCount();
+        sj["npcs"] = npcSpawner_.spawnCount();
+        sj["quests"] = questEditor_.questCount();
+        sj["textures"] = usedTextures.size();
+        sj["openFormatScore"] = score;
+        sj["formats"] = validation.summary();
+        sj["tiles"] = static_cast<int>(manifest.tiles.size());
+        auto* tr = viewport_.getTerrainRenderer();
+        if (tr) {
+            sj["chunks"] = tr->getChunkCount();
+            sj["triangles"] = tr->getTriangleCount();
         }
+        sj["editorVersion"] = "1.0.0";
+        std::ofstream stats(base + "/stats.json");
+        if (stats) stats << sj.dump(2) << "\n";
     }
 
-    showToast("Exported " + std::to_string(fileCount) + " files (" +
-              std::to_string(score) + "/5 open format)");
+    std::string summary = std::to_string(fileCount) + " files exported";
+    if (objectPlacer_.objectCount() > 0) summary += ", " + std::to_string(objectPlacer_.objectCount()) + " obj";
+    if (npcSpawner_.spawnCount() > 0) summary += ", " + std::to_string(npcSpawner_.spawnCount()) + " NPC";
+    if (questEditor_.questCount() > 0) summary += ", " + std::to_string(questEditor_.questCount()) + " quest";
+    summary += " (score " + std::to_string(score) + "/7)";
+    showToast(summary, 5.0f);
     LOG_INFO("=== Zone Export Summary ===");
     LOG_INFO("  Output: ", base);
-    LOG_INFO("  Open format score: ", score, "/5");
+    LOG_INFO("  Open format score: ", score, "/7");
     LOG_INFO("  Formats: ", validation.summary());
     LOG_INFO("  Terrain: WOT/WHM + heightmap/normals PNG");
     LOG_INFO("  Textures: ", usedTextures.size(), " BLP→PNG");
@@ -890,8 +1095,9 @@ void EditorApp::exportContentPack(const std::string& destPath) {
     // Pack into WCP
     ContentPackInfo info;
     info.name = loadedMap_;
-    info.author = "Kelsi Davis";
-    info.description = "Custom zone created with Wowee World Editor";
+    info.author = project_.author.empty() ? "Kelsi Davis" : project_.author;
+    info.description = project_.description.empty()
+        ? "Custom zone created with Wowee World Editor" : project_.description;
     info.mapId = 9000;
     if (ContentPacker::packZone(dir, loadedMap_, destPath, info))
         showToast("Content pack exported: " + destPath);
@@ -931,18 +1137,9 @@ void EditorApp::updateToasts(float dt) {
 
 void EditorApp::setSkyPreset(int preset) {
     switch (preset) {
-        case 0: // Day
-            viewport_.setClearColor(0.4f, 0.6f, 0.9f);
-            viewport_.setLightDir(glm::normalize(glm::vec3(0.5f, -1.0f, 0.8f)));
-            break;
-        case 1: // Dusk
-            viewport_.setClearColor(0.6f, 0.3f, 0.2f);
-            viewport_.setLightDir(glm::normalize(glm::vec3(0.8f, -0.3f, 0.1f)));
-            break;
-        case 2: // Night
-            viewport_.setClearColor(0.05f, 0.05f, 0.12f);
-            viewport_.setLightDir(glm::normalize(glm::vec3(0.2f, -0.5f, 0.8f)));
-            break;
+        case 0: viewport_.setTimeOfDay(12.0f); break;
+        case 1: viewport_.setTimeOfDay(18.0f); break;
+        case 2: viewport_.setTimeOfDay(22.0f); break;
     }
 }
 
@@ -978,14 +1175,51 @@ void EditorApp::addAdjacentTile(int offsetX, int offsetY) {
     int newY = loadedTileY_ + offsetY;
     if (newX < 0 || newX > 63 || newY < 0 || newY > 63) return;
 
-    // Create a blank tile adjacent to current
     auto adj = TerrainEditor::createBlankTerrain(newX, newY, terrain_.chunks[0].position[2],
                                                   Biome::Grassland);
-    // Stitch edges: copy border heights from current terrain to adjacent
-    // (This is a simplified version — full multi-tile needs a different architecture)
-    LOG_INFO("Adjacent tile created at [", newX, ",", newY, "] (not yet rendered in viewport)");
-    ADTWriter::write(adj, "output/" + loadedMap_ + "/" + loadedMap_ + "_" +
-                     std::to_string(newX) + "_" + std::to_string(newY) + ".adt");
+
+    // Stitch edge heights from current tile to adjacent tile
+    if (offsetX == 1) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& src = terrain_.chunks[15 * 16 + cx];
+            auto& dst = adj.chunks[0 * 16 + cx];
+            if (!src.hasHeightMap() || !dst.hasHeightMap()) continue;
+            for (int v = 0; v < 9; v++)
+                dst.heightMap.heights[v] = src.heightMap.heights[8 * 17 + v];
+        }
+    } else if (offsetX == -1) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& src = terrain_.chunks[0 * 16 + cx];
+            auto& dst = adj.chunks[15 * 16 + cx];
+            if (!src.hasHeightMap() || !dst.hasHeightMap()) continue;
+            for (int v = 0; v < 9; v++)
+                dst.heightMap.heights[8 * 17 + v] = src.heightMap.heights[v];
+        }
+    } else if (offsetY == 1) {
+        for (int cy = 0; cy < 16; cy++) {
+            auto& src = terrain_.chunks[cy * 16 + 15];
+            auto& dst = adj.chunks[cy * 16 + 0];
+            if (!src.hasHeightMap() || !dst.hasHeightMap()) continue;
+            for (int r = 0; r <= 8; r++)
+                dst.heightMap.heights[r * 17] = src.heightMap.heights[r * 17 + 8];
+        }
+    } else if (offsetY == -1) {
+        for (int cy = 0; cy < 16; cy++) {
+            auto& src = terrain_.chunks[cy * 16 + 0];
+            auto& dst = adj.chunks[cy * 16 + 15];
+            if (!src.hasHeightMap() || !dst.hasHeightMap()) continue;
+            for (int r = 0; r <= 8; r++)
+                dst.heightMap.heights[r * 17 + 8] = src.heightMap.heights[r * 17];
+        }
+    }
+
+    std::string base = "output/" + loadedMap_ + "/" + loadedMap_ + "_" +
+                       std::to_string(newX) + "_" + std::to_string(newY);
+    ADTWriter::write(adj, base + ".adt");
+    WoweeTerrain::exportOpen(adj, base, newX, newY);
+
+    showToast("Adjacent tile [" + std::to_string(newX) + "," + std::to_string(newY) + "] exported");
+    LOG_INFO("Adjacent tile created at [", newX, ",", newY, "] with edge stitching (ADT+WOT/WHM)");
 }
 
 void EditorApp::flyToSelected() {
@@ -1052,8 +1286,7 @@ void EditorApp::generateCompleteZone() {
 void EditorApp::clearAllObjects() {
     vkDeviceWaitIdle(window_->getVkContext()->getDevice());
     objectPlacer_.clearAll();
-    npcSpawner_.clearSelection();
-    npcSpawner_.getSpawns().clear();
+    npcSpawner_.clearAll();
     viewport_.clearObjects();
     viewport_.updateNpcMarkers({});
     terrainEditor_.history().clear();
@@ -1088,6 +1321,120 @@ void EditorApp::snapSelectedToGround() {
         sel->position.z = hitPos.z;
         objectsDirty_ = true;
     }
+}
+
+void EditorApp::flattenAroundSelected(float radius) {
+    auto* sel = objectPlacer_.getSelected();
+    if (!sel || !terrain_.isLoaded()) return;
+
+    terrainEditor_.beginGeneratorUndo();
+    float targetHeight = sel->position.z;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_.chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        bool modified = false;
+        for (int v = 0; v < 145; v++) {
+            glm::vec3 vpos = terrainEditor_.getChunkVertexWorldPos(ci, v);
+            float dist = glm::length(glm::vec2(vpos.x - sel->position.x, vpos.y - sel->position.y));
+            if (dist >= radius) continue;
+            float t = dist / radius;
+            float blend = t * t;
+            float relTarget = targetHeight - chunk.position[2];
+            chunk.heightMap.heights[v] = chunk.heightMap.heights[v] * blend + relTarget * (1.0f - blend);
+            modified = true;
+        }
+        if (modified) {
+            terrainEditor_.stitchChunkEdges(ci);
+            terrainEditor_.markDirty(ci);
+        }
+    }
+    terrainEditor_.endGeneratorUndo();
+    showToast("Flattened terrain around object (r=" + std::to_string(static_cast<int>(radius)) + ")");
+}
+
+void EditorApp::alignSelectedToTerrain() {
+    auto& indices = objectPlacer_.getSelectedIndices();
+    auto& objects = objectPlacer_.getObjects();
+    int count = 0;
+    auto alignOne = [&](PlacedObject& obj) {
+        glm::vec3 normal = terrainEditor_.sampleTerrainNormal(obj.position);
+        float pitchDeg = glm::degrees(std::asin(-normal.x));
+        float rollDeg = glm::degrees(std::asin(normal.y));
+        obj.rotation.x = pitchDeg;
+        obj.rotation.z = rollDeg;
+        count++;
+    };
+    if (!indices.empty()) {
+        for (int idx : indices) alignOne(objects[idx]);
+    } else if (auto* sel = objectPlacer_.getSelected()) {
+        alignOne(*sel);
+    }
+    if (count > 0) {
+        objectsDirty_ = true;
+        showToast("Aligned " + std::to_string(count) + " object(s) to terrain");
+    }
+}
+
+int EditorApp::batchConvertAssets(const std::string& dataDir) {
+    namespace fs = std::filesystem;
+    int converted = 0;
+
+    // Collect paths from filesystem or manifest
+    std::vector<std::string> assetPaths;
+    if (fs::exists(dataDir)) {
+        for (auto& entry : fs::recursive_directory_iterator(dataDir)) {
+            if (entry.is_regular_file())
+                assetPaths.push_back(fs::relative(entry.path(), dataDir).string());
+        }
+    }
+    if (assetPaths.empty() && assetManager_) {
+        for (const auto& [path, _] : assetManager_->getManifest().getEntries())
+            assetPaths.push_back(path);
+        LOG_INFO("Batch convert: using manifest (", assetPaths.size(), " entries)");
+    }
+
+    for (const auto& relPath : assetPaths) {
+        std::string ext;
+        auto dot = relPath.rfind('.');
+        if (dot != std::string::npos) ext = relPath.substr(dot);
+        for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        if (ext == ".m2") {
+            auto wom = pipeline::WoweeModelLoader::fromM2(relPath, assetManager_.get());
+            if (wom.isValid()) {
+                std::string outPath = relPath;
+                auto dot = outPath.rfind('.');
+                if (dot != std::string::npos) outPath = outPath.substr(0, dot);
+                pipeline::WoweeModelLoader::save(wom, "output/models/" + outPath);
+                converted++;
+            }
+        } else if (ext == ".wmo") {
+            auto wmoData = assetManager_->readFile(relPath);
+            if (!wmoData.empty()) {
+                auto wmoModel = pipeline::WMOLoader::load(wmoData);
+                if (wmoModel.nGroups > 0) {
+                    std::string wmoBase = relPath;
+                    if (wmoBase.size() > 4) wmoBase = wmoBase.substr(0, wmoBase.size() - 4);
+                    for (uint32_t gi = 0; gi < wmoModel.nGroups; gi++) {
+                        char suffix[16];
+                        snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+                        auto gd = assetManager_->readFile(wmoBase + suffix);
+                        if (!gd.empty()) pipeline::WMOLoader::loadGroup(gd, wmoModel, gi);
+                    }
+                }
+                auto wob = pipeline::WoweeBuildingLoader::fromWMO(wmoModel, relPath);
+                if (wob.isValid()) {
+                    std::string outPath = relPath;
+                    auto dot = outPath.rfind('.');
+                    if (dot != std::string::npos) outPath = outPath.substr(0, dot);
+                    pipeline::WoweeBuildingLoader::save(wob, "output/buildings/" + outPath);
+                    converted++;
+                }
+            }
+        }
+    }
+    LOG_INFO("Batch converted ", converted, " assets from ", dataDir);
+    return converted;
 }
 
 void EditorApp::resetCamera() {

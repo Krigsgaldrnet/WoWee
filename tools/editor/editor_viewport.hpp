@@ -52,6 +52,7 @@ public:
 
     TransformGizmo& getGizmo() { return gizmo_; }
     void setBrushIndicator(const glm::vec3& center, float radius, bool active);
+    void setPathPreview(const glm::vec3& start, const glm::vec3& end, float width, bool visible);
 
     void setWireframe(bool enabled);
     bool isWireframe() const { return wireframe_; }
@@ -60,6 +61,14 @@ public:
     void getClearColor(float& r, float& g, float& b) const { r=clearR_; g=clearG_; b=clearB_; }
     void setLightDir(const glm::vec3& d) { lightDir_ = d; }
     glm::vec3 getLightDir() const { return lightDir_; }
+
+    void setTimeOfDay(float t);
+    float getTimeOfDay() const { return timeOfDay_; }
+    glm::vec3& getLightColor() { return lightColor_; }
+    glm::vec3& getAmbientColor() { return ambientColor_; }
+    glm::vec3& getFogColor() { return fogColor_; }
+    float& getFogNear() { return fogNear_; }
+    float& getFogFar() { return fogFar_; }
 
     rendering::TerrainRenderer* getTerrainRenderer() { return terrainRenderer_.get(); }
     rendering::M2Renderer* getM2Renderer() { return m2Renderer_.get(); }
@@ -94,6 +103,11 @@ private:
     bool wireframe_ = false;
     float clearR_ = 0.15f, clearG_ = 0.15f, clearB_ = 0.2f;
     glm::vec3 lightDir_ = glm::normalize(glm::vec3(0.5f, -1.0f, 0.3f));
+    glm::vec3 lightColor_ = glm::vec3(1.0f, 0.95f, 0.85f);
+    glm::vec3 ambientColor_ = glm::vec3(0.3f, 0.3f, 0.35f);
+    glm::vec3 fogColor_ = glm::vec3(0.6f, 0.7f, 0.8f);
+    float fogNear_ = 5000.0f, fogFar_ = 10000.0f;
+    float timeOfDay_ = 12.0f;
 
     // Ghost preview state
     std::string ghostModelPath_;
@@ -111,6 +125,12 @@ private:
     VkBuffer npcMarkerVB_ = VK_NULL_HANDLE;
     VmaAllocation npcMarkerVBAlloc_ = VK_NULL_HANDLE;
     uint32_t npcMarkerVertCount_ = 0;
+
+    // Path preview line
+    VkBuffer pathVB_ = VK_NULL_HANDLE;
+    VmaAllocation pathVBAlloc_ = VK_NULL_HANDLE;
+    uint32_t pathVertCount_ = 0;
+    bool pathVisible_ = false;
 };
 
 } // namespace editor

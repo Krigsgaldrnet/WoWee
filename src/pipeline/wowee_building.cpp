@@ -1,6 +1,7 @@
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "core/logger.hpp"
+#include <glm/gtc/quaternion.hpp>
 #include <fstream>
 #include <filesystem>
 #include <cstring>
@@ -63,6 +64,23 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
             f.read(tp.data(), tl);
             grp.texturePaths.push_back(tp);
         }
+
+        // Read material data (v1.1+)
+        uint32_t mc = 0;
+        if (f.read(reinterpret_cast<char*>(&mc), 4) && mc > 0 && mc <= 256) {
+            for (uint32_t mi = 0; mi < mc; mi++) {
+                WoweeBuilding::Material mat;
+                uint16_t pl;
+                f.read(reinterpret_cast<char*>(&pl), 2);
+                mat.texturePath.resize(pl);
+                f.read(mat.texturePath.data(), pl);
+                f.read(reinterpret_cast<char*>(&mat.flags), 4);
+                f.read(reinterpret_cast<char*>(&mat.shader), 4);
+                f.read(reinterpret_cast<char*>(&mat.blendMode), 4);
+                grp.materials.push_back(mat);
+            }
+        }
+
         bld.groups.push_back(std::move(grp));
     }
 
@@ -139,6 +157,18 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
             f.write(reinterpret_cast<const char*>(&tl), 2);
             f.write(tp.data(), tl);
         }
+
+        // Write material data
+        uint32_t mc = static_cast<uint32_t>(grp.materials.size());
+        f.write(reinterpret_cast<const char*>(&mc), 4);
+        for (const auto& mat : grp.materials) {
+            uint16_t pl = static_cast<uint16_t>(mat.texturePath.size());
+            f.write(reinterpret_cast<const char*>(&pl), 2);
+            f.write(mat.texturePath.data(), pl);
+            f.write(reinterpret_cast<const char*>(&mat.flags), 4);
+            f.write(reinterpret_cast<const char*>(&mat.shader), 4);
+            f.write(reinterpret_cast<const char*>(&mat.blendMode), 4);
+        }
     }
 
     for (const auto& portal : bld.portals) {
@@ -194,6 +224,79 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
     // WMOModel uses isValid() = nGroups > 0 && !groups.empty()
     // Both are now set, so isValid() will return true
     return true;
+}
+
+WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::string& name) {
+    WoweeBuilding bld;
+    bld.name = name.empty() ? "Converted WMO" : name;
+
+    float maxDist = 0.0f;
+    for (const auto& grp : wmo.groups) {
+        WoweeBuilding::Group wobGroup;
+        wobGroup.name = grp.name;
+        wobGroup.isOutdoor = (grp.flags & 0x08) != 0;
+        wobGroup.boundMin = grp.boundingBoxMin;
+        wobGroup.boundMax = grp.boundingBoxMax;
+
+        wobGroup.vertices.reserve(grp.vertices.size());
+        for (const auto& v : grp.vertices) {
+            WoweeBuilding::Vertex wv;
+            wv.position = v.position;
+            wv.normal = v.normal;
+            wv.texCoord = v.texCoord;
+            wv.color = v.color;
+            wobGroup.vertices.push_back(wv);
+
+            float d = glm::length(v.position);
+            if (d > maxDist) maxDist = d;
+        }
+
+        wobGroup.indices.reserve(grp.indices.size());
+        for (uint16_t idx : grp.indices)
+            wobGroup.indices.push_back(static_cast<uint32_t>(idx));
+
+        for (const auto& mat : wmo.materials) {
+            WoweeBuilding::Material wobMat;
+            wobMat.flags = mat.flags;
+            wobMat.shader = mat.shader;
+            wobMat.blendMode = mat.blendMode;
+            if (mat.texture1 < wmo.textures.size()) {
+                std::string texPath = wmo.textures[mat.texture1];
+                auto dot = texPath.rfind('.');
+                if (dot != std::string::npos)
+                    texPath = texPath.substr(0, dot) + ".png";
+                wobMat.texturePath = texPath;
+                wobGroup.texturePaths.push_back(texPath);
+            }
+            wobGroup.materials.push_back(wobMat);
+        }
+
+        bld.groups.push_back(std::move(wobGroup));
+    }
+
+    bld.boundRadius = maxDist;
+
+    for (const auto& doodad : wmo.doodads) {
+        auto nameIt = wmo.doodadNames.find(doodad.nameIndex);
+        if (nameIt == wmo.doodadNames.end()) continue;
+
+        WoweeBuilding::DoodadPlacement dp;
+        dp.modelPath = nameIt->second;
+        auto dot = dp.modelPath.rfind('.');
+        if (dot != std::string::npos)
+            dp.modelPath = dp.modelPath.substr(0, dot) + ".wom";
+        dp.position = doodad.position;
+        // Convert quaternion rotation to euler angles
+        glm::quat q(doodad.rotation.w, doodad.rotation.x,
+                     doodad.rotation.y, doodad.rotation.z);
+        dp.rotation = glm::degrees(glm::eulerAngles(q));
+        dp.scale = doodad.scale;
+        bld.doodads.push_back(dp);
+    }
+
+    LOG_INFO("WOB from WMO: ", bld.name, " (", bld.groups.size(), " groups, ",
+             bld.doodads.size(), " doodads)");
+    return bld;
 }
 
 } // namespace pipeline

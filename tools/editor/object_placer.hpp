@@ -34,13 +34,18 @@ public:
     // Place object at world position
     void placeObject(const glm::vec3& position);
 
-    // Select object nearest to ray
+    // Select object nearest to ray (Shift adds to selection)
     int selectAt(const rendering::Ray& ray, float maxDist = 50.0f);
+    void addToSelection(int idx);
+    void toggleSelection(int idx);
     void clearSelection();
     int getSelectedIndex() const { return selectedIdx_; }
     PlacedObject* getSelected();
+    const std::vector<int>& getSelectedIndices() const { return selectedIndices_; }
+    size_t selectionCount() const { return selectedIndices_.size(); }
+    bool isMultiSelected() const { return selectedIndices_.size() > 1; }
 
-    // Transform selected
+    // Transform selected (operates on all selected objects)
     void moveSelected(const glm::vec3& delta);
     void rotateSelected(const glm::vec3& deltaDeg);
     void scaleSelected(float delta);
@@ -55,7 +60,9 @@ public:
 
     const std::vector<PlacedObject>& getObjects() const { return objects_; }
     std::vector<PlacedObject>& getObjects() { return objects_; }
-    void clearAll() { objects_.clear(); undoStack_.clear(); selectedIdx_ = -1; }
+    void selectAll();
+    void selectByType(PlaceableType type);
+    void clearAll() { objects_.clear(); undoStack_.clear(); selectedIdx_ = -1; selectedIndices_.clear(); uniqueIdCounter_ = 1; }
     size_t objectCount() const { return objects_.size(); }
 
     float getPlacementRotationY() const { return placementRotY_; }
@@ -75,6 +82,11 @@ public:
     void scatter(const glm::vec3& center, float radius, int count,
                  float minScale, float maxScale);
 
+    // Procedural biome population: auto-place vegetation based on rules
+    int populateBiome(const struct BiomeVegetation& vegetation,
+                       float tileSize, const glm::vec3& tileOrigin,
+                       uint32_t seed = 42);
+
 private:
     uint32_t nextUniqueId();
 
@@ -85,6 +97,7 @@ private:
     std::vector<PlacedObject> objects_;
     std::vector<int> undoStack_; // indices of recently placed objects
     int selectedIdx_ = -1;
+    std::vector<int> selectedIndices_;
     uint32_t uniqueIdCounter_ = 1;
     float placementRotY_ = 0.0f;
     float placementScale_ = 1.0f;

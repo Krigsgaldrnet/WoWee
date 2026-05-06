@@ -1,5 +1,6 @@
 #include "editor_project.hpp"
 #include "core/logger.hpp"
+#include <nlohmann/json.hpp>
 #include <fstream>
 #include <filesystem>
 
@@ -10,28 +11,25 @@ bool EditorProject::save(const std::string& path) const {
     namespace fs = std::filesystem;
     fs::create_directories(fs::path(path).parent_path());
 
+    nlohmann::json j;
+    j["format"] = "wowee-project-1.0";
+    j["name"] = name;
+    j["author"] = author;
+    j["description"] = description;
+    j["version"] = version;
+    j["startMapId"] = startMapId;
+
+    nlohmann::json zarr = nlohmann::json::array();
+    for (const auto& z : zones) {
+        zarr.push_back({{"mapName", z.mapName}, {"tileX", z.tileX},
+                        {"tileY", z.tileY}, {"biome", z.biome},
+                        {"description", z.description}});
+    }
+    j["zones"] = zarr;
+
     std::ofstream f(path);
     if (!f) return false;
-
-    f << "{\n";
-    f << "  \"format\": \"wowee-project-1.0\",\n";
-    f << "  \"name\": \"" << name << "\",\n";
-    f << "  \"author\": \"" << author << "\",\n";
-    f << "  \"description\": \"" << description << "\",\n";
-    f << "  \"version\": \"" << version << "\",\n";
-    f << "  \"startMapId\": " << startMapId << ",\n";
-    f << "  \"zones\": [\n";
-    for (size_t i = 0; i < zones.size(); i++) {
-        const auto& z = zones[i];
-        f << "    {\"mapName\": \"" << z.mapName << "\""
-          << ", \"tileX\": " << z.tileX
-          << ", \"tileY\": " << z.tileY
-          << ", \"biome\": \"" << z.biome << "\""
-          << ", \"description\": \"" << z.description << "\""
-          << "}" << (i + 1 < zones.size() ? "," : "") << "\n";
-    }
-    f << "  ]\n";
-    f << "}\n";
+    f << j.dump(2) << "\n";
 
     LOG_INFO("Project saved: ", path, " (", zones.size(), " zones)");
     return true;
@@ -40,64 +38,36 @@ bool EditorProject::save(const std::string& path) const {
 bool EditorProject::load(const std::string& path) {
     std::ifstream f(path);
     if (!f) return false;
-    std::string content((std::istreambuf_iterator<char>(f)),
-                         std::istreambuf_iterator<char>());
 
-    auto findStr = [&](const std::string& key) -> std::string {
-        auto pos = content.find("\"" + key + "\"");
-        if (pos == std::string::npos) return "";
-        pos = content.find('"', content.find(':', pos) + 1);
-        if (pos == std::string::npos) return "";
-        auto end = content.find('"', pos + 1);
-        return content.substr(pos + 1, end - pos - 1);
-    };
+    try {
+        nlohmann::json j = nlohmann::json::parse(f);
 
-    name = findStr("name");
-    author = findStr("author");
-    description = findStr("description");
-    version = findStr("version");
-    projectDir = std::filesystem::path(path).parent_path().string();
+        name = j.value("name", "");
+        author = j.value("author", "");
+        description = j.value("description", "");
+        version = j.value("version", "1.0.0");
+        startMapId = j.value("startMapId", 9000u);
+        projectDir = std::filesystem::path(path).parent_path().string();
 
-    // Parse zones from JSON array
-    zones.clear();
-    size_t zonesPos = content.find("\"zones\"");
-    if (zonesPos != std::string::npos) {
-        size_t start = zonesPos;
-        while ((start = content.find('{', start + 1)) != std::string::npos) {
-            auto end = content.find('}', start);
-            if (end == std::string::npos) break;
-            // Check we're still inside the zones array
-            auto closeBracket = content.find(']', zonesPos);
-            if (start > closeBracket) break;
-
-            std::string block = content.substr(start, end - start + 1);
-            ProjectZone z;
-
-            auto blockFindStr = [&](const std::string& key) -> std::string {
-                auto p = block.find("\"" + key + "\"");
-                if (p == std::string::npos) return "";
-                p = block.find('"', block.find(':', p) + 1);
-                if (p == std::string::npos) return "";
-                auto e = block.find('"', p + 1);
-                return block.substr(p + 1, e - p - 1);
-            };
-
-            z.mapName = blockFindStr("mapName");
-            z.biome = blockFindStr("biome");
-            z.description = blockFindStr("description");
-
-            auto txPos = block.find("\"tileX\":");
-            if (txPos != std::string::npos) z.tileX = std::stoi(block.substr(txPos + 8));
-            auto tyPos = block.find("\"tileY\":");
-            if (tyPos != std::string::npos) z.tileY = std::stoi(block.substr(tyPos + 8));
-
-            if (!z.mapName.empty()) zones.push_back(z);
-            start = end;
+        zones.clear();
+        if (j.contains("zones") && j["zones"].is_array()) {
+            for (const auto& jz : j["zones"]) {
+                ProjectZone z;
+                z.mapName = jz.value("mapName", "");
+                z.tileX = jz.value("tileX", 32);
+                z.tileY = jz.value("tileY", 32);
+                z.biome = jz.value("biome", "");
+                z.description = jz.value("description", "");
+                if (!z.mapName.empty()) zones.push_back(z);
+            }
         }
-    }
 
-    LOG_INFO("Project loaded: ", path, " (", name, ", ", zones.size(), " zones)");
-    return true;
+        LOG_INFO("Project loaded: ", path, " (", name, ", ", zones.size(), " zones)");
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to load project: ", e.what());
+        return false;
+    }
 }
 
 bool EditorProject::initGitRepo() const {
@@ -109,8 +79,14 @@ bool EditorProject::initGitRepo() const {
 
 bool EditorProject::gitCommit(const std::string& message) const {
     if (projectDir.empty()) return false;
+    // Sanitize commit message to prevent shell injection
+    std::string safe;
+    for (char c : message) {
+        if (c == '\'' || c == '\\') safe += '\\';
+        safe += c;
+    }
     int ret = std::system(("cd \"" + projectDir + "\" && git add -A && "
-                           "git commit -m \"" + message + "\"").c_str());
+                           "git commit -m '" + safe + "'").c_str());
     return ret == 0;
 }
 

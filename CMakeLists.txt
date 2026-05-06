@@ -592,6 +592,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_terrain_loader.cpp
     src/pipeline/wowee_model.cpp
     src/pipeline/wowee_building.cpp
+    src/pipeline/wowee_collision.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1213,6 +1214,7 @@ add_executable(dbc_to_csv
 )
 target_include_directories(dbc_to_csv PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern
 )
 target_link_libraries(dbc_to_csv PRIVATE Threads::Threads)
 set_target_properties(dbc_to_csv PROPERTIES
@@ -1295,6 +1297,8 @@ add_executable(wowee_editor
     tools/editor/object_placer.cpp
     tools/editor/npc_spawner.cpp
     tools/editor/npc_presets.cpp
+    tools/editor/sql_exporter.cpp
+    tools/editor/server_module_gen.cpp
     tools/editor/quest_editor.cpp
     tools/editor/transform_gizmo.cpp
     tools/editor/zone_manifest.cpp
@@ -1322,6 +1326,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_terrain_loader.cpp
     src/pipeline/wowee_model.cpp
     src/pipeline/wowee_building.cpp
+    src/pipeline/wowee_collision.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

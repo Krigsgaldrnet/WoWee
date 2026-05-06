@@ -399,6 +399,21 @@ target_link_libraries(test_gm_commands PRIVATE catch2_main)
 add_test(NAME gm_commands COMMAND test_gm_commands)
 register_test_target(test_gm_commands)
 
+# ── test_open_formats ────────────────────────────────────────
+add_executable(test_open_formats
+    test_open_formats.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/wowee_building.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/wowee_collision.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/wowee_terrain_loader.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/wmo_loader.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/logger.cpp
+)
+target_include_directories(test_open_formats PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_open_formats SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_open_formats PRIVATE catch2_main)
+add_test(NAME open_formats COMMAND test_open_formats)
+register_test_target(test_open_formats)
+
 # ── ASAN / UBSan for test targets ────────────────────────────
 if(WOWEE_ENABLE_ASAN AND NOT MSVC)
     foreach(_t IN LISTS ALL_TEST_TARGETS)

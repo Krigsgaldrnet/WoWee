@@ -201,6 +201,8 @@ public:
      * @param mapName Map name (e.g., "Azeroth", "Kalimdor")
      */
     void setMapName(const std::string& mapName) { this->mapName = mapName; }
+    bool isCustomZone() const { return isCustomZone_; }
+    void setCustomZone(bool custom) { isCustomZone_ = custom; }
 
     /**
      * Load a single tile
@@ -257,6 +259,10 @@ public:
      * @return Height (GL Z) if terrain loaded at that position, empty otherwise
      */
     std::optional<float> getHeightAt(float glX, float glY) const;
+
+    // Collision queries using WOC data (custom zones)
+    bool isPositionWalkable(float glX, float glY) const;
+    uint8_t getCollisionFlags(float glX, float glY) const;
 
     /**
      * Get dominant terrain texture name at a GL position.
@@ -352,6 +358,17 @@ private:
     float timeSinceLastUpdate = 0.0f;
     float proactiveStreamTimer_ = 0.0f;
     bool taxiStreamingMode_ = false;
+    bool isCustomZone_ = false;
+
+    // Collision data for custom zones (loaded from WOC files)
+    struct CollisionData {
+        struct Triangle { glm::vec3 v0, v1, v2; uint8_t flags; };
+        std::vector<Triangle> triangles;
+        glm::vec3 boundsMin{1e30f}, boundsMax{-1e30f};
+        bool loaded = false;
+    };
+    std::unordered_map<uint64_t, CollisionData> collisionTiles_;
+    uint64_t tileKey(int x, int y) const { return (static_cast<uint64_t>(x) << 32) | static_cast<uint32_t>(y); }
 
     // Tile size constants (WoW ADT specifications)
     // A tile (ADT) = 16x16 chunks = 533.33 units across

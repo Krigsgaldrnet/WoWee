@@ -11,6 +11,7 @@
 #include "pipeline/wowee_terrain_loader.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
+#include "pipeline/wowee_collision.hpp"
 #include "core/memory_monitor.hpp"
 #include "core/profiler.hpp"
 #include "pipeline/asset_manager.hpp"
@@ -323,6 +324,21 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
         if (pipeline::WoweeTerrainLoader::load(wotBase, *terrainPtr)) {
             loadedFromWot = true;
             LOG_INFO("Loaded custom zone terrain: ", wotBase);
+            // Load collision mesh if available
+            if (pipeline::WoweeCollisionBuilder::exists(wotBase)) {
+                auto woc = pipeline::WoweeCollisionBuilder::load(wotBase + ".woc");
+                if (woc.isValid()) {
+                    CollisionData cd;
+                    cd.triangles.reserve(woc.triangles.size());
+                    for (const auto& t : woc.triangles)
+                        cd.triangles.push_back({t.v0, t.v1, t.v2, t.flags});
+                    cd.boundsMin = woc.bounds.min;
+                    cd.boundsMax = woc.bounds.max;
+                    cd.loaded = true;
+                    collisionTiles_[tileKey(coord.x, coord.y)] = std::move(cd);
+                    LOG_INFO("Loaded WOC collision: ", woc.triangles.size(), " triangles");
+                }
+            }
         }
     }
 
@@ -334,6 +350,20 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             if (pipeline::WoweeTerrainLoader::load(outputBase, *terrainPtr)) {
                 loadedFromWot = true;
                 LOG_INFO("Loaded editor output terrain: ", outputBase);
+                if (pipeline::WoweeCollisionBuilder::exists(outputBase)) {
+                    auto woc = pipeline::WoweeCollisionBuilder::load(outputBase + ".woc");
+                    if (woc.isValid()) {
+                        CollisionData cd;
+                        cd.triangles.reserve(woc.triangles.size());
+                        for (const auto& t : woc.triangles)
+                            cd.triangles.push_back({t.v0, t.v1, t.v2, t.flags});
+                        cd.boundsMin = woc.bounds.min;
+                        cd.boundsMax = woc.bounds.max;
+                        cd.loaded = true;
+                        collisionTiles_[tileKey(coord.x, coord.y)] = std::move(cd);
+                        LOG_INFO("Loaded WOC collision: ", woc.triangles.size(), " triangles");
+                    }
+                }
             }
         }
     }
@@ -473,11 +503,60 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                         mv.position = v.position;
                         mv.normal = v.normal;
                         mv.texCoords[0] = v.texCoord;
+                        std::memcpy(mv.boneWeights, v.boneWeights, 4);
+                        std::memcpy(mv.boneIndices, v.boneIndices, 4);
                         m2Model.vertices.push_back(mv);
                     }
                     m2Model.indices.reserve(wom.indices.size());
                     for (uint32_t idx : wom.indices)
                         m2Model.indices.push_back(static_cast<uint16_t>(idx));
+
+                    // Set up textures from WOM paths
+                    for (const auto& texPath : wom.texturePaths) {
+                        pipeline::M2Texture tex;
+                        tex.type = 0;
+                        tex.flags = 0;
+                        tex.filename = texPath;
+                        m2Model.textures.push_back(tex);
+                    }
+                    m2Model.textureLookup = {0};
+
+                    // Create default render batch covering all geometry
+                    pipeline::M2Batch batch{};
+                    batch.flags = 0;
+                    batch.shader = 0;
+                    batch.textureCount = std::min(1u, static_cast<uint32_t>(wom.texturePaths.size()));
+                    batch.textureIndex = 0;
+                    batch.indexStart = 0;
+                    batch.indexCount = static_cast<uint32_t>(m2Model.indices.size());
+                    batch.vertexStart = 0;
+                    batch.vertexCount = static_cast<uint32_t>(m2Model.vertices.size());
+                    m2Model.batches.push_back(batch);
+
+                    // Default opaque material
+                    pipeline::M2Material mat;
+                    mat.flags = 0;
+                    mat.blendMode = 0;
+                    m2Model.materials.push_back(mat);
+
+                    // Copy bone hierarchy from WOM2
+                    for (const auto& wb : wom.bones) {
+                        pipeline::M2Bone bone;
+                        bone.keyBoneId = wb.keyBoneId;
+                        bone.parentBone = wb.parentBone;
+                        bone.pivot = wb.pivot;
+                        bone.flags = wb.flags;
+                        m2Model.bones.push_back(bone);
+                    }
+
+                    // Copy animation sequences from WOM2
+                    for (const auto& wa : wom.animations) {
+                        pipeline::M2Sequence seq;
+                        seq.id = wa.id;
+                        seq.duration = wa.durationMs;
+                        seq.movingSpeed = wa.movingSpeed;
+                        m2Model.sequences.push_back(seq);
+                    }
 
                     pending->m2Models.push_back({modelId, std::move(m2Model), {}});
                     preparedModelIds.insert(modelId);
@@ -597,6 +676,8 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             const std::string& wmoPath = pending->terrain.wmoNames[placement.nameId];
 
             // Check for WOB open format first (custom zone buildings)
+            bool wobLoaded = false;
+            pipeline::WMOModel wmoModel;
             {
                 std::string wobBase = wmoPath;
                 auto wobDot = wobBase.rfind('.');
@@ -607,10 +688,9 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                     if (pipeline::WoweeBuildingLoader::exists(prefix + wobBase)) {
                         auto wob = pipeline::WoweeBuildingLoader::load(prefix + wobBase);
                         if (wob.isValid()) {
-                            pipeline::WMOModel wobAsWmo;
-                            if (pipeline::WoweeBuildingLoader::toWMOModel(wob, wobAsWmo)) {
+                            if (pipeline::WoweeBuildingLoader::toWMOModel(wob, wmoModel)) {
                                 LOG_INFO("Loaded WOB building: ", prefix + wobBase);
-                                // TODO: feed wobAsWmo into the WMO render pipeline
+                                wobLoaded = true;
                             }
                         }
                         break;
@@ -618,37 +698,39 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                 }
             }
 
-            std::vector<uint8_t> wmoData = assetManager->readFile(wmoPath);
-            if (wmoData.empty()) continue;
+            if (!wobLoaded) {
+                std::vector<uint8_t> wmoData = assetManager->readFile(wmoPath);
+                if (wmoData.empty()) continue;
 
-            pipeline::WMOModel wmoModel = pipeline::WMOLoader::load(wmoData);
-            if (wmoModel.nGroups > 0) {
-                std::string basePath = wmoPath;
-                std::string extension;
-                if (basePath.size() > 4) {
-                    extension = basePath.substr(basePath.size() - 4);
-                    std::string extLower = extension;
-                    for (char& c : extLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    if (extLower == ".wmo") {
-                        basePath = basePath.substr(0, basePath.size() - 4);
+                wmoModel = pipeline::WMOLoader::load(wmoData);
+                if (wmoModel.nGroups > 0) {
+                    std::string basePath = wmoPath;
+                    std::string extension;
+                    if (basePath.size() > 4) {
+                        extension = basePath.substr(basePath.size() - 4);
+                        std::string extLower = extension;
+                        for (char& c : extLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        if (extLower == ".wmo") {
+                            basePath = basePath.substr(0, basePath.size() - 4);
+                        }
                     }
-                }
 
-                for (uint32_t gi = 0; gi < wmoModel.nGroups; gi++) {
-                    char groupSuffix[16];
-                    snprintf(groupSuffix, sizeof(groupSuffix), "_%03u%s", gi, extension.c_str());
-                    std::string groupPath = basePath + groupSuffix;
-                    std::vector<uint8_t> groupData = assetManager->readFile(groupPath);
-                    if (groupData.empty()) {
-                        snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.wmo", gi);
-                        groupData = assetManager->readFile(basePath + groupSuffix);
-                    }
-                    if (groupData.empty()) {
-                        snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.WMO", gi);
-                        groupData = assetManager->readFile(basePath + groupSuffix);
-                    }
-                    if (!groupData.empty()) {
-                        pipeline::WMOLoader::loadGroup(groupData, wmoModel, gi);
+                    for (uint32_t gi = 0; gi < wmoModel.nGroups; gi++) {
+                        char groupSuffix[16];
+                        snprintf(groupSuffix, sizeof(groupSuffix), "_%03u%s", gi, extension.c_str());
+                        std::string groupPath = basePath + groupSuffix;
+                        std::vector<uint8_t> groupData = assetManager->readFile(groupPath);
+                        if (groupData.empty()) {
+                            snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.wmo", gi);
+                            groupData = assetManager->readFile(basePath + groupSuffix);
+                        }
+                        if (groupData.empty()) {
+                            snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.WMO", gi);
+                            groupData = assetManager->readFile(basePath + groupSuffix);
+                        }
+                        if (!groupData.empty()) {
+                            pipeline::WMOLoader::loadGroup(groupData, wmoModel, gi);
+                        }
                     }
                 }
             }
@@ -2499,6 +2581,34 @@ void TerrainManager::precacheTiles(const std::vector<std::pair<int, int>>& tiles
 
     // Notify workers to start loading
     queueCV.notify_all();
+}
+
+uint8_t TerrainManager::getCollisionFlags(float glX, float glY) const {
+    for (const auto& [key, cd] : collisionTiles_) {
+        if (!cd.loaded) continue;
+        if (glX < cd.boundsMin.x || glX > cd.boundsMax.x ||
+            glY < cd.boundsMin.y || glY > cd.boundsMax.y) continue;
+
+        for (const auto& tri : cd.triangles) {
+            // Barycentric point-in-triangle test (XY plane)
+            glm::vec2 p(glX, glY);
+            glm::vec2 a(tri.v0.x, tri.v0.y), b(tri.v1.x, tri.v1.y), c(tri.v2.x, tri.v2.y);
+            glm::vec2 v0 = c - a, v1 = b - a, v2 = p - a;
+            float d00 = glm::dot(v0, v0), d01 = glm::dot(v0, v1), d02 = glm::dot(v0, v2);
+            float d11 = glm::dot(v1, v1), d12 = glm::dot(v1, v2);
+            float inv = d00 * d11 - d01 * d01;
+            if (std::abs(inv) < 1e-10f) continue;
+            float u = (d11 * d02 - d01 * d12) / inv;
+            float v = (d00 * d12 - d01 * d02) / inv;
+            if (u >= 0 && v >= 0 && u + v <= 1)
+                return tri.flags;
+        }
+    }
+    return 0x01; // default walkable if no collision data
+}
+
+bool TerrainManager::isPositionWalkable(float glX, float glY) const {
+    return (getCollisionFlags(glX, glY) & 0x01) != 0;
 }
 
 } // namespace rendering

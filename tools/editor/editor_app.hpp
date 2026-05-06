@@ -53,6 +53,17 @@ public:
     NpcPresets& getNpcPresets() { return npcPresets_; }
     QuestEditor& getQuestEditor() { return questEditor_; }
     AssetBrowser& getAssetBrowser() { return assetBrowser_; }
+    EditorViewport& getViewport() { return viewport_; }
+    bool setMapName(const std::string& name) {
+        if (name.empty()) return false;
+        for (char c : name) {
+            if (c == '/' || c == '\\' || c == '.' || c == ':' ||
+                c == '*' || c == '?' || c == '"' || c == '<' ||
+                c == '>' || c == '|' || c < 32) return false;
+        }
+        loadedMap_ = name;
+        return true;
+    }
     rendering::TerrainRenderer* getTerrainRenderer();
     rendering::M2Renderer* getM2Renderer() { return viewport_.getM2Renderer(); }
     pipeline::AssetManager* getAssetManager() { return assetManager_.get(); }
@@ -78,7 +89,10 @@ public:
     void setGizmoAxis(TransformAxis axis);
     void setSkyPreset(int preset); // 0=day, 1=dusk, 2=night
     void snapSelectedToGround();
+    void alignSelectedToTerrain();
+    void flattenAroundSelected(float radius = 30.0f);
     void flyToSelected();
+    int batchConvertAssets(const std::string& dataDir);
     void clearAllObjects();
     void generateCompleteZone();
     void centerOnTerrain();
@@ -135,6 +149,12 @@ private:
     float autoSaveTimer_ = 0.0f;
     float autoSaveInterval_ = 300.0f;
     bool autoSaveEnabled_ = true;
+    bool showQuitConfirm_ = false;
+    ZoneManifest zoneManifest_;
+
+    // Recent zones
+    struct RecentZone { std::string mapName; int tileX; int tileY; };
+    std::vector<RecentZone> recentZones_;
 
     // Toast notifications
     struct Toast { std::string msg; float timer; };
@@ -142,6 +162,13 @@ private:
 public:
     void showToast(const std::string& msg, float duration = 3.0f);
     const std::vector<Toast>& getToasts() const { return toasts_; }
+    const std::vector<RecentZone>& getRecentZones() const { return recentZones_; }
+    ZoneManifest& getZoneManifest() { return zoneManifest_; }
+    bool isAutoSaveEnabled() const { return autoSaveEnabled_; }
+    void setAutoSaveEnabled(bool v) { autoSaveEnabled_ = v; }
+    float getAutoSaveInterval() const { return autoSaveInterval_; }
+    void setAutoSaveInterval(float s) { autoSaveInterval_ = std::clamp(s, 60.0f, 900.0f); }
+    float getAutoSaveTimeRemaining() const { return autoSaveInterval_ - autoSaveTimer_; }
     void updateToasts(float dt);
 private:
     size_t lastObjCount_ = 0;

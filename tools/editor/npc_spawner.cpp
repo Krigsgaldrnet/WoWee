@@ -1,5 +1,6 @@
 #include "npc_spawner.hpp"
 #include "core/logger.hpp"
+#include <nlohmann/json.hpp>
 #include <fstream>
 #include <sstream>
 #include <cmath>
@@ -58,46 +59,44 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
     auto dir = std::filesystem::path(path).parent_path();
     if (!dir.empty()) std::filesystem::create_directories(dir);
 
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& s : spawns_) {
+        nlohmann::json js;
+        js["name"] = s.name;
+        js["model"] = s.modelPath;
+        js["displayId"] = s.displayId;
+        js["position"] = {s.position.x, s.position.y, s.position.z};
+        js["orientation"] = s.orientation;
+        js["scale"] = s.scale;
+        js["level"] = s.level;
+        js["health"] = s.health;
+        js["mana"] = s.mana;
+        js["minDamage"] = s.minDamage;
+        js["maxDamage"] = s.maxDamage;
+        js["armor"] = s.armor;
+        js["faction"] = s.faction;
+        js["behavior"] = static_cast<int>(s.behavior);
+        js["wanderRadius"] = s.wanderRadius;
+        js["aggroRadius"] = s.aggroRadius;
+        js["leashRadius"] = s.leashRadius;
+        js["respawnTimeMs"] = s.respawnTimeMs;
+        js["hostile"] = s.hostile;
+        js["questgiver"] = s.questgiver;
+        js["vendor"] = s.vendor;
+        js["flightmaster"] = s.flightmaster;
+        js["innkeeper"] = s.innkeeper;
+
+        nlohmann::json patrol = nlohmann::json::array();
+        for (const auto& p : s.patrolPath) {
+            patrol.push_back({p.position.x, p.position.y, p.position.z, p.waitTimeMs});
+        }
+        js["patrol"] = patrol;
+        arr.push_back(js);
+    }
+
     std::ofstream f(path);
     if (!f) { LOG_ERROR("Failed to write NPC file: ", path); return false; }
-
-    f << "[\n";
-    for (size_t i = 0; i < spawns_.size(); i++) {
-        const auto& s = spawns_[i];
-        f << "  {\n";
-        f << "    \"name\": \"" << s.name << "\",\n";
-        f << "    \"model\": \"" << s.modelPath << "\",\n";
-        f << "    \"displayId\": " << s.displayId << ",\n";
-        f << "    \"position\": [" << s.position.x << "," << s.position.y << "," << s.position.z << "],\n";
-        f << "    \"orientation\": " << s.orientation << ",\n";
-        f << "    \"scale\": " << s.scale << ",\n";
-        f << "    \"level\": " << s.level << ",\n";
-        f << "    \"health\": " << s.health << ",\n";
-        f << "    \"mana\": " << s.mana << ",\n";
-        f << "    \"minDamage\": " << s.minDamage << ",\n";
-        f << "    \"maxDamage\": " << s.maxDamage << ",\n";
-        f << "    \"armor\": " << s.armor << ",\n";
-        f << "    \"faction\": " << s.faction << ",\n";
-        f << "    \"behavior\": " << static_cast<int>(s.behavior) << ",\n";
-        f << "    \"wanderRadius\": " << s.wanderRadius << ",\n";
-        f << "    \"aggroRadius\": " << s.aggroRadius << ",\n";
-        f << "    \"leashRadius\": " << s.leashRadius << ",\n";
-        f << "    \"respawnTimeMs\": " << s.respawnTimeMs << ",\n";
-        f << "    \"hostile\": " << (s.hostile ? "true" : "false") << ",\n";
-        f << "    \"questgiver\": " << (s.questgiver ? "true" : "false") << ",\n";
-        f << "    \"vendor\": " << (s.vendor ? "true" : "false") << ",\n";
-        f << "    \"flightmaster\": " << (s.flightmaster ? "true" : "false") << ",\n";
-        f << "    \"innkeeper\": " << (s.innkeeper ? "true" : "false") << ",\n";
-        f << "    \"patrol\": [";
-        for (size_t p = 0; p < s.patrolPath.size(); p++) {
-            f << "[" << s.patrolPath[p].position.x << "," << s.patrolPath[p].position.y
-              << "," << s.patrolPath[p].position.z << "," << s.patrolPath[p].waitTimeMs << "]";
-            if (p + 1 < s.patrolPath.size()) f << ",";
-        }
-        f << "]\n";
-        f << "  }" << (i + 1 < spawns_.size() ? "," : "") << "\n";
-    }
-    f << "]\n";
+    f << arr.dump(2) << "\n";
 
     LOG_INFO("NPC spawns saved: ", path, " (", spawns_.size(), " creatures)");
     return true;
@@ -124,98 +123,69 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
     std::ifstream f(path);
     if (!f) { LOG_ERROR("Failed to open NPC file: ", path); return false; }
 
-    std::string content((std::istreambuf_iterator<char>(f)),
-                         std::istreambuf_iterator<char>());
+    try {
+        auto arr = nlohmann::json::parse(f);
+        if (!arr.is_array()) return false;
 
-    // Minimal JSON parser — extract fields from our known format
-    spawns_.clear();
-    selectedIdx_ = -1;
+        spawns_.clear();
+        selectedIdx_ = -1;
+        idCounter_ = 1;
 
-    auto findStr = [&](const std::string& block, const std::string& key) -> std::string {
-        auto pos = block.find("\"" + key + "\"");
-        if (pos == std::string::npos) return "";
-        pos = block.find(':', pos);
-        if (pos == std::string::npos) return "";
-        pos = block.find('"', pos + 1);
-        if (pos == std::string::npos) return "";
-        auto end = block.find('"', pos + 1);
-        if (end == std::string::npos) return "";
-        return block.substr(pos + 1, end - pos - 1);
-    };
+        for (const auto& js : arr) {
+            CreatureSpawn s;
+            s.name = js.value("name", "");
+            s.modelPath = js.value("model", "");
+            s.displayId = js.value("displayId", 0u);
+            s.orientation = js.value("orientation", 0.0f);
+            s.scale = js.value("scale", 1.0f);
+            if (s.scale < 0.1f) s.scale = 1.0f;
+            s.level = js.value("level", 1u);
+            s.health = js.value("health", 100u);
+            s.mana = js.value("mana", 0u);
+            s.minDamage = js.value("minDamage", 5u);
+            s.maxDamage = js.value("maxDamage", 10u);
+            s.armor = js.value("armor", 0u);
+            s.faction = js.value("faction", 0u);
+            s.behavior = static_cast<CreatureBehavior>(js.value("behavior", 0));
+            s.wanderRadius = js.value("wanderRadius", 0.0f);
+            s.aggroRadius = js.value("aggroRadius", 15.0f);
+            s.leashRadius = js.value("leashRadius", 40.0f);
+            s.respawnTimeMs = js.value("respawnTimeMs", 60000u);
+            s.hostile = js.value("hostile", false);
+            s.questgiver = js.value("questgiver", false);
+            s.vendor = js.value("vendor", false);
+            s.flightmaster = js.value("flightmaster", false);
+            s.innkeeper = js.value("innkeeper", false);
 
-    auto findNum = [&](const std::string& block, const std::string& key) -> float {
-        auto pos = block.find("\"" + key + "\"");
-        if (pos == std::string::npos) return 0;
-        pos = block.find(':', pos);
-        if (pos == std::string::npos) return 0;
-        return std::stof(block.substr(pos + 1));
-    };
+            if (js.contains("position") && js["position"].is_array() && js["position"].size() >= 3) {
+                s.position = glm::vec3(js["position"][0].get<float>(),
+                                       js["position"][1].get<float>(),
+                                       js["position"][2].get<float>());
+            }
 
-    auto findBool = [&](const std::string& block, const std::string& key) -> bool {
-        auto pos = block.find("\"" + key + "\"");
-        if (pos == std::string::npos) return false;
-        return block.find("true", pos) < block.find('\n', pos);
-    };
-
-    // Split by object boundaries
-    size_t start = 0;
-    while ((start = content.find('{', start)) != std::string::npos) {
-        auto end = content.find('}', start);
-        if (end == std::string::npos) break;
-        std::string block = content.substr(start, end - start + 1);
-
-        CreatureSpawn s;
-        s.name = findStr(block, "name");
-        s.modelPath = findStr(block, "model");
-        s.displayId = static_cast<uint32_t>(findNum(block, "displayId"));
-        s.orientation = findNum(block, "orientation");
-        s.scale = findNum(block, "scale");
-        if (s.scale < 0.1f) s.scale = 1.0f;
-        s.level = static_cast<uint32_t>(std::max(1.0f, findNum(block, "level")));
-        s.health = static_cast<uint32_t>(std::max(1.0f, findNum(block, "health")));
-        s.mana = static_cast<uint32_t>(findNum(block, "mana"));
-        s.minDamage = static_cast<uint32_t>(findNum(block, "minDamage"));
-        s.maxDamage = static_cast<uint32_t>(findNum(block, "maxDamage"));
-        s.armor = static_cast<uint32_t>(findNum(block, "armor"));
-        s.faction = static_cast<uint32_t>(findNum(block, "faction"));
-        s.behavior = static_cast<CreatureBehavior>(static_cast<int>(findNum(block, "behavior")));
-        s.wanderRadius = findNum(block, "wanderRadius");
-        s.aggroRadius = findNum(block, "aggroRadius");
-        s.leashRadius = findNum(block, "leashRadius");
-        s.respawnTimeMs = static_cast<uint32_t>(findNum(block, "respawnTimeMs"));
-        s.hostile = findBool(block, "hostile");
-        s.questgiver = findBool(block, "questgiver");
-        s.vendor = findBool(block, "vendor");
-        s.flightmaster = findBool(block, "flightmaster");
-        s.innkeeper = findBool(block, "innkeeper");
-
-        // Parse position array
-        auto posStart = block.find("\"position\"");
-        if (posStart != std::string::npos) {
-            auto bk = block.find('[', posStart);
-            if (bk != std::string::npos) {
-                float vals[3] = {};
-                int vi = 0;
-                auto p = bk + 1;
-                while (vi < 3 && p < block.size()) {
-                    vals[vi++] = std::stof(block.substr(p));
-                    p = block.find(',', p);
-                    if (p == std::string::npos) break;
-                    p++;
+            if (js.contains("patrol") && js["patrol"].is_array()) {
+                for (const auto& pt : js["patrol"]) {
+                    if (pt.is_array() && pt.size() >= 4) {
+                        PatrolPoint pp;
+                        pp.position = glm::vec3(pt[0].get<float>(), pt[1].get<float>(), pt[2].get<float>());
+                        pp.waitTimeMs = pt[3].get<uint32_t>();
+                        s.patrolPath.push_back(pp);
+                    }
                 }
-                s.position = glm::vec3(vals[0], vals[1], vals[2]);
+            }
+
+            if (!s.name.empty()) {
+                s.id = nextId();
+                spawns_.push_back(s);
             }
         }
 
-        if (!s.name.empty()) {
-            s.id = nextId();
-            spawns_.push_back(s);
-        }
-        start = end + 1;
+        LOG_INFO("NPC spawns loaded: ", path, " (", spawns_.size(), " creatures)");
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to parse NPC file: ", e.what());
+        return false;
     }
-
-    LOG_INFO("NPC spawns loaded: ", path, " (", spawns_.size(), " creatures)");
-    return true;
 }
 
 } // namespace editor

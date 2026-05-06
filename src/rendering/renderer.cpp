@@ -1887,13 +1887,11 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
     LOG_INFO("Initializing renderers for map: ", mapName);
 
     // Scan for custom zones on first initialization
-    static bool customZonesScanned = false;
-    if (!customZonesScanned) {
-        customZonesScanned = true;
-        auto customZones = pipeline::CustomZoneDiscovery::scan({"custom_zones", "output"});
-        if (!customZones.empty()) {
+    if (customZones_.empty()) {
+        customZones_ = pipeline::CustomZoneDiscovery::scan({"custom_zones", "output"});
+        if (!customZones_.empty()) {
             LOG_INFO("=== Custom Zones Available ===");
-            for (const auto& z : customZones) {
+            for (const auto& z : customZones_) {
                 LOG_INFO("  ", z.name, " (", z.directory, ")",
                          z.hasCreatures ? " [NPCs]" : "",
                          z.hasQuests ? " [Quests]" : "");

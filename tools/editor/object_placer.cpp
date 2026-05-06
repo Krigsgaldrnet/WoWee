@@ -1,5 +1,7 @@
 #include "object_placer.hpp"
+#include "terrain_biomes.hpp"
 #include "core/logger.hpp"
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -74,7 +76,32 @@ int ObjectPlacer::selectAt(const rendering::Ray& ray, float maxDist) {
     return bestIdx;
 }
 
+void ObjectPlacer::addToSelection(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(objects_.size())) return;
+    for (int si : selectedIndices_) { if (si == idx) return; }
+    selectedIndices_.push_back(idx);
+    objects_[idx].selected = true;
+    selectedIdx_ = idx;
+}
+
+void ObjectPlacer::toggleSelection(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(objects_.size())) return;
+    auto it = std::find(selectedIndices_.begin(), selectedIndices_.end(), idx);
+    if (it != selectedIndices_.end()) {
+        objects_[idx].selected = false;
+        selectedIndices_.erase(it);
+        selectedIdx_ = selectedIndices_.empty() ? -1 : selectedIndices_.back();
+    } else {
+        addToSelection(idx);
+    }
+}
+
 void ObjectPlacer::clearSelection() {
+    for (int idx : selectedIndices_) {
+        if (idx >= 0 && idx < static_cast<int>(objects_.size()))
+            objects_[idx].selected = false;
+    }
+    selectedIndices_.clear();
     if (selectedIdx_ >= 0 && selectedIdx_ < static_cast<int>(objects_.size()))
         objects_[selectedIdx_].selected = false;
     selectedIdx_ = -1;
@@ -85,23 +112,64 @@ PlacedObject* ObjectPlacer::getSelected() {
     return &objects_[selectedIdx_];
 }
 
+void ObjectPlacer::selectAll() {
+    clearSelection();
+    for (int i = 0; i < static_cast<int>(objects_.size()); i++) {
+        objects_[i].selected = true;
+        selectedIndices_.push_back(i);
+    }
+    if (!objects_.empty()) selectedIdx_ = 0;
+}
+
+void ObjectPlacer::selectByType(PlaceableType type) {
+    clearSelection();
+    for (int i = 0; i < static_cast<int>(objects_.size()); i++) {
+        if (objects_[i].type == type) {
+            objects_[i].selected = true;
+            selectedIndices_.push_back(i);
+        }
+    }
+    if (!selectedIndices_.empty()) selectedIdx_ = selectedIndices_[0];
+}
+
 void ObjectPlacer::moveSelected(const glm::vec3& delta) {
-    if (auto* obj = getSelected()) obj->position += delta;
+    if (selectedIndices_.size() > 1) {
+        for (int idx : selectedIndices_) objects_[idx].position += delta;
+    } else if (auto* obj = getSelected()) {
+        obj->position += delta;
+    }
 }
 
 void ObjectPlacer::rotateSelected(const glm::vec3& deltaDeg) {
-    if (auto* obj = getSelected()) obj->rotation += deltaDeg;
+    if (selectedIndices_.size() > 1) {
+        for (int idx : selectedIndices_) objects_[idx].rotation += deltaDeg;
+    } else if (auto* obj = getSelected()) {
+        obj->rotation += deltaDeg;
+    }
 }
 
 void ObjectPlacer::scaleSelected(float delta) {
-    if (auto* obj = getSelected())
+    if (selectedIndices_.size() > 1) {
+        for (int idx : selectedIndices_)
+            objects_[idx].scale = std::max(0.1f, objects_[idx].scale + delta);
+    } else if (auto* obj = getSelected()) {
         obj->scale = std::max(0.1f, obj->scale + delta);
+    }
 }
 
 void ObjectPlacer::deleteSelected() {
-    if (selectedIdx_ < 0 || selectedIdx_ >= static_cast<int>(objects_.size())) return;
-    objects_.erase(objects_.begin() + selectedIdx_);
-    selectedIdx_ = -1;
+    if (!selectedIndices_.empty()) {
+        std::sort(selectedIndices_.begin(), selectedIndices_.end(), std::greater<int>());
+        for (int idx : selectedIndices_) {
+            if (idx >= 0 && idx < static_cast<int>(objects_.size()))
+                objects_.erase(objects_.begin() + idx);
+        }
+        selectedIndices_.clear();
+        selectedIdx_ = -1;
+    } else if (selectedIdx_ >= 0 && selectedIdx_ < static_cast<int>(objects_.size())) {
+        objects_.erase(objects_.begin() + selectedIdx_);
+        selectedIdx_ = -1;
+    }
 }
 
 void ObjectPlacer::scatter(const glm::vec3& center, float radius, int count,
@@ -132,6 +200,45 @@ void ObjectPlacer::scatter(const glm::vec3& center, float radius, int count,
     LOG_INFO("Scattered ", count, " objects in radius ", radius);
 }
 
+int ObjectPlacer::populateBiome(const BiomeVegetation& vegetation,
+                                float tileSize, const glm::vec3& tileOrigin,
+                                uint32_t seed) {
+    int placed = 0;
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> distPos(0.0f, 1.0f);
+    std::uniform_real_distribution<float> distRot(0.0f, 360.0f);
+
+    for (const auto& asset : vegetation.assets) {
+        // Calculate object count from density (per 100x100 area)
+        float areaFactor = (tileSize * tileSize) / 10000.0f;
+        int count = static_cast<int>(asset.density * areaFactor);
+
+        std::uniform_real_distribution<float> distScale(asset.minScale, asset.maxScale);
+
+        for (int i = 0; i < count; i++) {
+            float u = distPos(rng);
+            float v = distPos(rng);
+            glm::vec3 pos = tileOrigin + glm::vec3(
+                -u * tileSize, -v * tileSize, 0.0f);
+
+            PlacedObject obj;
+            obj.type = PlaceableType::M2;
+            obj.path = asset.path;
+            obj.nameId = 0;
+            obj.uniqueId = nextUniqueId();
+            obj.position = pos;
+            obj.rotation = glm::vec3(0.0f, distRot(rng), 0.0f);
+            obj.scale = distScale(rng);
+            obj.selected = false;
+            objects_.push_back(obj);
+            placed++;
+        }
+    }
+
+    LOG_INFO("Biome populated: ", vegetation.name, " — ", placed, " objects placed");
+    return placed;
+}
+
 void ObjectPlacer::undoLastPlace() {
     if (undoStack_.empty()) return;
     int idx = undoStack_.back();
@@ -147,19 +254,21 @@ void ObjectPlacer::undoLastPlace() {
 
 bool ObjectPlacer::saveToFile(const std::string& path) const {
     std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& o : objects_) {
+        arr.push_back({
+            {"type", static_cast<int>(o.type)},
+            {"path", o.path},
+            {"pos", {o.position.x, o.position.y, o.position.z}},
+            {"rot", {o.rotation.x, o.rotation.y, o.rotation.z}},
+            {"scale", o.scale}
+        });
+    }
+
     std::ofstream f(path);
     if (!f) return false;
-    f << "[\n";
-    for (size_t i = 0; i < objects_.size(); i++) {
-        const auto& o = objects_[i];
-        f << "  {\"type\":" << static_cast<int>(o.type)
-          << ",\"path\":\"" << o.path << "\""
-          << ",\"pos\":[" << o.position.x << "," << o.position.y << "," << o.position.z << "]"
-          << ",\"rot\":[" << o.rotation.x << "," << o.rotation.y << "," << o.rotation.z << "]"
-          << ",\"scale\":" << o.scale
-          << "}" << (i + 1 < objects_.size() ? "," : "") << "\n";
-    }
-    f << "]\n";
+    f << arr.dump(2) << "\n";
     LOG_INFO("Objects saved: ", path, " (", objects_.size(), " objects)");
     return true;
 }
@@ -167,64 +276,52 @@ bool ObjectPlacer::saveToFile(const std::string& path) const {
 bool ObjectPlacer::loadFromFile(const std::string& path) {
     std::ifstream f(path);
     if (!f) return false;
-    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 
-    objects_.clear();
-    undoStack_.clear();
-    selectedIdx_ = -1;
+    try {
+        auto arr = nlohmann::json::parse(f);
+        if (!arr.is_array()) return false;
 
-    size_t start = 0;
-    while ((start = content.find('{', start)) != std::string::npos) {
-        auto end = content.find('}', start);
-        if (end == std::string::npos) break;
-        std::string block = content.substr(start, end - start + 1);
+        objects_.clear();
+        undoStack_.clear();
+        selectedIdx_ = -1;
+        selectedIndices_.clear();
+        uniqueIdCounter_ = 1;
 
-        PlacedObject obj;
-        // Parse type
-        auto tp = block.find("\"type\":");
-        if (tp != std::string::npos) obj.type = static_cast<PlaceableType>(std::stoi(block.substr(tp + 7)));
+        for (const auto& jo : arr) {
+            PlacedObject obj;
+            obj.type = static_cast<PlaceableType>(jo.value("type", 0));
+            obj.path = jo.value("path", "");
+            obj.scale = jo.value("scale", 1.0f);
 
-        // Parse path
-        auto pp = block.find("\"path\":\"");
-        if (pp != std::string::npos) {
-            pp += 8;
-            auto pe = block.find('"', pp);
-            if (pe != std::string::npos) obj.path = block.substr(pp, pe - pp);
+            if (jo.contains("pos") && jo["pos"].is_array() && jo["pos"].size() >= 3) {
+                obj.position = glm::vec3(jo["pos"][0].get<float>(),
+                                         jo["pos"][1].get<float>(),
+                                         jo["pos"][2].get<float>());
+            }
+            if (jo.contains("rot") && jo["rot"].is_array() && jo["rot"].size() >= 3) {
+                obj.rotation = glm::vec3(jo["rot"][0].get<float>(),
+                                         jo["rot"][1].get<float>(),
+                                         jo["rot"][2].get<float>());
+            }
+
+            if (!obj.path.empty()) {
+                obj.uniqueId = nextUniqueId();
+                objects_.push_back(obj);
+            }
         }
 
-        // Parse pos array
-        auto posP = block.find("\"pos\":[");
-        if (posP != std::string::npos) {
-            posP += 7;
-            obj.position.x = std::stof(block.substr(posP));
-            posP = block.find(',', posP) + 1;
-            obj.position.y = std::stof(block.substr(posP));
-            posP = block.find(',', posP) + 1;
-            obj.position.z = std::stof(block.substr(posP));
+        // Restore active path from last loaded object for seamless placement
+        if (!objects_.empty()) {
+            activePath_ = objects_.back().path;
+            activeType_ = objects_.back().type;
         }
 
-        // Parse rot array
-        auto rotP = block.find("\"rot\":[");
-        if (rotP != std::string::npos) {
-            rotP += 7;
-            obj.rotation.x = std::stof(block.substr(rotP));
-            rotP = block.find(',', rotP) + 1;
-            obj.rotation.y = std::stof(block.substr(rotP));
-            rotP = block.find(',', rotP) + 1;
-            obj.rotation.z = std::stof(block.substr(rotP));
-        }
-
-        auto scP = block.find("\"scale\":");
-        if (scP != std::string::npos) obj.scale = std::stof(block.substr(scP + 8));
-
-        if (!obj.path.empty()) {
-            obj.uniqueId = nextUniqueId();
-            objects_.push_back(obj);
-        }
-        start = end + 1;
+        LOG_INFO("Objects loaded: ", path, " (", objects_.size(), " objects)");
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to parse objects file: ", e.what());
+        return false;
     }
-    LOG_INFO("Objects loaded: ", path, " (", objects_.size(), " objects)");
-    return true;
 }
 
 void ObjectPlacer::syncToTerrain() {

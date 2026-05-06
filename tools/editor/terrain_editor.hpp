@@ -30,6 +30,9 @@ public:
     // Raycast against terrain, returns true if hit
     bool raycastTerrain(const rendering::Ray& ray, glm::vec3& hitPos) const;
 
+    // Sample terrain normal at a world XY position (for object alignment)
+    glm::vec3 sampleTerrainNormal(const glm::vec3& worldPos) const;
+
     // Apply brush at current position (call per-frame while painting)
     void applyBrush(float deltaTime);
 
@@ -40,6 +43,11 @@ public:
 
     // Get chunks modified since last call (for re-upload)
     std::vector<int> consumeDirtyChunks();
+    void markDirty(int chunkIdx) { dirtyChunks_.push_back(chunkIdx); dirty_ = true; }
+    void stitchChunkEdges(int chunkIdx) { stitchEdges(chunkIdx); }
+    glm::vec3 getChunkVertexWorldPos(int ci, int vi) const { return chunkVertexWorldPos(ci, vi); }
+    void beginGeneratorUndo() { recordGeneratorUndo(); }
+    void endGeneratorUndo() { commitGeneratorUndo(); }
 
     // Regenerate mesh for specific chunks
     pipeline::TerrainMesh regenerateMesh() const;
@@ -69,6 +77,8 @@ public:
     // Terrain stamp: copy heights from source area, paste at destination
     void copyStamp(const glm::vec3& center, float radius);
     void pasteStamp(const glm::vec3& center);
+    bool saveStamp(const std::string& path) const;
+    bool loadStamp(const std::string& path);
     bool hasStamp() const { return !stampData_.empty(); }
 
     // Mirror terrain along X or Y axis through tile center
@@ -134,6 +144,7 @@ public:
 
     // Import/export heightmap (raw 16-bit grayscale, 129x129)
     bool importHeightmap(const std::string& path, float heightScale);
+    bool importHeightmapImage(const std::string& path, float heightScale);
     bool exportHeightmap(const std::string& path, float heightScale);
 
     // Water editing
@@ -162,6 +173,9 @@ private:
     struct StampVertex { float dx, dy, height; };
     std::vector<StampVertex> stampData_;
     glm::vec3 stampCenter_{0};
+
+    void recordGeneratorUndo();
+    void commitGeneratorUndo();
 
     pipeline::ADTTerrain* terrain_ = nullptr;
     EditorBrush brush_;

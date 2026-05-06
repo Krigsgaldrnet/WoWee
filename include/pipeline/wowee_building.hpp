@@ -18,11 +18,19 @@ struct WoweeBuilding {
         glm::vec4 color; // vertex color/lighting
     };
 
+    struct Material {
+        std::string texturePath;
+        uint32_t flags = 0;
+        uint32_t shader = 0;
+        uint32_t blendMode = 0;
+    };
+
     struct Group {
         std::string name;
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
         std::vector<std::string> texturePaths;
+        std::vector<Material> materials;
         glm::vec3 boundMin{0}, boundMax{0};
         bool isOutdoor = false;
     };
@@ -56,6 +64,9 @@ public:
 
     // Convert WOB to WMOModel for the client's WMO renderer
     static bool toWMOModel(const WoweeBuilding& building, class WMOModel& outModel);
+
+    // Convert WMOModel to WOB (for editor export)
+    static WoweeBuilding fromWMO(const class WMOModel& wmo, const std::string& name = "");
 };
 
 } // namespace pipeline

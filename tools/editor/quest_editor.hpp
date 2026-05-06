@@ -54,6 +54,11 @@ public:
     size_t questCount() const { return quests_.size(); }
 
     bool saveToFile(const std::string& path) const;
+    bool loadFromFile(const std::string& path);
+    void clear() { quests_.clear(); nextId_ = 1; }
+
+    // Quest chain validation
+    bool validateChains(std::vector<std::string>& errors) const;
 
     Quest& getTemplate() { return template_; }
 

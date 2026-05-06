@@ -8,6 +8,9 @@
 #include "quest_editor.hpp"
 #include "pipeline/custom_zone_discovery.hpp"
 #include "content_pack.hpp"
+#include "sql_exporter.hpp"
+#include "server_module_gen.hpp"
+#include "wowee_terrain.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include <filesystem>
 #include "asset_browser.hpp"
@@ -130,6 +133,18 @@ void EditorUI::processActions(EditorApp& app) {
     }
 }
 
+void EditorUI::setPathPoint(const glm::vec3& pos) {
+    if (pathCapture_ == PathCapture::WaitingStart) {
+        pathStart_ = pos;
+        pathStartSet_ = true;
+        pathCapture_ = PathCapture::WaitingEnd;
+    } else if (pathCapture_ == PathCapture::WaitingEnd) {
+        pathEnd_ = pos;
+        pathEndSet_ = true;
+        pathCapture_ = PathCapture::None;
+    }
+}
+
 void EditorUI::renderMenuBar(EditorApp& app) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
@@ -224,8 +239,11 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                                     auto lastU = base.rfind('_');
                                     auto prevU = base.rfind('_', lastU - 1);
                                     if (lastU != std::string::npos && prevU != std::string::npos) {
-                                        int tx = std::stoi(base.substr(prevU + 1, lastU - prevU - 1));
-                                        int ty = std::stoi(base.substr(lastU + 1));
+                                        int tx = 0, ty = 0;
+                                        try {
+                                            tx = std::stoi(base.substr(prevU + 1, lastU - prevU - 1));
+                                            ty = std::stoi(base.substr(lastU + 1));
+                                        } catch (...) { break; }
                                         app.createNewTerrain(z.name, tx, ty, 100.0f, Biome::Grassland);
                                         // Load the WOT/WHM data
                                         std::string wotBase = entry.path().parent_path().string() + "/" + base;
@@ -242,6 +260,16 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Recent Zones", !app.getRecentZones().empty())) {
+                for (const auto& rz : app.getRecentZones()) {
+                    char label[128];
+                    std::snprintf(label, sizeof(label), "%s [%d, %d]",
+                                  rz.mapName.c_str(), rz.tileX, rz.tileY);
+                    if (ImGui::MenuItem(label))
+                        app.loadADT(rz.mapName, rz.tileX, rz.tileY);
+                }
+                ImGui::EndMenu();
+            }
             if (ImGui::BeginMenu("Content Packs (.wcp)")) {
                 static char wcpImportPath[256] = "content.wcp";
                 ImGui::InputText("Path##wcp", wcpImportPath, sizeof(wcpImportPath));
@@ -251,31 +279,75 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                     else
                         app.showToast("Import failed — check path");
                 }
-                if (ImGui::MenuItem("Inspect Pack Info")) {
+                if (ImGui::MenuItem("Import & Load")) {
+                    editor::ContentPackInfo info;
+                    if (editor::ContentPacker::readInfo(wcpImportPath, info) &&
+                        editor::ContentPacker::unpackZone(wcpImportPath, "custom_zones")) {
+                        app.showToast("Imported: " + info.name);
+                        auto zones = pipeline::CustomZoneDiscovery::scan({"custom_zones"});
+                        for (const auto& z : zones) {
+                            if (z.name == info.name && !z.tiles.empty()) {
+                                app.loadADT(z.name, z.tiles[0].first, z.tiles[0].second);
+                                break;
+                            }
+                        }
+                    } else {
+                        app.showToast("Import failed — check path");
+                    }
+                }
+                if (ImGui::BeginMenu("Inspect Pack Info")) {
                     editor::ContentPackInfo info;
                     if (editor::ContentPacker::readInfo(wcpImportPath, info)) {
-                        std::string msg = info.name + " v" + info.version;
-                        if (!info.author.empty()) msg += " by " + info.author;
-                        msg += " (" + info.format + ")";
-                        app.showToast(msg);
+                        ImGui::TextColored(ImVec4(1, 0.9f, 0.3f, 1), "%s v%s",
+                            info.name.c_str(), info.version.c_str());
+                        if (!info.author.empty())
+                            ImGui::Text("By: %s", info.author.c_str());
+                        if (!info.description.empty())
+                            ImGui::TextWrapped("%s", info.description.c_str());
+                        ImGui::Text("Map ID: %u, Files: %zu", info.mapId, info.files.size());
+                        if (!info.files.empty()) {
+                            ImGui::Separator();
+                            int terrain = 0, models = 0, buildings = 0, textures = 0, data = 0;
+                            uint64_t totalSize = 0;
+                            for (const auto& fe : info.files) {
+                                totalSize += fe.size;
+                                if (fe.category == "terrain") terrain++;
+                                else if (fe.category == "model") models++;
+                                else if (fe.category == "building") buildings++;
+                                else if (fe.category == "texture") textures++;
+                                else if (fe.category == "data") data++;
+                            }
+                            ImGui::Text("Terrain: %d  Models: %d  Buildings: %d",
+                                terrain, models, buildings);
+                            ImGui::Text("Textures: %d  Data: %d  Total: %.1f KB",
+                                textures, data, totalSize / 1024.0f);
+                        }
                     } else {
-                        app.showToast("Cannot read pack — check path");
+                        ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Cannot read pack");
                     }
+                    ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Import Heightmap", app.hasTerrainLoaded())) {
-                static char hmPath[256] = "heightmap.raw";
+                static char hmPath[256] = "heightmap.png";
                 static float hmScale = 200.0f;
                 ImGui::InputText("File##hm", hmPath, sizeof(hmPath));
                 ImGui::SliderFloat("Height Scale", &hmScale, 10.0f, 1000.0f);
-                ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1), "RAW 16-bit or 8-bit (129x129 or 257x257)");
-                if (ImGui::MenuItem("Import")) {
-                    if (app.getTerrainEditor().importHeightmap(hmPath, hmScale))
-                        app.showToast("Heightmap imported");
+                if (ImGui::MenuItem("Import Image (PNG/JPG/BMP/TGA)")) {
+                    if (app.getTerrainEditor().importHeightmapImage(hmPath, hmScale))
+                        app.showToast("Heightmap image imported (undoable)");
                     else
-                        app.showToast("Failed to import heightmap");
+                        app.showToast("Failed — check image path and format");
                 }
+                if (ImGui::MenuItem("Import RAW (16/8-bit binary)")) {
+                    if (app.getTerrainEditor().importHeightmap(hmPath, hmScale))
+                        app.showToast("RAW heightmap imported (undoable)");
+                    else
+                        app.showToast("Failed — need 129x129 or 257x257 RAW");
+                }
+                ImGui::TextColored(ImVec4(0.5f,0.5f,0.5f,1),
+                    "Supports any resolution PNG/JPG/BMP/TGA or RAW");
                 ImGui::EndMenu();
             }
             if (ImGui::MenuItem("Generate Complete Zone", nullptr, false, app.hasTerrainLoaded()))
@@ -293,9 +365,65 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 showSaveDialog_ = true;
             if (ImGui::MenuItem("Export Open Format (.wot/.whm)", nullptr, false, app.hasTerrainLoaded()))
                 app.exportOpenFormat("output");
-            if (ImGui::MenuItem("Export Content Pack (.wcp)", nullptr, false, app.hasTerrainLoaded())) {
+            if (ImGui::MenuItem("Export Server SQL", nullptr, false,
+                    app.getNpcSpawner().spawnCount() > 0 || app.getQuestEditor().questCount() > 0)) {
+                std::string sqlPath = "output/" + app.getLoadedMap() + "/spawns.sql";
+                editor::SQLExporter::exportAll(
+                    app.getNpcSpawner().getSpawns(),
+                    app.getQuestEditor().getQuests(),
+                    sqlPath, app.getZoneManifest().mapId);
+                app.showToast("SQL exported: " + sqlPath);
+            }
+            if (ImGui::MenuItem("Generate Server Module", nullptr, false, app.hasTerrainLoaded())) {
+                editor::ServerModuleGenerator::generate(
+                    app.getZoneManifest(),
+                    app.getNpcSpawner().getSpawns(),
+                    app.getQuestEditor().getQuests(),
+                    "output");
+                app.showToast("Server module: output/mod_wowee_" + app.getLoadedMap());
+            }
+            if (ImGui::MenuItem("Export Content Pack (.wcp)", "Ctrl+Shift+E", false, app.hasTerrainLoaded())) {
                 std::string wcpPath = "output/" + app.getLoadedMap() + ".wcp";
                 app.exportContentPack(wcpPath);
+            }
+            if (ImGui::BeginMenu("Validate Open Formats", app.hasTerrainLoaded())) {
+                std::string zoneDir = "output/" + app.getLoadedMap();
+                auto val = editor::ContentPacker::validateZone(zoneDir);
+                int score = val.openFormatScore();
+                ImVec4 scoreColor = score >= 5 ? ImVec4(0.3f, 1, 0.3f, 1) :
+                                    score >= 3 ? ImVec4(1, 1, 0.3f, 1) :
+                                                 ImVec4(1, 0.3f, 0.3f, 1);
+                ImGui::TextColored(scoreColor, "Open Format Score: %d/7", score);
+                ImGui::Separator();
+                auto fmt = [](bool has, bool valid, const char* name, const char* desc) {
+                    ImVec4 c = has ? (valid ? ImVec4(0.3f,1,0.3f,1) : ImVec4(1,0.7f,0.3f,1))
+                                  : ImVec4(0.5f,0.5f,0.5f,1);
+                    ImGui::TextColored(c, "%s %s — %s",
+                        has ? (valid ? "[OK]" : "[!!]") : "[--]", name, desc);
+                };
+                fmt(val.hasWot, true, "WOT", "terrain metadata");
+                fmt(val.hasWhm, val.whmValid, "WHM", "heightmap binary");
+                fmt(val.hasZoneJson, true, "zone.json", "map definition");
+                fmt(val.hasPng, true, "PNG", "textures");
+                fmt(val.hasWom, val.womValid, "WOM", "models");
+                fmt(val.hasWob, val.wobValid, "WOB", "buildings");
+                fmt(val.hasWoc, val.wocValid, "WOC", "collision mesh");
+                ImGui::Separator();
+                fmt(val.hasCreatures, true, "creatures", "NPC spawns");
+                fmt(val.hasQuests, true, "quests", "quest data");
+                fmt(val.hasObjects, true, "objects", "placed objects");
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Batch Convert Assets")) {
+                static char batchDir[256] = "Data";
+                ImGui::InputText("Data Directory", batchDir, sizeof(batchDir));
+                ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1),
+                    "Recursively converts M2->WOM and WMO->WOB");
+                if (ImGui::MenuItem("Convert All")) {
+                    int n = app.batchConvertAssets(batchDir);
+                    app.showToast("Converted " + std::to_string(n) + " assets to open format");
+                }
+                ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Add Adjacent Tile", app.hasTerrainLoaded())) {
                 if (ImGui::MenuItem("North (+X)")) app.addAdjacentTile(1, 0);
@@ -318,6 +446,22 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Export Zone Map", app.hasTerrainLoaded())) {
+                static char mapPath[256] = "output/zone_map.png";
+                static int mapRes = 512;
+                ImGui::InputText("File##zonemap", mapPath, sizeof(mapPath));
+                ImGui::SliderInt("Resolution", &mapRes, 128, 2048);
+                if (ImGui::MenuItem("Export PNG")) {
+                    if (editor::WoweeTerrain::exportZoneMap(
+                            *app.getTerrainEditor().getTerrain(), mapPath, mapRes))
+                        app.showToast("Zone map exported: " + std::string(mapPath));
+                    else
+                        app.showToast("Export failed");
+                }
+                ImGui::TextColored(ImVec4(0.5f,0.5f,0.5f,1),
+                    "Top-down colored map with terrain, water, objects");
+                ImGui::EndMenu();
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Quit", "Alt+F4")) app.requestQuit();
             ImGui::EndMenu();
@@ -326,6 +470,17 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             auto& te = app.getTerrainEditor();
             if (ImGui::MenuItem("Undo", "Ctrl+Z", false, te.history().canUndo())) te.undo();
             if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, te.history().canRedo())) te.redo();
+            ImGui::Separator();
+            if (ImGui::BeginMenu("Auto-Save Settings")) {
+                bool enabled = app.isAutoSaveEnabled();
+                if (ImGui::Checkbox("Enabled", &enabled)) app.setAutoSaveEnabled(enabled);
+                float interval = app.getAutoSaveInterval();
+                if (ImGui::SliderFloat("Interval (sec)", &interval, 60.0f, 900.0f, "%.0fs"))
+                    app.setAutoSaveInterval(interval);
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                    "Next in: %.0fs", app.getAutoSaveTimeRemaining());
+                ImGui::EndMenu();
+            }
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("View")) {
@@ -343,9 +498,21 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             if (ImGui::MenuItem("Center on Terrain", "Home")) app.centerOnTerrain();
             ImGui::Separator();
             if (ImGui::BeginMenu("Sky / Lighting")) {
-                if (ImGui::MenuItem("Day")) app.setSkyPreset(0);
-                if (ImGui::MenuItem("Dusk")) app.setSkyPreset(1);
-                if (ImGui::MenuItem("Night")) app.setSkyPreset(2);
+                auto& vp = app.getViewport();
+                float tod = vp.getTimeOfDay();
+                if (ImGui::SliderFloat("Time of Day", &tod, 0.0f, 24.0f, "%.1fh"))
+                    vp.setTimeOfDay(tod);
+                ImGui::Separator();
+                if (ImGui::MenuItem("Dawn (6:30)")) vp.setTimeOfDay(6.5f);
+                if (ImGui::MenuItem("Noon (12:00)")) vp.setTimeOfDay(12.0f);
+                if (ImGui::MenuItem("Dusk (18:00)")) vp.setTimeOfDay(18.0f);
+                if (ImGui::MenuItem("Night (22:00)")) vp.setTimeOfDay(22.0f);
+                ImGui::Separator();
+                ImGui::ColorEdit3("Light", &vp.getLightColor().x, ImGuiColorEditFlags_Float);
+                ImGui::ColorEdit3("Ambient", &vp.getAmbientColor().x, ImGuiColorEditFlags_Float);
+                ImGui::ColorEdit3("Fog", &vp.getFogColor().x, ImGuiColorEditFlags_Float);
+                ImGui::SliderFloat("Fog Near", &vp.getFogNear(), 100.0f, 10000.0f);
+                ImGui::SliderFloat("Fog Far", &vp.getFogFar(), 500.0f, 20000.0f);
                 ImGui::EndMenu();
             }
             ImGui::Separator();
@@ -373,26 +540,36 @@ void EditorUI::renderMenuBar(EditorApp& app) {
     if (showAbout_) {
         ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("About Wowee World Editor", &showAbout_)) {
-            ImGui::Text("Wowee World Editor");
+            ImGui::TextColored(ImVec4(1, 0.85f, 0.3f, 1), "Wowee World Editor v1.0.0");
             ImGui::Text("by Kelsi Davis");
             ImGui::Separator();
-            ImGui::Text("Version: 1.0.0");
-            ImGui::Text("Standalone world editor for creating");
-            ImGui::Text("custom WoW zones for the wowee client.");
+            ImGui::Text("Standalone world editor for creating custom");
+            ImGui::Text("WoW zones with novel open format exports.");
             ImGui::Separator();
-            ImGui::Text("6 modes, 30+ terrain tools, 3 noise types");
-            ImGui::Text("All 6 Blizzard formats replaced with open alternatives");
-            ImGui::Text("Export: ADT + WDT + JSON (zone manifest)");
-            ImGui::Text("11k+ lines, 6 novel open formats");
-            ImGui::Text("WOT/WHM/WOM/WOB/WCP + PNG/JSON");
-            ImGui::Text("Built with SDL2 / Vulkan / ImGui");
+            ImGui::TextColored(ImVec4(0.6f, 0.9f, 0.6f, 1), "Features:");
+            ImGui::BulletText("6 editing modes (Sculpt/Paint/Objects/Water/NPCs/Quests)");
+            ImGui::BulletText("30+ terrain tools with procedural generators");
+            ImGui::BulletText("Quest chains with circular reference detection");
+            ImGui::BulletText("631 creature presets across 8 categories");
+            ImGui::BulletText("Full undo/redo for terrain + texture painting");
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1), "Open Format Replacements (7/7):");
+            ImGui::BulletText("ADT -> WOT/WHM (terrain + heightmap)");
+            ImGui::BulletText("WDT -> zone.json (map definition)");
+            ImGui::BulletText("BLP -> PNG (textures)");
+            ImGui::BulletText("DBC -> JSON (data tables)");
+            ImGui::BulletText("M2  -> WOM (models)");
+            ImGui::BulletText("WMO -> WOB (buildings)");
+            ImGui::BulletText("Col -> WOC (collision/walkability)");
+            ImGui::Separator();
+            ImGui::Text("Built with SDL2 / Vulkan / ImGui / nlohmann-json");
         }
         ImGui::End();
     }
 
     // Help overlay
     if (showHelp_) {
-        ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(420, 500), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Keyboard Shortcuts", &showHelp_)) {
             ImGui::Text("Navigation:");
             ImGui::BulletText("WASD — fly camera");
@@ -403,17 +580,18 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Separator();
             ImGui::Text("Editing:");
             ImGui::BulletText("Left-click — paint/place (depends on mode)");
+            ImGui::BulletText("[ / ] — decrease / increase brush size");
             ImGui::BulletText("Ctrl+click — select object/NPC");
             ImGui::BulletText("Ctrl+S — quick save");
             ImGui::BulletText("Ctrl+Z — undo");
-            ImGui::BulletText("Ctrl+Shift+Z — redo");
+            ImGui::BulletText("Ctrl+Shift+Z / Ctrl+Y — redo");
             ImGui::BulletText("Delete — remove selected");
             ImGui::Separator();
             ImGui::Text("Object Transform:");
             ImGui::BulletText("G — move mode (then drag)");
             ImGui::BulletText("R — rotate mode (then drag)");
             ImGui::BulletText("T — scale mode (then drag)");
-            ImGui::BulletText("X/Y — constrain to axis");
+            ImGui::BulletText("X/Y/Z — constrain to axis");
             ImGui::BulletText("Escape — deselect / cancel");
             ImGui::BulletText("Right-click — context menu");
             ImGui::Separator();
@@ -429,6 +607,9 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::Text("Quick Actions:");
             ImGui::BulletText("Ctrl+N — new terrain");
             ImGui::BulletText("Ctrl+O — load map tile");
+            ImGui::BulletText("Ctrl+A — select all objects");
+            ImGui::BulletText("Alt+Click — eyedropper (paint mode)");
+            ImGui::BulletText("Ctrl+Shift+Click — add to selection");
             ImGui::BulletText("Middle-drag — orbit camera");
             ImGui::Separator();
             ImGui::Text("View:");
@@ -439,11 +620,26 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("Scroll — zoom in/out");
             ImGui::BulletText("Shift+Scroll — adjust speed");
             ImGui::Separator();
+            ImGui::Text("Object Tools:");
+            ImGui::BulletText("Snap Ground — drop to terrain surface");
+            ImGui::BulletText("Align Slope — rotate to terrain normal");
+            ImGui::BulletText("Flatten Ground — level terrain around object");
+            ImGui::BulletText("Scatter — mass-place with auto-align option");
+            ImGui::BulletText("Select by Type — M2 models or WMO buildings");
+            ImGui::Separator();
             ImGui::Text("Terrain Tools:");
-            ImGui::BulletText("Noise → Smooth → Scale → Clamp → Auto-paint");
-            ImGui::BulletText("River/Road: Set Start → Set End");
-            ImGui::BulletText("Stamp: Copy → Paste");
-            ImGui::BulletText("Mirror X/Y for symmetric zones");
+            ImGui::BulletText("Generators: Hill/Mesa/Crater/Canyon/Island/Ridge/Dunes");
+            ImGui::BulletText("River/Road: click start → click end → Apply");
+            ImGui::BulletText("Stamp: Copy → Save/Load → Paste (cross-zone)");
+            ImGui::BulletText("Mirror X/Y, Rotate 90, Scale/Offset heights");
+            ImGui::BulletText("Auto-paint by height/slope, scatter patches");
+            ImGui::Separator();
+            ImGui::Text("Export:");
+            ImGui::BulletText("Ctrl+S — quick save (all formats + collision)");
+            ImGui::BulletText("Ctrl+Shift+E — export content pack (.wcp)");
+            ImGui::BulletText("File → Batch Convert Assets (M2→WOM, WMO→WOB)");
+            ImGui::BulletText("File → Generate Server Module (AzerothCore SQL)");
+            ImGui::BulletText("Minimap: toggle slope overlay for collision preview");
         }
         ImGui::End();
     }
@@ -623,8 +819,9 @@ void EditorUI::renderSaveDialog(EditorApp& app) {
             std::snprintf(savePathBuf_, sizeof(savePathBuf_), "output");
         ImGui::InputText("Output Directory", savePathBuf_, sizeof(savePathBuf_));
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
-            "Exports: ADT, WDT, and creature spawns to %s/%s/",
-            savePathBuf_, app.getLoadedMap().c_str());
+            "Exports: ADT+WDT, WOT+WHM, WOM, WOB, PNG, JSON");
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1),
+            "Output: %s/%s/", savePathBuf_, app.getLoadedMap().c_str());
         ImGui::Spacing();
         if (ImGui::Button("Export All", ImVec2(140, 0))) {
             app.exportZone(savePathBuf_);
@@ -666,6 +863,10 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SetTooltip("%s", tips[idx]);
         }
         ImGui::SliderFloat("Radius", &s.radius, 5.0f, 200.0f, "%.0f");
+        if (ImGui::SmallButton("S##br")) { s.radius = 15.0f; } ImGui::SameLine();
+        if (ImGui::SmallButton("M##br")) { s.radius = 50.0f; } ImGui::SameLine();
+        if (ImGui::SmallButton("L##br")) { s.radius = 100.0f; } ImGui::SameLine();
+        if (ImGui::SmallButton("XL##br")) { s.radius = 180.0f; }
         ImGui::SliderFloat("Strength", &s.strength, 0.5f, 50.0f, "%.1f");
         ImGui::SliderFloat("Falloff", &s.falloff, 0.0f, 1.0f, "%.2f");
         if (s.mode == BrushMode::Flatten || s.mode == BrushMode::Level) {
@@ -770,45 +971,53 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
 
         ImGui::Separator();
         if (ImGui::CollapsingHeader("River / Road Carver")) {
-            static glm::vec3 pathStart{0}, pathEnd{0};
-            static float pathWidth = 8.0f, pathDepth = 5.0f;
-            static bool pathStartSet = false;
-            static int pathMode = 0; // 0=river, 1=road
-            ImGui::RadioButton("River (carve down)", &pathMode, 0);
+            ImGui::RadioButton("River (carve down)", &pathMode_, 0);
             ImGui::SameLine();
-            ImGui::RadioButton("Road (flatten)", &pathMode, 1);
-            ImGui::SliderFloat("Width##path", &pathWidth, 2.0f, 50.0f);
-            if (pathMode == 0) ImGui::SliderFloat("Depth##path", &pathDepth, 1.0f, 30.0f);
-            auto& brush4 = app.getTerrainEditor().brush();
-            auto brushPos = brush4.getPosition();
-            ImGui::Text("Cursor: %.0f, %.0f, %.0f %s",
-                        brushPos.x, brushPos.y, brushPos.z,
-                        brush4.isActive() ? "" : "(off terrain)");
-            if (ImGui::Button("Set Start##path", ImVec2(120, 0))) {
-                pathStart = brushPos;
-                pathStartSet = true;
-                app.showToast("Path start set");
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Set End + Apply##path", ImVec2(140, 0)) && pathStartSet) {
-                pathEnd = brushPos;
-                if (pathMode == 0) {
-                    app.getTerrainEditor().carveRiver(pathStart, pathEnd, pathWidth, pathDepth);
-                    app.getTexturePainter().paintAlongPath(pathStart, pathEnd, pathWidth * 1.5f,
-                        "Tileset\\Ashenvale\\AshenvaleSand.blp");
-                    app.showToast("River carved + banks textured");
-                } else {
-                    app.getTerrainEditor().flattenRoad(pathStart, pathEnd, pathWidth);
-                    app.getTexturePainter().paintAlongPath(pathStart, pathEnd, pathWidth,
-                        "Tileset\\Elwynn\\ElwynnCobblestoneBase.blp");
-                    app.showToast("Road flattened + textured");
+            ImGui::RadioButton("Road (flatten)", &pathMode_, 1);
+            ImGui::SliderFloat("Width##path", &pathWidth_, 2.0f, 50.0f);
+            if (pathMode_ == 0) ImGui::SliderFloat("Depth##path", &pathDepth_, 1.0f, 30.0f);
+
+            if (pathCapture_ == PathCapture::None && !pathStartSet_) {
+                if (ImGui::Button("Click Start Point", ImVec2(-1, 0))) {
+                    pathCapture_ = PathCapture::WaitingStart;
+                    pathStartSet_ = false;
+                    pathEndSet_ = false;
+                    app.showToast("Click terrain to set start point");
                 }
-                pathStartSet = false;
+            } else if (pathCapture_ == PathCapture::WaitingStart) {
+                ImGui::TextColored(ImVec4(1, 1, 0.3f, 1), "Click terrain for START point...");
+                if (ImGui::SmallButton("Cancel##path")) {
+                    pathCapture_ = PathCapture::None;
+                }
+            } else if (pathCapture_ == PathCapture::WaitingEnd) {
+                ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1), "Start set at (%.0f, %.0f) — click for END",
+                                   pathStart_.x, pathStart_.y);
+                if (ImGui::SmallButton("Cancel##path")) {
+                    clearPath();
+                }
+            } else if (pathStartSet_ && pathEndSet_) {
+                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1),
+                    "Start: (%.0f,%.0f) End: (%.0f,%.0f)", pathStart_.x, pathStart_.y, pathEnd_.x, pathEnd_.y);
+                if (ImGui::Button("Apply Path", ImVec2(-1, 0))) {
+                    if (pathMode_ == 0) {
+                        app.getTerrainEditor().carveRiver(pathStart_, pathEnd_, pathWidth_, pathDepth_);
+                        app.getTexturePainter().paintAlongPath(pathStart_, pathEnd_, pathWidth_ * 1.5f,
+                            "Tileset\\Ashenvale\\AshenvaleSand.blp");
+                        app.showToast("River carved + banks textured");
+                    } else {
+                        app.getTerrainEditor().flattenRoad(pathStart_, pathEnd_, pathWidth_);
+                        app.getTexturePainter().paintAlongPath(pathStart_, pathEnd_, pathWidth_,
+                            "Tileset\\Elwynn\\ElwynnCobblestoneBase.blp");
+                        app.showToast("Road flattened + textured");
+                    }
+                    clearPath();
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Reset##path")) clearPath();
+            } else if (pathStartSet_) {
+                if (ImGui::Button("Click End Point", ImVec2(-1, 0)))
+                    pathCapture_ = PathCapture::WaitingEnd;
             }
-            if (pathStartSet)
-                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1), "Start set — click end point");
-            else
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Set start then end to apply");
         }
 
         if (ImGui::CollapsingHeader("Mirror / Rotate")) {
@@ -834,10 +1043,18 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             if (ImGui::Button("Paste Stamp", ImVec2(120, 0))  &&
                 app.getTerrainEditor().hasStamp())
                 app.getTerrainEditor().pasteStamp(brush2.getPosition());
-            if (app.getTerrainEditor().hasStamp())
+            if (app.getTerrainEditor().hasStamp()) {
                 ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1), "Stamp ready");
-            else
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Save##stamp"))
+                    if (app.getTerrainEditor().saveStamp("output/stamps/terrain_stamp.json"))
+                        app.showToast("Stamp saved");
+            } else {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "No stamp copied");
+            }
+            if (ImGui::SmallButton("Load##stamp"))
+                if (app.getTerrainEditor().loadStamp("output/stamps/terrain_stamp.json"))
+                    app.showToast("Stamp loaded");
         }
 
         if (ImGui::CollapsingHeader("Detail Noise")) {
@@ -1051,6 +1268,17 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
         int pm = static_cast<int>(paintMode_);
         if (ImGui::Combo("Paint Mode", &pm, paintModes, 3))
             paintMode_ = static_cast<PaintMode>(pm);
+
+        if (ImGui::Button("Eyedropper (Alt+Click)")) {
+            auto& brush = app.getTerrainEditor().brush();
+            if (brush.isActive()) {
+                std::string picked = app.getTexturePainter().pickTextureAt(brush.getPosition());
+                if (!picked.empty()) {
+                    app.getTexturePainter().setActiveTexture(picked);
+                    app.showToast("Picked: " + picked.substr(picked.rfind('\\') + 1));
+                }
+            }
+        }
 
         ImGui::Separator();
 
@@ -1356,7 +1584,10 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         }
         if (auto* sel = placer.getSelected()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.9f, 0.3f, 1));
-            ImGui::Text("Selected: %s", sel->path.c_str());
+            if (placer.isMultiSelected())
+                ImGui::Text("Selected: %zu objects", placer.selectionCount());
+            else
+                ImGui::Text("Selected: %s", sel->path.c_str());
             ImGui::PopStyleColor();
 
             bool changed = false;
@@ -1371,6 +1602,12 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
             if (ImGui::Button("Snap Ground", ImVec2(75, 0)))
                 app.snapSelectedToGround();
             ImGui::SameLine();
+            if (ImGui::Button("Align Slope", ImVec2(75, 0)))
+                app.alignSelectedToTerrain();
+            if (ImGui::Button("Flatten Ground", ImVec2(100, 0)))
+                app.flattenAroundSelected();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Flatten terrain around object to its height");
             if (ImGui::Button("Fly To", ImVec2(55, 0)))
                 app.flyToSelected();
             ImGui::SameLine();
@@ -1403,16 +1640,60 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
             ImGui::SliderInt("Count##objsc", &objScatterCount, 1, 50);
             ImGui::SliderFloat("Radius##objsc", &objScatterRadius, 10.0f, 300.0f);
             ImGui::DragFloatRange2("Scale##objsc", &objMinScale, &objMaxScale, 0.05f, 0.1f, 10.0f);
+            static bool scatterAlign = true;
+            ImGui::Checkbox("Align to terrain", &scatterAlign);
             auto& brush = app.getTerrainEditor().brush();
             if (ImGui::Button("Scatter at Cursor##obj", ImVec2(-1, 0))) {
                 if (brush.isActive() && !placer.getActivePath().empty()) {
+                    size_t before = placer.objectCount();
                     placer.scatter(brush.getPosition(), objScatterRadius,
                                    objScatterCount, objMinScale, objMaxScale);
+                    if (scatterAlign) {
+                        for (size_t i = before; i < placer.objectCount(); i++) {
+                            auto& obj = placer.getObjects()[i];
+                            rendering::Ray ray;
+                            ray.origin = obj.position + glm::vec3(0, 0, 500);
+                            ray.direction = glm::vec3(0, 0, -1);
+                            glm::vec3 hitPos;
+                            if (app.getTerrainEditor().raycastTerrain(ray, hitPos)) {
+                                obj.position.z = hitPos.z;
+                                glm::vec3 n = app.getTerrainEditor().sampleTerrainNormal(obj.position);
+                                obj.rotation.x = glm::degrees(std::asin(-n.x));
+                                obj.rotation.z = glm::degrees(std::asin(n.y));
+                            }
+                        }
+                    }
                     app.markObjectsDirty();
                 }
             }
-            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
-                "Scatters selected model with random rotation/scale");
+        }
+
+        if (ImGui::CollapsingHeader("Auto-Populate Biome")) {
+            static int popBiome = 0;
+            static uint32_t popSeed = 42;
+            const char* biomeNames[] = {"Grassland", "Forest", "Jungle", "Desert",
+                "Barrens", "Snow", "Swamp", "Rocky", "Beach", "Volcanic"};
+            ImGui::Combo("Biome##pop", &popBiome, biomeNames, 10);
+            int seed = static_cast<int>(popSeed);
+            if (ImGui::InputInt("Seed##pop", &seed)) popSeed = static_cast<uint32_t>(seed);
+
+            auto veg = getBiomeVegetation(static_cast<Biome>(popBiome));
+            ImGui::TextColored(ImVec4(0.6f,0.6f,0.6f,1), "%zu asset types, density-based",
+                veg.assets.size());
+
+            if (ImGui::Button("Populate Zone", ImVec2(-1, 0)) && app.hasTerrainLoaded()) {
+                auto* t = app.getTerrainEditor().getTerrain();
+                float tileSize = 533.33333f;
+                glm::vec3 origin(
+                    (32.0f - t->coord.y) * tileSize,
+                    (32.0f - t->coord.x) * tileSize, 0);
+                int n = placer.populateBiome(veg, tileSize, origin, popSeed);
+                app.markObjectsDirty();
+                app.showToast("Populated " + std::string(biomeNames[popBiome]) +
+                    ": " + std::to_string(n) + " objects");
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Auto-place trees, rocks, bushes based on biome rules");
         }
 
         ImGui::Separator();
@@ -1702,16 +1983,20 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
     ImGui::SetNextWindowPos(ImVec2(vp->Size.x - 400, 90), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(390, 600), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Quest Editor")) {
+        if (!app.hasTerrainLoaded()) {
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Load or create terrain first");
+            ImGui::End(); return;
+        }
         auto& qe = app.getQuestEditor();
         auto& tmpl = qe.getTemplate();
 
         if (ImGui::CollapsingHeader("New Quest", ImGuiTreeNodeFlags_DefaultOpen)) {
-            static char titleBuf[128] = "New Quest";
+            char titleBuf[128] = {};
             std::strncpy(titleBuf, tmpl.title.c_str(), sizeof(titleBuf) - 1);
             if (ImGui::InputText("Title##q", titleBuf, sizeof(titleBuf)))
                 tmpl.title = titleBuf;
 
-            static char descBuf[512] = "";
+            char descBuf[512] = {};
             std::strncpy(descBuf, tmpl.description.c_str(), sizeof(descBuf) - 1);
             if (ImGui::InputTextMultiline("Description##q", descBuf, sizeof(descBuf), ImVec2(-1, 60)))
                 tmpl.description = descBuf;
@@ -1756,7 +2041,7 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
                 int ti = static_cast<int>(obj.type);
                 ImGui::Combo("Type", &ti, types, 6);
                 obj.type = static_cast<QuestObjectiveType>(ti);
-                static char objDesc[128];
+                char objDesc[128] = {};
                 std::strncpy(objDesc, obj.description.c_str(), sizeof(objDesc) - 1);
                 if (ImGui::InputText("Desc", objDesc, sizeof(objDesc))) obj.description = objDesc;
                 int cnt = obj.targetCount;
@@ -1772,6 +2057,25 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
             int gold = tmpl.reward.gold;
             if (ImGui::InputInt("Gold##qr", &gold)) tmpl.reward.gold = std::max(0, gold);
 
+            // Quest chain link
+            ImGui::Text("Chain to next quest:");
+            if (ImGui::BeginCombo("Next Quest##chain",
+                    tmpl.nextQuestId > 0 ? std::to_string(tmpl.nextQuestId).c_str() : "None (end of chain)")) {
+                if (ImGui::Selectable("None")) tmpl.nextQuestId = 0;
+                for (int qi = 0; qi < static_cast<int>(qe.questCount()); qi++) {
+                    auto* eq = qe.getQuest(qi);
+                    char ql[128];
+                    std::snprintf(ql, sizeof(ql), "[%u] %s", eq->id, eq->title.c_str());
+                    if (ImGui::Selectable(ql)) tmpl.nextQuestId = eq->id;
+                }
+                ImGui::EndCombo();
+            }
+
+            char completeBuf[256] = {};
+            std::strncpy(completeBuf, tmpl.completionText.c_str(), sizeof(completeBuf) - 1);
+            if (ImGui::InputTextMultiline("Completion Text##q", completeBuf, sizeof(completeBuf), ImVec2(-1, 40)))
+                tmpl.completionText = completeBuf;
+
             if (ImGui::Button("Create Quest", ImVec2(-1, 0))) {
                 qe.addQuest(tmpl);
                 app.showToast("Quest created: " + tmpl.title);
@@ -1781,23 +2085,59 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
         ImGui::Separator();
         if (ImGui::CollapsingHeader("Quest List", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Text("%zu quests", qe.questCount());
-            ImGui::BeginChild("QuestList", ImVec2(0, 120), true);
+            static int selectedQuest = -1;
+            ImGui::BeginChild("QuestList", ImVec2(0, 150), true);
             for (int i = 0; i < static_cast<int>(qe.questCount()); i++) {
                 auto* q = qe.getQuest(i);
                 char lbl[128];
-                std::snprintf(lbl, sizeof(lbl), "[%u] %s (Lv%u, %zu obj)",
-                              q->id, q->title.c_str(), q->requiredLevel, q->objectives.size());
-                if (ImGui::Selectable(lbl)) { /* select for editing */ }
+                std::snprintf(lbl, sizeof(lbl), "[%u] %s (Lv%u, %zu obj%s)",
+                              q->id, q->title.c_str(), q->requiredLevel, q->objectives.size(),
+                              q->nextQuestId ? " ->chain" : "");
+                if (ImGui::Selectable(lbl, selectedQuest == i))
+                    selectedQuest = i;
             }
             ImGui::EndChild();
+
+            if (selectedQuest >= 0 && selectedQuest < static_cast<int>(qe.questCount())) {
+                auto* sq = qe.getQuest(selectedQuest);
+                ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "Editing: [%u] %s", sq->id, sq->title.c_str());
+                char etBuf[128] = {};
+                std::strncpy(etBuf, sq->title.c_str(), sizeof(etBuf) - 1);
+                if (ImGui::InputText("Title##edit", etBuf, sizeof(etBuf))) sq->title = etBuf;
+                int elv = sq->requiredLevel;
+                if (ImGui::InputInt("Level##edit", &elv)) sq->requiredLevel = std::max(1, elv);
+                int exp = sq->reward.xp;
+                if (ImGui::InputInt("XP##edit", &exp)) sq->reward.xp = std::max(0, exp);
+                if (sq->nextQuestId > 0)
+                    ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1), "Chains to quest %u", sq->nextQuestId);
+                if (ImGui::SmallButton("Delete##quest")) {
+                    qe.removeQuest(selectedQuest);
+                    selectedQuest = -1;
+                }
+            }
+
+            // Chain validation
+            std::vector<std::string> chainErrors;
+            if (qe.questCount() > 0 && !qe.validateChains(chainErrors)) {
+                ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Chain issues:");
+                for (const auto& e : chainErrors)
+                    ImGui::BulletText("%s", e.c_str());
+            }
         }
 
         ImGui::Separator();
         static char questPath[256] = "output/quests.json";
         ImGui::InputText("File##quest", questPath, sizeof(questPath));
-        if (ImGui::Button("Save Quests", ImVec2(-1, 0))) {
+        if (ImGui::Button("Save Quests", ImVec2(180, 0))) {
             qe.saveToFile(questPath);
             app.showToast("Quests saved");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load Quests", ImVec2(-1, 0))) {
+            if (qe.loadFromFile(questPath))
+                app.showToast("Loaded " + std::to_string(qe.questCount()) + " quests");
+            else
+                app.showToast("Failed to load quests");
         }
     }
     ImGui::End();
@@ -1886,6 +2226,8 @@ void EditorUI::renderContextMenu(EditorApp& app) {
             ImGui::Separator();
             if (ImGui::MenuItem("Snap to Ground"))
                 app.snapSelectedToGround();
+            if (ImGui::MenuItem("Align to Slope"))
+                app.alignSelectedToTerrain();
             if (ImGui::MenuItem("Fly To"))
                 app.flyToSelected();
         }
@@ -1905,6 +2247,17 @@ void EditorUI::renderContextMenu(EditorApp& app) {
             if (objSel) { app.getObjectPlacer().deleteSelected(); }
             else { app.getNpcSpawner().removeCreature(app.getNpcSpawner().getSelectedIndex()); }
             app.markObjectsDirty();
+        }
+        if (ImGui::MenuItem("Select All", "Ctrl+A")) {
+            app.getObjectPlacer().selectAll();
+        }
+        if (ImGui::MenuItem("Select All M2 Models")) {
+            app.getObjectPlacer().selectByType(PlaceableType::M2);
+            app.showToast("Selected " + std::to_string(app.getObjectPlacer().selectionCount()) + " M2 models");
+        }
+        if (ImGui::MenuItem("Select All WMO Buildings")) {
+            app.getObjectPlacer().selectByType(PlaceableType::WMO);
+            app.showToast("Selected " + std::to_string(app.getObjectPlacer().selectionCount()) + " WMO buildings");
         }
         if (ImGui::MenuItem("Deselect")) {
             app.getObjectPlacer().clearSelection();
@@ -1972,7 +2325,7 @@ void EditorUI::renderMinimap(EditorApp& app) {
             }
         }
 
-        // Draw objects as yellow dots
+        // Draw objects (yellow=normal, white+ring=selected)
         float tileNW_X = (32.0f - static_cast<float>(terrain->coord.y)) * 533.33333f;
         float tileNW_Y = (32.0f - static_cast<float>(terrain->coord.x)) * 533.33333f;
         for (const auto& obj : app.getObjectPlacer().getObjects()) {
@@ -1980,7 +2333,12 @@ void EditorUI::renderMinimap(EditorApp& app) {
             float v = (tileNW_Y - obj.position.y) / 533.33333f;
             if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
                 ImVec2 pt(origin.x + v * avail.x, origin.y + u * (16 * cellH));
-                dl->AddCircleFilled(pt, 2.0f, IM_COL32(255, 220, 50, 200));
+                if (obj.selected) {
+                    dl->AddCircleFilled(pt, 3.5f, IM_COL32(255, 255, 255, 230));
+                    dl->AddCircle(pt, 5.0f, IM_COL32(255, 200, 50, 200), 0, 1.5f);
+                } else {
+                    dl->AddCircleFilled(pt, 2.0f, IM_COL32(255, 220, 50, 200));
+                }
             }
         }
         // Draw NPCs as red dots
@@ -2031,6 +2389,39 @@ void EditorUI::renderMinimap(EditorApp& app) {
             }
         }
 
+        // Slope/collision overlay (steep chunks highlighted red)
+        static bool showSlopeOverlay = false;
+        if (showSlopeOverlay) {
+            float steepCos = std::cos(50.0f * 3.14159f / 180.0f);
+            float unitSize = 533.33333f / 16.0f / 8.0f;
+            for (int cy2 = 0; cy2 < 16; cy2++) {
+                for (int cx2 = 0; cx2 < 16; cx2++) {
+                    const auto& c = terrain->chunks[cy2 * 16 + cx2];
+                    if (!c.hasHeightMap()) continue;
+                    int steepVerts = 0;
+                    for (int row = 0; row < 8; row++) {
+                        for (int col2 = 0; col2 < 8; col2++) {
+                            int i = row * 17 + col2;
+                            float h00 = c.heightMap.heights[i];
+                            float h10 = c.heightMap.heights[i + 1];
+                            float h01 = c.heightMap.heights[i + 17];
+                            float dzdx = (h10 - h00) / unitSize;
+                            float dzdy = (h01 - h00) / unitSize;
+                            float nz = 1.0f / std::sqrt(1.0f + dzdx*dzdx + dzdy*dzdy);
+                            if (nz < steepCos) steepVerts++;
+                        }
+                    }
+                    if (steepVerts > 0) {
+                        float intensity = std::min(1.0f, steepVerts / 20.0f);
+                        ImVec2 p0(origin.x + cx2 * cellW, origin.y + cy2 * cellH);
+                        ImVec2 p1(p0.x + cellW - 1, p0.y + cellH - 1);
+                        dl->AddRectFilled(p0, p1, IM_COL32(255, 30, 30,
+                            static_cast<int>(intensity * 150)));
+                    }
+                }
+            }
+        }
+
         // Hole indicators (dark X marks)
         for (int cy2 = 0; cy2 < 16; cy2++) {
             for (int cx2 = 0; cx2 < 16; cx2++) {
@@ -2050,6 +2441,7 @@ void EditorUI::renderMinimap(EditorApp& app) {
         dl2->AddCircleFilled(ImVec2(legPos.x + 45, legPos.y + 5), 3, IM_COL32(255, 60, 60, 200));
         dl2->AddCircleFilled(ImVec2(legPos.x + 100, legPos.y + 5), 3, IM_COL32(60, 200, 60, 200));
         ImGui::Text("  Obj   Hostile  Friendly  +Cam  H=Hole");
+        ImGui::Checkbox("Show Slopes (collision)", &showSlopeOverlay);
     }
     ImGui::End();
     ImGui::PopStyleVar();
@@ -2062,12 +2454,54 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
     if (ImGui::Begin("Info")) {
         auto* tr = app.getTerrainRenderer();
         if (tr && tr->getChunkCount() > 0) {
-            ImGui::Text("Map: %s [%d, %d]", app.getLoadedMap().c_str(),
-                        app.getLoadedTileX(), app.getLoadedTileY());
+            static char renameBuf[128] = {};
+            std::strncpy(renameBuf, app.getLoadedMap().c_str(), sizeof(renameBuf) - 1);
+            ImGui::SetNextItemWidth(140);
+            if (ImGui::InputText("##mapname", renameBuf, sizeof(renameBuf),
+                    ImGuiInputTextFlags_EnterReturnsTrue)) {
+                if (app.setMapName(renameBuf))
+                    app.showToast("Zone renamed: " + std::string(renameBuf));
+                else
+                    app.showToast("Invalid name (no slashes or special chars)");
+            }
+            ImGui::SameLine();
+            ImGui::Text("[%d, %d]", app.getLoadedTileX(), app.getLoadedTileY());
             ImGui::Text("Chunks: %d  Tris: %d", tr->getChunkCount(), tr->getTriangleCount());
-            ImGui::Text("Objects: %zu  NPCs: %zu",
+            ImGui::Text("Objects: %zu  NPCs: %zu  Q: %zu",
                         app.getObjectPlacer().objectCount(),
-                        app.getNpcSpawner().spawnCount());
+                        app.getNpcSpawner().spawnCount(),
+                        app.getQuestEditor().questCount());
+
+            // Zone metadata (mapId, displayName, flags)
+            if (ImGui::CollapsingHeader("Zone Metadata")) {
+                auto& m = app.getZoneManifest();
+                int mid = static_cast<int>(m.mapId);
+                if (ImGui::InputInt("Map ID", &mid))
+                    m.mapId = static_cast<uint32_t>(std::clamp(mid, 0, 65535));
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Custom zones: 9000-12000. Must be unique per server.");
+
+                char dispBuf[128] = {};
+                std::strncpy(dispBuf, m.displayName.c_str(), sizeof(dispBuf) - 1);
+                if (ImGui::InputText("Display Name", dispBuf, sizeof(dispBuf)))
+                    m.displayName = dispBuf;
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Name shown in-game on the world map and loading screen");
+
+                char descBuf[256] = {};
+                std::strncpy(descBuf, m.description.c_str(), sizeof(descBuf) - 1);
+                if (ImGui::InputTextMultiline("Description##zone", descBuf, sizeof(descBuf), ImVec2(-1, 40)))
+                    m.description = descBuf;
+
+                ImGui::Separator();
+                ImGui::Text("Zone Flags:");
+                ImGui::Checkbox("Allow Flying", &m.allowFlying);
+                ImGui::SameLine();
+                ImGui::Checkbox("PvP", &m.pvpEnabled);
+                ImGui::Checkbox("Indoor", &m.isIndoor);
+                ImGui::SameLine();
+                ImGui::Checkbox("Sanctuary", &m.isSanctuary);
+            }
         } else {
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No terrain loaded");
         }
@@ -2095,11 +2529,21 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
         ImGui::Text("Camera: %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
         ImGui::Text("Speed: %.0f (Shift+scroll)", app.getEditorCamera().getSpeed());
 
-        // Cursor world position
+        // Cursor world position + chunk info
         auto& brush = app.getTerrainEditor().brush();
         if (brush.isActive()) {
             auto bp = brush.getPosition();
             ImGui::Text("Cursor: %.1f, %.1f, %.1f", bp.x, bp.y, bp.z);
+
+            // Show active texture in paint mode
+            if (app.getMode() == EditorMode::Paint) {
+                auto& tex = app.getTexturePainter().getActiveTexture();
+                if (!tex.empty()) {
+                    auto lastSlash = tex.rfind('\\');
+                    ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1), "Texture: %s",
+                        lastSlash != std::string::npos ? tex.c_str() + lastSlash + 1 : tex.c_str());
+                }
+            }
         }
 
         ImGui::Separator();
@@ -2109,6 +2553,67 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
             ImGui::Text("Undo: %zu  Redo: %zu", hist.undoCount(), hist.redoCount());
 
         ImGui::Text("Quests: %zu", app.getQuestEditor().questCount());
+
+        // Terrain height stats
+        if (auto* t = app.getTerrainEditor().getTerrain()) {
+            float minH = 1e30f, maxH = -1e30f, sumH = 0;
+            int count = 0;
+            for (int ci = 0; ci < 256; ci++) {
+                if (!t->chunks[ci].hasHeightMap()) continue;
+                for (int v = 0; v < 145; v++) {
+                    float h = t->chunks[ci].position[2] + t->chunks[ci].heightMap.heights[v];
+                    minH = std::min(minH, h); maxH = std::max(maxH, h);
+                    sumH += h; count++;
+                }
+            }
+            if (count > 0)
+                ImGui::Text("Height: %.0f-%.0f (avg %.0f)", minH, maxH, sumH / count);
+        }
+
+        // Zone audio configuration
+        if (app.hasTerrainLoaded() && ImGui::CollapsingHeader("Zone Audio")) {
+            auto& manifest = app.getZoneManifest();
+            static char musicBuf[256] = {};
+            static char ambDayBuf[256] = {};
+            static char ambNightBuf[256] = {};
+            std::strncpy(musicBuf, manifest.musicTrack.c_str(), sizeof(musicBuf) - 1);
+            std::strncpy(ambDayBuf, manifest.ambienceDay.c_str(), sizeof(ambDayBuf) - 1);
+            std::strncpy(ambNightBuf, manifest.ambienceNight.c_str(), sizeof(ambNightBuf) - 1);
+
+            if (ImGui::InputText("Music##audio", musicBuf, sizeof(musicBuf)))
+                manifest.musicTrack = musicBuf;
+            if (ImGui::InputText("Ambience (Day)##audio", ambDayBuf, sizeof(ambDayBuf)))
+                manifest.ambienceDay = ambDayBuf;
+            if (ImGui::InputText("Ambience (Night)##audio", ambNightBuf, sizeof(ambNightBuf)))
+                manifest.ambienceNight = ambNightBuf;
+            ImGui::SliderFloat("Music Vol", &manifest.musicVolume, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Ambience Vol", &manifest.ambienceVolume, 0.0f, 1.0f, "%.2f");
+
+            if (ImGui::BeginCombo("Presets##audioPreset", "Select...")) {
+                if (ImGui::Selectable("Elwynn Forest")) {
+                    manifest.musicTrack = "Sound\\Music\\ZoneMusic\\Forest\\ForestDay.mp3";
+                    manifest.ambienceDay = "Sound\\Ambience\\GlueScreenAmbience.wav";
+                }
+                if (ImGui::Selectable("Durotar")) {
+                    manifest.musicTrack = "Sound\\Music\\ZoneMusic\\Barrens\\BarrensDay.mp3";
+                    manifest.ambienceDay = "Sound\\Ambience\\GlueScreenAmbience.wav";
+                }
+                if (ImGui::Selectable("Darkshore")) {
+                    manifest.musicTrack = "Sound\\Music\\ZoneMusic\\Darkshore\\DarkshoreDay.mp3";
+                    manifest.ambienceDay = "Sound\\Ambience\\GlueScreenAmbience.wav";
+                }
+                if (ImGui::Selectable("Dungeon")) {
+                    manifest.musicTrack = "Sound\\Music\\ZoneMusic\\Dungeon\\DungeonAmbience.mp3";
+                    manifest.ambienceDay = "";
+                }
+                if (ImGui::Selectable("None (silent)")) {
+                    manifest.musicTrack = "";
+                    manifest.ambienceDay = "";
+                    manifest.ambienceNight = "";
+                }
+                ImGui::EndCombo();
+            }
+        }
 
         if (app.getTerrainEditor().hasUnsavedChanges())
             ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "* Unsaved (Ctrl+S to save)");
@@ -2135,10 +2640,16 @@ void EditorUI::renderStatusBar(EditorApp& app) {
             ImGui::Text("[%s] %s [%d,%d]%s", m, app.getLoadedMap().c_str(),
                         app.getLoadedTileX(), app.getLoadedTileY(),
                         app.getTerrainEditor().hasUnsavedChanges() ? " *" : "");
-            ImGui::SameLine(vp->Size.x * 0.4f);
-            ImGui::Text("Obj:%zu NPC:%zu",
+            ImGui::SameLine(vp->Size.x * 0.35f);
+            ImGui::Text("Obj:%zu NPC:%zu Q:%zu",
                         app.getObjectPlacer().objectCount(),
-                        app.getNpcSpawner().spawnCount());
+                        app.getNpcSpawner().spawnCount(),
+                        app.getQuestEditor().questCount());
+            ImGui::SameLine(vp->Size.x * 0.6f);
+            auto& hist = app.getTerrainEditor().history();
+            if (hist.undoCount() > 0 || hist.redoCount() > 0)
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                    "Undo:%zu Redo:%zu", hist.undoCount(), hist.redoCount());
         } else {
             ImGui::Text("[%s] Wowee World Editor", m);
         }

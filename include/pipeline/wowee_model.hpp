@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -9,22 +10,49 @@ namespace wowee {
 namespace pipeline {
 
 // Wowee Open Model format (.wom) — novel format, no Blizzard IP
-// Designed for static doodads, props, and simple animated objects
+// WOM1: static geometry | WOM2: + bones + animations
 struct WoweeModel {
     struct Vertex {
         glm::vec3 position;
         glm::vec3 normal;
         glm::vec2 texCoord;
+        uint8_t boneWeights[4] = {255, 0, 0, 0};
+        uint8_t boneIndices[4] = {0, 0, 0, 0};
+    };
+
+    struct Bone {
+        int32_t keyBoneId = -1;
+        int16_t parentBone = -1;
+        glm::vec3 pivot{0};
+        uint32_t flags = 0;
+    };
+
+    struct AnimKeyframe {
+        uint32_t timeMs;
+        glm::vec3 translation;
+        glm::quat rotation;
+        glm::vec3 scale;
+    };
+
+    struct Animation {
+        uint32_t id = 0;
+        uint32_t durationMs = 0;
+        float movingSpeed = 0;
+        std::vector<std::vector<AnimKeyframe>> boneKeyframes; // [boneIdx][keyframe]
     };
 
     std::string name;
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
-    std::vector<std::string> texturePaths; // PNG paths
+    std::vector<std::string> texturePaths;
+    std::vector<Bone> bones;
+    std::vector<Animation> animations;
     float boundRadius = 1.0f;
     glm::vec3 boundMin{0}, boundMax{0};
+    uint32_t version = 1; // 1=WOM1(static), 2=WOM2(animated)
 
     bool isValid() const { return !vertices.empty() && !indices.empty(); }
+    bool hasAnimation() const { return !bones.empty() && !animations.empty(); }
 };
 
 class WoweeModelLoader {
