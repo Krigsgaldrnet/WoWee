@@ -531,6 +531,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
     std::printf("  --export-zone-csv <zoneDir> [outDir]\n");
     std::printf("                         Emit creatures.csv / objects.csv / quests.csv for spreadsheet workflows\n");
+    std::printf("  --export-zone-html <zoneDir> [out.html]\n");
+    std::printf("                         Emit a single-file HTML viewer next to the zone .glb (model-viewer based)\n");
     std::printf("  --export-quest-graph <zoneDir> [out.dot]\n");
     std::printf("                         Render quest-chain DAG as Graphviz DOT (pipe to `dot -Tpng -o quests.png`)\n");
     std::printf("  --info <wom-base> [--json]\n");
@@ -646,7 +648,7 @@ int main(int argc, char* argv[]) {
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--zone-summary", "--info-zone-tree",
         "--export-zone-summary-md", "--export-quest-graph",
-        "--export-zone-csv",
+        "--export-zone-csv", "--export-zone-html",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--zone-stats", "--list-zone-deps",
         "--check-zone-refs",
@@ -3965,6 +3967,102 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             std::printf("Exported %d CSV file(s) to %s\n", filesWritten, outDir.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-zone-html") == 0 && i + 1 < argc) {
+            // Generate a single-file HTML viewer next to the zone .glb.
+            // Anyone with a modern browser can open it — no installs, no
+            // CDN-mining the user's network. Uses model-viewer (Google's
+            // web component) bundled from the unpkg CDN since it's
+            // standards-based and doesn't require a build step.
+            //
+            // Usage flow:
+            //   wowee_editor --bake-zone-glb custom_zones/MyZone
+            //   wowee_editor --export-zone-html custom_zones/MyZone
+            //   open custom_zones/MyZone/MyZone.html  # opens in browser
+            std::string zoneDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "export-zone-html: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr, "export-zone-html: parse failed\n");
+                return 1;
+            }
+            std::string glbName = zm.mapName + ".glb";
+            std::string glbPath = zoneDir + "/" + glbName;
+            if (!fs::exists(glbPath)) {
+                std::fprintf(stderr,
+                    "export-zone-html: %s does not exist — run --bake-zone-glb first\n",
+                    glbPath.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = zoneDir + "/" + zm.mapName + ".html";
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-zone-html: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            // Compute relative path from html file's parent dir to the
+            // .glb so the viewer loads it. Default same-dir → just basename.
+            std::string glbHref = glbName;
+            // If outPath is in a different dir than the .glb, the user is
+            // responsible for moving things; leaving glbHref as the
+            // basename is a sensible default that fails loudly in the
+            // browser console rather than producing a wrong-but-silent
+            // page.
+            std::string title = zm.displayName.empty()
+                ? zm.mapName : zm.displayName;
+            // Single-file template with model-viewer. The version pin
+            // (^4.0.0) keeps the page from breaking when the unpkg
+            // 'latest' silently bumps a major version.
+            out << "<!doctype html>\n"
+                   "<html lang=\"en\">\n"
+                   "<head>\n"
+                   "  <meta charset=\"utf-8\">\n"
+                   "  <title>" << title << " — Wowee Zone Viewer</title>\n"
+                   "  <script type=\"module\" "
+                       "src=\"https://unpkg.com/@google/model-viewer@^4.0.0/dist/model-viewer.min.js\">"
+                   "</script>\n"
+                   "  <style>\n"
+                   "    body { margin:0; font-family: sans-serif; background:#1a1a1a; color:#eee; }\n"
+                   "    header { padding:12px 20px; background:#2a2a2a; border-bottom:1px solid #444; }\n"
+                   "    h1 { margin:0; font-size:18px; font-weight:500; }\n"
+                   "    .meta { color:#aaa; font-size:13px; margin-top:4px; }\n"
+                   "    model-viewer { width:100vw; height:calc(100vh - 60px); background:#1a1a1a; }\n"
+                   "    .footer { position:fixed; bottom:8px; right:12px; color:#666; font-size:11px; }\n"
+                   "  </style>\n"
+                   "</head>\n"
+                   "<body>\n"
+                   "  <header>\n"
+                   "    <h1>" << title << "</h1>\n"
+                   "    <div class=\"meta\">Map: <code>" << zm.mapName
+                << "</code> · Tiles: " << zm.tiles.size()
+                << " · MapId: " << zm.mapId << "</div>\n"
+                   "  </header>\n"
+                   "  <model-viewer\n"
+                   "    src=\"" << glbHref << "\"\n"
+                   "    alt=\"" << title << " terrain\"\n"
+                   "    camera-controls\n"
+                   "    auto-rotate\n"
+                   "    rotation-per-second=\"15deg\"\n"
+                   "    shadow-intensity=\"1\"\n"
+                   "    exposure=\"1.2\"\n"
+                   "    environment-image=\"neutral\">\n"
+                   "  </model-viewer>\n"
+                   "  <div class=\"footer\">Generated by wowee_editor --export-zone-html</div>\n"
+                   "</body>\n"
+                   "</html>\n";
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  references %s (must sit next to .html)\n", glbHref.c_str());
+            std::printf("  open in any modern browser — no install required\n");
             return 0;
         } else if (std::strcmp(argv[i], "--export-quest-graph") == 0 && i + 1 < argc) {
             // Render quest chains as a Graphviz DOT graph. Visualizing
