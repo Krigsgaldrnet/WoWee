@@ -981,7 +981,9 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
             obj.path = terrain_.wmoNames[wp.nameId];
             obj.position = core::coords::adtToWorld(wp.position[0], wp.position[1], wp.position[2]);
             obj.rotation = glm::vec3(-wp.rotation[2], -wp.rotation[0], wp.rotation[1] + 180.0f);
-            obj.scale = 1.0f;
+            // MODF scale is fixed-point u16 (1024 = 1.0); fall back to 1.0
+            // for older expansions where the scale slot was always 0.
+            obj.scale = wp.scale > 0 ? static_cast<float>(wp.scale) / 1024.0f : 1.0f;
             obj.uniqueId = wp.uniqueId;
             objectPlacer_.getObjects().push_back(obj);
         }

@@ -388,6 +388,10 @@ void ObjectPlacer::syncToTerrain() {
             wp.rotation[2] = -obj.rotation.x;
             wp.flags = 0;
             wp.doodadSet = 0;
+            wp.nameSet = 0;
+            // MODF scale is fixed-point u16 (1024 = 1.0); cap to u16 max.
+            float s1024 = obj.scale * 1024.0f;
+            wp.scale = static_cast<uint16_t>(std::clamp(s1024, 0.0f, 65535.0f));
             terrain_->wmoPlacements.push_back(wp);
         }
     }
