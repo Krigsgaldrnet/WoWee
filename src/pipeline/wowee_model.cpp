@@ -500,17 +500,26 @@ M2Model WoweeModelLoader::toM2(const WoweeModel& wom) {
     return m;
 }
 
-WoweeModel WoweeModelLoader::tryLoadByGamePath(const std::string& gamePath) {
+WoweeModel WoweeModelLoader::tryLoadByGamePath(
+    const std::string& gamePath,
+    const std::vector<std::string>& extraPrefixes) {
     std::string base = gamePath;
     auto dot = base.rfind('.');
     if (dot != std::string::npos) base = base.substr(0, dot);
     std::replace(base.begin(), base.end(), '\\', '/');
-    for (const char* prefix : {"custom_zones/models/", "output/models/"}) {
-        std::string full = std::string(prefix) + base;
+    auto tryPrefix = [&](const std::string& prefix) -> WoweeModel {
+        std::string full = prefix + base;
         if (exists(full)) {
             auto wom = load(full);
             if (wom.isValid()) return wom;
         }
+        return {};
+    };
+    for (const auto& p : extraPrefixes) {
+        if (auto w = tryPrefix(p); w.isValid()) return w;
+    }
+    for (const char* p : {"custom_zones/models/", "output/models/"}) {
+        if (auto w = tryPrefix(p); w.isValid()) return w;
     }
     return {};
 }

@@ -90,7 +90,12 @@ public:
 
     // Convenience: try loading <path-without-ext>.wom from the standard editor
     // search paths (custom_zones/models/, output/models/). Returns valid model on hit.
-    static WoweeModel tryLoadByGamePath(const std::string& gamePath);
+    // `extraPrefixes` are tried before the defaults — pass per-zone roots like
+    // {"output/<map>/models/", "custom_zones/<map>/models/"} when the caller
+    // knows the active zone.
+    static WoweeModel tryLoadByGamePath(
+        const std::string& gamePath,
+        const std::vector<std::string>& extraPrefixes = {});
 };
 
 } // namespace pipeline

@@ -482,25 +482,22 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
         }
 
         // Check for WOM open format first (custom zone models)
-        std::string womBase = m2Path;
-        auto womDot = womBase.rfind('.');
-        if (womDot != std::string::npos) womBase = womBase.substr(0, womDot);
-        // Check custom_zones and output directories
-        std::vector<std::string> womPrefixes = {"custom_zones/models/", "output/" + mapName + "/models/"};
-        for (const std::string& prefix : womPrefixes) {
-            std::string womPath = prefix + womBase;
-            std::replace(womPath.begin(), womPath.end(), '\\', '/');
-            if (pipeline::WoweeModelLoader::exists(womPath)) {
-                auto wom = pipeline::WoweeModelLoader::load(womPath);
-                if (wom.isValid()) {
-                    // toM2() handles WOM1/WOM2/WOM3 (multi-batch + materials)
-                    auto m2Model = pipeline::WoweeModelLoader::toM2(wom);
-                    pending->m2Models.push_back({modelId, std::move(m2Model), {}});
-                    preparedModelIds.insert(modelId);
-                    LOG_INFO("Loaded WOM model: ", womPath, " (v", wom.version,
-                             ", ", wom.batches.size(), " batches)");
-                    return true;
-                }
+        // Try open WOM format first via shared helper. Per-zone prefixes are
+        // checked before the global fallback so a zone export overrides a
+        // generic custom asset of the same name.
+        {
+            std::vector<std::string> extraPrefixes = {
+                "output/" + mapName + "/models/",
+                "custom_zones/" + mapName + "/models/",
+            };
+            auto wom = pipeline::WoweeModelLoader::tryLoadByGamePath(m2Path, extraPrefixes);
+            if (wom.isValid()) {
+                auto m2Model = pipeline::WoweeModelLoader::toM2(wom);
+                pending->m2Models.push_back({modelId, std::move(m2Model), {}});
+                preparedModelIds.insert(modelId);
+                LOG_INFO("Loaded WOM model: ", m2Path, " (v", wom.version,
+                         ", ", wom.batches.size(), " batches)");
+                return true;
             }
         }
 
