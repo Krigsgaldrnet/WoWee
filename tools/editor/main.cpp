@@ -41,6 +41,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-quests <p>      Print quests.json summary (counts, rewards, chain errors) and exit\n");
     std::printf("  --info-wcp <wcp-path>  Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
+    std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
     std::printf("Novel open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON\n");
@@ -56,7 +57,7 @@ int main(int argc, char* argv[]) {
     static const char* kArgRequired[] = {
         "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
-        "--info-wcp", "--list-wcp", "--validate", "--scaffold-zone",
+        "--info-wcp", "--list-wcp", "--unpack-wcp", "--validate", "--scaffold-zone",
         "--convert-m2", "--convert-wmo",
     };
     for (int i = 1; i < argc; i++) {
@@ -431,6 +432,18 @@ int main(int argc, char* argv[]) {
             std::printf("  files    : %s.wot, %s.whm, zone.json\n",
                         slug.c_str(), slug.c_str());
             std::printf("  next step: run editor without args, then File → Open Zone\n");
+            return 0;
+        } else if (std::strcmp(argv[i], "--unpack-wcp") == 0 && i + 1 < argc) {
+            std::string wcpPath = argv[++i];
+            std::string destDir = "custom_zones";
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                destDir = argv[++i];
+            }
+            if (!wowee::editor::ContentPacker::unpackZone(wcpPath, destDir)) {
+                std::fprintf(stderr, "WCP unpack failed: %s\n", wcpPath.c_str());
+                return 1;
+            }
+            std::printf("WCP unpacked to: %s\n", destDir.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--list-zones") == 0) {
             auto zones = wowee::pipeline::CustomZoneDiscovery::scan({"custom_zones", "output"});
