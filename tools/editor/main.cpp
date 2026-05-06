@@ -520,6 +520,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         List M2 particle + ribbon emitters (texture, blend, bone)\n");
     std::printf("  --info-sequences <m2-path> [--json]\n");
     std::printf("                         List M2 animation sequences (id, duration, flags)\n");
+    std::printf("  --info-bones <m2-path> [--json]\n");
+    std::printf("                         List M2 bones with parent tree, key-bone IDs, pivot offsets\n");
+    std::printf("  --list-zone-textures <zoneDir> [--json]\n");
+    std::printf("                         Aggregate texture refs across all WOM models in a zone (deduped)\n");
     std::printf("  --info-wob <wob-base> [--json]\n");
     std::printf("                         Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path> [--json]\n");
@@ -584,6 +588,7 @@ int main(int argc, char* argv[]) {
     static const char* kArgRequired[] = {
         "--data", "--info", "--info-batches", "--info-textures", "--info-doodads",
         "--info-attachments", "--info-particles", "--info-sequences",
+        "--info-bones", "--list-zone-textures",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--list-missing-sidecars",
@@ -1159,6 +1164,130 @@ int main(int argc, char* argv[]) {
                             k, s.id, s.variationIndex,
                             s.duration, s.flags,
                             s.movingSpeed, s.blendTime);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-bones") == 0 && i + 1 < argc) {
+            // Inspect M2 bone tree. Shows parent index, key-bone ID
+            // (-1 if not a named bone), pivot offset, and a depth
+            // indicator computed by walking up parents — useful for
+            // debugging skeleton structure when something looks wrong
+            // in the renderer ('why is this bone not following its parent?').
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr, "info-bones: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            auto m2 = wowee::pipeline::M2Loader::load(bytes);
+            // Compute depth per bone — guard against cycles by capping
+            // walk length at boneCount (a real DAG can't exceed that).
+            std::vector<int> depths(m2.bones.size(), -1);
+            for (size_t k = 0; k < m2.bones.size(); ++k) {
+                int d = 0;
+                int idx = static_cast<int>(k);
+                while (idx >= 0 && d <= static_cast<int>(m2.bones.size())) {
+                    int parent = m2.bones[idx].parentBone;
+                    if (parent < 0) break;
+                    idx = parent;
+                    d++;
+                }
+                depths[k] = d;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["m2"] = path;
+                j["count"] = m2.bones.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (size_t k = 0; k < m2.bones.size(); ++k) {
+                    const auto& b = m2.bones[k];
+                    arr.push_back({
+                        {"index", k}, {"keyBoneId", b.keyBoneId},
+                        {"parent", b.parentBone}, {"flags", b.flags},
+                        {"depth", depths[k]},
+                        {"pivot", {b.pivot.x, b.pivot.y, b.pivot.z}}
+                    });
+                }
+                j["bones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("M2 bones: %s (%zu)\n", path.c_str(), m2.bones.size());
+            if (m2.bones.empty()) {
+                std::printf("  *no bones (static model)*\n");
+                return 0;
+            }
+            std::printf("  idx  parent  depth  keyBone  flags    pivot (x, y, z)\n");
+            for (size_t k = 0; k < m2.bones.size(); ++k) {
+                const auto& b = m2.bones[k];
+                // Indent the keyBone column by depth so the tree shape
+                // is visible at a glance.
+                std::printf("  %3zu  %6d  %5d  %7d  %5u    (%6.2f, %6.2f, %6.2f)\n",
+                            k, b.parentBone, depths[k], b.keyBoneId, b.flags,
+                            b.pivot.x, b.pivot.y, b.pivot.z);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-zone-textures") == 0 && i + 1 < argc) {
+            // Aggregate texture references across every WOM model in a
+            // zone directory. Companion to --list-zone-deps (which lists
+            // model paths) — this lists the textures those models pull in.
+            // Useful for verifying every BLP/PNG ships with the zone.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "list-zone-textures: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            std::map<std::string, int> texHist;  // path -> count of WOMs that ref it
+            int womCount = 0;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                if (ext != ".wom") continue;
+                womCount++;
+                std::string base = e.path().string();
+                if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                std::unordered_set<std::string> seenInThisWom;
+                for (const auto& tp : wom.texturePaths) {
+                    if (tp.empty()) continue;
+                    if (seenInThisWom.insert(tp).second) {
+                        texHist[tp]++;
+                    }
+                }
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["womCount"] = womCount;
+                j["uniqueTextures"] = texHist.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& [path, count] : texHist) {
+                    arr.push_back({{"path", path}, {"refCount", count}});
+                }
+                j["textures"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone textures: %s\n", zoneDir.c_str());
+            std::printf("  WOMs scanned    : %d\n", womCount);
+            std::printf("  unique textures : %zu\n", texHist.size());
+            if (texHist.empty()) {
+                std::printf("  *no texture references*\n");
+                return 0;
+            }
+            std::printf("\n  refs  path\n");
+            for (const auto& [path, count] : texHist) {
+                std::printf("  %4d  %s\n", count, path.c_str());
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-wob") == 0 && i + 1 < argc) {
