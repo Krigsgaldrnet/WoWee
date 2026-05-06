@@ -31,9 +31,19 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
     // on Windows are readable on Linux/macOS and vice versa — the unpack
     // path-traversal check rejects '\' as an absolute prefix, so a Windows
     // path leaks would silently fail to extract.
+    //
+    // Cap total file count at the unpack-side limit (1M) so a runaway
+    // recursive_directory_iterator on a hostile symlink loop or a giant
+    // accidental subdirectory doesn't produce an unpackable archive.
+    constexpr size_t kMaxFiles = 1'000'000;
     std::vector<std::pair<std::string, std::string>> files; // relative path, full path
     for (auto& entry : fs::recursive_directory_iterator(srcDir)) {
         if (!entry.is_regular_file()) continue;
+        if (files.size() >= kMaxFiles) {
+            LOG_WARNING("WCP file count cap reached (", kMaxFiles,
+                        "); remaining files in ", srcDir, " omitted");
+            break;
+        }
         std::string rel = fs::relative(entry.path(), srcDir).string();
         std::replace(rel.begin(), rel.end(), '\\', '/');
         files.push_back({rel, entry.path().string()});
