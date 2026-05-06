@@ -181,6 +181,12 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
         }
         std::string path(pathLen, '\0');
         in.read(path.data(), pathLen);
+        // Normalize separators in case this WCP was packed before the
+        // pack-side normalization was added (older builds emitted '\' on
+        // Windows). Backslash translation must happen BEFORE the
+        // traversal check so the absolute-path rule catches Windows
+        // drive letters consistently.
+        std::replace(path.begin(), path.end(), '\\', '/');
 
         uint32_t dataSize;
         in.read(reinterpret_cast<char*>(&dataSize), 4);
@@ -192,9 +198,9 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
         }
         // Reject path-traversal attempts. Files like "../../etc/passwd" would
         // write outside destDir/<zoneName>/ and clobber system files.
-        // Also catch Windows-style backslash traversal and absolute paths.
+        // (Backslashes are already normalized to '/' above.)
         if (path.find("..") != std::string::npos ||
-            (!path.empty() && (path[0] == '/' || path[0] == '\\')) ||
+            (!path.empty() && path[0] == '/') ||
             (path.size() >= 2 && path[1] == ':')) {  // C:\... drive prefix
             LOG_ERROR("WCP rejected suspicious path: ", path);
             return false;
