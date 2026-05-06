@@ -1436,17 +1436,34 @@ void EditorApp::centerOnTerrain() {
 }
 
 void EditorApp::snapSelectedToGround() {
-    auto* sel = objectPlacer_.getSelected();
-    if (!sel || !terrain_.isLoaded()) return;
+    if (!terrain_.isLoaded()) return;
 
-    // Cast ray straight down from object position
-    rendering::Ray ray;
-    ray.origin = sel->position + glm::vec3(0, 0, 500);
-    ray.direction = glm::vec3(0, 0, -1);
-    glm::vec3 hitPos;
-    if (terrainEditor_.raycastTerrain(ray, hitPos)) {
-        sel->position.z = hitPos.z;
-        objectsDirty_ = true;
+    auto castDown = [&](const glm::vec3& pos, glm::vec3& hit) {
+        rendering::Ray ray;
+        ray.origin = pos + glm::vec3(0, 0, 500);
+        ray.direction = glm::vec3(0, 0, -1);
+        return terrainEditor_.raycastTerrain(ray, hit);
+    };
+
+    if (auto* sel = objectPlacer_.getSelected()) {
+        glm::vec3 hitPos;
+        if (castDown(sel->position, hitPos)) {
+            sel->position.z = hitPos.z;
+            objectsDirty_ = true;
+        }
+        return;
+    }
+
+    if (auto* npc = npcSpawner_.getSelected()) {
+        glm::vec3 hitPos;
+        if (castDown(npc->position, hitPos)) {
+            npc->position.z = hitPos.z;
+            objectsDirty_ = true;
+        }
+        // Also snap each patrol waypoint
+        for (auto& wp : npc->patrolPath) {
+            if (castDown(wp.position, hitPos)) wp.position.z = hitPos.z;
+        }
     }
 }
 
