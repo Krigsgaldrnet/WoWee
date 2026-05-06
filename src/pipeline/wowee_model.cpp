@@ -459,6 +459,29 @@ M2Model WoweeModelLoader::toM2(const WoweeModel& wom) {
         m.materials.push_back(mat);
     }
 
+    // Copy bones (WOM2/WOM3) — pivot/parent only, animation tracks are filled
+    // from the WoM animation block below.
+    for (const auto& wb : wom.bones) {
+        M2Bone bone;
+        bone.keyBoneId = wb.keyBoneId;
+        bone.parentBone = wb.parentBone;
+        bone.pivot = wb.pivot;
+        bone.flags = wb.flags;
+        m.bones.push_back(bone);
+    }
+
+    // Copy animation sequence headers (id/duration/movingSpeed). Per-bone
+    // keyframes inside WoM are richer than M2Sequence captures so a future
+    // animator may want a deeper conversion; this is enough for length-based
+    // selection in the renderer.
+    for (const auto& wa : wom.animations) {
+        M2Sequence seq;
+        seq.id = wa.id;
+        seq.duration = wa.durationMs;
+        seq.movingSpeed = wa.movingSpeed;
+        m.sequences.push_back(seq);
+    }
+
     return m;
 }
 

@@ -493,74 +493,12 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             if (pipeline::WoweeModelLoader::exists(womPath)) {
                 auto wom = pipeline::WoweeModelLoader::load(womPath);
                 if (wom.isValid()) {
-                    // Convert WOM to M2Model for the renderer
-                    pipeline::M2Model m2Model;
-                    m2Model.name = wom.name;
-                    m2Model.boundRadius = wom.boundRadius;
-                    m2Model.vertices.reserve(wom.vertices.size());
-                    for (const auto& v : wom.vertices) {
-                        pipeline::M2Vertex mv;
-                        mv.position = v.position;
-                        mv.normal = v.normal;
-                        mv.texCoords[0] = v.texCoord;
-                        std::memcpy(mv.boneWeights, v.boneWeights, 4);
-                        std::memcpy(mv.boneIndices, v.boneIndices, 4);
-                        m2Model.vertices.push_back(mv);
-                    }
-                    m2Model.indices.reserve(wom.indices.size());
-                    for (uint32_t idx : wom.indices)
-                        m2Model.indices.push_back(static_cast<uint16_t>(idx));
-
-                    // Set up textures from WOM paths
-                    for (const auto& texPath : wom.texturePaths) {
-                        pipeline::M2Texture tex;
-                        tex.type = 0;
-                        tex.flags = 0;
-                        tex.filename = texPath;
-                        m2Model.textures.push_back(tex);
-                    }
-                    m2Model.textureLookup = {0};
-
-                    // Create default render batch covering all geometry
-                    pipeline::M2Batch batch{};
-                    batch.flags = 0;
-                    batch.shader = 0;
-                    batch.textureCount = std::min(1u, static_cast<uint32_t>(wom.texturePaths.size()));
-                    batch.textureIndex = 0;
-                    batch.indexStart = 0;
-                    batch.indexCount = static_cast<uint32_t>(m2Model.indices.size());
-                    batch.vertexStart = 0;
-                    batch.vertexCount = static_cast<uint32_t>(m2Model.vertices.size());
-                    m2Model.batches.push_back(batch);
-
-                    // Default opaque material
-                    pipeline::M2Material mat;
-                    mat.flags = 0;
-                    mat.blendMode = 0;
-                    m2Model.materials.push_back(mat);
-
-                    // Copy bone hierarchy from WOM2
-                    for (const auto& wb : wom.bones) {
-                        pipeline::M2Bone bone;
-                        bone.keyBoneId = wb.keyBoneId;
-                        bone.parentBone = wb.parentBone;
-                        bone.pivot = wb.pivot;
-                        bone.flags = wb.flags;
-                        m2Model.bones.push_back(bone);
-                    }
-
-                    // Copy animation sequences from WOM2
-                    for (const auto& wa : wom.animations) {
-                        pipeline::M2Sequence seq;
-                        seq.id = wa.id;
-                        seq.duration = wa.durationMs;
-                        seq.movingSpeed = wa.movingSpeed;
-                        m2Model.sequences.push_back(seq);
-                    }
-
+                    // toM2() handles WOM1/WOM2/WOM3 (multi-batch + materials)
+                    auto m2Model = pipeline::WoweeModelLoader::toM2(wom);
                     pending->m2Models.push_back({modelId, std::move(m2Model), {}});
                     preparedModelIds.insert(modelId);
-                    LOG_INFO("Loaded WOM model: ", womPath);
+                    LOG_INFO("Loaded WOM model: ", womPath, " (v", wom.version,
+                             ", ", wom.batches.size(), " batches)");
                     return true;
                 }
             }
