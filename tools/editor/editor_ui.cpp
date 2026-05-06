@@ -2804,12 +2804,19 @@ void EditorUI::renderStatusBar(EditorApp& app) {
         } else {
             ImGui::Text("[%s] Wowee World Editor", m);
         }
-        // Camera coordinates display — useful for navigation and debugging.
+        // Camera (yellow) and cursor (cyan) world coords for navigation/debug.
         if (app.hasTerrainLoaded()) {
             glm::vec3 cp = app.getEditorCamera().getCamera().getPosition();
-            ImGui::SameLine(vp->Size.x - 290);
-            ImGui::TextColored(ImVec4(0.6f, 0.7f, 0.8f, 1.0f),
-                "(%.0f, %.0f, %.0f)", cp.x, cp.y, cp.z);
+            const auto& brush = app.getTerrainEditor().brush();
+            ImGui::SameLine(vp->Size.x - 460);
+            ImGui::TextColored(ImVec4(0.85f, 0.75f, 0.5f, 1.0f),
+                "Cam:(%.0f,%.0f,%.0f)", cp.x, cp.y, cp.z);
+            if (brush.isActive()) {
+                glm::vec3 bp = brush.getPosition();
+                ImGui::SameLine(vp->Size.x - 270);
+                ImGui::TextColored(ImVec4(0.5f, 0.85f, 0.85f, 1.0f),
+                    "Cur:(%.0f,%.0f,%.0f)", bp.x, bp.y, bp.z);
+            }
         }
         ImGui::SameLine(vp->Size.x - 120);
         ImGui::Text("%.1f FPS", ImGui::GetIO().Framerate);
