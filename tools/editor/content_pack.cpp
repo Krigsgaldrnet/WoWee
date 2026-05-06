@@ -195,6 +195,13 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
     uint32_t fileCount, infoSize;
     in.read(reinterpret_cast<char*>(&fileCount), 4);
     in.read(reinterpret_cast<char*>(&infoSize), 4);
+    // Same sanity bounds as unpack — refuse to allocate or read absurd
+    // info JSON on a malicious header.
+    if (fileCount > 1'000'000 || infoSize > 16 * 1024 * 1024) {
+        LOG_ERROR("WCP readInfo header rejected (fileCount=", fileCount,
+                  " infoSize=", infoSize, "): ", wcpPath);
+        return false;
+    }
 
     std::string jsonStr(infoSize, '\0');
     in.read(jsonStr.data(), infoSize);
@@ -219,6 +226,7 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
                     if (ext == ".wot" || ext == ".whm") fe.category = "terrain";
                     else if (ext == ".wom") fe.category = "model";
                     else if (ext == ".wob") fe.category = "building";
+                    else if (ext == ".woc") fe.category = "collision";
                     else if (ext == ".png") fe.category = "texture";
                     else if (ext == ".json") fe.category = "data";
                     else if (ext == ".adt" || ext == ".wdt") fe.category = "legacy";
