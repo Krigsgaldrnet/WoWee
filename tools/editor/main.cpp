@@ -644,6 +644,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Render a hierarchical tree view of a zone's contents (no --json)\n");
     std::printf("  --info-zone-bytes <zoneDir> [--json]\n");
     std::printf("                         Per-file size breakdown grouped by category, sorted largest-first\n");
+    std::printf("  --info-zone-extents <zoneDir> [--json]\n");
+    std::printf("                         Compute the zone's bounding box (XY tile range, Z height min/max)\n");
     std::printf("  --export-zone-summary-md <zoneDir> [out.md]\n");
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
     std::printf("  --export-zone-csv <zoneDir> [outDir]\n");
@@ -789,6 +791,7 @@ int main(int argc, char* argv[]) {
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
         "--zone-summary", "--info-zone-tree", "--info-zone-bytes",
+        "--info-zone-extents",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
         "--export-zone-checksum",
@@ -4522,6 +4525,104 @@ int main(int argc, char* argv[]) {
                             static_cast<unsigned long long>(p.first),
                             totalBytes ? (100.0 * p.first / totalBytes) : 0.0);
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-zone-extents") == 0 && i + 1 < argc) {
+            // Compute the zone's spatial bounding box. XY from manifest
+            // tile coords (each tile is 533.33 yards); Z from height
+            // range across all loaded chunks. Useful for sizing the
+            // camera frustum, planning where new tiles can fit
+            // contiguously, or quick sanity-checks ('this zone is 4km
+            // across? that seems wrong').
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "info-zone-extents: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr, "info-zone-extents: parse failed\n");
+                return 1;
+            }
+            // Tile XY range — straightforward integer min/max.
+            int tileMinX = 64, tileMaxX = -1;
+            int tileMinY = 64, tileMaxY = -1;
+            for (const auto& [tx, ty] : zm.tiles) {
+                tileMinX = std::min(tileMinX, tx);
+                tileMaxX = std::max(tileMaxX, tx);
+                tileMinY = std::min(tileMinY, ty);
+                tileMaxY = std::max(tileMaxY, ty);
+            }
+            // Z range from loaded chunks. Walk every WHM tile; this is
+            // the same scan --info-whm does per-tile but rolled up.
+            float zMin = 1e30f, zMax = -1e30f;
+            int loadedTiles = 0, missingTiles = 0;
+            for (const auto& [tx, ty] : zm.tiles) {
+                std::string tileBase = zoneDir + "/" + zm.mapName + "_" +
+                                        std::to_string(tx) + "_" + std::to_string(ty);
+                if (!wowee::pipeline::WoweeTerrainLoader::exists(tileBase)) {
+                    missingTiles++;
+                    continue;
+                }
+                wowee::pipeline::ADTTerrain terrain;
+                wowee::pipeline::WoweeTerrainLoader::load(tileBase, terrain);
+                loadedTiles++;
+                for (const auto& chunk : terrain.chunks) {
+                    if (!chunk.heightMap.isLoaded()) continue;
+                    float baseZ = chunk.position[2];
+                    for (float h : chunk.heightMap.heights) {
+                        if (!std::isfinite(h)) continue;
+                        zMin = std::min(zMin, baseZ + h);
+                        zMax = std::max(zMax, baseZ + h);
+                    }
+                }
+            }
+            if (zMin > zMax) { zMin = 0; zMax = 0; }
+            // Convert tile coords to world-space yards. WoW grid centers
+            // tile (32, 32) at world origin; +X tile = -X world (north),
+            // +Y tile = -Y world (west).
+            constexpr float kTileSize = 533.33333f;
+            float worldMinX = (32.0f - tileMaxY - 1) * kTileSize;
+            float worldMaxX = (32.0f - tileMinY)     * kTileSize;
+            float worldMinY = (32.0f - tileMaxX - 1) * kTileSize;
+            float worldMaxY = (32.0f - tileMinX)     * kTileSize;
+            float widthX = worldMaxX - worldMinX;
+            float widthY = worldMaxY - worldMinY;
+            float heightZ = zMax - zMin;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["tileCount"] = zm.tiles.size();
+                j["loadedTiles"] = loadedTiles;
+                j["missingTiles"] = missingTiles;
+                j["tileRange"] = {{"x", {tileMinX, tileMaxX}},
+                                   {"y", {tileMinY, tileMaxY}}};
+                j["worldBox"] = {{"min", {worldMinX, worldMinY, zMin}},
+                                  {"max", {worldMaxX, worldMaxY, zMax}}};
+                j["sizeYards"] = {widthX, widthY, heightZ};
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone extents: %s\n", zoneDir.c_str());
+            std::printf("  tile count   : %zu (%d loaded, %d missing on disk)\n",
+                        zm.tiles.size(), loadedTiles, missingTiles);
+            if (zm.tiles.empty()) {
+                std::printf("  *no tiles in manifest*\n");
+                return 0;
+            }
+            std::printf("  tile range   : x=[%d, %d]  y=[%d, %d]\n",
+                        tileMinX, tileMaxX, tileMinY, tileMaxY);
+            std::printf("  world box    : (%.1f, %.1f, %.1f) - (%.1f, %.1f, %.1f) yards\n",
+                        worldMinX, worldMinY, zMin,
+                        worldMaxX, worldMaxY, zMax);
+            std::printf("  size         : %.1f x %.1f x %.1f yards (%.0fm x %.0fm x %.1fm)\n",
+                        widthX, widthY, heightZ,
+                        widthX * 0.9144f, widthY * 0.9144f, heightZ * 0.9144f);
             return 0;
         } else if (std::strcmp(argv[i], "--export-zone-summary-md") == 0 && i + 1 < argc) {
             // Render a Markdown documentation page for a zone. Useful for
