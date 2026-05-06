@@ -143,6 +143,11 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
         }
 
         uint32_t animCount = 0;
+        // Track total keyframes loaded; cap at 10M total to prevent a
+        // pathological model (e.g. 1024 anims × 512 bones × 10K keys = 5B
+        // keyframes attempted otherwise).
+        size_t totalKeyframes = 0;
+        constexpr size_t kMaxTotalKeyframes = 10'000'000;
         if (f.read(reinterpret_cast<char*>(&animCount), 4) && animCount > 0 && animCount <= 1024) {
             model.animations.resize(animCount);
             for (uint32_t ai = 0; ai < animCount; ai++) {
@@ -157,7 +162,14 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
                 for (size_t bi = 0; bi < model.bones.size(); bi++) {
                     uint32_t kfCount = 0;
                     f.read(reinterpret_cast<char*>(&kfCount), 4);
+                    if (totalKeyframes >= kMaxTotalKeyframes) {
+                        // Skip the keyframe payload by seeking past it so we
+                        // don't desync the remaining anims/bones.
+                        f.seekg(static_cast<std::streamoff>(kfCount) * 44, std::ios::cur);
+                        continue;
+                    }
                     for (uint32_t ki = 0; ki < kfCount && ki < 10000; ki++) {
+                        if (totalKeyframes++ >= kMaxTotalKeyframes) break;
                         WoweeModel::AnimKeyframe kf;
                         f.read(reinterpret_cast<char*>(&kf.timeMs), 4);
                         f.read(reinterpret_cast<char*>(&kf.translation), 12);
