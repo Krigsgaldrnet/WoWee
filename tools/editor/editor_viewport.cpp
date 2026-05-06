@@ -119,7 +119,7 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
     clearObjects();
     if (objects.empty() && npcs.empty()) return;
 
-    vkCtx_->beginUploadBatch();
+    // Don't call beginUploadBatch here — loadModel starts its own batch
     uint32_t nextModelId = 1;
     std::unordered_map<std::string, uint32_t> m2ModelIds, wmoModelIds;
 
@@ -385,9 +385,14 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
     }
     for (const auto& npc : npcs) {
         auto it = m2ModelIds.find(npc.modelPath);
-        if (it == m2ModelIds.end()) continue;
+        if (it == m2ModelIds.end()) {
+            LOG_WARNING("NPC instance skip — no loaded model for: ", npc.modelPath);
+            continue;
+        }
         glm::vec3 rotRad = glm::radians(glm::vec3(0, 0, npc.orientation));
-        m2Renderer_->createInstance(it->second, npc.position, rotRad, npc.scale);
+        uint32_t instId = m2Renderer_->createInstance(it->second, npc.position, rotRad, npc.scale);
+        LOG_WARNING("NPC instance created: id=", instId, " modelId=", it->second,
+                    " pos=(", npc.position.x, ",", npc.position.y, ",", npc.position.z, ")");
     }
 
     // Update NPC markers via dedicated method
