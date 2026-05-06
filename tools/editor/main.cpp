@@ -2,6 +2,7 @@
 #include "content_pack.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
+#include "pipeline/wowee_collision.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/custom_zone_discovery.hpp"
@@ -21,6 +22,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --validate <zoneDir>   Score zone open-format completeness and exit\n");
     std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
+    std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
     std::printf("Novel open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON\n");
@@ -85,6 +87,25 @@ int main(int argc, char* argv[]) {
             std::printf("  total verts : %zu\n", totalVerts);
             std::printf("  total tris  : %zu\n", totalIdx / 3);
             std::printf("  total mats  : %zu (across all groups)\n", totalMats);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-woc") == 0 && i + 1 < argc) {
+            std::string path = argv[++i];
+            if (path.size() < 4 || path.substr(path.size() - 4) != ".woc")
+                path += ".woc";
+            auto col = wowee::pipeline::WoweeCollisionBuilder::load(path);
+            if (!col.isValid()) {
+                std::fprintf(stderr, "WOC not found or invalid: %s\n", path.c_str());
+                return 1;
+            }
+            std::printf("WOC: %s\n", path.c_str());
+            std::printf("  tile        : (%u, %u)\n", col.tileX, col.tileY);
+            std::printf("  triangles   : %zu\n", col.triangles.size());
+            std::printf("  walkable    : %zu\n", col.walkableCount());
+            std::printf("  steep       : %zu\n", col.steepCount());
+            std::printf("  bounds.min  : (%.1f, %.1f, %.1f)\n",
+                        col.bounds.min.x, col.bounds.min.y, col.bounds.min.z);
+            std::printf("  bounds.max  : (%.1f, %.1f, %.1f)\n",
+                        col.bounds.max.x, col.bounds.max.y, col.bounds.max.z);
             return 0;
         } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
             std::string zoneDir = argv[++i];
