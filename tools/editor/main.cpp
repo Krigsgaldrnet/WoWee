@@ -464,6 +464,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert a WOM model to glTF 2.0 binary (.glb) — modern industry standard\n");
     std::printf("  --export-wob-glb <wob-base> [out.glb]\n");
     std::printf("                         Convert a WOB building to glTF 2.0 binary (one mesh, per-group primitives)\n");
+    std::printf("  --export-whm-glb <wot-base> [out.glb]\n");
+    std::printf("                         Convert WHM heightmap to glTF 2.0 binary terrain mesh (per-chunk primitives)\n");
     std::printf("  --import-obj <obj-path> [wom-base]\n");
     std::printf("                         Convert a Wavefront OBJ back into WOM (round-trips with --export-obj)\n");
     std::printf("  --export-wob-obj <wob-base> [out.obj]\n");
@@ -580,7 +582,7 @@ int main(int argc, char* argv[]) {
         "--export-png", "--export-obj", "--import-obj",
         "--export-wob-obj", "--import-wob-obj",
         "--export-woc-obj", "--export-whm-obj",
-        "--export-glb", "--export-wob-glb",
+        "--export-glb", "--export-wob-glb", "--export-whm-glb",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
     };
@@ -3369,6 +3371,191 @@ int main(int argc, char* argv[]) {
             std::printf("  %zu groups -> %zu primitives, %u verts, %u tris, %u-byte BIN\n",
                         bld.groups.size(), primitives.size(),
                         totalV, totalI / 3, binLen);
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-whm-glb") == 0 && i + 1 < argc) {
+            // glTF 2.0 binary export for WHM/WOT terrain. Mirrors
+            // --export-whm-obj's mesh layout (9x9 outer grid per chunk
+            // → 8x8 quads → 2 tris each), but ships as a single .glb
+            // viewable in any modern web 3D tool. Per-chunk primitives
+            // so designers can hide individual chunks in three.js.
+            std::string base = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                outPath = argv[++i];
+            }
+            for (const char* ext : {".wot", ".whm"}) {
+                if (base.size() >= 4 && base.substr(base.size() - 4) == ext) {
+                    base = base.substr(0, base.size() - 4);
+                    break;
+                }
+            }
+            if (!wowee::pipeline::WoweeTerrainLoader::exists(base)) {
+                std::fprintf(stderr, "WHM/WOT not found: %s.{whm,wot}\n", base.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = base + ".glb";
+            wowee::pipeline::ADTTerrain terrain;
+            wowee::pipeline::WoweeTerrainLoader::load(base, terrain);
+            // Same coord constants as --export-whm-obj so the .glb and
+            // .obj of the same source align spatially.
+            constexpr float kTileSize = 533.33333f;
+            constexpr float kChunkSize = kTileSize / 16.0f;
+            constexpr float kVertSpacing = kChunkSize / 8.0f;
+            // Walk the 16x16 chunk grid, build per-chunk vertex + index
+            // arrays. Hole bits respected (cave-entrance quads dropped).
+            struct ChunkMesh { uint32_t vertOff, vertCount, idxOff, idxCount; };
+            std::vector<ChunkMesh> chunkMeshes;
+            std::vector<glm::vec3> positions;  // packed sequentially
+            std::vector<uint32_t>  indices;
+            int loadedChunks = 0;
+            glm::vec3 bMin{1e30f}, bMax{-1e30f};
+            for (int cx = 0; cx < 16; ++cx) {
+                for (int cy = 0; cy < 16; ++cy) {
+                    const auto& chunk = terrain.getChunk(cx, cy);
+                    if (!chunk.heightMap.isLoaded()) continue;
+                    loadedChunks++;
+                    ChunkMesh cm{};
+                    cm.vertOff = static_cast<uint32_t>(positions.size());
+                    cm.idxOff  = static_cast<uint32_t>(indices.size());
+                    float chunkBaseX = (32.0f - terrain.coord.y) * kTileSize - cy * kChunkSize;
+                    float chunkBaseY = (32.0f - terrain.coord.x) * kTileSize - cx * kChunkSize;
+                    // 9x9 outer verts (skip 8x8 inner fan-center verts).
+                    for (int row = 0; row < 9; ++row) {
+                        for (int col = 0; col < 9; ++col) {
+                            glm::vec3 p{
+                                chunkBaseX - row * kVertSpacing,
+                                chunkBaseY - col * kVertSpacing,
+                                chunk.position[2] + chunk.heightMap.heights[row * 17 + col]
+                            };
+                            positions.push_back(p);
+                            bMin = glm::min(bMin, p);
+                            bMax = glm::max(bMax, p);
+                        }
+                    }
+                    cm.vertCount = 81;
+                    bool isHoleChunk = (chunk.holes != 0);
+                    auto idx = [&](int r, int c) { return cm.vertOff + r * 9 + c; };
+                    for (int row = 0; row < 8; ++row) {
+                        for (int col = 0; col < 8; ++col) {
+                            if (isHoleChunk) {
+                                int hx = col / 2, hy = row / 2;
+                                if (chunk.holes & (1 << (hy * 4 + hx))) continue;
+                            }
+                            indices.push_back(idx(row, col));
+                            indices.push_back(idx(row, col + 1));
+                            indices.push_back(idx(row + 1, col + 1));
+                            indices.push_back(idx(row, col));
+                            indices.push_back(idx(row + 1, col + 1));
+                            indices.push_back(idx(row + 1, col));
+                        }
+                    }
+                    cm.idxCount = static_cast<uint32_t>(indices.size()) - cm.idxOff;
+                    chunkMeshes.push_back(cm);
+                }
+            }
+            if (loadedChunks == 0) {
+                std::fprintf(stderr, "WHM has no loaded chunks\n");
+                return 1;
+            }
+            // Synthesize normals as +Z (terrain is Z-up). Real per-vertex
+            // normals would need a smoothing pass across chunk boundaries
+            // — skip for v1, viewers can compute their own from positions.
+            const uint32_t totalV = static_cast<uint32_t>(positions.size());
+            const uint32_t totalI = static_cast<uint32_t>(indices.size());
+            const uint32_t posOff = 0;
+            const uint32_t nrmOff = posOff + totalV * 12;
+            const uint32_t idxOff = nrmOff + totalV * 12;
+            const uint32_t binSize = idxOff + totalI * 4;
+            std::vector<uint8_t> bin(binSize);
+            for (uint32_t v = 0; v < totalV; ++v) {
+                std::memcpy(&bin[posOff + v * 12 + 0], &positions[v].x, 4);
+                std::memcpy(&bin[posOff + v * 12 + 4], &positions[v].y, 4);
+                std::memcpy(&bin[posOff + v * 12 + 8], &positions[v].z, 4);
+                float nx = 0, ny = 0, nz = 1;
+                std::memcpy(&bin[nrmOff + v * 12 + 0], &nx, 4);
+                std::memcpy(&bin[nrmOff + v * 12 + 4], &ny, 4);
+                std::memcpy(&bin[nrmOff + v * 12 + 8], &nz, 4);
+            }
+            std::memcpy(&bin[idxOff], indices.data(), totalI * 4);
+            // Build glTF JSON.
+            nlohmann::json gj;
+            gj["asset"] = {{"version", "2.0"},
+                            {"generator", "wowee_editor --export-whm-glb"}};
+            gj["scene"] = 0;
+            gj["scenes"] = nlohmann::json::array({nlohmann::json{{"nodes", {0}}}});
+            std::string nodeName = "WoweeTerrain_" + std::to_string(terrain.coord.x) +
+                                    "_" + std::to_string(terrain.coord.y);
+            gj["nodes"] = nlohmann::json::array({nlohmann::json{
+                {"name", nodeName}, {"mesh", 0}
+            }});
+            gj["buffers"] = nlohmann::json::array({nlohmann::json{
+                {"byteLength", binSize}
+            }});
+            nlohmann::json bufferViews = nlohmann::json::array();
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", posOff},
+                                    {"byteLength", totalV * 12}, {"target", 34962}});
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", nrmOff},
+                                    {"byteLength", totalV * 12}, {"target", 34962}});
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", idxOff},
+                                    {"byteLength", totalI * 4},  {"target", 34963}});
+            gj["bufferViews"] = bufferViews;
+            nlohmann::json accessors = nlohmann::json::array();
+            accessors.push_back({
+                {"bufferView", 0}, {"componentType", 5126},
+                {"count", totalV}, {"type", "VEC3"},
+                {"min", {bMin.x, bMin.y, bMin.z}},
+                {"max", {bMax.x, bMax.y, bMax.z}}
+            });
+            accessors.push_back({{"bufferView", 1}, {"componentType", 5126},
+                                  {"count", totalV}, {"type", "VEC3"}});
+            // Per-chunk primitive — sliced from shared index bufferView.
+            nlohmann::json primitives = nlohmann::json::array();
+            for (const auto& cm : chunkMeshes) {
+                if (cm.idxCount == 0) continue;  // all-hole chunk
+                uint32_t accIdx = static_cast<uint32_t>(accessors.size());
+                accessors.push_back({
+                    {"bufferView", 2},
+                    {"byteOffset", cm.idxOff * 4},
+                    {"componentType", 5125},
+                    {"count", cm.idxCount},
+                    {"type", "SCALAR"}
+                });
+                primitives.push_back({
+                    {"attributes", {{"POSITION", 0}, {"NORMAL", 1}}},
+                    {"indices", accIdx},
+                    {"mode", 4}
+                });
+            }
+            gj["accessors"] = accessors;
+            gj["meshes"] = nlohmann::json::array({nlohmann::json{
+                {"primitives", primitives}
+            }});
+            std::string jsonStr = gj.dump();
+            while (jsonStr.size() % 4 != 0) jsonStr += ' ';
+            uint32_t jsonLen = static_cast<uint32_t>(jsonStr.size());
+            uint32_t binLen = binSize;
+            uint32_t totalLen = 12 + 8 + jsonLen + 8 + binLen;
+            std::ofstream out(outPath, std::ios::binary);
+            if (!out) {
+                std::fprintf(stderr, "Failed to open output: %s\n", outPath.c_str());
+                return 1;
+            }
+            uint32_t magic = 0x46546C67, version = 2;
+            out.write(reinterpret_cast<const char*>(&magic), 4);
+            out.write(reinterpret_cast<const char*>(&version), 4);
+            out.write(reinterpret_cast<const char*>(&totalLen), 4);
+            uint32_t jsonChunkType = 0x4E4F534A;
+            out.write(reinterpret_cast<const char*>(&jsonLen), 4);
+            out.write(reinterpret_cast<const char*>(&jsonChunkType), 4);
+            out.write(jsonStr.data(), jsonLen);
+            uint32_t binChunkType = 0x004E4942;
+            out.write(reinterpret_cast<const char*>(&binLen), 4);
+            out.write(reinterpret_cast<const char*>(&binChunkType), 4);
+            out.write(reinterpret_cast<const char*>(bin.data()), binLen);
+            out.close();
+            std::printf("Exported %s.whm -> %s\n", base.c_str(), outPath.c_str());
+            std::printf("  %d chunks loaded, %u verts, %u tris, %zu primitives, %u-byte BIN\n",
+                        loadedChunks, totalV, totalI / 3, primitives.size(), binLen);
             return 0;
         } else if (std::strcmp(argv[i], "--export-wob-obj") == 0 && i + 1 < argc) {
             // WOB is the WMO replacement; like --export-obj for WOM, this
