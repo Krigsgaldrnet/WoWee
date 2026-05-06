@@ -115,9 +115,17 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
             grp.texturePaths.push_back(tp);
         }
 
-        // Read material data (v1.1+)
+        // Read material data (v1.1+). Reject the whole load on a count
+        // overflow rather than silently dropping the materials and leaving
+        // the file pointer misaligned (next group's name would read
+        // material bytes as garbage).
         uint32_t mc = 0;
-        if (f.read(reinterpret_cast<char*>(&mc), 4) && mc > 0 && mc <= 256) {
+        if (f.read(reinterpret_cast<char*>(&mc), 4) && mc > 0) {
+            if (mc > 256) {
+                LOG_ERROR("WOB group ", gi, " material count rejected (",
+                          mc, "): ", basePath);
+                return WoweeBuilding{};
+            }
             for (uint32_t mi = 0; mi < mc; mi++) {
                 WoweeBuilding::Material mat;
                 uint16_t pl;
