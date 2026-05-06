@@ -419,6 +419,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Append one quest to <zoneDir>/quests.json and exit\n");
     std::printf("  --add-quest-objective <zoneDir> <questIdx> <kill|collect|talk|explore|escort|use> <targetName> [count]\n");
     std::printf("                         Append one objective to a quest by index\n");
+    std::printf("  --remove-quest-objective <zoneDir> <questIdx> <objIdx>\n");
+    std::printf("                         Remove the objective at given 0-based index from a quest\n");
     std::printf("  --add-quest-reward-item <zoneDir> <questIdx> <itemPath> [more...]\n");
     std::printf("                         Append item reward(s) to a quest's reward.itemRewards list\n");
     std::printf("  --set-quest-reward <zoneDir> <questIdx> [--xp N] [--gold N] [--silver N] [--copper N]\n");
@@ -527,6 +529,7 @@ int main(int argc, char* argv[]) {
         "--scaffold-zone", "--add-tile",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
+        "--remove-quest-objective",
         "--remove-creature", "--remove-object", "--remove-quest",
         "--copy-zone", "--rename-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
@@ -574,6 +577,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--add-quest-objective") == 0 && i + 4 >= argc) {
             std::fprintf(stderr,
                 "--add-quest-objective requires <zoneDir> <questIdx> <type> <targetName>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--remove-quest-objective") == 0 && i + 3 >= argc) {
+            std::fprintf(stderr,
+                "--remove-quest-objective requires <zoneDir> <questIdx> <objIdx>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--add-quest-reward-item") == 0 && i + 3 >= argc) {
@@ -3259,6 +3267,57 @@ int main(int argc, char* argv[]) {
             }
             std::printf("Added objective '%s' to quest %d ('%s'), now %zu objective(s)\n",
                         obj.description.c_str(), idx, q->title.c_str(),
+                        q->objectives.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--remove-quest-objective") == 0 && i + 3 < argc) {
+            // Symmetric counterpart to --add-quest-objective. Removes the
+            // objective at <objIdx> within quest <questIdx>. Pair with
+            // --info-quests / --list-quests to find the right indices.
+            std::string zoneDir = argv[++i];
+            std::string qIdxStr = argv[++i];
+            std::string oIdxStr = argv[++i];
+            std::string path = zoneDir + "/quests.json";
+            if (!std::filesystem::exists(path)) {
+                std::fprintf(stderr, "remove-quest-objective: %s not found\n", path.c_str());
+                return 1;
+            }
+            int qIdx, oIdx;
+            try {
+                qIdx = std::stoi(qIdxStr);
+                oIdx = std::stoi(oIdxStr);
+            } catch (...) {
+                std::fprintf(stderr, "remove-quest-objective: bad index\n");
+                return 1;
+            }
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr, "remove-quest-objective: failed to load %s\n",
+                             path.c_str());
+                return 1;
+            }
+            if (qIdx < 0 || qIdx >= static_cast<int>(qe.questCount())) {
+                std::fprintf(stderr,
+                    "remove-quest-objective: questIdx %d out of range [0, %zu)\n",
+                    qIdx, qe.questCount());
+                return 1;
+            }
+            wowee::editor::Quest* q = qe.getQuest(qIdx);
+            if (!q) return 1;
+            if (oIdx < 0 || oIdx >= static_cast<int>(q->objectives.size())) {
+                std::fprintf(stderr,
+                    "remove-quest-objective: objIdx %d out of range [0, %zu)\n",
+                    oIdx, q->objectives.size());
+                return 1;
+            }
+            std::string removedDesc = q->objectives[oIdx].description;
+            q->objectives.erase(q->objectives.begin() + oIdx);
+            if (!qe.saveToFile(path)) {
+                std::fprintf(stderr, "remove-quest-objective: failed to write %s\n",
+                             path.c_str());
+                return 1;
+            }
+            std::printf("Removed objective '%s' (was index %d) from quest %d ('%s'), now %zu remaining\n",
+                        removedDesc.c_str(), oIdx, qIdx, q->title.c_str(),
                         q->objectives.size());
             return 0;
         } else if (std::strcmp(argv[i], "--add-quest-reward-item") == 0 && i + 3 < argc) {
