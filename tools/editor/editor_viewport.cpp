@@ -274,9 +274,10 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
     }
 
     // Render NPC creatures as M2 instances
-    if (m2Renderer_) {
+    if (m2Renderer_ && !npcs.empty()) {
+        LOG_INFO("Loading ", npcs.size(), " NPC models...");
         for (const auto& npc : npcs) {
-            if (npc.modelPath.empty()) continue;
+            if (npc.modelPath.empty()) { LOG_WARNING("NPC has empty modelPath: ", npc.name); continue; }
             uint32_t modelId;
             auto it = m2ModelIds.find(npc.modelPath);
             if (it != m2ModelIds.end()) {
@@ -331,7 +332,7 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 if (!loaded) {
                     auto data = assetManager_->readFile(npc.modelPath);
                     if (data.empty()) {
-                        LOG_DEBUG("NPC model file not found: ", npc.modelPath);
+                        LOG_WARNING("NPC model file not found: ", npc.modelPath);
                         continue;
                     }
                     model = pipeline::M2Loader::load(data);
