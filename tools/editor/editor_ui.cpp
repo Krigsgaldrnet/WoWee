@@ -2748,6 +2748,13 @@ void EditorUI::renderStatusBar(EditorApp& app) {
         } else {
             ImGui::Text("[%s] Wowee World Editor", m);
         }
+        // Camera coordinates display — useful for navigation and debugging.
+        if (app.hasTerrainLoaded()) {
+            glm::vec3 cp = app.getEditorCamera().getCamera().getPosition();
+            ImGui::SameLine(vp->Size.x - 290);
+            ImGui::TextColored(ImVec4(0.6f, 0.7f, 0.8f, 1.0f),
+                "(%.0f, %.0f, %.0f)", cp.x, cp.y, cp.z);
+        }
         ImGui::SameLine(vp->Size.x - 120);
         ImGui::Text("%.1f FPS", ImGui::GetIO().Framerate);
     }
