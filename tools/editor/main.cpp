@@ -745,6 +745,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Compare two JSON DBC sidecars (format/source/recordCount/fieldCount)\n");
     std::printf("  --diff-extract <a> <b> [--json]\n");
     std::printf("                         Compare two extracted asset directories (per-extension file count + bytes)\n");
+    std::printf("  --diff-checksum <a> <b> [--json]\n");
+    std::printf("                         Diff two SHA256SUMS files; report added/removed/changed entries\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
@@ -862,6 +864,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--diff-extract") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--diff-extract requires <dirA> <dirB>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--diff-checksum") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--diff-checksum requires <a.sha256> <b.sha256>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 >= argc) {
@@ -3944,6 +3951,77 @@ int main(int argc, char* argv[]) {
                 return 0;
             }
             std::printf("\n  %d extension(s) differ\n", diffs);
+            return 1;
+        } else if (std::strcmp(argv[i], "--diff-checksum") == 0 && i + 2 < argc) {
+            // Compare two SHA256SUMS files (from --export-zone-checksum).
+            // Reports which files are added / removed / changed between
+            // two zone snapshots — much faster than walking the
+            // filesystem to recompute hashes of unchanged content.
+            std::string aPath = argv[++i];
+            std::string bPath = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            // Parse standard sha256sum format: "<64-hex>  <path>"
+            auto load = [](const std::string& p,
+                            std::map<std::string, std::string>& out) {
+                std::ifstream in(p);
+                if (!in) return false;
+                std::string line;
+                while (std::getline(in, line)) {
+                    if (line.size() < 66) continue;
+                    std::string hash = line.substr(0, 64);
+                    // Two spaces, then path.
+                    size_t sep = line.find("  ", 64);
+                    if (sep == std::string::npos) continue;
+                    std::string path = line.substr(sep + 2);
+                    out[path] = hash;
+                }
+                return true;
+            };
+            std::map<std::string, std::string> a, b;
+            if (!load(aPath, a)) {
+                std::fprintf(stderr,
+                    "diff-checksum: failed to read %s\n", aPath.c_str());
+                return 1;
+            }
+            if (!load(bPath, b)) {
+                std::fprintf(stderr,
+                    "diff-checksum: failed to read %s\n", bPath.c_str());
+                return 1;
+            }
+            std::vector<std::string> added, removed, changed;
+            for (const auto& [path, hash] : a) {
+                auto it = b.find(path);
+                if (it == b.end()) removed.push_back(path);
+                else if (it->second != hash) changed.push_back(path);
+            }
+            for (const auto& [path, hash] : b) {
+                if (a.count(path) == 0) added.push_back(path);
+            }
+            int diffs = added.size() + removed.size() + changed.size();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["a"] = aPath; j["b"] = bPath;
+                j["added"] = added;
+                j["removed"] = removed;
+                j["changed"] = changed;
+                j["totalDiffs"] = diffs;
+                j["identical"] = (diffs == 0);
+                std::printf("%s\n", j.dump(2).c_str());
+                return diffs == 0 ? 0 : 1;
+            }
+            std::printf("Diff: %s vs %s\n", aPath.c_str(), bPath.c_str());
+            std::printf("  added   : %zu\n", added.size());
+            std::printf("  removed : %zu\n", removed.size());
+            std::printf("  changed : %zu\n", changed.size());
+            for (const auto& p : added)   std::printf("  +  %s\n", p.c_str());
+            for (const auto& p : removed) std::printf("  -  %s\n", p.c_str());
+            for (const auto& p : changed) std::printf("  ~  %s\n", p.c_str());
+            if (diffs == 0) {
+                std::printf("  IDENTICAL\n");
+                return 0;
+            }
             return 1;
         } else if (std::strcmp(argv[i], "--list-wcp") == 0 && i + 1 < argc) {
             // Like --info-wcp but prints every file path. Useful for spotting
