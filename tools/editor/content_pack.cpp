@@ -74,12 +74,21 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
 
     // File table + data
     for (const auto& [rel, full] : files) {
-        uint16_t pathLen = static_cast<uint16_t>(rel.size());
+        // Truncate path length to fit u16; matches the unpack-side cap.
+        // Also skip files whose disk size doesn't fit in uint32 (4GB).
+        uint16_t pathLen = static_cast<uint16_t>(std::min<size_t>(rel.size(), 1024));
         out.write(reinterpret_cast<const char*>(&pathLen), 2);
         out.write(rel.data(), pathLen);
 
         std::ifstream fin(full, std::ios::binary | std::ios::ate);
-        uint32_t dataSize = static_cast<uint32_t>(fin.tellg());
+        std::streamsize sz = fin.tellg();
+        if (sz < 0 || static_cast<uint64_t>(sz) > 0xFFFFFFFFull) {
+            LOG_ERROR("WCP skipped file (size out of range): ", rel);
+            uint32_t zero = 0;
+            out.write(reinterpret_cast<const char*>(&zero), 4);
+            continue;
+        }
+        uint32_t dataSize = static_cast<uint32_t>(sz);
         fin.seekg(0);
         out.write(reinterpret_cast<const char*>(&dataSize), 4);
 
