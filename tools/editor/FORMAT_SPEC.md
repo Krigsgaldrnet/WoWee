@@ -128,3 +128,39 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 
 ## All formats are novel, portable, and open for redistribution.
 ## No Blizzard intellectual property is used in any format definition.
+
+## Headless CLI Surface
+
+The `wowee_editor` binary provides a complete non-GUI workflow over these formats:
+
+### Inspection
+- `--info <wom-base>` — WOM metadata (vertices/bones/animations/batches)
+- `--info-wob <wob-base>` — WOB groups/portals/doodads
+- `--info-woc <woc-path>` — WOC triangles/walkability counts
+- `--info-wot <wot-base>` — WOT/WHM tile coord, chunks, height range
+- `--info-wcp <wcp-path>` — WCP archive metadata (per-category counts)
+- `--list-wcp <wcp-path>` — every file in a WCP, sorted by path
+- `--info-creatures <p>` — creatures.json summary
+- `--info-objects <p>` — objects.json summary
+- `--info-quests <p>` — quests.json summary + chain validation
+
+### Validation
+- `--validate <zoneDir>` — open-format completeness score (0/7) with per-format counts
+- `--zone-summary <zoneDir>` — one-shot validate + creature/object/quest counts
+- `--diff-wcp <a> <b>` — file-by-file WCP comparison (added/removed/changed)
+
+### Authoring
+- `--scaffold-zone <name> [tx ty]` — create a blank zone in custom_zones/<slug>/
+- `--build-woc <wot-base>` — generate WOC collision mesh from WHM/WOT
+- `--regen-collision <zoneDir>` — rebuild every WOC under a zone dir
+- `--export-png <wot-base>` — render heightmap/normal/zone-map PNG previews
+- `--convert-m2 <path>` — M2 → WOM
+- `--convert-wmo <path>` — WMO → WOB
+
+### Packaging
+- `--pack-wcp <zone> [dst]` — pack a zone into a WCP archive
+- `--unpack-wcp <wcp> [dst]` — extract a WCP archive
+
+### Discovery
+- `--list-zones` — list custom_zones/ + output/ contents
+- `--version` — version info
