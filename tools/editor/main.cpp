@@ -439,6 +439,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-extract <dir> [--json]\n");
     std::printf("                         Walk extracted asset tree and report open-format coverage and exit\n");
+    std::printf("  --list-missing-sidecars <dir> [--json]\n");
+    std::printf("                         List proprietary files lacking open-format sidecars (one per line)\n");
     std::printf("  --info-zone <dir|json> [--json]\n");
     std::printf("                         Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
     std::printf("  --info-creatures <p> [--json]\n");
@@ -469,7 +471,8 @@ int main(int argc, char* argv[]) {
     static const char* kArgRequired[] = {
         "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
-        "--info-extract", "--info-zone", "--info-wcp", "--list-wcp",
+        "--info-extract", "--list-missing-sidecars",
+        "--info-zone", "--info-wcp", "--list-wcp",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--zone-summary",
@@ -829,6 +832,87 @@ int main(int argc, char* argv[]) {
             std::printf("\n");
             std::printf("  (run `asset_extract --emit-open` to fill missing sidecars)\n");
             return 0;
+        } else if (std::strcmp(argv[i], "--list-missing-sidecars") == 0 && i + 1 < argc) {
+            // Actionable counterpart to --info-extract: emit one line per
+            // proprietary file lacking its open-format sidecar. Pipe into
+            // xargs to drive a targeted re-extract:
+            //   wowee_editor --list-missing-sidecars Data/ |
+            //     awk '/\.blp$/ {print}' |
+            //     xargs asset_extract --emit-png-only
+            std::string dataDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(dataDir)) {
+                std::fprintf(stderr, "list-missing-sidecars: %s does not exist\n",
+                             dataDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> missingPng, missingJson, missingWom,
+                                     missingWob, missingWhm;
+            for (auto& entry : fs::recursive_directory_iterator(dataDir)) {
+                if (!entry.is_regular_file()) continue;
+                std::string ext = entry.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                std::string base = entry.path().string();
+                if (base.size() > ext.size())
+                    base = base.substr(0, base.size() - ext.size());
+                auto missing = [&](const char* sidecarExt) {
+                    return !fs::exists(base + sidecarExt);
+                };
+                if (ext == ".blp" && missing(".png"))
+                    missingPng.push_back(entry.path().string());
+                else if (ext == ".dbc" && missing(".json"))
+                    missingJson.push_back(entry.path().string());
+                else if (ext == ".m2" && missing(".wom"))
+                    missingWom.push_back(entry.path().string());
+                else if (ext == ".wmo") {
+                    // Group files (Foo_NNN.wmo) don't get individual sidecars
+                    // — only the parent file gets a .wob.
+                    std::string fname = entry.path().filename().string();
+                    auto under = fname.rfind('_');
+                    bool isGroup = (under != std::string::npos &&
+                                    fname.size() - under == 8);
+                    if (!isGroup && missing(".wob"))
+                        missingWob.push_back(entry.path().string());
+                }
+                else if (ext == ".adt" && missing(".whm"))
+                    missingWhm.push_back(entry.path().string());
+            }
+            size_t total = missingPng.size() + missingJson.size() +
+                           missingWom.size() + missingWob.size() +
+                           missingWhm.size();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["dir"] = dataDir;
+                j["totalMissing"] = total;
+                j["missing"] = {
+                    {"png",  missingPng},
+                    {"json", missingJson},
+                    {"wom",  missingWom},
+                    {"wob",  missingWob},
+                    {"whm",  missingWhm},
+                };
+                std::printf("%s\n", j.dump(2).c_str());
+                return total == 0 ? 0 : 1;
+            }
+            // Plain mode: one path per line, sorted by group, prefixed with
+            // the missing extension so awk/grep can filter.
+            auto emit = [](const char* tag, const std::vector<std::string>& files) {
+                for (const auto& f : files) std::printf("%s\t%s\n", tag, f.c_str());
+            };
+            emit("png",  missingPng);
+            emit("json", missingJson);
+            emit("wom",  missingWom);
+            emit("wob",  missingWob);
+            emit("whm",  missingWhm);
+            std::fprintf(stderr,
+                "%zu missing (PNG=%zu JSON=%zu WOM=%zu WOB=%zu WHM=%zu)\n",
+                total, missingPng.size(), missingJson.size(),
+                missingWom.size(), missingWob.size(), missingWhm.size());
+            return total == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--info-zone") == 0 && i + 1 < argc) {
             // Parse a zone.json and print every manifest field. Useful when
             // diffing two zones or auditing the audio/flag setup before
