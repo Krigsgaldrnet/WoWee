@@ -240,7 +240,10 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 modelId = it->second;
             } else {
                 auto data = assetManager_->readFile(npc.modelPath);
-                if (data.empty()) continue;
+                if (data.empty()) {
+                    LOG_DEBUG("NPC model not found (showing marker): ", npc.modelPath);
+                    continue;
+                }
                 auto model = pipeline::M2Loader::load(data);
                 if (!model.isValid()) {
                     std::string skinPath = npc.modelPath;
