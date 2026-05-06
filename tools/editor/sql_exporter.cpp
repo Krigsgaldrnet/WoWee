@@ -10,8 +10,9 @@
 namespace wowee {
 namespace editor {
 
-static std::string escapeSql(const std::string& s) {
+std::string SQLExporter::escape(const std::string& s) {
     std::string out;
+    out.reserve(s.size());
     for (char c : s) {
         if (c == '\'') out += "''";
         else if (c == '\\') out += "\\\\";
@@ -19,6 +20,8 @@ static std::string escapeSql(const std::string& s) {
     }
     return out;
 }
+
+static std::string escapeSql(const std::string& s) { return SQLExporter::escape(s); }
 
 bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
                                    const std::string& path,

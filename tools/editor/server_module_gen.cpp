@@ -36,17 +36,22 @@ bool ServerModuleGenerator::generate(const ZoneManifest& manifest,
         f << "-- Generated: " << timeBuf << "\n";
         f << "-- Map ID: " << cfg.mapId << "\n\n";
 
+        // Escape user-provided strings — a zone name like "King's Land"
+        // would otherwise produce invalid SQL.
+        const std::string mapName = SQLExporter::escape(cfg.mapName);
+        const std::string displayName = SQLExporter::escape(cfg.displayName);
+
         f << "-- Register custom map\n";
         f << "INSERT INTO `map_dbc` (`ID`, `MapName`, `MapType`, `MapDescription`) VALUES ("
-          << cfg.mapId << ", '" << cfg.mapName << "', 0, '"
-          << cfg.displayName << "') ON DUPLICATE KEY UPDATE `MapName`='"
-          << cfg.mapName << "';\n\n";
+          << cfg.mapId << ", '" << mapName << "', 0, '"
+          << displayName << "') ON DUPLICATE KEY UPDATE `MapName`='"
+          << mapName << "';\n\n";
 
         f << "-- Register zone area\n";
         f << "INSERT INTO `area_table_dbc` (`ID`, `MapID`, `AreaName`, `ExploreFlag`) VALUES ("
           << cfg.zoneId << ", " << cfg.mapId << ", '"
-          << cfg.displayName << "', 1) ON DUPLICATE KEY UPDATE `AreaName`='"
-          << cfg.displayName << "';\n";
+          << displayName << "', 1) ON DUPLICATE KEY UPDATE `AreaName`='"
+          << displayName << "';\n";
     }
 
     // 2. Generate creature + quest SQL
@@ -63,9 +68,10 @@ bool ServerModuleGenerator::generate(const ZoneManifest& manifest,
         float tileSize = 533.33333f;
         float x = (32.0f - manifest.tiles[0].second) * tileSize;
         float y = (32.0f - manifest.tiles[0].first) * tileSize;
+        const std::string teleName = SQLExporter::escape(manifest.mapName);
         f << "INSERT INTO `game_tele` (`name`, `position_x`, `position_y`, "
           << "`position_z`, `orientation`, `map`) VALUES ('"
-          << manifest.mapName << "', " << x << ", " << y << ", "
+          << teleName << "', " << x << ", " << y << ", "
           << manifest.baseHeight + 10.0f << ", 0, " << cfg.mapId
           << ") ON DUPLICATE KEY UPDATE `position_x`=" << x << ";\n";
         f << "\n-- Usage: .tele " << manifest.mapName << "\n";
