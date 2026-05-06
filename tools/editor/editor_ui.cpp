@@ -2172,8 +2172,10 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
             }
 
             ImGui::Separator();
-            ImGui::Text("Objectives:");
-            if (tmpl.objectives.size() < 4 && ImGui::Button("Add Objective")) {
+            ImGui::Text("Objectives (max 4 Kill + 6 Collect):");
+            // Limit to 10 total — matches the SQL exporter slot capacity
+            // (RequiredNpcOrGo[1..4] + RequiredItemId[1..6]).
+            if (tmpl.objectives.size() < 10 && ImGui::Button("Add Objective")) {
                 QuestObjective obj;
                 obj.description = "Kill 5 creatures";
                 tmpl.objectives.push_back(obj);
