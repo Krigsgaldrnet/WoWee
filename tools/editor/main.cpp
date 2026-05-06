@@ -223,16 +223,22 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             // Per-format counts. Pair proprietary with open-format sidecar
-            // so the report can show coverage percentages.
+            // so the report can show coverage percentages. Track bytes
+            // separately for proprietary vs open so the user can see how
+            // much disk a "purge proprietary after open conversion"
+            // workflow would save (or cost — open formats are sometimes
+            // larger, e.g. PNG vs DXT-compressed BLP).
             uint64_t blpCount = 0, pngSidecar = 0;
             uint64_t dbcCount = 0, jsonSidecar = 0;
             uint64_t m2Count  = 0, womSidecar = 0;
             uint64_t wmoCount = 0, wobSidecar = 0;
             uint64_t adtCount = 0, whmSidecar = 0;
             uint64_t totalBytes = 0;
+            uint64_t propBytes = 0, openBytes = 0;
             for (auto& entry : fs::recursive_directory_iterator(dataDir)) {
                 if (!entry.is_regular_file()) continue;
-                totalBytes += entry.file_size();
+                uint64_t fsz = entry.file_size();
+                totalBytes += fsz;
                 std::string ext = entry.path().extension().string();
                 std::transform(ext.begin(), ext.end(), ext.begin(),
                                [](unsigned char c) { return std::tolower(c); });
@@ -241,12 +247,11 @@ int main(int argc, char* argv[]) {
                 auto sidecarExists = [&](const char* sidecarExt) {
                     return fs::exists(base + sidecarExt);
                 };
-                if      (ext == ".blp") { blpCount++;  if (sidecarExists(".png"))  pngSidecar++; }
-                else if (ext == ".dbc") { dbcCount++;  if (sidecarExists(".json")) jsonSidecar++; }
-                else if (ext == ".m2")  { m2Count++;   if (sidecarExists(".wom"))  womSidecar++; }
+                if      (ext == ".blp") { blpCount++; propBytes += fsz; if (sidecarExists(".png"))  pngSidecar++; }
+                else if (ext == ".dbc") { dbcCount++; propBytes += fsz; if (sidecarExists(".json")) jsonSidecar++; }
+                else if (ext == ".m2")  { m2Count++;  propBytes += fsz; if (sidecarExists(".wom"))  womSidecar++; }
                 else if (ext == ".wmo") {
-                    // Skip group sub-files (<base>_NNN.wmo) so coverage
-                    // counts only root WMOs against the WOB output.
+                    propBytes += fsz;
                     std::string fname = entry.path().filename().string();
                     auto under = fname.rfind('_');
                     bool isGroup = (under != std::string::npos &&
@@ -255,7 +260,12 @@ int main(int argc, char* argv[]) {
                         wmoCount++; if (sidecarExists(".wob")) wobSidecar++;
                     }
                 }
-                else if (ext == ".adt") { adtCount++; if (sidecarExists(".whm")) whmSidecar++; }
+                else if (ext == ".adt") { adtCount++; propBytes += fsz; if (sidecarExists(".whm")) whmSidecar++; }
+                else if (ext == ".png" || ext == ".json" || ext == ".wom" ||
+                         ext == ".wob" || ext == ".whm" || ext == ".wot" ||
+                         ext == ".woc") {
+                    openBytes += fsz;
+                }
             }
             auto pct = [](uint64_t x, uint64_t total) {
                 return total == 0 ? 0.0 : (100.0 * x) / total;
@@ -275,6 +285,17 @@ int main(int argc, char* argv[]) {
             uint64_t openTotal = pngSidecar + jsonSidecar + womSidecar + wobSidecar + whmSidecar;
             uint64_t propTotal = blpCount + dbcCount + m2Count + wmoCount + adtCount;
             std::printf("  overall open-format coverage: %.1f%%\n", pct(openTotal, propTotal));
+            // Disk-usage breakdown: shows roughly how big a purge-proprietary
+            // workflow would shrink the tree (or how much extra a dual-format
+            // extraction costs).
+            const double mb = 1024.0 * 1024.0;
+            std::printf("  proprietary bytes: %.1f MB\n", propBytes / mb);
+            std::printf("  open-format bytes: %.1f MB", openBytes / mb);
+            if (propBytes > 0) {
+                std::printf(" (%.1f%% of proprietary)",
+                            100.0 * static_cast<double>(openBytes) / propBytes);
+            }
+            std::printf("\n");
             std::printf("  (run `asset_extract --emit-open` to fill missing sidecars)\n");
             return 0;
         } else if (std::strcmp(argv[i], "--info-zone") == 0 && i + 1 < argc) {
