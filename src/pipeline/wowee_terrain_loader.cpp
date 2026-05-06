@@ -173,10 +173,15 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
             }
         }
 
-        // Parse doodad placements
+        // Parse doodad placements. n.get<std::string> throws on non-string
+        // entries — guard with is_string and cap the list at 65536 (uint32
+        // nameId range is far larger but real zones top out around ~5k).
         if (j.contains("doodadNames") && j["doodadNames"].is_array()) {
-            for (const auto& n : j["doodadNames"])
-                terrain.doodadNames.push_back(n.get<std::string>());
+            constexpr size_t kMaxNames = 65536;
+            for (const auto& n : j["doodadNames"]) {
+                if (terrain.doodadNames.size() >= kMaxNames) break;
+                if (n.is_string()) terrain.doodadNames.push_back(n.get<std::string>());
+            }
         }
         // Helper used by both doodad and WMO loaders below.
         auto san3 = [](float& a, float& b, float& c) {
@@ -208,10 +213,13 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
             }
         }
 
-        // Parse WMO placements
+        // Parse WMO placements (same guards as doodadNames above).
         if (j.contains("wmoNames") && j["wmoNames"].is_array()) {
-            for (const auto& n : j["wmoNames"])
-                terrain.wmoNames.push_back(n.get<std::string>());
+            constexpr size_t kMaxWmoNames = 65536;
+            for (const auto& n : j["wmoNames"]) {
+                if (terrain.wmoNames.size() >= kMaxWmoNames) break;
+                if (n.is_string()) terrain.wmoNames.push_back(n.get<std::string>());
+            }
         }
         if (j.contains("wmos") && j["wmos"].is_array()) {
             for (const auto& jw : j["wmos"]) {
