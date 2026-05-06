@@ -138,6 +138,9 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
                 ADTTerrain::WaterLayer wl;
                 wl.liquidType = w.value("type", 0u);
                 wl.maxHeight = w.value("height", 0.0f);
+                // NaN water height would produce NaN vertex positions and
+                // a degenerate GPU draw, or crash the water mesh build.
+                if (!std::isfinite(wl.maxHeight)) wl.maxHeight = 0.0f;
                 wl.minHeight = wl.maxHeight;
                 wl.x = 0; wl.y = 0; wl.width = 9; wl.height = 9;
                 wl.heights.assign(81, wl.maxHeight);
