@@ -133,13 +133,15 @@ void EditorApp::run() {
             gizmo.setMode(TransformMode::None);
         }
 
-        // Patrol path visualization for the selected NPC
+        // Patrol path visualization for the selected NPC.
+        // Adds a loop-back to the start so users can see the cycle the creature follows.
         if (auto* selNpc = npcSpawner_.getSelected();
             selNpc && !selNpc->patrolPath.empty()) {
             std::vector<glm::vec3> pts;
-            pts.reserve(selNpc->patrolPath.size() + 1);
+            pts.reserve(selNpc->patrolPath.size() + 2);
             pts.push_back(selNpc->position);
             for (const auto& wp : selNpc->patrolPath) pts.push_back(wp.position);
+            if (selNpc->patrolPath.size() >= 2) pts.push_back(selNpc->position);
             viewport_.setPatrolPath(pts);
         } else {
             viewport_.clearPatrolPath();
