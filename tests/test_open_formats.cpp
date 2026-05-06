@@ -752,3 +752,58 @@ TEST_CASE("WOB save scrubs NaN group bounds and vertex positions", "[wob][harden
     REQUIRE(v.normal == glm::vec3(0, 0, 1));
     std::filesystem::remove(base + ".wob");
 }
+
+TEST_CASE("WOB save caps texture-path count to 1024 on round-trip", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/cap_textures";
+
+    WoweeBuilding bld;
+    bld.name = "ManyTex";
+    bld.boundRadius = 1.0f;
+    WoweeBuilding::Group g;
+    g.name = "G";
+    g.vertices.push_back({{0, 0, 0}, {0, 0, 1}, {0, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{1, 0, 0}, {0, 0, 1}, {1, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{0, 1, 0}, {0, 0, 1}, {0, 1}, {1, 1, 1, 1}});
+    g.indices = {0, 1, 2};
+    // Push more textures than the load limit (1024) — save should cap.
+    for (int i = 0; i < 1500; i++) {
+        g.texturePaths.push_back("tex" + std::to_string(i) + ".png");
+    }
+    bld.groups.push_back(g);
+
+    REQUIRE(WoweeBuildingLoader::save(bld, base));
+    auto reloaded = WoweeBuildingLoader::load(base);
+    REQUIRE(reloaded.isValid());
+    REQUIRE(reloaded.groups.size() == 1);
+    // Capped at 1024 on save → loader sees only 1024 entries.
+    REQUIRE(reloaded.groups[0].texturePaths.size() == 1024);
+    // First and last (capped) entries match what was written.
+    REQUIRE(reloaded.groups[0].texturePaths.front() == "tex0.png");
+    REQUIRE(reloaded.groups[0].texturePaths.back() == "tex1023.png");
+    std::filesystem::remove(base + ".wob");
+}
+
+TEST_CASE("WoweeCollision save caps tri count and clamps tile coords", "[woc][hardening]") {
+    ensureTestDir();
+    std::string path = TEST_DIR + "/cap_woc.woc";
+    WoweeCollision col;
+    col.tileX = 200;  // out of range — should clamp to 32 on save
+    col.tileY = 200;
+    // Add a few real triangles so the file isn't empty.
+    for (int i = 0; i < 5; i++) {
+        WoweeCollision::Triangle t;
+        t.v0 = glm::vec3(static_cast<float>(i), 0, 0);
+        t.v1 = glm::vec3(static_cast<float>(i + 1), 0, 0);
+        t.v2 = glm::vec3(static_cast<float>(i), 1, 0);
+        t.flags = 0x01;
+        col.triangles.push_back(t);
+    }
+    REQUIRE(WoweeCollisionBuilder::save(col, path));
+    auto reloaded = WoweeCollisionBuilder::load(path);
+    REQUIRE(reloaded.isValid());
+    REQUIRE(reloaded.tileX == 32);  // clamped from 200
+    REQUIRE(reloaded.tileY == 32);
+    REQUIRE(reloaded.triangles.size() == 5);
+    std::filesystem::remove(path);
+}
