@@ -6,6 +6,7 @@
 #include <ctime>
 #include <chrono>
 #include <unordered_map>
+#include <cmath>
 
 namespace wowee {
 namespace editor {
@@ -118,7 +119,12 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
 
         // Editor stores positions in render coords; AzerothCore expects WoW
         // canonical (X=north, Y=west). renderToCanonical handles the swap.
-        const glm::vec3 wow = core::coords::renderToCanonical(s.position);
+        // Sanitize each component — ostream prints NaN as "nan" which
+        // AzerothCore's SQL import will reject.
+        glm::vec3 wow = core::coords::renderToCanonical(s.position);
+        if (!std::isfinite(wow.x)) wow.x = 0.0f;
+        if (!std::isfinite(wow.y)) wow.y = 0.0f;
+        if (!std::isfinite(wow.z)) wow.z = 0.0f;
         const float wowX = wow.x;
         const float wowY = wow.y;
         const float wowZ = wow.z;
@@ -126,7 +132,8 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
         // orientation is in degrees from +renderX (west). Convert via:
         //   wowYaw = π/2 - editorYaw
         constexpr float kPi = 3.14159265358979323846f;
-        const float editorYawRad = s.orientation * kPi / 180.0f;
+        float orientation = std::isfinite(s.orientation) ? s.orientation : 0.0f;
+        const float editorYawRad = orientation * kPi / 180.0f;
         float orientRad = kPi * 0.5f - editorYawRad;
         while (orientRad < 0.0f) orientRad += 2.0f * kPi;
         while (orientRad >= 2.0f * kPi) orientRad -= 2.0f * kPi;
@@ -166,7 +173,10 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
 
             for (size_t pi = 0; pi < s.patrolPath.size(); pi++) {
                 const auto& wp = s.patrolPath[pi];
-                const glm::vec3 wpWow = core::coords::renderToCanonical(wp.position);
+                glm::vec3 wpWow = core::coords::renderToCanonical(wp.position);
+                if (!std::isfinite(wpWow.x)) wpWow.x = 0.0f;
+                if (!std::isfinite(wpWow.y)) wpWow.y = 0.0f;
+                if (!std::isfinite(wpWow.z)) wpWow.z = 0.0f;
                 const float wpWowX = wpWow.x;
                 const float wpWowY = wpWow.y;
                 const float wpWowZ = wpWow.z;
