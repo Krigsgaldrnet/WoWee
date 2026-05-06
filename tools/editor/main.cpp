@@ -513,6 +513,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Recursively run all per-format validators on every file\n");
     std::printf("  --validate-glb <path> [--json]\n");
     std::printf("                         Verify a glTF 2.0 binary's structure (magic, chunks, JSON, accessors)\n");
+    std::printf("  --check-glb-bounds <path> [--json]\n");
+    std::printf("                         Verify position accessor min/max in a .glb actually matches the data\n");
     std::printf("  --validate-jsondbc <path> [--json]\n");
     std::printf("                         Verify a JSON DBC sidecar's full schema (per-cell types, row width, format tag)\n");
     std::printf("  --info-glb <path> [--json]\n");
@@ -624,7 +626,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
-        "--validate-jsondbc",
+        "--validate-jsondbc", "--check-glb-bounds",
         "--zone-summary", "--info-zone-tree",
         "--export-zone-summary-md", "--export-quest-graph",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
@@ -3956,6 +3958,165 @@ int main(int argc, char* argv[]) {
             std::printf("  FAILED — %d error(s):\n", errorCount);
             for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
             return isValidate ? 1 : 0;
+        } else if (std::strcmp(argv[i], "--check-glb-bounds") == 0 && i + 1 < argc) {
+            // Cross-checks every position accessor's claimed min/max
+            // against the actual data in the BIN chunk. glTF viewers use
+            // these for camera framing and frustum culling — stale
+            // values (e.g. from a tool that edited geometry without
+            // recomputing) cause models to vanish at certain angles or
+            // get framed wrong on load.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr,
+                    "check-glb-bounds: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            // Parse glb structure (re-implements --validate-glb's parser
+            // since we need access to the BIN chunk bytes here).
+            if (bytes.size() < 28) {
+                std::fprintf(stderr,
+                    "check-glb-bounds: file too short to be a .glb\n");
+                return 1;
+            }
+            uint32_t magic, version;
+            std::memcpy(&magic, &bytes[0], 4);
+            std::memcpy(&version, &bytes[4], 4);
+            if (magic != 0x46546C67 || version != 2) {
+                std::fprintf(stderr,
+                    "check-glb-bounds: not a valid glTF 2.0 binary\n");
+                return 1;
+            }
+            uint32_t jsonLen, jsonType;
+            std::memcpy(&jsonLen, &bytes[12], 4);
+            std::memcpy(&jsonType, &bytes[16], 4);
+            std::string jsonStr(bytes.begin() + 20, bytes.begin() + 20 + jsonLen);
+            size_t binOff = 20 + jsonLen;
+            std::memcpy(&magic, &bytes[binOff + 4], 4);  // chunkType
+            const uint8_t* binData = &bytes[binOff + 8];
+            uint32_t binLen;
+            std::memcpy(&binLen, &bytes[binOff], 4);
+            (void)binLen;  // not range-checked here; --validate-glb does that
+            nlohmann::json gj;
+            try { gj = nlohmann::json::parse(jsonStr); }
+            catch (const std::exception& e) {
+                std::fprintf(stderr,
+                    "check-glb-bounds: JSON parse failed: %s\n", e.what());
+                return 1;
+            }
+            std::vector<std::string> errors;
+            int posAccessors = 0, mismatched = 0;
+            // Walk all primitives, collect their POSITION accessor index,
+            // dedupe (multiple primitives can share an accessor — only
+            // recompute once per unique).
+            std::set<int> posAccIndices;
+            if (gj.contains("meshes") && gj["meshes"].is_array()) {
+                for (const auto& m : gj["meshes"]) {
+                    if (!m.contains("primitives") || !m["primitives"].is_array()) continue;
+                    for (const auto& p : m["primitives"]) {
+                        if (p.contains("attributes") &&
+                            p["attributes"].contains("POSITION")) {
+                            posAccIndices.insert(p["attributes"]["POSITION"].get<int>());
+                        }
+                    }
+                }
+            }
+            const auto& accessors = gj["accessors"];
+            const auto& bufferViews = gj["bufferViews"];
+            for (int ai : posAccIndices) {
+                if (ai < 0 || ai >= static_cast<int>(accessors.size())) {
+                    errors.push_back("position accessor " + std::to_string(ai) +
+                                     " out of range");
+                    continue;
+                }
+                const auto& acc = accessors[ai];
+                if (acc.value("type", std::string{}) != "VEC3" ||
+                    acc.value("componentType", 0) != 5126) {
+                    errors.push_back("accessor " + std::to_string(ai) +
+                                     " is not VEC3 FLOAT");
+                    continue;
+                }
+                posAccessors++;
+                int bvIdx = acc.value("bufferView", -1);
+                if (bvIdx < 0 || bvIdx >= static_cast<int>(bufferViews.size())) {
+                    errors.push_back("accessor " + std::to_string(ai) +
+                                     " bufferView " + std::to_string(bvIdx) +
+                                     " out of range");
+                    continue;
+                }
+                const auto& bv = bufferViews[bvIdx];
+                uint32_t bvOff = bv.value("byteOffset", 0u);
+                uint32_t accOff = acc.value("byteOffset", 0u);
+                uint32_t count = acc.value("count", 0u);
+                const uint8_t* p = binData + bvOff + accOff;
+                glm::vec3 actualMin{1e30f}, actualMax{-1e30f};
+                for (uint32_t v = 0; v < count; ++v) {
+                    glm::vec3 pos;
+                    std::memcpy(&pos.x, p + v * 12 + 0, 4);
+                    std::memcpy(&pos.y, p + v * 12 + 4, 4);
+                    std::memcpy(&pos.z, p + v * 12 + 8, 4);
+                    actualMin = glm::min(actualMin, pos);
+                    actualMax = glm::max(actualMax, pos);
+                }
+                // Compare against claimed min/max (within float epsilon).
+                glm::vec3 claimedMin{0}, claimedMax{0};
+                bool hasClaimed = (acc.contains("min") && acc.contains("max"));
+                if (hasClaimed) {
+                    claimedMin.x = acc["min"][0]; claimedMin.y = acc["min"][1]; claimedMin.z = acc["min"][2];
+                    claimedMax.x = acc["max"][0]; claimedMax.y = acc["max"][1]; claimedMax.z = acc["max"][2];
+                    auto close = [](float a, float b) {
+                        return std::abs(a - b) < 1e-3f;
+                    };
+                    bool ok = close(claimedMin.x, actualMin.x) &&
+                              close(claimedMin.y, actualMin.y) &&
+                              close(claimedMin.z, actualMin.z) &&
+                              close(claimedMax.x, actualMax.x) &&
+                              close(claimedMax.y, actualMax.y) &&
+                              close(claimedMax.z, actualMax.z);
+                    if (!ok) {
+                        mismatched++;
+                        char buf[256];
+                        std::snprintf(buf, sizeof(buf),
+                            "accessor %d bounds mismatch: claimed [%g,%g,%g]-[%g,%g,%g] vs actual [%g,%g,%g]-[%g,%g,%g]",
+                            ai,
+                            claimedMin.x, claimedMin.y, claimedMin.z,
+                            claimedMax.x, claimedMax.y, claimedMax.z,
+                            actualMin.x, actualMin.y, actualMin.z,
+                            actualMax.x, actualMax.y, actualMax.z);
+                        errors.push_back(buf);
+                    }
+                } else {
+                    // glTF spec requires position accessors to declare min/max.
+                    errors.push_back("accessor " + std::to_string(ai) +
+                                     " missing required min/max for POSITION attribute");
+                    mismatched++;
+                }
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["glb"] = path;
+                j["positionAccessors"] = posAccessors;
+                j["mismatched"] = mismatched;
+                j["errors"] = errors;
+                j["passed"] = errors.empty();
+                std::printf("%s\n", j.dump(2).c_str());
+                return errors.empty() ? 0 : 1;
+            }
+            std::printf("GLB bounds: %s\n", path.c_str());
+            std::printf("  position accessors checked : %d\n", posAccessors);
+            std::printf("  mismatched                 : %d\n", mismatched);
+            if (errors.empty()) {
+                std::printf("  PASSED\n");
+                return 0;
+            }
+            std::printf("  FAILED — %zu error(s):\n", errors.size());
+            for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return 1;
         } else if (std::strcmp(argv[i], "--validate-jsondbc") == 0 && i + 1 < argc) {
             // Strict schema validator for JSON DBC sidecars. --info-jsondbc
             // checks that header recordCount matches the actual records[]
