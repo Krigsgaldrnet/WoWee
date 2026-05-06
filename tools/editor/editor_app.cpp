@@ -1105,6 +1105,10 @@ void EditorApp::exportZone(const std::string& outputDir) {
         if (!questEditor_.validateChains(chainErrors)) {
             for (const auto& err : chainErrors)
                 LOG_WARNING("Quest chain issue: ", err);
+            // Surface chain issues to the user — silently logging means most
+            // users won't notice a broken chain until they test in-game.
+            showToast("Quest chains have " + std::to_string(chainErrors.size()) +
+                      " issue(s) — see log", 5.0f);
         }
     }
 
