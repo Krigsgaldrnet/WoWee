@@ -855,6 +855,14 @@ bool EditorApp::loadWMOInstance(const std::string& mapName) {
 }
 
 void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
+    // WoW tile grid is 64x64 — out-of-range coords would compute paths
+    // like "World\Maps\Foo\Foo_-1_-1.adt" that the asset manager refuses,
+    // and would also poison the manifest.tiles entries on save.
+    if (tileX < 0 || tileX > 63 || tileY < 0 || tileY > 63) {
+        LOG_ERROR("loadADT rejected: tile (", tileX, ",", tileY,
+                  ") out of valid 0..63 range");
+        return;
+    }
     // Clear previous state before loading new tile
     clearAllObjects();
     questEditor_.clear();
