@@ -243,11 +243,18 @@ void TexturePainter::autoPaintBySlope(float slopeThreshold, const std::string& s
 void TexturePainter::paintAlongPath(const glm::vec3& start, const glm::vec3& end,
                                      float width, const std::string& texturePath) {
     if (!terrain_ || texturePath.empty()) return;
+    if (!std::isfinite(start.x) || !std::isfinite(start.y) ||
+        !std::isfinite(end.x) || !std::isfinite(end.y) ||
+        !std::isfinite(width) || width <= 0.0f) return;
     uint32_t texId = ensureTextureInList(texturePath);
     glm::vec2 lineStart(start.x, start.y);
     glm::vec2 lineEnd(end.x, end.y);
-    glm::vec2 lineDir = glm::normalize(lineEnd - lineStart);
     float lineLen = glm::length(lineEnd - lineStart);
+    // Reject zero-length lines: glm::normalize would produce NaN, then
+    // every subsequent dist would be NaN and the chunk-skip check would
+    // pass — painting full strength on every chunk in the tile.
+    if (lineLen < 1e-4f) return;
+    glm::vec2 lineDir = (lineEnd - lineStart) / lineLen;
 
     for (int ci = 0; ci < 256; ci++) {
         auto& chunk = terrain_->chunks[ci];
