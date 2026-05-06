@@ -414,6 +414,26 @@ target_link_libraries(test_open_formats PRIVATE catch2_main)
 add_test(NAME open_formats COMMAND test_open_formats)
 register_test_target(test_open_formats)
 
+# ── test_sql_escape ──────────────────────────────────────────
+add_executable(test_sql_escape
+    test_sql_escape.cpp
+    ${CMAKE_SOURCE_DIR}/tools/editor/sql_exporter.cpp
+    ${CMAKE_SOURCE_DIR}/tools/editor/npc_spawner.cpp
+    ${CMAKE_SOURCE_DIR}/tools/editor/quest_editor.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/logger.cpp
+)
+target_include_directories(test_sql_escape PRIVATE
+    ${TEST_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/tools/editor
+)
+target_include_directories(test_sql_escape SYSTEM PRIVATE
+    ${TEST_SYSTEM_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/extern/nlohmann
+)
+target_link_libraries(test_sql_escape PRIVATE catch2_main)
+add_test(NAME sql_escape COMMAND test_sql_escape)
+register_test_target(test_sql_escape)
+
 # ── ASAN / UBSan for test targets ────────────────────────────
 if(WOWEE_ENABLE_ASAN AND NOT MSVC)
     foreach(_t IN LISTS ALL_TEST_TARGETS)
