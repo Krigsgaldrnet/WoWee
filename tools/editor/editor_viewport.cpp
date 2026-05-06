@@ -650,6 +650,7 @@ void EditorViewport::render(VkCommandBuffer cmd) {
                         m2Renderer_->getInstanceCount(), " instances, ",
                         m2Renderer_->getDrawCallCount(), " draws");
         }
+        m2Renderer_->prepareRender(frame, *camera_);
         m2Renderer_->render(cmd, perFrameSet, *camera_);
     }
     if (wmoRenderer_)
