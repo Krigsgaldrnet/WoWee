@@ -346,10 +346,13 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                     }
                 }
                 if (!model.isValid()) {
-                    LOG_DEBUG("NPC model invalid: ", npc.modelPath,
+                    LOG_WARNING("NPC model invalid: ", npc.modelPath,
                              " (verts=", model.vertices.size(), " idx=", model.indices.size(), ")");
                     continue;
                 }
+                LOG_INFO("NPC M2 loaded: ", npc.modelPath, " (",
+                         model.vertices.size(), "v ", model.indices.size(), "i ",
+                         model.batches.size(), "b)");
                 if (model.boundRadius < 1.0f) model.boundRadius = 50.0f;
                 // Validate vertex data
                 bool ok = true;
