@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstring>
 #include <unordered_map>
+#include <map>
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include "stb_image_write.h"
@@ -415,6 +416,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
     std::printf("  --zone-stats <projectDir> [--json]\n");
     std::printf("                         Aggregate counts across every zone in <projectDir>\n");
+    std::printf("  --list-zone-deps <zoneDir> [--json]\n");
+    std::printf("                         List external M2/WMO model paths a zone references (objects + WOB doodads)\n");
     std::printf("  --for-each-zone <projectDir> -- <cmd...>\n");
     std::printf("                         Run <cmd...> for every zone in <projectDir>; '{}' in cmd is replaced with the zone path\n");
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
@@ -578,7 +581,7 @@ int main(int argc, char* argv[]) {
         "--validate-whm", "--validate-all", "--zone-summary",
         "--export-zone-summary-md",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
-        "--for-each-zone", "--zone-stats",
+        "--for-each-zone", "--zone-stats", "--list-zone-deps",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
@@ -5967,6 +5970,108 @@ int main(int argc, char* argv[]) {
                             r.tiles, r.creatures, r.objects, r.quests,
                             r.bytes / kKB);
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-zone-deps") == 0 && i + 1 < argc) {
+            // Enumerate every external model path a zone references —
+            // both directly placed (objects.json) and indirectly via
+            // doodad placements inside any WOB sitting next to the
+            // zone manifest. Useful when packaging a content pack to
+            // confirm every needed asset will ship.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "list-zone-deps: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            // Collect with usage counts so duplicates report '×N' instead
+            // of cluttering the table.
+            std::map<std::string, int> directM2;   // m2 placements
+            std::map<std::string, int> directWMO;  // wmo placements
+            std::map<std::string, int> doodadM2;   // m2s referenced inside WOBs
+            wowee::editor::ObjectPlacer op;
+            if (op.loadFromFile(zoneDir + "/objects.json")) {
+                for (const auto& o : op.getObjects()) {
+                    if (o.type == wowee::editor::PlaceableType::M2) directM2[o.path]++;
+                    else if (o.type == wowee::editor::PlaceableType::WMO) directWMO[o.path]++;
+                }
+            }
+            // Walk WOBs in the zone directory recursively and pull in
+            // their doodad model paths. Sub-dirs caught too in case the
+            // user organizes buildings under a buildings/ subfolder.
+            int wobCount = 0;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                if (ext != ".wob") continue;
+                wobCount++;
+                std::string base = e.path().string();
+                if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+                for (const auto& d : bld.doodads) {
+                    if (d.modelPath.empty()) continue;
+                    doodadM2[d.modelPath]++;
+                }
+            }
+            // For each direct WMO placement, also recurse into the WOB
+            // sitting at that path (relative to the zone) so transitive
+            // doodad deps surface — this matches the runtime's actual
+            // load chain.
+            for (const auto& [path, count] : directWMO) {
+                // Strip extension since loader takes a base path.
+                std::string base = path;
+                if (base.size() >= 4 && base.substr(base.size() - 4) == ".wmo")
+                    base = base.substr(0, base.size() - 4);
+                // Try relative-to-zone first, then absolute.
+                std::string trial = zoneDir + "/" + base;
+                if (!wowee::pipeline::WoweeBuildingLoader::exists(trial)) trial = base;
+                if (!wowee::pipeline::WoweeBuildingLoader::exists(trial)) continue;
+                auto bld = wowee::pipeline::WoweeBuildingLoader::load(trial);
+                for (const auto& d : bld.doodads) {
+                    if (d.modelPath.empty()) continue;
+                    doodadM2[d.modelPath]++;
+                }
+            }
+            size_t totalUnique = directM2.size() + directWMO.size() + doodadM2.size();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["wobCount"] = wobCount;
+                j["totalUnique"] = totalUnique;
+                auto toArr = [](const std::map<std::string, int>& m) {
+                    nlohmann::json a = nlohmann::json::array();
+                    for (const auto& [path, count] : m) {
+                        a.push_back({{"path", path}, {"count", count}});
+                    }
+                    return a;
+                };
+                j["directM2"] = toArr(directM2);
+                j["directWMO"] = toArr(directWMO);
+                j["doodadM2"] = toArr(doodadM2);
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone deps: %s\n", zoneDir.c_str());
+            std::printf("  WOBs scanned        : %d\n", wobCount);
+            std::printf("  unique paths total  : %zu\n", totalUnique);
+            auto emit = [](const char* tag, const std::map<std::string, int>& m) {
+                std::printf("\n  %s (%zu unique):\n", tag, m.size());
+                if (m.empty()) {
+                    std::printf("    *none*\n");
+                    return;
+                }
+                for (const auto& [path, count] : m) {
+                    if (count > 1) std::printf("    %s ×%d\n", path.c_str(), count);
+                    else            std::printf("    %s\n",     path.c_str());
+                }
+            };
+            emit("Direct M2 placements",  directM2);
+            emit("Direct WMO placements", directWMO);
+            emit("WOB doodad M2 refs",    doodadM2);
             return 0;
         } else if (std::strcmp(argv[i], "--for-each-zone") == 0 && i + 1 < argc) {
             // Batch runner: enumerates zones in <projectDir> and runs the
