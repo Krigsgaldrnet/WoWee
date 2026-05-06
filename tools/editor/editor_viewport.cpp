@@ -436,7 +436,13 @@ void EditorViewport::setPathPreview(const glm::vec3& start, const glm::vec3& end
     struct BV { float pos[3]; float color[4]; };
     std::vector<BV> verts;
 
-    glm::vec2 dir = glm::normalize(glm::vec2(end.x - start.x, end.y - start.y));
+    glm::vec2 delta(end.x - start.x, end.y - start.y);
+    float dlen = glm::length(delta);
+    // start == end would produce NaN dir/perp from glm::normalize and then
+    // NaN positions in the path ribbon — Vulkan would either drop the draw
+    // or crash on validation. Hide the preview instead.
+    if (dlen < 1e-4f) { pathVisible_ = false; return; }
+    glm::vec2 dir = delta / dlen;
     glm::vec2 perp(-dir.y, dir.x);
     float z0 = start.z + 2.0f;
     float z1 = end.z + 2.0f;
