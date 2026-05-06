@@ -95,10 +95,14 @@ int TextureExporter::exportTexturesAsPng(pipeline::AssetManager* am,
     namespace fs = std::filesystem;
     int exported = 0;
 
+    int notFound = 0;
     for (const auto& texPath : texturePaths) {
         auto blpImage = am->loadTexture(texPath);
         if (!blpImage.isValid()) {
-            LOG_WARNING("Texture not found or invalid: ", texPath);
+            // Many character/dynamic textures legitimately don't exist as files
+            // (composed at runtime from CharSections.dbc); don't spam.
+            ++notFound;
+            if (notFound <= 5) LOG_WARNING("Texture not found or invalid: ", texPath);
             continue;
         }
 
@@ -125,7 +129,8 @@ int TextureExporter::exportTexturesAsPng(pipeline::AssetManager* am,
         }
     }
 
-    LOG_INFO("Exported ", exported, "/", texturePaths.size(), " textures as PNG to ", outputDir);
+    LOG_INFO("Exported ", exported, "/", texturePaths.size(), " textures as PNG to ", outputDir,
+             notFound > 5 ? " (" + std::to_string(notFound - 5) + " more not-found warnings suppressed)" : "");
     return exported;
 }
 
