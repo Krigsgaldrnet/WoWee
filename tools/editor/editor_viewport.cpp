@@ -658,8 +658,10 @@ void EditorViewport::render(VkCommandBuffer cmd) {
         m2Renderer_->prepareRender(frame, *camera_);
         m2Renderer_->render(cmd, perFrameSet, *camera_);
     }
-    if (wmoRenderer_)
+    if (wmoRenderer_) {
+        wmoRenderer_->prepareRender();
         wmoRenderer_->render(cmd, perFrameSet, *camera_);
+    }
 
     waterRenderer_.render(cmd, perFrameSet);
 
