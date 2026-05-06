@@ -608,6 +608,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Compare two glTF 2.0 binaries structurally; exit 0 if identical\n");
     std::printf("  --diff-wom <a-base> <b-base> [--json]\n");
     std::printf("                         Compare two WOM models (verts, indices, bones, anims, batches, bounds)\n");
+    std::printf("  --diff-wob <a-base> <b-base> [--json]\n");
+    std::printf("                         Compare two WOB buildings (groups, portals, doodads, totals)\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
@@ -689,6 +691,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--diff-wom") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--diff-wom requires <a-base> <b-base>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--diff-wob") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--diff-wob requires <a-base> <b-base>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 >= argc) {
@@ -3167,6 +3174,107 @@ int main(int argc, char* argv[]) {
                         nameMatch ? "" : "DIFF");
             std::printf("  %-12s: %s\n", "bounds",
                         boundsMatch ? "match" : "DIFF");
+            if (diffs == 0) {
+                std::printf("  IDENTICAL\n");
+                return 0;
+            }
+            return 1;
+        } else if (std::strcmp(argv[i], "--diff-wob") == 0 && i + 2 < argc) {
+            // Companion to --diff-wom for buildings. Same shape: count-
+            // based compare so round-trips through OBJ/glTF can be
+            // validated without false positives from float perturbation.
+            std::string aBase = argv[++i];
+            std::string bBase = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            for (auto* base : {&aBase, &bBase}) {
+                if (base->size() >= 4 &&
+                    base->substr(base->size() - 4) == ".wob") {
+                    *base = base->substr(0, base->size() - 4);
+                }
+            }
+            for (const auto& base : {aBase, bBase}) {
+                if (!wowee::pipeline::WoweeBuildingLoader::exists(base)) {
+                    std::fprintf(stderr,
+                        "diff-wob: WOB not found: %s.wob\n", base.c_str());
+                    return 1;
+                }
+            }
+            auto a = wowee::pipeline::WoweeBuildingLoader::load(aBase);
+            auto b = wowee::pipeline::WoweeBuildingLoader::load(bBase);
+            // Aggregate vertex+index counts across all groups for the
+            // headline 'totalVerts/totalTris' metric (matches what
+            // --info-wob reports).
+            auto sumGroupVerts = [](const auto& bld) {
+                size_t s = 0;
+                for (const auto& g : bld.groups) s += g.vertices.size();
+                return s;
+            };
+            auto sumGroupIdx = [](const auto& bld) {
+                size_t s = 0;
+                for (const auto& g : bld.groups) s += g.indices.size();
+                return s;
+            };
+            struct Row {
+                const char* label;
+                long long av, bv;
+            };
+            // WoweeBuilding doesn't have a top-level textures vector or
+            // doodadSets — materials and textures are per-group, doodad
+            // sets are flattened. Aggregate the per-group counts.
+            long long aMats = 0, bMats = 0;
+            long long aGroupTex = 0, bGroupTex = 0;
+            for (const auto& g : a.groups) {
+                aMats += static_cast<long long>(g.materials.size());
+                aGroupTex += static_cast<long long>(g.texturePaths.size());
+            }
+            for (const auto& g : b.groups) {
+                bMats += static_cast<long long>(g.materials.size());
+                bGroupTex += static_cast<long long>(g.texturePaths.size());
+            }
+            std::vector<Row> rows = {
+                {"groups",      (long long)a.groups.size(),   (long long)b.groups.size()},
+                {"portals",     (long long)a.portals.size(),  (long long)b.portals.size()},
+                {"doodads",     (long long)a.doodads.size(),  (long long)b.doodads.size()},
+                {"materials",   aMats, bMats},
+                {"groupTex",    aGroupTex, bGroupTex},
+                {"totalVerts",  (long long)sumGroupVerts(a),  (long long)sumGroupVerts(b)},
+                {"totalIdx",    (long long)sumGroupIdx(a),    (long long)sumGroupIdx(b)},
+            };
+            int diffs = 0;
+            for (const auto& r : rows) if (r.av != r.bv) diffs++;
+            bool nameMatch = (a.name == b.name);
+            if (!nameMatch) diffs++;
+            bool radMatch = (std::abs(a.boundRadius - b.boundRadius) < 0.01f);
+            if (!radMatch) diffs++;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["a"] = aBase + ".wob";
+                j["b"] = bBase + ".wob";
+                for (const auto& r : rows) {
+                    j[r.label] = {{"a", r.av}, {"b", r.bv}};
+                }
+                j["name"] = {{"a", a.name}, {"b", b.name}};
+                j["boundRadiusMatch"] = radMatch;
+                j["totalDiffs"] = diffs;
+                j["identical"] = (diffs == 0);
+                std::printf("%s\n", j.dump(2).c_str());
+                return diffs == 0 ? 0 : 1;
+            }
+            std::printf("Diff: %s.wob vs %s.wob\n", aBase.c_str(), bBase.c_str());
+            std::printf("                       a              b\n");
+            for (const auto& r : rows) {
+                std::printf("  %-12s: %12lld %12lld  %s\n",
+                            r.label, r.av, r.bv,
+                            r.av == r.bv ? "" : "DIFF");
+            }
+            std::printf("  %-12s: %-13s %-13s  %s\n",
+                        "name", a.name.substr(0, 13).c_str(),
+                        b.name.substr(0, 13).c_str(),
+                        nameMatch ? "" : "DIFF");
+            std::printf("  %-12s: %s\n", "boundRadius",
+                        radMatch ? "match" : "DIFF");
             if (diffs == 0) {
                 std::printf("  IDENTICAL\n");
                 return 0;
