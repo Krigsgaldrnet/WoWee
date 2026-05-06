@@ -108,11 +108,21 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
     in.read(reinterpret_cast<char*>(&fileCount), 4);
     in.read(reinterpret_cast<char*>(&infoSize), 4);
 
-    // Skip info JSON
-    in.seekg(infoSize, std::ios::cur);
+    // Read the info JSON to extract the zone name. packZone stored files
+    // relative to the zone subdirectory (e.g. "MyZone_32_32.adt"), so we
+    // need to recreate that subdirectory under destDir for the loader to
+    // find the zone.
+    std::string infoJson(infoSize, '\0');
+    in.read(infoJson.data(), infoSize);
+    std::string zoneName;
+    try {
+        auto info = nlohmann::json::parse(infoJson);
+        zoneName = info.value("name", "");
+    } catch (...) {}
 
     namespace fs = std::filesystem;
-    fs::create_directories(destDir);
+    std::string zoneDir = zoneName.empty() ? destDir : destDir + "/" + zoneName;
+    fs::create_directories(zoneDir);
 
     for (uint32_t i = 0; i < fileCount; i++) {
         uint16_t pathLen;
@@ -126,13 +136,13 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
         std::vector<char> data(dataSize);
         in.read(data.data(), dataSize);
 
-        std::string fullPath = destDir + "/" + path;
+        std::string fullPath = zoneDir + "/" + path;
         fs::create_directories(fs::path(fullPath).parent_path());
         std::ofstream fout(fullPath, std::ios::binary);
         fout.write(data.data(), dataSize);
     }
 
-    LOG_INFO("Content pack extracted to: ", destDir, " (", fileCount, " files)");
+    LOG_INFO("Content pack extracted to: ", zoneDir, " (", fileCount, " files)");
     return true;
 }
 
