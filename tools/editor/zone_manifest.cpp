@@ -85,6 +85,12 @@ bool ZoneManifest::load(const std::string& path) {
         displayName = j.value("displayName", mapName);
         biome = j.value("biome", "");
         description = j.value("description", "");
+        // Cap to AzerothCore map_dbc/area_table_dbc string limits — keeps
+        // the SQL export valid and the README readable.
+        if (mapName.size() > 100) mapName.resize(100);
+        if (displayName.size() > 100) displayName.resize(100);
+        if (biome.size() > 64) biome.resize(64);
+        if (description.size() > 4096) description.resize(4096);
         mapId = j.value("mapId", 9000u);
         baseHeight = j.value("baseHeight", 100.0f);
         // Sanitize edited values — baseHeight propagates into terrain mesh
