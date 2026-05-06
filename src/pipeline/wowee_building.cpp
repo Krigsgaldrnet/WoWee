@@ -5,6 +5,7 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <cmath>
 #include <unordered_map>
 
 namespace wowee {
@@ -105,6 +106,10 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         f.read(reinterpret_cast<char*>(&dp.position), 12);
         f.read(reinterpret_cast<char*>(&dp.rotation), 12);
         f.read(reinterpret_cast<char*>(&dp.scale), 4);
+        // Guard against corrupted scale (older WoBs that hadn't initialized
+        // the field, or NaNs from a partial write). The renderer would
+        // collapse the doodad to a point with scale 0.
+        if (!std::isfinite(dp.scale) || dp.scale <= 0.0001f) dp.scale = 1.0f;
         bld.doodads.push_back(dp);
     }
 
