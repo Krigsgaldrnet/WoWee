@@ -441,6 +441,11 @@ bool DBCFile::loadJSON(const std::vector<uint8_t>& jsonData) {
 
         for (uint32_t i = 0; i < recordCount; i++) {
             const auto& row = records[i];
+            // Skip non-array rows (object, string, etc.) — row[col] throws
+            // on a non-array, which the outer try-catch would treat as a
+            // hard load failure for the whole file. Empty record stays
+            // zero-initialized from the resize() above.
+            if (!row.is_array()) continue;
             uint32_t* fields = reinterpret_cast<uint32_t*>(
                 recordData.data() + static_cast<size_t>(i) * recordSize);
 
