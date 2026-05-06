@@ -4,6 +4,7 @@
 #include <fstream>
 #include <filesystem>
 #include <unordered_set>
+#include <unordered_map>
 
 namespace wowee {
 namespace editor {
@@ -156,7 +157,11 @@ bool QuestEditor::loadFromFile(const std::string& path) {
 bool QuestEditor::validateChains(std::vector<std::string>& errors) const {
     errors.clear();
     std::unordered_set<uint32_t> validIds;
-    for (const auto& q : quests_) validIds.insert(q.id);
+    std::unordered_map<uint32_t, uint32_t> nextById; // id -> nextId
+    for (const auto& q : quests_) {
+        validIds.insert(q.id);
+        nextById[q.id] = q.nextQuestId;
+    }
 
     for (const auto& q : quests_) {
         if (q.nextQuestId != 0 && validIds.find(q.nextQuestId) == validIds.end()) {
@@ -164,7 +169,16 @@ bool QuestEditor::validateChains(std::vector<std::string>& errors) const {
                            "\" chains to non-existent quest " + std::to_string(q.nextQuestId));
         }
 
-        // Circular chain detection
+        // Quest with no questgiver and no turn-in is unreachable in-game.
+        // Common authoring mistake — flag it so the player isn't stuck
+        // wondering why a quest never appears.
+        if (q.questGiverNpcId == 0 && q.turnInNpcId == 0) {
+            errors.push_back("Quest [" + std::to_string(q.id) + "] \"" + q.title +
+                           "\" has no questgiver or turn-in NPC (unreachable)");
+        }
+
+        // Circular chain detection. Use the precomputed map so the inner
+        // lookup is O(1) instead of O(n) — was O(n²) per starting quest.
         if (q.nextQuestId != 0) {
             std::unordered_set<uint32_t> visited;
             uint32_t current = q.id;
@@ -174,11 +188,8 @@ bool QuestEditor::validateChains(std::vector<std::string>& errors) const {
                                    std::to_string(q.id) + "] \"" + q.title + "\"");
                     break;
                 }
-                uint32_t next = 0;
-                for (const auto& other : quests_) {
-                    if (other.id == current) { next = other.nextQuestId; break; }
-                }
-                current = next;
+                auto it = nextById.find(current);
+                current = (it != nextById.end()) ? it->second : 0;
             }
         }
     }
