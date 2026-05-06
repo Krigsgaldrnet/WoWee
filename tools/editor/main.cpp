@@ -421,6 +421,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Upgrade an older WOM (v1/v2) to WOM3 with a default single-batch entry\n");
     std::printf("  --migrate-zone <zoneDir>\n");
     std::printf("                         Run --migrate-wom in-place on every WOM under <zoneDir>\n");
+    std::printf("  --migrate-jsondbc <path> [out.json]\n");
+    std::printf("                         Auto-fix a JSON DBC sidecar: add missing format/source, sync recordCount\n");
     std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
     std::printf("  --zone-stats <projectDir> [--json]\n");
     std::printf("                         Aggregate counts across every zone in <projectDir>\n");
@@ -667,7 +669,7 @@ int main(int argc, char* argv[]) {
         "--bake-zone-glb", "--bake-zone-stl", "--bake-zone-obj",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
-        "--migrate-wom", "--migrate-zone",
+        "--migrate-wom", "--migrate-zone", "--migrate-jsondbc",
     };
     for (int i = 1; i < argc; i++) {
         for (const char* opt : kArgRequired) {
@@ -9543,6 +9545,117 @@ int main(int argc, char* argv[]) {
                 std::printf("  FAILED    : %d (see stderr)\n", failed);
             }
             return failed == 0 ? 0 : 1;
+        }
+        if (std::strcmp(argv[i], "--migrate-jsondbc") == 0 && i + 1 < argc) {
+            // Auto-fix common schema problems in JSON DBC sidecars so they
+            // pass --validate-jsondbc cleanly. Designed for upgrading
+            // sidecars produced by older asset_extract versions or from
+            // third-party tools that omit fields the runtime now expects:
+            //   - missing 'format' tag → add 'wowee-dbc-json-1.0'
+            //   - missing 'source' field → derive from filename
+            //   - missing 'fieldCount' → infer from first row
+            //   - recordCount mismatch → recompute from actual records[]
+            // Wrong-width rows are not silently fixed (data loss risk);
+            // they're surfaced as warnings so the user can decide.
+            std::string path = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            if (outPath.empty()) outPath = path;  // in-place
+            std::ifstream in(path);
+            if (!in) {
+                std::fprintf(stderr,
+                    "migrate-jsondbc: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try { in >> doc; }
+            catch (const std::exception& e) {
+                std::fprintf(stderr,
+                    "migrate-jsondbc: bad JSON in %s (%s)\n",
+                    path.c_str(), e.what());
+                return 1;
+            }
+            in.close();
+            if (!doc.is_object()) {
+                std::fprintf(stderr,
+                    "migrate-jsondbc: top-level value is not an object\n");
+                return 1;
+            }
+            int fixes = 0;
+            if (!doc.contains("format") || !doc["format"].is_string()) {
+                doc["format"] = "wowee-dbc-json-1.0";
+                fixes++;
+                std::printf("  added: format = 'wowee-dbc-json-1.0'\n");
+            } else if (doc["format"] != "wowee-dbc-json-1.0") {
+                std::printf("  retained existing format: '%s' (not changed)\n",
+                            doc["format"].get<std::string>().c_str());
+            }
+            if (!doc.contains("source") || !doc["source"].is_string() ||
+                doc["source"].get<std::string>().empty()) {
+                // Derive from input path's stem + .dbc — best-effort
+                // matching the convention asset_extract uses.
+                std::string stem = std::filesystem::path(path).stem().string();
+                doc["source"] = stem + ".dbc";
+                fixes++;
+                std::printf("  added: source = '%s'\n",
+                            doc["source"].get<std::string>().c_str());
+            }
+            // recordCount + fieldCount are non-negotiable for re-import.
+            if (!doc.contains("records") || !doc["records"].is_array()) {
+                std::fprintf(stderr,
+                    "migrate-jsondbc: 'records' missing or not an array — cannot fix\n");
+                return 1;
+            }
+            const auto& records = doc["records"];
+            uint32_t actualCount = static_cast<uint32_t>(records.size());
+            uint32_t headerCount = doc.value("recordCount", 0u);
+            if (headerCount != actualCount) {
+                doc["recordCount"] = actualCount;
+                fixes++;
+                std::printf("  fixed: recordCount %u -> %u (matches actual)\n",
+                            headerCount, actualCount);
+            }
+            // Infer fieldCount from first row if missing.
+            if (!doc.contains("fieldCount") ||
+                !doc["fieldCount"].is_number_integer()) {
+                if (!records.empty() && records[0].is_array()) {
+                    uint32_t inferred = static_cast<uint32_t>(records[0].size());
+                    doc["fieldCount"] = inferred;
+                    fixes++;
+                    std::printf("  inferred: fieldCount = %u (from first row)\n",
+                                inferred);
+                }
+            }
+            // Surface wrong-width rows as warnings (no auto-fix).
+            uint32_t fc = doc.value("fieldCount", 0u);
+            int badRows = 0;
+            for (size_t r = 0; r < records.size(); ++r) {
+                if (records[r].is_array() && records[r].size() != fc) {
+                    if (++badRows <= 3) {
+                        std::printf("  WARN: row %zu has %zu cells, expected %u\n",
+                                    r, records[r].size(), fc);
+                    }
+                }
+            }
+            if (badRows > 3) {
+                std::printf("  WARN: ... and %d more wrong-width rows\n",
+                            badRows - 3);
+            }
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "migrate-jsondbc: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            out << doc.dump(2) << "\n";
+            out.close();
+            std::printf("Migrated %s -> %s\n", path.c_str(), outPath.c_str());
+            std::printf("  fixes applied: %d\n", fixes);
+            if (badRows > 0) {
+                std::printf("  warnings     : %d wrong-width rows (NOT auto-fixed)\n",
+                            badRows);
+            }
+            return 0;
         }
     }
 
