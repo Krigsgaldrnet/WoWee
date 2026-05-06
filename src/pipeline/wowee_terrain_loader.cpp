@@ -58,9 +58,17 @@ bool WoweeTerrainLoader::loadHeightmap(const std::string& whmPath, ADTTerrain& t
             if (!std::isfinite(h)) h = 0.0f;
         }
 
-        // Read alpha map data (may not be present in older WHM files)
+        // Read alpha map data (may not be present in older WHM files).
+        // Reject overlong alphaSize to keep the per-chunk block alignment —
+        // skipping a 100MB alpha block would leave the next chunk's
+        // baseHeight read parsing alpha bytes as floats.
         uint32_t alphaSize = 0;
-        if (f.read(reinterpret_cast<char*>(&alphaSize), 4) && alphaSize > 0 && alphaSize <= 65536) {
+        if (f.read(reinterpret_cast<char*>(&alphaSize), 4) && alphaSize > 0) {
+            if (alphaSize > 65536) {
+                LOG_ERROR("WHM chunk ", ci, " alphaSize rejected (",
+                          alphaSize, "): ", whmPath);
+                return false;
+            }
             chunk.alphaMap.resize(alphaSize);
             f.read(reinterpret_cast<char*>(chunk.alphaMap.data()), alphaSize);
         }
