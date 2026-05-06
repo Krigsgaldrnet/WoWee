@@ -432,6 +432,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Remove the objective at given 0-based index from a quest\n");
     std::printf("  --clone-quest <zoneDir> <questIdx> [newTitle]\n");
     std::printf("                         Duplicate a quest (with all objectives + rewards) and append it\n");
+    std::printf("  --clone-creature <zoneDir> <idx> [newName] [dx dy dz]\n");
+    std::printf("                         Duplicate a creature spawn (defaults: '<orig> (copy)' offset by 5 yards)\n");
     std::printf("  --add-quest-reward-item <zoneDir> <questIdx> <itemPath> [more...]\n");
     std::printf("                         Append item reward(s) to a quest's reward.itemRewards list\n");
     std::printf("  --set-quest-reward <zoneDir> <questIdx> [--xp N] [--gold N] [--silver N] [--copper N]\n");
@@ -554,7 +556,7 @@ int main(int argc, char* argv[]) {
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
-        "--remove-quest-objective", "--clone-quest",
+        "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--remove-creature", "--remove-object", "--remove-quest",
         "--copy-zone", "--rename-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
@@ -612,6 +614,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--clone-quest") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--clone-quest requires <zoneDir> <questIdx>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--clone-creature") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--clone-creature requires <zoneDir> <idx>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--add-quest-reward-item") == 0 && i + 3 >= argc) {
@@ -3834,6 +3841,75 @@ int main(int argc, char* argv[]) {
                         clone.objectives.size(),
                         clone.reward.itemRewards.size(),
                         clone.reward.xp);
+            return 0;
+        } else if (std::strcmp(argv[i], "--clone-creature") == 0 && i + 2 < argc) {
+            // Duplicate a creature spawn. Common workflow: design one
+            // 'patrol guard' archetype, then clone it across spawn points
+            // around a town. Preserves stats, faction, behavior, equipment;
+            // resets id and offsets position by 5 yards by default so the
+            // copy doesn't z-fight with the original.
+            std::string zoneDir = argv[++i];
+            std::string idxStr = argv[++i];
+            std::string newName;
+            float dx = 5.0f, dy = 0.0f, dz = 0.0f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                newName = argv[++i];
+            }
+            // Optional 3-axis offset after newName.
+            if (i + 3 < argc && argv[i + 1][0] != '-') {
+                try {
+                    dx = std::stof(argv[++i]);
+                    dy = std::stof(argv[++i]);
+                    dz = std::stof(argv[++i]);
+                } catch (...) {
+                    std::fprintf(stderr, "clone-creature: bad offset coordinate\n");
+                    return 1;
+                }
+            }
+            std::string path = zoneDir + "/creatures.json";
+            if (!std::filesystem::exists(path)) {
+                std::fprintf(stderr, "clone-creature: %s not found\n", path.c_str());
+                return 1;
+            }
+            int idx;
+            try { idx = std::stoi(idxStr); }
+            catch (...) {
+                std::fprintf(stderr, "clone-creature: bad idx '%s'\n", idxStr.c_str());
+                return 1;
+            }
+            wowee::editor::NpcSpawner sp;
+            if (!sp.loadFromFile(path)) {
+                std::fprintf(stderr, "clone-creature: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            if (idx < 0 || idx >= static_cast<int>(sp.spawnCount())) {
+                std::fprintf(stderr,
+                    "clone-creature: idx %d out of range [0, %zu)\n",
+                    idx, sp.spawnCount());
+                return 1;
+            }
+            // Deep-copy by value; CreatureSpawn is POD-ish (vectors for
+            // patrol points copy automatically).
+            wowee::editor::CreatureSpawn clone = sp.getSpawns()[idx];
+            clone.id = 0;  // addCreature auto-assigns a fresh id
+            clone.name = newName.empty()
+                ? (clone.name + " (copy)")
+                : newName;
+            clone.position.x += dx;
+            clone.position.y += dy;
+            clone.position.z += dz;
+            // Patrol path is intentionally NOT offset — patrol points are
+            // typically authored as world-space waypoints, not relative to
+            // the spawn. Designers re-author the path if needed.
+            sp.getSpawns().push_back(clone);
+            if (!sp.saveToFile(path)) {
+                std::fprintf(stderr, "clone-creature: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            std::printf("Cloned creature %d -> '%s' at (%.1f, %.1f, %.1f) (now %zu total)\n",
+                        idx, clone.name.c_str(),
+                        clone.position.x, clone.position.y, clone.position.z,
+                        sp.spawnCount());
             return 0;
         } else if (std::strcmp(argv[i], "--add-quest-reward-item") == 0 && i + 3 < argc) {
             // Append one or more item rewards to a quest. Multiple paths
