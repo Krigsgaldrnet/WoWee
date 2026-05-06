@@ -41,6 +41,13 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 - Material: texturePath + flags(4) + shader(4) + blendMode(4)
 - Doodad: modelPath + position(12) + rotation(12) + scale(4)
 - Portal: groupA(4) + groupB(4) + vertexCount(4) + vertices
+- toWMOModel restoration:
+  - Materials are deduplicated across all groups by (texture, blend, flags)
+  - Texture paths .png → .blp (renderer's PNG override is keyed on .blp)
+  - Outdoor flag → WMO group flag bit 0x08
+  - Portal vertices reconstruct MOPR refs for groupA / groupB
+  - Doodad euler degrees → glm::quat using glm::eulerAngles convention
+  - Default `Set_$DefaultGlobal` doodadSet emitted when doodads present
 
 ## WCP — Wowee Content Pack (archive)
 - Extension: `.wcp`
