@@ -190,16 +190,34 @@ WoweeCollision WoweeCollisionBuilder::load(const std::string& path) {
     f.read(reinterpret_cast<char*>(&col.bounds.min), 12);
     f.read(reinterpret_cast<char*>(&col.bounds.max), 12);
 
-    col.triangles.resize(triCount);
+    col.triangles.reserve(triCount);
+    auto fixVec = [](glm::vec3& v) {
+        if (!std::isfinite(v.x)) v.x = 0.0f;
+        if (!std::isfinite(v.y)) v.y = 0.0f;
+        if (!std::isfinite(v.z)) v.z = 0.0f;
+    };
     for (uint32_t i = 0; i < triCount; i++) {
-        auto& tri = col.triangles[i];
+        WoweeCollision::Triangle tri;
         f.read(reinterpret_cast<char*>(&tri.v0), 12);
         f.read(reinterpret_cast<char*>(&tri.v1), 12);
         f.read(reinterpret_cast<char*>(&tri.v2), 12);
         f.read(reinterpret_cast<char*>(&tri.flags), 1);
+        // Skip degenerate / non-finite triangles. They'd produce NaNs in
+        // ray-triangle intersection (used for movement collision), making
+        // the player phase through walls or fall through the floor.
+        fixVec(tri.v0); fixVec(tri.v1); fixVec(tri.v2);
+        glm::vec3 e1 = tri.v1 - tri.v0;
+        glm::vec3 e2 = tri.v2 - tri.v0;
+        if (glm::length(glm::cross(e1, e2)) < 1e-8f) continue;
+        col.triangles.push_back(tri);
     }
+    // Sanitize stored bounds too — they're used as a coarse cull box.
+    fixVec(col.bounds.min);
+    fixVec(col.bounds.max);
 
-    LOG_INFO("WOC loaded: ", path, " (", triCount, " triangles)");
+    LOG_INFO("WOC loaded: ", path, " (", col.triangles.size(), "/",
+             triCount, " triangles, ", triCount - col.triangles.size(),
+             " degenerate skipped)");
     return col;
 }
 
