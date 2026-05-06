@@ -301,11 +301,19 @@ bool ObjectPlacer::loadFromFile(const std::string& path) {
                 obj.position = glm::vec3(jo["pos"][0].get<float>(),
                                          jo["pos"][1].get<float>(),
                                          jo["pos"][2].get<float>());
+                if (!std::isfinite(obj.position.x) || !std::isfinite(obj.position.y) ||
+                    !std::isfinite(obj.position.z)) {
+                    obj.position = glm::vec3(0.0f);
+                }
             }
             if (jo.contains("rot") && jo["rot"].is_array() && jo["rot"].size() >= 3) {
                 obj.rotation = glm::vec3(jo["rot"][0].get<float>(),
                                          jo["rot"][1].get<float>(),
                                          jo["rot"][2].get<float>());
+                if (!std::isfinite(obj.rotation.x) || !std::isfinite(obj.rotation.y) ||
+                    !std::isfinite(obj.rotation.z)) {
+                    obj.rotation = glm::vec3(0.0f);
+                }
             }
 
             if (!obj.path.empty()) {

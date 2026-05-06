@@ -177,6 +177,12 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
                 s.position = glm::vec3(js["position"][0].get<float>(),
                                        js["position"][1].get<float>(),
                                        js["position"][2].get<float>());
+                // Reject NaN/inf positions — they crash the M2 renderer's
+                // matrix math and produce invisible / chaos-shaped instances.
+                if (!std::isfinite(s.position.x) || !std::isfinite(s.position.y) ||
+                    !std::isfinite(s.position.z)) {
+                    s.position = glm::vec3(0.0f);
+                }
             }
 
             if (js.contains("patrol") && js["patrol"].is_array()) {
