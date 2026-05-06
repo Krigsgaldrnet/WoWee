@@ -13,6 +13,7 @@
 #include "wowee_terrain.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include <filesystem>
+#include <random>
 #include "asset_browser.hpp"
 #include "transform_gizmo.hpp"
 #include "terrain_biomes.hpp"
@@ -1842,6 +1843,14 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
                 tmpl.name = nameBuf;
 
             ImGui::SliderFloat("Scale", &tmpl.scale, 0.5f, 10.0f, "%.1f");
+            ImGui::SliderFloat("Facing", &tmpl.orientation, 0.0f, 360.0f, "%.0f deg");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Random##face")) {
+                static std::mt19937 rng(7);
+                std::uniform_real_distribution<float> d(0.0f, 360.0f);
+                tmpl.orientation = d(rng);
+            }
+            ImGui::TextDisabled("Tip: Ctrl+Wheel rotates while placing (Shift = fine)");
 
             // Quick NPC linking for quests
             if (app.getQuestEditor().questCount() > 0) {

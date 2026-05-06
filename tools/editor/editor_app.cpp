@@ -535,8 +535,28 @@ void EditorApp::processEvents() {
             }
         }
 
-        if (event.type == SDL_MOUSEWHEEL && !io.WantCaptureMouse)
-            camera_.processMouseWheel(event.wheel.y, (SDL_GetModState() & KMOD_SHIFT) != 0);
+        if (event.type == SDL_MOUSEWHEEL && !io.WantCaptureMouse) {
+            // Ctrl+wheel rotates the placement preview instead of zooming the camera.
+            // Step 15 deg, Shift makes it 5 deg for finer control.
+            bool ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+            bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+            if (ctrl && (mode_ == EditorMode::PlaceObject || mode_ == EditorMode::NPC)) {
+                float step = shift ? 5.0f : 15.0f;
+                if (mode_ == EditorMode::PlaceObject) {
+                    float r = objectPlacer_.getPlacementRotationY() + step * event.wheel.y;
+                    while (r >= 360.0f) r -= 360.0f;
+                    while (r < 0.0f) r += 360.0f;
+                    objectPlacer_.setPlacementRotationY(r);
+                } else {
+                    float r = npcSpawner_.getTemplate().orientation + step * event.wheel.y;
+                    while (r >= 360.0f) r -= 360.0f;
+                    while (r < 0.0f) r += 360.0f;
+                    npcSpawner_.getTemplate().orientation = r;
+                }
+            } else {
+                camera_.processMouseWheel(event.wheel.y, shift);
+            }
+        }
     }
 }
 
@@ -567,7 +587,8 @@ void EditorApp::updateTerrainEditing(float dt) {
             } else if (mode_ == EditorMode::NPC && !npcSpawner_.getTemplate().modelPath.empty()) {
                 viewport_.setGhostPreview(
                     npcSpawner_.getTemplate().modelPath, hitPos,
-                    glm::vec3(0, 0, 0), npcSpawner_.getTemplate().scale);
+                    glm::vec3(0, 0, npcSpawner_.getTemplate().orientation),
+                    npcSpawner_.getTemplate().scale);
             } else if (mode_ != EditorMode::PlaceObject && mode_ != EditorMode::NPC) {
                 viewport_.clearGhostPreview();
             }
