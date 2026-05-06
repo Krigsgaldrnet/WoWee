@@ -1,4 +1,5 @@
 #include "extractor.hpp"
+#include "open_format_emitter.hpp"
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -30,6 +31,9 @@ static void printUsage(const char* prog) {
               << "  --emit-wob          Emit foo.wob next to every extracted foo.wmo (+groups)\n"
               << "  --emit-terrain      Emit foo.whm + foo.wot + foo.woc next to every foo.adt\n"
               << "  --emit-open         Shortcut: enable every open-format emitter (png+json+wom+wob+terrain)\n"
+              << "  --upgrade-extract <dir>\n"
+              << "                      Standalone post-extract pass on an existing tree —\n"
+              << "                      writes open-format sidecars without re-running MPQ extract\n"
               << "  --verify            CRC32 verify all extracted files\n"
               << "  --threads <N>       Number of extraction threads (default: auto)\n"
               << "  --verbose           Verbose output\n"
@@ -40,6 +44,11 @@ int main(int argc, char** argv) {
     wowee::tools::Extractor::Options opts;
     std::string expansion;
     std::string locale;
+    // Standalone open-format emit mode: skip MPQ enumeration entirely
+    // and just walk an existing extracted tree, writing sidecars in
+    // place. Useful for upgrading an old extraction without re-running
+    // it from MPQ. Triggered by --upgrade-extract <dir>.
+    std::string upgradeDir;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--mpq-dir") == 0 && i + 1 < argc) {
@@ -85,6 +94,14 @@ int main(int argc, char** argv) {
             opts.verify = true;
         } else if (std::strcmp(argv[i], "--verbose") == 0) {
             opts.verbose = true;
+        } else if (std::strcmp(argv[i], "--upgrade-extract") == 0 && i + 1 < argc) {
+            upgradeDir = argv[++i];
+            // Implies --emit-open if no individual emit flag was set.
+            if (!opts.emitPng && !opts.emitJsonDbc && !opts.emitWom &&
+                !opts.emitWob && !opts.emitTerrain) {
+                opts.emitPng = opts.emitJsonDbc = opts.emitWom =
+                    opts.emitWob = opts.emitTerrain = true;
+            }
         } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
             printUsage(argv[0]);
             return 0;
@@ -93,6 +110,32 @@ int main(int argc, char** argv) {
             printUsage(argv[0]);
             return 1;
         }
+    }
+
+    // --upgrade-extract: standalone post-extract pass on an existing tree.
+    if (!upgradeDir.empty()) {
+        if (!std::filesystem::exists(upgradeDir)) {
+            std::cerr << "upgrade-extract: " << upgradeDir << " does not exist\n";
+            return 1;
+        }
+        std::cout << "Walking " << upgradeDir
+                  << " for open-format upgrades...\n";
+        wowee::tools::OpenFormatStats stats;
+        wowee::tools::emitOpenFormats(upgradeDir,
+                                       opts.emitPng, opts.emitJsonDbc,
+                                       opts.emitWom, opts.emitWob,
+                                       opts.emitTerrain, stats);
+        std::cout << "  PNG (BLP→PNG)     : " << stats.pngOk     << " ok"
+                  << (stats.pngFail     ? ", " + std::to_string(stats.pngFail)     + " failed" : "") << "\n";
+        std::cout << "  JSON (DBC→JSON)   : " << stats.jsonDbcOk << " ok"
+                  << (stats.jsonDbcFail ? ", " + std::to_string(stats.jsonDbcFail) + " failed" : "") << "\n";
+        std::cout << "  WOM (M2→WOM)      : " << stats.womOk     << " ok"
+                  << (stats.womFail     ? ", " + std::to_string(stats.womFail)     + " failed" : "") << "\n";
+        std::cout << "  WOB (WMO→WOB)     : " << stats.wobOk     << " ok"
+                  << (stats.wobFail     ? ", " + std::to_string(stats.wobFail)     + " failed" : "") << "\n";
+        std::cout << "  WHM/WOT/WOC (ADT) : " << stats.whmOk     << " ok"
+                  << (stats.whmFail     ? ", " + std::to_string(stats.whmFail)     + " failed" : "") << "\n";
+        return 0;
     }
 
     if (opts.mpqDir.empty() || opts.outputDir.empty()) {
