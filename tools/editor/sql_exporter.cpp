@@ -277,9 +277,14 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
             } catch (...) { /* leave as 0 */ }
         }
 
+        // Resolve quest-chain link to the matching SQL quest entry.
+        // q.nextQuestId is editor-relative; the SQL row id is startEntry + id.
+        uint32_t nextQuestSqlId = q.nextQuestId != 0
+            ? startEntry + q.nextQuestId : 0;
+
         f << "INSERT INTO `quest_template` "
           << "(`ID`, `LogTitle`, `LogDescription`, `QuestCompletionLog`, "
-          << "`MinLevel`, `RewardXP`, `RewardMoney`, "
+          << "`MinLevel`, `RewardXP`, `RewardMoney`, `NextQuestInChain`, "
           << "`RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, "
           << "`RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, "
           << "`RequiredNpcOrGo3`, `RequiredNpcOrGoCount3`, "
@@ -299,7 +304,7 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
           << "'" << escapeSql(q.description) << "', "
           << "'" << escapeSql(q.completionText) << "', "
           << q.requiredLevel << ", "
-          << q.reward.xp << ", " << rewardMoney;
+          << q.reward.xp << ", " << rewardMoney << ", " << nextQuestSqlId;
         for (int k = 0; k < 4; k++) f << ", " << reqNpcOrGo[k] << ", " << reqNpcOrGoCount[k];
         for (int k = 0; k < 6; k++) f << ", " << reqItemId[k] << ", " << reqItemCount[k];
         for (int k = 0; k < 4; k++) f << ", " << rewardItemId[k] << ", " << rewardItemCount[k];
