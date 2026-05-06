@@ -642,6 +642,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         One-shot validate + creature/object/quest counts and exit\n");
     std::printf("  --info-zone-tree <zoneDir>\n");
     std::printf("                         Render a hierarchical tree view of a zone's contents (no --json)\n");
+    std::printf("  --info-project-tree <projectDir>\n");
+    std::printf("                         Tree view of every zone in a project with quick counts (no --json)\n");
     std::printf("  --info-zone-bytes <zoneDir> [--json]\n");
     std::printf("                         Per-file size breakdown grouped by category, sorted largest-first\n");
     std::printf("  --info-zone-extents <zoneDir> [--json]\n");
@@ -792,8 +794,8 @@ int main(int argc, char* argv[]) {
         "--info-glb-tree",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
-        "--zone-summary", "--info-zone-tree", "--info-zone-bytes",
-        "--info-zone-extents",
+        "--zone-summary", "--info-zone-tree", "--info-project-tree",
+        "--info-zone-bytes", "--info-zone-extents",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
         "--export-project-md", "--export-zone-checksum",
@@ -4425,6 +4427,88 @@ int main(int argc, char* argv[]) {
             for (size_t k = 0; k < diskFiles.size(); ++k) {
                 bool last = (k == diskFiles.size() - 1);
                 std::printf("   %s%s\n", branch(last), diskFiles[k].c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-tree") == 0 && i + 1 < argc) {
+            // Project-level tree view: every zone with quick counts +
+            // bake/viewer status. --info-zone-tree drills into one zone;
+            // this gives the bird's-eye view across the whole project.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-tree: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            struct ZE {
+                std::string name, dir, mapName;
+                int tiles = 0, creatures = 0, objects = 0, quests = 0;
+                bool hasGlb = false, hasObj = false, hasStl = false;
+                bool hasHtml = false, hasZoneMd = false;
+            };
+            std::vector<ZE> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load((entry.path() / "zone.json").string())) continue;
+                ZE z;
+                z.name = zm.displayName.empty() ? zm.mapName : zm.displayName;
+                z.dir = entry.path().filename().string();
+                z.mapName = zm.mapName;
+                z.tiles = static_cast<int>(zm.tiles.size());
+                wowee::editor::NpcSpawner sp;
+                if (sp.loadFromFile((entry.path() / "creatures.json").string())) {
+                    z.creatures = static_cast<int>(sp.spawnCount());
+                }
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile((entry.path() / "objects.json").string())) {
+                    z.objects = static_cast<int>(op.getObjects().size());
+                }
+                wowee::editor::QuestEditor qe;
+                if (qe.loadFromFile((entry.path() / "quests.json").string())) {
+                    z.quests = static_cast<int>(qe.questCount());
+                }
+                z.hasGlb  = fs::exists(entry.path() / (zm.mapName + ".glb"));
+                z.hasObj  = fs::exists(entry.path() / (zm.mapName + ".obj"));
+                z.hasStl  = fs::exists(entry.path() / (zm.mapName + ".stl"));
+                z.hasHtml = fs::exists(entry.path() / (zm.mapName + ".html"));
+                z.hasZoneMd = fs::exists(entry.path() / "ZONE.md");
+                zones.push_back(std::move(z));
+            }
+            std::sort(zones.begin(), zones.end(),
+                      [](const ZE& a, const ZE& b) { return a.name < b.name; });
+            int totalTiles = 0, totalCreat = 0, totalObj = 0, totalQuest = 0;
+            for (const auto& z : zones) {
+                totalTiles += z.tiles; totalCreat += z.creatures;
+                totalObj += z.objects; totalQuest += z.quests;
+            }
+            std::printf("%s/  (%zu zones, %d tiles, %d creatures, %d objects, %d quests)\n",
+                        projectDir.c_str(), zones.size(),
+                        totalTiles, totalCreat, totalObj, totalQuest);
+            for (size_t k = 0; k < zones.size(); ++k) {
+                bool lastZ = (k == zones.size() - 1);
+                const auto& z = zones[k];
+                const char* zBranch = lastZ ? "└─ " : "├─ ";
+                const char* zCont   = lastZ ? "   " : "│  ";
+                std::printf("%s%s/  (tiles=%d, creat=%d, obj=%d, quest=%d)\n",
+                            zBranch, z.dir.c_str(),
+                            z.tiles, z.creatures, z.objects, z.quests);
+                // Artifact status row — quick visual of what's been baked.
+                std::printf("%s├─ name      : %s\n", zCont, z.name.c_str());
+                std::printf("%s├─ mapName   : %s\n", zCont, z.mapName.c_str());
+                std::printf("%s├─ artifacts : %s%s%s%s%s%s\n", zCont,
+                            z.hasGlb  ? ".glb "  : "",
+                            z.hasObj  ? ".obj "  : "",
+                            z.hasStl  ? ".stl "  : "",
+                            z.hasHtml ? ".html " : "",
+                            z.hasZoneMd ? "ZONE.md " : "",
+                            (!z.hasGlb && !z.hasObj && !z.hasStl &&
+                             !z.hasHtml && !z.hasZoneMd) ? "(none)" : "");
+                std::printf("%s└─ status    : %s\n", zCont,
+                            (z.creatures || z.objects || z.quests) ?
+                                "populated" : "empty (only terrain)");
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-zone-bytes") == 0 && i + 1 < argc) {
