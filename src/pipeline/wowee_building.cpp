@@ -272,6 +272,37 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
         }
     }
 
+    // Restore doodads. WMODoodad keys nameIndex by MODN byte offset; we just
+    // assign sequential offsets here since none of our paths share suffixes.
+    outModel.doodads.clear();
+    outModel.doodadNames.clear();
+    uint32_t doodadOffset = 0;
+    for (const auto& dp : building.doodads) {
+        // Convert WOM extension back to M2 for the runtime that may not have a
+        // WOM-aware loader for in-WMO doodads yet.
+        std::string mp = dp.modelPath;
+        auto dot = mp.rfind('.');
+        if (dot != std::string::npos) {
+            std::string ext = mp.substr(dot + 1);
+            if (ext == "wom") mp = mp.substr(0, dot) + ".m2";
+        }
+        outModel.doodadNames[doodadOffset] = mp;
+
+        WMODoodad d{};
+        d.nameIndex = doodadOffset;
+        d.position = dp.position;
+        // Convert euler degrees -> quaternion (XYZ order)
+        glm::vec3 r = glm::radians(dp.rotation);
+        glm::quat qx = glm::angleAxis(r.x, glm::vec3(1, 0, 0));
+        glm::quat qy = glm::angleAxis(r.y, glm::vec3(0, 1, 0));
+        glm::quat qz = glm::angleAxis(r.z, glm::vec3(0, 0, 1));
+        d.rotation = qx * qy * qz;
+        d.scale = dp.scale;
+        d.color = glm::vec4(1.0f);
+        outModel.doodads.push_back(d);
+        doodadOffset += static_cast<uint32_t>(mp.size() + 1);
+    }
+
     return true;
 }
 
