@@ -39,8 +39,9 @@ struct CreatureSpawn {
     uint32_t armor = 0;
     uint32_t faction = 0; // 0 = neutral
 
-    // Display
-    float scale = 3.0f;
+    // Display — 1.0 matches AzerothCore's default creature scale.
+    // Templates can be scaled higher per-NPC if needed.
+    float scale = 1.0f;
 
     // Behavior
     CreatureBehavior behavior = CreatureBehavior::Stationary;
