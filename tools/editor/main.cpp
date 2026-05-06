@@ -72,8 +72,9 @@ int main(int argc, char* argv[]) {
                     auto dot = outPath.rfind('.');
                     if (dot != std::string::npos) outPath = outPath.substr(0, dot);
                     wowee::pipeline::WoweeModelLoader::save(wom, "output/models/" + outPath);
-                    std::printf("OK: output/models/%s.wom (%zu verts, %zu bones)\n",
-                        outPath.c_str(), wom.vertices.size(), wom.bones.size());
+                    std::printf("OK: output/models/%s.wom (v%u, %zu verts, %zu bones, %zu batches)\n",
+                        outPath.c_str(), wom.version, wom.vertices.size(),
+                        wom.bones.size(), wom.batches.size());
                 } else {
                     std::fprintf(stderr, "FAILED: %s\n", m2Path.c_str());
                     am.shutdown();
