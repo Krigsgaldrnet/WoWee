@@ -190,7 +190,17 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
                     if (pt.is_array() && pt.size() >= 4) {
                         PatrolPoint pp;
                         pp.position = glm::vec3(pt[0].get<float>(), pt[1].get<float>(), pt[2].get<float>());
+                        // Skip waypoints with NaN/inf — would produce a path
+                        // that warps the creature to garbage coords.
+                        if (!std::isfinite(pp.position.x) || !std::isfinite(pp.position.y) ||
+                            !std::isfinite(pp.position.z))
+                            continue;
                         pp.waitTimeMs = pt[3].get<uint32_t>();
+                        // Cap wait time at 10 minutes to keep AzerothCore
+                        // happy and prevent obvious data-entry typos that
+                        // would produce a creature that effectively never
+                        // moves (e.g. 24h = 86400000).
+                        if (pp.waitTimeMs > 600000) pp.waitTimeMs = 600000;
                         s.patrolPath.push_back(pp);
                     }
                 }
