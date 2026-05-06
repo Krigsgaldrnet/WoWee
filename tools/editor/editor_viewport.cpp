@@ -583,6 +583,10 @@ void EditorViewport::updateNpcMarkers(const std::vector<CreatureSpawn>& npcs) {
     struct MV { float pos[3]; float color[4]; };
     std::vector<MV> verts;
     for (const auto& npc : npcs) {
+        // Skip NPCs with non-finite position — would produce NaN vertices
+        // in the marker mesh (Vulkan validation drops the whole batch).
+        if (!std::isfinite(npc.position.x) || !std::isfinite(npc.position.y) ||
+            !std::isfinite(npc.position.z)) continue;
         // Selected NPC: larger marker in cyan-yellow so it pops out among
         // hostile/friendly markers without losing the hostile colour signal.
         float s = npc.selected ? 2.5f : 1.5f;
