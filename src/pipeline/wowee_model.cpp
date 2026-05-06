@@ -390,7 +390,10 @@ WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am)
         if (anim.durationMs > 0) model.animations.push_back(anim);
     }
 
-    model.version = model.hasAnimation() ? 2 : 1;
+    // Version reflects highest feature in use: WOM3 if multi-batch, WOM2 if
+    // animated, WOM1 if just static geometry. The save() function picks magic
+    // off this same hierarchy.
+    model.version = model.hasBatches() ? 3 : (model.hasAnimation() ? 2 : 1);
     return model;
 }
 
