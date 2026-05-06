@@ -137,8 +137,26 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
         zoneName = info.value("name", "");
     } catch (...) {}
 
+    // The zone name becomes a directory name. A malicious WCP could carry a
+    // name with traversal sequences ("../etc") or an absolute path
+    // ("/etc/passwd") that would write outside destDir. Strip to a safe
+    // identifier — same alphabet as the server module slug.
+    std::string safeZoneName;
+    for (char c : zoneName) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '_' || c == '-') {
+            safeZoneName += c;
+        } else if (c == ' ') {
+            safeZoneName += '_';
+        }
+    }
+    if (safeZoneName != zoneName && !zoneName.empty()) {
+        LOG_WARNING("WCP zone name sanitized: '", zoneName, "' -> '",
+                    safeZoneName, "'");
+    }
+
     namespace fs = std::filesystem;
-    std::string zoneDir = zoneName.empty() ? destDir : destDir + "/" + zoneName;
+    std::string zoneDir = safeZoneName.empty() ? destDir : destDir + "/" + safeZoneName;
     fs::create_directories(zoneDir);
 
     for (uint32_t i = 0; i < fileCount; i++) {
