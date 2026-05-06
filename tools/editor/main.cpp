@@ -34,6 +34,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
     std::printf("  --export-png <wot-base> Render heightmap, normal-map, and zone-map PNG previews\n");
     std::printf("  --validate <zoneDir>   Score zone open-format completeness and exit\n");
+    std::printf("  --zone-summary <zoneDir>  One-shot validate + creature/object/quest counts and exit\n");
     std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
@@ -62,7 +63,8 @@ int main(int argc, char* argv[]) {
         "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-wcp", "--list-wcp", "--unpack-wcp", "--pack-wcp",
-        "--validate", "--scaffold-zone", "--build-woc", "--export-png",
+        "--validate", "--zone-summary",
+        "--scaffold-zone", "--build-woc", "--export-png",
         "--convert-m2", "--convert-wmo",
     };
     for (int i = 1; i < argc; i++) {
@@ -393,6 +395,64 @@ int main(int argc, char* argv[]) {
             std::printf("  bounds.max  : (%.1f, %.1f, %.1f)\n",
                         col.bounds.max.x, col.bounds.max.y, col.bounds.max.z);
             return 0;
+        } else if (std::strcmp(argv[i], "--zone-summary") == 0 && i + 1 < argc) {
+            // One-shot zone overview: validate + creature/object/quest counts.
+            // Collapses the most common multi-step inspection into a single
+            // command; useful for CI reports and quick sanity checks.
+            std::string zoneDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr, "zone-summary: %s does not exist\n", zoneDir.c_str());
+                return 1;
+            }
+            auto v = wowee::editor::ContentPacker::validateZone(zoneDir);
+            std::printf("Zone: %s\n", zoneDir.c_str());
+            std::printf("  open formats : %d/7  (%s)\n",
+                        v.openFormatScore(), v.summary().c_str());
+            std::printf("  WOT/WHM      : %d/%d   WOM: %d   WOB: %d   WOC: %d   PNG: %d\n",
+                        v.wotCount, v.whmCount, v.womCount, v.wobCount,
+                        v.wocCount, v.pngCount);
+            // Creature stats
+            std::string creaturesPath = zoneDir + "/creatures.json";
+            if (fs::exists(creaturesPath)) {
+                wowee::editor::NpcSpawner sp;
+                if (sp.loadFromFile(creaturesPath)) {
+                    int hostile = 0, qg = 0, vendor = 0;
+                    for (const auto& s : sp.getSpawns()) {
+                        if (s.hostile) hostile++;
+                        if (s.questgiver) qg++;
+                        if (s.vendor) vendor++;
+                    }
+                    std::printf("  creatures    : %zu  (%d hostile, %d quest, %d vendor)\n",
+                                sp.getSpawns().size(), hostile, qg, vendor);
+                }
+            }
+            // Object stats
+            std::string objectsPath = zoneDir + "/objects.json";
+            if (fs::exists(objectsPath)) {
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(objectsPath)) {
+                    int m2 = 0, wmo = 0;
+                    for (const auto& o : op.getObjects()) {
+                        if (o.type == wowee::editor::PlaceableType::M2) m2++;
+                        else wmo++;
+                    }
+                    std::printf("  objects      : %zu  (%d M2, %d WMO)\n",
+                                op.getObjects().size(), m2, wmo);
+                }
+            }
+            // Quest stats
+            std::string questsPath = zoneDir + "/quests.json";
+            if (fs::exists(questsPath)) {
+                wowee::editor::QuestEditor qe;
+                if (qe.loadFromFile(questsPath)) {
+                    std::vector<std::string> errors;
+                    qe.validateChains(errors);
+                    std::printf("  quests       : %zu  (%zu chain warnings)\n",
+                                qe.getQuests().size(), errors.size());
+                }
+            }
+            return v.openFormatScore() == 7 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
             std::string zoneDir = argv[++i];
             auto v = wowee::editor::ContentPacker::validateZone(zoneDir);
