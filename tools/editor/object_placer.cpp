@@ -49,11 +49,25 @@ void ObjectPlacer::placeObject(const glm::vec3& position) {
 
 int ObjectPlacer::selectAt(const rendering::Ray& ray, float maxDist) {
     clearSelection();
+    // Reject NaN ray — without this every disc < 0 short-circuit returns
+    // false and we'd 'hit' every object with garbage t values.
+    if (!std::isfinite(ray.origin.x) || !std::isfinite(ray.origin.y) ||
+        !std::isfinite(ray.origin.z) || !std::isfinite(ray.direction.x) ||
+        !std::isfinite(ray.direction.y) || !std::isfinite(ray.direction.z) ||
+        !std::isfinite(maxDist)) {
+        return -1;
+    }
 
     float bestDist = maxDist;
     int bestIdx = -1;
 
     for (int i = 0; i < static_cast<int>(objects_.size()); i++) {
+        // Skip objects with NaN position/scale — would feed NaN into the
+        // sphere test (NaN comparisons short-circuit to false → "hit").
+        if (!std::isfinite(objects_[i].position.x) ||
+            !std::isfinite(objects_[i].position.y) ||
+            !std::isfinite(objects_[i].position.z) ||
+            !std::isfinite(objects_[i].scale)) continue;
         // Simple sphere test (radius based on scale)
         float radius = 5.0f * objects_[i].scale;
         glm::vec3 oc = ray.origin - objects_[i].position;
