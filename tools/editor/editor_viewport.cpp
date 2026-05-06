@@ -5,6 +5,7 @@
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "pipeline/wowee_model.hpp"
+#include "pipeline/wowee_building.hpp"
 #include "core/logger.hpp"
 #include <cstring>
 #include <cmath>
@@ -205,30 +206,53 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
             if (it != wmoModelIds.end()) {
                 modelId = it->second;
             } else {
-                auto data = assetManager_->readFile(obj.path);
-                if (data.empty()) {
-                    LOG_WARNING("WMO file not found in manifest: ", obj.path);
-                    continue;
-                }
-                auto model = pipeline::WMOLoader::load(data);
+                pipeline::WMOModel model;
+                bool loaded = false;
 
-                // Load WMO group files (_000.wmo, _001.wmo, etc.)
-                std::string basePath = obj.path;
-                auto dotPos = basePath.rfind('.');
-                if (dotPos != std::string::npos) basePath = basePath.substr(0, dotPos);
-                for (uint32_t gi = 0; gi < model.nGroups; gi++) {
-                    char groupSuffix[16];
-                    std::snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.wmo", gi);
-                    std::string groupPath = basePath + groupSuffix;
-                    auto groupData = assetManager_->readFile(groupPath);
-                    if (!groupData.empty()) {
-                        pipeline::WMOLoader::loadGroup(groupData, model, gi);
+                // Try WOB open format first (replaces proprietary WMO when available)
+                {
+                    std::string wobBase = obj.path;
+                    auto wobDot = wobBase.rfind('.');
+                    if (wobDot != std::string::npos) wobBase = wobBase.substr(0, wobDot);
+                    std::replace(wobBase.begin(), wobBase.end(), '\\', '/');
+                    for (const char* prefix : {"custom_zones/buildings/", "output/buildings/"}) {
+                        if (pipeline::WoweeBuildingLoader::exists(std::string(prefix) + wobBase)) {
+                            auto wob = pipeline::WoweeBuildingLoader::load(std::string(prefix) + wobBase);
+                            if (wob.isValid() &&
+                                pipeline::WoweeBuildingLoader::toWMOModel(wob, model)) {
+                                loaded = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!loaded) {
+                    auto data = assetManager_->readFile(obj.path);
+                    if (data.empty()) {
+                        LOG_WARNING("WMO file not found in manifest: ", obj.path);
+                        continue;
+                    }
+                    model = pipeline::WMOLoader::load(data);
+
+                    // Load WMO group files (_000.wmo, _001.wmo, etc.)
+                    std::string basePath = obj.path;
+                    auto dotPos = basePath.rfind('.');
+                    if (dotPos != std::string::npos) basePath = basePath.substr(0, dotPos);
+                    for (uint32_t gi = 0; gi < model.nGroups; gi++) {
+                        char groupSuffix[16];
+                        std::snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.wmo", gi);
+                        std::string groupPath = basePath + groupSuffix;
+                        auto groupData = assetManager_->readFile(groupPath);
+                        if (!groupData.empty()) {
+                            pipeline::WMOLoader::loadGroup(groupData, model, gi);
+                        }
                     }
                 }
 
                 if (!model.isValid()) {
-                    LOG_WARNING("WMO failed to parse (", data.size(), " bytes, ",
-                                model.nGroups, " groups expected): ", obj.path);
+                    LOG_WARNING("WMO failed to parse (groups expected: ",
+                                model.nGroups, "): ", obj.path);
                     continue;
                 }
 
