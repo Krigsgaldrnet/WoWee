@@ -642,6 +642,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Compare two WOC collision meshes (triangles, walkable/steep counts, tile)\n");
     std::printf("  --diff-jsondbc <a> <b> [--json]\n");
     std::printf("                         Compare two JSON DBC sidecars (format/source/recordCount/fieldCount)\n");
+    std::printf("  --diff-extract <a> <b> [--json]\n");
+    std::printf("                         Compare two extracted asset directories (per-extension file count + bytes)\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
@@ -748,6 +750,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--diff-jsondbc") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--diff-jsondbc requires <a.json> <b.json>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--diff-extract") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--diff-extract requires <dirA> <dirB>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 >= argc) {
@@ -3644,6 +3651,105 @@ int main(int argc, char* argv[]) {
                 std::printf("  IDENTICAL\n");
                 return 0;
             }
+            return 1;
+        } else if (std::strcmp(argv[i], "--diff-extract") == 0 && i + 2 < argc) {
+            // Compare two extracted asset directories. Useful for diffing
+            // a fresh asset_extract run against a previous baseline (did
+            // the new MPQ add files? did any get dropped?), or comparing
+            // what each WoW expansion contributes.
+            std::string aDir = argv[++i];
+            std::string bDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            for (const auto& d : {aDir, bDir}) {
+                if (!fs::exists(d) || !fs::is_directory(d)) {
+                    std::fprintf(stderr,
+                        "diff-extract: %s is not a directory\n", d.c_str());
+                    return 1;
+                }
+            }
+            // Tally per-extension counts + bytes for each side.
+            struct Stats { int count = 0; uint64_t bytes = 0; };
+            auto walk = [](const std::string& dir) {
+                std::map<std::string, Stats> m;
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(dir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    std::transform(ext.begin(), ext.end(), ext.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+                    if (ext.empty()) ext = "(no-ext)";
+                    auto& s = m[ext];
+                    s.count++;
+                    s.bytes += e.file_size(ec);
+                }
+                return m;
+            };
+            auto a = walk(aDir);
+            auto b = walk(bDir);
+            // Union of all extensions.
+            std::set<std::string> allExts;
+            for (const auto& [e, _] : a) allExts.insert(e);
+            for (const auto& [e, _] : b) allExts.insert(e);
+            int diffs = 0;
+            for (const auto& e : allExts) {
+                int aC = a.count(e) ? a[e].count : 0;
+                int bC = b.count(e) ? b[e].count : 0;
+                if (aC != bC) diffs++;
+            }
+            int aTotalFiles = 0, bTotalFiles = 0;
+            uint64_t aTotalBytes = 0, bTotalBytes = 0;
+            for (const auto& [_, s] : a) { aTotalFiles += s.count; aTotalBytes += s.bytes; }
+            for (const auto& [_, s] : b) { bTotalFiles += s.count; bTotalBytes += s.bytes; }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["a"] = aDir; j["b"] = bDir;
+                j["totalFiles"] = {{"a", aTotalFiles}, {"b", bTotalFiles}};
+                j["totalBytes"] = {{"a", aTotalBytes}, {"b", bTotalBytes}};
+                nlohmann::json byExt = nlohmann::json::array();
+                for (const auto& e : allExts) {
+                    int aC = a.count(e) ? a[e].count : 0;
+                    int bC = b.count(e) ? b[e].count : 0;
+                    uint64_t aB = a.count(e) ? a[e].bytes : 0;
+                    uint64_t bB = b.count(e) ? b[e].bytes : 0;
+                    byExt.push_back({{"ext", e},
+                                      {"a", {{"count", aC}, {"bytes", aB}}},
+                                      {"b", {{"count", bC}, {"bytes", bB}}}});
+                }
+                j["byExtension"] = byExt;
+                j["totalDiffs"] = diffs;
+                j["identical"] = (diffs == 0);
+                std::printf("%s\n", j.dump(2).c_str());
+                return diffs == 0 ? 0 : 1;
+            }
+            std::printf("Diff: %s vs %s\n", aDir.c_str(), bDir.c_str());
+            std::printf("  totals: %d files / %.1f MB    vs    %d files / %.1f MB\n",
+                        aTotalFiles, aTotalBytes / (1024.0 * 1024.0),
+                        bTotalFiles, bTotalBytes / (1024.0 * 1024.0));
+            std::printf("\n  Per-extension (count then bytes):\n");
+            std::printf("  %-12s   a count   b count    a bytes      b bytes  status\n", "ext");
+            for (const auto& e : allExts) {
+                int aC = a.count(e) ? a[e].count : 0;
+                int bC = b.count(e) ? b[e].count : 0;
+                uint64_t aB = a.count(e) ? a[e].bytes : 0;
+                uint64_t bB = b.count(e) ? b[e].bytes : 0;
+                const char* status = (aC == bC) ? ""
+                                  : (aC == 0)   ? "+B"
+                                  : (bC == 0)   ? "-A"
+                                  : "DIFF";
+                std::printf("  %-12s %9d %9d  %10llu %12llu  %s\n",
+                            e.c_str(), aC, bC,
+                            static_cast<unsigned long long>(aB),
+                            static_cast<unsigned long long>(bB),
+                            status);
+            }
+            if (diffs == 0) {
+                std::printf("\n  IDENTICAL (per-extension counts match)\n");
+                return 0;
+            }
+            std::printf("\n  %d extension(s) differ\n", diffs);
             return 1;
         } else if (std::strcmp(argv[i], "--list-wcp") == 0 && i + 1 < argc) {
             // Like --info-wcp but prints every file path. Useful for spotting
