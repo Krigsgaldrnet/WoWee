@@ -566,16 +566,18 @@ void EditorViewport::render(VkCommandBuffer cmd) {
 
     gizmo_.render(cmd, perFrameSet);
 
-    // NPC markers rendered last with no depth test (always on top via gizmo pipeline)
+    // NPC markers — always render with water pipeline (pos+color, alpha blend)
     if (npcMarkerVB_ && npcMarkerVertCount_ > 0) {
-        // Gizmo pipeline has depthTestEnable=VK_FALSE — markers always visible
-        auto& gizmoPL = gizmo_;
-        // Re-bind gizmo pipeline (same vertex format, no depth test)
-        // gizmo_.render already set it up, just draw our buffer
-        VkDeviceSize off = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &npcMarkerVB_, &off);
-        vkCmdDraw(cmd, npcMarkerVertCount_, 1, 0, 0);
-        (void)gizmoPL;
+        auto* waterPipeline = waterRenderer_.getPipeline();
+        auto* waterLayout = waterRenderer_.getPipelineLayout();
+        if (waterPipeline && waterLayout) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterPipeline);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout,
+                                    0, 1, &perFrameSet, 0, nullptr);
+            VkDeviceSize off = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &npcMarkerVB_, &off);
+            vkCmdDraw(cmd, npcMarkerVertCount_, 1, 0, 0);
+        }
     }
 }
 
