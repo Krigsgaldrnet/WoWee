@@ -1010,7 +1010,13 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 pending.push_back({entry.index, instanceFadeAlpha, needsBones, targetLOD});
             }
 
-            if (pending.empty()) { visStart = groupEnd; continue; }
+            if (pending.empty()) {
+                if (forceNoCull_) {
+                    LOG_WARNING("M2 render: model '", model.name, "' all ",
+                                (groupEnd - visStart), " instances filtered out (bones?)");
+                }
+                visStart = groupEnd; continue;
+            }
 
             // Sort by targetLOD so each sub-group occupies a contiguous SSBO range
             std::sort(pending.begin(), pending.end(),
