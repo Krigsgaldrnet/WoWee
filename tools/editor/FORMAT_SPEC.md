@@ -112,5 +112,19 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 - Quest givers/turn-in NPCs: written as `creature_queststarter` /
   `creature_questender` rows linking npc.id ↔ quest.id.
 
+## Format Quick Reference
+
+| Format    | Replaces | Magic              | Extension     | Purpose                             |
+|-----------|----------|--------------------|---------------|-------------------------------------|
+| WOT       | (part of ADT) | `wot-1.0` JSON  | `.wot`        | Terrain metadata + placements       |
+| WHM       | ADT MCNK heights/alpha | `WHM1` (0x314D4857) | `.whm` | Heightmap + alpha layers       |
+| WOM1/2/3  | M2/skin  | `WOM1/2/3` (0x31/32/33 4D4F57) | `.wom` | Static / animated / multi-batch model |
+| WOB       | WMO + group files | `WOB1` (0x31424F57) | `.wob` | Building (groups + portals + doodads) |
+| WOC       | (none, novel) | `WOC1` (0x31434F57) | `.woc` | Walkability collision mesh        |
+| WCP       | MPQ archive | `WCP1` (0x31504357) | `.wcp` | Whole-zone bundle                |
+| zone.json | WDT      | `"format":"wowee-zone-1.0"` | `zone.json` | Map definition + audio/flags |
+| JSON DBC  | DBC      | `"format":"wowee-dbc-json-1.0"` | `*.json` | Data tables                  |
+| PNG       | BLP      | PNG signature      | `.png`        | Textures (loaded via override sys)  |
+
 ## All formats are novel, portable, and open for redistribution.
 ## No Blizzard intellectual property is used in any format definition.
