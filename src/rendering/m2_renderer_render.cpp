@@ -945,6 +945,12 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
             auto mdlIt = models.find(groupModelId);
             if (mdlIt == models.end() || !mdlIt->second.vertexBuffer || !mdlIt->second.indexBuffer) {
+                if (forceNoCull_ && mdlIt != models.end()) {
+                    LOG_WARNING("M2 skip model ", groupModelId, " '", mdlIt->second.name,
+                                "': vb=", (void*)mdlIt->second.vertexBuffer,
+                                " ib=", (void*)mdlIt->second.indexBuffer,
+                                " batches=", mdlIt->second.batches.size());
+                }
                 visStart = groupEnd;
                 continue;
             }
