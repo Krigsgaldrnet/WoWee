@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <ctime>
 #include <chrono>
+#include <unordered_map>
 
 namespace wowee {
 namespace editor {
@@ -157,7 +158,23 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
 
 bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
                                 const std::string& path,
-                                uint32_t startEntry) {
+                                uint32_t startEntry,
+                                const std::vector<CreatureSpawn>* spawns,
+                                uint32_t creatureStartEntry) {
+    // Build a spawn.id -> SQL creature entry map. Allows quest hooks defined
+    // by the editor's UI (which uses spawn.id) to point at the matching
+    // creature_template row (which uses creatureStartEntry + index).
+    std::unordered_map<uint32_t, uint32_t> spawnIdToEntry;
+    if (spawns) {
+        for (size_t i = 0; i < spawns->size(); i++) {
+            spawnIdToEntry[(*spawns)[i].id] = creatureStartEntry + static_cast<uint32_t>(i);
+        }
+    }
+    auto resolveCreatureEntry = [&](uint32_t spawnId) {
+        if (!spawns || spawns->empty()) return spawnId;
+        auto it = spawnIdToEntry.find(spawnId);
+        return it != spawnIdToEntry.end() ? it->second : spawnId;
+    };
     namespace fs = std::filesystem;
     fs::create_directories(fs::path(path).parent_path());
 
@@ -188,7 +205,9 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
             uint32_t id = 0;
             try { id = static_cast<uint32_t>(std::stoul(obj.targetName)); } catch (...) {}
             if (obj.type == QuestObjectiveType::KillCreature && npcSlot < 4) {
-                reqNpcOrGo[npcSlot] = id;
+                // Editor UI fills targetName with a spawn.id for Kill objectives;
+                // resolve to the matching SQL creature entry.
+                reqNpcOrGo[npcSlot] = resolveCreatureEntry(id);
                 reqNpcOrGoCount[npcSlot] = obj.targetCount;
                 npcSlot++;
             } else if (obj.type == QuestObjectiveType::CollectItem && itemSlot < 6) {
@@ -231,11 +250,11 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
         uint32_t entry = startEntry + q.id;
         if (q.questGiverNpcId > 0) {
             f << "INSERT IGNORE INTO `creature_queststarter` (`id`, `quest`) VALUES ("
-              << q.questGiverNpcId << ", " << entry << ");\n";
+              << resolveCreatureEntry(q.questGiverNpcId) << ", " << entry << ");\n";
         }
         if (q.turnInNpcId > 0) {
             f << "INSERT IGNORE INTO `creature_questender` (`id`, `quest`) VALUES ("
-              << q.turnInNpcId << ", " << entry << ");\n";
+              << resolveCreatureEntry(q.turnInNpcId) << ", " << entry << ");\n";
         }
     }
 
@@ -249,7 +268,7 @@ bool SQLExporter::exportAll(const std::vector<CreatureSpawn>& spawns,
                              uint32_t mapId,
                              uint32_t startEntry) {
     if (!exportCreatures(spawns, path, mapId, startEntry)) return false;
-    if (!quests.empty()) exportQuests(quests, path, startEntry);
+    if (!quests.empty()) exportQuests(quests, path, startEntry, &spawns, startEntry);
     return true;
 }
 
