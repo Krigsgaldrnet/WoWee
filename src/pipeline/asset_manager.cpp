@@ -304,10 +304,35 @@ std::shared_ptr<DBCFile> AssetManager::loadDBC(const std::string& name) {
 
     std::vector<uint8_t> dbcData;
 
-    // Try binary DBC from extracted MPQs first (preferred source)
+    // Try binary DBC from extracted MPQs first (preferred source).
+    std::string dbcPath = "DBFilesClient\\" + name;
     {
-        std::string dbcPath = "DBFilesClient\\" + name;
         dbcData = readFile(dbcPath);
+    }
+
+    // If asset_extract was run with --emit-json-dbc, the DBC's directory
+    // also contains a JSON sidecar. Use it when the binary is missing
+    // (lets users run with PNG/JSON-only extractions for testing the
+    // open-format end-to-end path). Server-mode never reads via this
+    // code path, so private-server compat is unaffected.
+    if (dbcData.empty()) {
+        std::string normalizedDbc = normalizePath(dbcPath);
+        std::string fsPath = resolveFile(normalizedDbc);
+        if (!fsPath.empty() && fsPath.size() >= 4) {
+            std::string sidecar = fsPath.substr(0, fsPath.size() - 4) + ".json";
+            if (std::filesystem::exists(sidecar)) {
+                std::ifstream jf(sidecar, std::ios::binary | std::ios::ate);
+                if (jf) {
+                    auto sz = jf.tellg();
+                    if (sz > 0) {
+                        dbcData.resize(static_cast<size_t>(sz));
+                        jf.seekg(0);
+                        jf.read(reinterpret_cast<char*>(dbcData.data()), sz);
+                        LOG_INFO("Loading JSON DBC sidecar: ", sidecar);
+                    }
+                }
+            }
+        }
     }
 
     // Try Data/db/ directory (pre-extracted binary DBCs shared across expansions)
