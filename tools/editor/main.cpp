@@ -43,6 +43,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-quests <p>      Print quests.json summary (counts, rewards, chain errors) and exit\n");
     std::printf("  --info-wcp <wcp-path>  Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
+    std::printf("  --diff-wcp <a> <b>     Compare two WCPs file-by-file; exit 0 if identical, 1 otherwise\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
@@ -73,6 +74,10 @@ int main(int argc, char* argv[]) {
         }
         if (std::strcmp(argv[i], "--adt") == 0 && i + 3 >= argc) {
             std::fprintf(stderr, "--adt requires <map> <x> <y>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr, "--diff-wcp requires two paths\n");
             return 1;
         }
     }
@@ -231,6 +236,49 @@ int main(int argc, char* argv[]) {
                         stationary, wander, patrol);
             std::printf("  unique displayIds: %zu\n", displayIdHist.size());
             return 0;
+        } else if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 < argc) {
+            // Print which files differ between two WCP archives. Useful
+            // when verifying that an authoring tweak only changed what
+            // it claimed to change, or when comparing pack-WCP output
+            // across editor versions for regression detection.
+            std::string aPath = argv[++i];
+            std::string bPath = argv[++i];
+            wowee::editor::ContentPackInfo aInfo, bInfo;
+            if (!wowee::editor::ContentPacker::readInfo(aPath, aInfo) ||
+                !wowee::editor::ContentPacker::readInfo(bPath, bInfo)) {
+                std::fprintf(stderr, "Failed to read WCP info\n");
+                return 1;
+            }
+            std::unordered_map<std::string, uint64_t> aFiles, bFiles;
+            for (const auto& f : aInfo.files) aFiles[f.path] = f.size;
+            for (const auto& f : bInfo.files) bFiles[f.path] = f.size;
+
+            int onlyA = 0, onlyB = 0, sizeChanged = 0, identical = 0;
+            std::vector<std::string> onlyAList, onlyBList, changedList;
+            for (const auto& [p, sz] : aFiles) {
+                auto it = bFiles.find(p);
+                if (it == bFiles.end()) { onlyA++; onlyAList.push_back(p); }
+                else if (it->second != sz) {
+                    sizeChanged++;
+                    changedList.push_back(p + " (" + std::to_string(sz) + " -> " +
+                                          std::to_string(it->second) + ")");
+                } else identical++;
+            }
+            for (const auto& [p, sz] : bFiles) {
+                if (aFiles.find(p) == aFiles.end()) { onlyB++; onlyBList.push_back(p); }
+            }
+            std::sort(onlyAList.begin(), onlyAList.end());
+            std::sort(onlyBList.begin(), onlyBList.end());
+            std::sort(changedList.begin(), changedList.end());
+            std::printf("Diff: %s vs %s\n", aPath.c_str(), bPath.c_str());
+            std::printf("  identical : %d\n", identical);
+            std::printf("  changed   : %d\n", sizeChanged);
+            std::printf("  only in A : %d\n", onlyA);
+            std::printf("  only in B : %d\n", onlyB);
+            for (const auto& s : changedList) std::printf("  ~  %s\n", s.c_str());
+            for (const auto& s : onlyAList)   std::printf("  -  %s\n", s.c_str());
+            for (const auto& s : onlyBList)   std::printf("  +  %s\n", s.c_str());
+            return (onlyA + onlyB + sizeChanged) == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--list-wcp") == 0 && i + 1 < argc) {
             // Like --info-wcp but prints every file path. Useful for spotting
             // missing or unexpected entries before unpacking.
