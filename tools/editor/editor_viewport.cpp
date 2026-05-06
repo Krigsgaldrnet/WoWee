@@ -520,11 +520,14 @@ void EditorViewport::updateNpcMarkers(const std::vector<CreatureSpawn>& npcs) {
     struct MV { float pos[3]; float color[4]; };
     std::vector<MV> verts;
     for (const auto& npc : npcs) {
-        float s = 1.5f;  // base radius (was 5)
+        // Selected NPC: larger marker in cyan-yellow so it pops out among
+        // hostile/friendly markers without losing the hostile colour signal.
+        float s = npc.selected ? 2.5f : 1.5f;
         float x = npc.position.x, y = npc.position.y, z = npc.position.z;
-        float r = npc.hostile ? 1.0f : 0.1f;
-        float g = npc.hostile ? 0.15f : 0.9f;
-        float b = 0.1f, a = 0.7f;
+        float r = npc.selected ? 1.0f : (npc.hostile ? 1.0f : 0.1f);
+        float g = npc.selected ? 1.0f : (npc.hostile ? 0.15f : 0.9f);
+        float b = npc.selected ? 0.2f : 0.1f;
+        float a = npc.selected ? 1.0f : 0.7f;
 
         MV v; v.color[0]=r; v.color[1]=g; v.color[2]=b; v.color[3]=a;
         // Small octagonal base

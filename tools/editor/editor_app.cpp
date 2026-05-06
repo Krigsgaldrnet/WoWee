@@ -122,12 +122,15 @@ void EditorApp::run() {
         size_t objCount = objectPlacer_.objectCount();
         size_t npcCount = npcSpawner_.spawnCount();
         bool objChanged = (objCount != lastObjCount_);
-        bool npcChanged = (npcCount != lastNpcCount_) || objectsDirty_;
+        int npcSelIdx = npcSpawner_.getSelectedIndex();
+        bool npcSelChanged = (npcSelIdx != lastNpcSelIdx_);
+        bool npcChanged = (npcCount != lastNpcCount_) || objectsDirty_ || npcSelChanged;
 
         if (npcChanged) {
             // NPC markers are cheap — always update
             viewport_.updateNpcMarkers(npcSpawner_.getSpawns());
             lastNpcCount_ = npcCount;
+            lastNpcSelIdx_ = npcSelIdx;
         }
 
         // Show gizmo arrows on selected object or NPC. NPCs only support move

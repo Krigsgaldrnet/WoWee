@@ -175,6 +175,7 @@ public:
 private:
     size_t lastObjCount_ = 0;
     size_t lastNpcCount_ = 0;
+    int lastNpcSelIdx_ = -1;
     EditorMode mode_ = EditorMode::Sculpt;
     float waterHeight_ = 100.0f;
     uint16_t waterType_ = 0;
