@@ -4,6 +4,7 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <cmath>
 
 namespace wowee {
 namespace pipeline {
@@ -46,9 +47,16 @@ bool WoweeTerrainLoader::loadHeightmap(const std::string& whmPath, ADTTerrain& t
 
         float base;
         f.read(reinterpret_cast<char*>(&base), 4);
+        // Reject NaN/inf chunk base height — would break collision/pathing
+        // and produce non-finite vertex positions in the terrain mesh.
+        if (!std::isfinite(base)) base = 0.0f;
         chunk.position[2] = base;
 
         f.read(reinterpret_cast<char*>(chunk.heightMap.heights.data()), 145 * 4);
+        // Same guard applied per-vertex.
+        for (auto& h : chunk.heightMap.heights) {
+            if (!std::isfinite(h)) h = 0.0f;
+        }
 
         // Read alpha map data (may not be present in older WHM files)
         uint32_t alphaSize = 0;
