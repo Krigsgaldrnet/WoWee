@@ -107,6 +107,14 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
     uint32_t fileCount, infoSize;
     in.read(reinterpret_cast<char*>(&fileCount), 4);
     in.read(reinterpret_cast<char*>(&infoSize), 4);
+    // Sanity bounds: a zone with more than 1M files or a 16MB info block is
+    // almost certainly corrupted. Reject early so we don't OOM on a malicious
+    // header before reading the body.
+    if (fileCount > 1'000'000 || infoSize > 16 * 1024 * 1024) {
+        LOG_ERROR("WCP header rejected (fileCount=", fileCount,
+                  " infoSize=", infoSize, "): ", wcpPath);
+        return false;
+    }
 
     // Read the info JSON to extract the zone name. packZone stored files
     // relative to the zone subdirectory (e.g. "MyZone_32_32.adt"), so we
@@ -132,6 +140,19 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
 
         uint32_t dataSize;
         in.read(reinterpret_cast<char*>(&dataSize), 4);
+        // Cap individual file size to prevent OOM from a malicious entry.
+        // 256MB per packed file is well above any legitimate content.
+        if (dataSize > 256 * 1024 * 1024) {
+            LOG_ERROR("WCP rejected file ", path, " size ", dataSize, " too large");
+            return false;
+        }
+        // Reject path-traversal attempts. Files like "../../etc/passwd" would
+        // write outside destDir/<zoneName>/ and clobber system files.
+        if (path.find("..") != std::string::npos ||
+            (!path.empty() && path[0] == '/')) {
+            LOG_ERROR("WCP rejected suspicious path: ", path);
+            return false;
+        }
 
         std::vector<char> data(dataSize);
         in.read(data.data(), dataSize);
