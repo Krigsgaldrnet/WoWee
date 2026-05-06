@@ -85,6 +85,7 @@ public:
         mode_ = m;
     }
     void markObjectsDirty() { objectsDirty_ = true; autoSavePendingChanges_ = true; }
+    bool hasUnsavedNonTerrainChanges() const { return autoSavePendingChanges_; }
 
     void startGizmoMode(TransformMode mode);
     void setGizmoAxis(TransformAxis axis);

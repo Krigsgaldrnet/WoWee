@@ -2788,9 +2788,11 @@ void EditorUI::renderStatusBar(EditorApp& app) {
         const char* ms[] = {"Sculpt", "Paint", "Objects", "Water", "NPCs", "Quests"};
         const char* m = ms[static_cast<int>(app.getMode())];
         if (app.hasTerrainLoaded()) {
+            bool dirty = app.getTerrainEditor().hasUnsavedChanges() ||
+                         app.hasUnsavedNonTerrainChanges();
             ImGui::Text("[%s] %s [%d,%d]%s", m, app.getLoadedMap().c_str(),
                         app.getLoadedTileX(), app.getLoadedTileY(),
-                        app.getTerrainEditor().hasUnsavedChanges() ? " *" : "");
+                        dirty ? " *" : "");
             ImGui::SameLine(vp->Size.x * 0.35f);
             ImGui::Text("Obj:%zu NPC:%zu Q:%zu",
                         app.getObjectPlacer().objectCount(),
