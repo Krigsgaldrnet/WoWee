@@ -41,6 +41,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
     std::printf("  --info-wot <wot-base>  Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
+    std::printf("  --info-extract <dir>   Walk extracted asset tree and report open-format coverage and exit\n");
     std::printf("  --info-zone <dir|json> Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
     std::printf("  --info-creatures <p>   Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-objects <p>     Print objects.json summary (counts, types, scale range) and exit\n");
@@ -65,7 +66,8 @@ int main(int argc, char* argv[]) {
     static const char* kArgRequired[] = {
         "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
-        "--info-zone", "--info-wcp", "--list-wcp", "--unpack-wcp", "--pack-wcp",
+        "--info-extract", "--info-zone", "--info-wcp", "--list-wcp",
+        "--unpack-wcp", "--pack-wcp",
         "--validate", "--zone-summary",
         "--scaffold-zone", "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png",
@@ -209,6 +211,71 @@ int main(int argc, char* argv[]) {
             if (!objs.empty()) {
                 std::printf("  scale range : [%.2f, %.2f]\n", minScale, maxScale);
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-extract") == 0 && i + 1 < argc) {
+            // Walk an extracted-asset directory and report counts by
+            // extension + open-format coverage. Useful for seeing whether
+            // a user ran asset_extract with --emit-open.
+            std::string dataDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(dataDir)) {
+                std::fprintf(stderr, "info-extract: %s does not exist\n", dataDir.c_str());
+                return 1;
+            }
+            // Per-format counts. Pair proprietary with open-format sidecar
+            // so the report can show coverage percentages.
+            uint64_t blpCount = 0, pngSidecar = 0;
+            uint64_t dbcCount = 0, jsonSidecar = 0;
+            uint64_t m2Count  = 0, womSidecar = 0;
+            uint64_t wmoCount = 0, wobSidecar = 0;
+            uint64_t adtCount = 0, whmSidecar = 0;
+            uint64_t totalBytes = 0;
+            for (auto& entry : fs::recursive_directory_iterator(dataDir)) {
+                if (!entry.is_regular_file()) continue;
+                totalBytes += entry.file_size();
+                std::string ext = entry.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                std::string base = entry.path().string();
+                if (base.size() > ext.size()) base = base.substr(0, base.size() - ext.size());
+                auto sidecarExists = [&](const char* sidecarExt) {
+                    return fs::exists(base + sidecarExt);
+                };
+                if      (ext == ".blp") { blpCount++;  if (sidecarExists(".png"))  pngSidecar++; }
+                else if (ext == ".dbc") { dbcCount++;  if (sidecarExists(".json")) jsonSidecar++; }
+                else if (ext == ".m2")  { m2Count++;   if (sidecarExists(".wom"))  womSidecar++; }
+                else if (ext == ".wmo") {
+                    // Skip group sub-files (<base>_NNN.wmo) so coverage
+                    // counts only root WMOs against the WOB output.
+                    std::string fname = entry.path().filename().string();
+                    auto under = fname.rfind('_');
+                    bool isGroup = (under != std::string::npos &&
+                                    fname.size() - under == 8);
+                    if (!isGroup) {
+                        wmoCount++; if (sidecarExists(".wob")) wobSidecar++;
+                    }
+                }
+                else if (ext == ".adt") { adtCount++; if (sidecarExists(".whm")) whmSidecar++; }
+            }
+            auto pct = [](uint64_t x, uint64_t total) {
+                return total == 0 ? 0.0 : (100.0 * x) / total;
+            };
+            std::printf("Extracted asset tree: %s\n", dataDir.c_str());
+            std::printf("  total bytes  : %.2f GB\n", totalBytes / (1024.0 * 1024.0 * 1024.0));
+            std::printf("  BLP textures : %lu  (%lu PNG sidecar = %.1f%% open)\n",
+                        blpCount, pngSidecar, pct(pngSidecar, blpCount));
+            std::printf("  DBC tables   : %lu  (%lu JSON sidecar = %.1f%% open)\n",
+                        dbcCount, jsonSidecar, pct(jsonSidecar, dbcCount));
+            std::printf("  M2 models    : %lu  (%lu WOM sidecar = %.1f%% open)\n",
+                        m2Count, womSidecar, pct(womSidecar, m2Count));
+            std::printf("  WMO buildings: %lu  (%lu WOB sidecar = %.1f%% open)\n",
+                        wmoCount, wobSidecar, pct(wobSidecar, wmoCount));
+            std::printf("  ADT terrain  : %lu  (%lu WHM sidecar = %.1f%% open)\n",
+                        adtCount, whmSidecar, pct(whmSidecar, adtCount));
+            uint64_t openTotal = pngSidecar + jsonSidecar + womSidecar + wobSidecar + whmSidecar;
+            uint64_t propTotal = blpCount + dbcCount + m2Count + wmoCount + adtCount;
+            std::printf("  overall open-format coverage: %.1f%%\n", pct(openTotal, propTotal));
+            std::printf("  (run `asset_extract --emit-open` to fill missing sidecars)\n");
             return 0;
         } else if (std::strcmp(argv[i], "--info-zone") == 0 && i + 1 < argc) {
             // Parse a zone.json and print every manifest field. Useful when
