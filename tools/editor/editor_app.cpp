@@ -1407,10 +1407,22 @@ void EditorApp::exportContentPack(const std::string& destPath) {
     // Honor the user-edited Map ID from the zone manifest panel rather than
     // always emitting 9000.
     info.mapId = zoneManifest_.mapId != 0 ? zoneManifest_.mapId : 9000;
-    if (ContentPacker::packZone(dir, loadedMap_, destPath, info))
-        showToast("Content pack exported: " + destPath);
-    else
+    if (ContentPacker::packZone(dir, loadedMap_, destPath, info)) {
+        // Report on-disk size so users can sanity-check the export. WCPs of
+        // a few MB are normal; tens of MB usually means lots of textures.
+        std::error_code ec;
+        auto bytes = std::filesystem::file_size(destPath, ec);
+        if (!ec) {
+            char msg[256];
+            std::snprintf(msg, sizeof(msg), "Content pack exported: %s (%.1f MB)",
+                          destPath.c_str(), bytes / (1024.0 * 1024.0));
+            showToast(msg);
+        } else {
+            showToast("Content pack exported: " + destPath);
+        }
+    } else {
         showToast("Failed to create content pack");
+    }
 }
 
 void EditorApp::exportOpenFormat(const std::string& basePath) {
