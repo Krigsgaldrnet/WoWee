@@ -265,6 +265,18 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
             // representable objectives).
         }
 
+        // Reward items — itemRewards entries are item IDs as strings;
+        // try to parse as numeric. Anything unparseable becomes 0 and is
+        // skipped by the count=0 check below.
+        uint32_t rewardItemId[4] = {0, 0, 0, 0};
+        uint32_t rewardItemCount[4] = {0, 0, 0, 0};
+        for (size_t k = 0; k < q.reward.itemRewards.size() && k < 4; k++) {
+            try {
+                rewardItemId[k] = static_cast<uint32_t>(std::stoul(q.reward.itemRewards[k]));
+                if (rewardItemId[k] != 0) rewardItemCount[k] = 1;
+            } catch (...) { /* leave as 0 */ }
+        }
+
         f << "INSERT INTO `quest_template` "
           << "(`ID`, `LogTitle`, `LogDescription`, `QuestCompletionLog`, "
           << "`MinLevel`, `RewardXP`, `RewardMoney`, "
@@ -277,7 +289,11 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
           << "`RequiredItemId3`, `RequiredItemCount3`, "
           << "`RequiredItemId4`, `RequiredItemCount4`, "
           << "`RequiredItemId5`, `RequiredItemCount5`, "
-          << "`RequiredItemId6`, `RequiredItemCount6`) VALUES ("
+          << "`RequiredItemId6`, `RequiredItemCount6`, "
+          << "`RewardItem1`, `RewardItemCount1`, "
+          << "`RewardItem2`, `RewardItemCount2`, "
+          << "`RewardItem3`, `RewardItemCount3`, "
+          << "`RewardItem4`, `RewardItemCount4`) VALUES ("
           << entry << ", "
           << "'" << escapeSql(q.title) << "', "
           << "'" << escapeSql(q.description) << "', "
@@ -286,6 +302,7 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
           << q.reward.xp << ", " << rewardMoney;
         for (int k = 0; k < 4; k++) f << ", " << reqNpcOrGo[k] << ", " << reqNpcOrGoCount[k];
         for (int k = 0; k < 6; k++) f << ", " << reqItemId[k] << ", " << reqItemCount[k];
+        for (int k = 0; k < 4; k++) f << ", " << rewardItemId[k] << ", " << rewardItemCount[k];
         f << ") ON DUPLICATE KEY UPDATE `LogTitle`='" << escapeSql(q.title) << "';\n";
     }
 
