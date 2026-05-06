@@ -1386,7 +1386,9 @@ void EditorApp::exportContentPack(const std::string& destPath) {
     info.author = project_.author.empty() ? "Kelsi Davis" : project_.author;
     info.description = project_.description.empty()
         ? "Custom zone created with Wowee World Editor" : project_.description;
-    info.mapId = 9000;
+    // Honor the user-edited Map ID from the zone manifest panel rather than
+    // always emitting 9000.
+    info.mapId = zoneManifest_.mapId != 0 ? zoneManifest_.mapId : 9000;
     if (ContentPacker::packZone(dir, loadedMap_, destPath, info))
         showToast("Content pack exported: " + destPath);
     else
