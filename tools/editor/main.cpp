@@ -47,9 +47,12 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-extract <dir> [--json]\n");
     std::printf("                         Walk extracted asset tree and report open-format coverage and exit\n");
     std::printf("  --info-zone <dir|json> Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
-    std::printf("  --info-creatures <p>   Print creatures.json summary (counts, behaviors) and exit\n");
-    std::printf("  --info-objects <p>     Print objects.json summary (counts, types, scale range) and exit\n");
-    std::printf("  --info-quests <p>      Print quests.json summary (counts, rewards, chain errors) and exit\n");
+    std::printf("  --info-creatures <p> [--json]\n");
+    std::printf("                         Print creatures.json summary (counts, behaviors) and exit\n");
+    std::printf("  --info-objects <p> [--json]\n");
+    std::printf("                         Print objects.json summary (counts, types, scale range) and exit\n");
+    std::printf("  --info-quests <p> [--json]\n");
+    std::printf("                         Print quests.json summary (counts, rewards, chain errors) and exit\n");
     std::printf("  --info-wcp <wcp-path> [--json]\n");
     std::printf("                         Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
@@ -153,6 +156,9 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (std::strcmp(argv[i], "--info-quests") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             wowee::editor::QuestEditor qe;
             if (!qe.loadFromFile(path)) {
                 std::fprintf(stderr, "Failed to load quests.json: %s\n", path.c_str());
@@ -177,6 +183,23 @@ int main(int argc, char* argv[]) {
             }
             std::vector<std::string> errors;
             qe.validateChains(errors);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["total"] = quests.size();
+                j["chained"] = chained;
+                j["withReward"] = withReward;
+                j["withItems"] = withItems;
+                j["totalXp"] = totalXp;
+                j["avgXpPerQuest"] = quests.empty() ? 0.0
+                                        : double(totalXp) / quests.size();
+                j["objectives"] = {{"kill", objKill},
+                                    {"collect", objCollect},
+                                    {"talk", objTalk}};
+                j["chainErrors"] = errors;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
             std::printf("quests.json: %s\n", path.c_str());
             std::printf("  total       : %zu\n", quests.size());
             std::printf("  chained     : %d (have nextQuestId)\n", chained);
@@ -193,6 +216,9 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (std::strcmp(argv[i], "--info-objects") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             wowee::editor::ObjectPlacer placer;
             if (!placer.loadFromFile(path)) {
                 std::fprintf(stderr, "Failed to load objects.json: %s\n", path.c_str());
@@ -208,6 +234,20 @@ int main(int argc, char* argv[]) {
                 pathHist[o.path]++;
                 if (o.scale < minScale) minScale = o.scale;
                 if (o.scale > maxScale) maxScale = o.scale;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["total"] = objs.size();
+                j["m2"] = m2Count;
+                j["wmo"] = wmoCount;
+                j["uniquePaths"] = pathHist.size();
+                if (!objs.empty()) {
+                    j["scaleMin"] = minScale;
+                    j["scaleMax"] = maxScale;
+                }
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
             }
             std::printf("objects.json: %s\n", path.c_str());
             std::printf("  total       : %zu\n", objs.size());
@@ -379,6 +419,9 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (std::strcmp(argv[i], "--info-creatures") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             wowee::editor::NpcSpawner spawner;
             if (!spawner.loadFromFile(path)) {
                 std::fprintf(stderr, "Failed to load creatures.json: %s\n", path.c_str());
@@ -398,6 +441,21 @@ int main(int argc, char* argv[]) {
                 else if (s.behavior == B::Wander) wander++;
                 else if (s.behavior == B::Stationary) stationary++;
                 displayIdHist[s.displayId]++;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["total"] = spawns.size();
+                j["hostile"] = hostile;
+                j["questgiver"] = questgiver;
+                j["vendor"] = vendor;
+                j["trainer"] = trainer;
+                j["behavior"] = {{"stationary", stationary},
+                                  {"wander", wander},
+                                  {"patrol", patrol}};
+                j["uniqueDisplayIds"] = displayIdHist.size();
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
             }
             std::printf("creatures.json: %s\n", path.c_str());
             std::printf("  total       : %zu\n", spawns.size());
