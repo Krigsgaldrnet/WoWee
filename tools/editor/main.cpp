@@ -472,6 +472,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
     std::printf("  --diff-wcp <a> <b> [--json]\n");
     std::printf("                         Compare two WCPs file-by-file; exit 0 if identical, 1 otherwise\n");
+    std::printf("  --diff-zone <a> <b> [--json]\n");
+    std::printf("                         Compare two zone dirs (creatures/objects/quests/manifest); exit 0 if identical\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
@@ -511,6 +513,11 @@ int main(int argc, char* argv[]) {
         }
         if (std::strcmp(argv[i], "--adt") == 0 && i + 3 >= argc) {
             std::fprintf(stderr, "--adt requires <map> <x> <y>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--diff-zone") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--diff-zone requires <zoneA> <zoneB>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 >= argc) {
@@ -1272,6 +1279,145 @@ int main(int argc, char* argv[]) {
             for (const auto& s : onlyAList)   std::printf("  -  %s\n", s.c_str());
             for (const auto& s : onlyBList)   std::printf("  +  %s\n", s.c_str());
             return (onlyA + onlyB + sizeChanged) == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--diff-zone") == 0 && i + 2 < argc) {
+            // Compare two unpacked zone directories: zone.json fields,
+            // creature names, object paths, quest titles. Useful when a
+            // designer wants to see what changed between an upstream
+            // template (--copy-zone source) and their customized variant,
+            // or to verify a refactor only touched what it claimed to.
+            std::string aDir = argv[++i];
+            std::string bDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            for (const auto& d : {aDir, bDir}) {
+                if (!fs::exists(d + "/zone.json")) {
+                    std::fprintf(stderr,
+                        "diff-zone: %s has no zone.json — not a zone dir\n",
+                        d.c_str());
+                    return 1;
+                }
+            }
+            wowee::editor::ZoneManifest aZ, bZ;
+            aZ.load(aDir + "/zone.json");
+            bZ.load(bDir + "/zone.json");
+            // Helper: load a sub-file if present, returning empty container
+            // when missing — both sides may legitimately omit a content
+            // file (e.g. a quest-free zone) without that being a diff per se.
+            auto loadCreatures = [](const std::string& dir) {
+                std::vector<std::string> names;
+                wowee::editor::NpcSpawner sp;
+                if (sp.loadFromFile(dir + "/creatures.json")) {
+                    for (const auto& s : sp.getSpawns()) names.push_back(s.name);
+                }
+                std::sort(names.begin(), names.end());
+                return names;
+            };
+            auto loadObjectPaths = [](const std::string& dir) {
+                std::vector<std::string> paths;
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(dir + "/objects.json")) {
+                    for (const auto& o : op.getObjects()) paths.push_back(o.path);
+                }
+                std::sort(paths.begin(), paths.end());
+                return paths;
+            };
+            auto loadQuestTitles = [](const std::string& dir) {
+                std::vector<std::string> titles;
+                wowee::editor::QuestEditor qe;
+                if (qe.loadFromFile(dir + "/quests.json")) {
+                    for (const auto& q : qe.getQuests()) titles.push_back(q.title);
+                }
+                std::sort(titles.begin(), titles.end());
+                return titles;
+            };
+            auto aCreatures = loadCreatures(aDir);
+            auto bCreatures = loadCreatures(bDir);
+            auto aObjects = loadObjectPaths(aDir);
+            auto bObjects = loadObjectPaths(bDir);
+            auto aQuests = loadQuestTitles(aDir);
+            auto bQuests = loadQuestTitles(bDir);
+            // Set diff: returns (onlyA, onlyB) where each is a sorted list.
+            auto setDiff = [](const std::vector<std::string>& a,
+                              const std::vector<std::string>& b) {
+                std::vector<std::string> onlyA, onlyB;
+                std::set_difference(a.begin(), a.end(), b.begin(), b.end(),
+                                    std::back_inserter(onlyA));
+                std::set_difference(b.begin(), b.end(), a.begin(), a.end(),
+                                    std::back_inserter(onlyB));
+                return std::pair{onlyA, onlyB};
+            };
+            auto [creatOnlyA, creatOnlyB] = setDiff(aCreatures, bCreatures);
+            auto [objOnlyA, objOnlyB] = setDiff(aObjects, bObjects);
+            auto [questOnlyA, questOnlyB] = setDiff(aQuests, bQuests);
+            // Manifest field diffs.
+            std::vector<std::string> manifestDiffs;
+            auto cmp = [&](const char* field, const std::string& a,
+                           const std::string& b) {
+                if (a != b) {
+                    manifestDiffs.push_back(std::string(field) + ": '" +
+                                            a + "' -> '" + b + "'");
+                }
+            };
+            cmp("mapName",      aZ.mapName,      bZ.mapName);
+            cmp("displayName",  aZ.displayName,  bZ.displayName);
+            cmp("biome",        aZ.biome,        bZ.biome);
+            cmp("musicTrack",   aZ.musicTrack,   bZ.musicTrack);
+            if (aZ.mapId != bZ.mapId) {
+                manifestDiffs.push_back("mapId: " + std::to_string(aZ.mapId) +
+                                        " -> " + std::to_string(bZ.mapId));
+            }
+            if (aZ.tiles.size() != bZ.tiles.size()) {
+                manifestDiffs.push_back("tile count: " + std::to_string(aZ.tiles.size()) +
+                                        " -> " + std::to_string(bZ.tiles.size()));
+            }
+            int diffs = manifestDiffs.size() +
+                        creatOnlyA.size() + creatOnlyB.size() +
+                        objOnlyA.size() + objOnlyB.size() +
+                        questOnlyA.size() + questOnlyB.size();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["a"] = aDir;
+                j["b"] = bDir;
+                j["identical"] = (diffs == 0);
+                j["manifestDiffs"] = manifestDiffs;
+                j["creatures"] = {{"a", aCreatures.size()},
+                                   {"b", bCreatures.size()},
+                                   {"onlyA", creatOnlyA},
+                                   {"onlyB", creatOnlyB}};
+                j["objects"] = {{"a", aObjects.size()},
+                                 {"b", bObjects.size()},
+                                 {"onlyA", objOnlyA},
+                                 {"onlyB", objOnlyB}};
+                j["quests"] = {{"a", aQuests.size()},
+                                {"b", bQuests.size()},
+                                {"onlyA", questOnlyA},
+                                {"onlyB", questOnlyB}};
+                j["totalDiffs"] = diffs;
+                std::printf("%s\n", j.dump(2).c_str());
+                return diffs == 0 ? 0 : 1;
+            }
+            std::printf("Diff: %s vs %s\n", aDir.c_str(), bDir.c_str());
+            if (diffs == 0) {
+                std::printf("  IDENTICAL\n");
+                return 0;
+            }
+            std::printf("  manifest  : %zu field diff(s)\n", manifestDiffs.size());
+            for (const auto& d : manifestDiffs) std::printf("    ~ %s\n", d.c_str());
+            std::printf("  creatures : %zu vs %zu\n",
+                        aCreatures.size(), bCreatures.size());
+            for (const auto& s : creatOnlyA) std::printf("    - %s\n", s.c_str());
+            for (const auto& s : creatOnlyB) std::printf("    + %s\n", s.c_str());
+            std::printf("  objects   : %zu vs %zu\n",
+                        aObjects.size(), bObjects.size());
+            for (const auto& s : objOnlyA) std::printf("    - %s\n", s.c_str());
+            for (const auto& s : objOnlyB) std::printf("    + %s\n", s.c_str());
+            std::printf("  quests    : %zu vs %zu\n",
+                        aQuests.size(), bQuests.size());
+            for (const auto& s : questOnlyA) std::printf("    - %s\n", s.c_str());
+            for (const auto& s : questOnlyB) std::printf("    + %s\n", s.c_str());
+            return 1;
         } else if (std::strcmp(argv[i], "--list-wcp") == 0 && i + 1 < argc) {
             // Like --info-wcp but prints every file path. Useful for spotting
             // missing or unexpected entries before unpacking.
