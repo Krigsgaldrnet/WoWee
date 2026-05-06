@@ -1592,6 +1592,7 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         ImGui::Separator();
         ImGui::Text("Placed: %zu objects (open format: WOM)", placer.objectCount());
         if (placer.objectCount() > 0 && ImGui::CollapsingHeader("Object List")) {
+            ImGui::TextDisabled("Click to select, double-click to fly to");
             ImGui::BeginChild("ObjPlacedList", ImVec2(0, 100), true);
             for (int i = 0; i < static_cast<int>(placer.objectCount()); i++) {
                 auto& o = const_cast<std::vector<PlacedObject>&>(placer.getObjects())[i];
@@ -1601,13 +1602,15 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
                 char lbl[128];
                 std::snprintf(lbl, sizeof(lbl), "%s (%.0f,%.0f,%.0f)##obj%d",
                               disp.c_str(), o.position.x, o.position.y, o.position.z, i);
-                if (ImGui::Selectable(lbl, o.selected)) {
+                if (ImGui::Selectable(lbl, o.selected, ImGuiSelectableFlags_AllowDoubleClick)) {
                     placer.clearSelection();
                     // Select by creating a ray through the object position
                     rendering::Ray r;
                     r.origin = o.position + glm::vec3(0, 0, 1);
                     r.direction = glm::vec3(0, 0, -1);
                     placer.selectAt(r, 1000.0f);
+                    if (ImGui::IsMouseDoubleClicked(0))
+                        app.flyToSelected();
                 }
             }
             ImGui::EndChild();
@@ -1907,7 +1910,7 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
 
         // ---- Spawned list ----
         if (ImGui::CollapsingHeader("Spawned Creatures", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("%zu placed", spawner.spawnCount());
+            ImGui::Text("%zu placed (double-click to fly to)", spawner.spawnCount());
             ImGui::BeginChild("SpawnList", ImVec2(0, 100), true);
             for (int i = 0; i < static_cast<int>(spawner.spawnCount()); i++) {
                 auto& s = spawner.getSpawns()[i];
@@ -1916,8 +1919,11 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
                 std::snprintf(label, sizeof(label), "%s Lv%u (%.0f,%.0f,%.0f)",
                               s.name.c_str(), s.level,
                               s.position.x, s.position.y, s.position.z);
-                if (ImGui::Selectable(label, sel))
+                if (ImGui::Selectable(label, sel, ImGuiSelectableFlags_AllowDoubleClick)) {
                     spawner.selectAt(s.position, 10000.0f);
+                    if (ImGui::IsMouseDoubleClicked(0))
+                        app.flyToSelected();
+                }
             }
             ImGui::EndChild();
         }
