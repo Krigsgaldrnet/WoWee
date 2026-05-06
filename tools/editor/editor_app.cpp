@@ -842,6 +842,7 @@ bool EditorApp::loadWMOInstance(const std::string& mapName) {
     loadedMap_ = mapName;
     loadedTileX_ = 32;
     loadedTileY_ = 32;
+    viewport_.setActiveMapName(mapName);
 
     // Position camera near the WMO
     camera_.setPosition(wmoPos + glm::vec3(0, 0, 50));
@@ -938,6 +939,7 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     loadedMap_ = mapName;
     loadedTileX_ = tileX;
     loadedTileY_ = tileY;
+    viewport_.setActiveMapName(mapName);
 
     // Track recent zones (deduplicate, max 8)
     recentZones_.erase(std::remove_if(recentZones_.begin(), recentZones_.end(),
@@ -1046,6 +1048,7 @@ void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tile
     loadedMap_ = mapName;
     loadedTileX_ = tileX;
     loadedTileY_ = tileY;
+    viewport_.setActiveMapName(mapName);
     lastObjCount_ = 0;
     lastNpcCount_ = 0;
     objectsDirty_ = false;

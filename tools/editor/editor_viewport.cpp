@@ -148,8 +148,14 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 pipeline::M2Model model;
                 bool loaded = false;
 
-                // Try WOM open format first (replaces proprietary M2 when available)
-                if (auto wom = pipeline::WoweeModelLoader::tryLoadByGamePath(obj.path);
+                // Try WOM open format first (replaces proprietary M2 when available).
+                // Per-zone WOM directories shadow the global custom_zones folder.
+                std::vector<std::string> womExtra;
+                if (!activeMapName_.empty()) {
+                    womExtra.push_back("output/" + activeMapName_ + "/models/");
+                    womExtra.push_back("custom_zones/" + activeMapName_ + "/models/");
+                }
+                if (auto wom = pipeline::WoweeModelLoader::tryLoadByGamePath(obj.path, womExtra);
                     wom.isValid()) {
                     model = pipeline::WoweeModelLoader::toM2(wom);
                     loaded = true;
@@ -210,7 +216,12 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 bool loaded = false;
 
                 // Try WOB open format first (replaces proprietary WMO when available)
-                if (auto wob = pipeline::WoweeBuildingLoader::tryLoadByGamePath(obj.path);
+                std::vector<std::string> wobExtra;
+                if (!activeMapName_.empty()) {
+                    wobExtra.push_back("output/" + activeMapName_ + "/buildings/");
+                    wobExtra.push_back("custom_zones/" + activeMapName_ + "/buildings/");
+                }
+                if (auto wob = pipeline::WoweeBuildingLoader::tryLoadByGamePath(obj.path, wobExtra);
                     wob.isValid() &&
                     pipeline::WoweeBuildingLoader::toWMOModel(wob, model)) {
                     loaded = true;
@@ -274,7 +285,13 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 // Try WOM open format first (replaces proprietary M2 when available)
                 pipeline::M2Model model;
                 bool loaded = false;
-                if (auto wom = pipeline::WoweeModelLoader::tryLoadByGamePath(npc.modelPath);
+                std::vector<std::string> npcWomExtra;
+                if (!activeMapName_.empty()) {
+                    npcWomExtra.push_back("output/" + activeMapName_ + "/models/");
+                    npcWomExtra.push_back("custom_zones/" + activeMapName_ + "/models/");
+                }
+                if (auto wom = pipeline::WoweeModelLoader::tryLoadByGamePath(
+                        npc.modelPath, npcWomExtra);
                     wom.isValid()) {
                     model = pipeline::WoweeModelLoader::toM2(wom);
                     loaded = true;

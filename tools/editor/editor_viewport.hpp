@@ -80,6 +80,9 @@ public:
     rendering::TerrainRenderer* getTerrainRenderer() { return terrainRenderer_.get(); }
     rendering::M2Renderer* getM2Renderer() { return m2Renderer_.get(); }
 
+    /** Set the active map name so WOM/WOB lookups can probe per-zone roots first. */
+    void setActiveMapName(const std::string& name) { activeMapName_ = name; }
+
 private:
     bool createPerFrameResources();
     void destroyPerFrameResources();
@@ -121,6 +124,10 @@ private:
     std::unordered_map<std::string, uint32_t> persistentM2ModelIds_;
     std::unordered_map<std::string, uint32_t> persistentWMOModelIds_;
     uint32_t nextPersistentModelId_ = 1;
+
+    // Active map name used to build per-zone WOM/WOB prefixes so per-zone
+    // overrides win over global custom_zones/ assets.
+    std::string activeMapName_;
 
     // Ghost preview state
     std::string ghostModelPath_;
