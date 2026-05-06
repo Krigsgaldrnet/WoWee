@@ -50,6 +50,7 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         WoweeBuilding::Group grp;
         uint16_t gnLen;
         f.read(reinterpret_cast<char*>(&gnLen), 2);
+        if (gnLen > 1024) gnLen = 0;
         grp.name.resize(gnLen);
         f.read(grp.name.data(), gnLen);
 
@@ -57,6 +58,13 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         f.read(reinterpret_cast<char*>(&vc), 4);
         f.read(reinterpret_cast<char*>(&ic), 4);
         f.read(reinterpret_cast<char*>(&tc), 4);
+        // Per-group sanity. WMO groups cap at 65k vertices in practice
+        // (uint16 indices). Tex paths per group rarely exceed 16.
+        if (vc > 1'000'000 || ic > 4'000'000 || tc > 1024) {
+            LOG_ERROR("WOB group ", gi, " counts rejected (verts=", vc,
+                      " indices=", ic, " textures=", tc, "): ", basePath);
+            return WoweeBuilding{};
+        }
         uint8_t outdoor;
         f.read(reinterpret_cast<char*>(&outdoor), 1);
         grp.isOutdoor = (outdoor != 0);
