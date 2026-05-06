@@ -2,6 +2,7 @@
 #include "content_pack.hpp"
 #include "npc_spawner.hpp"
 #include "object_placer.hpp"
+#include "quest_editor.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wowee_collision.hpp"
@@ -30,6 +31,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-wot <wot-base>  Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-creatures <p>   Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-objects <p>     Print objects.json summary (counts, types, scale range) and exit\n");
+    std::printf("  --info-quests <p>      Print quests.json summary (counts, rewards, chain errors) and exit\n");
     std::printf("  --info-wcp <wcp-path>  Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
@@ -95,6 +97,46 @@ int main(int argc, char* argv[]) {
             std::printf("  total verts : %zu\n", totalVerts);
             std::printf("  total tris  : %zu\n", totalIdx / 3);
             std::printf("  total mats  : %zu (across all groups)\n", totalMats);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-quests") == 0 && i + 1 < argc) {
+            std::string path = argv[++i];
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr, "Failed to load quests.json: %s\n", path.c_str());
+                return 1;
+            }
+            const auto& quests = qe.getQuests();
+            int chained = 0, withReward = 0, withItems = 0;
+            int objKill = 0, objCollect = 0, objTalk = 0;
+            uint32_t totalXp = 0;
+            for (const auto& q : quests) {
+                if (q.nextQuestId != 0) chained++;
+                if (q.reward.xp > 0 || q.reward.gold > 0 ||
+                    q.reward.silver > 0 || q.reward.copper > 0) withReward++;
+                if (!q.reward.itemRewards.empty()) withItems++;
+                totalXp += q.reward.xp;
+                using OT = wowee::editor::QuestObjectiveType;
+                for (const auto& obj : q.objectives) {
+                    if (obj.type == OT::KillCreature) objKill++;
+                    else if (obj.type == OT::CollectItem) objCollect++;
+                    else if (obj.type == OT::TalkToNPC) objTalk++;
+                }
+            }
+            std::vector<std::string> errors;
+            qe.validateChains(errors);
+            std::printf("quests.json: %s\n", path.c_str());
+            std::printf("  total       : %zu\n", quests.size());
+            std::printf("  chained     : %d (have nextQuestId)\n", chained);
+            std::printf("  with reward : %d\n", withReward);
+            std::printf("  with items  : %d\n", withItems);
+            std::printf("  total XP    : %u (avg %.0f per quest)\n", totalXp,
+                        quests.empty() ? 0.0 : double(totalXp) / quests.size());
+            std::printf("  objectives  : %d kill, %d collect, %d talk\n",
+                        objKill, objCollect, objTalk);
+            if (!errors.empty()) {
+                std::printf("  chain errors: %zu\n", errors.size());
+                for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--info-objects") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
