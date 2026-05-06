@@ -55,6 +55,8 @@ public:
     void setPathPreview(const glm::vec3& start, const glm::vec3& end, float width, bool visible);
 
     void setWireframe(bool enabled);
+    void setShowNpcMarkers(bool show) { showNpcMarkers_ = show; }
+    bool getShowNpcMarkers() const { return showNpcMarkers_; }
     bool isWireframe() const { return wireframe_; }
 
     void setClearColor(float r, float g, float b) { clearR_=r; clearG_=g; clearB_=b; }
@@ -121,7 +123,8 @@ private:
     uint32_t brushVertCount_ = 0;
     bool brushVisible_ = false;
 
-    // NPC position markers (always visible fallback)
+    // NPC position markers
+    bool showNpcMarkers_ = true;
     VkBuffer npcMarkerVB_ = VK_NULL_HANDLE;
     VmaAllocation npcMarkerVBAlloc_ = VK_NULL_HANDLE;
     uint32_t npcMarkerVertCount_ = 0;

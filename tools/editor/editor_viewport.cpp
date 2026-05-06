@@ -405,29 +405,32 @@ void EditorViewport::updateNpcMarkers(const std::vector<CreatureSpawn>& npcs) {
     struct MV { float pos[3]; float color[4]; };
     std::vector<MV> verts;
     for (const auto& npc : npcs) {
-        float s = 5.0f;
+        float s = 1.5f;  // base radius (was 5)
         float x = npc.position.x, y = npc.position.y, z = npc.position.z;
         float r = npc.hostile ? 1.0f : 0.1f;
         float g = npc.hostile ? 0.15f : 0.9f;
-        float b = 0.1f, a = 0.9f;
+        float b = 0.1f, a = 0.7f;
 
         MV v; v.color[0]=r; v.color[1]=g; v.color[2]=b; v.color[3]=a;
+        // Small octagonal base
         for (int seg = 0; seg < 8; seg++) {
             float a0 = seg * 0.7854f, a1 = (seg+1) * 0.7854f;
-            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+0.3f; verts.push_back(v);
-            v.pos[0]=x+std::cos(a0)*s; v.pos[1]=y+std::sin(a0)*s; v.pos[2]=z+0.3f; verts.push_back(v);
-            v.pos[0]=x+std::cos(a1)*s; v.pos[1]=y+std::sin(a1)*s; v.pos[2]=z+0.3f; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+0.2f; verts.push_back(v);
+            v.pos[0]=x+std::cos(a0)*s; v.pos[1]=y+std::sin(a0)*s; v.pos[2]=z+0.2f; verts.push_back(v);
+            v.pos[0]=x+std::cos(a1)*s; v.pos[1]=y+std::sin(a1)*s; v.pos[2]=z+0.2f; verts.push_back(v);
         }
-        float pw = 0.8f, ph = 30.0f;
-        v.color[3] = 0.8f;
+        // Thin pole
+        float pw = 0.3f, ph = 8.0f;  // was 0.8 wide, 30 tall
+        v.color[3] = 0.6f;
         v.pos[0]=x-pw; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
         v.pos[0]=x+pw; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+ph; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y-pw; v.pos[2]=z; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y+pw; v.pos[2]=z; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+ph; verts.push_back(v);
-        float ts = 3.0f, tz = z + ph;
-        v.color[0]=1; v.color[1]=1; v.color[2]=0.3f; v.color[3]=0.95f;
+        // Small diamond top
+        float ts = 1.0f, tz = z + ph;  // was 3
+        v.color[0]=1; v.color[1]=1; v.color[2]=0.3f; v.color[3]=0.8f;
         v.pos[0]=x+ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y+ts; v.pos[2]=tz; verts.push_back(v);
         v.pos[0]=x-ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
@@ -569,8 +572,8 @@ void EditorViewport::render(VkCommandBuffer cmd) {
 
     gizmo_.render(cmd, perFrameSet);
 
-    // NPC markers — always render with water pipeline (pos+color, alpha blend)
-    if (npcMarkerVB_ && npcMarkerVertCount_ > 0) {
+    // NPC markers — render with water pipeline (pos+color, alpha blend)
+    if (showNpcMarkers_ && npcMarkerVB_ && npcMarkerVertCount_ > 0) {
         auto* waterPipeline = waterRenderer_.getPipeline();
         auto* waterLayout = waterRenderer_.getPipelineLayout();
         if (waterPipeline && waterLayout) {

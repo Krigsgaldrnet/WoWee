@@ -1748,6 +1748,11 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
         auto& presets = app.getNpcPresets();
         auto& tmpl = spawner.getTemplate();
 
+        bool showMarkers = app.getViewport().getShowNpcMarkers();
+        if (ImGui::Checkbox("Show Position Markers", &showMarkers))
+            app.getViewport().setShowNpcMarkers(showMarkers);
+        ImGui::Separator();
+
         // ---- Creature Browser ----
         if (ImGui::CollapsingHeader("Creature Browser", ImGuiTreeNodeFlags_DefaultOpen)) {
             // Category filter
