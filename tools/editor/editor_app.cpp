@@ -119,6 +119,17 @@ void EditorApp::run() {
         // Refresh dirty terrain chunks
         refreshDirtyChunks();
 
+        // Periodic GPU model cache cleanup. Models that lost all instances
+        // (e.g. user removed every spawn of one creature) get evicted after
+        // the renderer's grace period. Without this the editor would slowly
+        // accumulate GPU memory across long sessions.
+        static float modelCleanupTimer = 0.0f;
+        modelCleanupTimer += dt;
+        if (modelCleanupTimer >= 30.0f) {
+            modelCleanupTimer = 0.0f;
+            if (auto* m2 = viewport_.getM2Renderer()) m2->cleanupUnusedModels();
+        }
+
         // Track object and NPC counts separately
         size_t objCount = objectPlacer_.objectCount();
         size_t npcCount = npcSpawner_.spawnCount();
