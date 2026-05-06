@@ -362,11 +362,24 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
         }
     }
 
-    // WOM3: write batches
+    // WOM3: write batches. Drop batches that reference invalid index ranges
+    // or texture slots — load would do the same drop and log a warning, but
+    // skipping at save time keeps the file small and deterministic.
     if (hasBatches) {
-        uint32_t batchCount = static_cast<uint32_t>(model.batches.size());
-        f.write(reinterpret_cast<const char*>(&batchCount), 4);
+        const uint32_t totalIdx = static_cast<uint32_t>(model.indices.size());
+        const uint32_t totalTex = static_cast<uint32_t>(model.texturePaths.size());
+        std::vector<WoweeModel::Batch> validBatches;
+        validBatches.reserve(model.batches.size());
         for (const auto& b : model.batches) {
+            if (b.indexCount == 0) continue;
+            if (b.indexStart > totalIdx) continue;
+            if (b.indexStart + b.indexCount > totalIdx) continue;
+            if (totalTex > 0 && b.textureIndex >= totalTex) continue;
+            validBatches.push_back(b);
+        }
+        uint32_t batchCount = static_cast<uint32_t>(validBatches.size());
+        f.write(reinterpret_cast<const char*>(&batchCount), 4);
+        for (const auto& b : validBatches) {
             f.write(reinterpret_cast<const char*>(&b.indexStart), 4);
             f.write(reinterpret_cast<const char*>(&b.indexCount), 4);
             f.write(reinterpret_cast<const char*>(&b.textureIndex), 4);
