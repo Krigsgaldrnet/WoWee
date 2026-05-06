@@ -305,3 +305,53 @@ TEST_CASE("EditorBrush::getInfluence handles zero falloff (hard edge)", "[brush]
     REQUIRE(b.getInfluence(9.99f) == 1.0f);
     REQUIRE(b.getInfluence(10.0f) == 0.0f);
 }
+
+// ============== ObjectPlacer JSON load tests ==============
+
+#include "object_placer.hpp"
+
+TEST_CASE("ObjectPlacer load defaults missing/zero scale to 1.0", "[objects]") {
+    namespace fs = std::filesystem;
+    fs::create_directories("test_objects");
+    std::string path = "test_objects/zero_scale.json";
+    {
+        std::ofstream f(path);
+        // scale=0 is invalid (would render at 0 size); loader should clamp.
+        // Also omit scale on the second object to test the default path.
+        f << R"([{"type":0,"path":"x.m2","pos":[0,0,0],"rot":[0,0,0],
+                  "scale":0,"uniqueId":1},
+                 {"type":0,"path":"y.m2","pos":[1,1,1],"rot":[0,0,0],
+                  "uniqueId":2}])";
+    }
+    ObjectPlacer p;
+    REQUIRE(p.loadFromFile(path));
+    REQUIRE(p.getObjects().size() == 2);
+    // scale=0 was clamped to 1.0 by the load-time guard.
+    REQUIRE(p.getObjects()[0].scale == 1.0f);
+    // Missing scale field defaulted to 1.0 via .value("scale", 1.0f).
+    REQUIRE(p.getObjects()[1].scale == 1.0f);
+    fs::remove_all("test_objects");
+}
+
+TEST_CASE("ObjectPlacer load preserves uniqueId across save/load", "[objects]") {
+    namespace fs = std::filesystem;
+    fs::create_directories("test_objects");
+    std::string path = "test_objects/preserve_id.json";
+
+    ObjectPlacer src;
+    src.setActivePath("Tree.m2", PlaceableType::M2);
+    src.placeObject(glm::vec3(10, 20, 30));
+    src.placeObject(glm::vec3(40, 50, 60));
+    REQUIRE(src.getObjects().size() == 2);
+    uint32_t id0 = src.getObjects()[0].uniqueId;
+    uint32_t id1 = src.getObjects()[1].uniqueId;
+    REQUIRE(src.saveToFile(path));
+
+    ObjectPlacer dst;
+    REQUIRE(dst.loadFromFile(path));
+    REQUIRE(dst.getObjects().size() == 2);
+    // uniqueIds should round-trip exactly
+    REQUIRE(dst.getObjects()[0].uniqueId == id0);
+    REQUIRE(dst.getObjects()[1].uniqueId == id1);
+    fs::remove_all("test_objects");
+}

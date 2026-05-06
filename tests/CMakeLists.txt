@@ -434,6 +434,7 @@ add_executable(test_editor_units
     ${CMAKE_SOURCE_DIR}/tools/editor/quest_editor.cpp
     ${CMAKE_SOURCE_DIR}/tools/editor/content_pack.cpp
     ${CMAKE_SOURCE_DIR}/tools/editor/editor_brush.cpp
+    ${CMAKE_SOURCE_DIR}/tools/editor/object_placer.cpp
     ${CMAKE_SOURCE_DIR}/src/core/logger.cpp
 )
 target_include_directories(test_editor_units PRIVATE
