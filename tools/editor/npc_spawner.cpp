@@ -154,7 +154,17 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
         selectedIdx_ = -1;
         idCounter_ = 1;
 
+        // Cap NPC count — same defense pattern as QuestEditor / ObjectPlacer.
+        // 50k creatures is generous; each emits a creature_template +
+        // creature INSERT, plus optional addon/waypoint rows.
+        constexpr size_t kMaxSpawns = 50'000;
+
         for (const auto& js : arr) {
+            if (spawns_.size() >= kMaxSpawns) {
+                LOG_WARNING("NPC cap reached (", kMaxSpawns,
+                            ") — remaining entries dropped");
+                break;
+            }
             CreatureSpawn s;
             s.name = js.value("name", "");
             s.modelPath = js.value("model", "");
