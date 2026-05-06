@@ -275,7 +275,7 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
 
     // Render NPC creatures as M2 instances
     if (m2Renderer_ && !npcs.empty()) {
-        LOG_INFO("Loading ", npcs.size(), " NPC models...");
+        LOG_WARNING("NPC rebuild: ", npcs.size(), " creatures to load");
         for (const auto& npc : npcs) {
             if (npc.modelPath.empty()) { LOG_WARNING("NPC has empty modelPath: ", npc.name); continue; }
             uint32_t modelId;
@@ -321,7 +321,7 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                                 pipeline::M2Material mat; mat.flags = 0; mat.blendMode = 0;
                                 model.materials.push_back(mat);
                                 loaded = true;
-                                LOG_INFO("NPC loaded from WOM: ", prefix, womBase);
+                                LOG_WARNING("NPC loaded from WOM: ", prefix, womBase);
                                 break;
                             }
                         }
@@ -351,7 +351,7 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                              " (verts=", model.vertices.size(), " idx=", model.indices.size(), ")");
                     continue;
                 }
-                LOG_INFO("NPC M2 loaded: ", npc.modelPath, " (",
+                LOG_WARNING("NPC M2 OK: ", npc.modelPath, " (",
                          model.vertices.size(), "v ", model.indices.size(), "i ",
                          model.batches.size(), "b)");
                 if (model.boundRadius < 1.0f) model.boundRadius = 50.0f;
