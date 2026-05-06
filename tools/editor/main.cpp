@@ -514,6 +514,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print glTF 2.0 binary metadata (chunks, mesh/primitive counts, accessors)\n");
     std::printf("  --zone-summary <zoneDir> [--json]\n");
     std::printf("                         One-shot validate + creature/object/quest counts and exit\n");
+    std::printf("  --info-zone-tree <zoneDir>\n");
+    std::printf("                         Render a hierarchical tree view of a zone's contents (no --json)\n");
     std::printf("  --export-zone-summary-md <zoneDir> [out.md]\n");
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
     std::printf("  --export-quest-graph <zoneDir> [out.dot]\n");
@@ -613,7 +615,7 @@ int main(int argc, char* argv[]) {
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
         "--validate-jsondbc",
-        "--zone-summary",
+        "--zone-summary", "--info-zone-tree",
         "--export-zone-summary-md", "--export-quest-graph",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--zone-stats", "--list-zone-deps",
@@ -2950,6 +2952,130 @@ int main(int argc, char* argv[]) {
                             questTotal, chainWarnings);
             }
             return v.openFormatScore() == 7 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--info-zone-tree") == 0 && i + 1 < argc) {
+            // Pretty `tree`-style hierarchical view of a zone's contents.
+            // Designed for at-a-glance comprehension — what creatures,
+            // what objects, what quests, what tiles, what files. No
+            // --json flag because the structured equivalent is just
+            // running --info-* per category and concatenating.
+            std::string zoneDir = argv[++i];
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "info-zone-tree: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr, "info-zone-tree: parse failed\n");
+                return 1;
+            }
+            wowee::editor::NpcSpawner sp;
+            sp.loadFromFile(zoneDir + "/creatures.json");
+            wowee::editor::ObjectPlacer op;
+            op.loadFromFile(zoneDir + "/objects.json");
+            wowee::editor::QuestEditor qe;
+            qe.loadFromFile(zoneDir + "/quests.json");
+            // Walk on-disk files for the 'Files' branch.
+            std::vector<std::string> diskFiles;
+            std::error_code ec;
+            for (const auto& e : fs::directory_iterator(zoneDir, ec)) {
+                if (e.is_regular_file()) {
+                    diskFiles.push_back(e.path().filename().string());
+                }
+            }
+            std::sort(diskFiles.begin(), diskFiles.end());
+            // Tree-drawing helpers — Unix box characters since most
+            // terminals support UTF-8 by default. Pre-compute prefix
+            // strings so leaf vs branch alignment looks right.
+            auto branch = [](bool last) { return last ? "└─ " : "├─ "; };
+            auto cont   = [](bool last) { return last ? "   " : "│  "; };
+            std::printf("%s/\n",
+                        zm.displayName.empty() ? zm.mapName.c_str()
+                                                : zm.displayName.c_str());
+            // Manifest section
+            std::printf("├─ Manifest\n");
+            std::printf("│  ├─ mapName     : %s\n", zm.mapName.c_str());
+            std::printf("│  ├─ mapId       : %u\n", zm.mapId);
+            std::printf("│  ├─ baseHeight  : %.1f\n", zm.baseHeight);
+            std::printf("│  ├─ biome       : %s\n",
+                        zm.biome.empty() ? "(unset)" : zm.biome.c_str());
+            std::printf("│  └─ flags       : %s%s%s%s\n",
+                        zm.allowFlying ? "fly " : "",
+                        zm.pvpEnabled  ? "pvp " : "",
+                        zm.isIndoor    ? "indoor " : "",
+                        zm.isSanctuary ? "sanctuary " : "");
+            // Tiles
+            std::printf("├─ Tiles (%zu)\n", zm.tiles.size());
+            for (size_t k = 0; k < zm.tiles.size(); ++k) {
+                bool last = (k == zm.tiles.size() - 1);
+                std::printf("│  %s(%d, %d)\n", branch(last),
+                            zm.tiles[k].first, zm.tiles[k].second);
+            }
+            // Creatures
+            std::printf("├─ Creatures (%zu)\n", sp.spawnCount());
+            for (size_t k = 0; k < sp.spawnCount(); ++k) {
+                bool last = (k == sp.spawnCount() - 1);
+                const auto& s = sp.getSpawns()[k];
+                std::printf("│  %slvl %u  %s%s\n",
+                            branch(last), s.level, s.name.c_str(),
+                            s.hostile ? " [hostile]" : "");
+            }
+            // Objects
+            std::printf("├─ Objects (%zu)\n", op.getObjects().size());
+            for (size_t k = 0; k < op.getObjects().size(); ++k) {
+                bool last = (k == op.getObjects().size() - 1);
+                const auto& o = op.getObjects()[k];
+                std::printf("│  %s%s  %s\n", branch(last),
+                            o.type == wowee::editor::PlaceableType::M2 ? "m2 " : "wmo",
+                            o.path.c_str());
+            }
+            // Quests with sub-tree of objectives
+            std::printf("├─ Quests (%zu)\n", qe.questCount());
+            using OT = wowee::editor::QuestObjectiveType;
+            auto typeName = [](OT t) {
+                switch (t) {
+                    case OT::KillCreature: return "kill";
+                    case OT::CollectItem:  return "collect";
+                    case OT::TalkToNPC:    return "talk";
+                    case OT::ExploreArea:  return "explore";
+                    case OT::EscortNPC:    return "escort";
+                    case OT::UseObject:    return "use";
+                }
+                return "?";
+            };
+            for (size_t k = 0; k < qe.questCount(); ++k) {
+                bool lastQ = (k == qe.questCount() - 1);
+                const auto& q = qe.getQuests()[k];
+                std::printf("│  %s[%u] %s (lvl %u, %u XP)\n",
+                            branch(lastQ), q.id, q.title.c_str(),
+                            q.requiredLevel, q.reward.xp);
+                // Objectives indented under the quest. Use 'cont' for
+                // the prior column so vertical bars align.
+                for (size_t o = 0; o < q.objectives.size(); ++o) {
+                    bool lastO = (o == q.objectives.size() - 1 &&
+                                  q.reward.itemRewards.empty());
+                    const auto& obj = q.objectives[o];
+                    std::printf("│  %s%s%s ×%u %s\n",
+                                cont(lastQ), branch(lastO),
+                                typeName(obj.type), obj.targetCount,
+                                obj.targetName.c_str());
+                }
+                for (size_t r = 0; r < q.reward.itemRewards.size(); ++r) {
+                    bool lastR = (r == q.reward.itemRewards.size() - 1);
+                    std::printf("│  %s%sreward: %s\n",
+                                cont(lastQ), branch(lastR),
+                                q.reward.itemRewards[r].c_str());
+                }
+            }
+            // Files (last top-level branch — uses └─)
+            std::printf("└─ Files (%zu)\n", diskFiles.size());
+            for (size_t k = 0; k < diskFiles.size(); ++k) {
+                bool last = (k == diskFiles.size() - 1);
+                std::printf("   %s%s\n", branch(last), diskFiles[k].c_str());
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--export-zone-summary-md") == 0 && i + 1 < argc) {
             // Render a Markdown documentation page for a zone. Useful for
             // designers tracking changes between versions, generating
