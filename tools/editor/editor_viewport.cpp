@@ -487,12 +487,23 @@ void EditorViewport::setPatrolPath(const std::vector<glm::vec3>& points, float w
         pushV(bot); pushV(n); pushV(w);
     };
 
+    // Ribbons fade from bright orange at the start to dim orange at the end
+    // so direction of travel is visually obvious.
     for (size_t i = 0; i + 1 < points.size(); i++) {
-        addRibbon(points[i], points[i+1], 1.0f, 0.7f, 0.2f, 0.55f);
+        float t = points.size() > 1 ? static_cast<float>(i) / (points.size() - 1) : 0.0f;
+        float bright = 1.0f - t * 0.5f;
+        addRibbon(points[i], points[i+1], bright, 0.7f * bright, 0.2f * bright, 0.55f);
     }
     for (size_t i = 0; i < points.size(); i++) {
-        bool isStart = (i == 0);
-        addWaypoint(points[i], isStart ? 0.2f : 1.0f, isStart ? 1.0f : 0.85f, isStart ? 0.3f : 0.2f);
+        // Start (NPC home) green, intermediate yellow→orange, last red.
+        if (i == 0) {
+            addWaypoint(points[i], 0.2f, 1.0f, 0.3f);
+        } else if (i == points.size() - 1 && points.size() >= 2) {
+            addWaypoint(points[i], 1.0f, 0.3f, 0.2f);
+        } else {
+            float t = points.size() > 1 ? static_cast<float>(i) / (points.size() - 1) : 0.0f;
+            addWaypoint(points[i], 1.0f, 1.0f - t * 0.6f, 0.2f);
+        }
     }
 
     patrolVertCount_ = static_cast<uint32_t>(verts.size());
