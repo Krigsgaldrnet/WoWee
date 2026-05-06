@@ -4,6 +4,7 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <algorithm>
 
 namespace wowee {
 namespace editor {
@@ -26,11 +27,15 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
         return false;
     }
 
-    // Collect all files
+    // Collect all files. Normalize path separators to '/' so packs created
+    // on Windows are readable on Linux/macOS and vice versa — the unpack
+    // path-traversal check rejects '\' as an absolute prefix, so a Windows
+    // path leaks would silently fail to extract.
     std::vector<std::pair<std::string, std::string>> files; // relative path, full path
     for (auto& entry : fs::recursive_directory_iterator(srcDir)) {
         if (!entry.is_regular_file()) continue;
         std::string rel = fs::relative(entry.path(), srcDir).string();
+        std::replace(rel.begin(), rel.end(), '\\', '/');
         files.push_back({rel, entry.path().string()});
     }
 
