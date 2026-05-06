@@ -220,6 +220,34 @@ TEST_CASE("WCP unpack rejects bad magic", "[wcp]") {
     fs::remove_all("test_wcp_out");
 }
 
+TEST_CASE("WCP unpack rejects truncated file body", "[wcp]") {
+    namespace fs = std::filesystem;
+    fs::create_directories("test_wcp_out");
+    std::string info = R"({"name":"truncated"})";
+    {
+        // Hand-write a WCP that declares dataSize=1000 but only writes 50.
+        std::ofstream f("test_wcp_out/short.wcp", std::ios::binary);
+        f.write(reinterpret_cast<const char*>(&kWCP_MAGIC), 4);
+        uint32_t fileCount = 1, infoSize = static_cast<uint32_t>(info.size());
+        f.write(reinterpret_cast<const char*>(&fileCount), 4);
+        f.write(reinterpret_cast<const char*>(&infoSize), 4);
+        f.write(info.data(), infoSize);
+        std::string path = "data.bin";
+        uint16_t pathLen = static_cast<uint16_t>(path.size());
+        f.write(reinterpret_cast<const char*>(&pathLen), 2);
+        f.write(path.data(), pathLen);
+        uint32_t declared = 1000;
+        f.write(reinterpret_cast<const char*>(&declared), 4);
+        std::string actual(50, 'X');
+        f.write(actual.data(), actual.size());
+    }
+    REQUIRE_FALSE(ContentPacker::unpackZone("test_wcp_out/short.wcp",
+                                              "test_wcp_out/dest"));
+    // Confirm we did NOT silently write the partial data.
+    REQUIRE_FALSE(fs::exists("test_wcp_out/dest/truncated/data.bin"));
+    fs::remove_all("test_wcp_out");
+}
+
 // ============== EditorBrush::getInfluence tests ==============
 
 #include "editor_brush.hpp"
