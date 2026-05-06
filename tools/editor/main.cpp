@@ -425,6 +425,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Remove quest at given 0-based index from <zoneDir>/quests.json\n");
     std::printf("  --copy-zone <srcDir> <newName>\n");
     std::printf("                         Duplicate a zone to custom_zones/<slug>/ with renamed slug-prefixed files\n");
+    std::printf("  --rename-zone <srcDir> <newName>\n");
+    std::printf("                         In-place rename (zone.json + slug-prefixed files + dir); no copy\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
     std::printf("  --regen-collision <zoneDir>  Rebuild every WOC under a zone dir and exit\n");
     std::printf("  --fix-zone <zoneDir>   Re-parse + re-save zone JSONs to apply latest scrubs/caps and exit\n");
@@ -517,7 +519,7 @@ int main(int argc, char* argv[]) {
         "--scaffold-zone", "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-creature", "--remove-object", "--remove-quest",
-        "--copy-zone",
+        "--copy-zone", "--rename-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png", "--export-obj", "--import-obj",
         "--export-wob-obj", "--import-wob-obj",
@@ -577,6 +579,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--copy-zone") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--copy-zone requires <srcDir> <newName>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--rename-zone") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--rename-zone requires <srcDir> <newName>\n");
             return 1;
         }
         for (const char* opt : {"--remove-creature", "--remove-object",
@@ -3593,6 +3600,105 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             std::printf("Copied %s -> %s\n", srcDir.c_str(), dstDir.c_str());
+            std::printf("  mapName  : %s -> %s\n", oldSlug.c_str(), newSlug.c_str());
+            std::printf("  renamed  : %d slug-prefixed file(s)\n", renamed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--rename-zone") == 0 && i + 2 < argc) {
+            // In-place rename — like --copy-zone but no copy. Useful when
+            // the user wants to fix a typo or change a name without
+            // doubling disk usage. Renames the directory itself too
+            // (Old/ -> New/ under the same parent), so paths shift.
+            std::string srcDir = argv[++i];
+            std::string rawName = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr, "rename-zone: source dir not found: %s\n",
+                             srcDir.c_str());
+                return 1;
+            }
+            if (!fs::exists(srcDir + "/zone.json")) {
+                std::fprintf(stderr, "rename-zone: %s has no zone.json — not a zone dir\n",
+                             srcDir.c_str());
+                return 1;
+            }
+            std::string newSlug;
+            for (char c : rawName) {
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') || c == '_' || c == '-') {
+                    newSlug += c;
+                } else if (c == ' ') {
+                    newSlug += '_';
+                }
+            }
+            if (newSlug.empty()) {
+                std::fprintf(stderr, "rename-zone: name '%s' has no valid characters\n",
+                             rawName.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(srcDir + "/zone.json")) {
+                std::fprintf(stderr, "rename-zone: failed to parse %s/zone.json\n",
+                             srcDir.c_str());
+                return 1;
+            }
+            std::string oldSlug = zm.mapName;
+            if (oldSlug == newSlug && rawName == zm.displayName) {
+                std::fprintf(stderr,
+                    "rename-zone: nothing to do (slug=%s, displayName=%s already match)\n",
+                    oldSlug.c_str(), rawName.c_str());
+                return 1;
+            }
+            // Compute target directory: same parent, new slug name. If the
+            // current directory name already matches the new slug, skip
+            // the dir rename (only manifest + slug-prefixed files change).
+            fs::path srcPath = fs::absolute(srcDir);
+            fs::path parent = srcPath.parent_path();
+            fs::path dstPath = parent / newSlug;
+            bool needDirRename = (srcPath.filename() != newSlug);
+            if (needDirRename && fs::exists(dstPath)) {
+                std::fprintf(stderr, "rename-zone: target dir already exists: %s\n",
+                             dstPath.string().c_str());
+                return 1;
+            }
+            // Rename slug-prefixed files inside the source dir BEFORE
+            // moving the directory — fewer paths to fix up if anything
+            // fails midway. fs::rename is atomic per-call.
+            std::error_code ec;
+            int renamed = 0;
+            for (const auto& entry : fs::recursive_directory_iterator(srcDir)) {
+                if (!entry.is_regular_file()) continue;
+                std::string fname = entry.path().filename().string();
+                bool match = (oldSlug != newSlug &&
+                              fname.size() > oldSlug.size() + 1 &&
+                              fname.compare(0, oldSlug.size(), oldSlug) == 0 &&
+                              (fname[oldSlug.size()] == '_' ||
+                               fname[oldSlug.size()] == '.'));
+                if (!match) continue;
+                std::string newName = newSlug + fname.substr(oldSlug.size());
+                fs::rename(entry.path(), entry.path().parent_path() / newName, ec);
+                if (!ec) renamed++;
+            }
+            // Update manifest and save BEFORE the dir rename so the file
+            // exists at the path we're saving to.
+            zm.mapName = newSlug;
+            zm.displayName = rawName;
+            if (!zm.save(srcDir + "/zone.json")) {
+                std::fprintf(stderr, "rename-zone: failed to write zone.json\n");
+                return 1;
+            }
+            // Now move the directory itself.
+            std::string finalDir = srcDir;
+            if (needDirRename) {
+                fs::rename(srcPath, dstPath, ec);
+                if (ec) {
+                    std::fprintf(stderr,
+                        "rename-zone: dir rename failed (%s); manifest already updated\n",
+                        ec.message().c_str());
+                    return 1;
+                }
+                finalDir = dstPath.string();
+            }
+            std::printf("Renamed %s -> %s\n", srcDir.c_str(), finalDir.c_str());
             std::printf("  mapName  : %s -> %s\n", oldSlug.c_str(), newSlug.c_str());
             std::printf("  renamed  : %d slug-prefixed file(s)\n", renamed);
             return 0;
