@@ -138,14 +138,24 @@ void EditorApp::run() {
         if (cmd == VK_NULL_HANDLE) continue;
 
         // Rebuild objects AFTER beginFrame so instance SSBO uses correct frame index
+        // Debounce: wait 0.5s after last change before rebuilding to avoid
+        // clear+reload cycle on every click during rapid NPC placement
+        static float rebuildTimer = 0.0f;
         if (objChanged || objectsDirty_) {
+            rebuildTimer = 0.5f;
             objectsDirty_ = false;
             lastObjCount_ = objCount;
-            if (objCount > 0 || npcCount > 0) {
-                vkDeviceWaitIdle(vkCtx->getDevice());
-                viewport_.rebuildObjects(objectPlacer_.getObjects(), npcSpawner_.getSpawns());
-            }
             lastNpcCount_ = npcCount;
+        }
+        if (rebuildTimer > 0.0f) {
+            rebuildTimer -= dt;
+            if (rebuildTimer <= 0.0f) {
+                rebuildTimer = 0.0f;
+                if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0) {
+                    vkDeviceWaitIdle(vkCtx->getDevice());
+                    viewport_.rebuildObjects(objectPlacer_.getObjects(), npcSpawner_.getSpawns());
+                }
+            }
         }
 
         // Update M2 animations AFTER beginFrame (so getCurrentFrame is correct)
