@@ -261,9 +261,21 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
     f.write(reinterpret_cast<const char*>(&vertCount), 4);
     f.write(reinterpret_cast<const char*>(&indexCount), 4);
     f.write(reinterpret_cast<const char*>(&texCount), 4);
-    f.write(reinterpret_cast<const char*>(&model.boundRadius), 4);
-    f.write(reinterpret_cast<const char*>(&model.boundMin), 12);
-    f.write(reinterpret_cast<const char*>(&model.boundMax), 12);
+    // Sanitize bound floats at save time; matches the load-time guard so a
+    // partial-write or in-memory corruption can't poison the file.
+    float boundRadius = std::isfinite(model.boundRadius) && model.boundRadius >= 0.0f
+                            ? model.boundRadius : 1.0f;
+    glm::vec3 boundMin = model.boundMin, boundMax = model.boundMax;
+    auto sanVec3 = [](glm::vec3& v) {
+        if (!std::isfinite(v.x)) v.x = 0.0f;
+        if (!std::isfinite(v.y)) v.y = 0.0f;
+        if (!std::isfinite(v.z)) v.z = 0.0f;
+    };
+    sanVec3(boundMin);
+    sanVec3(boundMax);
+    f.write(reinterpret_cast<const char*>(&boundRadius), 4);
+    f.write(reinterpret_cast<const char*>(&boundMin), 12);
+    f.write(reinterpret_cast<const char*>(&boundMax), 12);
 
     // Same writeStr pattern as WoB: truncate to 1KB so the u16 length doesn't
     // wrap and corrupt the rest of the file.
