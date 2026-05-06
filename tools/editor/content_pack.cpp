@@ -194,6 +194,17 @@ static bool checkMagic(const std::string& path, uint32_t expectedMagic) {
     return magic == expectedMagic;
 }
 
+// Returns true if `magic` matches any of the WOM family magics (WOM1/WOM2/WOM3).
+static bool checkAnyMagic(const std::string& path,
+                           std::initializer_list<uint32_t> expected) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    uint32_t magic = 0;
+    f.read(reinterpret_cast<char*>(&magic), 4);
+    for (uint32_t e : expected) if (magic == e) return true;
+    return false;
+}
+
 ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& zoneDir) {
     namespace fs = std::filesystem;
     ValidationResult r;
@@ -201,6 +212,8 @@ ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& z
 
     static constexpr uint32_t WHM_MAGIC = 0x314D4857; // "WHM1"
     static constexpr uint32_t WOM_MAGIC = 0x314D4F57; // "WOM1"
+    static constexpr uint32_t WOM2_MAGIC = 0x324D4F57; // "WOM2"
+    static constexpr uint32_t WOM3_MAGIC = 0x334D4F57; // "WOM3"
     static constexpr uint32_t WOB_MAGIC = 0x31424F57; // "WOB1"
     static constexpr uint32_t WOC_MAGIC = 0x31434F57; // "WOC1"
 
@@ -215,7 +228,8 @@ ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& z
         }
         if (ext == ".wom") {
             r.hasWom = true;
-            if (checkMagic(entry.path().string(), WOM_MAGIC)) r.womValid = true;
+            if (checkAnyMagic(entry.path().string(), {WOM_MAGIC, WOM2_MAGIC, WOM3_MAGIC}))
+                r.womValid = true;
         }
         if (ext == ".wob") {
             r.hasWob = true;
