@@ -88,18 +88,24 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
         if (s.behavior == CreatureBehavior::Wander) movementType = 1;
         if (s.behavior == CreatureBehavior::Patrol) movementType = 2;
 
+        // Editor stores positions in render coords (renderX=wowY, renderY=wowX,
+        // renderZ=wowZ) but AzerothCore creature.position_x/y are WoW canonical
+        // (X=north-south, Y=west-east). Swap x/y on the way out.
+        const float wowX = s.position.y;
+        const float wowY = s.position.x;
+        const float wowZ = s.position.z;
         // AzerothCore expects orientation in radians; editor stores degrees.
         const float orientRad = s.orientation * 3.14159265358979323846f / 180.0f;
         f << "INSERT INTO `creature` "
           << "(`guid`, `id`, `map`, `position_x`, `position_y`, `position_z`, "
           << "`orientation`, `spawntimesecs`, `wander_distance`, `MovementType`) VALUES ("
           << guid << ", " << entry << ", " << mapId << ", "
-          << s.position.x << ", " << s.position.y << ", " << s.position.z << ", "
+          << wowX << ", " << wowY << ", " << wowZ << ", "
           << orientRad << ", "
           << (s.respawnTimeMs / 1000) << ", "
           << s.wanderRadius << ", "
           << static_cast<int>(movementType)
-          << ") ON DUPLICATE KEY UPDATE `position_x`=" << s.position.x << ";\n";
+          << ") ON DUPLICATE KEY UPDATE `position_x`=" << wowX << ";\n";
     }
 
     // Patrol waypoints
@@ -124,12 +130,16 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
 
             for (size_t pi = 0; pi < s.patrolPath.size(); pi++) {
                 const auto& wp = s.patrolPath[pi];
+                // Same render -> WoW canonical swap as the spawn position.
+                const float wpWowX = wp.position.y;
+                const float wpWowY = wp.position.x;
+                const float wpWowZ = wp.position.z;
                 f << "INSERT INTO `waypoint_data` "
                   << "(`id`, `point`, `position_x`, `position_y`, `position_z`, `delay`) VALUES ("
                   << pathId << ", " << (pi + 1) << ", "
-                  << wp.position.x << ", " << wp.position.y << ", " << wp.position.z << ", "
+                  << wpWowX << ", " << wpWowY << ", " << wpWowZ << ", "
                   << wp.waitTimeMs
-                  << ") ON DUPLICATE KEY UPDATE `position_x`=" << wp.position.x << ";\n";
+                  << ") ON DUPLICATE KEY UPDATE `position_x`=" << wpWowX << ";\n";
             }
         }
     }
