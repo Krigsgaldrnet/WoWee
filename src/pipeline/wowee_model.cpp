@@ -132,6 +132,8 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
                 f.read(reinterpret_cast<char*>(&anim.id), 4);
                 f.read(reinterpret_cast<char*>(&anim.durationMs), 4);
                 f.read(reinterpret_cast<char*>(&anim.movingSpeed), 4);
+                // Reject NaN movingSpeed; it leaks into displacement maths.
+                if (!std::isfinite(anim.movingSpeed)) anim.movingSpeed = 0.0f;
 
                 anim.boneKeyframes.resize(model.bones.size());
                 for (size_t bi = 0; bi < model.bones.size(); bi++) {
@@ -143,6 +145,19 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
                         f.read(reinterpret_cast<char*>(&kf.translation), 12);
                         f.read(reinterpret_cast<char*>(&kf.rotation), 16);
                         f.read(reinterpret_cast<char*>(&kf.scale), 12);
+                        // Sanitize keyframe floats — bone interp returns NaN
+                        // for any NaN input and corrupts the whole skeleton.
+                        auto fixVec = [](glm::vec3& v, float def) {
+                            if (!std::isfinite(v.x)) v.x = def;
+                            if (!std::isfinite(v.y)) v.y = def;
+                            if (!std::isfinite(v.z)) v.z = def;
+                        };
+                        fixVec(kf.translation, 0.0f);
+                        fixVec(kf.scale, 1.0f);
+                        if (!std::isfinite(kf.rotation.x)) kf.rotation.x = 0.0f;
+                        if (!std::isfinite(kf.rotation.y)) kf.rotation.y = 0.0f;
+                        if (!std::isfinite(kf.rotation.z)) kf.rotation.z = 0.0f;
+                        if (!std::isfinite(kf.rotation.w)) kf.rotation.w = 1.0f;
                         anim.boneKeyframes[bi].push_back(kf);
                     }
                 }
