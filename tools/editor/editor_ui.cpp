@@ -1997,6 +1997,11 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             ImGui::DragFloat("Scale##s", &sel->scale, 0.05f, 0.1f, 50.0f, "%.2f");
             int hp2 = sel->health; if (ImGui::InputInt("HP##s", &hp2)) sel->health = std::max(1, hp2);
             int lv2 = sel->level; if (ImGui::InputInt("Lv##s", &lv2)) sel->level = std::max(1, lv2);
+            int mp2 = sel->mana; if (ImGui::InputInt("Mana##s", &mp2)) sel->mana = std::max(0, mp2);
+            int dmin2 = sel->minDamage, dmax2 = sel->maxDamage;
+            ImGui::InputInt("Min Dmg##s", &dmin2); sel->minDamage = std::max(0, dmin2);
+            ImGui::InputInt("Max Dmg##s", &dmax2); sel->maxDamage = std::max(0, dmax2);
+            int arm2 = sel->armor; if (ImGui::InputInt("Armor##s", &arm2)) sel->armor = std::max(0, arm2);
             int dispId = static_cast<int>(sel->displayId);
             if (ImGui::InputInt("Display ID##s", &dispId))
                 sel->displayId = static_cast<uint32_t>(std::max(0, dispId));
