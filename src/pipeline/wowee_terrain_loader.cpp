@@ -137,6 +137,10 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
                 if (wci < 0 || wci >= 256) continue;
                 ADTTerrain::WaterLayer wl;
                 wl.liquidType = w.value("type", 0u);
+                // Known WoW liquid types: 0=water, 1=ocean, 2=magma, 3=slime.
+                // Out-of-range values would default to plain water in render
+                // but might break server-side liquid behaviour.
+                if (wl.liquidType > 3) wl.liquidType = 0;
                 wl.maxHeight = w.value("height", 0.0f);
                 // NaN water height would produce NaN vertex positions and
                 // a degenerate GPU draw, or crash the water mesh build.
