@@ -484,6 +484,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Walk extracted asset tree and report open-format coverage and exit\n");
     std::printf("  --info-png <path> [--json]\n");
     std::printf("                         Print PNG header (width, height, channels, bit depth) and exit\n");
+    std::printf("  --info-blp <path> [--json]\n");
+    std::printf("                         Print BLP texture header (format, compression, mips, dimensions) and exit\n");
     std::printf("  --info-jsondbc <path> [--json]\n");
     std::printf("                         Print JSON DBC sidecar metadata (records, fields, source) and exit\n");
     std::printf("  --list-missing-sidecars <dir> [--json]\n");
@@ -531,7 +533,7 @@ int main(int argc, char* argv[]) {
         "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--list-missing-sidecars",
-        "--info-png", "--info-jsondbc",
+        "--info-png", "--info-jsondbc", "--info-blp",
         "--info-zone", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
         "--list-quest-objectives", "--list-quest-rewards",
@@ -1105,6 +1107,65 @@ int main(int argc, char* argv[]) {
             std::printf("  color     : %s (%d channel%s)\n",
                         colorName, channels, channels == 1 ? "" : "s");
             std::printf("  file bytes: %llu\n", static_cast<unsigned long long>(fsz));
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-blp") == 0 && i + 1 < argc) {
+            // Inspect a BLP texture: format/compression/mips/dimensions.
+            // Loads the full image (which decompresses pixels) since we
+            // also report channel count and decoded byte size — useful
+            // for verifying the source before --convert-blp-png.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr, "info-blp: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            // Quick magic check before full decode — saves a confusing
+            // 'invalid' from the loader when the user feeds a non-BLP.
+            if (bytes.size() < 4 ||
+                !(bytes[0] == 'B' && bytes[1] == 'L' && bytes[2] == 'P' &&
+                  (bytes[3] == '1' || bytes[3] == '2'))) {
+                std::fprintf(stderr, "info-blp: %s is not a BLP1/BLP2 file\n",
+                             path.c_str());
+                return 1;
+            }
+            std::string magicVer = std::string(bytes.begin(), bytes.begin() + 4);
+            auto img = wowee::pipeline::BLPLoader::load(bytes);
+            if (!img.isValid()) {
+                std::fprintf(stderr, "info-blp: failed to decode %s\n", path.c_str());
+                return 1;
+            }
+            std::error_code ec;
+            uint64_t fsz = std::filesystem::file_size(path, ec);
+            const char* fmtName = wowee::pipeline::BLPLoader::getFormatName(img.format);
+            const char* compName = wowee::pipeline::BLPLoader::getCompressionName(img.compression);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["blp"] = path;
+                j["magic"] = magicVer;
+                j["width"] = img.width;
+                j["height"] = img.height;
+                j["channels"] = img.channels;
+                j["mipLevels"] = img.mipLevels;
+                j["format"] = fmtName;
+                j["compression"] = compName;
+                j["decodedBytes"] = img.data.size();
+                j["fileSize"] = fsz;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("BLP: %s (%s)\n", path.c_str(), magicVer.c_str());
+            std::printf("  size       : %d x %d\n", img.width, img.height);
+            std::printf("  channels   : %d\n", img.channels);
+            std::printf("  format     : %s\n", fmtName);
+            std::printf("  compression: %s\n", compName);
+            std::printf("  mip levels : %d\n", img.mipLevels);
+            std::printf("  file bytes : %llu\n", static_cast<unsigned long long>(fsz));
+            std::printf("  decoded RGBA bytes: %zu\n", img.data.size());
             return 0;
         } else if (std::strcmp(argv[i], "--info-jsondbc") == 0 && i + 1 < argc) {
             // Inspect a JSON DBC sidecar (the JSON output of asset_extract
