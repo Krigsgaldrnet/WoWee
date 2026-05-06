@@ -656,6 +656,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Emit a single-file HTML viewer next to the zone .glb (model-viewer based)\n");
     std::printf("  --export-project-html <projectDir> [out.html]\n");
     std::printf("                         Generate an index.html linking to every zone's HTML viewer in <projectDir>\n");
+    std::printf("  --export-project-md <projectDir> [out.md]\n");
+    std::printf("                         Generate a README.md indexing every zone with counts + viewer/bake status\n");
     std::printf("  --export-quest-graph <zoneDir> [out.dot]\n");
     std::printf("                         Render quest-chain DAG as Graphviz DOT (pipe to `dot -Tpng -o quests.png`)\n");
     std::printf("  --info <wom-base> [--json]\n");
@@ -794,7 +796,7 @@ int main(int argc, char* argv[]) {
         "--info-zone-extents",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
-        "--export-zone-checksum",
+        "--export-project-md", "--export-zone-checksum",
         "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--zone-stats", "--info-tilemap",
         "--list-zone-deps", "--check-zone-refs", "--check-zone-content",
@@ -5181,6 +5183,101 @@ int main(int argc, char* argv[]) {
             std::printf("Wrote %s\n", outPath.c_str());
             std::printf("  %zu zone(s) listed, %d with viewable HTML\n",
                         entries.size(), withViewer);
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-project-md") == 0 && i + 1 < argc) {
+            // Markdown counterpart to --export-project-html. Generates a
+            // README.md indexing every zone with counts + bake/viewer
+            // status. GitHub renders it natively at the project root.
+            // Pairs with --export-zone-summary-md (per-zone) — the project
+            // README links to each zone's per-zone .md.
+            std::string projectDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "export-project-md: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = projectDir + "/README.md";
+            // Per-zone collection: name + counts + which artifacts exist.
+            struct Row {
+                std::string name, dirRel, mapName;
+                int tiles = 0, creatures = 0, objects = 0, quests = 0;
+                bool hasGlb = false, hasHtml = false, hasZoneMd = false;
+            };
+            std::vector<Row> rows;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load((entry.path() / "zone.json").string())) continue;
+                Row r;
+                r.name = zm.displayName.empty() ? zm.mapName : zm.displayName;
+                r.dirRel = entry.path().filename().string();
+                r.mapName = zm.mapName;
+                r.tiles = static_cast<int>(zm.tiles.size());
+                wowee::editor::NpcSpawner sp;
+                if (sp.loadFromFile((entry.path() / "creatures.json").string())) {
+                    r.creatures = static_cast<int>(sp.spawnCount());
+                }
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile((entry.path() / "objects.json").string())) {
+                    r.objects = static_cast<int>(op.getObjects().size());
+                }
+                wowee::editor::QuestEditor qe;
+                if (qe.loadFromFile((entry.path() / "quests.json").string())) {
+                    r.quests = static_cast<int>(qe.questCount());
+                }
+                r.hasGlb = fs::exists(entry.path() / (zm.mapName + ".glb"));
+                r.hasHtml = fs::exists(entry.path() / (zm.mapName + ".html"));
+                r.hasZoneMd = fs::exists(entry.path() / "ZONE.md");
+                rows.push_back(std::move(r));
+            }
+            std::sort(rows.begin(), rows.end(),
+                      [](const Row& a, const Row& b) { return a.name < b.name; });
+            int totalT = 0, totalC = 0, totalO = 0, totalQ = 0;
+            for (const auto& r : rows) {
+                totalT += r.tiles; totalC += r.creatures;
+                totalO += r.objects; totalQ += r.quests;
+            }
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-project-md: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            out << "# Wowee Project — Zone Index\n\n";
+            out << "*Auto-generated. " << rows.size()
+                << " zone(s) discovered in `" << projectDir << "`.*\n\n";
+            out << "## Summary\n\n";
+            out << "| Metric | Total |\n|---|---:|\n";
+            out << "| Zones      | " << rows.size() << " |\n";
+            out << "| Tiles      | " << totalT << " |\n";
+            out << "| Creatures  | " << totalC << " |\n";
+            out << "| Objects    | " << totalO << " |\n";
+            out << "| Quests     | " << totalQ << " |\n\n";
+            out << "## Zones\n\n";
+            out << "| Zone | Tiles | Creatures | Objects | Quests | Bake | Viewer | Docs |\n";
+            out << "|---|---:|---:|---:|---:|:---:|:---:|:---:|\n";
+            for (const auto& r : rows) {
+                out << "| ";
+                if (r.hasZoneMd) {
+                    out << "[" << r.name << "](" << r.dirRel << "/ZONE.md)";
+                } else {
+                    out << r.name;
+                }
+                out << " | " << r.tiles << " | " << r.creatures << " | "
+                    << r.objects << " | " << r.quests << " | "
+                    << (r.hasGlb ? "✓" : "—") << " | "
+                    << (r.hasHtml ? "[view](" + r.dirRel + "/" + r.mapName + ".html)" : "—") << " | "
+                    << (r.hasZoneMd ? "[md](" + r.dirRel + "/ZONE.md)" : "—") << " |\n";
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  %zu zone(s) indexed (%d tiles, %d creatures, %d objects, %d quests)\n",
+                        rows.size(), totalT, totalC, totalO, totalQ);
             return 0;
         } else if (std::strcmp(argv[i], "--export-quest-graph") == 0 && i + 1 < argc) {
             // Render quest chains as a Graphviz DOT graph. Visualizing
