@@ -350,6 +350,29 @@ void EditorApp::processEvents() {
                     objectPlacer_.selectAll();
                     showToast("Selected " + std::to_string(objectPlacer_.selectionCount()) + " objects");
                 }
+                // Ctrl+D = duplicate selected object or NPC, offset by (10,10) on the ground.
+                if (sc == SDL_SCANCODE_D && (event.key.keysym.mod & KMOD_CTRL)) {
+                    if (auto* sel = objectPlacer_.getSelected()) {
+                        std::string dupPath = sel->path;
+                        glm::vec3 dupPos = sel->position + glm::vec3(10.0f, 10.0f, 0.0f);
+                        glm::vec3 dupRot = sel->rotation;
+                        float dupScale = sel->scale;
+                        auto dupType = sel->type;
+                        objectPlacer_.clearSelection();
+                        objectPlacer_.setActivePath(dupPath, dupType);
+                        objectPlacer_.setPlacementScale(dupScale);
+                        objectPlacer_.setPlacementRotationY(dupRot.y);
+                        objectPlacer_.placeObject(dupPos);
+                        objectsDirty_ = true;
+                        showToast("Duplicated object");
+                    } else if (auto* npc = npcSpawner_.getSelected()) {
+                        CreatureSpawn copy = *npc;
+                        copy.position += glm::vec3(10, 10, 0);
+                        npcSpawner_.placeCreature(copy);
+                        objectsDirty_ = true;
+                        showToast("Duplicated NPC");
+                    }
+                }
                 // W: add patrol waypoint at cursor for the selected NPC (no modifiers,
                 // editor must be in NPC mode and an NPC must be selected with Patrol behavior).
                 if (sc == SDL_SCANCODE_W && mode_ == EditorMode::NPC &&
