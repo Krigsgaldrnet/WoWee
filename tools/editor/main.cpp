@@ -40,6 +40,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
     std::printf("  --info-wot <wot-base>  Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
+    std::printf("  --info-zone <dir|json> Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
     std::printf("  --info-creatures <p>   Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-objects <p>     Print objects.json summary (counts, types, scale range) and exit\n");
     std::printf("  --info-quests <p>      Print quests.json summary (counts, rewards, chain errors) and exit\n");
@@ -63,7 +64,7 @@ int main(int argc, char* argv[]) {
     static const char* kArgRequired[] = {
         "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
-        "--info-wcp", "--list-wcp", "--unpack-wcp", "--pack-wcp",
+        "--info-zone", "--info-wcp", "--list-wcp", "--unpack-wcp", "--pack-wcp",
         "--validate", "--zone-summary",
         "--scaffold-zone", "--build-woc", "--regen-collision", "--export-png",
         "--convert-m2", "--convert-wmo",
@@ -205,6 +206,47 @@ int main(int argc, char* argv[]) {
             std::printf("  unique paths: %zu\n", pathHist.size());
             if (!objs.empty()) {
                 std::printf("  scale range : [%.2f, %.2f]\n", minScale, maxScale);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-zone") == 0 && i + 1 < argc) {
+            // Parse a zone.json and print every manifest field. Useful when
+            // diffing two zones or auditing the audio/flag setup before
+            // packing into a WCP.
+            std::string zonePath = argv[++i];
+            namespace fs = std::filesystem;
+            // Accept either a directory or the zone.json itself.
+            if (fs::is_directory(zonePath)) zonePath += "/zone.json";
+            wowee::editor::ZoneManifest manifest;
+            if (!manifest.load(zonePath)) {
+                std::fprintf(stderr, "Failed to load zone.json: %s\n", zonePath.c_str());
+                return 1;
+            }
+            std::printf("zone.json: %s\n", zonePath.c_str());
+            std::printf("  mapName     : %s\n", manifest.mapName.c_str());
+            std::printf("  displayName : %s\n", manifest.displayName.c_str());
+            std::printf("  mapId       : %u\n", manifest.mapId);
+            std::printf("  biome       : %s\n", manifest.biome.c_str());
+            std::printf("  baseHeight  : %.2f\n", manifest.baseHeight);
+            std::printf("  hasCreatures: %s\n", manifest.hasCreatures ? "yes" : "no");
+            std::printf("  description : %s\n", manifest.description.c_str());
+            std::printf("  tiles       : %zu\n", manifest.tiles.size());
+            for (const auto& t : manifest.tiles)
+                std::printf("    (%d, %d)\n", t.first, t.second);
+            std::printf("  flags       : %s%s%s%s\n",
+                        manifest.allowFlying  ? "fly " : "",
+                        manifest.pvpEnabled   ? "pvp " : "",
+                        manifest.isIndoor     ? "indoor " : "",
+                        manifest.isSanctuary  ? "sanctuary" : "");
+            if (!manifest.musicTrack.empty() || !manifest.ambienceDay.empty()) {
+                std::printf("  audio       :\n");
+                if (!manifest.musicTrack.empty())
+                    std::printf("    music     : %s (vol=%.2f)\n",
+                                manifest.musicTrack.c_str(), manifest.musicVolume);
+                if (!manifest.ambienceDay.empty())
+                    std::printf("    ambience  : %s (vol=%.2f)\n",
+                                manifest.ambienceDay.c_str(), manifest.ambienceVolume);
+                if (!manifest.ambienceNight.empty())
+                    std::printf("    night amb : %s\n", manifest.ambienceNight.c_str());
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-creatures") == 0 && i + 1 < argc) {
