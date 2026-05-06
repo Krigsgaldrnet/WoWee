@@ -945,12 +945,6 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
             auto mdlIt = models.find(groupModelId);
             if (mdlIt == models.end() || !mdlIt->second.vertexBuffer || !mdlIt->second.indexBuffer) {
-                if (forceNoCull_ && mdlIt != models.end()) {
-                    LOG_WARNING("M2 skip model ", groupModelId, " '", mdlIt->second.name,
-                                "': vb=", (void*)mdlIt->second.vertexBuffer,
-                                " ib=", (void*)mdlIt->second.indexBuffer,
-                                " batches=", mdlIt->second.batches.size());
-                }
                 visStart = groupEnd;
                 continue;
             }
@@ -1010,13 +1004,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 pending.push_back({entry.index, instanceFadeAlpha, needsBones, targetLOD});
             }
 
-            if (pending.empty()) {
-                if (forceNoCull_) {
-                    LOG_WARNING("M2 render: model '", model.name, "' all ",
-                                (groupEnd - visStart), " instances filtered out (bones?)");
-                }
-                visStart = groupEnd; continue;
-            }
+            if (pending.empty()) { visStart = groupEnd; continue; }
 
             // Sort by targetLOD so each sub-group occupies a contiguous SSBO range
             std::sort(pending.begin(), pending.end(),

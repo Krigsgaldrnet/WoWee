@@ -269,9 +269,8 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
 
     // Render NPC creatures as M2 instances
     if (m2Renderer_ && !npcs.empty()) {
-        LOG_WARNING("NPC rebuild: ", npcs.size(), " creatures to load");
         for (const auto& npc : npcs) {
-            if (npc.modelPath.empty()) { LOG_WARNING("NPC has empty modelPath: ", npc.name); continue; }
+            if (npc.modelPath.empty()) continue;
             uint32_t modelId;
             auto it = m2ModelIds.find(npc.modelPath);
             if (it != m2ModelIds.end()) {
@@ -315,7 +314,7 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                                 pipeline::M2Material mat; mat.flags = 0; mat.blendMode = 0;
                                 model.materials.push_back(mat);
                                 loaded = true;
-                                LOG_WARNING("NPC loaded from WOM: ", prefix, womBase);
+                                LOG_DEBUG("NPC loaded from WOM: ", prefix, womBase);
                                 break;
                             }
                         }
@@ -345,7 +344,7 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                              " (verts=", model.vertices.size(), " idx=", model.indices.size(), ")");
                     continue;
                 }
-                LOG_WARNING("NPC M2 OK: ", npc.modelPath, " (",
+                LOG_DEBUG("NPC M2 OK: ", npc.modelPath, " (",
                          model.vertices.size(), "v ", model.indices.size(), "i ",
                          model.batches.size(), "b)");
                 if (model.boundRadius < 1.0f) model.boundRadius = 50.0f;
@@ -385,14 +384,9 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
     }
     for (const auto& npc : npcs) {
         auto it = m2ModelIds.find(npc.modelPath);
-        if (it == m2ModelIds.end()) {
-            LOG_WARNING("NPC instance skip — no loaded model for: ", npc.modelPath);
-            continue;
-        }
+        if (it == m2ModelIds.end()) continue;
         glm::vec3 rotRad = glm::radians(glm::vec3(0, 0, npc.orientation));
-        uint32_t instId = m2Renderer_->createInstance(it->second, npc.position, rotRad, npc.scale);
-        LOG_WARNING("NPC instance created: id=", instId, " modelId=", it->second,
-                    " pos=(", npc.position.x, ",", npc.position.y, ",", npc.position.z, ")");
+        m2Renderer_->createInstance(it->second, npc.position, rotRad, npc.scale);
     }
 
     // Update NPC markers via dedicated method
@@ -644,12 +638,6 @@ void EditorViewport::render(VkCommandBuffer cmd) {
     terrainRenderer_->render(cmd, perFrameSet, *camera_);
 
     if (m2Renderer_) {
-        static int diagCounter = 0;
-        if (m2Renderer_->getInstanceCount() > 0 && (diagCounter++ % 300) == 0) {
-            LOG_WARNING("M2 render: ", m2Renderer_->getModelCount(), " models, ",
-                        m2Renderer_->getInstanceCount(), " instances, ",
-                        m2Renderer_->getDrawCallCount(), " draws");
-        }
         m2Renderer_->prepareRender(frame, *camera_);
         m2Renderer_->render(cmd, perFrameSet, *camera_);
     }
