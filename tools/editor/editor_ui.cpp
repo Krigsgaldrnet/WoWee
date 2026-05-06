@@ -2013,12 +2013,22 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
                         totalDist += glm::length(sel->position - prev);
                     ImGui::TextDisabled("Loop length: %.0f units", totalDist);
 
-                    ImGui::BeginChild("PatrolList", ImVec2(0, 110), true);
+                    ImGui::BeginChild("PatrolList", ImVec2(0, 130), true);
                     for (int pi = 0; pi < static_cast<int>(sel->patrolPath.size()); pi++) {
                         auto& pp = sel->patrolPath[pi];
                         ImGui::PushID(pi);
                         ImGui::Text("P%d (%.0f,%.0f,%.0f)",
                                     pi, pp.position.x, pp.position.y, pp.position.z);
+                        // Reorder + delete buttons in one row.
+                        ImGui::SameLine();
+                        if (pi > 0 && ImGui::SmallButton("up")) {
+                            std::swap(sel->patrolPath[pi], sel->patrolPath[pi - 1]);
+                        }
+                        ImGui::SameLine();
+                        if (pi + 1 < static_cast<int>(sel->patrolPath.size()) &&
+                            ImGui::SmallButton("dn")) {
+                            std::swap(sel->patrolPath[pi], sel->patrolPath[pi + 1]);
+                        }
                         ImGui::SameLine();
                         if (ImGui::SmallButton("X")) {
                             sel->patrolPath.erase(sel->patrolPath.begin() + pi--);
@@ -2029,6 +2039,16 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
                         float waitS = pp.waitTimeMs / 1000.0f;
                         if (ImGui::DragFloat("wait s", &waitS, 0.25f, 0.0f, 60.0f, "%.1fs"))
                             pp.waitTimeMs = std::max(0.0f, waitS) * 1000.0f;
+                        // Insert-after at brush cursor — useful for slicing
+                        // a long segment into two.
+                        ImGui::SameLine();
+                        auto& brush2 = app.getTerrainEditor().brush();
+                        if (brush2.isActive() && ImGui::SmallButton("+after")) {
+                            PatrolPoint np;
+                            np.position = brush2.getPosition();
+                            np.waitTimeMs = 2000.0f;
+                            sel->patrolPath.insert(sel->patrolPath.begin() + pi + 1, np);
+                        }
                         ImGui::PopID();
                     }
                     ImGui::EndChild();
