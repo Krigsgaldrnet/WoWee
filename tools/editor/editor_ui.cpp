@@ -1924,6 +1924,14 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
                 ImGui::SliderFloat("Wander Dist", &tmpl.wanderRadius, 1.0f, 100.0f);
             ImGui::SliderFloat("Aggro Range", &tmpl.aggroRadius, 0.0f, 100.0f);
 
+            float respSec = tmpl.respawnTimeMs / 1000.0f;
+            if (ImGui::DragFloat("Respawn (s)", &respSec, 5.0f, 5.0f, 86400.0f, "%.0fs")) {
+                if (respSec < 5.0f) respSec = 5.0f;
+                tmpl.respawnTimeMs = static_cast<uint32_t>(respSec * 1000.0f);
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Server respawn delay. AzerothCore default ~60-300s.");
+
             ImGui::Checkbox("Hostile", &tmpl.hostile);
             ImGui::SameLine(); ImGui::Checkbox("Questgiver", &tmpl.questgiver);
             ImGui::Checkbox("Vendor", &tmpl.vendor);
@@ -2002,6 +2010,11 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             ImGui::InputInt("Min Dmg##s", &dmin2); sel->minDamage = std::max(0, dmin2);
             ImGui::InputInt("Max Dmg##s", &dmax2); sel->maxDamage = std::max(0, dmax2);
             int arm2 = sel->armor; if (ImGui::InputInt("Armor##s", &arm2)) sel->armor = std::max(0, arm2);
+            float respSec2 = sel->respawnTimeMs / 1000.0f;
+            if (ImGui::DragFloat("Respawn (s)##s", &respSec2, 5.0f, 5.0f, 86400.0f, "%.0fs")) {
+                if (respSec2 < 5.0f) respSec2 = 5.0f;
+                sel->respawnTimeMs = static_cast<uint32_t>(respSec2 * 1000.0f);
+            }
             int dispId = static_cast<int>(sel->displayId);
             if (ImGui::InputInt("Display ID##s", &dispId))
                 sel->displayId = static_cast<uint32_t>(std::max(0, dispId));
