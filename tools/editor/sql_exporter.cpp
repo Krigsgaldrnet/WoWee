@@ -157,17 +157,52 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
         uint32_t entry = startEntry + q.id;
         uint32_t rewardMoney = q.reward.gold * 10000 + q.reward.silver * 100 + q.reward.copper;
 
+        // Map up to 4 KillCreature objectives to RequiredNpcOrGo slots
+        // and report objective counts in matching slots. Item objectives go
+        // to RequiredItemId/Count. Editor stores the M2 path in targetName,
+        // so creature objectives can only be linked when the user has filled
+        // a numeric ID into targetName (rare); leave 0 otherwise.
+        uint32_t reqNpcOrGo[4] = {0, 0, 0, 0};
+        uint32_t reqNpcOrGoCount[4] = {0, 0, 0, 0};
+        uint32_t reqItemId[6] = {0, 0, 0, 0, 0, 0};
+        uint32_t reqItemCount[6] = {0, 0, 0, 0, 0, 0};
+        size_t npcSlot = 0, itemSlot = 0;
+        for (const auto& obj : q.objectives) {
+            uint32_t id = 0;
+            try { id = static_cast<uint32_t>(std::stoul(obj.targetName)); } catch (...) {}
+            if (obj.type == QuestObjectiveType::KillCreature && npcSlot < 4) {
+                reqNpcOrGo[npcSlot] = id;
+                reqNpcOrGoCount[npcSlot] = obj.targetCount;
+                npcSlot++;
+            } else if (obj.type == QuestObjectiveType::CollectItem && itemSlot < 6) {
+                reqItemId[itemSlot] = id;
+                reqItemCount[itemSlot] = obj.targetCount;
+                itemSlot++;
+            }
+        }
+
         f << "INSERT INTO `quest_template` "
           << "(`ID`, `LogTitle`, `LogDescription`, `QuestCompletionLog`, "
-          << "`MinLevel`, `RewardXP`, `RewardMoney`) VALUES ("
+          << "`MinLevel`, `RewardXP`, `RewardMoney`, "
+          << "`RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, "
+          << "`RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, "
+          << "`RequiredNpcOrGo3`, `RequiredNpcOrGoCount3`, "
+          << "`RequiredNpcOrGo4`, `RequiredNpcOrGoCount4`, "
+          << "`RequiredItemId1`, `RequiredItemCount1`, "
+          << "`RequiredItemId2`, `RequiredItemCount2`, "
+          << "`RequiredItemId3`, `RequiredItemCount3`, "
+          << "`RequiredItemId4`, `RequiredItemCount4`, "
+          << "`RequiredItemId5`, `RequiredItemCount5`, "
+          << "`RequiredItemId6`, `RequiredItemCount6`) VALUES ("
           << entry << ", "
           << "'" << escapeSql(q.title) << "', "
           << "'" << escapeSql(q.description) << "', "
           << "'" << escapeSql(q.completionText) << "', "
           << q.requiredLevel << ", "
-          << q.reward.xp << ", "
-          << rewardMoney
-          << ") ON DUPLICATE KEY UPDATE `LogTitle`='" << escapeSql(q.title) << "';\n";
+          << q.reward.xp << ", " << rewardMoney;
+        for (int k = 0; k < 4; k++) f << ", " << reqNpcOrGo[k] << ", " << reqNpcOrGoCount[k];
+        for (int k = 0; k < 6; k++) f << ", " << reqItemId[k] << ", " << reqItemCount[k];
+        f << ") ON DUPLICATE KEY UPDATE `LogTitle`='" << escapeSql(q.title) << "';\n";
     }
 
     // creature_queststarter / creature_questender link quests to NPCs.
