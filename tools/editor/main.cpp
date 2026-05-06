@@ -598,6 +598,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Compare two zone dirs (creatures/objects/quests/manifest); exit 0 if identical\n");
     std::printf("  --diff-glb <a> <b> [--json]\n");
     std::printf("                         Compare two glTF 2.0 binaries structurally; exit 0 if identical\n");
+    std::printf("  --diff-wom <a-base> <b-base> [--json]\n");
+    std::printf("                         Compare two WOM models (verts, indices, bones, anims, batches, bounds)\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
@@ -672,6 +674,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--diff-glb") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--diff-glb requires <a.glb> <b.glb>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--diff-wom") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--diff-wom requires <a-base> <b-base>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 >= argc) {
@@ -2816,6 +2823,97 @@ int main(int argc, char* argv[]) {
             cmp("buffers",     aBuf,  bBuf);
             cmp("BIN bytes",   static_cast<int>(aBinLen),
                                 static_cast<int>(bBinLen));
+            if (diffs == 0) {
+                std::printf("  IDENTICAL\n");
+                return 0;
+            }
+            return 1;
+        } else if (std::strcmp(argv[i], "--diff-wom") == 0 && i + 2 < argc) {
+            // Structural compare of two WOM models. Useful for verifying
+            // that a --migrate-wom or round-trip through OBJ/glTF/STL
+            // preserved the right counts. Compares sizes only — point-
+            // wise vertex compare would be O(n²) and brittle to minor
+            // float diffs from format conversions.
+            std::string aBase = argv[++i];
+            std::string bBase = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            for (auto* base : {&aBase, &bBase}) {
+                if (base->size() >= 4 &&
+                    base->substr(base->size() - 4) == ".wom") {
+                    *base = base->substr(0, base->size() - 4);
+                }
+            }
+            for (const auto& base : {aBase, bBase}) {
+                if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                    std::fprintf(stderr,
+                        "diff-wom: WOM not found: %s.wom\n", base.c_str());
+                    return 1;
+                }
+            }
+            auto a = wowee::pipeline::WoweeModelLoader::load(aBase);
+            auto b = wowee::pipeline::WoweeModelLoader::load(bBase);
+            // Each row is (label, a-value, b-value) so the table renders
+            // straight.
+            struct Row {
+                const char* label;
+                long long av, bv;
+            };
+            std::vector<Row> rows = {
+                {"version",       a.version,                 b.version},
+                {"vertices",  (long long)a.vertices.size(),  (long long)b.vertices.size()},
+                {"indices",   (long long)a.indices.size(),   (long long)b.indices.size()},
+                {"triangles", (long long)(a.indices.size()/3),(long long)(b.indices.size()/3)},
+                {"textures",  (long long)a.texturePaths.size(),(long long)b.texturePaths.size()},
+                {"bones",     (long long)a.bones.size(),     (long long)b.bones.size()},
+                {"animations",(long long)a.animations.size(),(long long)b.animations.size()},
+                {"batches",   (long long)a.batches.size(),   (long long)b.batches.size()},
+            };
+            // Bounds compare with float epsilon since round-trips through
+            // text formats can perturb the last bit. 0.01-unit slop is
+            // generous (positions are typically in yards, ~1m).
+            auto closeBounds = [](const glm::vec3& x, const glm::vec3& y) {
+                return std::abs(x.x - y.x) < 0.01f &&
+                       std::abs(x.y - y.y) < 0.01f &&
+                       std::abs(x.z - y.z) < 0.01f;
+            };
+            bool boundsMatch = closeBounds(a.boundMin, b.boundMin) &&
+                                closeBounds(a.boundMax, b.boundMax) &&
+                                std::abs(a.boundRadius - b.boundRadius) < 0.01f;
+            int diffs = 0;
+            for (const auto& r : rows) if (r.av != r.bv) diffs++;
+            if (!boundsMatch) diffs++;
+            bool nameMatch = (a.name == b.name);
+            if (!nameMatch) diffs++;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["a"] = aBase + ".wom";
+                j["b"] = bBase + ".wom";
+                for (const auto& r : rows) {
+                    j[r.label] = {{"a", r.av}, {"b", r.bv}};
+                }
+                j["name"] = {{"a", a.name}, {"b", b.name}};
+                j["boundsMatch"] = boundsMatch;
+                j["totalDiffs"] = diffs;
+                j["identical"] = (diffs == 0);
+                std::printf("%s\n", j.dump(2).c_str());
+                return diffs == 0 ? 0 : 1;
+            }
+            std::printf("Diff: %s.wom vs %s.wom\n", aBase.c_str(), bBase.c_str());
+            std::printf("                       a              b\n");
+            for (const auto& r : rows) {
+                std::printf("  %-12s: %12lld %12lld  %s\n",
+                            r.label, r.av, r.bv,
+                            r.av == r.bv ? "" : "DIFF");
+            }
+            std::printf("  %-12s: %-13s %-13s  %s\n",
+                        "name",
+                        a.name.substr(0, 13).c_str(),
+                        b.name.substr(0, 13).c_str(),
+                        nameMatch ? "" : "DIFF");
+            std::printf("  %-12s: %s\n", "bounds",
+                        boundsMatch ? "match" : "DIFF");
             if (diffs == 0) {
                 std::printf("  IDENTICAL\n");
                 return 0;
