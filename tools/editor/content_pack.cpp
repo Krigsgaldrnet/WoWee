@@ -288,7 +288,12 @@ bool ContentPacker::readInfo(const std::string& wcpPath, ContentPackInfo& info) 
         info.mapId = j.value("mapId", 9000u);
         info.files.clear();
         if (j.contains("files") && j["files"].is_array()) {
+            // Same cap as the header fileCount — info JSON could declare
+            // more entries than the header, so this defends both readInfo
+            // callers and the listing CLI from runaway memory use.
+            constexpr size_t kMaxFiles = 1'000'000;
             for (const auto& jf : j["files"]) {
+                if (info.files.size() >= kMaxFiles) break;
                 ContentPackInfo::FileEntry fe;
                 fe.path = jf.value("path", "");
                 fe.size = jf.value("size", 0ULL);
