@@ -83,6 +83,10 @@ bool QuestEditor::loadFromFile(const std::string& path) {
             q.description = jq.value("description", "");
             q.completionText = jq.value("completionText", "");
             q.requiredLevel = jq.value("requiredLevel", 1u);
+            // WoW levels 1-80 (WotLK). Cap to keep AzerothCore happy and
+            // catch obvious typos like "999".
+            if (q.requiredLevel == 0) q.requiredLevel = 1;
+            if (q.requiredLevel > 255) q.requiredLevel = 80;
             q.questGiverNpcId = jq.value("questGiverNpcId", 0u);
             q.turnInNpcId = jq.value("turnInNpcId", 0u);
             q.nextQuestId = jq.value("nextQuestId", 0u);
@@ -93,9 +97,19 @@ bool QuestEditor::loadFromFile(const std::string& path) {
                 q.reward.gold = jr.value("gold", 0u);
                 q.reward.silver = jr.value("silver", 0u);
                 q.reward.copper = jr.value("copper", 0u);
+                // Reward sanity caps. Highest WoW quest XP ~50k; gold realistic
+                // cap is hundreds. Catches typo entries like "100000000 gold".
+                if (q.reward.xp > 1'000'000) q.reward.xp = 1'000'000;
+                if (q.reward.gold > 10000) q.reward.gold = 10000;
+                if (q.reward.silver > 99) q.reward.silver = 99;
+                if (q.reward.copper > 99) q.reward.copper = 99;
                 if (jr.contains("items") && jr["items"].is_array()) {
-                    for (const auto& item : jr["items"])
+                    for (const auto& item : jr["items"]) {
+                        // Cap item reward count to 6 (WoW quest_template
+                        // RewardItemId[1..6] slot capacity).
+                        if (q.reward.itemRewards.size() >= 6) break;
                         q.reward.itemRewards.push_back(item.get<std::string>());
+                    }
                 }
             }
 
