@@ -248,11 +248,21 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
                 reqNpcOrGo[npcSlot] = resolveCreatureEntry(id);
                 reqNpcOrGoCount[npcSlot] = obj.targetCount;
                 npcSlot++;
+            } else if (obj.type == QuestObjectiveType::TalkToNPC && npcSlot < 4) {
+                // AzerothCore reuses RequiredNpcOrGo for talk objectives —
+                // count=1 indicates an interaction rather than a kill.
+                reqNpcOrGo[npcSlot] = resolveCreatureEntry(id);
+                reqNpcOrGoCount[npcSlot] = 1;
+                npcSlot++;
             } else if (obj.type == QuestObjectiveType::CollectItem && itemSlot < 6) {
                 reqItemId[itemSlot] = id;
                 reqItemCount[itemSlot] = obj.targetCount;
                 itemSlot++;
             }
+            // ExploreArea / EscortNPC / UseObject have no direct
+            // quest_template column; they need server scripts. Silently
+            // skipped here (validateChains warns if a quest has no SQL-
+            // representable objectives).
         }
 
         f << "INSERT INTO `quest_template` "
