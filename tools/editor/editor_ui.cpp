@@ -2011,6 +2011,18 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             int bi2 = static_cast<int>(sel->behavior);
             if (ImGui::Combo("AI##s", &bi2, beh2, 4)) sel->behavior = static_cast<CreatureBehavior>(bi2);
 
+            // NPC role flags — match the template editor's set so users can
+            // toggle these on already-placed NPCs without re-creating them.
+            ImGui::Checkbox("Hostile##s", &sel->hostile);
+            ImGui::SameLine(); ImGui::Checkbox("Quest##s", &sel->questgiver);
+            ImGui::SameLine(); ImGui::Checkbox("Vendor##s", &sel->vendor);
+            ImGui::Checkbox("Inn##s", &sel->innkeeper);
+            ImGui::SameLine(); ImGui::Checkbox("Train##s", &sel->trainer);
+            ImGui::SameLine(); ImGui::Checkbox("Bank##s", &sel->banker);
+            ImGui::Checkbox("Auc##s", &sel->auctioneer);
+            ImGui::SameLine(); ImGui::Checkbox("Repair##s", &sel->repair);
+            ImGui::SameLine(); ImGui::Checkbox("Flight##s", &sel->flightmaster);
+
             // Patrol path editing
             if (sel->behavior == CreatureBehavior::Patrol) {
                 ImGui::Text("Patrol Points: %zu", sel->patrolPath.size());
