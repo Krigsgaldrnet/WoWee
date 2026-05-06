@@ -53,6 +53,9 @@ public:
     TransformGizmo& getGizmo() { return gizmo_; }
     void setBrushIndicator(const glm::vec3& center, float radius, bool active);
     void setPathPreview(const glm::vec3& start, const glm::vec3& end, float width, bool visible);
+    /** Show a multi-segment patrol path as a ribbon. Empty `points` clears it. */
+    void setPatrolPath(const std::vector<glm::vec3>& points, float width = 1.5f);
+    void clearPatrolPath() { setPatrolPath({}); }
 
     void setWireframe(bool enabled);
     void setShowNpcMarkers(bool show) { showNpcMarkers_ = show; }
@@ -134,6 +137,11 @@ private:
     VmaAllocation pathVBAlloc_ = VK_NULL_HANDLE;
     uint32_t pathVertCount_ = 0;
     bool pathVisible_ = false;
+
+    // Patrol path ribbon (selected NPC)
+    VkBuffer patrolVB_ = VK_NULL_HANDLE;
+    VmaAllocation patrolVBAlloc_ = VK_NULL_HANDLE;
+    uint32_t patrolVertCount_ = 0;
 };
 
 } // namespace editor

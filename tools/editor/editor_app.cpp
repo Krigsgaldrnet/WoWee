@@ -133,6 +133,18 @@ void EditorApp::run() {
             gizmo.setMode(TransformMode::None);
         }
 
+        // Patrol path visualization for the selected NPC
+        if (auto* selNpc = npcSpawner_.getSelected();
+            selNpc && !selNpc->patrolPath.empty()) {
+            std::vector<glm::vec3> pts;
+            pts.reserve(selNpc->patrolPath.size() + 1);
+            pts.push_back(selNpc->position);
+            for (const auto& wp : selNpc->patrolPath) pts.push_back(wp.position);
+            viewport_.setPatrolPath(pts);
+        } else {
+            viewport_.clearPatrolPath();
+        }
+
         uint32_t imageIndex = 0;
         VkCommandBuffer cmd = vkCtx->beginFrame(imageIndex);
         if (cmd == VK_NULL_HANDLE) continue;

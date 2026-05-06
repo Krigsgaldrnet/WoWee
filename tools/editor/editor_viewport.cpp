@@ -60,6 +60,7 @@ void EditorViewport::shutdown() {
     if (npcMarkerVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), npcMarkerVB_, npcMarkerVBAlloc_); npcMarkerVB_ = VK_NULL_HANDLE; }
     if (brushVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), brushVB_, brushVBAlloc_); brushVB_ = VK_NULL_HANDLE; }
     if (pathVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), pathVB_, pathVBAlloc_); pathVB_ = VK_NULL_HANDLE; }
+    if (patrolVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), patrolVB_, patrolVBAlloc_); patrolVB_ = VK_NULL_HANDLE; }
     gizmo_.shutdown();
     waterRenderer_.shutdown();
 
@@ -505,6 +506,80 @@ void EditorViewport::setPathPreview(const glm::vec3& start, const glm::vec3& end
     }
 }
 
+void EditorViewport::setPatrolPath(const std::vector<glm::vec3>& points, float width) {
+    if (patrolVB_) {
+        vmaDestroyBuffer(vkCtx_->getAllocator(), patrolVB_, patrolVBAlloc_);
+        patrolVB_ = VK_NULL_HANDLE;
+        patrolVertCount_ = 0;
+    }
+    if (points.size() < 2) return;
+
+    struct BV { float pos[3]; float color[4]; };
+    std::vector<BV> verts;
+    verts.reserve(points.size() * 24);
+
+    auto addRibbon = [&](const glm::vec3& a, const glm::vec3& b, float r, float g, float bl, float al) {
+        glm::vec2 dir = glm::vec2(b.x - a.x, b.y - a.y);
+        float len = glm::length(dir);
+        if (len < 0.001f) return;
+        dir /= len;
+        glm::vec2 perp(-dir.y, dir.x);
+        float hw = width * 0.5f;
+        float z0 = a.z + 1.5f;
+        float z1 = b.z + 1.5f;
+        BV v;
+        v.color[0] = r; v.color[1] = g; v.color[2] = bl; v.color[3] = al;
+        v.pos[0] = a.x - perp.x*hw; v.pos[1] = a.y - perp.y*hw; v.pos[2] = z0; verts.push_back(v);
+        v.pos[0] = a.x + perp.x*hw; v.pos[1] = a.y + perp.y*hw; v.pos[2] = z0; verts.push_back(v);
+        v.pos[0] = b.x - perp.x*hw; v.pos[1] = b.y - perp.y*hw; v.pos[2] = z1; verts.push_back(v);
+        v.pos[0] = b.x - perp.x*hw; v.pos[1] = b.y - perp.y*hw; v.pos[2] = z1; verts.push_back(v);
+        v.pos[0] = a.x + perp.x*hw; v.pos[1] = a.y + perp.y*hw; v.pos[2] = z0; verts.push_back(v);
+        v.pos[0] = b.x + perp.x*hw; v.pos[1] = b.y + perp.y*hw; v.pos[2] = z1; verts.push_back(v);
+    };
+
+    auto addWaypoint = [&](const glm::vec3& p, float r, float g, float bl) {
+        float s = 1.5f;
+        BV v;
+        v.color[0] = r; v.color[1] = g; v.color[2] = bl; v.color[3] = 0.95f;
+        glm::vec3 top(p.x, p.y, p.z + s * 2);
+        glm::vec3 bot(p.x, p.y, p.z + 0.2f);
+        glm::vec3 n(p.x, p.y + s, p.z + s);
+        glm::vec3 s2(p.x, p.y - s, p.z + s);
+        glm::vec3 e(p.x + s, p.y, p.z + s);
+        glm::vec3 w(p.x - s, p.y, p.z + s);
+        auto pushV = [&](const glm::vec3& vv){ v.pos[0]=vv.x; v.pos[1]=vv.y; v.pos[2]=vv.z; verts.push_back(v); };
+        pushV(top); pushV(n); pushV(e);
+        pushV(top); pushV(e); pushV(s2);
+        pushV(top); pushV(s2); pushV(w);
+        pushV(top); pushV(w); pushV(n);
+        pushV(bot); pushV(e); pushV(n);
+        pushV(bot); pushV(s2); pushV(e);
+        pushV(bot); pushV(w); pushV(s2);
+        pushV(bot); pushV(n); pushV(w);
+    };
+
+    for (size_t i = 0; i + 1 < points.size(); i++) {
+        addRibbon(points[i], points[i+1], 1.0f, 0.7f, 0.2f, 0.55f);
+    }
+    for (size_t i = 0; i < points.size(); i++) {
+        bool isStart = (i == 0);
+        addWaypoint(points[i], isStart ? 0.2f : 1.0f, isStart ? 1.0f : 0.85f, isStart ? 0.3f : 0.2f);
+    }
+
+    patrolVertCount_ = static_cast<uint32_t>(verts.size());
+    VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufInfo.size = verts.size() * sizeof(BV);
+    bufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo mapInfo{};
+    if (vmaCreateBuffer(vkCtx_->getAllocator(), &bufInfo, &allocInfo,
+            &patrolVB_, &patrolVBAlloc_, &mapInfo) == VK_SUCCESS) {
+        std::memcpy(mapInfo.pMappedData, verts.data(), verts.size() * sizeof(BV));
+    }
+}
+
 void EditorViewport::updateNpcMarkers(const std::vector<CreatureSpawn>& npcs) {
     if (npcMarkerVB_) {
         vmaDestroyBuffer(vkCtx_->getAllocator(), npcMarkerVB_, npcMarkerVBAlloc_);
@@ -682,6 +757,20 @@ void EditorViewport::render(VkCommandBuffer cmd) {
             VkDeviceSize off = 0;
             vkCmdBindVertexBuffers(cmd, 0, 1, &pathVB_, &off);
             vkCmdDraw(cmd, pathVertCount_, 1, 0, 0);
+        }
+    }
+
+    // Patrol path ribbon for selected NPC
+    if (patrolVB_ && patrolVertCount_ > 0) {
+        auto* waterPipeline = waterRenderer_.getPipeline();
+        auto* waterLayout = waterRenderer_.getPipelineLayout();
+        if (waterPipeline && waterLayout) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterPipeline);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout,
+                                    0, 1, &perFrameSet, 0, nullptr);
+            VkDeviceSize off = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &patrolVB_, &off);
+            vkCmdDraw(cmd, patrolVertCount_, 1, 0, 0);
         }
     }
 
