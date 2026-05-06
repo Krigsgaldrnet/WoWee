@@ -276,6 +276,28 @@ WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::strin
 
     bld.boundRadius = maxDist;
 
+    // Extract portals (vertex polygons + group links via MOPR refs).
+    // Each MOPR ref links a portal to one of its two adjacent groups; pairing
+    // refs with the same portalIndex gives us groupA/groupB for that portal.
+    for (size_t pi = 0; pi < wmo.portals.size(); pi++) {
+        const auto& wmoPortal = wmo.portals[pi];
+        WoweeBuilding::Portal wp;
+        wp.groupA = -1;
+        wp.groupB = -1;
+        for (const auto& ref : wmo.portalRefs) {
+            if (ref.portalIndex != static_cast<uint16_t>(pi)) continue;
+            if (wp.groupA < 0) wp.groupA = ref.groupIndex;
+            else if (wp.groupB < 0) wp.groupB = ref.groupIndex;
+        }
+        for (uint16_t vi = 0; vi < wmoPortal.vertexCount; vi++) {
+            uint32_t idx = wmoPortal.startVertex + vi;
+            if (idx < wmo.portalVertices.size()) {
+                wp.vertices.push_back(wmo.portalVertices[idx]);
+            }
+        }
+        if (!wp.vertices.empty()) bld.portals.push_back(std::move(wp));
+    }
+
     for (const auto& doodad : wmo.doodads) {
         auto nameIt = wmo.doodadNames.find(doodad.nameIndex);
         if (nameIt == wmo.doodadNames.end()) continue;
