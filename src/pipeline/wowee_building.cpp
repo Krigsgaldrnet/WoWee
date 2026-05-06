@@ -198,7 +198,10 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
     f.write(reinterpret_cast<const char*>(&gc), 4);
     f.write(reinterpret_cast<const char*>(&pc), 4);
     f.write(reinterpret_cast<const char*>(&dc), 4);
-    f.write(reinterpret_cast<const char*>(&bld.boundRadius), 4);
+    // Same float sanitize as WOM/WOC saves — defaults to 1.0 if non-finite.
+    float boundRadius = std::isfinite(bld.boundRadius) && bld.boundRadius >= 0.0f
+                            ? bld.boundRadius : 1.0f;
+    f.write(reinterpret_cast<const char*>(&boundRadius), 4);
 
     // Truncate length-prefixed strings to fit their u16 length field — without
     // this, names over 65535 chars would silently get a wrap-around length and
@@ -222,8 +225,14 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         f.write(reinterpret_cast<const char*>(&tc), 4);
         uint8_t outdoor = grp.isOutdoor ? 1 : 0;
         f.write(reinterpret_cast<const char*>(&outdoor), 1);
-        f.write(reinterpret_cast<const char*>(&grp.boundMin), 12);
-        f.write(reinterpret_cast<const char*>(&grp.boundMax), 12);
+        // Sanitize group bounds — non-finite would corrupt cull frustum.
+        glm::vec3 bMin = grp.boundMin, bMax = grp.boundMax;
+        for (int k = 0; k < 3; k++) {
+            if (!std::isfinite(bMin[k])) bMin[k] = 0.0f;
+            if (!std::isfinite(bMax[k])) bMax[k] = 0.0f;
+        }
+        f.write(reinterpret_cast<const char*>(&bMin), 12);
+        f.write(reinterpret_cast<const char*>(&bMax), 12);
 
         f.write(reinterpret_cast<const char*>(grp.vertices.data()),
                 vc * sizeof(WoweeBuilding::Vertex));
