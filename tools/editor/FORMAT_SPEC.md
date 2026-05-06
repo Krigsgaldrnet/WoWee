@@ -35,12 +35,12 @@ Novel file formats for custom WoW zone content. No Blizzard IP.
 ## WOB — Wowee Open Building (binary)
 - Extension: `.wob`
 - Magic: `WOB1` (0x31424F57)
-- Layout: magic(4) + groupCount(4) + portalCount(4) + doodadCount(4) + bounds(4) + name + groups + portals + doodads
-- Group: name + vertexCount(4) + indexCount(4) + texCount(4) + outdoor(1) + bounds(24)
-  + vertices(pos+normal+uv+color) + indices + texPaths + materialCount(4) + materials
-- Material: texturePath + flags(4) + shader(4) + blendMode(4)
-- Doodad: modelPath + position(12) + rotation(12) + scale(4)
-- Portal: groupA(4) + groupB(4) + vertexCount(4) + vertices
+- Layout: magic(4) + groupCount(4) + portalCount(4) + doodadCount(4) + boundRadius(4) + nameLen(2) + name + groups + portals + doodads
+- Group: nameLen(2) + name + vertexCount(4) + indexCount(4) + texCount(4) + outdoor(1) + boundMin(12) + boundMax(12)
+  + vertices(pos+normal+uv+color = 48 bytes) + indices(uint32) + texPaths(prefixed) + materialCount(4) + materials
+- Material: pathLen(2) + texturePath + flags(4) + shader(4) + blendMode(4)
+- Doodad: pathLen(2) + modelPath + position(12) + rotation(12 euler degrees) + scale(4)
+- Portal: groupA(4) + groupB(4) + vertexCount(4) + vertices(12 bytes each)
 - toWMOModel restoration:
   - Materials are deduplicated across all groups by (texture, blend, flags)
   - Texture paths .png → .blp (renderer's PNG override is keyed on .blp)
