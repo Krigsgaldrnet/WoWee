@@ -1018,24 +1018,29 @@ void EditorApp::exportZone(const std::string& outputDir) {
         objectPlacer_.saveToFile(objPath);
     }
 
-    // Convert placed M2 objects to WOM open format
-    if (objectPlacer_.objectCount() > 0) {
+    // Convert all referenced M2 models (placed objects + NPCs) to WOM open format.
+    // This makes the exported zone self-contained and free of proprietary M2/skin files.
+    {
         std::unordered_set<std::string> convertedModels;
+        auto convertOne = [&](const std::string& m2Path) {
+            if (m2Path.empty() || convertedModels.count(m2Path)) return;
+            auto wom = pipeline::WoweeModelLoader::fromM2(m2Path, assetManager_.get());
+            if (!wom.isValid()) return;
+            std::string womPath = m2Path;
+            std::replace(womPath.begin(), womPath.end(), '\\', '/');
+            auto dot = womPath.rfind('.');
+            if (dot != std::string::npos) womPath = womPath.substr(0, dot);
+            pipeline::WoweeModelLoader::save(wom, base + "/models/" + womPath);
+            convertedModels.insert(m2Path);
+        };
         for (const auto& obj : objectPlacer_.getObjects()) {
-            if (obj.type == PlaceableType::M2 && !convertedModels.count(obj.path)) {
-                auto wom = pipeline::WoweeModelLoader::fromM2(obj.path, assetManager_.get());
-                if (wom.isValid()) {
-                    std::string womPath = obj.path;
-                    std::replace(womPath.begin(), womPath.end(), '\\', '/');
-                    auto dot = womPath.rfind('.');
-                    if (dot != std::string::npos) womPath = womPath.substr(0, dot);
-                    pipeline::WoweeModelLoader::save(wom, base + "/models/" + womPath);
-                    convertedModels.insert(obj.path);
-                }
-            }
+            if (obj.type == PlaceableType::M2) convertOne(obj.path);
+        }
+        for (const auto& npc : npcSpawner_.getSpawns()) {
+            convertOne(npc.modelPath);
         }
         if (!convertedModels.empty())
-            LOG_INFO("Converted ", convertedModels.size(), " M2 models to WOM");
+            LOG_INFO("Converted ", convertedModels.size(), " M2 models to WOM (objects + NPCs)");
     }
 
     // Convert placed WMO buildings to WOB open format
