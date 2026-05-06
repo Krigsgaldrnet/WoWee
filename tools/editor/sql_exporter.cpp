@@ -114,10 +114,12 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
         uint32_t guid = startEntry + static_cast<uint32_t>(i);
 
         // movementType: 0=stationary, 1=wander, 2=waypoint (patrol).
-        // Patrol with no waypoints would log an error in AzerothCore at
-        // spawn — fall back to stationary so the spawn still appears.
+        // Patrol with no waypoints or Wander with zero radius would either
+        // log an error or spawn a creature that pretends to wander but
+        // never moves. Downgrade to stationary in both cases.
         uint8_t movementType = 0;
-        if (s.behavior == CreatureBehavior::Wander) movementType = 1;
+        if (s.behavior == CreatureBehavior::Wander && s.wanderRadius > 0.01f)
+            movementType = 1;
         if (s.behavior == CreatureBehavior::Patrol && !s.patrolPath.empty())
             movementType = 2;
 
