@@ -135,6 +135,12 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
     for (uint32_t i = 0; i < fileCount; i++) {
         uint16_t pathLen;
         in.read(reinterpret_cast<char*>(&pathLen), 2);
+        // Cap path length — uint16 can hold up to 64KB but real zone paths
+        // are well under 256 chars. Anything longer is corrupt or malicious.
+        if (pathLen > 1024) {
+            LOG_ERROR("WCP rejected file ", i, " path length ", pathLen, " too large");
+            return false;
+        }
         std::string path(pathLen, '\0');
         in.read(path.data(), pathLen);
 
@@ -148,8 +154,10 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
         }
         // Reject path-traversal attempts. Files like "../../etc/passwd" would
         // write outside destDir/<zoneName>/ and clobber system files.
+        // Also catch Windows-style backslash traversal and absolute paths.
         if (path.find("..") != std::string::npos ||
-            (!path.empty() && path[0] == '/')) {
+            (!path.empty() && (path[0] == '/' || path[0] == '\\')) ||
+            (path.size() >= 2 && path[1] == ':')) {  // C:\... drive prefix
             LOG_ERROR("WCP rejected suspicious path: ", path);
             return false;
         }
