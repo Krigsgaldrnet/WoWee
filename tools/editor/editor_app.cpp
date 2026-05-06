@@ -1356,6 +1356,10 @@ void EditorApp::exportZone(const std::string& outputDir) {
     LOG_INFO("  NPCs: ", npcSpawner_.spawnCount(), " creatures");
     LOG_INFO("  Quests: ", questEditor_.questCount());
     LOG_INFO("========================");
+
+    // Any path through exportZone counts as a save — clear the pending flag
+    // so the dirty asterisk and quit-confirm dialog go away.
+    autoSavePendingChanges_ = false;
 }
 
 void EditorApp::exportContentPack(const std::string& destPath) {
