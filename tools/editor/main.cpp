@@ -714,6 +714,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         List every objective on a quest (for --remove-quest-objective)\n");
     std::printf("  --list-quest-rewards <p> <questIdx> [--json]\n");
     std::printf("                         List XP/coin/item rewards on a quest\n");
+    std::printf("  --info-quest-graph-stats <p> [--json]\n");
+    std::printf("                         Analyze quest chain graph (roots, leaves, depths, cycles, orphans)\n");
     std::printf("  --info-creature <p> <idx> [--json]\n");
     std::printf("                         Print every field for one creature spawn (stats, behavior, AI, flags)\n");
     std::printf("  --info-quest <p> <idx> [--json]\n");
@@ -775,6 +777,7 @@ int main(int argc, char* argv[]) {
         "--list-creatures", "--list-objects", "--list-quests",
         "--list-quest-objectives", "--list-quest-rewards",
         "--info-creature", "--info-quest", "--info-object",
+        "--info-quest-graph-stats",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
@@ -2755,6 +2758,93 @@ int main(int argc, char* argv[]) {
                 std::printf("    [%zu] %s\n", k, r.itemRewards[k].c_str());
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--info-quest-graph-stats") == 0 && i + 1 < argc) {
+            // Topology analysis of the quest dependency graph. Where
+            // --export-quest-graph visualizes it, this quantifies it:
+            //   roots    = quests no one chains TO (entry points)
+            //   leaves   = quests with no nextQuestId (terminal)
+            //   orphans  = roots that are also leaves (one-shot quests)
+            //   cycles   = circular chain detected
+            //   maxDepth = longest path from any root
+            //   avgDepth = mean path length across all roots
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr,
+                    "info-quest-graph-stats: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            const auto& quests = qe.getQuests();
+            // Build id -> nextId and reverse adjacency.
+            std::unordered_map<uint32_t, uint32_t> nextOf;
+            std::unordered_set<uint32_t> hasInbound;
+            std::unordered_set<uint32_t> validIds;
+            for (const auto& q : quests) {
+                validIds.insert(q.id);
+                nextOf[q.id] = q.nextQuestId;
+            }
+            for (const auto& q : quests) {
+                if (q.nextQuestId != 0 && validIds.count(q.nextQuestId)) {
+                    hasInbound.insert(q.nextQuestId);
+                }
+            }
+            int roots = 0, leaves = 0, orphans = 0;
+            int cycles = 0;
+            int maxDepth = 0;
+            int sumDepths = 0;
+            for (const auto& q : quests) {
+                bool isRoot = (hasInbound.count(q.id) == 0);
+                bool isLeaf = (q.nextQuestId == 0 ||
+                                validIds.count(q.nextQuestId) == 0);
+                if (isRoot) roots++;
+                if (isLeaf) leaves++;
+                if (isRoot && isLeaf) orphans++;
+                if (isRoot) {
+                    // Walk the chain forward, counting depth + cycle-guarding.
+                    std::unordered_set<uint32_t> visited;
+                    int depth = 1;
+                    uint32_t current = q.id;
+                    while (current != 0 && validIds.count(current)) {
+                        if (!visited.insert(current).second) {
+                            cycles++;
+                            break;
+                        }
+                        auto it = nextOf.find(current);
+                        if (it == nextOf.end() || it->second == 0) break;
+                        current = it->second;
+                        depth++;
+                    }
+                    if (depth > maxDepth) maxDepth = depth;
+                    sumDepths += depth;
+                }
+            }
+            double avgDepth = (roots > 0) ? double(sumDepths) / roots : 0.0;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["totalQuests"] = quests.size();
+                j["roots"] = roots;
+                j["leaves"] = leaves;
+                j["orphans"] = orphans;
+                j["cycles"] = cycles;
+                j["maxDepth"] = maxDepth;
+                j["avgDepth"] = avgDepth;
+                std::printf("%s\n", j.dump(2).c_str());
+                return cycles == 0 ? 0 : 1;
+            }
+            std::printf("Quest graph: %s\n", path.c_str());
+            std::printf("  total quests : %zu\n", quests.size());
+            std::printf("  roots        : %d (no inbound chain — entry points)\n", roots);
+            std::printf("  leaves       : %d (no outbound chain — terminal)\n", leaves);
+            std::printf("  orphans      : %d (root AND leaf — one-shot)\n", orphans);
+            std::printf("  cycles       : %d %s\n", cycles,
+                        cycles == 0 ? "" : "(BROKEN — chains loop back)");
+            std::printf("  max depth    : %d\n", maxDepth);
+            std::printf("  avg depth    : %.2f (chain length per root)\n", avgDepth);
+            return cycles == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--info-creature") == 0 && i + 2 < argc) {
             // Single-creature deep dive — every CreatureSpawn field for
             // one entry. Companion to --list-creatures (which is a
