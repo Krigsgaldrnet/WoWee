@@ -1958,18 +1958,34 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
                     }
                 }
                 if (!sel->patrolPath.empty()) {
-                    ImGui::BeginChild("PatrolList", ImVec2(0, 80), true);
+                    // Compute total loop distance so users can see how long the cycle is.
+                    float totalDist = 0.0f;
+                    glm::vec3 prev = sel->position;
+                    for (const auto& wp : sel->patrolPath) {
+                        totalDist += glm::length(wp.position - prev);
+                        prev = wp.position;
+                    }
+                    if (sel->patrolPath.size() >= 2)
+                        totalDist += glm::length(sel->position - prev);
+                    ImGui::TextDisabled("Loop length: %.0f units", totalDist);
+
+                    ImGui::BeginChild("PatrolList", ImVec2(0, 110), true);
                     for (int pi = 0; pi < static_cast<int>(sel->patrolPath.size()); pi++) {
                         auto& pp = sel->patrolPath[pi];
-                        char lbl[64];
-                        std::snprintf(lbl, sizeof(lbl), "P%d (%.0f,%.0f,%.0f) %.1fs",
-                                      pi, pp.position.x, pp.position.y, pp.position.z,
-                                      pp.waitTimeMs / 1000.0f);
-                        ImGui::Text("%s", lbl);
+                        ImGui::PushID(pi);
+                        ImGui::Text("P%d (%.0f,%.0f,%.0f)",
+                                    pi, pp.position.x, pp.position.y, pp.position.z);
                         ImGui::SameLine();
-                        char delBtn[16]; std::snprintf(delBtn, sizeof(delBtn), "X##p%d", pi);
-                        if (ImGui::SmallButton(delBtn))
+                        if (ImGui::SmallButton("X")) {
                             sel->patrolPath.erase(sel->patrolPath.begin() + pi--);
+                            ImGui::PopID();
+                            continue;
+                        }
+                        ImGui::SetNextItemWidth(80);
+                        float waitS = pp.waitTimeMs / 1000.0f;
+                        if (ImGui::DragFloat("wait s", &waitS, 0.25f, 0.0f, 60.0f, "%.1fs"))
+                            pp.waitTimeMs = std::max(0.0f, waitS) * 1000.0f;
+                        ImGui::PopID();
                     }
                     ImGui::EndChild();
                     if (ImGui::Button("Clear Path##patrol"))
