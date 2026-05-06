@@ -452,6 +452,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Duplicate a zone to custom_zones/<slug>/ with renamed slug-prefixed files\n");
     std::printf("  --rename-zone <srcDir> <newName>\n");
     std::printf("                         In-place rename (zone.json + slug-prefixed files + dir); no copy\n");
+    std::printf("  --clear-zone-content <zoneDir> [--creatures] [--objects] [--quests] [--all]\n");
+    std::printf("                         Wipe one or more content files (terrain + manifest preserved)\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
     std::printf("  --regen-collision <zoneDir>  Rebuild every WOC under a zone dir and exit\n");
     std::printf("  --fix-zone <zoneDir>   Re-parse + re-save zone JSONs to apply latest scrubs/caps and exit\n");
@@ -573,7 +575,7 @@ int main(int argc, char* argv[]) {
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest",
-        "--copy-zone", "--rename-zone",
+        "--copy-zone", "--rename-zone", "--clear-zone-content",
         "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png", "--export-obj", "--import-obj",
         "--export-wob-obj", "--import-wob-obj",
@@ -5325,6 +5327,75 @@ int main(int argc, char* argv[]) {
             std::printf("Renamed %s -> %s\n", srcDir.c_str(), finalDir.c_str());
             std::printf("  mapName  : %s -> %s\n", oldSlug.c_str(), newSlug.c_str());
             std::printf("  renamed  : %d slug-prefixed file(s)\n", renamed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--clear-zone-content") == 0 && i + 1 < argc) {
+            // Wipe content files (creatures.json / objects.json /
+            // quests.json) from a zone while keeping terrain + manifest
+            // intact. Useful for templating: --copy-zone gives you a
+            // duplicate; --clear-zone-content turns it into an empty
+            // shell ready for fresh population.
+            //
+            // Pass --creatures / --objects / --quests to wipe individually,
+            // or --all to wipe everything. At least one selector is required.
+            std::string zoneDir = argv[++i];
+            bool wipeCreatures = false, wipeObjects = false, wipeQuests = false;
+            while (i + 1 < argc && argv[i + 1][0] == '-') {
+                std::string opt = argv[i + 1];
+                if      (opt == "--creatures") { wipeCreatures = true; ++i; }
+                else if (opt == "--objects")   { wipeObjects = true;   ++i; }
+                else if (opt == "--quests")    { wipeQuests = true;    ++i; }
+                else if (opt == "--all") {
+                    wipeCreatures = wipeObjects = wipeQuests = true; ++i;
+                }
+                else break;  // unknown flag — stop consuming, surface the error
+            }
+            if (!wipeCreatures && !wipeObjects && !wipeQuests) {
+                std::fprintf(stderr,
+                    "clear-zone-content: pass --creatures / --objects / --quests / --all\n");
+                return 1;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "clear-zone-content: %s has no zone.json — not a zone dir\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            // Delete (not blank-write) so the next --info-* doesn't see
+            // an empty file and report 'total: 0' as if data existed.
+            // Missing files are the canonical 'no content' state.
+            int deleted = 0;
+            std::error_code ec;
+            auto wipe = [&](const std::string& fname) {
+                std::string p = zoneDir + "/" + fname;
+                if (fs::exists(p) && fs::remove(p, ec)) {
+                    ++deleted;
+                    std::printf("  removed  : %s\n", fname.c_str());
+                } else if (fs::exists(p)) {
+                    std::fprintf(stderr,
+                        "  WARN: failed to remove %s (%s)\n",
+                        p.c_str(), ec.message().c_str());
+                } else {
+                    std::printf("  skipped  : %s (already absent)\n", fname.c_str());
+                }
+            };
+            std::printf("Cleared content from %s\n", zoneDir.c_str());
+            if (wipeCreatures) wipe("creatures.json");
+            if (wipeObjects)   wipe("objects.json");
+            if (wipeQuests)    wipe("quests.json");
+            // Also reset manifest.hasCreatures so server module gen
+            // doesn't expect an NPC table that's no longer there.
+            if (wipeCreatures) {
+                wowee::editor::ZoneManifest zm;
+                if (zm.load(zoneDir + "/zone.json")) {
+                    if (zm.hasCreatures) {
+                        zm.hasCreatures = false;
+                        zm.save(zoneDir + "/zone.json");
+                        std::printf("  updated  : zone.json hasCreatures = false\n");
+                    }
+                }
+            }
+            std::printf("  removed  : %d file(s) total\n", deleted);
             return 0;
         } else if (std::strcmp(argv[i], "--pack-wcp") == 0 && i + 1 < argc) {
             // Pack a zone directory into a .wcp archive.
