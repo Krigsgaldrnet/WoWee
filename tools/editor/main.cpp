@@ -230,6 +230,170 @@ static std::vector<std::string> validateWobErrors(
     return errors;
 }
 
+static std::vector<std::string> validateWocErrors(
+        const wowee::pipeline::WoweeCollision& woc) {
+    std::vector<std::string> errors;
+    if (!woc.isValid()) errors.push_back("empty collision (no triangles)");
+    if (woc.tileX >= 64 || woc.tileY >= 64) {
+        errors.push_back("tile coords out of WoW grid: (" +
+                         std::to_string(woc.tileX) + ", " +
+                         std::to_string(woc.tileY) + ") — must be < 64");
+    }
+    int nanTris = 0, degenerate = 0, badFlags = 0;
+    auto isFiniteVec = [](const glm::vec3& v) {
+        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+    };
+    constexpr uint8_t kKnownFlags = 0x0F;  // walkable|water|steep|indoor
+    for (size_t t = 0; t < woc.triangles.size(); ++t) {
+        const auto& tri = woc.triangles[t];
+        if (!isFiniteVec(tri.v0) || !isFiniteVec(tri.v1) || !isFiniteVec(tri.v2)) {
+            if (++nanTris <= 3) {
+                errors.push_back("triangle " + std::to_string(t) +
+                                 " has non-finite vertex coord");
+            }
+        }
+        if (tri.v0 == tri.v1 || tri.v1 == tri.v2 || tri.v0 == tri.v2) {
+            if (++degenerate <= 3) {
+                errors.push_back("triangle " + std::to_string(t) +
+                                 " is degenerate (two vertices identical)");
+            }
+        }
+        if (tri.flags & ~kKnownFlags) {
+            if (++badFlags <= 3) {
+                errors.push_back("triangle " + std::to_string(t) +
+                                 " has unknown flag bits 0x" +
+                                 [&]{ char b[8]; std::snprintf(b,sizeof b,"%02X",tri.flags); return std::string(b); }());
+            }
+        }
+    }
+    if (nanTris > 3) errors.push_back("... and " + std::to_string(nanTris - 3) +
+                                       " more non-finite triangles");
+    if (degenerate > 3) errors.push_back("... and " + std::to_string(degenerate - 3) +
+                                          " more degenerate triangles");
+    if (badFlags > 3) errors.push_back("... and " + std::to_string(badFlags - 3) +
+                                        " more triangles with unknown flag bits");
+    if (woc.bounds.min.x > woc.bounds.max.x ||
+        woc.bounds.min.y > woc.bounds.max.y ||
+        woc.bounds.min.z > woc.bounds.max.z) {
+        errors.push_back("bounds.min > bounds.max on at least one axis");
+    }
+    return errors;
+}
+
+static std::vector<std::string> validateWhmErrors(
+        const wowee::pipeline::ADTTerrain& terrain) {
+    std::vector<std::string> errors;
+    if (!terrain.isLoaded()) {
+        errors.push_back("terrain not loaded");
+        return errors;
+    }
+    if (terrain.coord.x < 0 || terrain.coord.x >= 64 ||
+        terrain.coord.y < 0 || terrain.coord.y >= 64) {
+        errors.push_back("tile coord out of WoW grid: (" +
+                         std::to_string(terrain.coord.x) + ", " +
+                         std::to_string(terrain.coord.y) + ")");
+    }
+    int nanHeightChunks = 0, nanPosChunks = 0;
+    int loadedChunks = 0;
+    float minH = 1e30f, maxH = -1e30f;
+    for (size_t c = 0; c < 256; ++c) {
+        const auto& chunk = terrain.chunks[c];
+        if (!chunk.heightMap.isLoaded()) continue;
+        loadedChunks++;
+        if (!std::isfinite(chunk.position[0]) ||
+            !std::isfinite(chunk.position[1]) ||
+            !std::isfinite(chunk.position[2])) {
+            if (++nanPosChunks <= 3) {
+                errors.push_back("chunk " + std::to_string(c) +
+                                 " has non-finite position");
+            }
+        }
+        bool chunkHasBadHeight = false;
+        for (float h : chunk.heightMap.heights) {
+            if (!std::isfinite(h)) {
+                chunkHasBadHeight = true;
+            } else {
+                if (h < minH) minH = h;
+                if (h > maxH) maxH = h;
+            }
+        }
+        if (chunkHasBadHeight) {
+            if (++nanHeightChunks <= 3) {
+                errors.push_back("chunk " + std::to_string(c) +
+                                 " contains non-finite heights");
+            }
+        }
+    }
+    if (nanHeightChunks > 3) {
+        errors.push_back("... and " + std::to_string(nanHeightChunks - 3) +
+                         " more chunks with non-finite heights");
+    }
+    if (nanPosChunks > 3) {
+        errors.push_back("... and " + std::to_string(nanPosChunks - 3) +
+                         " more chunks with non-finite positions");
+    }
+    if (loadedChunks == 0) {
+        errors.push_back("no chunks loaded (heightmap empty)");
+    }
+    // Heights outside the WoW world envelope often signal a units-confusion
+    // bug — most maps stay in [-3000, 3000]. Warn-class, not fail.
+    if (loadedChunks > 0 && (minH < -10000.0f || maxH > 10000.0f)) {
+        errors.push_back("height range [" + std::to_string(minH) +
+                         ", " + std::to_string(maxH) +
+                         "] is outside reasonable WoW envelope");
+    }
+    int badPlacements = 0;
+    for (size_t p = 0; p < terrain.doodadPlacements.size(); ++p) {
+        const auto& d = terrain.doodadPlacements[p];
+        if (!std::isfinite(d.position[0]) ||
+            !std::isfinite(d.position[1]) ||
+            !std::isfinite(d.position[2])) {
+            if (++badPlacements <= 3) {
+                errors.push_back("doodad placement " + std::to_string(p) +
+                                 " has non-finite position");
+            }
+        }
+        if (d.scale == 0) {
+            if (++badPlacements <= 3) {
+                errors.push_back("doodad placement " + std::to_string(p) +
+                                 " has scale=0");
+            }
+        }
+        if (!terrain.doodadNames.empty() && d.nameId >= terrain.doodadNames.size()) {
+            if (++badPlacements <= 3) {
+                errors.push_back("doodad placement " + std::to_string(p) +
+                                 " nameId=" + std::to_string(d.nameId) +
+                                 " >= doodadNames " +
+                                 std::to_string(terrain.doodadNames.size()));
+            }
+        }
+    }
+    for (size_t p = 0; p < terrain.wmoPlacements.size(); ++p) {
+        const auto& w = terrain.wmoPlacements[p];
+        if (!std::isfinite(w.position[0]) ||
+            !std::isfinite(w.position[1]) ||
+            !std::isfinite(w.position[2])) {
+            if (++badPlacements <= 3) {
+                errors.push_back("wmo placement " + std::to_string(p) +
+                                 " has non-finite position");
+            }
+        }
+        if (!terrain.wmoNames.empty() && w.nameId >= terrain.wmoNames.size()) {
+            if (++badPlacements <= 3) {
+                errors.push_back("wmo placement " + std::to_string(p) +
+                                 " nameId=" + std::to_string(w.nameId) +
+                                 " >= wmoNames " +
+                                 std::to_string(terrain.wmoNames.size()));
+            }
+        }
+    }
+    if (badPlacements > 3) {
+        errors.push_back("... and " + std::to_string(badPlacements - 3) +
+                         " more bad placement entries");
+    }
+    return errors;
+}
+
 static void printUsage(const char* argv0) {
     std::printf("Usage: %s --data <path> [options]\n\n", argv0);
     std::printf("Options:\n");
@@ -257,8 +421,12 @@ static void printUsage(const char* argv0) {
     std::printf("                         Deep-check a WOM file for index/bone/batch/bound invariants\n");
     std::printf("  --validate-wob <wob-base> [--json]\n");
     std::printf("                         Deep-check a WOB file for group/portal/doodad invariants\n");
+    std::printf("  --validate-woc <woc-path> [--json]\n");
+    std::printf("                         Deep-check a WOC collision mesh for finite verts and degeneracy\n");
+    std::printf("  --validate-whm <wot-base> [--json]\n");
+    std::printf("                         Deep-check a WHM/WOT terrain pair for NaN heights and bad placements\n");
     std::printf("  --validate-all <dir> [--json]\n");
-    std::printf("                         Recursively run --validate-wom + --validate-wob on every file\n");
+    std::printf("                         Recursively run all per-format validators on every file\n");
     std::printf("  --zone-summary <zoneDir> [--json]\n");
     std::printf("                         One-shot validate + creature/object/quest counts and exit\n");
     std::printf("  --info <wom-base> [--json]\n");
@@ -303,8 +471,8 @@ int main(int argc, char* argv[]) {
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--info-zone", "--info-wcp", "--list-wcp",
         "--unpack-wcp", "--pack-wcp",
-        "--validate", "--validate-wom", "--validate-wob", "--validate-all",
-        "--zone-summary",
+        "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
+        "--validate-whm", "--validate-all", "--zone-summary",
         "--scaffold-zone", "--add-creature", "--add-object", "--add-quest",
         "--copy-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
@@ -1281,11 +1449,98 @@ int main(int argc, char* argv[]) {
             std::printf("  FAILED — %zu error(s):\n", errors.size());
             for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
             return 1;
+        } else if (std::strcmp(argv[i], "--validate-woc") == 0 && i + 1 < argc) {
+            // Deep check on a WOC collision mesh — finite vertex coords,
+            // non-degenerate triangles, valid flag bits, sane bounds.
+            // Catches corruption that breaks movement queries silently.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            if (!std::filesystem::exists(path)) {
+                std::fprintf(stderr, "WOC not found: %s\n", path.c_str());
+                return 1;
+            }
+            auto woc = wowee::pipeline::WoweeCollisionBuilder::load(path);
+            auto errors = validateWocErrors(woc);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["woc"] = path;
+                j["triangles"] = woc.triangles.size();
+                j["walkable"] = woc.walkableCount();
+                j["steep"] = woc.steepCount();
+                j["tile"] = {woc.tileX, woc.tileY};
+                j["errorCount"] = errors.size();
+                j["errors"] = errors;
+                j["passed"] = errors.empty();
+                std::printf("%s\n", j.dump(2).c_str());
+                return errors.empty() ? 0 : 1;
+            }
+            std::printf("WOC: %s\n", path.c_str());
+            std::printf("  tile      : (%u, %u)\n", woc.tileX, woc.tileY);
+            if (errors.empty()) {
+                std::printf("  PASSED — %zu triangles (%zu walkable, %zu steep)\n",
+                            woc.triangles.size(),
+                            woc.walkableCount(), woc.steepCount());
+                return 0;
+            }
+            std::printf("  FAILED — %zu error(s):\n", errors.size());
+            for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-whm") == 0 && i + 1 < argc) {
+            // Deep check on a WHM/WOT terrain pair — finite heights,
+            // chunks present, placements within name-table bounds.
+            std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            for (const char* ext : {".wot", ".whm"}) {
+                if (base.size() >= 4 && base.substr(base.size() - 4) == ext) {
+                    base = base.substr(0, base.size() - 4);
+                    break;
+                }
+            }
+            if (!wowee::pipeline::WoweeTerrainLoader::exists(base)) {
+                std::fprintf(stderr, "WHM/WOT not found: %s.{whm,wot}\n", base.c_str());
+                return 1;
+            }
+            wowee::pipeline::ADTTerrain terrain;
+            wowee::pipeline::WoweeTerrainLoader::load(base, terrain);
+            auto errors = validateWhmErrors(terrain);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["whm"] = base + ".whm";
+                j["wot"] = base + ".wot";
+                j["coord"] = {terrain.coord.x, terrain.coord.y};
+                j["doodadPlacements"] = terrain.doodadPlacements.size();
+                j["wmoPlacements"] = terrain.wmoPlacements.size();
+                int loadedChunks = 0;
+                for (const auto& c : terrain.chunks) if (c.heightMap.isLoaded()) loadedChunks++;
+                j["loadedChunks"] = loadedChunks;
+                j["errorCount"] = errors.size();
+                j["errors"] = errors;
+                j["passed"] = errors.empty();
+                std::printf("%s\n", j.dump(2).c_str());
+                return errors.empty() ? 0 : 1;
+            }
+            std::printf("WHM/WOT: %s.{whm,wot}\n", base.c_str());
+            std::printf("  tile      : (%d, %d)\n", terrain.coord.x, terrain.coord.y);
+            if (errors.empty()) {
+                int loaded = 0;
+                for (const auto& c : terrain.chunks) if (c.heightMap.isLoaded()) loaded++;
+                std::printf("  PASSED — %d/256 chunks, %zu doodad + %zu wmo placements\n",
+                            loaded, terrain.doodadPlacements.size(),
+                            terrain.wmoPlacements.size());
+                return 0;
+            }
+            std::printf("  FAILED — %zu error(s):\n", errors.size());
+            for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return 1;
         } else if (std::strcmp(argv[i], "--validate-all") == 0 && i + 1 < argc) {
-            // CI gate: walk a directory, run validate-wom on every .wom and
-            // validate-wob on every .wob. Aggregate counts for fast triage.
-            // Per-file errors are reported (capped) so the user knows which
-            // file to drill into with --validate-wom/-wob individually.
+            // CI gate: walk a directory, run every per-format validator on
+            // every matching file. Aggregate counts for fast triage; per-
+            // file errors are listed (capped at 20) so the user knows which
+            // file to drill into with --validate-{wom,wob,woc,whm}.
             std::string root = argv[++i];
             bool jsonOut = (i + 1 < argc &&
                             std::strcmp(argv[i + 1], "--json") == 0);
@@ -1296,8 +1551,14 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             int womTotal = 0, womFail = 0, wobTotal = 0, wobFail = 0;
+            int wocTotal = 0, wocFail = 0, whmTotal = 0, whmFail = 0;
             int totalErrors = 0;
             std::vector<std::pair<std::string, std::vector<std::string>>> failures;
+            auto recordFailure = [&](const std::string& path,
+                                      const std::vector<std::string>& errs) {
+                totalErrors += errs.size();
+                if (failures.size() < 20) failures.push_back({path, errs});
+            };
             for (const auto& entry : fs::recursive_directory_iterator(root)) {
                 if (!entry.is_regular_file()) continue;
                 std::string ext = entry.path().extension().string();
@@ -1307,32 +1568,37 @@ int main(int argc, char* argv[]) {
                     womTotal++;
                     auto wom = wowee::pipeline::WoweeModelLoader::load(base);
                     auto errs = validateWomErrors(wom);
-                    if (!errs.empty()) {
-                        womFail++;
-                        totalErrors += errs.size();
-                        if (failures.size() < 20) {
-                            failures.push_back({entry.path().string(), errs});
-                        }
-                    }
+                    if (!errs.empty()) { womFail++; recordFailure(entry.path().string(), errs); }
                 } else if (ext == ".wob") {
                     wobTotal++;
                     auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
                     auto errs = validateWobErrors(bld);
-                    if (!errs.empty()) {
-                        wobFail++;
-                        totalErrors += errs.size();
-                        if (failures.size() < 20) {
-                            failures.push_back({entry.path().string(), errs});
-                        }
-                    }
+                    if (!errs.empty()) { wobFail++; recordFailure(entry.path().string(), errs); }
+                } else if (ext == ".woc") {
+                    wocTotal++;
+                    auto woc = wowee::pipeline::WoweeCollisionBuilder::load(entry.path().string());
+                    auto errs = validateWocErrors(woc);
+                    if (!errs.empty()) { wocFail++; recordFailure(entry.path().string(), errs); }
+                } else if (ext == ".whm") {
+                    // Only validate via the .whm half — .wot is its sidecar
+                    // and gets pulled in by load(base).
+                    whmTotal++;
+                    wowee::pipeline::ADTTerrain terrain;
+                    wowee::pipeline::WoweeTerrainLoader::load(base, terrain);
+                    auto errs = validateWhmErrors(terrain);
+                    if (!errs.empty()) { whmFail++; recordFailure(entry.path().string(), errs); }
                 }
             }
-            int allPassed = (womFail == 0 && wobFail == 0);
+            int allPassed = (womFail == 0 && wobFail == 0 &&
+                             wocFail == 0 && whmFail == 0);
+            int totalFiles = womTotal + wobTotal + wocTotal + whmTotal;
             if (jsonOut) {
                 nlohmann::json j;
                 j["root"] = root;
                 j["wom"] = {{"total", womTotal}, {"failed", womFail}};
                 j["wob"] = {{"total", wobTotal}, {"failed", wobFail}};
+                j["woc"] = {{"total", wocTotal}, {"failed", wocFail}};
+                j["whm"] = {{"total", whmTotal}, {"failed", whmFail}};
                 j["totalErrors"] = totalErrors;
                 j["passed"] = bool(allPassed);
                 nlohmann::json failArr = nlohmann::json::array();
@@ -1346,8 +1612,10 @@ int main(int argc, char* argv[]) {
             std::printf("validate-all: %s\n", root.c_str());
             std::printf("  WOM: %d total, %d failed\n", womTotal, womFail);
             std::printf("  WOB: %d total, %d failed\n", wobTotal, wobFail);
+            std::printf("  WOC: %d total, %d failed\n", wocTotal, wocFail);
+            std::printf("  WHM: %d total, %d failed\n", whmTotal, whmFail);
             if (allPassed) {
-                std::printf("  PASSED — all %d file(s) clean\n", womTotal + wobTotal);
+                std::printf("  PASSED — all %d file(s) clean\n", totalFiles);
                 return 0;
             }
             std::printf("  FAILED — %d total error(s) across %zu file(s):\n",
