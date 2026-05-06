@@ -516,10 +516,16 @@ void EditorApp::processEvents() {
                             static_cast<float>(ext.height));
                         glm::vec3 hitPos;
                         if (terrainEditor_.raycastTerrain(ray, hitPos)) {
-                            auto& tmpl = npcSpawner_.getTemplate();
-                            tmpl.position = hitPos;
-                            npcSpawner_.placeCreature(tmpl);
-                            objectsDirty_ = true;
+                            // Plain left-click near an existing NPC selects it instead of
+                            // placing a duplicate. Shift+click forces placement.
+                            bool forcePlace = (event.key.keysym.mod & KMOD_SHIFT) != 0;
+                            int hit = forcePlace ? -1 : npcSpawner_.selectAt(hitPos, 4.0f);
+                            if (hit < 0) {
+                                auto& tmpl = npcSpawner_.getTemplate();
+                                tmpl.position = hitPos;
+                                npcSpawner_.placeCreature(tmpl);
+                                objectsDirty_ = true;
+                            }
                         }
                     } else if (mode_ == EditorMode::Water) {
                         painting_ = true;
