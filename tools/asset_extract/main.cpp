@@ -125,13 +125,18 @@ int main(int argc, char** argv) {
         wowee::tools::OpenFormatStats stats;
         // Pass 0 to auto-detect threads (or honor user --threads override).
         unsigned int t = opts.threads > 0 ? static_cast<unsigned int>(opts.threads) : 0;
+        // upgrade-extract is always incremental — skip files whose sidecar
+        // is already up to date so re-runs are cheap.
         wowee::tools::emitOpenFormats(upgradeDir,
                                        opts.emitPng, opts.emitJsonDbc,
                                        opts.emitWom, opts.emitWob,
-                                       opts.emitTerrain, stats, t);
+                                       opts.emitTerrain, stats, t,
+                                       /*incremental=*/true);
         auto secs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - t0).count() / 1000.0;
         std::cout << "  elapsed           : " << secs << " s\n";
+        if (stats.skipped > 0)
+            std::cout << "  up-to-date (skip) : " << stats.skipped << "\n";
         std::cout << "  PNG (BLP→PNG)     : " << stats.pngOk     << " ok"
                   << (stats.pngFail     ? ", " + std::to_string(stats.pngFail)     + " failed" : "") << "\n";
         std::cout << "  JSON (DBC→JSON)   : " << stats.jsonDbcOk << " ok"

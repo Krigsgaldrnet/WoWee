@@ -290,7 +290,20 @@ void emitOpenFormats(const std::string& rootDir,
                      bool emitWom, bool emitWob,
                      bool emitTerrain,
                      OpenFormatStats& stats,
-                     unsigned int threadCount) {
+                     unsigned int threadCount,
+                     bool incremental) {
+    // Returns true if `sidecarPath` exists and its mtime is >= source mtime.
+    // Used by the incremental walk to skip up-to-date conversions.
+    auto sidecarUpToDate = [](const std::string& sourcePath,
+                               const std::string& sidecarPath) {
+        std::error_code ec;
+        if (!fs::exists(sidecarPath, ec)) return false;
+        auto srcTime = fs::last_write_time(sourcePath, ec);
+        if (ec) return false;
+        auto sideTime = fs::last_write_time(sidecarPath, ec);
+        if (ec) return false;
+        return sideTime >= srcTime;
+    };
     if (!fs::exists(rootDir)) return;
     if (!emitPng && !emitJsonDbc && !emitWom && !emitWob && !emitTerrain) return;
 
@@ -314,18 +327,35 @@ void emitOpenFormats(const std::string& rootDir,
             base = base.substr(0, base.size() - ext.size());
         std::string p = entry.path().string();
 
-        if      (emitPng     && ext == ".blp") jobs.push_back({p, base, Kind::Png});
-        else if (emitJsonDbc && ext == ".dbc") jobs.push_back({p, base, Kind::JsonDbc});
-        else if (emitWom     && ext == ".m2")  jobs.push_back({p, base, Kind::Wom});
+        // For incremental, skip the job entirely if the sidecar already
+        // tracks the source. For terrain we treat .whm as the canonical
+        // sidecar (the WHM/WOT/WOC trio always written together).
+        auto skipIfFresh = [&](const std::string& sidecar) -> bool {
+            if (!incremental) return false;
+            if (sidecarUpToDate(p, sidecar)) { stats.skipped++; return true; }
+            return false;
+        };
+        if      (emitPng     && ext == ".blp") {
+            if (!skipIfFresh(base + ".png"))  jobs.push_back({p, base, Kind::Png});
+        }
+        else if (emitJsonDbc && ext == ".dbc") {
+            if (!skipIfFresh(base + ".json")) jobs.push_back({p, base, Kind::JsonDbc});
+        }
+        else if (emitWom     && ext == ".m2")  {
+            if (!skipIfFresh(base + ".wom"))  jobs.push_back({p, base, Kind::Wom});
+        }
         else if (emitWob     && ext == ".wmo") {
             // Skip group sub-files (<base>_NNN.wmo) — merged into root WMO.
             std::string fname = entry.path().filename().string();
             auto under = fname.rfind('_');
             bool isGroup = (under != std::string::npos &&
                             fname.size() - under == 8);
-            if (!isGroup) jobs.push_back({p, base, Kind::Wob});
+            if (!isGroup && !skipIfFresh(base + ".wob"))
+                jobs.push_back({p, base, Kind::Wob});
         }
-        else if (emitTerrain && ext == ".adt") jobs.push_back({p, base, Kind::Terrain});
+        else if (emitTerrain && ext == ".adt") {
+            if (!skipIfFresh(base + ".whm")) jobs.push_back({p, base, Kind::Terrain});
+        }
     }
     if (jobs.empty()) return;
 

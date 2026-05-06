@@ -22,6 +22,9 @@ struct OpenFormatStats {
     uint32_t wobOk = 0, wobFail = 0;
     uint32_t whmOk = 0, whmFail = 0;
     uint32_t wocOk = 0, wocFail = 0;
+    // Files where the sidecar already existed and was newer than the
+    // proprietary source — skipped (incremental mode).
+    uint32_t skipped = 0;
 };
 
 // Convert one BLP file on disk to a PNG side-file.
@@ -51,12 +54,15 @@ bool emitTerrainFromAdt(const std::string& adtPath, const std::string& outBase);
 // Walk an extracted-asset directory and emit open-format side-files for
 // every requested format. Counts accumulated into stats.
 // `threadCount` 0 = auto-detect from hardware_concurrency().
+// If `incremental` is true, files whose sidecar already exists and is
+// newer than the proprietary source are skipped (counted in stats.skipped).
 void emitOpenFormats(const std::string& rootDir,
                      bool emitPng, bool emitJsonDbc,
                      bool emitWom, bool emitWob,
                      bool emitTerrain,
                      OpenFormatStats& stats,
-                     unsigned int threadCount = 0);
+                     unsigned int threadCount = 0,
+                     bool incremental = false);
 
 } // namespace tools
 } // namespace wowee
