@@ -289,8 +289,17 @@ void TerrainEditor::commitGeneratorUndo() {
 
 void TerrainEditor::applyBrush(float deltaTime) {
     if (!terrain_ || !brush_.isActive()) return;
+    // Reject NaN brush position / non-positive radius / NaN strength.
+    // dist = length(pos - center) goes NaN if center has NaN, and
+    // brush_.getInfluence(NaN) returns full strength on every vertex
+    // because NaN comparisons always return false.
+    const auto& bs = brush_.settings();
+    auto bp = brush_.getPosition();
+    if (!std::isfinite(bp.x) || !std::isfinite(bp.y) || !std::isfinite(bp.z) ||
+        !std::isfinite(bs.radius) || bs.radius <= 0.0f ||
+        !std::isfinite(bs.strength)) return;
 
-    switch (brush_.settings().mode) {
+    switch (bs.mode) {
         case BrushMode::Raise: applyRaise(deltaTime); break;
         case BrushMode::Lower: applyRaise(deltaTime); break;
         case BrushMode::Smooth: applySmooth(deltaTime); break;
