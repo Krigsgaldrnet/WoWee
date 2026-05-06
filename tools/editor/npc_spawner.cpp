@@ -149,6 +149,10 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
             CreatureSpawn s;
             s.name = js.value("name", "");
             s.modelPath = js.value("model", "");
+            // creature_template.name is varchar(100); modelPath is internal
+            // but capped to keep export sane. Trim instead of dropping.
+            if (s.name.size() > 100) s.name.resize(100);
+            if (s.modelPath.size() > 1024) s.modelPath.resize(1024);
             s.displayId = js.value("displayId", 0u);
             s.orientation = js.value("orientation", 0.0f);
             // Normalise orientation to [0, 360) for consistent gizmo behaviour.
