@@ -261,6 +261,13 @@ BLPImage AssetManager::tryLoadPngOverride(const std::string& normalizedPath) con
         LOG_WARNING("PNG override exists but failed to load: ", pngPath);
         return BLPImage();
     }
+    // Cap texture dimensions. WoW textures top out at 4K; stbi can return
+    // 32K x 32K which would allocate 4GB on a malicious PNG.
+    if (w <= 0 || h <= 0 || w > 8192 || h > 8192) {
+        LOG_WARNING("PNG override dimensions out of range (", w, "x", h, "): ", pngPath);
+        stbi_image_free(pixels);
+        return BLPImage();
+    }
 
     BLPImage image;
     image.width = w;
@@ -268,7 +275,7 @@ BLPImage AssetManager::tryLoadPngOverride(const std::string& normalizedPath) con
     image.channels = 4;
     image.format = BLPFormat::BLP2;
     image.compression = BLPCompression::ARGB8888;
-    image.data.assign(pixels, pixels + (w * h * 4));
+    image.data.assign(pixels, pixels + (static_cast<size_t>(w) * h * 4));
     stbi_image_free(pixels);
 
     LOG_INFO("PNG override loaded: ", pngPath, " (", w, "x", h, ")");
