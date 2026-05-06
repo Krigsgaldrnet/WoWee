@@ -49,7 +49,7 @@ bool VkTexture::upload(VkContext& ctx, const uint8_t* pixels, uint32_t width, ui
     else if (format == VK_FORMAT_R8G8_UNORM) bpp = 2;
     else if (format == VK_FORMAT_R8G8B8_UNORM) bpp = 3;
 
-    VkDeviceSize imageSize = width * height * bpp;
+    VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * bpp;
 
     // Create staging buffer
     AllocatedBuffer staging = createBuffer(ctx.getAllocator(), imageSize,

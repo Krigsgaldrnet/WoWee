@@ -108,7 +108,7 @@ static void precacheNearbyTiles(rendering::TerrainManager* terrainMgr,
     auto [tileX, tileY] = core::coords::worldToTile(renderPos.x, renderPos.y);
     int side = 2 * radius + 1;
     std::vector<std::pair<int,int>> tiles;
-    tiles.reserve(side * side);
+    tiles.reserve(static_cast<size_t>(side) * static_cast<size_t>(side));
     for (int dy = -radius; dy <= radius; dy++)
         for (int dx = -radius; dx <= radius; dx++)
             tiles.push_back({tileX + dx, tileY + dy});
