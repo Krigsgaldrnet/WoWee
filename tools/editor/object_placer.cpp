@@ -279,14 +279,18 @@ void ObjectPlacer::undoLastPlace() {
 bool ObjectPlacer::saveToFile(const std::string& path) const {
     std::filesystem::create_directories(std::filesystem::path(path).parent_path());
 
+    // nlohmann::json throws on NaN/inf serialization. Scrub on the way
+    // out so a bad in-memory transform can't kill the whole save.
+    auto san = [](float x) { return std::isfinite(x) ? x : 0.0f; };
+    auto sanScale = [](float x) { return (std::isfinite(x) && x > 0.0f) ? x : 1.0f; };
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& o : objects_) {
         arr.push_back({
             {"type", static_cast<int>(o.type)},
             {"path", o.path},
-            {"pos", {o.position.x, o.position.y, o.position.z}},
-            {"rot", {o.rotation.x, o.rotation.y, o.rotation.z}},
-            {"scale", o.scale},
+            {"pos", {san(o.position.x), san(o.position.y), san(o.position.z)}},
+            {"rot", {san(o.rotation.x), san(o.rotation.y), san(o.rotation.z)}},
+            {"scale", sanScale(o.scale)},
             {"uniqueId", o.uniqueId}
         });
     }
