@@ -312,12 +312,9 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
         WMODoodad d{};
         d.nameIndex = doodadOffset;
         d.position = dp.position;
-        // Convert euler degrees -> quaternion (XYZ order)
-        glm::vec3 r = glm::radians(dp.rotation);
-        glm::quat qx = glm::angleAxis(r.x, glm::vec3(1, 0, 0));
-        glm::quat qy = glm::angleAxis(r.y, glm::vec3(0, 1, 0));
-        glm::quat qz = glm::angleAxis(r.z, glm::vec3(0, 0, 1));
-        d.rotation = qx * qy * qz;
+        // Convert euler degrees -> quaternion using the same convention that
+        // glm::eulerAngles uses (so this round-trips cleanly with fromWMO).
+        d.rotation = glm::quat(glm::radians(dp.rotation));
         d.scale = dp.scale;
         d.color = glm::vec4(1.0f);
         outModel.doodads.push_back(d);
