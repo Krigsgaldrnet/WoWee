@@ -414,6 +414,33 @@ target_link_libraries(test_open_formats PRIVATE catch2_main)
 add_test(NAME open_formats COMMAND test_open_formats)
 register_test_target(test_open_formats)
 
+# ── test_open_format_emitter ─────────────────────────────────
+# Locks in the asset_extract → wowee open-format conversion path.
+add_executable(test_open_format_emitter
+    test_open_format_emitter.cpp
+    ${CMAKE_SOURCE_DIR}/tools/asset_extract/open_format_emitter.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/dbc_loader.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/blp_loader.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/m2_loader.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/wmo_loader.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/adt_loader.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/wowee_model.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/wowee_building.cpp
+    ${CMAKE_SOURCE_DIR}/src/pipeline/wowee_collision.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/logger.cpp
+)
+target_include_directories(test_open_format_emitter PRIVATE
+    ${TEST_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}
+)
+target_include_directories(test_open_format_emitter SYSTEM PRIVATE
+    ${TEST_SYSTEM_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/extern/nlohmann
+)
+target_link_libraries(test_open_format_emitter PRIVATE catch2_main)
+add_test(NAME open_format_emitter COMMAND test_open_format_emitter)
+register_test_target(test_open_format_emitter)
+
 # ── test_camera ──────────────────────────────────────────────
 add_executable(test_camera
     test_camera.cpp
