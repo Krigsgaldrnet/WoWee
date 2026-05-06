@@ -1182,6 +1182,9 @@ if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR)
         ${CMAKE_CURRENT_SOURCE_DIR}/tools/asset_extract
         ${STORMLIB_INCLUDE_DIR}
     )
+    target_include_directories(asset_extract SYSTEM PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern
+    )
     target_link_libraries(asset_extract PRIVATE
         ${STORMLIB_LIBRARY}
         ZLIB::ZLIB
