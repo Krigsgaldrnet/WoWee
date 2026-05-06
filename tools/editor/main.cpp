@@ -53,7 +53,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-wcp <wcp-path> [--json]\n");
     std::printf("                         Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
-    std::printf("  --diff-wcp <a> <b>     Compare two WCPs file-by-file; exit 0 if identical, 1 otherwise\n");
+    std::printf("  --diff-wcp <a> <b> [--json]\n");
+    std::printf("                         Compare two WCPs file-by-file; exit 0 if identical, 1 otherwise\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
@@ -415,6 +416,10 @@ int main(int argc, char* argv[]) {
             // across editor versions for regression detection.
             std::string aPath = argv[++i];
             std::string bPath = argv[++i];
+            // Optional --json after both paths for machine-readable output.
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             wowee::editor::ContentPackInfo aInfo, bInfo;
             if (!wowee::editor::ContentPacker::readInfo(aPath, aInfo) ||
                 !wowee::editor::ContentPacker::readInfo(bPath, bInfo)) {
@@ -427,6 +432,10 @@ int main(int argc, char* argv[]) {
 
             int onlyA = 0, onlyB = 0, sizeChanged = 0, identical = 0;
             std::vector<std::string> onlyAList, onlyBList, changedList;
+            // For JSON we want size-change rows as structured records, not
+            // pre-formatted strings — collect both forms in one pass.
+            struct ChangedRow { std::string path; uint64_t aSize, bSize; };
+            std::vector<ChangedRow> changedRows;
             for (const auto& [p, sz] : aFiles) {
                 auto it = bFiles.find(p);
                 if (it == bFiles.end()) { onlyA++; onlyAList.push_back(p); }
@@ -434,6 +443,7 @@ int main(int argc, char* argv[]) {
                     sizeChanged++;
                     changedList.push_back(p + " (" + std::to_string(sz) + " -> " +
                                           std::to_string(it->second) + ")");
+                    changedRows.push_back({p, sz, it->second});
                 } else identical++;
             }
             for (const auto& [p, sz] : bFiles) {
@@ -442,6 +452,28 @@ int main(int argc, char* argv[]) {
             std::sort(onlyAList.begin(), onlyAList.end());
             std::sort(onlyBList.begin(), onlyBList.end());
             std::sort(changedList.begin(), changedList.end());
+            if (jsonOut) {
+                nlohmann::json j;
+                j["a"] = aPath;
+                j["b"] = bPath;
+                j["identical"] = identical;
+                j["changed"] = sizeChanged;
+                j["onlyA"] = onlyA;
+                j["onlyB"] = onlyB;
+                std::sort(changedRows.begin(), changedRows.end(),
+                          [](const auto& x, const auto& y) { return x.path < y.path; });
+                nlohmann::json changedArr = nlohmann::json::array();
+                for (const auto& c : changedRows) {
+                    changedArr.push_back({{"path", c.path},
+                                           {"aSize", c.aSize},
+                                           {"bSize", c.bSize}});
+                }
+                j["changedFiles"] = changedArr;
+                j["onlyAFiles"] = onlyAList;
+                j["onlyBFiles"] = onlyBList;
+                std::printf("%s\n", j.dump(2).c_str());
+                return (onlyA + onlyB + sizeChanged) == 0 ? 0 : 1;
+            }
             std::printf("Diff: %s vs %s\n", aPath.c_str(), bPath.c_str());
             std::printf("  identical : %d\n", identical);
             std::printf("  changed   : %d\n", sizeChanged);
