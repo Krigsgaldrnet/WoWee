@@ -216,6 +216,12 @@ void ADTLoader::parseMDDF(const uint8_t* data, size_t size, ADTTerrain& terrain)
         placement.rotation[2] = readFloat(data, offset + 28);
         placement.scale = readUInt16(data, offset + 32);
         placement.flags = readUInt16(data, offset + 34);
+        // Sanitize NaN/inf — corrupted MDDF entries would propagate bad
+        // floats into the WMO/M2 instance transform and crash render.
+        for (int k = 0; k < 3; k++) {
+            if (!std::isfinite(placement.position[k])) placement.position[k] = 0.0f;
+            if (!std::isfinite(placement.rotation[k])) placement.rotation[k] = 0.0f;
+        }
 
         terrain.doodadPlacements.push_back(placement);
     }
@@ -254,6 +260,14 @@ void ADTLoader::parseMODF(const uint8_t* data, size_t size, ADTTerrain& terrain)
             placement.nameSet = readUInt16(data, offset + 60);
             placement.scale = readUInt16(data, offset + 62);
             if (placement.scale == 0) placement.scale = 1024;
+        }
+        // Same NaN scrub as MDDF entries — corrupted MODF would crash WMO
+        // instance transform.
+        for (int k = 0; k < 3; k++) {
+            if (!std::isfinite(placement.position[k])) placement.position[k] = 0.0f;
+            if (!std::isfinite(placement.rotation[k])) placement.rotation[k] = 0.0f;
+            if (!std::isfinite(placement.extentLower[k])) placement.extentLower[k] = 0.0f;
+            if (!std::isfinite(placement.extentUpper[k])) placement.extentUpper[k] = 0.0f;
         }
 
         terrain.wmoPlacements.push_back(placement);
