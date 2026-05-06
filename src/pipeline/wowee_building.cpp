@@ -374,10 +374,22 @@ WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::strin
             wv.normal = v.normal;
             wv.texCoord = v.texCoord;
             wv.color = v.color;
+            // Sanitize on conversion so a corrupt source WMO doesn't poison
+            // the WOB and then surprise us on later reload.
+            if (!std::isfinite(wv.position.x)) wv.position.x = 0.0f;
+            if (!std::isfinite(wv.position.y)) wv.position.y = 0.0f;
+            if (!std::isfinite(wv.position.z)) wv.position.z = 0.0f;
+            if (!std::isfinite(wv.normal.x)) wv.normal.x = 0.0f;
+            if (!std::isfinite(wv.normal.y)) wv.normal.y = 0.0f;
+            if (!std::isfinite(wv.normal.z)) wv.normal.z = 1.0f;
+            if (!std::isfinite(wv.texCoord.x)) wv.texCoord.x = 0.0f;
+            if (!std::isfinite(wv.texCoord.y)) wv.texCoord.y = 0.0f;
+            for (int c = 0; c < 4; c++)
+                if (!std::isfinite(wv.color[c])) wv.color[c] = 1.0f;
             wobGroup.vertices.push_back(wv);
 
-            float d = glm::length(v.position);
-            if (d > maxDist) maxDist = d;
+            float d = glm::length(wv.position);
+            if (std::isfinite(d) && d > maxDist) maxDist = d;
         }
 
         wobGroup.indices.reserve(grp.indices.size());
