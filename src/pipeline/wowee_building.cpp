@@ -149,6 +149,18 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         }
         portal.vertices.resize(pvCount);
         f.read(reinterpret_cast<char*>(portal.vertices.data()), pvCount * 12);
+        // Sanitize vertex floats — NaN portal vertices break the WMO
+        // portal-frustum cull and would draw the whole interior every frame.
+        for (auto& v : portal.vertices) {
+            if (!std::isfinite(v.x)) v.x = 0.0f;
+            if (!std::isfinite(v.y)) v.y = 0.0f;
+            if (!std::isfinite(v.z)) v.z = 0.0f;
+        }
+        // Validate group indices are in range — out-of-range groupA/groupB
+        // would index past wmo.groups during cull and segfault.
+        const int32_t maxGroup = static_cast<int32_t>(groupCount);
+        if (portal.groupA >= maxGroup) portal.groupA = -1;
+        if (portal.groupB >= maxGroup) portal.groupB = -1;
         bld.portals.push_back(portal);
     }
 
@@ -283,7 +295,16 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         f.write(reinterpret_cast<const char*>(&portal.groupB), 4);
         uint32_t pvCount = static_cast<uint32_t>(portal.vertices.size());
         f.write(reinterpret_cast<const char*>(&pvCount), 4);
-        f.write(reinterpret_cast<const char*>(portal.vertices.data()), pvCount * 12);
+        // Sanitize vertices on the way out — NaN portal vertices break
+        // the WMO portal-frustum cull and fail-back to drawing the entire
+        // building, defeating the indoor optimization.
+        std::vector<glm::vec3> sanPortal = portal.vertices;
+        for (auto& v : sanPortal) {
+            if (!std::isfinite(v.x)) v.x = 0.0f;
+            if (!std::isfinite(v.y)) v.y = 0.0f;
+            if (!std::isfinite(v.z)) v.z = 0.0f;
+        }
+        f.write(reinterpret_cast<const char*>(sanPortal.data()), pvCount * 12);
     }
 
     for (const auto& dp : bld.doodads) {
