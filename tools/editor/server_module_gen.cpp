@@ -15,7 +15,21 @@ bool ServerModuleGenerator::generate(const ZoneManifest& manifest,
                                       const std::vector<Quest>& quests,
                                       const std::string& outputDir) {
     namespace fs = std::filesystem;
-    std::string dir = outputDir + "/mod_wowee_" + manifest.mapName;
+    // Sanitize mapName for filesystem and conf-key use. The original may
+    // contain spaces, slashes, or punctuation (we let the user pick); we
+    // need a strict identifier here for paths and conf keys.
+    std::string slug;
+    slug.reserve(manifest.mapName.size());
+    for (char c : manifest.mapName) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '_' || c == '-') {
+            slug += c;
+        } else if (c == ' ' || c == '/' || c == '\\') {
+            slug += '_';
+        }
+    }
+    if (slug.empty()) slug = "zone";
+    std::string dir = outputDir + "/mod_wowee_" + slug;
     fs::create_directories(dir + "/sql");
     fs::create_directories(dir + "/conf");
 
@@ -26,6 +40,8 @@ bool ServerModuleGenerator::generate(const ZoneManifest& manifest,
 
     Config cfg;
     cfg.mapId = manifest.mapId;
+    // SQL VALUES use cfg.mapName via SQLExporter::escape — keep raw display
+    // text. Conf keys (Wowee.<key>.*) must be the slug, so use it there.
     cfg.mapName = manifest.mapName;
     cfg.displayName = manifest.displayName.empty() ? manifest.mapName : manifest.displayName;
 
@@ -99,13 +115,13 @@ bool ServerModuleGenerator::generate(const ZoneManifest& manifest,
         f << "#\n# Wowee Custom Zone: " << cfg.displayName << "\n";
         f << "# Add this to your worldserver.conf\n#\n\n";
         f << "# Enable custom zone " << cfg.displayName << "\n";
-        f << "Wowee." << cfg.mapName << ".Enabled = 1\n";
-        f << "Wowee." << cfg.mapName << ".MapId = " << cfg.mapId << "\n";
-        f << "Wowee." << cfg.mapName << ".ZoneId = " << cfg.zoneId << "\n\n";
+        f << "Wowee." << slug << ".Enabled = 1\n";
+        f << "Wowee." << slug << ".MapId = " << cfg.mapId << "\n";
+        f << "Wowee." << slug << ".ZoneId = " << cfg.zoneId << "\n\n";
         f << "# Zone settings\n";
-        f << "Wowee." << cfg.mapName << ".AllowFlying = "
+        f << "Wowee." << slug << ".AllowFlying = "
           << (manifest.allowFlying ? 1 : 0) << "\n";
-        f << "Wowee." << cfg.mapName << ".PvP = "
+        f << "Wowee." << slug << ".PvP = "
           << (manifest.pvpEnabled ? 1 : 0) << "\n";
     }
 
