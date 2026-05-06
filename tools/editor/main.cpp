@@ -458,6 +458,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert a WOM model to Wavefront OBJ for use in Blender/MeshLab\n");
     std::printf("  --export-glb <wom-base> [out.glb]\n");
     std::printf("                         Convert a WOM model to glTF 2.0 binary (.glb) — modern industry standard\n");
+    std::printf("  --export-wob-glb <wob-base> [out.glb]\n");
+    std::printf("                         Convert a WOB building to glTF 2.0 binary (one mesh, per-group primitives)\n");
     std::printf("  --import-obj <obj-path> [wom-base]\n");
     std::printf("                         Convert a Wavefront OBJ back into WOM (round-trips with --export-obj)\n");
     std::printf("  --export-wob-obj <wob-base> [out.obj]\n");
@@ -571,7 +573,7 @@ int main(int argc, char* argv[]) {
         "--export-png", "--export-obj", "--import-obj",
         "--export-wob-obj", "--import-wob-obj",
         "--export-woc-obj", "--export-whm-obj",
-        "--export-glb",
+        "--export-glb", "--export-wob-glb",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
     };
@@ -3110,6 +3112,163 @@ int main(int argc, char* argv[]) {
             std::printf("Exported %s.wom -> %s\n", base.c_str(), outPath.c_str());
             std::printf("  %u verts, %u tris, %zu primitive(s), %u-byte binary chunk\n",
                         vCount, iCount / 3, primitives.size(), binLen);
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-wob-glb") == 0 && i + 1 < argc) {
+            // glTF 2.0 binary export for WOB. Same purpose as --export-glb
+            // for WOM but adapted for buildings: each WOB group becomes
+            // one primitive in a single mesh, sharing one big vertex
+            // pool concatenated from per-group vertex arrays.
+            std::string base = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                outPath = argv[++i];
+            }
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wob")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeBuildingLoader::exists(base)) {
+                std::fprintf(stderr, "WOB not found: %s.wob\n", base.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = base + ".glb";
+            auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+            if (!bld.isValid()) {
+                std::fprintf(stderr, "WOB has no groups: %s.wob\n", base.c_str());
+                return 1;
+            }
+            // Total counts + per-group offsets needed before allocating
+            // the BIN buffer. Index buffer is uint32 so groups can each
+            // index into the global pool by offset.
+            uint32_t totalV = 0, totalI = 0;
+            std::vector<uint32_t> groupVertOff(bld.groups.size(), 0);
+            std::vector<uint32_t> groupIdxOff(bld.groups.size(), 0);
+            for (size_t g = 0; g < bld.groups.size(); ++g) {
+                groupVertOff[g] = totalV;
+                groupIdxOff[g] = totalI;
+                totalV += static_cast<uint32_t>(bld.groups[g].vertices.size());
+                totalI += static_cast<uint32_t>(bld.groups[g].indices.size());
+            }
+            if (totalV == 0 || totalI == 0) {
+                std::fprintf(stderr, "WOB has no vertex data\n");
+                return 1;
+            }
+            const uint32_t posOff = 0;
+            const uint32_t nrmOff = posOff + totalV * 12;
+            const uint32_t uvOff  = nrmOff + totalV * 12;
+            const uint32_t idxOff = uvOff  + totalV * 8;
+            const uint32_t binSize = idxOff + totalI * 4;
+            std::vector<uint8_t> bin(binSize);
+            // Pack per-group geometry into the global pool. Indices get
+            // offset by the group's starting vertex index so they
+            // continue to reference the right vertices in the merged pool.
+            uint32_t vCursor = 0, iCursor = 0;
+            glm::vec3 bMin{1e30f}, bMax{-1e30f};
+            for (size_t g = 0; g < bld.groups.size(); ++g) {
+                const auto& grp = bld.groups[g];
+                for (const auto& v : grp.vertices) {
+                    std::memcpy(&bin[posOff + vCursor * 12 + 0], &v.position.x, 4);
+                    std::memcpy(&bin[posOff + vCursor * 12 + 4], &v.position.y, 4);
+                    std::memcpy(&bin[posOff + vCursor * 12 + 8], &v.position.z, 4);
+                    std::memcpy(&bin[nrmOff + vCursor * 12 + 0], &v.normal.x, 4);
+                    std::memcpy(&bin[nrmOff + vCursor * 12 + 4], &v.normal.y, 4);
+                    std::memcpy(&bin[nrmOff + vCursor * 12 + 8], &v.normal.z, 4);
+                    std::memcpy(&bin[uvOff  + vCursor * 8  + 0], &v.texCoord.x, 4);
+                    std::memcpy(&bin[uvOff  + vCursor * 8  + 4], &v.texCoord.y, 4);
+                    bMin = glm::min(bMin, v.position);
+                    bMax = glm::max(bMax, v.position);
+                    vCursor++;
+                }
+                // Offset indices by group's vertex base so merged pool
+                // indexing still works. uint32 indices, written LE.
+                for (uint32_t idx : grp.indices) {
+                    uint32_t off = idx + groupVertOff[g];
+                    std::memcpy(&bin[idxOff + iCursor * 4], &off, 4);
+                    iCursor++;
+                }
+            }
+            // Build glTF JSON.
+            nlohmann::json gj;
+            gj["asset"] = {{"version", "2.0"},
+                            {"generator", "wowee_editor --export-wob-glb"}};
+            gj["scene"] = 0;
+            gj["scenes"] = nlohmann::json::array({nlohmann::json{{"nodes", {0}}}});
+            gj["nodes"] = nlohmann::json::array({nlohmann::json{
+                {"name", bld.name.empty() ? "WoweeBuilding" : bld.name},
+                {"mesh", 0}
+            }});
+            gj["buffers"] = nlohmann::json::array({nlohmann::json{
+                {"byteLength", binSize}
+            }});
+            nlohmann::json bufferViews = nlohmann::json::array();
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", posOff},
+                                    {"byteLength", totalV * 12}, {"target", 34962}});
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", nrmOff},
+                                    {"byteLength", totalV * 12}, {"target", 34962}});
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", uvOff},
+                                    {"byteLength", totalV * 8},  {"target", 34962}});
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", idxOff},
+                                    {"byteLength", totalI * 4},  {"target", 34963}});
+            gj["bufferViews"] = bufferViews;
+            nlohmann::json accessors = nlohmann::json::array();
+            accessors.push_back({
+                {"bufferView", 0}, {"componentType", 5126},
+                {"count", totalV}, {"type", "VEC3"},
+                {"min", {bMin.x, bMin.y, bMin.z}},
+                {"max", {bMax.x, bMax.y, bMax.z}}
+            });
+            accessors.push_back({{"bufferView", 1}, {"componentType", 5126},
+                                  {"count", totalV}, {"type", "VEC3"}});
+            accessors.push_back({{"bufferView", 2}, {"componentType", 5126},
+                                  {"count", totalV}, {"type", "VEC2"}});
+            // Per-group primitives — each gets its own indices accessor
+            // sliced from the shared index bufferView via byteOffset.
+            nlohmann::json primitives = nlohmann::json::array();
+            for (size_t g = 0; g < bld.groups.size(); ++g) {
+                uint32_t accIdx = static_cast<uint32_t>(accessors.size());
+                accessors.push_back({
+                    {"bufferView", 3},
+                    {"byteOffset", groupIdxOff[g] * 4},
+                    {"componentType", 5125},
+                    {"count", bld.groups[g].indices.size()},
+                    {"type", "SCALAR"}
+                });
+                primitives.push_back({
+                    {"attributes", {{"POSITION", 0}, {"NORMAL", 1}, {"TEXCOORD_0", 2}}},
+                    {"indices", accIdx},
+                    {"mode", 4}
+                });
+            }
+            gj["accessors"] = accessors;
+            gj["meshes"] = nlohmann::json::array({nlohmann::json{
+                {"primitives", primitives}
+            }});
+            std::string jsonStr = gj.dump();
+            while (jsonStr.size() % 4 != 0) jsonStr += ' ';
+            uint32_t jsonLen = static_cast<uint32_t>(jsonStr.size());
+            uint32_t binLen = binSize;
+            uint32_t totalLen = 12 + 8 + jsonLen + 8 + binLen;
+            std::ofstream out(outPath, std::ios::binary);
+            if (!out) {
+                std::fprintf(stderr, "Failed to open output: %s\n", outPath.c_str());
+                return 1;
+            }
+            uint32_t magic = 0x46546C67;
+            uint32_t version = 2;
+            out.write(reinterpret_cast<const char*>(&magic), 4);
+            out.write(reinterpret_cast<const char*>(&version), 4);
+            out.write(reinterpret_cast<const char*>(&totalLen), 4);
+            uint32_t jsonChunkType = 0x4E4F534A;
+            out.write(reinterpret_cast<const char*>(&jsonLen), 4);
+            out.write(reinterpret_cast<const char*>(&jsonChunkType), 4);
+            out.write(jsonStr.data(), jsonLen);
+            uint32_t binChunkType = 0x004E4942;
+            out.write(reinterpret_cast<const char*>(&binLen), 4);
+            out.write(reinterpret_cast<const char*>(&binChunkType), 4);
+            out.write(reinterpret_cast<const char*>(bin.data()), binLen);
+            out.close();
+            std::printf("Exported %s.wob -> %s\n", base.c_str(), outPath.c_str());
+            std::printf("  %zu groups -> %zu primitives, %u verts, %u tris, %u-byte BIN\n",
+                        bld.groups.size(), primitives.size(),
+                        totalV, totalI / 3, binLen);
             return 0;
         } else if (std::strcmp(argv[i], "--export-wob-obj") == 0 && i + 1 < argc) {
             // WOB is the WMO replacement; like --export-obj for WOM, this
