@@ -416,6 +416,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert one BLP texture to PNG sidecar\n");
     std::printf("  --migrate-wom <wom-base> [out-base]\n");
     std::printf("                         Upgrade an older WOM (v1/v2) to WOM3 with a default single-batch entry\n");
+    std::printf("  --migrate-zone <zoneDir>\n");
+    std::printf("                         Run --migrate-wom in-place on every WOM under <zoneDir>\n");
     std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
     std::printf("  --zone-stats <projectDir> [--json]\n");
     std::printf("                         Aggregate counts across every zone in <projectDir>\n");
@@ -623,7 +625,7 @@ int main(int argc, char* argv[]) {
         "--export-glb", "--export-wob-glb", "--export-whm-glb",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
-        "--migrate-wom",
+        "--migrate-wom", "--migrate-zone",
     };
     for (int i = 1; i < argc; i++) {
         for (const char* opt : kArgRequired) {
@@ -7459,6 +7461,55 @@ int main(int argc, char* argv[]) {
                 std::printf("  (already had batches; no schema change)\n");
             }
             return 0;
+        }
+        if (std::strcmp(argv[i], "--migrate-zone") == 0 && i + 1 < argc) {
+            // Batch-runs --migrate-wom in-place on every .wom under
+            // a zone directory. Idempotent (already-migrated files
+            // become no-ops). Useful when wowee_editor adds a new
+            // WOM3-only feature and you want to upgrade legacy zones
+            // in one shot.
+            std::string zoneDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir) || !fs::is_directory(zoneDir)) {
+                std::fprintf(stderr,
+                    "migrate-zone: %s is not a directory\n", zoneDir.c_str());
+                return 1;
+            }
+            int scanned = 0, upgraded = 0, alreadyV3 = 0, failed = 0;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                if (ext != ".wom") continue;
+                scanned++;
+                std::string base = e.path().string();
+                if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                if (!wom.isValid()) { failed++; continue; }
+                if (!wom.batches.empty()) { alreadyV3++; continue; }
+                wowee::pipeline::WoweeModel::Batch b;
+                b.indexStart = 0;
+                b.indexCount = static_cast<uint32_t>(wom.indices.size());
+                b.textureIndex = 0;
+                b.blendMode = 0;
+                b.flags = 0;
+                wom.batches.push_back(b);
+                if (wowee::pipeline::WoweeModelLoader::save(wom, base)) {
+                    upgraded++;
+                    std::printf("  upgraded: %s.wom\n", base.c_str());
+                } else {
+                    failed++;
+                    std::fprintf(stderr, "  FAILED: %s.wom\n", base.c_str());
+                }
+            }
+            std::printf("\nmigrate-zone: %s\n", zoneDir.c_str());
+            std::printf("  scanned   : %d WOM file(s)\n", scanned);
+            std::printf("  upgraded  : %d (added single-batch entry)\n", upgraded);
+            std::printf("  already v3: %d (no change needed)\n", alreadyV3);
+            if (failed > 0) {
+                std::printf("  FAILED    : %d (see stderr)\n", failed);
+            }
+            return failed == 0 ? 0 : 1;
         }
     }
 
