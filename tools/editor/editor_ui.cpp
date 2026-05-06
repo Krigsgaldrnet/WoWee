@@ -802,6 +802,21 @@ void EditorUI::renderLoadDialog(EditorApp& app) {
                 if (!found) app.showToast("No ADT tiles found for this map");
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Auto-find first available tile");
+
+            // Count total tiles for this map
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Count")) {
+                int total = 0;
+                for (int x = 0; x < 64; x++) {
+                    for (int y = 0; y < 64; y++) {
+                        std::string tp = "world\\maps\\" + mapLower + "\\" + mapLower + "_" +
+                                         std::to_string(x) + "_" + std::to_string(y) + ".adt";
+                        if (app.getAssetManager()->getManifest().hasEntry(tp)) total++;
+                    }
+                }
+                app.showToast(mapLower + ": " + std::to_string(total) + " tiles");
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Count total ADT tiles for this map");
         }
 
         ImGui::Spacing();
