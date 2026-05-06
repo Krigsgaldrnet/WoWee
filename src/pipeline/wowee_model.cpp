@@ -298,7 +298,15 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
         }
     }
 
-    f.write(reinterpret_cast<const char*>(model.indices.data()), indexCount * 4);
+    // Clamp out-of-range indices on save too — symmetric with the load
+    // guard. Avoids writing index values that the renderer would refuse
+    // and that the load-time guard would have to clean up later.
+    {
+        const uint32_t vMax = vertCount > 0 ? vertCount - 1 : 0;
+        std::vector<uint32_t> sanIdx = model.indices;
+        for (auto& idx : sanIdx) if (idx > vMax) idx = 0;
+        f.write(reinterpret_cast<const char*>(sanIdx.data()), indexCount * 4);
+    }
 
     for (const auto& path : model.texturePaths) writeStr(path);
 
