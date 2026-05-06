@@ -176,6 +176,12 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         // the field, or NaNs from a partial write). The renderer would
         // collapse the doodad to a point with scale 0.
         if (!std::isfinite(dp.scale) || dp.scale <= 0.0001f) dp.scale = 1.0f;
+        // Same NaN scrub for position/rotation — doodads with non-finite
+        // transforms produce NaN model matrices and crash the GPU.
+        for (int k = 0; k < 3; k++) {
+            if (!std::isfinite(dp.position[k])) dp.position[k] = 0.0f;
+            if (!std::isfinite(dp.rotation[k])) dp.rotation[k] = 0.0f;
+        }
         bld.doodads.push_back(dp);
     }
 
