@@ -1853,6 +1853,13 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
                     tmpl.minDamage = 3 + p.defaultLevel * 2;
                     tmpl.maxDamage = 5 + p.defaultLevel * 3;
                     tmpl.armor = p.defaultLevel * 10;
+                    // Sensible AzerothCore FactionTemplate default — only set
+                    // if the user hasn't already typed in a custom value.
+                    if (tmpl.faction == 0) {
+                        if (p.category == CreatureCategory::Critter) tmpl.faction = 250;
+                        else if (p.defaultHostile) tmpl.faction = 14;  // Monster
+                        else tmpl.faction = 35;                         // Friendly
+                    }
                 }
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", p.modelPath.c_str());
