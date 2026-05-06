@@ -529,6 +529,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Verify a JSON DBC sidecar's full schema (per-cell types, row width, format tag)\n");
     std::printf("  --info-glb <path> [--json]\n");
     std::printf("                         Print glTF 2.0 binary metadata (chunks, mesh/primitive counts, accessors)\n");
+    std::printf("  --info-glb-tree <path>\n");
+    std::printf("                         Render glTF structure as a tree (scenes/nodes/meshes/primitives)\n");
     std::printf("  --zone-summary <zoneDir> [--json]\n");
     std::printf("                         One-shot validate + creature/object/quest counts and exit\n");
     std::printf("  --info-zone-tree <zoneDir>\n");
@@ -657,6 +659,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
+        "--info-glb-tree",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png",
         "--zone-summary", "--info-zone-tree",
@@ -4912,6 +4915,161 @@ int main(int argc, char* argv[]) {
             std::printf("  FAILED — %d error(s):\n", errorCount);
             for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
             return isValidate ? 1 : 0;
+        } else if (std::strcmp(argv[i], "--info-glb-tree") == 0 && i + 1 < argc) {
+            // Pretty `tree`-style view of glTF structure. --info-glb gives
+            // counts; this shows the actual scene→node→mesh→primitive
+            // hierarchy with names. Useful when debugging 'why is this
+            // imported model showing up empty in three.js?' (often
+            // because the scene's nodes[] array references the wrong node).
+            std::string path = argv[++i];
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr,
+                    "info-glb-tree: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            if (bytes.size() < 28) {
+                std::fprintf(stderr, "info-glb-tree: file too short\n");
+                return 1;
+            }
+            uint32_t magic, version;
+            std::memcpy(&magic, &bytes[0], 4);
+            std::memcpy(&version, &bytes[4], 4);
+            if (magic != 0x46546C67 || version != 2) {
+                std::fprintf(stderr, "info-glb-tree: not glTF 2.0\n");
+                return 1;
+            }
+            uint32_t jsonLen;
+            std::memcpy(&jsonLen, &bytes[12], 4);
+            std::string jsonStr(bytes.begin() + 20, bytes.begin() + 20 + jsonLen);
+            nlohmann::json gj;
+            try { gj = nlohmann::json::parse(jsonStr); }
+            catch (const std::exception& e) {
+                std::fprintf(stderr, "info-glb-tree: JSON parse failed: %s\n", e.what());
+                return 1;
+            }
+            // Tree drawing
+            auto branch = [](bool last) { return last ? "└─ " : "├─ "; };
+            auto cont = [](bool last) { return last ? "   " : "│  "; };
+            std::printf("%s\n", path.c_str());
+            // Asset section
+            std::string genName = gj.value("/asset/version"_json_pointer, std::string{});
+            std::string gen = gj.value("/asset/generator"_json_pointer, std::string{});
+            std::printf("├─ asset (v%s, %s)\n",
+                        genName.c_str(),
+                        gen.empty() ? "no generator" : gen.c_str());
+            // Buffers
+            int nBuf = (gj.contains("buffers") && gj["buffers"].is_array())
+                        ? static_cast<int>(gj["buffers"].size()) : 0;
+            std::printf("├─ buffers (%d)\n", nBuf);
+            if (nBuf > 0) {
+                for (int b = 0; b < nBuf; ++b) {
+                    bool last = (b == nBuf - 1);
+                    uint64_t bl = gj["buffers"][b].value("byteLength", 0u);
+                    std::printf("│  %s[%d] %llu bytes\n", branch(last), b,
+                                static_cast<unsigned long long>(bl));
+                }
+            }
+            // BufferViews
+            int nBV = (gj.contains("bufferViews") && gj["bufferViews"].is_array())
+                       ? static_cast<int>(gj["bufferViews"].size()) : 0;
+            std::printf("├─ bufferViews (%d)\n", nBV);
+            for (int v = 0; v < nBV; ++v) {
+                bool last = (v == nBV - 1);
+                const auto& bv = gj["bufferViews"][v];
+                uint32_t bo = bv.value("byteOffset", 0u);
+                uint32_t bl = bv.value("byteLength", 0u);
+                int target = bv.value("target", 0);
+                std::printf("│  %s[%d] off=%u len=%u%s\n",
+                            branch(last), v, bo, bl,
+                            target == 34962 ? " (vertex)"
+                          : target == 34963 ? " (index)"
+                          : "");
+            }
+            // Accessors
+            int nAcc = (gj.contains("accessors") && gj["accessors"].is_array())
+                        ? static_cast<int>(gj["accessors"].size()) : 0;
+            std::printf("├─ accessors (%d)\n", nAcc);
+            for (int a = 0; a < nAcc; ++a) {
+                bool last = (a == nAcc - 1);
+                const auto& acc = gj["accessors"][a];
+                int ct = acc.value("componentType", 0);
+                std::string type = acc.value("type", std::string{});
+                uint32_t count = acc.value("count", 0u);
+                int bv = acc.value("bufferView", -1);
+                const char* ctName =
+                    ct == 5120 ? "i8" :
+                    ct == 5121 ? "u8" :
+                    ct == 5122 ? "i16" :
+                    ct == 5123 ? "u16" :
+                    ct == 5125 ? "u32" :
+                    ct == 5126 ? "f32" : "?";
+                std::printf("│  %s[%d] %s %s ×%u (bv=%d)\n",
+                            branch(last), a, ctName, type.c_str(), count, bv);
+            }
+            // Meshes (with primitives nested)
+            int nMesh = (gj.contains("meshes") && gj["meshes"].is_array())
+                         ? static_cast<int>(gj["meshes"].size()) : 0;
+            std::printf("├─ meshes (%d)\n", nMesh);
+            for (int m = 0; m < nMesh; ++m) {
+                bool lastM = (m == nMesh - 1);
+                const auto& mesh = gj["meshes"][m];
+                std::string name = mesh.value("name", std::string{});
+                int nPrim = (mesh.contains("primitives") && mesh["primitives"].is_array())
+                             ? static_cast<int>(mesh["primitives"].size()) : 0;
+                std::printf("│  %s[%d]%s%s (%d primitives)\n",
+                            branch(lastM), m,
+                            name.empty() ? "" : " ",
+                            name.c_str(), nPrim);
+                for (int p = 0; p < nPrim; ++p) {
+                    bool lastP = (p == nPrim - 1);
+                    const auto& prim = mesh["primitives"][p];
+                    int idxAcc = prim.value("indices", -1);
+                    int mode = prim.value("mode", 4);
+                    const char* modeName =
+                        mode == 0 ? "POINTS" :
+                        mode == 1 ? "LINES" :
+                        mode == 4 ? "TRIANGLES" : "?";
+                    std::printf("│  %s%s[%d] %s indices=acc#%d\n",
+                                cont(lastM), branch(lastP), p, modeName, idxAcc);
+                }
+            }
+            // Nodes (flat list — could be tree but glTF nodes are a graph)
+            int nNode = (gj.contains("nodes") && gj["nodes"].is_array())
+                         ? static_cast<int>(gj["nodes"].size()) : 0;
+            std::printf("├─ nodes (%d)\n", nNode);
+            for (int n = 0; n < nNode; ++n) {
+                bool last = (n == nNode - 1);
+                const auto& node = gj["nodes"][n];
+                std::string name = node.value("name", std::string{});
+                int meshIdx = node.value("mesh", -1);
+                std::printf("│  %s[%d]%s%s%s\n",
+                            branch(last), n,
+                            name.empty() ? "" : " ",
+                            name.c_str(),
+                            meshIdx >= 0 ? (" -> mesh#" + std::to_string(meshIdx)).c_str() : "");
+            }
+            // Scenes (last branch)
+            int nScene = (gj.contains("scenes") && gj["scenes"].is_array())
+                          ? static_cast<int>(gj["scenes"].size()) : 0;
+            std::printf("└─ scenes (%d, default=%d)\n",
+                        nScene, gj.value("scene", 0));
+            for (int s = 0; s < nScene; ++s) {
+                bool lastS = (s == nScene - 1);
+                const auto& scene = gj["scenes"][s];
+                int nodeRefs = (scene.contains("nodes") && scene["nodes"].is_array())
+                                ? static_cast<int>(scene["nodes"].size()) : 0;
+                std::printf("   %s[%d] nodes=[", branch(lastS), s);
+                if (scene.contains("nodes") && scene["nodes"].is_array()) {
+                    for (size_t k = 0; k < scene["nodes"].size(); ++k) {
+                        std::printf("%s%d", k ? "," : "", scene["nodes"][k].get<int>());
+                    }
+                }
+                std::printf("] (%d nodes)\n", nodeRefs);
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--check-glb-bounds") == 0 && i + 1 < argc) {
             // Cross-checks every position accessor's claimed min/max
             // against the actual data in the BIN chunk. glTF viewers use
