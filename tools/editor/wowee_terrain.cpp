@@ -6,6 +6,7 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <cmath>
 
 namespace wowee {
 namespace editor {
@@ -30,10 +31,23 @@ bool WoweeTerrain::exportOpen(const pipeline::ADTTerrain& terrain,
         // Per-chunk: baseHeight(4) + heights[145](580) + alphaSize(4) + alphaData(N)
         for (int ci = 0; ci < 256; ci++) {
             const auto& chunk = terrain.chunks[ci];
+            // Sanitize base + heights on save so a corrupt in-memory terrain
+            // (e.g. mid-edit NaN spike) doesn't get persisted into the WHM
+            // and require the load-time guard to clean up forever after.
             float base = chunk.position[2];
+            if (!std::isfinite(base)) base = 0.0f;
             f.write(reinterpret_cast<const char*>(&base), 4);
-            f.write(reinterpret_cast<const char*>(chunk.heightMap.heights.data()), 145 * 4);
-            uint32_t alphaSize = static_cast<uint32_t>(chunk.alphaMap.size());
+            float clean[145];
+            for (int i = 0; i < 145; i++) {
+                clean[i] = chunk.heightMap.heights[i];
+                if (!std::isfinite(clean[i])) clean[i] = 0.0f;
+            }
+            f.write(reinterpret_cast<const char*>(clean), 145 * 4);
+            // Cap alpha size at 64KB (matches loader cap) — alphaMap is
+            // bounded in practice but defensive truncation prevents a
+            // stale memory state from producing an unloadable WHM.
+            uint32_t alphaSize = std::min<uint32_t>(
+                static_cast<uint32_t>(chunk.alphaMap.size()), 65536);
             f.write(reinterpret_cast<const char*>(&alphaSize), 4);
             if (alphaSize > 0) {
                 f.write(reinterpret_cast<const char*>(chunk.alphaMap.data()), alphaSize);
