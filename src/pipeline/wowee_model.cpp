@@ -307,9 +307,19 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
         uint32_t boneCount = static_cast<uint32_t>(model.bones.size());
         f.write(reinterpret_cast<const char*>(&boneCount), 4);
         for (const auto& bone : model.bones) {
+            // Symmetric scrub with load — pivot NaN propagates through
+            // skeleton matrices to every child bone; parent indices outside
+            // bone array would walk off the end during matrix evaluation.
+            glm::vec3 pivot = bone.pivot;
+            if (!std::isfinite(pivot.x)) pivot.x = 0.0f;
+            if (!std::isfinite(pivot.y)) pivot.y = 0.0f;
+            if (!std::isfinite(pivot.z)) pivot.z = 0.0f;
+            int16_t parent = bone.parentBone;
+            if (parent >= 0 && static_cast<uint32_t>(parent) >= boneCount)
+                parent = -1;
             f.write(reinterpret_cast<const char*>(&bone.keyBoneId), 4);
-            f.write(reinterpret_cast<const char*>(&bone.parentBone), 2);
-            f.write(reinterpret_cast<const char*>(&bone.pivot), 12);
+            f.write(reinterpret_cast<const char*>(&parent), 2);
+            f.write(reinterpret_cast<const char*>(&pivot), 12);
             f.write(reinterpret_cast<const char*>(&bone.flags), 4);
         }
 
