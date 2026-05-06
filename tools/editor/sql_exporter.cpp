@@ -88,12 +88,14 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
         if (s.behavior == CreatureBehavior::Wander) movementType = 1;
         if (s.behavior == CreatureBehavior::Patrol) movementType = 2;
 
+        // AzerothCore expects orientation in radians; editor stores degrees.
+        const float orientRad = s.orientation * 3.14159265358979323846f / 180.0f;
         f << "INSERT INTO `creature` "
           << "(`guid`, `id`, `map`, `position_x`, `position_y`, `position_z`, "
           << "`orientation`, `spawntimesecs`, `wander_distance`, `MovementType`) VALUES ("
           << guid << ", " << entry << ", " << mapId << ", "
           << s.position.x << ", " << s.position.y << ", " << s.position.z << ", "
-          << s.orientation << ", "
+          << orientRad << ", "
           << (s.respawnTimeMs / 1000) << ", "
           << s.wanderRadius << ", "
           << static_cast<int>(movementType)
