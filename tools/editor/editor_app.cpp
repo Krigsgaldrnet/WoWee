@@ -125,17 +125,6 @@ void EditorApp::run() {
             lastNpcCount_ = npcCount;
         }
 
-        if (objChanged || objectsDirty_) {
-            // Full M2 rebuild only when placed objects change
-            objectsDirty_ = false;
-            lastObjCount_ = objCount;
-            if (objCount > 0 || npcCount > 0) {
-                vkDeviceWaitIdle(vkCtx->getDevice());
-                viewport_.rebuildObjects(objectPlacer_.getObjects(), npcSpawner_.getSpawns());
-            }
-            lastNpcCount_ = npcCount; // sync after rebuild
-        }
-
         // Show gizmo arrows on selected object
         auto& gizmo = viewport_.getGizmo();
         if (auto* sel = objectPlacer_.getSelected()) {
@@ -147,6 +136,17 @@ void EditorApp::run() {
         uint32_t imageIndex = 0;
         VkCommandBuffer cmd = vkCtx->beginFrame(imageIndex);
         if (cmd == VK_NULL_HANDLE) continue;
+
+        // Rebuild objects AFTER beginFrame so instance SSBO uses correct frame index
+        if (objChanged || objectsDirty_) {
+            objectsDirty_ = false;
+            lastObjCount_ = objCount;
+            if (objCount > 0 || npcCount > 0) {
+                vkDeviceWaitIdle(vkCtx->getDevice());
+                viewport_.rebuildObjects(objectPlacer_.getObjects(), npcSpawner_.getSpawns());
+            }
+            lastNpcCount_ = npcCount;
+        }
 
         // Update M2 animations AFTER beginFrame (so getCurrentFrame is correct)
         viewport_.update(dt);
