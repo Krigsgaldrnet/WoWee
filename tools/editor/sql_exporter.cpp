@@ -1,4 +1,5 @@
 #include "sql_exporter.hpp"
+#include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include <fstream>
 #include <filesystem>
@@ -88,12 +89,12 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
         if (s.behavior == CreatureBehavior::Wander) movementType = 1;
         if (s.behavior == CreatureBehavior::Patrol) movementType = 2;
 
-        // Editor stores positions in render coords (renderX=wowY, renderY=wowX,
-        // renderZ=wowZ) but AzerothCore creature.position_x/y are WoW canonical
-        // (X=north-south, Y=west-east). Swap x/y on the way out.
-        const float wowX = s.position.y;
-        const float wowY = s.position.x;
-        const float wowZ = s.position.z;
+        // Editor stores positions in render coords; AzerothCore expects WoW
+        // canonical (X=north, Y=west). renderToCanonical handles the swap.
+        const glm::vec3 wow = core::coords::renderToCanonical(s.position);
+        const float wowX = wow.x;
+        const float wowY = wow.y;
+        const float wowZ = wow.z;
         // AzerothCore expects orientation in radians from +X (north). Editor's
         // orientation is in degrees from +renderX (west). Convert via:
         //   wowYaw = π/2 - editorYaw
@@ -136,10 +137,10 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
 
             for (size_t pi = 0; pi < s.patrolPath.size(); pi++) {
                 const auto& wp = s.patrolPath[pi];
-                // Same render -> WoW canonical swap as the spawn position.
-                const float wpWowX = wp.position.y;
-                const float wpWowY = wp.position.x;
-                const float wpWowZ = wp.position.z;
+                const glm::vec3 wpWow = core::coords::renderToCanonical(wp.position);
+                const float wpWowX = wpWow.x;
+                const float wpWowY = wpWow.y;
+                const float wpWowZ = wpWow.z;
                 f << "INSERT INTO `waypoint_data` "
                   << "(`id`, `point`, `position_x`, `position_y`, `position_z`, `delay`) VALUES ("
                   << pathId << ", " << (pi + 1) << ", "
