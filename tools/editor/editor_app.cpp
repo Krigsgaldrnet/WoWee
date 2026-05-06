@@ -1578,8 +1578,15 @@ void EditorApp::flyToSelected() {
     // both for tight spawn lists and for far-flung WMOs.
     glm::vec3 fwd = camera_.getCamera().getForward();
     if (glm::length(fwd) < 0.001f) fwd = glm::vec3(1, 0, 0);
-    glm::vec3 back = -glm::normalize(glm::vec3(fwd.x, fwd.y, 0.0f));
-    if (glm::length(back) < 0.001f) back = glm::vec3(-1, 0, 0);
+    // Project onto XY before normalizing — but if the camera is looking
+    // straight up/down, the projection is zero and glm::normalize returns
+    // NaN. NaN length < 0.001f is false (NaN comparisons return false), so
+    // the original fallback didn't catch the case. Length-check the source
+    // vector explicitly.
+    glm::vec3 fwdXY(fwd.x, fwd.y, 0.0f);
+    glm::vec3 back = (glm::length(fwdXY) < 0.001f)
+                         ? glm::vec3(-1, 0, 0)
+                         : -glm::normalize(fwdXY);
 
     glm::vec3 cam = target + back * 25.0f + glm::vec3(0, 0, 15);
     camera_.setPosition(cam);
