@@ -658,6 +658,14 @@ void EditorViewport::update(float deltaTime) {
 void EditorViewport::setGhostPreview(const std::string& path, const glm::vec3& pos,
                                       const glm::vec3& rotDeg, float scale) {
     if (!m2Renderer_) return;
+    // Reject NaN inputs — would propagate into the M2 renderer transform
+    // and either crash on the GPU or silently render at the origin.
+    if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z) ||
+        !std::isfinite(rotDeg.x) || !std::isfinite(rotDeg.y) || !std::isfinite(rotDeg.z) ||
+        !std::isfinite(scale) || scale <= 0.0f) {
+        clearGhostPreview();
+        return;
+    }
 
     // Load model if path changed
     if (path != ghostModelPath_ || ghostModelId_ == 0) {
