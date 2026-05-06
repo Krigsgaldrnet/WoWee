@@ -163,6 +163,16 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
 
 uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4& modelMatrix,
                                                 const glm::vec3& position) {
+    // Reject NaN inputs at the boundary. position feeds the dedup hash
+    // (std::round of NaN is implementation-defined); the matrix goes
+    // straight to the GPU UBO and would crash validation.
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(position.z)) {
+        return 0;
+    }
+    for (int c = 0; c < 4; c++)
+        for (int r = 0; r < 4; r++)
+            if (!std::isfinite(modelMatrix[c][r])) return 0;
     if (models.find(modelId) == models.end()) {
         LOG_WARNING("Cannot create instance: model ", modelId, " not loaded");
         return 0;
