@@ -807,3 +807,56 @@ TEST_CASE("WoweeCollision save caps tri count and clamps tile coords", "[woc][ha
     REQUIRE(reloaded.triangles.size() == 5);
     std::filesystem::remove(path);
 }
+
+TEST_CASE("WOB rejects load on overlong building name", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/bad_name";
+    std::string path = base + ".wob";
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31424F57; // WOB1
+        uint32_t gc = 1, pc = 0, dc = 0;
+        float boundRadius = 1.0f;
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&gc), 4);
+        f.write(reinterpret_cast<const char*>(&pc), 4);
+        f.write(reinterpret_cast<const char*>(&dc), 4);
+        f.write(reinterpret_cast<const char*>(&boundRadius), 4);
+        // Overlong building name length (5000 > 1024 cap)
+        uint16_t nameLen = 5000;
+        f.write(reinterpret_cast<const char*>(&nameLen), 2);
+    }
+    auto bld = WoweeBuildingLoader::load(base);
+    // Without the reject, the loader would silently set nameLen=0 and the
+    // 5000 stale bytes after would be misread as the next group's name+
+    // counts. With the fix the load returns an empty WoweeBuilding.
+    REQUIRE_FALSE(bld.isValid());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WOB rejects load on overlong group name", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/bad_grp_name";
+    std::string path = base + ".wob";
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31424F57; // WOB1
+        uint32_t gc = 1, pc = 0, dc = 0;
+        float boundRadius = 1.0f;
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&gc), 4);
+        f.write(reinterpret_cast<const char*>(&pc), 4);
+        f.write(reinterpret_cast<const char*>(&dc), 4);
+        f.write(reinterpret_cast<const char*>(&boundRadius), 4);
+        // Valid building name
+        uint16_t nameLen = 4;
+        f.write(reinterpret_cast<const char*>(&nameLen), 2);
+        f.write("Test", 4);
+        // Overlong group name length
+        uint16_t gnLen = 9999;
+        f.write(reinterpret_cast<const char*>(&gnLen), 2);
+    }
+    auto bld = WoweeBuildingLoader::load(base);
+    REQUIRE_FALSE(bld.isValid());
+    std::filesystem::remove(path);
+}
