@@ -1291,7 +1291,10 @@ void EditorApp::exportZone(const std::string& outputDir) {
     // Scan output directory for all exported tiles (includes adjacent tiles)
     ZoneManifest& manifest = zoneManifest_;
     manifest.mapName = loadedMap_;
-    manifest.displayName = loadedMap_;
+    // Preserve user-set displayName from the Zone Metadata panel; only fill in
+    // the default when the user hasn't customized it.
+    if (manifest.displayName.empty()) manifest.displayName = loadedMap_;
+    manifest.tiles.clear();
     manifest.tiles.push_back({loadedTileX_, loadedTileY_});
     namespace fs = std::filesystem;
     if (fs::exists(base)) {
