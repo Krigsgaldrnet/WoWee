@@ -623,7 +623,9 @@ void EditorViewport::clearGhostPreview() {
         ghostInstanceId_ = 0;
     }
     if (ghostModelId_ != 0 && m2Renderer_) {
-        // Don't unload the model — it might be used by placed objects too
+        // Ghost ID is reserved for previews only — safe to unload so a path
+        // change can re-load with the new model under the same ID.
+        m2Renderer_->unloadModel(ghostModelId_);
         ghostModelId_ = 0;
         ghostModelPath_.clear();
     }

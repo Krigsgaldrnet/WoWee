@@ -287,6 +287,8 @@ public:
 
     bool hasModel(uint32_t modelId) const;
     bool loadModel(const pipeline::M2Model& model, uint32_t modelId);
+    /** Force-remove a model and all its GPU resources. Caller must ensure no instances reference it. */
+    void unloadModel(uint32_t modelId);
     /** Mark a loaded model as a spell effect (full-brightness particles, no collision). */
     void markModelAsSpellEffect(uint32_t modelId);
 

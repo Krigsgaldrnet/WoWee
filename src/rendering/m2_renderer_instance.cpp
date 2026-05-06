@@ -543,6 +543,15 @@ void M2Renderer::cleanupUnusedModels() {
     }
 }
 
+void M2Renderer::unloadModel(uint32_t modelId) {
+    auto it = models.find(modelId);
+    if (it == models.end()) return;
+    if (vkCtx_) vkDeviceWaitIdle(vkCtx_->getDevice());
+    destroyModelGPU(it->second);
+    models.erase(it);
+    modelUnusedSince_.erase(modelId);
+}
+
 VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {
     constexpr uint64_t kFailedTextureRetryLookups = 512;
     auto normalizeKey = [](std::string key) {
