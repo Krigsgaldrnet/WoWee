@@ -414,6 +414,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert a wowee JSON DBC back to binary DBC for private-server compat\n");
     std::printf("  --convert-blp-png <blp-path> [out.png]\n");
     std::printf("                         Convert one BLP texture to PNG sidecar\n");
+    std::printf("  --migrate-wom <wom-base> [out-base]\n");
+    std::printf("                         Upgrade an older WOM (v1/v2) to WOM3 with a default single-batch entry\n");
     std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
     std::printf("  --zone-stats <projectDir> [--json]\n");
     std::printf("                         Aggregate counts across every zone in <projectDir>\n");
@@ -618,6 +620,7 @@ int main(int argc, char* argv[]) {
         "--export-glb", "--export-wob-glb", "--export-whm-glb",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
+        "--migrate-wom",
     };
     for (int i = 1; i < argc; i++) {
         for (const char* opt : kArgRequired) {
@@ -7249,6 +7252,63 @@ int main(int argc, char* argv[]) {
             std::printf("Converted %s -> %s\n", blpPath.c_str(), outPath.c_str());
             std::printf("  %dx%d, %zu bytes (RGBA8)\n",
                         img.width, img.height, img.data.size());
+            return 0;
+        }
+        if (std::strcmp(argv[i], "--migrate-wom") == 0 && i + 1 < argc) {
+            // Upgrade an older WOM (v1=static, v2=animated) to WOM3 by
+            // adding a default single-batch entry that covers the whole
+            // mesh. WOM3 is a strict superset; tooling that consumes
+            // batches (--info-batches, --export-glb per-primitive split,
+            // material-aware renderers) becomes useful on previously-
+            // batchless content. The save() function picks WOM3 magic
+            // automatically once batches.size() > 0.
+            std::string base = argv[++i];
+            std::string outBase;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outBase = argv[++i];
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                std::fprintf(stderr, "WOM not found: %s.wom\n", base.c_str());
+                return 1;
+            }
+            if (outBase.empty()) outBase = base;
+            auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            if (!wom.isValid()) {
+                std::fprintf(stderr, "migrate-wom: %s.wom has no geometry\n", base.c_str());
+                return 1;
+            }
+            int oldVersion = wom.version;
+            int batchesAdded = 0;
+            if (wom.batches.empty()) {
+                // Single batch covering the entire index range with the
+                // first texture (or 0 if no textures exist). Opaque
+                // blend mode + no flags — safe defaults that match how
+                // the renderer was treating the whole mesh implicitly.
+                wowee::pipeline::WoweeModel::Batch b;
+                b.indexStart = 0;
+                b.indexCount = static_cast<uint32_t>(wom.indices.size());
+                b.textureIndex = wom.texturePaths.empty() ? 0 : 0;
+                b.blendMode = 0;
+                b.flags = 0;
+                wom.batches.push_back(b);
+                batchesAdded = 1;
+            }
+            // version field is recomputed inside save() based on
+            // hasBatches/hasAnimation, so we don't need to set it here.
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, outBase)) {
+                std::fprintf(stderr, "migrate-wom: failed to write %s.wom\n",
+                             outBase.c_str());
+                return 1;
+            }
+            // Re-load to verify the new version flag landed correctly.
+            auto check = wowee::pipeline::WoweeModelLoader::load(outBase);
+            std::printf("Migrated %s.wom -> %s.wom\n", base.c_str(), outBase.c_str());
+            std::printf("  version: %d -> %u  batches: %zu -> %zu (added %d)\n",
+                        oldVersion, check.version,
+                        size_t(0), check.batches.size(), batchesAdded);
+            if (batchesAdded == 0) {
+                std::printf("  (already had batches; no schema change)\n");
+            }
             return 0;
         }
     }
