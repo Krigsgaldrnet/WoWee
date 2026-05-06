@@ -241,11 +241,12 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
             } else {
                 auto data = assetManager_->readFile(npc.modelPath);
                 if (data.empty()) {
-                    LOG_DEBUG("NPC model not found (showing marker): ", npc.modelPath);
+                    LOG_DEBUG("NPC model file not found: ", npc.modelPath);
                     continue;
                 }
                 auto model = pipeline::M2Loader::load(data);
-                if (!model.isValid()) {
+                // Always try loading skin file (WotLK M2s need it for geometry)
+                {
                     std::string skinPath = npc.modelPath;
                     auto dotPos = skinPath.rfind('.');
                     if (dotPos != std::string::npos)
@@ -254,7 +255,11 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                     if (!skinData.empty())
                         pipeline::M2Loader::loadSkin(skinData, model);
                 }
-                if (!model.isValid()) continue;
+                if (!model.isValid()) {
+                    LOG_DEBUG("NPC model invalid after skin load: ", npc.modelPath,
+                             " (verts=", model.vertices.size(), " idx=", model.indices.size(), ")");
+                    continue;
+                }
                 if (model.boundRadius < 1.0f) model.boundRadius = 50.0f;
                 // Validate vertex data
                 bool ok = true;
