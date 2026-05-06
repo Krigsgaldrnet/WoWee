@@ -148,6 +148,16 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         if (pl > 1024) pl = 0;
         dp.modelPath.resize(pl);
         f.read(dp.modelPath.data(), pl);
+        // Reject path-traversal in doodad model paths — these end up in
+        // outModel.doodadNames and are passed to the asset manager. While
+        // the manager only reads files, '..' paths in custom_zones could
+        // probe for files outside the assets/ tree.
+        if (dp.modelPath.find("..") != std::string::npos ||
+            (!dp.modelPath.empty() && (dp.modelPath[0] == '/' || dp.modelPath[0] == '\\')) ||
+            (dp.modelPath.size() >= 2 && dp.modelPath[1] == ':')) {
+            LOG_WARNING("WOB doodad path rejected (traversal): ", dp.modelPath);
+            dp.modelPath.clear();
+        }
         f.read(reinterpret_cast<char*>(&dp.position), 12);
         f.read(reinterpret_cast<char*>(&dp.rotation), 12);
         f.read(reinterpret_cast<char*>(&dp.scale), 4);
