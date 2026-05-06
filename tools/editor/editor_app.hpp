@@ -32,6 +32,7 @@ public:
     void shutdown();
 
     void loadADT(const std::string& mapName, int tileX, int tileY);
+    bool loadWMOInstance(const std::string& mapName);
     void createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome);
     void saveADT(const std::string& path);
     void saveWDT(const std::string& path);

@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
+#include "pipeline/wdt_loader.hpp"
 #include "pipeline/terrain_mesh.hpp"
 #include "core/logger.hpp"
 #include <imgui.h>
@@ -663,6 +664,65 @@ void EditorApp::refreshDirtyChunks() {
     viewport_.loadTerrain(mesh, terrain_.textures, loadedTileX_, loadedTileY_);
 }
 
+bool EditorApp::loadWMOInstance(const std::string& mapName) {
+    std::string mapLower = mapName;
+    std::transform(mapLower.begin(), mapLower.end(), mapLower.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    std::string wdtPath = "world\\maps\\" + mapLower + "\\" + mapLower + ".wdt";
+    auto wdtData = assetManager_->readFile(wdtPath);
+    if (wdtData.empty()) return false;
+
+    auto wdtInfo = pipeline::parseWDT(wdtData);
+    if (!wdtInfo.isWMOOnly() || wdtInfo.rootWMOPath.empty()) return false;
+
+    LOG_INFO("WMO-only instance: ", mapName, " root=", wdtInfo.rootWMOPath);
+
+    clearAllObjects();
+    questEditor_.clear();
+    ui_.clearPath();
+    viewport_.clearTerrain();
+
+    // Create blank terrain as a floor reference
+    terrain_ = TerrainEditor::createBlankTerrain(32, 32, 0.0f, Biome::Rocky);
+    terrain_.coord = {32, 32};
+    terrainEditor_.setTerrain(&terrain_);
+    texturePainter_.setTerrain(&terrain_);
+    objectPlacer_.setTerrain(&terrain_);
+
+    auto mesh = pipeline::TerrainMeshGenerator::generate(terrain_);
+    viewport_.loadTerrain(mesh, terrain_.textures, 32, 32);
+
+    // Place the root WMO as an object
+    glm::vec3 wmoPos = core::coords::adtToWorld(
+        wdtInfo.position[0], wdtInfo.position[1], wdtInfo.position[2]);
+    glm::vec3 wmoRot(-wdtInfo.rotation[2], -wdtInfo.rotation[0],
+                      wdtInfo.rotation[1] + 180.0f);
+
+    PlacedObject wmo;
+    wmo.type = PlaceableType::WMO;
+    wmo.path = wdtInfo.rootWMOPath;
+    wmo.position = wmoPos;
+    wmo.rotation = wmoRot;
+    wmo.scale = 1.0f;
+    wmo.uniqueId = 1;
+    objectPlacer_.getObjects().push_back(wmo);
+    objectsDirty_ = true;
+
+    loadedMap_ = mapName;
+    loadedTileX_ = 32;
+    loadedTileY_ = 32;
+
+    // Position camera near the WMO
+    camera_.setPosition(wmoPos + glm::vec3(0, 0, 50));
+    camera_.setYawPitch(0.0f, -30.0f);
+
+    showToast("WMO instance loaded: " + mapName);
+    LOG_INFO("WMO instance loaded: ", mapName, " at (",
+             wmoPos.x, ",", wmoPos.y, ",", wmoPos.z, ")");
+    return true;
+}
+
 void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     // Clear previous state before loading new tile
     clearAllObjects();
@@ -690,6 +750,8 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 
         auto adtData = assetManager_->readFile(path.str());
         if (adtData.empty()) {
+            // Try WMO-only instance (dungeons like Dire Maul have no ADT tiles)
+            if (loadWMOInstance(mapName)) return;
             LOG_ERROR("ADT file not found: ", path.str());
             showToast("Zone not found: " + mapName + " [" + std::to_string(tileX) + "," + std::to_string(tileY) + "]");
             return;

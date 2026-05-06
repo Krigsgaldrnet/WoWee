@@ -799,7 +799,14 @@ void EditorUI::renderLoadDialog(EditorApp& app) {
                         }
                     }
                 }
-                if (!found) app.showToast("No ADT tiles found for this map");
+                if (!found) {
+                    // Check if it's a WMO-only instance
+                    std::string wdtPath = "world\\maps\\" + mapLower + "\\" + mapLower + ".wdt";
+                    if (app.getAssetManager()->getManifest().hasEntry(wdtPath))
+                        app.showToast("WMO-only instance — click Load to open");
+                    else
+                        app.showToast("No ADT tiles found for this map");
+                }
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Auto-find first available tile");
 
