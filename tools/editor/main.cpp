@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <nlohmann/json.hpp>
+#include "stb_image_write.h"
 
 // ─── Open-format consistency checks ─────────────────────────────
 // Both validators are called from the per-file CLI commands AND
@@ -407,6 +408,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
     std::printf("                         Convert a wowee JSON DBC back to binary DBC for private-server compat\n");
+    std::printf("  --convert-blp-png <blp-path> [out.png]\n");
+    std::printf("                         Convert one BLP texture to PNG sidecar\n");
     std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
     std::printf("  --add-tile <zoneDir> <tx> <ty> [baseHeight]\n");
@@ -537,7 +540,7 @@ int main(int argc, char* argv[]) {
         "--export-wob-obj", "--import-wob-obj",
         "--export-woc-obj", "--export-whm-obj",
         "--convert-m2", "--convert-wmo",
-        "--convert-dbc-json", "--convert-json-dbc",
+        "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
     };
     for (int i = 1; i < argc; i++) {
         for (const char* opt : kArgRequired) {
@@ -4340,6 +4343,64 @@ int main(int argc, char* argv[]) {
             if (convertErrors > 0) {
                 std::printf("  warning: %d cell(s) had unrecognized types\n", convertErrors);
             }
+            return 0;
+        }
+        if (std::strcmp(argv[i], "--convert-blp-png") == 0 && i + 1 < argc) {
+            // Standalone BLP -> PNG conversion. Same code path as
+            // asset_extract --emit-open's per-file walker, but for one
+            // texture without re-running a full extraction.
+            std::string blpPath = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                outPath = argv[++i];
+            }
+            if (outPath.empty()) {
+                outPath = blpPath;
+                if (outPath.size() >= 4 &&
+                    outPath.substr(outPath.size() - 4) == ".blp") {
+                    outPath = outPath.substr(0, outPath.size() - 4);
+                }
+                outPath += ".png";
+            }
+            std::ifstream in(blpPath, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr, "convert-blp-png: cannot open %s\n", blpPath.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            auto img = wowee::pipeline::BLPLoader::load(bytes);
+            if (!img.isValid()) {
+                std::fprintf(stderr, "convert-blp-png: failed to decode %s\n",
+                             blpPath.c_str());
+                return 1;
+            }
+            // Same dimension/buffer-size guards as the asset_extract
+            // emitter so we never feed stbi_write_png an invalid buffer.
+            const size_t expected = static_cast<size_t>(img.width) * img.height * 4;
+            if (img.width <= 0 || img.height <= 0 ||
+                img.width > 8192 || img.height > 8192 ||
+                img.data.size() < expected) {
+                std::fprintf(stderr, "convert-blp-png: invalid dimensions or data (%dx%d, %zu bytes)\n",
+                             img.width, img.height, img.data.size());
+                return 1;
+            }
+            // Ensure output directory exists; fs::create_directories with
+            // an empty path is a no-op so we don't need to special-case
+            // 'png in cwd'.
+            std::filesystem::create_directories(
+                std::filesystem::path(outPath).parent_path());
+            int rc = stbi_write_png(outPath.c_str(),
+                                     img.width, img.height, 4,
+                                     img.data.data(), img.width * 4);
+            if (!rc) {
+                std::fprintf(stderr, "convert-blp-png: stbi_write_png failed for %s\n",
+                             outPath.c_str());
+                return 1;
+            }
+            std::printf("Converted %s -> %s\n", blpPath.c_str(), outPath.c_str());
+            std::printf("  %dx%d, %zu bytes (RGBA8)\n",
+                        img.width, img.height, img.data.size());
             return 0;
         }
     }
