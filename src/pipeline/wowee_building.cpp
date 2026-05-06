@@ -379,8 +379,22 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
         }
 
         wmoGroup.indices.reserve(grp.indices.size());
-        for (uint32_t idx : grp.indices)
-            wmoGroup.indices.push_back(static_cast<uint16_t>(idx));
+        // WMO format uses uint16 indices, so each group must stay under 65k
+        // verts. WoB allows uint32 — log + clamp instead of silently
+        // wrapping and producing garbage triangles in the renderer.
+        bool warnedTrunc = false;
+        for (uint32_t idx : grp.indices) {
+            if (idx > 0xFFFF) {
+                if (!warnedTrunc) {
+                    LOG_WARNING("toWMOModel: group '", grp.name,
+                                "' has index > 65535 (clamping to 0)");
+                    warnedTrunc = true;
+                }
+                wmoGroup.indices.push_back(0);
+            } else {
+                wmoGroup.indices.push_back(static_cast<uint16_t>(idx));
+            }
+        }
 
         outModel.groups.push_back(std::move(wmoGroup));
     }
