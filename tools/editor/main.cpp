@@ -645,6 +645,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
+    std::printf("  --info-cli-stats [--json]\n");
+    std::printf("                         Meta-stats on the CLI surface (command count by category prefix)\n");
     std::printf("  --gen-completion <bash|zsh>\n");
     std::printf("                         Print a shell-completion script for wowee_editor (source it from your rc file)\n");
     std::printf("  --version              Show version and format info\n\n");
@@ -10534,6 +10536,74 @@ int main(int argc, char* argv[]) {
             commands.insert("--help");
             commands.insert("--version");
             for (const auto& c : commands) std::printf("%s\n", c.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-cli-stats") == 0) {
+            // Meta-stats on the CLI surface: total command count + per-
+            // category breakdown by prefix verb (--info-*, --validate-*,
+            // --diff-*, etc.). Useful for tracking growth over time and
+            // spotting category imbalances.
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            // Re-use --list-commands' parser. Capture printUsage stdout.
+            FILE* old = stdout;
+            FILE* tmp = std::tmpfile();
+            if (!tmp) { std::fprintf(stderr, "info-cli-stats: tmpfile failed\n"); return 1; }
+            stdout = tmp;
+            printUsage(argv[0]);
+            stdout = old;
+            std::fseek(tmp, 0, SEEK_SET);
+            std::set<std::string> commands;
+            char line[512];
+            while (std::fgets(line, sizeof(line), tmp)) {
+                const char* p = line;
+                while (*p == ' ' || *p == '\t') ++p;
+                if (p[0] != '-' || p[1] != '-') continue;
+                std::string flag;
+                while (*p && (std::isalnum(static_cast<unsigned char>(*p)) ||
+                              *p == '-' || *p == '_')) { flag += *p++; }
+                if (flag.size() > 2) commands.insert(flag);
+            }
+            std::fclose(tmp);
+            commands.insert("--help");
+            commands.insert("--version");
+            // Bucket by category — verb is the second token after '--',
+            // up to the next dash. So '--info-zone-tree' -> 'info'.
+            std::map<std::string, int> byCategory;
+            int maxLen = 0;
+            for (const auto& c : commands) {
+                if (static_cast<int>(c.size()) > maxLen) maxLen = static_cast<int>(c.size());
+                size_t verbStart = 2;  // skip '--'
+                size_t verbEnd = c.find('-', verbStart);
+                std::string verb = (verbEnd == std::string::npos)
+                    ? c.substr(verbStart)
+                    : c.substr(verbStart, verbEnd - verbStart);
+                byCategory[verb]++;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["totalCommands"] = commands.size();
+                j["maxFlagLength"] = maxLen;
+                nlohmann::json cats = nlohmann::json::object();
+                for (const auto& [v, c] : byCategory) cats[v] = c;
+                j["byCategory"] = cats;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("CLI surface stats\n");
+            std::printf("  total commands : %zu\n", commands.size());
+            std::printf("  longest flag   : %d chars\n", maxLen);
+            std::printf("\n  Categories (by verb prefix, sorted by count):\n");
+            // Sort by count descending for the table.
+            std::vector<std::pair<std::string, int>> sorted(
+                byCategory.begin(), byCategory.end());
+            std::sort(sorted.begin(), sorted.end(),
+                      [](const auto& a, const auto& b) {
+                          return a.second > b.second;
+                      });
+            for (const auto& [verb, count] : sorted) {
+                std::printf("    --%-12s %4d\n", verb.c_str(), count);
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--gen-completion") == 0 && i + 1 < argc) {
             // Emit a bash or zsh completion script. Re-execs the editor's
