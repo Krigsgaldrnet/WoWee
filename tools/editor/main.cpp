@@ -517,6 +517,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Verify a glTF 2.0 binary's structure (magic, chunks, JSON, accessors)\n");
     std::printf("  --check-glb-bounds <path> [--json]\n");
     std::printf("                         Verify position accessor min/max in a .glb actually matches the data\n");
+    std::printf("  --validate-stl <path> [--json]\n");
+    std::printf("                         Verify an ASCII STL's structure (solid framing, facet/vertex shape, no NaN)\n");
     std::printf("  --validate-jsondbc <path> [--json]\n");
     std::printf("                         Verify a JSON DBC sidecar's full schema (per-cell types, row width, format tag)\n");
     std::printf("  --info-glb <path> [--json]\n");
@@ -628,7 +630,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
-        "--validate-jsondbc", "--check-glb-bounds",
+        "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--zone-summary", "--info-zone-tree",
         "--export-zone-summary-md", "--export-quest-graph",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
@@ -4113,6 +4115,135 @@ int main(int argc, char* argv[]) {
             std::printf("GLB bounds: %s\n", path.c_str());
             std::printf("  position accessors checked : %d\n", posAccessors);
             std::printf("  mismatched                 : %d\n", mismatched);
+            if (errors.empty()) {
+                std::printf("  PASSED\n");
+                return 0;
+            }
+            std::printf("  FAILED — %zu error(s):\n", errors.size());
+            for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-stl") == 0 && i + 1 < argc) {
+            // Structural validator for ASCII STL — pairs with --export-stl
+            // and --import-stl (and --bake-zone-stl). Catches truncation,
+            // missing solid framing, mismatched facet/vertex counts, and
+            // non-finite vertex coords that would crash a slicer's mesh
+            // analyzer.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path);
+            if (!in) {
+                std::fprintf(stderr,
+                    "validate-stl: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<std::string> errors;
+            std::string solidName;
+            int facetCount = 0, vertCount = 0, nonFinite = 0;
+            int facetsOpen = 0;  // facet-without-endfacet leak detector
+            bool sawSolid = false, sawEndsolid = false;
+            int currentFacetVerts = 0;
+            std::string line;
+            int lineNum = 0;
+            while (std::getline(in, line)) {
+                lineNum++;
+                while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
+                    line.pop_back();
+                if (line.empty()) continue;
+                std::istringstream ss(line);
+                std::string tok;
+                ss >> tok;
+                if (tok == "solid") {
+                    if (sawSolid) {
+                        errors.push_back("line " + std::to_string(lineNum) +
+                                         ": multiple 'solid' headers");
+                    }
+                    sawSolid = true;
+                    ss >> solidName;
+                } else if (tok == "facet") {
+                    facetCount++;
+                    facetsOpen++;
+                    currentFacetVerts = 0;
+                    std::string nrmTok;
+                    ss >> nrmTok;
+                    if (nrmTok != "normal") {
+                        errors.push_back("line " + std::to_string(lineNum) +
+                                         ": 'facet' missing 'normal' subtoken");
+                    } else {
+                        float nx, ny, nz;
+                        if (!(ss >> nx >> ny >> nz)) {
+                            errors.push_back("line " + std::to_string(lineNum) +
+                                             ": 'facet normal' missing 3 floats");
+                        } else if (!std::isfinite(nx) || !std::isfinite(ny) ||
+                                    !std::isfinite(nz)) {
+                            errors.push_back("line " + std::to_string(lineNum) +
+                                             ": non-finite facet normal");
+                            nonFinite++;
+                        }
+                    }
+                } else if (tok == "vertex") {
+                    vertCount++;
+                    currentFacetVerts++;
+                    float x, y, z;
+                    if (!(ss >> x >> y >> z)) {
+                        errors.push_back("line " + std::to_string(lineNum) +
+                                         ": 'vertex' missing 3 floats");
+                    } else if (!std::isfinite(x) || !std::isfinite(y) ||
+                                !std::isfinite(z)) {
+                        nonFinite++;
+                        if (errors.size() < 30) {
+                            errors.push_back("line " + std::to_string(lineNum) +
+                                             ": non-finite vertex coord");
+                        }
+                    }
+                } else if (tok == "endfacet") {
+                    facetsOpen--;
+                    if (currentFacetVerts != 3) {
+                        errors.push_back("line " + std::to_string(lineNum) +
+                                         ": facet has " +
+                                         std::to_string(currentFacetVerts) +
+                                         " vertices, expected exactly 3");
+                    }
+                } else if (tok == "endsolid") {
+                    sawEndsolid = true;
+                }
+                // outer loop / endloop are required by spec but ignored
+                // here; their absence doesn't break parsing as long as
+                // the vertex count per facet is correct.
+            }
+            if (!sawSolid) errors.push_back("missing 'solid' header");
+            if (!sawEndsolid) errors.push_back("missing 'endsolid' footer");
+            if (facetsOpen != 0) {
+                errors.push_back(std::to_string(facetsOpen) +
+                                 " unclosed 'facet' (missing 'endfacet')");
+            }
+            if (vertCount != facetCount * 3) {
+                errors.push_back("vertex count " + std::to_string(vertCount) +
+                                 " != 3 * facet count " +
+                                 std::to_string(facetCount));
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["stl"] = path;
+                j["solidName"] = solidName;
+                j["facetCount"] = facetCount;
+                j["vertexCount"] = vertCount;
+                j["nonFiniteCount"] = nonFinite;
+                j["errorCount"] = errors.size();
+                j["errors"] = errors;
+                j["passed"] = errors.empty();
+                std::printf("%s\n", j.dump(2).c_str());
+                return errors.empty() ? 0 : 1;
+            }
+            std::printf("STL: %s\n", path.c_str());
+            std::printf("  solid name : %s\n",
+                        solidName.empty() ? "(unset)" : solidName.c_str());
+            std::printf("  facets     : %d\n", facetCount);
+            std::printf("  vertices   : %d\n", vertCount);
+            if (nonFinite > 0) {
+                std::printf("  non-finite : %d\n", nonFinite);
+            }
             if (errors.empty()) {
                 std::printf("  PASSED\n");
                 return 0;
