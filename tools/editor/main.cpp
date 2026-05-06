@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include <unordered_map>
+#include <algorithm>
 
 static void printUsage(const char* argv0) {
     std::printf("Usage: %s --data <path> [options]\n\n", argv0);
@@ -33,6 +34,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-objects <p>     Print objects.json summary (counts, types, scale range) and exit\n");
     std::printf("  --info-quests <p>      Print quests.json summary (counts, rewards, chain errors) and exit\n");
     std::printf("  --info-wcp <wcp-path>  Print WCP archive metadata (name, files) and exit\n");
+    std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
     std::printf("Novel open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON\n");
@@ -196,6 +198,28 @@ int main(int argc, char* argv[]) {
             std::printf("  behavior    : %d stationary, %d wander, %d patrol\n",
                         stationary, wander, patrol);
             std::printf("  unique displayIds: %zu\n", displayIdHist.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-wcp") == 0 && i + 1 < argc) {
+            // Like --info-wcp but prints every file path. Useful for spotting
+            // missing or unexpected entries before unpacking.
+            std::string path = argv[++i];
+            wowee::editor::ContentPackInfo info;
+            if (!wowee::editor::ContentPacker::readInfo(path, info)) {
+                std::fprintf(stderr, "Failed to read WCP: %s\n", path.c_str());
+                return 1;
+            }
+            std::printf("WCP: %s — %zu files\n", path.c_str(), info.files.size());
+            // Sort by path so identical packs produce identical output (the
+            // packer order depends on the directory_iterator implementation).
+            auto files = info.files;
+            std::sort(files.begin(), files.end(),
+                      [](const auto& a, const auto& b) { return a.path < b.path; });
+            for (const auto& f : files) {
+                std::printf("  %-10s %10llu  %s\n",
+                            f.category.c_str(),
+                            static_cast<unsigned long long>(f.size),
+                            f.path.c_str());
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--info-wcp") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
