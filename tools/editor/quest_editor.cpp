@@ -82,6 +82,13 @@ bool QuestEditor::loadFromFile(const std::string& path) {
             q.title = jq.value("title", "Untitled");
             q.description = jq.value("description", "");
             q.completionText = jq.value("completionText", "");
+            // AzerothCore quest_template.LogTitle is varchar(200); the
+            // Description/QuestCompletionLog are text but practically capped.
+            // Truncate edited values so SQL writes don't get rejected by
+            // length constraints or bloat the export.
+            if (q.title.size() > 200) q.title.resize(200);
+            if (q.description.size() > 8192) q.description.resize(8192);
+            if (q.completionText.size() > 8192) q.completionText.resize(8192);
             q.requiredLevel = jq.value("requiredLevel", 1u);
             // WoW levels 1-80 (WotLK). Cap to keep AzerothCore happy and
             // catch obvious typos like "999".
