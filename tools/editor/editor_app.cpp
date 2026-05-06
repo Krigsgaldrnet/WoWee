@@ -1514,7 +1514,11 @@ void EditorApp::addAdjacentTile(int offsetX, int offsetY) {
     int newY = loadedTileY_ + offsetY;
     if (newX < 0 || newX > 63 || newY < 0 || newY > 63) return;
 
-    auto adj = TerrainEditor::createBlankTerrain(newX, newY, terrain_.chunks[0].position[2],
+    // Source base height could be NaN if mid-edit terrain hadn't stitched —
+    // fall back to a safe default so the new tile starts clean.
+    float baseHeight = terrain_.chunks[0].position[2];
+    if (!std::isfinite(baseHeight)) baseHeight = 100.0f;
+    auto adj = TerrainEditor::createBlankTerrain(newX, newY, baseHeight,
                                                   Biome::Grassland);
 
     // Stitch edge heights from current tile to adjacent tile
