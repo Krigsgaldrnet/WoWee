@@ -224,7 +224,12 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
             }
 
             if (js.contains("patrol") && js["patrol"].is_array()) {
+                // Cap patrol size at 256 waypoints — covers any realistic
+                // route and keeps SQL export size bounded for malformed
+                // input (a stale autosave that grew unbounded).
+                constexpr size_t kMaxPatrolPoints = 256;
                 for (const auto& pt : js["patrol"]) {
+                    if (s.patrolPath.size() >= kMaxPatrolPoints) break;
                     if (pt.is_array() && pt.size() >= 4) {
                         PatrolPoint pp;
                         pp.position = glm::vec3(pt[0].get<float>(), pt[1].get<float>(), pt[2].get<float>());
