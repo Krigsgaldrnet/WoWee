@@ -36,6 +36,7 @@ public:
         bool emitJsonDbc = false;      // DBC → JSON side-files
         bool emitWom = false;          // M2 (+skin) → WOM side-files
         bool emitWob = false;          // WMO (+groups) → WOB side-files
+        bool emitTerrain = false;      // ADT → WHM + WOT + WOC side-files
     };
 
     struct Stats {

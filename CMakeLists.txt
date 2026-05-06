@@ -1180,8 +1180,10 @@ if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR)
         src/pipeline/blp_loader.cpp
         src/pipeline/m2_loader.cpp
         src/pipeline/wmo_loader.cpp
+        src/pipeline/adt_loader.cpp
         src/pipeline/wowee_model.cpp
         src/pipeline/wowee_building.cpp
+        src/pipeline/wowee_collision.cpp
         src/core/logger.cpp
     )
     target_include_directories(asset_extract PRIVATE

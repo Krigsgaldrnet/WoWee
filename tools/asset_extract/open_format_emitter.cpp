@@ -3,8 +3,10 @@
 #include "pipeline/dbc_loader.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
+#include "pipeline/wowee_collision.hpp"
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
+#include "pipeline/adt_loader.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -115,6 +117,151 @@ bool emitWomFromM2(const std::string& m2Path, const std::string& womBase) {
     return pipeline::WoweeModelLoader::save(wom, womBase);
 }
 
+// Inline WHM+WOT writer. Mirrors the structure of WoweeTerrain::exportOpen
+// in the editor but stripped to the bytes the runtime needs (no PNG
+// previews, no normal map). Keeps the asset extractor independent of
+// the editor target.
+static bool writeWhmWot(const pipeline::ADTTerrain& terrain,
+                         const std::string& outBase, int tileX, int tileY) {
+    namespace fs = std::filesystem;
+    fs::create_directories(fs::path(outBase).parent_path());
+
+    // .whm — binary heightmap, fixed 256 chunks * 145 floats
+    {
+        std::ofstream f(outBase + ".whm", std::ios::binary);
+        if (!f) return false;
+        uint32_t magic = 0x314D4857; // "WHM1"
+        uint32_t chunks = 256, verts = 145;
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&chunks), 4);
+        f.write(reinterpret_cast<const char*>(&verts), 4);
+        for (int ci = 0; ci < 256; ci++) {
+            const auto& chunk = terrain.chunks[ci];
+            float base = std::isfinite(chunk.position[2]) ? chunk.position[2] : 0.0f;
+            f.write(reinterpret_cast<const char*>(&base), 4);
+            float clean[145];
+            for (int v = 0; v < 145; v++) {
+                clean[v] = chunk.heightMap.heights[v];
+                if (!std::isfinite(clean[v])) clean[v] = 0.0f;
+            }
+            f.write(reinterpret_cast<const char*>(clean), 145 * 4);
+            uint32_t alphaSize = std::min<uint32_t>(
+                static_cast<uint32_t>(chunk.alphaMap.size()), 65536);
+            f.write(reinterpret_cast<const char*>(&alphaSize), 4);
+            if (alphaSize > 0)
+                f.write(reinterpret_cast<const char*>(chunk.alphaMap.data()), alphaSize);
+        }
+    }
+
+    // .wot — JSON metadata (textures + chunkLayers + water + placements)
+    {
+        nlohmann::json j;
+        j["format"] = "wot-1.0";
+        j["editor"] = "asset_extract-1.0.0";
+        j["tileX"] = tileX;
+        j["tileY"] = tileY;
+        j["chunkGrid"] = {16, 16};
+        j["vertsPerChunk"] = 145;
+        j["heightmapFile"] = fs::path(outBase + ".whm").filename().string();
+
+        nlohmann::json texArr = nlohmann::json::array();
+        for (const auto& tex : terrain.textures) texArr.push_back(tex);
+        j["textures"] = texArr;
+
+        nlohmann::json chunkArr = nlohmann::json::array();
+        for (int ci = 0; ci < 256; ci++) {
+            const auto& chunk = terrain.chunks[ci];
+            nlohmann::json cl;
+            nlohmann::json layerIds = nlohmann::json::array();
+            for (const auto& layer : chunk.layers) layerIds.push_back(layer.textureId);
+            cl["layers"] = layerIds;
+            cl["holes"] = chunk.holes;
+            chunkArr.push_back(cl);
+        }
+        j["chunkLayers"] = chunkArr;
+
+        nlohmann::json waterArr = nlohmann::json::array();
+        for (int ci = 0; ci < 256; ci++) {
+            const auto& w = terrain.waterData[ci];
+            if (w.hasWater()) {
+                float h = std::isfinite(w.layers[0].maxHeight) ? w.layers[0].maxHeight : 0.0f;
+                waterArr.push_back({{"chunk", ci},
+                                     {"type", w.layers[0].liquidType},
+                                     {"height", h}});
+            } else {
+                waterArr.push_back(nullptr);
+            }
+        }
+        j["water"] = waterArr;
+
+        auto san = [](float x) { return std::isfinite(x) ? x : 0.0f; };
+        nlohmann::json doodadNames = nlohmann::json::array();
+        for (const auto& n : terrain.doodadNames) doodadNames.push_back(n);
+        j["doodadNames"] = doodadNames;
+        nlohmann::json doodads = nlohmann::json::array();
+        for (const auto& dp : terrain.doodadPlacements) {
+            doodads.push_back({
+                {"nameId", dp.nameId}, {"uniqueId", dp.uniqueId},
+                {"pos", {san(dp.position[0]), san(dp.position[1]), san(dp.position[2])}},
+                {"rot", {san(dp.rotation[0]), san(dp.rotation[1]), san(dp.rotation[2])}},
+                {"scale", dp.scale}, {"flags", dp.flags}
+            });
+        }
+        j["doodads"] = doodads;
+
+        nlohmann::json wmoNames = nlohmann::json::array();
+        for (const auto& n : terrain.wmoNames) wmoNames.push_back(n);
+        j["wmoNames"] = wmoNames;
+        nlohmann::json wmos = nlohmann::json::array();
+        for (const auto& wp : terrain.wmoPlacements) {
+            wmos.push_back({
+                {"nameId", wp.nameId}, {"uniqueId", wp.uniqueId},
+                {"pos", {san(wp.position[0]), san(wp.position[1]), san(wp.position[2])}},
+                {"rot", {san(wp.rotation[0]), san(wp.rotation[1]), san(wp.rotation[2])}},
+                {"flags", wp.flags}, {"doodadSet", wp.doodadSet}
+            });
+        }
+        j["wmos"] = wmos;
+
+        std::ofstream f(outBase + ".wot");
+        if (!f) return false;
+        f << j.dump(2) << "\n";
+    }
+    return true;
+}
+
+bool emitTerrainFromAdt(const std::string& adtPath, const std::string& outBase) {
+    auto bytes = readBytes(adtPath);
+    if (bytes.empty()) return false;
+    auto terrain = pipeline::ADTLoader::load(bytes);
+    if (!terrain.loaded) return false;
+
+    // Parse "<map>_<x>_<y>.adt" tile coords from the filename so the WOT
+    // can record them; fall back to (32,32) if the layout is unexpected.
+    int tileX = 32, tileY = 32;
+    {
+        std::string stem = fs::path(adtPath).stem().string();
+        auto last = stem.rfind('_');
+        auto prev = (last != std::string::npos) ? stem.rfind('_', last - 1) : std::string::npos;
+        if (last != std::string::npos && prev != std::string::npos) {
+            try {
+                tileX = std::stoi(stem.substr(prev + 1, last - prev - 1));
+                tileY = std::stoi(stem.substr(last + 1));
+            } catch (...) {}
+        }
+    }
+    terrain.coord.x = tileX;
+    terrain.coord.y = tileY;
+
+    if (!writeWhmWot(terrain, outBase, tileX, tileY)) return false;
+
+    // Also build a terrain-only WOC (collision mesh) so the runtime can
+    // do walkability queries without re-deriving from the heightmap.
+    auto col = pipeline::WoweeCollisionBuilder::fromTerrain(terrain);
+    pipeline::WoweeCollisionBuilder::save(col, outBase + ".woc");
+    return true;
+}
+
 bool emitWobFromWmo(const std::string& wmoPath, const std::string& wobBase) {
     auto rootBytes = readBytes(wmoPath);
     if (rootBytes.empty()) return false;
@@ -138,9 +285,10 @@ bool emitWobFromWmo(const std::string& wmoPath, const std::string& wobBase) {
 void emitOpenFormats(const std::string& rootDir,
                      bool emitPng, bool emitJsonDbc,
                      bool emitWom, bool emitWob,
+                     bool emitTerrain,
                      OpenFormatStats& stats) {
     if (!fs::exists(rootDir)) return;
-    if (!emitPng && !emitJsonDbc && !emitWom && !emitWob) return;
+    if (!emitPng && !emitJsonDbc && !emitWom && !emitWob && !emitTerrain) return;
 
     auto lower = [](std::string s) {
         std::transform(s.begin(), s.end(), s.begin(),
@@ -180,6 +328,14 @@ void emitOpenFormats(const std::string& rootDir,
             if (!isGroup) {
                 if (emitWobFromWmo(entry.path().string(), base)) stats.wobOk++;
                 else stats.wobFail++;
+            }
+        } else if (emitTerrain && ext == ".adt") {
+            if (emitTerrainFromAdt(entry.path().string(), base)) {
+                stats.whmOk++;
+                stats.wocOk++;
+            } else {
+                stats.whmFail++;
+                stats.wocFail++;
             }
         }
     }

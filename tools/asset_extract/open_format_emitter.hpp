@@ -20,6 +20,8 @@ struct OpenFormatStats {
     uint32_t jsonDbcOk = 0, jsonDbcFail = 0;
     uint32_t womOk = 0, womFail = 0;
     uint32_t wobOk = 0, wobFail = 0;
+    uint32_t whmOk = 0, whmFail = 0;
+    uint32_t wocOk = 0, wocFail = 0;
 };
 
 // Convert one BLP file on disk to a PNG side-file.
@@ -40,11 +42,18 @@ bool emitWomFromM2(const std::string& m2Path, const std::string& womBase);
 // matching <base>_NNN.wmo group files if present.
 bool emitWobFromWmo(const std::string& wmoPath, const std::string& wobBase);
 
+// Convert one ADT file on disk to a WHM (binary heightmap) + WOT (JSON
+// metadata) pair, plus a WOC (collision mesh) for movement queries.
+// Returns true if all three were written. tileX/tileY are parsed from
+// the filename (e.g. "MapName_32_48.adt").
+bool emitTerrainFromAdt(const std::string& adtPath, const std::string& outBase);
+
 // Walk an extracted-asset directory and emit open-format side-files for
 // every requested format. Counts accumulated into stats.
 void emitOpenFormats(const std::string& rootDir,
                      bool emitPng, bool emitJsonDbc,
                      bool emitWom, bool emitWob,
+                     bool emitTerrain,
                      OpenFormatStats& stats);
 
 } // namespace tools
