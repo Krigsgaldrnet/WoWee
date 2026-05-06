@@ -13,6 +13,8 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 namespace wowee {
 namespace pipeline { class AssetManager; }
@@ -53,8 +55,13 @@ public:
     TransformGizmo& getGizmo() { return gizmo_; }
     void setBrushIndicator(const glm::vec3& center, float radius, bool active);
     void setPathPreview(const glm::vec3& start, const glm::vec3& end, float width, bool visible);
+    /** Show a multi-segment patrol path as a ribbon. Empty `points` clears it. */
+    void setPatrolPath(const std::vector<glm::vec3>& points, float width = 1.5f);
+    void clearPatrolPath() { setPatrolPath({}); }
 
     void setWireframe(bool enabled);
+    void setShowNpcMarkers(bool show) { showNpcMarkers_ = show; }
+    bool getShowNpcMarkers() const { return showNpcMarkers_; }
     bool isWireframe() const { return wireframe_; }
 
     void setClearColor(float r, float g, float b) { clearR_=r; clearG_=g; clearB_=b; }
@@ -72,6 +79,9 @@ public:
 
     rendering::TerrainRenderer* getTerrainRenderer() { return terrainRenderer_.get(); }
     rendering::M2Renderer* getM2Renderer() { return m2Renderer_.get(); }
+
+    /** Set the active map name so WOM/WOB lookups can probe per-zone roots first. */
+    void setActiveMapName(const std::string& name) { activeMapName_ = name; }
 
 private:
     bool createPerFrameResources();
@@ -109,6 +119,16 @@ private:
     float fogNear_ = 5000.0f, fogFar_ = 10000.0f;
     float timeOfDay_ = 12.0f;
 
+    // Persistent path -> renderer model ID maps. Keeping these across rebuilds
+    // lets the renderer skip re-uploading models that are still in its cache.
+    std::unordered_map<std::string, uint32_t> persistentM2ModelIds_;
+    std::unordered_map<std::string, uint32_t> persistentWMOModelIds_;
+    uint32_t nextPersistentModelId_ = 1;
+
+    // Active map name used to build per-zone WOM/WOB prefixes so per-zone
+    // overrides win over global custom_zones/ assets.
+    std::string activeMapName_;
+
     // Ghost preview state
     std::string ghostModelPath_;
     uint32_t ghostModelId_ = 0;
@@ -121,7 +141,8 @@ private:
     uint32_t brushVertCount_ = 0;
     bool brushVisible_ = false;
 
-    // NPC position markers (always visible fallback)
+    // NPC position markers
+    bool showNpcMarkers_ = true;
     VkBuffer npcMarkerVB_ = VK_NULL_HANDLE;
     VmaAllocation npcMarkerVBAlloc_ = VK_NULL_HANDLE;
     uint32_t npcMarkerVertCount_ = 0;
@@ -131,6 +152,11 @@ private:
     VmaAllocation pathVBAlloc_ = VK_NULL_HANDLE;
     uint32_t pathVertCount_ = 0;
     bool pathVisible_ = false;
+
+    // Patrol path ribbon (selected NPC)
+    VkBuffer patrolVB_ = VK_NULL_HANDLE;
+    VmaAllocation patrolVBAlloc_ = VK_NULL_HANDLE;
+    uint32_t patrolVertCount_ = 0;
 };
 
 } // namespace editor

@@ -49,6 +49,10 @@ bool EditorProject::load(const std::string& path) {
         startMapId = j.value("startMapId", 9000u);
         projectDir = std::filesystem::path(path).parent_path().string();
 
+        // Cap mapId to a reasonable range. mapId 0 is reserved for Eastern
+        // Kingdoms; >65535 wraps DBC fields. Custom zones live in 9000+.
+        if (startMapId == 0 || startMapId > 65535) startMapId = 9000;
+
         zones.clear();
         if (j.contains("zones") && j["zones"].is_array()) {
             for (const auto& jz : j["zones"]) {
@@ -58,6 +62,10 @@ bool EditorProject::load(const std::string& path) {
                 z.tileY = jz.value("tileY", 32);
                 z.biome = jz.value("biome", "");
                 z.description = jz.value("description", "");
+                // Tile coords valid 0..63 in WoW. Out-of-range values would
+                // produce garbage ADT filenames or off-map terrain placement.
+                if (z.tileX < 0 || z.tileX > 63) z.tileX = 32;
+                if (z.tileY < 0 || z.tileY > 63) z.tileY = 32;
                 if (!z.mapName.empty()) zones.push_back(z);
             }
         }

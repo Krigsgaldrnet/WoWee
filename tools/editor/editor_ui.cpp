@@ -13,6 +13,7 @@
 #include "wowee_terrain.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include <filesystem>
+#include <random>
 #include "asset_browser.hpp"
 #include "transform_gizmo.hpp"
 #include "terrain_biomes.hpp"
@@ -608,9 +609,15 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             ImGui::BulletText("Ctrl+N — new terrain");
             ImGui::BulletText("Ctrl+O — load map tile");
             ImGui::BulletText("Ctrl+A — select all objects");
+            ImGui::BulletText("Ctrl+D — duplicate selected (objects + NPCs)");
+            ImGui::BulletText("Ctrl+Wheel — rotate placement preview (Shift = fine)");
             ImGui::BulletText("Alt+Click — eyedropper (paint mode)");
             ImGui::BulletText("Ctrl+Shift+Click — add to selection");
             ImGui::BulletText("Middle-drag — orbit camera");
+            ImGui::Separator();
+            ImGui::Text("NPC Mode:");
+            ImGui::BulletText("Click NPC marker — select (Shift+click forces placement)");
+            ImGui::BulletText("W — add patrol waypoint at cursor (selected NPC must use Patrol behavior)");
             ImGui::Separator();
             ImGui::Text("View:");
             ImGui::BulletText("F1 — this help");
@@ -799,9 +806,31 @@ void EditorUI::renderLoadDialog(EditorApp& app) {
                         }
                     }
                 }
-                if (!found) app.showToast("No ADT tiles found for this map");
+                if (!found) {
+                    // Check if it's a WMO-only instance
+                    std::string wdtPath = "world\\maps\\" + mapLower + "\\" + mapLower + ".wdt";
+                    if (app.getAssetManager()->getManifest().hasEntry(wdtPath))
+                        app.showToast("WMO-only instance — click Load to open");
+                    else
+                        app.showToast("No ADT tiles found for this map");
+                }
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Auto-find first available tile");
+
+            // Count total tiles for this map
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Count")) {
+                int total = 0;
+                for (int x = 0; x < 64; x++) {
+                    for (int y = 0; y < 64; y++) {
+                        std::string tp = "world\\maps\\" + mapLower + "\\" + mapLower + "_" +
+                                         std::to_string(x) + "_" + std::to_string(y) + ".adt";
+                        if (app.getAssetManager()->getManifest().hasEntry(tp)) total++;
+                    }
+                }
+                app.showToast(mapLower + ": " + std::to_string(total) + " tiles");
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Count total ADT tiles for this map");
         }
 
         ImGui::Spacing();
@@ -1304,10 +1333,12 @@ void EditorUI::renderTexturePaintPanel(EditorApp& app) {
         std::transform(filter.begin(), filter.end(), filter.begin(),
                        [](unsigned char c) { return std::tolower(c); });
 
+        const auto& textures = browser.getTextures();
+        ImGui::TextDisabled("Pool: %zu textures across %zu dirs",
+                            textures.size(), dirs.size());
         float listHeight = ImGui::GetContentRegionAvail().y - 60;
         ImGui::BeginChild("TexList", ImVec2(0, listHeight), true);
 
-        const auto& textures = browser.getTextures();
         int shown = 0;
         for (const auto& tex : textures) {
             if (texDirIdx_ >= 0 && tex.directory != dirs[texDirIdx_]) continue;
@@ -1504,6 +1535,7 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         float rot = placer.getPlacementRotationY();
         if (ImGui::SliderFloat("Y Rotation", &rot, 0.0f, 360.0f, "%.0f deg"))
             placer.setPlacementRotationY(rot);
+        ImGui::TextDisabled("Tip: Ctrl+Wheel rotates while placing (Shift = fine)");
         bool randRot = placer.getRandomRotation();
         if (ImGui::Checkbox("Random Rotation", &randRot))
             placer.setRandomRotation(randRot);
@@ -1512,7 +1544,7 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         if (ImGui::Checkbox("Snap Ground", &snap))
             placer.setSnapToGround(snap);
         float scale = placer.getPlacementScale();
-        if (ImGui::SliderFloat("Scale", &scale, 0.1f, 10.0f, "%.2f"))
+        if (ImGui::DragFloat("Scale", &scale, 0.05f, 0.1f, 50.0f, "%.2f"))
             placer.setPlacementScale(scale);
 
         ImGui::Separator();
@@ -1526,6 +1558,9 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
                        [](unsigned char c) { return std::tolower(c); });
 
         auto& browser = app.getAssetBrowser();
+        // Show pool counts so the user knows the search base.
+        ImGui::TextDisabled("Pool: %zu M2  %zu WMO",
+                            browser.getM2Models().size(), browser.getWMOs().size());
         float listHeight = ImGui::GetContentRegionAvail().y - 100;
         ImGui::BeginChild("ObjList", ImVec2(0, listHeight), true);
 
@@ -1562,22 +1597,39 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         ImGui::Separator();
         ImGui::Text("Placed: %zu objects (open format: WOM)", placer.objectCount());
         if (placer.objectCount() > 0 && ImGui::CollapsingHeader("Object List")) {
+            ImGui::TextDisabled("Click to select, double-click to fly to");
+            static char placedFilter[128] = "";
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##placedfilter", "Filter by name...", placedFilter, sizeof(placedFilter));
+            std::string filterLower(placedFilter);
+            std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            int shown = 0;
             ImGui::BeginChild("ObjPlacedList", ImVec2(0, 100), true);
             for (int i = 0; i < static_cast<int>(placer.objectCount()); i++) {
                 auto& o = const_cast<std::vector<PlacedObject>&>(placer.getObjects())[i];
                 std::string disp = o.path;
                 auto sl = disp.rfind('\\');
                 if (sl != std::string::npos) disp = disp.substr(sl + 1);
+                if (!filterLower.empty()) {
+                    std::string nameLower = disp;
+                    std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+                    if (nameLower.find(filterLower) == std::string::npos) continue;
+                }
+                if (++shown > 200) { ImGui::Text("... refine filter"); break; }
                 char lbl[128];
                 std::snprintf(lbl, sizeof(lbl), "%s (%.0f,%.0f,%.0f)##obj%d",
                               disp.c_str(), o.position.x, o.position.y, o.position.z, i);
-                if (ImGui::Selectable(lbl, o.selected)) {
+                if (ImGui::Selectable(lbl, o.selected, ImGuiSelectableFlags_AllowDoubleClick)) {
                     placer.clearSelection();
                     // Select by creating a ray through the object position
                     rendering::Ray r;
                     r.origin = o.position + glm::vec3(0, 0, 1);
                     r.direction = glm::vec3(0, 0, -1);
                     placer.selectAt(r, 1000.0f);
+                    if (ImGui::IsMouseDoubleClicked(0))
+                        app.flyToSelected();
                 }
             }
             ImGui::EndChild();
@@ -1748,6 +1800,11 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
         auto& presets = app.getNpcPresets();
         auto& tmpl = spawner.getTemplate();
 
+        bool showMarkers = app.getViewport().getShowNpcMarkers();
+        if (ImGui::Checkbox("Show Position Markers", &showMarkers))
+            app.getViewport().setShowNpcMarkers(showMarkers);
+        ImGui::Separator();
+
         // ---- Creature Browser ----
         if (ImGui::CollapsingHeader("Creature Browser", ImGuiTreeNodeFlags_DefaultOpen)) {
             // Category filter
@@ -1796,6 +1853,13 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
                     tmpl.minDamage = 3 + p.defaultLevel * 2;
                     tmpl.maxDamage = 5 + p.defaultLevel * 3;
                     tmpl.armor = p.defaultLevel * 10;
+                    // Sensible AzerothCore FactionTemplate default — only set
+                    // if the user hasn't already typed in a custom value.
+                    if (tmpl.faction == 0) {
+                        if (p.category == CreatureCategory::Critter) tmpl.faction = 250;
+                        else if (p.defaultHostile) tmpl.faction = 14;  // Monster
+                        else tmpl.faction = 35;                         // Friendly
+                    }
                 }
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", p.modelPath.c_str());
@@ -1814,7 +1878,15 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             if (ImGui::InputText("Name##tmpl", nameBuf, sizeof(nameBuf)))
                 tmpl.name = nameBuf;
 
-            ImGui::SliderFloat("Scale", &tmpl.scale, 0.5f, 10.0f, "%.1f");
+            ImGui::DragFloat("Scale", &tmpl.scale, 0.05f, 0.1f, 50.0f, "%.2f");
+            ImGui::SliderFloat("Facing", &tmpl.orientation, 0.0f, 360.0f, "%.0f deg");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Random##face")) {
+                static std::mt19937 rng(7);
+                std::uniform_real_distribution<float> d(0.0f, 360.0f);
+                tmpl.orientation = d(rng);
+            }
+            ImGui::TextDisabled("Tip: Ctrl+Wheel rotates while placing (Shift = fine)");
 
             // Quick NPC linking for quests
             if (app.getQuestEditor().questCount() > 0) {
@@ -1841,6 +1913,15 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             int arm = tmpl.armor;
             if (ImGui::InputInt("Armor", &arm)) tmpl.armor = std::max(0, arm);
 
+            // Faction template ID (FactionTemplate.dbc). Common AzerothCore values:
+            // 7 = Stormwind, 35 = Friendly to all, 14 = Monster (hostile to all),
+            // 16 = Beast (Wild), 250 = Critter, 71 = Theramore, etc.
+            int fac = static_cast<int>(tmpl.faction);
+            if (ImGui::InputInt("Faction", &fac))
+                tmpl.faction = static_cast<uint32_t>(std::max(0, fac));
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("FactionTemplate ID. 7=Stormwind 14=Monster 16=Beast 35=Friendly 250=Critter");
+
             const char* behaviors[] = {"Stationary", "Patrol", "Wander", "Scripted"};
             int bIdx = static_cast<int>(tmpl.behavior);
             if (ImGui::Combo("Behavior", &bIdx, behaviors, 4))
@@ -1850,10 +1931,23 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
                 ImGui::SliderFloat("Wander Dist", &tmpl.wanderRadius, 1.0f, 100.0f);
             ImGui::SliderFloat("Aggro Range", &tmpl.aggroRadius, 0.0f, 100.0f);
 
+            float respSec = tmpl.respawnTimeMs / 1000.0f;
+            if (ImGui::DragFloat("Respawn (s)", &respSec, 5.0f, 5.0f, 86400.0f, "%.0fs")) {
+                if (respSec < 5.0f) respSec = 5.0f;
+                tmpl.respawnTimeMs = static_cast<uint32_t>(respSec * 1000.0f);
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Server respawn delay. AzerothCore default ~60-300s.");
+
             ImGui::Checkbox("Hostile", &tmpl.hostile);
             ImGui::SameLine(); ImGui::Checkbox("Questgiver", &tmpl.questgiver);
             ImGui::Checkbox("Vendor", &tmpl.vendor);
             ImGui::SameLine(); ImGui::Checkbox("Innkeeper", &tmpl.innkeeper);
+            ImGui::Checkbox("Trainer", &tmpl.trainer);
+            ImGui::SameLine(); ImGui::Checkbox("Banker", &tmpl.banker);
+            ImGui::Checkbox("Auctioneer", &tmpl.auctioneer);
+            ImGui::SameLine(); ImGui::Checkbox("Repair", &tmpl.repair);
+            ImGui::SameLine(); ImGui::Checkbox("Flightmaster", &tmpl.flightmaster);
 
             // Update nameBuf when preset selection changes it
             if (tmpl.name.c_str() != std::string(nameBuf))
@@ -1864,17 +1958,44 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
 
         // ---- Spawned list ----
         if (ImGui::CollapsingHeader("Spawned Creatures", ImGuiTreeNodeFlags_DefaultOpen)) {
+            static char spawnFilter[128] = "";
+            // Count hostile / friendly / quest givers / vendors
+            size_t hostile = 0, friendly = 0, qg = 0, vend = 0;
+            for (const auto& s : spawner.getSpawns()) {
+                if (s.hostile) hostile++; else friendly++;
+                if (s.questgiver) qg++;
+                if (s.vendor) vend++;
+            }
             ImGui::Text("%zu placed", spawner.spawnCount());
+            ImGui::TextDisabled("Hostile: %zu  Friendly: %zu  Q-givers: %zu  Vendors: %zu",
+                                hostile, friendly, qg, vend);
+            ImGui::TextDisabled("Double-click an entry to fly to it");
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##spawnfilter", "Filter by name...", spawnFilter, sizeof(spawnFilter));
+            std::string filterLower(spawnFilter);
+            std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            int shown = 0;
             ImGui::BeginChild("SpawnList", ImVec2(0, 100), true);
             for (int i = 0; i < static_cast<int>(spawner.spawnCount()); i++) {
                 auto& s = spawner.getSpawns()[i];
+                if (!filterLower.empty()) {
+                    std::string nameLower = s.name;
+                    std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+                    if (nameLower.find(filterLower) == std::string::npos) continue;
+                }
+                if (++shown > 200) { ImGui::Text("... refine filter"); break; }
                 bool sel = (i == spawner.getSelectedIndex());
                 char label[128];
                 std::snprintf(label, sizeof(label), "%s Lv%u (%.0f,%.0f,%.0f)",
                               s.name.c_str(), s.level,
                               s.position.x, s.position.y, s.position.z);
-                if (ImGui::Selectable(label, sel))
+                if (ImGui::Selectable(label, sel, ImGuiSelectableFlags_AllowDoubleClick)) {
                     spawner.selectAt(s.position, 10000.0f);
+                    if (ImGui::IsMouseDoubleClicked(0))
+                        app.flyToSelected();
+                }
             }
             ImGui::EndChild();
         }
@@ -1887,13 +2008,45 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             ImGui::PopStyleColor();
 
             ImGui::DragFloat3("Pos##npc", &sel->position.x, 1.0f);
-            ImGui::SliderFloat("Facing", &sel->orientation, 0.0f, 360.0f, "%.0f");
+            ImGui::SliderFloat("Facing", &sel->orientation, 0.0f, 360.0f, "%.0f deg");
+            ImGui::DragFloat("Scale##s", &sel->scale, 0.05f, 0.1f, 50.0f, "%.2f");
             int hp2 = sel->health; if (ImGui::InputInt("HP##s", &hp2)) sel->health = std::max(1, hp2);
             int lv2 = sel->level; if (ImGui::InputInt("Lv##s", &lv2)) sel->level = std::max(1, lv2);
+            int mp2 = sel->mana; if (ImGui::InputInt("Mana##s", &mp2)) sel->mana = std::max(0, mp2);
+            int dmin2 = sel->minDamage, dmax2 = sel->maxDamage;
+            ImGui::InputInt("Min Dmg##s", &dmin2); sel->minDamage = std::max(0, dmin2);
+            ImGui::InputInt("Max Dmg##s", &dmax2); sel->maxDamage = std::max(0, dmax2);
+            int arm2 = sel->armor; if (ImGui::InputInt("Armor##s", &arm2)) sel->armor = std::max(0, arm2);
+            float respSec2 = sel->respawnTimeMs / 1000.0f;
+            if (ImGui::DragFloat("Respawn (s)##s", &respSec2, 5.0f, 5.0f, 86400.0f, "%.0fs")) {
+                if (respSec2 < 5.0f) respSec2 = 5.0f;
+                sel->respawnTimeMs = static_cast<uint32_t>(respSec2 * 1000.0f);
+            }
+            int dispId = static_cast<int>(sel->displayId);
+            if (ImGui::InputInt("Display ID##s", &dispId))
+                sel->displayId = static_cast<uint32_t>(std::max(0, dispId));
+            if (sel->displayId == 0)
+                ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.3f, 1),
+                    "Display ID 0 = invisible in game; set for SQL export");
+            int facSel = static_cast<int>(sel->faction);
+            if (ImGui::InputInt("Faction##s", &facSel))
+                sel->faction = static_cast<uint32_t>(std::max(0, facSel));
 
             const char* beh2[] = {"Stationary", "Patrol", "Wander", "Scripted"};
             int bi2 = static_cast<int>(sel->behavior);
             if (ImGui::Combo("AI##s", &bi2, beh2, 4)) sel->behavior = static_cast<CreatureBehavior>(bi2);
+
+            // NPC role flags — match the template editor's set so users can
+            // toggle these on already-placed NPCs without re-creating them.
+            ImGui::Checkbox("Hostile##s", &sel->hostile);
+            ImGui::SameLine(); ImGui::Checkbox("Quest##s", &sel->questgiver);
+            ImGui::SameLine(); ImGui::Checkbox("Vendor##s", &sel->vendor);
+            ImGui::Checkbox("Inn##s", &sel->innkeeper);
+            ImGui::SameLine(); ImGui::Checkbox("Train##s", &sel->trainer);
+            ImGui::SameLine(); ImGui::Checkbox("Bank##s", &sel->banker);
+            ImGui::Checkbox("Auc##s", &sel->auctioneer);
+            ImGui::SameLine(); ImGui::Checkbox("Repair##s", &sel->repair);
+            ImGui::SameLine(); ImGui::Checkbox("Flight##s", &sel->flightmaster);
 
             // Patrol path editing
             if (sel->behavior == CreatureBehavior::Patrol) {
@@ -1908,18 +2061,54 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
                     }
                 }
                 if (!sel->patrolPath.empty()) {
-                    ImGui::BeginChild("PatrolList", ImVec2(0, 80), true);
+                    // Compute total loop distance so users can see how long the cycle is.
+                    float totalDist = 0.0f;
+                    glm::vec3 prev = sel->position;
+                    for (const auto& wp : sel->patrolPath) {
+                        totalDist += glm::length(wp.position - prev);
+                        prev = wp.position;
+                    }
+                    if (sel->patrolPath.size() >= 2)
+                        totalDist += glm::length(sel->position - prev);
+                    ImGui::TextDisabled("Loop length: %.0f units", totalDist);
+
+                    ImGui::BeginChild("PatrolList", ImVec2(0, 130), true);
                     for (int pi = 0; pi < static_cast<int>(sel->patrolPath.size()); pi++) {
                         auto& pp = sel->patrolPath[pi];
-                        char lbl[64];
-                        std::snprintf(lbl, sizeof(lbl), "P%d (%.0f,%.0f,%.0f) %.1fs",
-                                      pi, pp.position.x, pp.position.y, pp.position.z,
-                                      pp.waitTimeMs / 1000.0f);
-                        ImGui::Text("%s", lbl);
+                        ImGui::PushID(pi);
+                        ImGui::Text("P%d (%.0f,%.0f,%.0f)",
+                                    pi, pp.position.x, pp.position.y, pp.position.z);
+                        // Reorder + delete buttons in one row.
                         ImGui::SameLine();
-                        char delBtn[16]; std::snprintf(delBtn, sizeof(delBtn), "X##p%d", pi);
-                        if (ImGui::SmallButton(delBtn))
+                        if (pi > 0 && ImGui::SmallButton("up")) {
+                            std::swap(sel->patrolPath[pi], sel->patrolPath[pi - 1]);
+                        }
+                        ImGui::SameLine();
+                        if (pi + 1 < static_cast<int>(sel->patrolPath.size()) &&
+                            ImGui::SmallButton("dn")) {
+                            std::swap(sel->patrolPath[pi], sel->patrolPath[pi + 1]);
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("X")) {
                             sel->patrolPath.erase(sel->patrolPath.begin() + pi--);
+                            ImGui::PopID();
+                            continue;
+                        }
+                        ImGui::SetNextItemWidth(80);
+                        float waitS = pp.waitTimeMs / 1000.0f;
+                        if (ImGui::DragFloat("wait s", &waitS, 0.25f, 0.0f, 60.0f, "%.1fs"))
+                            pp.waitTimeMs = std::max(0.0f, waitS) * 1000.0f;
+                        // Insert-after at brush cursor — useful for slicing
+                        // a long segment into two.
+                        ImGui::SameLine();
+                        auto& brush2 = app.getTerrainEditor().brush();
+                        if (brush2.isActive() && ImGui::SmallButton("+after")) {
+                            PatrolPoint np;
+                            np.position = brush2.getPosition();
+                            np.waitTimeMs = 2000.0f;
+                            sel->patrolPath.insert(sel->patrolPath.begin() + pi + 1, np);
+                        }
+                        ImGui::PopID();
                     }
                     ImGui::EndChild();
                     if (ImGui::Button("Clear Path##patrol"))
@@ -1949,12 +2138,26 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
         if (ImGui::CollapsingHeader("Scatter Tool")) {
             static int scatterCount = 5;
             static float scatterRadius = 50.0f;
+            static bool scatterSnap = true;
             ImGui::SliderInt("Count", &scatterCount, 1, 30);
             ImGui::SliderFloat("Radius##scatter", &scatterRadius, 10.0f, 200.0f);
+            ImGui::Checkbox("Snap to Ground##scatter", &scatterSnap);
             auto& brush = app.getTerrainEditor().brush();
             if (ImGui::Button("Scatter at Cursor", ImVec2(-1, 0))) {
                 if (brush.isActive() && !tmpl.modelPath.empty()) {
+                    size_t before = spawner.spawnCount();
                     spawner.scatter(tmpl, brush.getPosition(), scatterRadius, scatterCount);
+                    if (scatterSnap) {
+                        auto& tEd = app.getTerrainEditor();
+                        for (size_t i = before; i < spawner.spawnCount(); i++) {
+                            auto& s = spawner.getSpawns()[i];
+                            rendering::Ray ray;
+                            ray.origin = s.position + glm::vec3(0, 0, 500);
+                            ray.direction = glm::vec3(0, 0, -1);
+                            glm::vec3 hit;
+                            if (tEd.raycastTerrain(ray, hit)) s.position.z = hit.z;
+                        }
+                    }
                     app.markObjectsDirty();
                 }
             }
@@ -2028,8 +2231,10 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
             }
 
             ImGui::Separator();
-            ImGui::Text("Objectives:");
-            if (tmpl.objectives.size() < 4 && ImGui::Button("Add Objective")) {
+            ImGui::Text("Objectives (max 4 Kill + 6 Collect):");
+            // Limit to 10 total — matches the SQL exporter slot capacity
+            // (RequiredNpcOrGo[1..4] + RequiredItemId[1..6]).
+            if (tmpl.objectives.size() < 10 && ImGui::Button("Add Objective")) {
                 QuestObjective obj;
                 obj.description = "Kill 5 creatures";
                 tmpl.objectives.push_back(obj);
@@ -2046,6 +2251,24 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
                 if (ImGui::InputText("Desc", objDesc, sizeof(objDesc))) obj.description = objDesc;
                 int cnt = obj.targetCount;
                 if (ImGui::InputInt("Count", &cnt)) obj.targetCount = std::max(1, cnt);
+                // Target ID input — for Kill objectives this is the creature
+                // entry, for Collect it's the item ID. SQL export keys off it.
+                char targetBuf[64] = {};
+                std::strncpy(targetBuf, obj.targetName.c_str(), sizeof(targetBuf) - 1);
+                if (ImGui::InputText("Target ID", targetBuf, sizeof(targetBuf)))
+                    obj.targetName = targetBuf;
+                // For Kill objectives, offer a dropdown of placed NPC entries.
+                if (obj.type == QuestObjectiveType::KillCreature) {
+                    if (ImGui::BeginCombo("Pick NPC", "(spawn list)")) {
+                        for (size_t si = 0; si < spawner.spawnCount(); si++) {
+                            const auto& s = spawner.getSpawns()[si];
+                            char lbl[96];
+                            std::snprintf(lbl, sizeof(lbl), "%s (id %u)", s.name.c_str(), s.id);
+                            if (ImGui::Selectable(lbl)) obj.targetName = std::to_string(s.id);
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
                 if (ImGui::SmallButton("Remove")) tmpl.objectives.erase(tmpl.objectives.begin() + oi--);
                 ImGui::PopID();
                 ImGui::Separator();
@@ -2234,10 +2457,19 @@ void EditorUI::renderContextMenu(EditorApp& app) {
         if (npcSel) {
             if (ImGui::MenuItem("Fly To"))
                 app.flyToSelected();
-            if (ImGui::MenuItem("Duplicate")) {
+            if (ImGui::MenuItem("Snap to Ground"))
+                app.snapSelectedToGround();
+            if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
                 CreatureSpawn copy = *npcSel;
                 copy.position += glm::vec3(10, 10, 0);
                 app.getNpcSpawner().placeCreature(copy);
+                app.markObjectsDirty();
+            }
+            if (ImGui::MenuItem("Face Camera")) {
+                glm::vec3 cam = app.getEditorCamera().getCamera().getPosition();
+                glm::vec3 to = cam - npcSel->position;
+                npcSel->orientation = glm::degrees(std::atan2(to.y, to.x));
+                if (npcSel->orientation < 0.0f) npcSel->orientation += 360.0f;
                 app.markObjectsDirty();
             }
         }
@@ -2637,9 +2869,11 @@ void EditorUI::renderStatusBar(EditorApp& app) {
         const char* ms[] = {"Sculpt", "Paint", "Objects", "Water", "NPCs", "Quests"};
         const char* m = ms[static_cast<int>(app.getMode())];
         if (app.hasTerrainLoaded()) {
+            bool dirty = app.getTerrainEditor().hasUnsavedChanges() ||
+                         app.hasUnsavedNonTerrainChanges();
             ImGui::Text("[%s] %s [%d,%d]%s", m, app.getLoadedMap().c_str(),
                         app.getLoadedTileX(), app.getLoadedTileY(),
-                        app.getTerrainEditor().hasUnsavedChanges() ? " *" : "");
+                        dirty ? " *" : "");
             ImGui::SameLine(vp->Size.x * 0.35f);
             ImGui::Text("Obj:%zu NPC:%zu Q:%zu",
                         app.getObjectPlacer().objectCount(),
@@ -2652,6 +2886,20 @@ void EditorUI::renderStatusBar(EditorApp& app) {
                     "Undo:%zu Redo:%zu", hist.undoCount(), hist.redoCount());
         } else {
             ImGui::Text("[%s] Wowee World Editor", m);
+        }
+        // Camera (yellow) and cursor (cyan) world coords for navigation/debug.
+        if (app.hasTerrainLoaded()) {
+            glm::vec3 cp = app.getEditorCamera().getCamera().getPosition();
+            const auto& brush = app.getTerrainEditor().brush();
+            ImGui::SameLine(vp->Size.x - 460);
+            ImGui::TextColored(ImVec4(0.85f, 0.75f, 0.5f, 1.0f),
+                "Cam:(%.0f,%.0f,%.0f)", cp.x, cp.y, cp.z);
+            if (brush.isActive()) {
+                glm::vec3 bp = brush.getPosition();
+                ImGui::SameLine(vp->Size.x - 270);
+                ImGui::TextColored(ImVec4(0.5f, 0.85f, 0.85f, 1.0f),
+                    "Cur:(%.0f,%.0f,%.0f)", bp.x, bp.y, bp.z);
+            }
         }
         ImGui::SameLine(vp->Size.x - 120);
         ImGui::Text("%.1f FPS", ImGui::GetIO().Framerate);

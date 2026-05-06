@@ -74,12 +74,21 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
 
     // File table + data
     for (const auto& [rel, full] : files) {
-        uint16_t pathLen = static_cast<uint16_t>(rel.size());
+        // Truncate path length to fit u16; matches the unpack-side cap.
+        // Also skip files whose disk size doesn't fit in uint32 (4GB).
+        uint16_t pathLen = static_cast<uint16_t>(std::min<size_t>(rel.size(), 1024));
         out.write(reinterpret_cast<const char*>(&pathLen), 2);
         out.write(rel.data(), pathLen);
 
         std::ifstream fin(full, std::ios::binary | std::ios::ate);
-        uint32_t dataSize = static_cast<uint32_t>(fin.tellg());
+        std::streamsize sz = fin.tellg();
+        if (sz < 0 || static_cast<uint64_t>(sz) > 0xFFFFFFFFull) {
+            LOG_ERROR("WCP skipped file (size out of range): ", rel);
+            uint32_t zero = 0;
+            out.write(reinterpret_cast<const char*>(&zero), 4);
+            continue;
+        }
+        uint32_t dataSize = static_cast<uint32_t>(sz);
         fin.seekg(0);
         out.write(reinterpret_cast<const char*>(&dataSize), 4);
 
@@ -107,32 +116,71 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
     uint32_t fileCount, infoSize;
     in.read(reinterpret_cast<char*>(&fileCount), 4);
     in.read(reinterpret_cast<char*>(&infoSize), 4);
+    // Sanity bounds: a zone with more than 1M files or a 16MB info block is
+    // almost certainly corrupted. Reject early so we don't OOM on a malicious
+    // header before reading the body.
+    if (fileCount > 1'000'000 || infoSize > 16 * 1024 * 1024) {
+        LOG_ERROR("WCP header rejected (fileCount=", fileCount,
+                  " infoSize=", infoSize, "): ", wcpPath);
+        return false;
+    }
 
-    // Skip info JSON
-    in.seekg(infoSize, std::ios::cur);
+    // Read the info JSON to extract the zone name. packZone stored files
+    // relative to the zone subdirectory (e.g. "MyZone_32_32.adt"), so we
+    // need to recreate that subdirectory under destDir for the loader to
+    // find the zone.
+    std::string infoJson(infoSize, '\0');
+    in.read(infoJson.data(), infoSize);
+    std::string zoneName;
+    try {
+        auto info = nlohmann::json::parse(infoJson);
+        zoneName = info.value("name", "");
+    } catch (...) {}
 
     namespace fs = std::filesystem;
-    fs::create_directories(destDir);
+    std::string zoneDir = zoneName.empty() ? destDir : destDir + "/" + zoneName;
+    fs::create_directories(zoneDir);
 
     for (uint32_t i = 0; i < fileCount; i++) {
         uint16_t pathLen;
         in.read(reinterpret_cast<char*>(&pathLen), 2);
+        // Cap path length — uint16 can hold up to 64KB but real zone paths
+        // are well under 256 chars. Anything longer is corrupt or malicious.
+        if (pathLen > 1024) {
+            LOG_ERROR("WCP rejected file ", i, " path length ", pathLen, " too large");
+            return false;
+        }
         std::string path(pathLen, '\0');
         in.read(path.data(), pathLen);
 
         uint32_t dataSize;
         in.read(reinterpret_cast<char*>(&dataSize), 4);
+        // Cap individual file size to prevent OOM from a malicious entry.
+        // 256MB per packed file is well above any legitimate content.
+        if (dataSize > 256 * 1024 * 1024) {
+            LOG_ERROR("WCP rejected file ", path, " size ", dataSize, " too large");
+            return false;
+        }
+        // Reject path-traversal attempts. Files like "../../etc/passwd" would
+        // write outside destDir/<zoneName>/ and clobber system files.
+        // Also catch Windows-style backslash traversal and absolute paths.
+        if (path.find("..") != std::string::npos ||
+            (!path.empty() && (path[0] == '/' || path[0] == '\\')) ||
+            (path.size() >= 2 && path[1] == ':')) {  // C:\... drive prefix
+            LOG_ERROR("WCP rejected suspicious path: ", path);
+            return false;
+        }
 
         std::vector<char> data(dataSize);
         in.read(data.data(), dataSize);
 
-        std::string fullPath = destDir + "/" + path;
+        std::string fullPath = zoneDir + "/" + path;
         fs::create_directories(fs::path(fullPath).parent_path());
         std::ofstream fout(fullPath, std::ios::binary);
         fout.write(data.data(), dataSize);
     }
 
-    LOG_INFO("Content pack extracted to: ", destDir, " (", fileCount, " files)");
+    LOG_INFO("Content pack extracted to: ", zoneDir, " (", fileCount, " files)");
     return true;
 }
 
@@ -194,6 +242,17 @@ static bool checkMagic(const std::string& path, uint32_t expectedMagic) {
     return magic == expectedMagic;
 }
 
+// Returns true if `magic` matches any of the WOM family magics (WOM1/WOM2/WOM3).
+static bool checkAnyMagic(const std::string& path,
+                           std::initializer_list<uint32_t> expected) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    uint32_t magic = 0;
+    f.read(reinterpret_cast<char*>(&magic), 4);
+    for (uint32_t e : expected) if (magic == e) return true;
+    return false;
+}
+
 ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& zoneDir) {
     namespace fs = std::filesystem;
     ValidationResult r;
@@ -201,6 +260,8 @@ ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& z
 
     static constexpr uint32_t WHM_MAGIC = 0x314D4857; // "WHM1"
     static constexpr uint32_t WOM_MAGIC = 0x314D4F57; // "WOM1"
+    static constexpr uint32_t WOM2_MAGIC = 0x324D4F57; // "WOM2"
+    static constexpr uint32_t WOM3_MAGIC = 0x334D4F57; // "WOM3"
     static constexpr uint32_t WOB_MAGIC = 0x31424F57; // "WOB1"
     static constexpr uint32_t WOC_MAGIC = 0x31434F57; // "WOC1"
 
@@ -215,7 +276,8 @@ ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& z
         }
         if (ext == ".wom") {
             r.hasWom = true;
-            if (checkMagic(entry.path().string(), WOM_MAGIC)) r.womValid = true;
+            if (checkAnyMagic(entry.path().string(), {WOM_MAGIC, WOM2_MAGIC, WOM3_MAGIC}))
+                r.womValid = true;
         }
         if (ext == ".wob") {
             r.hasWob = true;

@@ -1,5 +1,6 @@
 #include "object_placer.hpp"
 #include "terrain_biomes.hpp"
+#include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -175,6 +176,17 @@ void ObjectPlacer::deleteSelected() {
 void ObjectPlacer::scatter(const glm::vec3& center, float radius, int count,
                             float minScale, float maxScale) {
     if (activePath_.empty()) return;
+    // Defensive bounds — UI sliders cap these, but the function is also
+    // callable programmatically. count > 100k would freeze the editor;
+    // minScale >= maxScale violates uniform_real_distribution preconditions.
+    if (count <= 0 || count > 100'000) return;
+    if (!std::isfinite(radius) || radius < 0.0f) return;
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
+        !std::isfinite(center.z)) return;
+    if (!std::isfinite(minScale) || !std::isfinite(maxScale)) return;
+    if (minScale <= 0.0f) minScale = 0.01f;
+    if (maxScale < minScale) maxScale = minScale + 0.01f;
+
     std::mt19937 rng(static_cast<uint32_t>(center.x * 100 + center.y * 37 + objects_.size()));
     std::uniform_real_distribution<float> distAngle(0.0f, 6.2831853f);
     std::uniform_real_distribution<float> distDist(0.0f, 1.0f);
@@ -204,6 +216,7 @@ int ObjectPlacer::populateBiome(const BiomeVegetation& vegetation,
                                 float tileSize, const glm::vec3& tileOrigin,
                                 uint32_t seed) {
     int placed = 0;
+    if (!std::isfinite(tileSize) || tileSize <= 0.0f) return 0;
     std::mt19937 rng(seed);
     std::uniform_real_distribution<float> distPos(0.0f, 1.0f);
     std::uniform_real_distribution<float> distRot(0.0f, 360.0f);
@@ -212,8 +225,19 @@ int ObjectPlacer::populateBiome(const BiomeVegetation& vegetation,
         // Calculate object count from density (per 100x100 area)
         float areaFactor = (tileSize * tileSize) / 10000.0f;
         int count = static_cast<int>(asset.density * areaFactor);
+        // Cap per-asset count — a runaway density value would freeze the
+        // editor and exceed sensible vertex/draw limits for the tile.
+        if (count > 50'000) count = 50'000;
+        if (count <= 0) continue;
 
-        std::uniform_real_distribution<float> distScale(asset.minScale, asset.maxScale);
+        // Ensure the scale distribution preconditions hold (a < b, both
+        // positive). Asset definitions are normally edited in code but we
+        // also load them from JSON in some setups.
+        float minS = std::isfinite(asset.minScale) ? asset.minScale : 1.0f;
+        float maxS = std::isfinite(asset.maxScale) ? asset.maxScale : minS + 0.01f;
+        if (minS <= 0.0f) minS = 0.01f;
+        if (maxS < minS) maxS = minS + 0.01f;
+        std::uniform_real_distribution<float> distScale(minS, maxS);
 
         for (int i = 0; i < count; i++) {
             float u = distPos(rng);
@@ -262,7 +286,8 @@ bool ObjectPlacer::saveToFile(const std::string& path) const {
             {"path", o.path},
             {"pos", {o.position.x, o.position.y, o.position.z}},
             {"rot", {o.rotation.x, o.rotation.y, o.rotation.z}},
-            {"scale", o.scale}
+            {"scale", o.scale},
+            {"uniqueId", o.uniqueId}
         });
     }
 
@@ -292,20 +317,39 @@ bool ObjectPlacer::loadFromFile(const std::string& path) {
             obj.type = static_cast<PlaceableType>(jo.value("type", 0));
             obj.path = jo.value("path", "");
             obj.scale = jo.value("scale", 1.0f);
+            // Guard against corrupted/partial-write JSON: clamp invalid scale.
+            if (!std::isfinite(obj.scale) || obj.scale <= 0.0001f) obj.scale = 1.0f;
 
             if (jo.contains("pos") && jo["pos"].is_array() && jo["pos"].size() >= 3) {
                 obj.position = glm::vec3(jo["pos"][0].get<float>(),
                                          jo["pos"][1].get<float>(),
                                          jo["pos"][2].get<float>());
+                if (!std::isfinite(obj.position.x) || !std::isfinite(obj.position.y) ||
+                    !std::isfinite(obj.position.z)) {
+                    obj.position = glm::vec3(0.0f);
+                }
             }
             if (jo.contains("rot") && jo["rot"].is_array() && jo["rot"].size() >= 3) {
                 obj.rotation = glm::vec3(jo["rot"][0].get<float>(),
                                          jo["rot"][1].get<float>(),
                                          jo["rot"][2].get<float>());
+                if (!std::isfinite(obj.rotation.x) || !std::isfinite(obj.rotation.y) ||
+                    !std::isfinite(obj.rotation.z)) {
+                    obj.rotation = glm::vec3(0.0f);
+                }
             }
 
             if (!obj.path.empty()) {
-                obj.uniqueId = nextUniqueId();
+                // Preserve original uniqueId from JSON if present so ADT round-trip
+                // is stable. Bump uniqueIdCounter_ past any loaded value to avoid
+                // collisions with future placements.
+                if (jo.contains("uniqueId")) {
+                    obj.uniqueId = jo["uniqueId"].get<uint32_t>();
+                    if (obj.uniqueId >= uniqueIdCounter_)
+                        uniqueIdCounter_ = obj.uniqueId + 1;
+                } else {
+                    obj.uniqueId = nextUniqueId();
+                }
                 objects_.push_back(obj);
             }
         }
@@ -346,15 +390,22 @@ void ObjectPlacer::syncToTerrain() {
             m2Names.push_back(obj.path);
             foundM2:
 
+            // Editor stores positions in render/world coords; ADT files use
+            // ADT-space placement coords. Convert back so re-loading the saved
+            // ADT yields identical world positions.
+            // Inverse of the load-time transform:
+            //   load: obj.rot = (-dp.rot[2], -dp.rot[0], dp.rot[1] + 180)
+            //   save: dp.rot  = (-obj.rot.y, obj.rot.z - 180, -obj.rot.x)
+            glm::vec3 adtPos = core::coords::worldToAdt(obj.position);
             pipeline::ADTTerrain::DoodadPlacement dp{};
             dp.nameId = nameId;
             dp.uniqueId = obj.uniqueId;
-            dp.position[0] = obj.position.x;
-            dp.position[1] = obj.position.y;
-            dp.position[2] = obj.position.z;
-            dp.rotation[0] = obj.rotation.x;
-            dp.rotation[1] = obj.rotation.y;
-            dp.rotation[2] = obj.rotation.z;
+            dp.position[0] = adtPos.x;
+            dp.position[1] = adtPos.y;
+            dp.position[2] = adtPos.z;
+            dp.rotation[0] = -obj.rotation.y;
+            dp.rotation[1] = obj.rotation.z - 180.0f;
+            dp.rotation[2] = -obj.rotation.x;
             dp.scale = static_cast<uint16_t>(obj.scale * 1024.0f);
             dp.flags = 0;
             terrain_->doodadPlacements.push_back(dp);
@@ -368,17 +419,22 @@ void ObjectPlacer::syncToTerrain() {
             wmoNames.push_back(obj.path);
             foundWMO:
 
+            glm::vec3 adtPos = core::coords::worldToAdt(obj.position);
             pipeline::ADTTerrain::WMOPlacement wp{};
             wp.nameId = nameId;
             wp.uniqueId = obj.uniqueId;
-            wp.position[0] = obj.position.x;
-            wp.position[1] = obj.position.y;
-            wp.position[2] = obj.position.z;
-            wp.rotation[0] = obj.rotation.x;
-            wp.rotation[1] = obj.rotation.y;
-            wp.rotation[2] = obj.rotation.z;
+            wp.position[0] = adtPos.x;
+            wp.position[1] = adtPos.y;
+            wp.position[2] = adtPos.z;
+            wp.rotation[0] = -obj.rotation.y;
+            wp.rotation[1] = obj.rotation.z - 180.0f;
+            wp.rotation[2] = -obj.rotation.x;
             wp.flags = 0;
             wp.doodadSet = 0;
+            wp.nameSet = 0;
+            // MODF scale is fixed-point u16 (1024 = 1.0); cap to u16 max.
+            float s1024 = obj.scale * 1024.0f;
+            wp.scale = static_cast<uint16_t>(std::clamp(s1024, 0.0f, 65535.0f));
             terrain_->wmoPlacements.push_back(wp);
         }
     }

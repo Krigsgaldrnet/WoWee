@@ -1516,12 +1516,23 @@ bool TerrainEditor::loadStamp(const std::string& path) {
         if (!j.contains("vertices") || !j["vertices"].is_array()) return false;
 
         stampData_.clear();
+        // Cap stamp size — stamps blast directly into chunk heights, so a
+        // huge or NaN-laden stamp would corrupt the terrain irreversibly.
+        constexpr size_t kMaxStampVerts = 1'000'000;
+        if (j["vertices"].size() > kMaxStampVerts) {
+            LOG_ERROR("Stamp vertexCount too large: ", j["vertices"].size());
+            return false;
+        }
         for (const auto& v : j["vertices"]) {
             if (!v.is_array() || v.size() < 3) continue;
             StampVertex sv;
             sv.dx = v[0].get<float>();
             sv.dy = v[1].get<float>();
             sv.height = v[2].get<float>();
+            // Skip non-finite samples — they'd propagate through brush blends
+            // and produce permanent NaN holes in the heightmap.
+            if (!std::isfinite(sv.dx) || !std::isfinite(sv.dy) ||
+                !std::isfinite(sv.height)) continue;
             stampData_.push_back(sv);
         }
         stampCenter_ = glm::vec3(0);

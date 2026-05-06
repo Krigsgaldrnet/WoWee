@@ -377,6 +377,22 @@ void M2Renderer::clear() {
     textureBudgetRejectWarnings_ = 0;
 }
 
+void M2Renderer::clearInstances() {
+    if (vkCtx_) vkDeviceWaitIdle(vkCtx_->getDevice());
+    for (auto& inst : instances) destroyInstanceBones(inst);
+    instances.clear();
+    spatialGrid.clear();
+    instanceIndexById.clear();
+    instanceDedupMap_.clear();
+    smokeInstanceIndices_.clear();
+    portalInstanceIndices_.clear();
+    animatedInstanceIndices_.clear();
+    particleOnlyInstanceIndices_.clear();
+    particleInstanceIndices_.clear();
+    smokeParticles.clear();
+    smokeEmitAccum = 0.0f;
+}
+
 void M2Renderer::setCollisionFocus(const glm::vec3& worldPos, float radius) {
     collisionFocusEnabled = (radius > 0.0f);
     collisionFocusPos = worldPos;
@@ -541,6 +557,15 @@ void M2Renderer::cleanupUnusedModels() {
     if (!toRemove.empty()) {
         LOG_INFO("M2 cleanup: removed ", toRemove.size(), " unused models, ", models.size(), " remaining");
     }
+}
+
+void M2Renderer::unloadModel(uint32_t modelId) {
+    auto it = models.find(modelId);
+    if (it == models.end()) return;
+    if (vkCtx_) vkDeviceWaitIdle(vkCtx_->getDevice());
+    destroyModelGPU(it->second);
+    models.erase(it);
+    modelUnusedSince_.erase(modelId);
 }
 
 VkTexture* M2Renderer::loadTexture(const std::string& path, uint32_t texFlags) {

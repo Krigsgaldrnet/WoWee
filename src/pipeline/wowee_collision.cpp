@@ -74,10 +74,16 @@ WoweeCollision WoweeCollisionBuilder::fromTerrain(const ADTTerrain& terrain,
                 glm::vec3 v01 = vtx(i01), v11 = vtx(i11);
 
                 auto classifyTri = [&](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
+                    // Skip degenerate triangles — would produce NaN normals
+                    // and crash collision intersection tests downstream.
+                    glm::vec3 cross = glm::cross(b - a, c - a);
+                    float crossLen = glm::length(cross);
+                    if (crossLen < 1e-8f) return;
+
                     WoweeCollision::Triangle tri;
                     tri.v0 = a; tri.v1 = b; tri.v2 = c;
 
-                    glm::vec3 normal = glm::normalize(glm::cross(b - a, c - a));
+                    glm::vec3 normal = cross / crossLen;
                     float nz = std::abs(normal.z);
 
                     tri.flags = 0;
@@ -113,6 +119,41 @@ WoweeCollision WoweeCollisionBuilder::fromTerrain(const ADTTerrain& terrain,
     return col;
 }
 
+void WoweeCollisionBuilder::addMesh(WoweeCollision& collision,
+                                     const std::vector<glm::vec3>& vertices,
+                                     const std::vector<uint32_t>& indices,
+                                     const glm::mat4& transform,
+                                     uint8_t extraFlags,
+                                     float steepAngle) {
+    if (vertices.empty() || indices.size() < 3) return;
+    const float steepCos = std::cos(glm::radians(steepAngle));
+
+    collision.triangles.reserve(collision.triangles.size() + indices.size() / 3);
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        uint32_t i0 = indices[i], i1 = indices[i + 1], i2 = indices[i + 2];
+        if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) continue;
+
+        WoweeCollision::Triangle tri;
+        tri.v0 = glm::vec3(transform * glm::vec4(vertices[i0], 1.0f));
+        tri.v1 = glm::vec3(transform * glm::vec4(vertices[i1], 1.0f));
+        tri.v2 = glm::vec3(transform * glm::vec4(vertices[i2], 1.0f));
+
+        glm::vec3 n = glm::cross(tri.v1 - tri.v0, tri.v2 - tri.v0);
+        float len = glm::length(n);
+        tri.flags = extraFlags;
+        if (len > 1e-6f) {
+            float nz = n.z / len;
+            if (nz >= steepCos) tri.flags |= 0x01;       // walkable
+            else if (nz < 0.0f) tri.flags |= 0x04;       // steep / facing-down
+        }
+
+        collision.bounds.expand(tri.v0);
+        collision.bounds.expand(tri.v1);
+        collision.bounds.expand(tri.v2);
+        collision.triangles.push_back(tri);
+    }
+}
+
 bool WoweeCollisionBuilder::save(const WoweeCollision& collision, const std::string& path) {
     namespace fs = std::filesystem;
     fs::create_directories(fs::path(path).parent_path());
@@ -121,17 +162,28 @@ bool WoweeCollisionBuilder::save(const WoweeCollision& collision, const std::str
     if (!f) return false;
 
     f.write(reinterpret_cast<const char*>(&WOC_MAGIC), 4);
+    // Sanitize bounds before writing — produces a clean WOC even when an
+    // in-memory collision has been polluted by addMesh on bad input.
+    auto sanVec = [](glm::vec3 v) {
+        if (!std::isfinite(v.x)) v.x = 0.0f;
+        if (!std::isfinite(v.y)) v.y = 0.0f;
+        if (!std::isfinite(v.z)) v.z = 0.0f;
+        return v;
+    };
     uint32_t triCount = static_cast<uint32_t>(collision.triangles.size());
     f.write(reinterpret_cast<const char*>(&triCount), 4);
     f.write(reinterpret_cast<const char*>(&collision.tileX), 4);
     f.write(reinterpret_cast<const char*>(&collision.tileY), 4);
-    f.write(reinterpret_cast<const char*>(&collision.bounds.min), 12);
-    f.write(reinterpret_cast<const char*>(&collision.bounds.max), 12);
+    glm::vec3 bmin = sanVec(collision.bounds.min);
+    glm::vec3 bmax = sanVec(collision.bounds.max);
+    f.write(reinterpret_cast<const char*>(&bmin), 12);
+    f.write(reinterpret_cast<const char*>(&bmax), 12);
 
     for (const auto& tri : collision.triangles) {
-        f.write(reinterpret_cast<const char*>(&tri.v0), 12);
-        f.write(reinterpret_cast<const char*>(&tri.v1), 12);
-        f.write(reinterpret_cast<const char*>(&tri.v2), 12);
+        glm::vec3 v0 = sanVec(tri.v0), v1 = sanVec(tri.v1), v2 = sanVec(tri.v2);
+        f.write(reinterpret_cast<const char*>(&v0), 12);
+        f.write(reinterpret_cast<const char*>(&v1), 12);
+        f.write(reinterpret_cast<const char*>(&v2), 12);
         f.write(reinterpret_cast<const char*>(&tri.flags), 1);
     }
 
@@ -154,17 +206,49 @@ WoweeCollision WoweeCollisionBuilder::load(const std::string& path) {
     f.read(reinterpret_cast<char*>(&col.tileY), 4);
     f.read(reinterpret_cast<char*>(&col.bounds.min), 12);
     f.read(reinterpret_cast<char*>(&col.bounds.max), 12);
+    // A whole-tile collision mesh tops out at ~256*128 = 32K terrain triangles
+    // plus building overlays. >2M is corrupted and would OOM us.
+    if (triCount > 2'000'000) {
+        LOG_ERROR("WOC triCount rejected (", triCount, "): ", path);
+        return WoweeCollision{};
+    }
+    // Tile coords are valid 0..63 in WoW; cap higher values that suggest
+    // a corrupted file rather than letting them propagate.
+    if (col.tileX > 63 || col.tileY > 63) {
+        LOG_WARNING("WOC tile coord out of range (", col.tileX, ",", col.tileY,
+                    ") — clamping");
+        if (col.tileX > 63) col.tileX = 32;
+        if (col.tileY > 63) col.tileY = 32;
+    }
 
-    col.triangles.resize(triCount);
+    col.triangles.reserve(triCount);
+    auto fixVec = [](glm::vec3& v) {
+        if (!std::isfinite(v.x)) v.x = 0.0f;
+        if (!std::isfinite(v.y)) v.y = 0.0f;
+        if (!std::isfinite(v.z)) v.z = 0.0f;
+    };
     for (uint32_t i = 0; i < triCount; i++) {
-        auto& tri = col.triangles[i];
+        WoweeCollision::Triangle tri;
         f.read(reinterpret_cast<char*>(&tri.v0), 12);
         f.read(reinterpret_cast<char*>(&tri.v1), 12);
         f.read(reinterpret_cast<char*>(&tri.v2), 12);
         f.read(reinterpret_cast<char*>(&tri.flags), 1);
+        // Skip degenerate / non-finite triangles. They'd produce NaNs in
+        // ray-triangle intersection (used for movement collision), making
+        // the player phase through walls or fall through the floor.
+        fixVec(tri.v0); fixVec(tri.v1); fixVec(tri.v2);
+        glm::vec3 e1 = tri.v1 - tri.v0;
+        glm::vec3 e2 = tri.v2 - tri.v0;
+        if (glm::length(glm::cross(e1, e2)) < 1e-8f) continue;
+        col.triangles.push_back(tri);
     }
+    // Sanitize stored bounds too — they're used as a coarse cull box.
+    fixVec(col.bounds.min);
+    fixVec(col.bounds.max);
 
-    LOG_INFO("WOC loaded: ", path, " (", triCount, " triangles)");
+    LOG_INFO("WOC loaded: ", path, " (", col.triangles.size(), "/",
+             triCount, " triangles, ", triCount - col.triangles.size(),
+             " degenerate skipped)");
     return col;
 }
 

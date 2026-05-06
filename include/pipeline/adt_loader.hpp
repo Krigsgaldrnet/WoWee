@@ -113,6 +113,8 @@ struct ADTTerrain {
         float extentUpper[3];
         uint16_t flags;
         uint16_t doodadSet;
+        uint16_t nameSet = 0;     // MODF nameSet (rare; usually 0)
+        uint16_t scale = 1024;    // MODF scale * 1024 (1024 = 1.0)
     };
     std::vector<WMOPlacement> wmoPlacements;
 

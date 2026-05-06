@@ -482,87 +482,22 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
         }
 
         // Check for WOM open format first (custom zone models)
-        std::string womBase = m2Path;
-        auto womDot = womBase.rfind('.');
-        if (womDot != std::string::npos) womBase = womBase.substr(0, womDot);
-        // Check custom_zones and output directories
-        std::vector<std::string> womPrefixes = {"custom_zones/models/", "output/" + mapName + "/models/"};
-        for (const std::string& prefix : womPrefixes) {
-            std::string womPath = prefix + womBase;
-            std::replace(womPath.begin(), womPath.end(), '\\', '/');
-            if (pipeline::WoweeModelLoader::exists(womPath)) {
-                auto wom = pipeline::WoweeModelLoader::load(womPath);
-                if (wom.isValid()) {
-                    // Convert WOM to M2Model for the renderer
-                    pipeline::M2Model m2Model;
-                    m2Model.name = wom.name;
-                    m2Model.boundRadius = wom.boundRadius;
-                    m2Model.vertices.reserve(wom.vertices.size());
-                    for (const auto& v : wom.vertices) {
-                        pipeline::M2Vertex mv;
-                        mv.position = v.position;
-                        mv.normal = v.normal;
-                        mv.texCoords[0] = v.texCoord;
-                        std::memcpy(mv.boneWeights, v.boneWeights, 4);
-                        std::memcpy(mv.boneIndices, v.boneIndices, 4);
-                        m2Model.vertices.push_back(mv);
-                    }
-                    m2Model.indices.reserve(wom.indices.size());
-                    for (uint32_t idx : wom.indices)
-                        m2Model.indices.push_back(static_cast<uint16_t>(idx));
-
-                    // Set up textures from WOM paths
-                    for (const auto& texPath : wom.texturePaths) {
-                        pipeline::M2Texture tex;
-                        tex.type = 0;
-                        tex.flags = 0;
-                        tex.filename = texPath;
-                        m2Model.textures.push_back(tex);
-                    }
-                    m2Model.textureLookup = {0};
-
-                    // Create default render batch covering all geometry
-                    pipeline::M2Batch batch{};
-                    batch.flags = 0;
-                    batch.shader = 0;
-                    batch.textureCount = std::min(1u, static_cast<uint32_t>(wom.texturePaths.size()));
-                    batch.textureIndex = 0;
-                    batch.indexStart = 0;
-                    batch.indexCount = static_cast<uint32_t>(m2Model.indices.size());
-                    batch.vertexStart = 0;
-                    batch.vertexCount = static_cast<uint32_t>(m2Model.vertices.size());
-                    m2Model.batches.push_back(batch);
-
-                    // Default opaque material
-                    pipeline::M2Material mat;
-                    mat.flags = 0;
-                    mat.blendMode = 0;
-                    m2Model.materials.push_back(mat);
-
-                    // Copy bone hierarchy from WOM2
-                    for (const auto& wb : wom.bones) {
-                        pipeline::M2Bone bone;
-                        bone.keyBoneId = wb.keyBoneId;
-                        bone.parentBone = wb.parentBone;
-                        bone.pivot = wb.pivot;
-                        bone.flags = wb.flags;
-                        m2Model.bones.push_back(bone);
-                    }
-
-                    // Copy animation sequences from WOM2
-                    for (const auto& wa : wom.animations) {
-                        pipeline::M2Sequence seq;
-                        seq.id = wa.id;
-                        seq.duration = wa.durationMs;
-                        seq.movingSpeed = wa.movingSpeed;
-                        m2Model.sequences.push_back(seq);
-                    }
-
-                    pending->m2Models.push_back({modelId, std::move(m2Model), {}});
-                    preparedModelIds.insert(modelId);
-                    LOG_INFO("Loaded WOM model: ", womPath);
-                    return true;
-                }
+        // Try open WOM format first via shared helper. Per-zone prefixes are
+        // checked before the global fallback so a zone export overrides a
+        // generic custom asset of the same name.
+        {
+            std::vector<std::string> extraPrefixes = {
+                "output/" + mapName + "/models/",
+                "custom_zones/" + mapName + "/models/",
+            };
+            auto wom = pipeline::WoweeModelLoader::tryLoadByGamePath(m2Path, extraPrefixes);
+            if (wom.isValid()) {
+                auto m2Model = pipeline::WoweeModelLoader::toM2(wom);
+                pending->m2Models.push_back({modelId, std::move(m2Model), {}});
+                preparedModelIds.insert(modelId);
+                LOG_INFO("Loaded WOM model: ", m2Path, " (v", wom.version,
+                         ", ", wom.batches.size(), " batches)");
+                return true;
             }
         }
 
@@ -679,22 +614,17 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
             bool wobLoaded = false;
             pipeline::WMOModel wmoModel;
             {
-                std::string wobBase = wmoPath;
-                auto wobDot = wobBase.rfind('.');
-                if (wobDot != std::string::npos) wobBase = wobBase.substr(0, wobDot);
-                std::replace(wobBase.begin(), wobBase.end(), '\\', '/');
-                std::vector<std::string> wobPrefixes = {"custom_zones/buildings/", "output/" + mapName + "/buildings/"};
-                for (const auto& prefix : wobPrefixes) {
-                    if (pipeline::WoweeBuildingLoader::exists(prefix + wobBase)) {
-                        auto wob = pipeline::WoweeBuildingLoader::load(prefix + wobBase);
-                        if (wob.isValid()) {
-                            if (pipeline::WoweeBuildingLoader::toWMOModel(wob, wmoModel)) {
-                                LOG_INFO("Loaded WOB building: ", prefix + wobBase);
-                                wobLoaded = true;
-                            }
-                        }
-                        break;
-                    }
+                // Per-zone overrides win over global custom_zones/ overrides.
+                std::vector<std::string> extraPrefixes = {
+                    "output/" + mapName + "/buildings/",
+                    "custom_zones/" + mapName + "/buildings/",
+                };
+                auto wob = pipeline::WoweeBuildingLoader::tryLoadByGamePath(
+                    wmoPath, extraPrefixes);
+                if (wob.isValid() &&
+                    pipeline::WoweeBuildingLoader::toWMOModel(wob, wmoModel)) {
+                    LOG_INFO("Loaded WOB building: ", wmoPath);
+                    wobLoaded = true;
                 }
             }
 
@@ -922,6 +852,8 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                 ready.model = std::move(wmoModel);
                 ready.position = pos;
                 ready.rotation = rot;
+                ready.scale = placement.scale > 0
+                    ? static_cast<float>(placement.scale) / 1024.0f : 1.0f;
                 pending->wmoModels.push_back(std::move(ready));
             }
         }
@@ -1165,7 +1097,8 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
                 }
                 // Create the instance on first visit (liquidGroupIndex == 0)
                 if (ft.wmoLiquidGroupIndex == 0) {
-                    uint32_t wmoInstId = wmoRenderer->createInstance(wmoReady.modelId, wmoReady.position, wmoReady.rotation);
+                    uint32_t wmoInstId = wmoRenderer->createInstance(
+                        wmoReady.modelId, wmoReady.position, wmoReady.rotation, wmoReady.scale);
                     if (!wmoInstId) {
                         ft.wmoInstanceIndex++;
                         continue;

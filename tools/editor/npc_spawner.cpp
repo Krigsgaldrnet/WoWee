@@ -62,6 +62,7 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& s : spawns_) {
         nlohmann::json js;
+        js["id"] = s.id;
         js["name"] = s.name;
         js["model"] = s.modelPath;
         js["displayId"] = s.displayId;
@@ -85,6 +86,10 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
         js["vendor"] = s.vendor;
         js["flightmaster"] = s.flightmaster;
         js["innkeeper"] = s.innkeeper;
+        js["trainer"] = s.trainer;
+        js["auctioneer"] = s.auctioneer;
+        js["banker"] = s.banker;
+        js["repair"] = s.repair;
 
         nlohmann::json patrol = nlohmann::json::array();
         for (const auto& p : s.patrolPath) {
@@ -104,6 +109,15 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
 
 void NpcSpawner::scatter(const CreatureSpawn& base, const glm::vec3& center,
                           float radius, int count) {
+    // Defensive bounds — UI sliders cap these, but the function is also
+    // callable programmatically. radius<=0 would either throw from the
+    // uniform distribution constructor or divide by zero on the sqrt
+    // line; an absurd count would freeze the editor and OOM.
+    if (count <= 0 || count > 10000) return;
+    if (!std::isfinite(radius) || radius <= 0.0f) return;
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
+        !std::isfinite(center.z)) return;
+
     std::mt19937 rng(static_cast<uint32_t>(center.x * 100 + center.y * 37));
     std::uniform_real_distribution<float> distAngle(0.0f, 6.2831853f);
     std::uniform_real_distribution<float> distDist(0.0f, radius);
@@ -137,30 +151,63 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
             s.modelPath = js.value("model", "");
             s.displayId = js.value("displayId", 0u);
             s.orientation = js.value("orientation", 0.0f);
+            // Normalise orientation to [0, 360) for consistent gizmo behaviour.
+            if (std::isfinite(s.orientation)) {
+                s.orientation = std::fmod(s.orientation, 360.0f);
+                if (s.orientation < 0.0f) s.orientation += 360.0f;
+            } else {
+                s.orientation = 0.0f;
+            }
             s.scale = js.value("scale", 1.0f);
-            if (s.scale < 0.1f) s.scale = 1.0f;
+            if (!std::isfinite(s.scale) || s.scale < 0.1f) s.scale = 1.0f;
             s.level = js.value("level", 1u);
+            // WoW level cap is 80 (WotLK) but allow up to 255 for special
+            // bosses; 0 is invalid.
+            if (s.level == 0) s.level = 1;
+            if (s.level > 255) s.level = 255;
             s.health = js.value("health", 100u);
+            if (s.health == 0) s.health = 1;
             s.mana = js.value("mana", 0u);
             s.minDamage = js.value("minDamage", 5u);
             s.maxDamage = js.value("maxDamage", 10u);
+            // maxDmg should be >= minDmg.
+            if (s.maxDamage < s.minDamage) s.maxDamage = s.minDamage;
             s.armor = js.value("armor", 0u);
             s.faction = js.value("faction", 0u);
-            s.behavior = static_cast<CreatureBehavior>(js.value("behavior", 0));
+            int beh = js.value("behavior", 0);
+            if (beh < 0 || beh > 3) beh = 0;
+            s.behavior = static_cast<CreatureBehavior>(beh);
             s.wanderRadius = js.value("wanderRadius", 0.0f);
+            if (!std::isfinite(s.wanderRadius) || s.wanderRadius < 0.0f) s.wanderRadius = 0.0f;
+            if (s.wanderRadius > 1000.0f) s.wanderRadius = 1000.0f;
             s.aggroRadius = js.value("aggroRadius", 15.0f);
+            if (!std::isfinite(s.aggroRadius) || s.aggroRadius < 0.0f) s.aggroRadius = 0.0f;
             s.leashRadius = js.value("leashRadius", 40.0f);
+            if (!std::isfinite(s.leashRadius) || s.leashRadius < 0.0f) s.leashRadius = 40.0f;
             s.respawnTimeMs = js.value("respawnTimeMs", 60000u);
+            // Cap respawn at 24h — typo guard, also matches AzerothCore.
+            if (s.respawnTimeMs > 86'400'000u) s.respawnTimeMs = 86'400'000u;
+            if (s.respawnTimeMs < 1000u) s.respawnTimeMs = 1000u;
             s.hostile = js.value("hostile", false);
             s.questgiver = js.value("questgiver", false);
             s.vendor = js.value("vendor", false);
             s.flightmaster = js.value("flightmaster", false);
             s.innkeeper = js.value("innkeeper", false);
+            s.trainer = js.value("trainer", false);
+            s.auctioneer = js.value("auctioneer", false);
+            s.banker = js.value("banker", false);
+            s.repair = js.value("repair", false);
 
             if (js.contains("position") && js["position"].is_array() && js["position"].size() >= 3) {
                 s.position = glm::vec3(js["position"][0].get<float>(),
                                        js["position"][1].get<float>(),
                                        js["position"][2].get<float>());
+                // Reject NaN/inf positions — they crash the M2 renderer's
+                // matrix math and produce invisible / chaos-shaped instances.
+                if (!std::isfinite(s.position.x) || !std::isfinite(s.position.y) ||
+                    !std::isfinite(s.position.z)) {
+                    s.position = glm::vec3(0.0f);
+                }
             }
 
             if (js.contains("patrol") && js["patrol"].is_array()) {
@@ -168,14 +215,33 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
                     if (pt.is_array() && pt.size() >= 4) {
                         PatrolPoint pp;
                         pp.position = glm::vec3(pt[0].get<float>(), pt[1].get<float>(), pt[2].get<float>());
+                        // Skip waypoints with NaN/inf — would produce a path
+                        // that warps the creature to garbage coords.
+                        if (!std::isfinite(pp.position.x) || !std::isfinite(pp.position.y) ||
+                            !std::isfinite(pp.position.z))
+                            continue;
                         pp.waitTimeMs = pt[3].get<uint32_t>();
+                        // Cap wait time at 10 minutes to keep AzerothCore
+                        // happy and prevent obvious data-entry typos that
+                        // would produce a creature that effectively never
+                        // moves (e.g. 24h = 86400000).
+                        if (pp.waitTimeMs > 600000) pp.waitTimeMs = 600000;
                         s.patrolPath.push_back(pp);
                     }
                 }
             }
 
             if (!s.name.empty()) {
-                s.id = nextId();
+                // Preserve original id from JSON if present so quest hooks
+                // (questGiverNpcId, turnInNpcId, KillCreature targetName)
+                // remain stable across save/load. Bump idCounter past any
+                // loaded value to avoid collisions with future placements.
+                if (js.contains("id")) {
+                    s.id = js["id"].get<uint32_t>();
+                    if (s.id >= idCounter_) idCounter_ = s.id + 1;
+                } else {
+                    s.id = nextId();
+                }
                 spawns_.push_back(s);
             }
         }

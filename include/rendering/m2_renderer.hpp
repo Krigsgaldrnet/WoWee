@@ -287,6 +287,8 @@ public:
 
     bool hasModel(uint32_t modelId) const;
     bool loadModel(const pipeline::M2Model& model, uint32_t modelId);
+    /** Force-remove a model and all its GPU resources. Caller must ensure no instances reference it. */
+    void unloadModel(uint32_t modelId);
     /** Mark a loaded model as a spell effect (full-brightness particles, no collision). */
     void markModelAsSpellEffect(uint32_t modelId);
 
@@ -355,6 +357,9 @@ public:
     void removeInstances(const std::vector<uint32_t>& instanceIds);
     void setSkipCollision(uint32_t instanceId, bool skip);
     void clear();
+    /** Drop all instances but keep models in GPU memory. Cheap path for the
+     *  editor's rebuild loop where the same model is re-instanced repeatedly. */
+    void clearInstances();
     void cleanupUnusedModels();
 
     bool checkCollision(const glm::vec3& from, const glm::vec3& to,

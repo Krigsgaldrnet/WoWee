@@ -4,6 +4,8 @@
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
+#include "pipeline/wowee_model.hpp"
+#include "pipeline/wowee_building.hpp"
 #include "core/logger.hpp"
 #include <cstring>
 #include <cmath>
@@ -59,6 +61,7 @@ void EditorViewport::shutdown() {
     if (npcMarkerVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), npcMarkerVB_, npcMarkerVBAlloc_); npcMarkerVB_ = VK_NULL_HANDLE; }
     if (brushVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), brushVB_, brushVBAlloc_); brushVB_ = VK_NULL_HANDLE; }
     if (pathVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), pathVB_, pathVBAlloc_); pathVB_ = VK_NULL_HANDLE; }
+    if (patrolVB_) { vmaDestroyBuffer(vkCtx_->getAllocator(), patrolVB_, patrolVBAlloc_); patrolVB_ = VK_NULL_HANDLE; }
     gizmo_.shutdown();
     waterRenderer_.shutdown();
 
@@ -78,6 +81,13 @@ bool EditorViewport::loadTerrain(const pipeline::TerrainMesh& mesh,
 
 void EditorViewport::clearTerrain() {
     if (terrainRenderer_) terrainRenderer_->clear();
+    // Loading a different zone invalidates the cached models; flush them so
+    // their slots can be reused without leaking GPU memory across zones.
+    persistentM2ModelIds_.clear();
+    persistentWMOModelIds_.clear();
+    nextPersistentModelId_ = 1;
+    if (m2Renderer_) m2Renderer_->clear();
+    if (wmoRenderer_) wmoRenderer_->clearAll();
 }
 
 void EditorViewport::updateWater(const pipeline::ADTTerrain& terrain, int tileX, int tileY) {
@@ -104,12 +114,16 @@ void EditorViewport::clearObjects() {
     ghostModelId_ = 0;
     ghostModelPath_.clear();
 
+    // Drop instances but keep models cached on the GPU. The editor's rebuild
+    // path destroys-and-recreates instances every time the placement set
+    // changes; preserving model GPU buffers makes that path much cheaper for
+    // large NPC populations using shared models.
     if (m2Renderer_) {
         vkCtx_->waitAllUploads();
-        m2Renderer_->clear();
+        m2Renderer_->clearInstances();
     }
     if (wmoRenderer_) {
-        wmoRenderer_->clearAll();
+        wmoRenderer_->clearInstances();
     }
 }
 
@@ -118,8 +132,11 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
     clearObjects();
     if (objects.empty() && npcs.empty()) return;
 
-    uint32_t nextModelId = 1;
-    std::unordered_map<std::string, uint32_t> m2ModelIds, wmoModelIds;
+    // Don't call beginUploadBatch here — loadModel starts its own batch.
+    // Use the persistent model-id maps so models stay cached across rebuilds.
+    auto& m2ModelIds = persistentM2ModelIds_;
+    auto& wmoModelIds = persistentWMOModelIds_;
+    uint32_t& nextModelId = nextPersistentModelId_;
 
     for (const auto& obj : objects) {
         if (obj.type == PlaceableType::M2 && m2Renderer_) {
@@ -128,28 +145,40 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
             if (it != m2ModelIds.end()) {
                 modelId = it->second;
             } else {
-                auto data = assetManager_->readFile(obj.path);
-                if (data.empty()) {
-                    LOG_WARNING("M2 file not found in manifest: ", obj.path);
-                    continue;
-                }
-                auto model = pipeline::M2Loader::load(data);
+                pipeline::M2Model model;
+                bool loaded = false;
 
-                // WotLK M2s need a separate .skin file for geometry
-                if (!model.isValid()) {
-                    std::string skinPath = obj.path;
-                    auto dotPos = skinPath.rfind('.');
-                    if (dotPos != std::string::npos)
-                        skinPath = skinPath.substr(0, dotPos) + "00.skin";
-                    auto skinData = assetManager_->readFile(skinPath);
-                    if (!skinData.empty())
-                        pipeline::M2Loader::loadSkin(skinData, model);
+                // Try WOM open format first (replaces proprietary M2 when available).
+                // Per-zone WOM directories shadow the global custom_zones folder.
+                std::vector<std::string> womExtra;
+                if (!activeMapName_.empty()) {
+                    womExtra.push_back("output/" + activeMapName_ + "/models/");
+                    womExtra.push_back("custom_zones/" + activeMapName_ + "/models/");
+                }
+                if (auto wom = pipeline::WoweeModelLoader::tryLoadByGamePath(obj.path, womExtra);
+                    wom.isValid()) {
+                    model = pipeline::WoweeModelLoader::toM2(wom);
+                    loaded = true;
                 }
 
-                if (!model.isValid()) {
-                    LOG_WARNING("M2 failed to parse (", data.size(), " bytes): ", obj.path);
-                    continue;
+                // Fall back to M2 from game data
+                if (!loaded) {
+                    auto data = assetManager_->readFile(obj.path);
+                    if (data.empty()) continue;
+                    model = pipeline::M2Loader::load(data);
+                    // Always load skin (WotLK M2s need it for geometry)
+                    {
+                        std::string skinPath = obj.path;
+                        auto dotPos = skinPath.rfind('.');
+                        if (dotPos != std::string::npos)
+                            skinPath = skinPath.substr(0, dotPos) + "00.skin";
+                        auto skinData = assetManager_->readFile(skinPath);
+                        if (!skinData.empty())
+                            pipeline::M2Loader::loadSkin(skinData, model);
+                    }
                 }
+
+                if (!model.isValid()) continue;
 
                 if (model.boundRadius < 1.0f) model.boundRadius = 50.0f;
 
@@ -172,14 +201,10 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                     LOG_WARNING("M2 failed to upload to GPU: ", obj.path);
                     continue;
                 }
-                vkCtx_->waitAllUploads();
-                vkCtx_->pollUploadBatches();
                 LOG_INFO("M2 loaded: ", obj.path, " (modelId=", modelId, ", ",
                          model.vertices.size(), " verts)");
                 m2ModelIds[obj.path] = modelId;
             }
-            glm::vec3 rotRad = glm::radians(obj.rotation);
-            m2Renderer_->createInstance(modelId, obj.position, rotRad, obj.scale);
 
         } else if (obj.type == PlaceableType::WMO && wmoRenderer_) {
             uint32_t modelId;
@@ -187,30 +212,47 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
             if (it != wmoModelIds.end()) {
                 modelId = it->second;
             } else {
-                auto data = assetManager_->readFile(obj.path);
-                if (data.empty()) {
-                    LOG_WARNING("WMO file not found in manifest: ", obj.path);
-                    continue;
-                }
-                auto model = pipeline::WMOLoader::load(data);
+                pipeline::WMOModel model;
+                bool loaded = false;
 
-                // Load WMO group files (_000.wmo, _001.wmo, etc.)
-                std::string basePath = obj.path;
-                auto dotPos = basePath.rfind('.');
-                if (dotPos != std::string::npos) basePath = basePath.substr(0, dotPos);
-                for (uint32_t gi = 0; gi < model.nGroups; gi++) {
-                    char groupSuffix[16];
-                    std::snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.wmo", gi);
-                    std::string groupPath = basePath + groupSuffix;
-                    auto groupData = assetManager_->readFile(groupPath);
-                    if (!groupData.empty()) {
-                        pipeline::WMOLoader::loadGroup(groupData, model, gi);
+                // Try WOB open format first (replaces proprietary WMO when available)
+                std::vector<std::string> wobExtra;
+                if (!activeMapName_.empty()) {
+                    wobExtra.push_back("output/" + activeMapName_ + "/buildings/");
+                    wobExtra.push_back("custom_zones/" + activeMapName_ + "/buildings/");
+                }
+                if (auto wob = pipeline::WoweeBuildingLoader::tryLoadByGamePath(obj.path, wobExtra);
+                    wob.isValid() &&
+                    pipeline::WoweeBuildingLoader::toWMOModel(wob, model)) {
+                    loaded = true;
+                }
+
+                if (!loaded) {
+                    auto data = assetManager_->readFile(obj.path);
+                    if (data.empty()) {
+                        LOG_WARNING("WMO file not found in manifest: ", obj.path);
+                        continue;
+                    }
+                    model = pipeline::WMOLoader::load(data);
+
+                    // Load WMO group files (_000.wmo, _001.wmo, etc.)
+                    std::string basePath = obj.path;
+                    auto dotPos = basePath.rfind('.');
+                    if (dotPos != std::string::npos) basePath = basePath.substr(0, dotPos);
+                    for (uint32_t gi = 0; gi < model.nGroups; gi++) {
+                        char groupSuffix[16];
+                        std::snprintf(groupSuffix, sizeof(groupSuffix), "_%03u.wmo", gi);
+                        std::string groupPath = basePath + groupSuffix;
+                        auto groupData = assetManager_->readFile(groupPath);
+                        if (!groupData.empty()) {
+                            pipeline::WMOLoader::loadGroup(groupData, model, gi);
+                        }
                     }
                 }
 
                 if (!model.isValid()) {
-                    LOG_WARNING("WMO failed to parse (", data.size(), " bytes, ",
-                                model.nGroups, " groups expected): ", obj.path);
+                    LOG_WARNING("WMO failed to parse (groups expected: ",
+                                model.nGroups, "): ", obj.path);
                     continue;
                 }
 
@@ -219,19 +261,20 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                     LOG_WARNING("WMO failed to upload to GPU: ", obj.path);
                     continue;
                 }
-                vkCtx_->waitAllUploads();
-                vkCtx_->pollUploadBatches();
                 LOG_INFO("WMO loaded: ", obj.path, " (modelId=", modelId, ", ",
                          model.groups.size(), " groups)");
                 wmoModelIds[obj.path] = modelId;
             }
             glm::vec3 wmoRotRad = glm::radians(obj.rotation);
-            wmoRenderer_->createInstance(modelId, obj.position, wmoRotRad);
+            // Pass through obj.scale so non-1.0 WMO instance scales (loaded
+            // from MODF, edited via the gizmo, or duplicated) actually render
+            // at the right size instead of always 1.0.
+            wmoRenderer_->createInstance(modelId, obj.position, wmoRotRad, obj.scale);
         }
     }
 
     // Render NPC creatures as M2 instances
-    if (m2Renderer_) {
+    if (m2Renderer_ && !npcs.empty()) {
         for (const auto& npc : npcs) {
             if (npc.modelPath.empty()) continue;
             uint32_t modelId;
@@ -239,19 +282,47 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
             if (it != m2ModelIds.end()) {
                 modelId = it->second;
             } else {
-                auto data = assetManager_->readFile(npc.modelPath);
-                if (data.empty()) continue;
-                auto model = pipeline::M2Loader::load(data);
-                if (!model.isValid()) {
-                    std::string skinPath = npc.modelPath;
-                    auto dotPos = skinPath.rfind('.');
-                    if (dotPos != std::string::npos)
-                        skinPath = skinPath.substr(0, dotPos) + "00.skin";
-                    auto skinData = assetManager_->readFile(skinPath);
-                    if (!skinData.empty())
-                        pipeline::M2Loader::loadSkin(skinData, model);
+                // Try WOM open format first (replaces proprietary M2 when available)
+                pipeline::M2Model model;
+                bool loaded = false;
+                std::vector<std::string> npcWomExtra;
+                if (!activeMapName_.empty()) {
+                    npcWomExtra.push_back("output/" + activeMapName_ + "/models/");
+                    npcWomExtra.push_back("custom_zones/" + activeMapName_ + "/models/");
                 }
-                if (!model.isValid()) continue;
+                if (auto wom = pipeline::WoweeModelLoader::tryLoadByGamePath(
+                        npc.modelPath, npcWomExtra);
+                    wom.isValid()) {
+                    model = pipeline::WoweeModelLoader::toM2(wom);
+                    loaded = true;
+                }
+
+                // Fall back to M2 from game data
+                if (!loaded) {
+                    auto data = assetManager_->readFile(npc.modelPath);
+                    if (data.empty()) {
+                        LOG_WARNING("NPC model file not found: ", npc.modelPath);
+                        continue;
+                    }
+                    model = pipeline::M2Loader::load(data);
+                    {
+                        std::string skinPath = npc.modelPath;
+                        auto dotPos = skinPath.rfind('.');
+                        if (dotPos != std::string::npos)
+                            skinPath = skinPath.substr(0, dotPos) + "00.skin";
+                        auto skinData = assetManager_->readFile(skinPath);
+                        if (!skinData.empty())
+                            pipeline::M2Loader::loadSkin(skinData, model);
+                    }
+                }
+                if (!model.isValid()) {
+                    LOG_WARNING("NPC model invalid: ", npc.modelPath,
+                             " (verts=", model.vertices.size(), " idx=", model.indices.size(), ")");
+                    continue;
+                }
+                LOG_DEBUG("NPC M2 OK: ", npc.modelPath, " (",
+                         model.vertices.size(), "v ", model.indices.size(), "i ",
+                         model.batches.size(), "b)");
                 if (model.boundRadius < 1.0f) model.boundRadius = 50.0f;
                 // Validate vertex data
                 bool ok = true;
@@ -262,18 +333,37 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 }
                 if (!ok) { LOG_WARNING("NPC M2 bad vertices: ", npc.modelPath); continue; }
                 modelId = nextModelId++;
-                if (!m2Renderer_->loadModel(model, modelId)) continue;
-                vkCtx_->waitAllUploads();
-                vkCtx_->pollUploadBatches();
+                if (!m2Renderer_->loadModel(model, modelId)) {
+                    LOG_WARNING("NPC M2 loadModel failed: ", npc.modelPath,
+                               " (", model.vertices.size(), "v ", model.indices.size(), "i ",
+                               model.batches.size(), "b)");
+                    continue;
+                }
                 m2ModelIds[npc.modelPath] = modelId;
             }
-            glm::vec3 rotRad = glm::radians(glm::vec3(0, 0, npc.orientation));
-            m2Renderer_->createInstance(modelId, npc.position, rotRad, npc.scale);
         }
     }
 
+    // Finalize all GPU uploads BEFORE creating instances
+    // (vertex buffers must be valid for isValid() check in createInstance)
     vkCtx_->waitAllUploads();
     vkCtx_->pollUploadBatches();
+
+    // Now create instances (vertex buffers are finalized)
+    for (const auto& obj : objects) {
+        if (obj.type == PlaceableType::M2) {
+            auto it = m2ModelIds.find(obj.path);
+            if (it == m2ModelIds.end()) continue;
+            glm::vec3 rotRad = glm::radians(obj.rotation);
+            m2Renderer_->createInstance(it->second, obj.position, rotRad, obj.scale);
+        }
+    }
+    for (const auto& npc : npcs) {
+        auto it = m2ModelIds.find(npc.modelPath);
+        if (it == m2ModelIds.end()) continue;
+        glm::vec3 rotRad = glm::radians(glm::vec3(0, 0, npc.orientation));
+        m2Renderer_->createInstance(it->second, npc.position, rotRad, npc.scale);
+    }
 
     // Update NPC markers via dedicated method
     updateNpcMarkers(npcs);
@@ -391,6 +481,91 @@ void EditorViewport::setPathPreview(const glm::vec3& start, const glm::vec3& end
     }
 }
 
+void EditorViewport::setPatrolPath(const std::vector<glm::vec3>& points, float width) {
+    if (patrolVB_) {
+        vmaDestroyBuffer(vkCtx_->getAllocator(), patrolVB_, patrolVBAlloc_);
+        patrolVB_ = VK_NULL_HANDLE;
+        patrolVertCount_ = 0;
+    }
+    if (points.size() < 2) return;
+
+    struct BV { float pos[3]; float color[4]; };
+    std::vector<BV> verts;
+    verts.reserve(points.size() * 24);
+
+    auto addRibbon = [&](const glm::vec3& a, const glm::vec3& b, float r, float g, float bl, float al) {
+        glm::vec2 dir = glm::vec2(b.x - a.x, b.y - a.y);
+        float len = glm::length(dir);
+        if (len < 0.001f) return;
+        dir /= len;
+        glm::vec2 perp(-dir.y, dir.x);
+        float hw = width * 0.5f;
+        float z0 = a.z + 1.5f;
+        float z1 = b.z + 1.5f;
+        BV v;
+        v.color[0] = r; v.color[1] = g; v.color[2] = bl; v.color[3] = al;
+        v.pos[0] = a.x - perp.x*hw; v.pos[1] = a.y - perp.y*hw; v.pos[2] = z0; verts.push_back(v);
+        v.pos[0] = a.x + perp.x*hw; v.pos[1] = a.y + perp.y*hw; v.pos[2] = z0; verts.push_back(v);
+        v.pos[0] = b.x - perp.x*hw; v.pos[1] = b.y - perp.y*hw; v.pos[2] = z1; verts.push_back(v);
+        v.pos[0] = b.x - perp.x*hw; v.pos[1] = b.y - perp.y*hw; v.pos[2] = z1; verts.push_back(v);
+        v.pos[0] = a.x + perp.x*hw; v.pos[1] = a.y + perp.y*hw; v.pos[2] = z0; verts.push_back(v);
+        v.pos[0] = b.x + perp.x*hw; v.pos[1] = b.y + perp.y*hw; v.pos[2] = z1; verts.push_back(v);
+    };
+
+    auto addWaypoint = [&](const glm::vec3& p, float r, float g, float bl) {
+        float s = 1.5f;
+        BV v;
+        v.color[0] = r; v.color[1] = g; v.color[2] = bl; v.color[3] = 0.95f;
+        glm::vec3 top(p.x, p.y, p.z + s * 2);
+        glm::vec3 bot(p.x, p.y, p.z + 0.2f);
+        glm::vec3 n(p.x, p.y + s, p.z + s);
+        glm::vec3 s2(p.x, p.y - s, p.z + s);
+        glm::vec3 e(p.x + s, p.y, p.z + s);
+        glm::vec3 w(p.x - s, p.y, p.z + s);
+        auto pushV = [&](const glm::vec3& vv){ v.pos[0]=vv.x; v.pos[1]=vv.y; v.pos[2]=vv.z; verts.push_back(v); };
+        pushV(top); pushV(n); pushV(e);
+        pushV(top); pushV(e); pushV(s2);
+        pushV(top); pushV(s2); pushV(w);
+        pushV(top); pushV(w); pushV(n);
+        pushV(bot); pushV(e); pushV(n);
+        pushV(bot); pushV(s2); pushV(e);
+        pushV(bot); pushV(w); pushV(s2);
+        pushV(bot); pushV(n); pushV(w);
+    };
+
+    // Ribbons fade from bright orange at the start to dim orange at the end
+    // so direction of travel is visually obvious.
+    for (size_t i = 0; i + 1 < points.size(); i++) {
+        float t = points.size() > 1 ? static_cast<float>(i) / (points.size() - 1) : 0.0f;
+        float bright = 1.0f - t * 0.5f;
+        addRibbon(points[i], points[i+1], bright, 0.7f * bright, 0.2f * bright, 0.55f);
+    }
+    for (size_t i = 0; i < points.size(); i++) {
+        // Start (NPC home) green, intermediate yellow→orange, last red.
+        if (i == 0) {
+            addWaypoint(points[i], 0.2f, 1.0f, 0.3f);
+        } else if (i == points.size() - 1 && points.size() >= 2) {
+            addWaypoint(points[i], 1.0f, 0.3f, 0.2f);
+        } else {
+            float t = points.size() > 1 ? static_cast<float>(i) / (points.size() - 1) : 0.0f;
+            addWaypoint(points[i], 1.0f, 1.0f - t * 0.6f, 0.2f);
+        }
+    }
+
+    patrolVertCount_ = static_cast<uint32_t>(verts.size());
+    VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufInfo.size = verts.size() * sizeof(BV);
+    bufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo mapInfo{};
+    if (vmaCreateBuffer(vkCtx_->getAllocator(), &bufInfo, &allocInfo,
+            &patrolVB_, &patrolVBAlloc_, &mapInfo) == VK_SUCCESS) {
+        std::memcpy(mapInfo.pMappedData, verts.data(), verts.size() * sizeof(BV));
+    }
+}
+
 void EditorViewport::updateNpcMarkers(const std::vector<CreatureSpawn>& npcs) {
     if (npcMarkerVB_) {
         vmaDestroyBuffer(vkCtx_->getAllocator(), npcMarkerVB_, npcMarkerVBAlloc_);
@@ -402,35 +577,52 @@ void EditorViewport::updateNpcMarkers(const std::vector<CreatureSpawn>& npcs) {
     struct MV { float pos[3]; float color[4]; };
     std::vector<MV> verts;
     for (const auto& npc : npcs) {
-        float s = 5.0f;
+        // Selected NPC: larger marker in cyan-yellow so it pops out among
+        // hostile/friendly markers without losing the hostile colour signal.
+        float s = npc.selected ? 2.5f : 1.5f;
         float x = npc.position.x, y = npc.position.y, z = npc.position.z;
-        float r = npc.hostile ? 1.0f : 0.1f;
-        float g = npc.hostile ? 0.15f : 0.9f;
-        float b = 0.1f, a = 0.9f;
+        float r = npc.selected ? 1.0f : (npc.hostile ? 1.0f : 0.1f);
+        float g = npc.selected ? 1.0f : (npc.hostile ? 0.15f : 0.9f);
+        float b = npc.selected ? 0.2f : 0.1f;
+        float a = npc.selected ? 1.0f : 0.7f;
 
         MV v; v.color[0]=r; v.color[1]=g; v.color[2]=b; v.color[3]=a;
+        // Small octagonal base
         for (int seg = 0; seg < 8; seg++) {
             float a0 = seg * 0.7854f, a1 = (seg+1) * 0.7854f;
-            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+0.3f; verts.push_back(v);
-            v.pos[0]=x+std::cos(a0)*s; v.pos[1]=y+std::sin(a0)*s; v.pos[2]=z+0.3f; verts.push_back(v);
-            v.pos[0]=x+std::cos(a1)*s; v.pos[1]=y+std::sin(a1)*s; v.pos[2]=z+0.3f; verts.push_back(v);
+            v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+0.2f; verts.push_back(v);
+            v.pos[0]=x+std::cos(a0)*s; v.pos[1]=y+std::sin(a0)*s; v.pos[2]=z+0.2f; verts.push_back(v);
+            v.pos[0]=x+std::cos(a1)*s; v.pos[1]=y+std::sin(a1)*s; v.pos[2]=z+0.2f; verts.push_back(v);
         }
-        float pw = 0.8f, ph = 30.0f;
-        v.color[3] = 0.8f;
+        // Thin pole
+        float pw = 0.3f, ph = 8.0f;  // was 0.8 wide, 30 tall
+        v.color[3] = 0.6f;
         v.pos[0]=x-pw; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
         v.pos[0]=x+pw; v.pos[1]=y; v.pos[2]=z; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+ph; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y-pw; v.pos[2]=z; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y+pw; v.pos[2]=z; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y; v.pos[2]=z+ph; verts.push_back(v);
-        float ts = 3.0f, tz = z + ph;
-        v.color[0]=1; v.color[1]=1; v.color[2]=0.3f; v.color[3]=0.95f;
+        // Small diamond top
+        float ts = 1.0f, tz = z + ph;  // was 3
+        v.color[0]=1; v.color[1]=1; v.color[2]=0.3f; v.color[3]=0.8f;
         v.pos[0]=x+ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y+ts; v.pos[2]=tz; verts.push_back(v);
         v.pos[0]=x-ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
         v.pos[0]=x+ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
         v.pos[0]=x-ts; v.pos[1]=y; v.pos[2]=tz; verts.push_back(v);
         v.pos[0]=x; v.pos[1]=y-ts; v.pos[2]=tz; verts.push_back(v);
+
+        // Facing arrow on the ground: triangle pointing in the orientation direction.
+        // Helps users see which way each NPC faces without selecting it.
+        float yaw = glm::radians(npc.orientation);
+        float fx = std::cos(yaw), fy = std::sin(yaw);
+        float perpX = -fy, perpY = fx;
+        float arrowLen = s * 2.5f, arrowHalfW = s * 0.8f;
+        v.color[0]=1.0f; v.color[1]=0.9f; v.color[2]=0.2f; v.color[3]=0.85f;
+        v.pos[0]=x + fx*arrowLen; v.pos[1]=y + fy*arrowLen; v.pos[2]=z+0.25f; verts.push_back(v);
+        v.pos[0]=x + perpX*arrowHalfW; v.pos[1]=y + perpY*arrowHalfW; v.pos[2]=z+0.25f; verts.push_back(v);
+        v.pos[0]=x - perpX*arrowHalfW; v.pos[1]=y - perpY*arrowHalfW; v.pos[2]=z+0.25f; verts.push_back(v);
     }
     npcMarkerVertCount_ = static_cast<uint32_t>(verts.size());
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -506,7 +698,9 @@ void EditorViewport::clearGhostPreview() {
         ghostInstanceId_ = 0;
     }
     if (ghostModelId_ != 0 && m2Renderer_) {
-        // Don't unload the model — it might be used by placed objects too
+        // Ghost ID is reserved for previews only — safe to unload so a path
+        // change can re-load with the new model under the same ID.
+        m2Renderer_->unloadModel(ghostModelId_);
         ghostModelId_ = 0;
         ghostModelPath_.clear();
     }
@@ -520,10 +714,14 @@ void EditorViewport::render(VkCommandBuffer cmd) {
 
     terrainRenderer_->render(cmd, perFrameSet, *camera_);
 
-    if (m2Renderer_)
+    if (m2Renderer_) {
+        m2Renderer_->prepareRender(frame, *camera_);
         m2Renderer_->render(cmd, perFrameSet, *camera_);
-    if (wmoRenderer_)
+    }
+    if (wmoRenderer_) {
+        wmoRenderer_->prepareRender();
         wmoRenderer_->render(cmd, perFrameSet, *camera_);
+    }
 
     waterRenderer_.render(cmd, perFrameSet);
 
@@ -564,18 +762,34 @@ void EditorViewport::render(VkCommandBuffer cmd) {
         }
     }
 
+    // Patrol path ribbon for selected NPC
+    if (patrolVB_ && patrolVertCount_ > 0) {
+        auto* waterPipeline = waterRenderer_.getPipeline();
+        auto* waterLayout = waterRenderer_.getPipelineLayout();
+        if (waterPipeline && waterLayout) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterPipeline);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout,
+                                    0, 1, &perFrameSet, 0, nullptr);
+            VkDeviceSize off = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &patrolVB_, &off);
+            vkCmdDraw(cmd, patrolVertCount_, 1, 0, 0);
+        }
+    }
+
     gizmo_.render(cmd, perFrameSet);
 
-    // NPC markers rendered last with no depth test (always on top via gizmo pipeline)
-    if (npcMarkerVB_ && npcMarkerVertCount_ > 0) {
-        // Gizmo pipeline has depthTestEnable=VK_FALSE — markers always visible
-        auto& gizmoPL = gizmo_;
-        // Re-bind gizmo pipeline (same vertex format, no depth test)
-        // gizmo_.render already set it up, just draw our buffer
-        VkDeviceSize off = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &npcMarkerVB_, &off);
-        vkCmdDraw(cmd, npcMarkerVertCount_, 1, 0, 0);
-        (void)gizmoPL;
+    // NPC markers — render with water pipeline (pos+color, alpha blend)
+    if (showNpcMarkers_ && npcMarkerVB_ && npcMarkerVertCount_ > 0) {
+        auto* waterPipeline = waterRenderer_.getPipeline();
+        auto* waterLayout = waterRenderer_.getPipelineLayout();
+        if (waterPipeline && waterLayout) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterPipeline);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout,
+                                    0, 1, &perFrameSet, 0, nullptr);
+            VkDeviceSize off = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &npcMarkerVB_, &off);
+            vkCmdDraw(cmd, npcMarkerVertCount_, 1, 0, 0);
+        }
     }
 }
 

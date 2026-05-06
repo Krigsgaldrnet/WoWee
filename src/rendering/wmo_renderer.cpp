@@ -1113,7 +1113,7 @@ void WMORenderer::clearAll() {
     textureBudgetRejectWarnings_ = 0;
     precomputedFloorGrid.clear();
 
-    LOG_WARNING("Cleared all WMO models, instances, and texture cache");
+    LOG_INFO("Cleared all WMO models, instances, and texture cache");
 }
 
 void WMORenderer::setCollisionFocus(const glm::vec3& worldPos, float radius) {
@@ -2248,7 +2248,7 @@ std::unique_ptr<VkTexture> WMORenderer::generateNormalHeightMap(
         float h = 0.299f * r + 0.587f * g + 0.114f * b;
         heightMap[i] = h;
         sumH += h;
-        sumH2 += h * h;
+        sumH2 += static_cast<double>(h) * static_cast<double>(h);
     }
     double mean = sumH / totalPixels;
     outVariance = static_cast<float>(sumH2 / totalPixels - mean * mean);
@@ -2716,7 +2716,7 @@ void WMORenderer::GroupResources::buildCollisionGrid() {
     if (gridCellsX > 64) gridCellsX = 64;
     if (gridCellsY > 64) gridCellsY = 64;
 
-    size_t totalCells = gridCellsX * gridCellsY;
+    size_t totalCells = static_cast<size_t>(gridCellsX) * static_cast<size_t>(gridCellsY);
     cellTriangles.resize(totalCells);
     cellFloorTriangles.resize(totalCells);
     cellWallTriangles.resize(totalCells);

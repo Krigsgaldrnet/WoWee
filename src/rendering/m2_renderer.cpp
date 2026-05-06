@@ -1032,8 +1032,8 @@ void M2ModelGPU::CollisionMesh::build() {
     gridCellsX = std::max(1, std::min(32, static_cast<int>(std::ceil((bmax.x - bmin.x) / CELL_SIZE))));
     gridCellsY = std::max(1, std::min(32, static_cast<int>(std::ceil((bmax.y - bmin.y) / CELL_SIZE))));
 
-    cellFloorTris.resize(gridCellsX * gridCellsY);
-    cellWallTris.resize(gridCellsX * gridCellsY);
+    cellFloorTris.resize(static_cast<size_t>(gridCellsX) * static_cast<size_t>(gridCellsY));
+    cellWallTris.resize(static_cast<size_t>(gridCellsX) * static_cast<size_t>(gridCellsY));
     triBounds.resize(triCount);
 
     for (uint32_t ti = 0; ti < triCount; ti++) {

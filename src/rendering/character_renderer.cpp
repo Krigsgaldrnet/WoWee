@@ -548,7 +548,7 @@ std::unique_ptr<VkTexture> CharacterRenderer::generateNormalHeightMap(
     if (!vkCtx_ || width == 0 || height == 0) return nullptr;
 
     // Use the CPU-only static method, then upload to GPU
-    std::vector<uint8_t> dummy(width * height * 4);
+    std::vector<uint8_t> dummy(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
     std::memcpy(dummy.data(), pixels, dummy.size());
     auto result = generateNormalHeightMapCPU("", std::move(dummy), width, height);
     outVariance = result.variance;
@@ -585,7 +585,7 @@ CharacterRenderer::NormalMapResult CharacterRenderer::generateNormalHeightMapCPU
         float h = 0.299f * r + 0.587f * g + 0.114f * b;
         heightMap[i] = h;
         sumH += h;
-        sumH2 += h * h;
+        sumH2 += static_cast<double>(h) * static_cast<double>(h);
     }
     double mean = sumH / totalPixels;
     result.variance = static_cast<float>(sumH2 / totalPixels - mean * mean);

@@ -2,6 +2,7 @@
 #include "core/logger.hpp"
 #include <nlohmann/json.hpp>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <set>
 #include <sstream>
@@ -398,9 +399,22 @@ bool DBCFile::loadJSON(const std::vector<uint8_t>& jsonData) {
             fieldCount = static_cast<uint32_t>(records[0].size());
         }
         if (fieldCount == 0) return false;
+        // Sanity caps. Real DBCs cap at ~250 fields and a few million
+        // records (Spell.dbc is the biggest at ~50K rows). Multi-million
+        // products would OOM the recordData allocation below.
+        if (fieldCount > 1024) {
+            LOG_ERROR("JSON DBC: fieldCount ", fieldCount, " too large");
+            return false;
+        }
 
         recordSize = fieldCount * 4;
         recordCount = static_cast<uint32_t>(records.size());
+        if (recordCount > 5'000'000 ||
+            static_cast<uint64_t>(recordCount) * recordSize > (256ull << 20)) {
+            LOG_ERROR("JSON DBC: recordCount ", recordCount, " * recordSize ",
+                      recordSize, " exceeds 256MB cap");
+            return false;
+        }
 
         stringBlock.clear();
         stringBlock.push_back(0);
@@ -417,7 +431,13 @@ bool DBCFile::loadJSON(const std::vector<uint8_t>& jsonData) {
                 const auto& val = row[col];
                 if (val.is_string()) {
                     const std::string& str = val.get_ref<const std::string&>();
+                    // Cap individual string at 4KB and total stringBlock at
+                    // 64MB to prevent OOM from a malicious JSON DBC stuffing
+                    // huge strings into every field.
                     if (str.empty()) {
+                        fields[col] = 0;
+                    } else if (str.size() > 4096 ||
+                               stringBlock.size() + str.size() > 64ull * 1024 * 1024) {
                         fields[col] = 0;
                     } else {
                         fields[col] = static_cast<uint32_t>(stringBlock.size());
@@ -426,6 +446,7 @@ bool DBCFile::loadJSON(const std::vector<uint8_t>& jsonData) {
                     }
                 } else if (val.is_number_float()) {
                     float f = val.get<float>();
+                    if (!std::isfinite(f)) f = 0.0f;
                     std::memcpy(&fields[col], &f, 4);
                 } else if (val.is_number_integer()) {
                     fields[col] = val.get<uint32_t>();

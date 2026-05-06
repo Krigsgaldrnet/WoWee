@@ -65,7 +65,17 @@ int DBCExporter::exportZoneDBCs(pipeline::AssetManager* am,
         "SoundAmbience.dbc",
         "GroundEffectTexture.dbc",
         "GroundEffectDoodad.dbc",
-        "LiquidType.dbc"
+        "LiquidType.dbc",
+        // Creature/NPC display data so spawned creatures can be looked up
+        // without the original game DBCs.
+        "CreatureDisplayInfo.dbc",
+        "CreatureModelData.dbc",
+        "CreatureType.dbc",
+        "CreatureFamily.dbc",
+        "FactionTemplate.dbc",
+        "Faction.dbc",
+        // Item display data — buildings/decorations may reference these
+        "ItemDisplayInfo.dbc"
     };
 
     int exported = 0;

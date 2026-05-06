@@ -99,6 +99,7 @@ struct PendingTile {
         pipeline::WMOModel model;
         glm::vec3 position;
         glm::vec3 rotation;
+        float scale = 1.0f;
     };
     std::vector<WMOReady> wmoModels;
 

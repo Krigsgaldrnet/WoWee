@@ -40,6 +40,16 @@ public:
     static WoweeCollision fromTerrain(const ADTTerrain& terrain,
                                        float steepAngle = 50.0f);
 
+    // Append a transformed mesh to an existing collision (for WMO/M2 instances).
+    // `vertices` are local-space; `transform` puts them into world space.
+    // Triangles are classified by slope using `steepAngle`.
+    static void addMesh(WoweeCollision& collision,
+                        const std::vector<glm::vec3>& vertices,
+                        const std::vector<uint32_t>& indices,
+                        const glm::mat4& transform,
+                        uint8_t extraFlags = 0,
+                        float steepAngle = 50.0f);
+
     // Save collision mesh to binary file
     static bool save(const WoweeCollision& collision, const std::string& path);
 

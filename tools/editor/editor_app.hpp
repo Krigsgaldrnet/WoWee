@@ -32,6 +32,7 @@ public:
     void shutdown();
 
     void loadADT(const std::string& mapName, int tileX, int tileY);
+    bool loadWMOInstance(const std::string& mapName);
     void createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome);
     void saveADT(const std::string& path);
     void saveWDT(const std::string& path);
@@ -83,7 +84,8 @@ public:
         }
         mode_ = m;
     }
-    void markObjectsDirty() { objectsDirty_ = true; }
+    void markObjectsDirty() { objectsDirty_ = true; autoSavePendingChanges_ = true; }
+    bool hasUnsavedNonTerrainChanges() const { return autoSavePendingChanges_; }
 
     void startGizmoMode(TransformMode mode);
     void setGizmoAxis(TransformAxis axis);
@@ -149,6 +151,7 @@ private:
     float autoSaveTimer_ = 0.0f;
     float autoSaveInterval_ = 300.0f;
     bool autoSaveEnabled_ = true;
+    bool autoSavePendingChanges_ = false;
     bool showQuitConfirm_ = false;
     ZoneManifest zoneManifest_;
 
@@ -173,6 +176,7 @@ public:
 private:
     size_t lastObjCount_ = 0;
     size_t lastNpcCount_ = 0;
+    int lastNpcSelIdx_ = -1;
     EditorMode mode_ = EditorMode::Sculpt;
     float waterHeight_ = 100.0f;
     uint16_t waterType_ = 0;

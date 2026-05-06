@@ -5,6 +5,8 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <cmath>
+#include <unordered_map>
 
 namespace wowee {
 namespace pipeline {
@@ -29,9 +31,18 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
     f.read(reinterpret_cast<char*>(&portalCount), 4);
     f.read(reinterpret_cast<char*>(&doodadCount), 4);
     f.read(reinterpret_cast<char*>(&bld.boundRadius), 4);
+    // Sanity bounds. Real WMOs are usually 1-50 groups; >4096 indicates a
+    // corrupted header that would OOM us when we resize() vectors.
+    if (groupCount > 4096 || portalCount > 8192 || doodadCount > 65536) {
+        LOG_ERROR("WOB header rejected (groups=", groupCount,
+                  " portals=", portalCount, " doodads=", doodadCount, "): ", basePath);
+        return WoweeBuilding{};
+    }
+    if (!std::isfinite(bld.boundRadius) || bld.boundRadius < 0.0f) bld.boundRadius = 1.0f;
 
     uint16_t nameLen;
     f.read(reinterpret_cast<char*>(&nameLen), 2);
+    if (nameLen > 1024) nameLen = 0;
     bld.name.resize(nameLen);
     f.read(bld.name.data(), nameLen);
 
@@ -39,6 +50,7 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         WoweeBuilding::Group grp;
         uint16_t gnLen;
         f.read(reinterpret_cast<char*>(&gnLen), 2);
+        if (gnLen > 1024) gnLen = 0;
         grp.name.resize(gnLen);
         f.read(grp.name.data(), gnLen);
 
@@ -46,6 +58,13 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         f.read(reinterpret_cast<char*>(&vc), 4);
         f.read(reinterpret_cast<char*>(&ic), 4);
         f.read(reinterpret_cast<char*>(&tc), 4);
+        // Per-group sanity. WMO groups cap at 65k vertices in practice
+        // (uint16 indices). Tex paths per group rarely exceed 16.
+        if (vc > 1'000'000 || ic > 4'000'000 || tc > 1024) {
+            LOG_ERROR("WOB group ", gi, " counts rejected (verts=", vc,
+                      " indices=", ic, " textures=", tc, "): ", basePath);
+            return WoweeBuilding{};
+        }
         uint8_t outdoor;
         f.read(reinterpret_cast<char*>(&outdoor), 1);
         grp.isOutdoor = (outdoor != 0);
@@ -54,14 +73,45 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
 
         grp.vertices.resize(vc);
         f.read(reinterpret_cast<char*>(grp.vertices.data()), vc * sizeof(WoweeBuilding::Vertex));
+        // Sanitize vertex floats — WMO renderer matrix math is sensitive
+        // and a NaN position can desync the entire group's draw state.
+        for (auto& v : grp.vertices) {
+            if (!std::isfinite(v.position.x)) v.position.x = 0.0f;
+            if (!std::isfinite(v.position.y)) v.position.y = 0.0f;
+            if (!std::isfinite(v.position.z)) v.position.z = 0.0f;
+            if (!std::isfinite(v.normal.x)) v.normal.x = 0.0f;
+            if (!std::isfinite(v.normal.y)) v.normal.y = 0.0f;
+            if (!std::isfinite(v.normal.z)) v.normal.z = 1.0f;
+            if (!std::isfinite(v.texCoord.x)) v.texCoord.x = 0.0f;
+            if (!std::isfinite(v.texCoord.y)) v.texCoord.y = 0.0f;
+            for (int c = 0; c < 4; c++)
+                if (!std::isfinite(v.color[c])) v.color[c] = 1.0f;
+        }
         grp.indices.resize(ic);
         f.read(reinterpret_cast<char*>(grp.indices.data()), ic * 4);
+        // Same out-of-range index clamp as the WOM loader — bad indices
+        // would crash the GPU draw on the WMO group.
+        const uint32_t vMax = vc > 0 ? vc - 1 : 0;
+        for (auto& idx : grp.indices) {
+            if (idx > vMax) idx = 0;
+        }
 
+        // Helper: clear path on traversal/absolute attempt.
+        auto rejectTraversal = [](std::string& s, const char* what) {
+            if (s.find("..") != std::string::npos ||
+                (!s.empty() && (s[0] == '/' || s[0] == '\\')) ||
+                (s.size() >= 2 && s[1] == ':')) {
+                LOG_WARNING("WOB ", what, " path rejected (traversal): ", s);
+                s.clear();
+            }
+        };
         for (uint32_t ti = 0; ti < tc; ti++) {
             uint16_t tl;
             f.read(reinterpret_cast<char*>(&tl), 2);
+            if (tl > 1024) tl = 0;
             std::string tp(tl, '\0');
             f.read(tp.data(), tl);
+            rejectTraversal(tp, "group texture");
             grp.texturePaths.push_back(tp);
         }
 
@@ -72,8 +122,10 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
                 WoweeBuilding::Material mat;
                 uint16_t pl;
                 f.read(reinterpret_cast<char*>(&pl), 2);
+                if (pl > 1024) pl = 0;
                 mat.texturePath.resize(pl);
                 f.read(mat.texturePath.data(), pl);
+                rejectTraversal(mat.texturePath, "material texture");
                 f.read(reinterpret_cast<char*>(&mat.flags), 4);
                 f.read(reinterpret_cast<char*>(&mat.shader), 4);
                 f.read(reinterpret_cast<char*>(&mat.blendMode), 4);
@@ -90,6 +142,11 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         f.read(reinterpret_cast<char*>(&portal.groupB), 4);
         uint32_t pvCount;
         f.read(reinterpret_cast<char*>(&pvCount), 4);
+        // Real portals are 4-12 vertices; >4096 is corrupt.
+        if (pvCount > 4096) {
+            LOG_ERROR("WOB portal ", pi, " vertex count rejected (", pvCount, "): ", basePath);
+            return WoweeBuilding{};
+        }
         portal.vertices.resize(pvCount);
         f.read(reinterpret_cast<char*>(portal.vertices.data()), pvCount * 12);
         bld.portals.push_back(portal);
@@ -99,11 +156,26 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         WoweeBuilding::DoodadPlacement dp;
         uint16_t pl;
         f.read(reinterpret_cast<char*>(&pl), 2);
+        if (pl > 1024) pl = 0;
         dp.modelPath.resize(pl);
         f.read(dp.modelPath.data(), pl);
+        // Reject path-traversal in doodad model paths — these end up in
+        // outModel.doodadNames and are passed to the asset manager. While
+        // the manager only reads files, '..' paths in custom_zones could
+        // probe for files outside the assets/ tree.
+        if (dp.modelPath.find("..") != std::string::npos ||
+            (!dp.modelPath.empty() && (dp.modelPath[0] == '/' || dp.modelPath[0] == '\\')) ||
+            (dp.modelPath.size() >= 2 && dp.modelPath[1] == ':')) {
+            LOG_WARNING("WOB doodad path rejected (traversal): ", dp.modelPath);
+            dp.modelPath.clear();
+        }
         f.read(reinterpret_cast<char*>(&dp.position), 12);
         f.read(reinterpret_cast<char*>(&dp.rotation), 12);
         f.read(reinterpret_cast<char*>(&dp.scale), 4);
+        // Guard against corrupted scale (older WoBs that hadn't initialized
+        // the field, or NaNs from a partial write). The renderer would
+        // collapse the doodad to a point with scale 0.
+        if (!std::isfinite(dp.scale) || dp.scale <= 0.0001f) dp.scale = 1.0f;
         bld.doodads.push_back(dp);
     }
 
@@ -126,16 +198,24 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
     f.write(reinterpret_cast<const char*>(&gc), 4);
     f.write(reinterpret_cast<const char*>(&pc), 4);
     f.write(reinterpret_cast<const char*>(&dc), 4);
-    f.write(reinterpret_cast<const char*>(&bld.boundRadius), 4);
+    // Same float sanitize as WOM/WOC saves — defaults to 1.0 if non-finite.
+    float boundRadius = std::isfinite(bld.boundRadius) && bld.boundRadius >= 0.0f
+                            ? bld.boundRadius : 1.0f;
+    f.write(reinterpret_cast<const char*>(&boundRadius), 4);
 
-    uint16_t nl = static_cast<uint16_t>(bld.name.size());
-    f.write(reinterpret_cast<const char*>(&nl), 2);
-    f.write(bld.name.data(), nl);
+    // Truncate length-prefixed strings to fit their u16 length field — without
+    // this, names over 65535 chars would silently get a wrap-around length and
+    // produce a corrupt file (the string text would be longer than the saved
+    // length and shift everything after it).
+    auto writeStr = [&](const std::string& s, size_t maxLen = 1024) {
+        uint16_t len = static_cast<uint16_t>(std::min<size_t>(s.size(), maxLen));
+        f.write(reinterpret_cast<const char*>(&len), 2);
+        f.write(s.data(), len);
+    };
+    writeStr(bld.name);
 
     for (const auto& grp : bld.groups) {
-        uint16_t gnl = static_cast<uint16_t>(grp.name.size());
-        f.write(reinterpret_cast<const char*>(&gnl), 2);
-        f.write(grp.name.data(), gnl);
+        writeStr(grp.name);
 
         uint32_t vc = static_cast<uint32_t>(grp.vertices.size());
         uint32_t ic = static_cast<uint32_t>(grp.indices.size());
@@ -145,26 +225,26 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         f.write(reinterpret_cast<const char*>(&tc), 4);
         uint8_t outdoor = grp.isOutdoor ? 1 : 0;
         f.write(reinterpret_cast<const char*>(&outdoor), 1);
-        f.write(reinterpret_cast<const char*>(&grp.boundMin), 12);
-        f.write(reinterpret_cast<const char*>(&grp.boundMax), 12);
+        // Sanitize group bounds — non-finite would corrupt cull frustum.
+        glm::vec3 bMin = grp.boundMin, bMax = grp.boundMax;
+        for (int k = 0; k < 3; k++) {
+            if (!std::isfinite(bMin[k])) bMin[k] = 0.0f;
+            if (!std::isfinite(bMax[k])) bMax[k] = 0.0f;
+        }
+        f.write(reinterpret_cast<const char*>(&bMin), 12);
+        f.write(reinterpret_cast<const char*>(&bMax), 12);
 
         f.write(reinterpret_cast<const char*>(grp.vertices.data()),
                 vc * sizeof(WoweeBuilding::Vertex));
         f.write(reinterpret_cast<const char*>(grp.indices.data()), ic * 4);
 
-        for (const auto& tp : grp.texturePaths) {
-            uint16_t tl = static_cast<uint16_t>(tp.size());
-            f.write(reinterpret_cast<const char*>(&tl), 2);
-            f.write(tp.data(), tl);
-        }
+        for (const auto& tp : grp.texturePaths) writeStr(tp);
 
         // Write material data
         uint32_t mc = static_cast<uint32_t>(grp.materials.size());
         f.write(reinterpret_cast<const char*>(&mc), 4);
         for (const auto& mat : grp.materials) {
-            uint16_t pl = static_cast<uint16_t>(mat.texturePath.size());
-            f.write(reinterpret_cast<const char*>(&pl), 2);
-            f.write(mat.texturePath.data(), pl);
+            writeStr(mat.texturePath);
             f.write(reinterpret_cast<const char*>(&mat.flags), 4);
             f.write(reinterpret_cast<const char*>(&mat.shader), 4);
             f.write(reinterpret_cast<const char*>(&mat.blendMode), 4);
@@ -180,9 +260,7 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
     }
 
     for (const auto& dp : bld.doodads) {
-        uint16_t pl = static_cast<uint16_t>(dp.modelPath.size());
-        f.write(reinterpret_cast<const char*>(&pl), 2);
-        f.write(dp.modelPath.data(), pl);
+        writeStr(dp.modelPath);
         f.write(reinterpret_cast<const char*>(&dp.position), 12);
         f.write(reinterpret_cast<const char*>(&dp.rotation), 12);
         f.write(reinterpret_cast<const char*>(&dp.scale), 4);
@@ -197,12 +275,66 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
 
     outModel.nGroups = static_cast<uint32_t>(building.groups.size());
     outModel.groups.clear();
+    outModel.textures.clear();
+    outModel.materials.clear();
+    outModel.portals.clear();
+    outModel.portalVertices.clear();
+    outModel.portalRefs.clear();
+
+    // Build a global texture index from per-material texturePath strings.
+    // First-group materials become the WMO material list; each unique texture
+    // gets one entry in outModel.textures.
+
+    // Reverse the .blp -> .png conversion that fromWMO did, since the WMO
+    // renderer's PNG override system only triggers when the requested texture
+    // path ends in .blp (it then probes for a .png next to the cache file).
+    auto textureIndex = [&](const std::string& path) -> uint32_t {
+        std::string p = path;
+        if (p.size() >= 4) {
+            std::string ext = p.substr(p.size() - 4);
+            if (ext == ".png" || ext == ".PNG") p = p.substr(0, p.size() - 4) + ".blp";
+        }
+        if (p.empty()) return 0;
+        for (uint32_t i = 0; i < outModel.textures.size(); i++) {
+            if (outModel.textures[i] == p) return i;
+        }
+        outModel.textures.push_back(p);
+        return static_cast<uint32_t>(outModel.textures.size() - 1);
+    };
+
+    // Collect unique materials across all groups. WMO has a single global
+    // materials array shared by every group's batches; pulling only from
+    // group[0] dropped per-group materials. Dedupe by (texture, blend, flags).
+    auto materialKey = [](const WoweeBuilding::Material& m) {
+        return m.texturePath + "|" + std::to_string(m.flags) + "|" + std::to_string(m.blendMode);
+    };
+    std::unordered_map<std::string, uint32_t> materialIndex;
+    for (const auto& grp : building.groups) {
+        for (const auto& mat : grp.materials) {
+            std::string key = materialKey(mat);
+            if (materialIndex.count(key)) continue;
+            WMOMaterial wm{};
+            wm.flags = mat.flags;
+            wm.shader = mat.shader;
+            wm.blendMode = mat.blendMode;
+            wm.texture1 = textureIndex(mat.texturePath);
+            wm.color1 = 0;
+            wm.texture2 = 0;
+            wm.color2 = 0;
+            wm.texture3 = 0;
+            wm.color3 = 0;
+            materialIndex[key] = static_cast<uint32_t>(outModel.materials.size());
+            outModel.materials.push_back(wm);
+        }
+    }
 
     for (const auto& grp : building.groups) {
         WMOGroup wmoGroup;
         wmoGroup.name = grp.name;
+        wmoGroup.boundingBoxMin = grp.boundMin;
+        wmoGroup.boundingBoxMax = grp.boundMax;
+        if (grp.isOutdoor) wmoGroup.flags |= 0x08;
 
-        // Convert vertices
         wmoGroup.vertices.reserve(grp.vertices.size());
         for (const auto& v : grp.vertices) {
             WMOVertex wv;
@@ -213,7 +345,6 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
             wmoGroup.vertices.push_back(wv);
         }
 
-        // Convert indices
         wmoGroup.indices.reserve(grp.indices.size());
         for (uint32_t idx : grp.indices)
             wmoGroup.indices.push_back(static_cast<uint16_t>(idx));
@@ -221,8 +352,64 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
         outModel.groups.push_back(std::move(wmoGroup));
     }
 
-    // WMOModel uses isValid() = nGroups > 0 && !groups.empty()
-    // Both are now set, so isValid() will return true
+    // Reconstruct portal vertices + refs from WoB's higher-level portal struct.
+    for (const auto& wp : building.portals) {
+        WMOPortal portal{};
+        portal.startVertex = static_cast<uint16_t>(outModel.portalVertices.size());
+        portal.vertexCount = static_cast<uint16_t>(wp.vertices.size());
+        portal.planeIndex = 0;
+        for (const auto& v : wp.vertices) outModel.portalVertices.push_back(v);
+        uint16_t portalIdx = static_cast<uint16_t>(outModel.portals.size());
+        outModel.portals.push_back(portal);
+        if (wp.groupA >= 0) {
+            outModel.portalRefs.push_back({portalIdx, static_cast<uint16_t>(wp.groupA), -1, 0});
+        }
+        if (wp.groupB >= 0) {
+            outModel.portalRefs.push_back({portalIdx, static_cast<uint16_t>(wp.groupB), 1, 0});
+        }
+    }
+
+    // Restore doodads. WMODoodad keys nameIndex by MODN byte offset; we just
+    // assign sequential offsets here since none of our paths share suffixes.
+    outModel.doodads.clear();
+    outModel.doodadNames.clear();
+    outModel.doodadSets.clear();
+    uint32_t doodadOffset = 0;
+    for (const auto& dp : building.doodads) {
+        // Convert WOM extension back to M2 for the runtime that may not have a
+        // WOM-aware loader for in-WMO doodads yet.
+        std::string mp = dp.modelPath;
+        auto dot = mp.rfind('.');
+        if (dot != std::string::npos) {
+            std::string ext = mp.substr(dot + 1);
+            if (ext == "wom") mp = mp.substr(0, dot) + ".m2";
+        }
+        outModel.doodadNames[doodadOffset] = mp;
+
+        WMODoodad d{};
+        d.nameIndex = doodadOffset;
+        d.position = dp.position;
+        // Convert euler degrees -> quaternion using the same convention that
+        // glm::eulerAngles uses (so this round-trips cleanly with fromWMO).
+        d.rotation = glm::quat(glm::radians(dp.rotation));
+        d.scale = dp.scale;
+        d.color = glm::vec4(1.0f);
+        outModel.doodads.push_back(d);
+        doodadOffset += static_cast<uint32_t>(mp.size() + 1);
+    }
+
+    // Renderer uses doodadSets[0] to know which slice of doodads to render.
+    // Without it, even with doodads populated, nothing draws. Emit a default
+    // "Set_$DefaultGlobal" set covering every doodad.
+    if (!outModel.doodads.empty()) {
+        WMODoodadSet ds{};
+        std::strncpy(ds.name, "Set_$DefaultGlobal", sizeof(ds.name) - 1);
+        ds.startIndex = 0;
+        ds.count = static_cast<uint32_t>(outModel.doodads.size());
+        ds.padding = 0;
+        outModel.doodadSets.push_back(ds);
+    }
+
     return true;
 }
 
@@ -245,10 +432,22 @@ WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::strin
             wv.normal = v.normal;
             wv.texCoord = v.texCoord;
             wv.color = v.color;
+            // Sanitize on conversion so a corrupt source WMO doesn't poison
+            // the WOB and then surprise us on later reload.
+            if (!std::isfinite(wv.position.x)) wv.position.x = 0.0f;
+            if (!std::isfinite(wv.position.y)) wv.position.y = 0.0f;
+            if (!std::isfinite(wv.position.z)) wv.position.z = 0.0f;
+            if (!std::isfinite(wv.normal.x)) wv.normal.x = 0.0f;
+            if (!std::isfinite(wv.normal.y)) wv.normal.y = 0.0f;
+            if (!std::isfinite(wv.normal.z)) wv.normal.z = 1.0f;
+            if (!std::isfinite(wv.texCoord.x)) wv.texCoord.x = 0.0f;
+            if (!std::isfinite(wv.texCoord.y)) wv.texCoord.y = 0.0f;
+            for (int c = 0; c < 4; c++)
+                if (!std::isfinite(wv.color[c])) wv.color[c] = 1.0f;
             wobGroup.vertices.push_back(wv);
 
-            float d = glm::length(v.position);
-            if (d > maxDist) maxDist = d;
+            float d = glm::length(wv.position);
+            if (std::isfinite(d) && d > maxDist) maxDist = d;
         }
 
         wobGroup.indices.reserve(grp.indices.size());
@@ -276,6 +475,28 @@ WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::strin
 
     bld.boundRadius = maxDist;
 
+    // Extract portals (vertex polygons + group links via MOPR refs).
+    // Each MOPR ref links a portal to one of its two adjacent groups; pairing
+    // refs with the same portalIndex gives us groupA/groupB for that portal.
+    for (size_t pi = 0; pi < wmo.portals.size(); pi++) {
+        const auto& wmoPortal = wmo.portals[pi];
+        WoweeBuilding::Portal wp;
+        wp.groupA = -1;
+        wp.groupB = -1;
+        for (const auto& ref : wmo.portalRefs) {
+            if (ref.portalIndex != static_cast<uint16_t>(pi)) continue;
+            if (wp.groupA < 0) wp.groupA = ref.groupIndex;
+            else if (wp.groupB < 0) wp.groupB = ref.groupIndex;
+        }
+        for (uint16_t vi = 0; vi < wmoPortal.vertexCount; vi++) {
+            uint32_t idx = wmoPortal.startVertex + vi;
+            if (idx < wmo.portalVertices.size()) {
+                wp.vertices.push_back(wmo.portalVertices[idx]);
+            }
+        }
+        if (!wp.vertices.empty()) bld.portals.push_back(std::move(wp));
+    }
+
     for (const auto& doodad : wmo.doodads) {
         auto nameIt = wmo.doodadNames.find(doodad.nameIndex);
         if (nameIt == wmo.doodadNames.end()) continue;
@@ -297,6 +518,30 @@ WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::strin
     LOG_INFO("WOB from WMO: ", bld.name, " (", bld.groups.size(), " groups, ",
              bld.doodads.size(), " doodads)");
     return bld;
+}
+
+WoweeBuilding WoweeBuildingLoader::tryLoadByGamePath(
+    const std::string& gamePath,
+    const std::vector<std::string>& extraPrefixes) {
+    std::string base = gamePath;
+    auto dot = base.rfind('.');
+    if (dot != std::string::npos) base = base.substr(0, dot);
+    std::replace(base.begin(), base.end(), '\\', '/');
+    auto tryPrefix = [&](const std::string& prefix) -> WoweeBuilding {
+        std::string full = prefix + base;
+        if (exists(full)) {
+            auto wob = load(full);
+            if (wob.isValid()) return wob;
+        }
+        return {};
+    };
+    for (const auto& p : extraPrefixes) {
+        if (auto w = tryPrefix(p); w.isValid()) return w;
+    }
+    for (const char* p : {"custom_zones/buildings/", "output/buildings/"}) {
+        if (auto w = tryPrefix(p); w.isValid()) return w;
+    }
+    return {};
 }
 
 } // namespace pipeline

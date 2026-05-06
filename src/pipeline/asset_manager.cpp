@@ -231,20 +231,41 @@ BLPImage AssetManager::tryLoadPngOverride(const std::string& normalizedPath) con
     std::string ext = normalizedPath.substr(normalizedPath.size() - 4);
     if (ext != ".blp") return BLPImage();
 
+    // Try the standard sidecar path first: extracted .blp's directory + .png.
     std::string fsPath = resolveFile(normalizedPath);
-    if (fsPath.empty()) return BLPImage();
-
-    // Replace .blp/.BLP extension with .png
-    if (fsPath.size() < 4) return BLPImage();
-    std::string pngPath = fsPath.substr(0, fsPath.size() - 4) + ".png";
-    if (!LooseFileReader::fileExists(pngPath)) {
-        return BLPImage();
+    std::string pngPath;
+    if (!fsPath.empty() && fsPath.size() >= 4) {
+        pngPath = fsPath.substr(0, fsPath.size() - 4) + ".png";
+        if (!LooseFileReader::fileExists(pngPath)) pngPath.clear();
     }
+
+    // Fallback: probe well-known custom-zone texture roots so that PNG-only
+    // assets ship without needing a phantom BLP manifest entry. Path is
+    // forward-slash + lowercase to match the editor's PNG export convention.
+    if (pngPath.empty()) {
+        std::string norm = normalizedPath;
+        std::replace(norm.begin(), norm.end(), '\\', '/');
+        std::transform(norm.begin(), norm.end(), norm.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        std::string candidate = norm.substr(0, norm.size() - 4) + ".png";
+        for (const char* root : {"custom_zones/textures/", "output/textures/"}) {
+            std::string p = std::string(root) + candidate;
+            if (LooseFileReader::fileExists(p)) { pngPath = p; break; }
+        }
+    }
+    if (pngPath.empty()) return BLPImage();
 
     int w, h, channels;
     unsigned char* pixels = stbi_load(pngPath.c_str(), &w, &h, &channels, 4);
     if (!pixels) {
         LOG_WARNING("PNG override exists but failed to load: ", pngPath);
+        return BLPImage();
+    }
+    // Cap texture dimensions. WoW textures top out at 4K; stbi can return
+    // 32K x 32K which would allocate 4GB on a malicious PNG.
+    if (w <= 0 || h <= 0 || w > 8192 || h > 8192) {
+        LOG_WARNING("PNG override dimensions out of range (", w, "x", h, "): ", pngPath);
+        stbi_image_free(pixels);
         return BLPImage();
     }
 
@@ -254,7 +275,7 @@ BLPImage AssetManager::tryLoadPngOverride(const std::string& normalizedPath) con
     image.channels = 4;
     image.format = BLPFormat::BLP2;
     image.compression = BLPCompression::ARGB8888;
-    image.data.assign(pixels, pixels + (w * h * 4));
+    image.data.assign(pixels, pixels + (static_cast<size_t>(w) * h * 4));
     stbi_image_free(pixels);
 
     LOG_INFO("PNG override loaded: ", pngPath, " (", w, "x", h, ")");

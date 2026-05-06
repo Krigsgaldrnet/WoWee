@@ -5,12 +5,14 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <cmath>
 
 namespace wowee {
 namespace pipeline {
 
 static constexpr uint32_t WOM_MAGIC = 0x314D4F57; // "WOM1"
 static constexpr uint32_t WOM2_MAGIC = 0x324D4F57; // "WOM2"
+static constexpr uint32_t WOM3_MAGIC = 0x334D4F57; // "WOM3"
 
 bool WoweeModelLoader::exists(const std::string& basePath) {
     return std::filesystem::exists(basePath + ".wom");
@@ -25,9 +27,10 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
 
     uint32_t magic;
     f.read(reinterpret_cast<char*>(&magic), 4);
-    bool isV2 = (magic == WOM2_MAGIC);
-    if (magic != WOM_MAGIC && magic != WOM2_MAGIC) return model;
-    model.version = isV2 ? 2 : 1;
+    bool isV2 = (magic == WOM2_MAGIC || magic == WOM3_MAGIC);
+    bool isV3 = (magic == WOM3_MAGIC);
+    if (magic != WOM_MAGIC && magic != WOM2_MAGIC && magic != WOM3_MAGIC) return model;
+    model.version = isV3 ? 3 : (isV2 ? 2 : 1);
 
     uint32_t vertCount, indexCount, texCount;
     f.read(reinterpret_cast<char*>(&vertCount), 4);
@@ -36,6 +39,26 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
     f.read(reinterpret_cast<char*>(&model.boundRadius), 4);
     f.read(reinterpret_cast<char*>(&model.boundMin), 12);
     f.read(reinterpret_cast<char*>(&model.boundMax), 12);
+    // Sanity bounds. Real M2 models cap at 65k vertices (uint16 indices) and
+    // typically 64 textures. Reject obviously corrupted counts before we
+    // try to allocate huge vertex/index buffers.
+    if (vertCount > 1'000'000 || indexCount > 4'000'000 || texCount > 1024) {
+        LOG_ERROR("WOM header rejected (verts=", vertCount,
+                  " indices=", indexCount, " textures=", texCount, "): ", basePath);
+        return WoweeModel{};
+    }
+
+    // Bound sanity — radius drives M2 culling, min/max drive collision AABBs.
+    // NaN/inf would either cull-out the model or crash the cull math.
+    if (!std::isfinite(model.boundRadius) || model.boundRadius < 0.0f)
+        model.boundRadius = 1.0f;
+    auto sanitiseVec = [](glm::vec3& v) {
+        if (!std::isfinite(v.x)) v.x = 0.0f;
+        if (!std::isfinite(v.y)) v.y = 0.0f;
+        if (!std::isfinite(v.z)) v.z = 0.0f;
+    };
+    sanitiseVec(model.boundMin);
+    sanitiseVec(model.boundMax);
 
     uint16_t nameLen;
     f.read(reinterpret_cast<char*>(&nameLen), 2);
@@ -58,15 +81,46 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
             model.vertices[i].texCoord = v1.uv;
         }
     }
+    // Sanitize per-vertex floats. NaN/inf positions crash the M2 vertex
+    // shader (silent device-lost on some drivers) — safer to render the
+    // vertex at the origin than corrupt the whole pipeline.
+    for (auto& v : model.vertices) {
+        if (!std::isfinite(v.position.x)) v.position.x = 0.0f;
+        if (!std::isfinite(v.position.y)) v.position.y = 0.0f;
+        if (!std::isfinite(v.position.z)) v.position.z = 0.0f;
+        if (!std::isfinite(v.normal.x)) v.normal.x = 0.0f;
+        if (!std::isfinite(v.normal.y)) v.normal.y = 0.0f;
+        if (!std::isfinite(v.normal.z)) v.normal.z = 1.0f;
+        if (!std::isfinite(v.texCoord.x)) v.texCoord.x = 0.0f;
+        if (!std::isfinite(v.texCoord.y)) v.texCoord.y = 0.0f;
+    }
 
     model.indices.resize(indexCount);
     f.read(reinterpret_cast<char*>(model.indices.data()), indexCount * 4);
+    // Clamp out-of-range indices — these would index past the vertex buffer
+    // and crash the GPU vertex shader. Replace with 0 rather than drop, so
+    // triangle counts stay aligned (a degenerate triangle is harmless,
+    // an off-by-one indexing the wrong vertex is silent corruption).
+    const uint32_t vMax = vertCount > 0 ? vertCount - 1 : 0;
+    for (auto& idx : model.indices) {
+        if (idx > vMax) idx = 0;
+    }
 
     for (uint32_t i = 0; i < texCount; i++) {
         uint16_t pathLen;
         f.read(reinterpret_cast<char*>(&pathLen), 2);
+        // Reject absurd path lengths (corrupted/truncated file).
+        if (pathLen > 1024) { pathLen = 0; }
         std::string path(pathLen, '\0');
         f.read(path.data(), pathLen);
+        // Reject path-traversal — texture paths from a hostile WOM are fed
+        // to the asset manager and could probe files outside assets/.
+        if (path.find("..") != std::string::npos ||
+            (!path.empty() && (path[0] == '/' || path[0] == '\\')) ||
+            (path.size() >= 2 && path[1] == ':')) {
+            LOG_WARNING("WOM texture path rejected (traversal): ", path);
+            path.clear();
+        }
         model.texturePaths.push_back(path);
     }
 
@@ -81,10 +135,27 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
                 f.read(reinterpret_cast<char*>(&bone.parentBone), 2);
                 f.read(reinterpret_cast<char*>(&bone.pivot), 12);
                 f.read(reinterpret_cast<char*>(&bone.flags), 4);
+                // Sanitize pivot — bones with NaN pivots produce broken
+                // skeleton matrices that ripple into every child bone.
+                if (!std::isfinite(bone.pivot.x)) bone.pivot.x = 0.0f;
+                if (!std::isfinite(bone.pivot.y)) bone.pivot.y = 0.0f;
+                if (!std::isfinite(bone.pivot.z)) bone.pivot.z = 0.0f;
+                // parentBone must be < boneCount (or -1) — out-of-range
+                // parents would cause a use-after-free during bone-matrix
+                // computation that walks the parent chain.
+                if (bone.parentBone >= 0 &&
+                    static_cast<uint32_t>(bone.parentBone) >= boneCount) {
+                    bone.parentBone = -1;
+                }
             }
         }
 
         uint32_t animCount = 0;
+        // Track total keyframes loaded; cap at 10M total to prevent a
+        // pathological model (e.g. 1024 anims × 512 bones × 10K keys = 5B
+        // keyframes attempted otherwise).
+        size_t totalKeyframes = 0;
+        constexpr size_t kMaxTotalKeyframes = 10'000'000;
         if (f.read(reinterpret_cast<char*>(&animCount), 4) && animCount > 0 && animCount <= 1024) {
             model.animations.resize(animCount);
             for (uint32_t ai = 0; ai < animCount; ai++) {
@@ -92,17 +163,39 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
                 f.read(reinterpret_cast<char*>(&anim.id), 4);
                 f.read(reinterpret_cast<char*>(&anim.durationMs), 4);
                 f.read(reinterpret_cast<char*>(&anim.movingSpeed), 4);
+                // Reject NaN movingSpeed; it leaks into displacement maths.
+                if (!std::isfinite(anim.movingSpeed)) anim.movingSpeed = 0.0f;
 
                 anim.boneKeyframes.resize(model.bones.size());
                 for (size_t bi = 0; bi < model.bones.size(); bi++) {
                     uint32_t kfCount = 0;
                     f.read(reinterpret_cast<char*>(&kfCount), 4);
+                    if (totalKeyframes >= kMaxTotalKeyframes) {
+                        // Skip the keyframe payload by seeking past it so we
+                        // don't desync the remaining anims/bones.
+                        f.seekg(static_cast<std::streamoff>(kfCount) * 44, std::ios::cur);
+                        continue;
+                    }
                     for (uint32_t ki = 0; ki < kfCount && ki < 10000; ki++) {
+                        if (totalKeyframes++ >= kMaxTotalKeyframes) break;
                         WoweeModel::AnimKeyframe kf;
                         f.read(reinterpret_cast<char*>(&kf.timeMs), 4);
                         f.read(reinterpret_cast<char*>(&kf.translation), 12);
                         f.read(reinterpret_cast<char*>(&kf.rotation), 16);
                         f.read(reinterpret_cast<char*>(&kf.scale), 12);
+                        // Sanitize keyframe floats — bone interp returns NaN
+                        // for any NaN input and corrupts the whole skeleton.
+                        auto fixVec = [](glm::vec3& v, float def) {
+                            if (!std::isfinite(v.x)) v.x = def;
+                            if (!std::isfinite(v.y)) v.y = def;
+                            if (!std::isfinite(v.z)) v.z = def;
+                        };
+                        fixVec(kf.translation, 0.0f);
+                        fixVec(kf.scale, 1.0f);
+                        if (!std::isfinite(kf.rotation.x)) kf.rotation.x = 0.0f;
+                        if (!std::isfinite(kf.rotation.y)) kf.rotation.y = 0.0f;
+                        if (!std::isfinite(kf.rotation.z)) kf.rotation.z = 0.0f;
+                        if (!std::isfinite(kf.rotation.w)) kf.rotation.w = 1.0f;
                         anim.boneKeyframes[bi].push_back(kf);
                     }
                 }
@@ -110,8 +203,37 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
         }
     }
 
-    LOG_INFO("WOM", (isV2 ? "2" : "1"), " loaded: ", basePath, " (", vertCount, " verts, ",
-             model.bones.size(), " bones, ", model.animations.size(), " anims)");
+    // WOM3: read batches (multi-material support).
+    // Validate each batch references a real slice of the index buffer and a
+    // real texture so a corrupted file can't crash the renderer.
+    if (isV3) {
+        uint32_t batchCount = 0;
+        if (f.read(reinterpret_cast<char*>(&batchCount), 4) && batchCount > 0 && batchCount <= 4096) {
+            model.batches.reserve(batchCount);
+            for (uint32_t i = 0; i < batchCount; i++) {
+                WoweeModel::Batch b;
+                f.read(reinterpret_cast<char*>(&b.indexStart), 4);
+                f.read(reinterpret_cast<char*>(&b.indexCount), 4);
+                f.read(reinterpret_cast<char*>(&b.textureIndex), 4);
+                f.read(reinterpret_cast<char*>(&b.blendMode), 2);
+                f.read(reinterpret_cast<char*>(&b.flags), 2);
+                if (b.indexCount == 0 ||
+                    static_cast<uint64_t>(b.indexStart) + b.indexCount > model.indices.size() ||
+                    (b.textureIndex >= model.texturePaths.size() && !model.texturePaths.empty())) {
+                    LOG_WARNING("WOM3 batch ", i, " out of range (start=", b.indexStart,
+                                " count=", b.indexCount, " tex=", b.textureIndex,
+                                " maxIdx=", model.indices.size(),
+                                " maxTex=", model.texturePaths.size(), ") — dropping");
+                    continue;
+                }
+                model.batches.push_back(b);
+            }
+        }
+    }
+
+    LOG_INFO("WOM", (isV3 ? "3" : (isV2 ? "2" : "1")), " loaded: ", basePath, " (",
+             vertCount, " verts, ", model.bones.size(), " bones, ",
+             model.animations.size(), " anims, ", model.batches.size(), " batches)");
     return model;
 }
 
@@ -124,7 +246,13 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
     if (!f) return false;
 
     bool hasAnim = model.hasAnimation();
-    uint32_t magic = hasAnim ? WOM2_MAGIC : WOM_MAGIC;
+    bool hasBatches = model.hasBatches();
+    // WOM3 implies WOM2 layout (vertex format with bones), so we only emit
+    // WOM3 if the model also has animation data — pure-batch static meshes
+    // still go to WOM1/WOM2 with batches written via the WOM3 trailing block
+    // when present alongside animation. For static-only with batches, write
+    // as WOM3 anyway (decoder handles missing bones).
+    uint32_t magic = hasBatches ? WOM3_MAGIC : (hasAnim ? WOM2_MAGIC : WOM_MAGIC);
     f.write(reinterpret_cast<const char*>(&magic), 4);
 
     uint32_t vertCount = static_cast<uint32_t>(model.vertices.size());
@@ -133,16 +261,33 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
     f.write(reinterpret_cast<const char*>(&vertCount), 4);
     f.write(reinterpret_cast<const char*>(&indexCount), 4);
     f.write(reinterpret_cast<const char*>(&texCount), 4);
-    f.write(reinterpret_cast<const char*>(&model.boundRadius), 4);
-    f.write(reinterpret_cast<const char*>(&model.boundMin), 12);
-    f.write(reinterpret_cast<const char*>(&model.boundMax), 12);
+    // Sanitize bound floats at save time; matches the load-time guard so a
+    // partial-write or in-memory corruption can't poison the file.
+    float boundRadius = std::isfinite(model.boundRadius) && model.boundRadius >= 0.0f
+                            ? model.boundRadius : 1.0f;
+    glm::vec3 boundMin = model.boundMin, boundMax = model.boundMax;
+    auto sanVec3 = [](glm::vec3& v) {
+        if (!std::isfinite(v.x)) v.x = 0.0f;
+        if (!std::isfinite(v.y)) v.y = 0.0f;
+        if (!std::isfinite(v.z)) v.z = 0.0f;
+    };
+    sanVec3(boundMin);
+    sanVec3(boundMax);
+    f.write(reinterpret_cast<const char*>(&boundRadius), 4);
+    f.write(reinterpret_cast<const char*>(&boundMin), 12);
+    f.write(reinterpret_cast<const char*>(&boundMax), 12);
 
-    uint16_t nameLen = static_cast<uint16_t>(model.name.size());
-    f.write(reinterpret_cast<const char*>(&nameLen), 2);
-    f.write(model.name.data(), nameLen);
+    // Same writeStr pattern as WoB: truncate to 1KB so the u16 length doesn't
+    // wrap and corrupt the rest of the file.
+    auto writeStr = [&](const std::string& s, size_t maxLen = 1024) {
+        uint16_t len = static_cast<uint16_t>(std::min<size_t>(s.size(), maxLen));
+        f.write(reinterpret_cast<const char*>(&len), 2);
+        f.write(s.data(), len);
+    };
+    writeStr(model.name);
 
-    // WOM2 writes full vertex with bone data; WOM1 writes 32-byte vertex
-    if (hasAnim) {
+    // WOM2/WOM3 write full vertex with bone data; WOM1 writes 32-byte vertex
+    if (hasAnim || hasBatches) {
         f.write(reinterpret_cast<const char*>(model.vertices.data()),
                 vertCount * sizeof(WoweeModel::Vertex));
     } else {
@@ -155,14 +300,10 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
 
     f.write(reinterpret_cast<const char*>(model.indices.data()), indexCount * 4);
 
-    for (const auto& path : model.texturePaths) {
-        uint16_t pathLen = static_cast<uint16_t>(path.size());
-        f.write(reinterpret_cast<const char*>(&pathLen), 2);
-        f.write(path.data(), pathLen);
-    }
+    for (const auto& path : model.texturePaths) writeStr(path);
 
-    // WOM2: write bones and animations
-    if (hasAnim) {
+    // WOM2/WOM3: write bones and animations (always, even if empty for WOM3)
+    if (hasAnim || hasBatches) {
         uint32_t boneCount = static_cast<uint32_t>(model.bones.size());
         f.write(reinterpret_cast<const char*>(&boneCount), 4);
         for (const auto& bone : model.bones) {
@@ -194,8 +335,22 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
         }
     }
 
-    LOG_INFO("WOM", (hasAnim ? "2" : "1"), " saved: ", womPath, " (", vertCount, " verts, ",
-             model.bones.size(), " bones, ", model.animations.size(), " anims)");
+    // WOM3: write batches
+    if (hasBatches) {
+        uint32_t batchCount = static_cast<uint32_t>(model.batches.size());
+        f.write(reinterpret_cast<const char*>(&batchCount), 4);
+        for (const auto& b : model.batches) {
+            f.write(reinterpret_cast<const char*>(&b.indexStart), 4);
+            f.write(reinterpret_cast<const char*>(&b.indexCount), 4);
+            f.write(reinterpret_cast<const char*>(&b.textureIndex), 4);
+            f.write(reinterpret_cast<const char*>(&b.blendMode), 2);
+            f.write(reinterpret_cast<const char*>(&b.flags), 2);
+        }
+    }
+
+    LOG_INFO("WOM", (hasBatches ? "3" : (hasAnim ? "2" : "1")), " saved: ", womPath,
+             " (", vertCount, " verts, ", model.bones.size(), " bones, ",
+             model.animations.size(), " anims, ", model.batches.size(), " batches)");
     return true;
 }
 
@@ -208,7 +363,10 @@ WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am)
 
     auto m2 = M2Loader::load(data);
 
-    if (!m2.isValid()) {
+    // WotLK+ M2s store header in .m2 but geometry in .skin — always merge the
+    // skin file when present so we get vertices/indices/batches even for M2s
+    // that already report isValid() (older expansions).
+    {
         std::string skinPath = m2Path;
         auto dotPos = skinPath.rfind('.');
         if (dotPos != std::string::npos)
@@ -223,7 +381,10 @@ WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am)
     model.name = m2.name;
     model.boundRadius = m2.boundRadius;
 
-    // Convert vertices with bone data
+    // Convert vertices with bone data. Sanitize at conversion time so a
+    // corrupt source M2 (mangled MPQ block, partial extraction) doesn't
+    // silently produce a NaN-laced WOM that the load-time guard then has
+    // to clean up on every load.
     model.vertices.reserve(m2.vertices.size());
     for (const auto& v : m2.vertices) {
         WoweeModel::Vertex wv;
@@ -232,10 +393,18 @@ WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am)
         wv.texCoord = v.texCoords[0];
         std::memcpy(wv.boneWeights, v.boneWeights, 4);
         std::memcpy(wv.boneIndices, v.boneIndices, 4);
+        if (!std::isfinite(wv.position.x)) wv.position.x = 0.0f;
+        if (!std::isfinite(wv.position.y)) wv.position.y = 0.0f;
+        if (!std::isfinite(wv.position.z)) wv.position.z = 0.0f;
+        if (!std::isfinite(wv.normal.x)) wv.normal.x = 0.0f;
+        if (!std::isfinite(wv.normal.y)) wv.normal.y = 0.0f;
+        if (!std::isfinite(wv.normal.z)) wv.normal.z = 1.0f;
+        if (!std::isfinite(wv.texCoord.x)) wv.texCoord.x = 0.0f;
+        if (!std::isfinite(wv.texCoord.y)) wv.texCoord.y = 0.0f;
         model.vertices.push_back(wv);
 
-        model.boundMin = glm::min(model.boundMin, v.position);
-        model.boundMax = glm::max(model.boundMax, v.position);
+        model.boundMin = glm::min(model.boundMin, wv.position);
+        model.boundMax = glm::max(model.boundMax, wv.position);
     }
 
     model.indices.reserve(m2.indices.size());
@@ -258,6 +427,25 @@ WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am)
         wb.pivot = b.pivot;
         wb.flags = b.flags;
         model.bones.push_back(wb);
+    }
+
+    // Convert batches with material/blend mode info (WOM3 feature).
+    // Each M2 batch maps to a WOM batch — preserves multi-submesh material structure.
+    for (const auto& mb : m2.batches) {
+        WoweeModel::Batch wb;
+        wb.indexStart = mb.indexStart;
+        wb.indexCount = mb.indexCount;
+        // Resolve textureLookup -> texture index
+        uint32_t lookupIdx = mb.textureIndex;
+        wb.textureIndex = (lookupIdx < m2.textureLookup.size())
+            ? static_cast<uint32_t>(std::max<int16_t>(0, m2.textureLookup[lookupIdx]))
+            : 0;
+        if (mb.materialIndex < m2.materials.size()) {
+            const auto& mat = m2.materials[mb.materialIndex];
+            wb.blendMode = mat.blendMode;
+            wb.flags = mat.flags;
+        }
+        model.batches.push_back(wb);
     }
 
     // Convert animations (first keyframe per bone per sequence)
@@ -320,8 +508,135 @@ WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am)
         if (anim.durationMs > 0) model.animations.push_back(anim);
     }
 
-    model.version = model.hasAnimation() ? 2 : 1;
+    // Version reflects highest feature in use: WOM3 if multi-batch, WOM2 if
+    // animated, WOM1 if just static geometry. The save() function picks magic
+    // off this same hierarchy.
+    model.version = model.hasBatches() ? 3 : (model.hasAnimation() ? 2 : 1);
     return model;
+}
+
+M2Model WoweeModelLoader::toM2(const WoweeModel& wom) {
+    M2Model m;
+    if (!wom.isValid()) return m;
+
+    m.name = wom.name;
+    m.boundRadius = wom.boundRadius;
+
+    m.vertices.reserve(wom.vertices.size());
+    for (const auto& v : wom.vertices) {
+        M2Vertex mv;
+        mv.position = v.position;
+        mv.normal = v.normal;
+        mv.texCoords[0] = v.texCoord;
+        std::memcpy(mv.boneWeights, v.boneWeights, 4);
+        std::memcpy(mv.boneIndices, v.boneIndices, 4);
+        m.vertices.push_back(mv);
+    }
+
+    m.indices.reserve(wom.indices.size());
+    for (uint32_t idx : wom.indices)
+        m.indices.push_back(static_cast<uint16_t>(idx));
+
+    // Convert .png paths back to .blp so the M2 renderer's PNG override path
+    // engages — it's keyed on .blp extension, not .png. fromM2 stored .png to
+    // signal intent; toM2 has to undo that for the runtime to find textures.
+    for (const auto& tp : wom.texturePaths) {
+        M2Texture tex;
+        tex.type = 0;
+        tex.flags = 0;
+        tex.filename = tp;
+        if (tex.filename.size() >= 4) {
+            std::string ext = tex.filename.substr(tex.filename.size() - 4);
+            if (ext == ".png" || ext == ".PNG")
+                tex.filename = tex.filename.substr(0, tex.filename.size() - 4) + ".blp";
+        }
+        m.textures.push_back(tex);
+    }
+    m.textureLookup.clear();
+    for (uint32_t i = 0; i < wom.texturePaths.size(); i++)
+        m.textureLookup.push_back(static_cast<int16_t>(i));
+    if (m.textureLookup.empty()) m.textureLookup.push_back(0);
+
+    if (wom.hasBatches()) {
+        for (const auto& wb : wom.batches) {
+            M2Batch batch{};
+            batch.indexStart = wb.indexStart;
+            batch.indexCount = wb.indexCount;
+            batch.vertexCount = static_cast<uint32_t>(m.vertices.size());
+            batch.textureCount = 1;
+            // textureLookup may be empty when the WOM has no textures at all;
+            // in that case the renderer falls back to its white default.
+            uint16_t safeTexIdx = m.textureLookup.empty()
+                ? 0
+                : static_cast<uint16_t>(std::min<uint32_t>(wb.textureIndex, m.textureLookup.size() - 1));
+            batch.textureIndex = safeTexIdx;
+            batch.materialIndex = static_cast<uint16_t>(m.materials.size());
+            m.batches.push_back(batch);
+            M2Material mat;
+            mat.flags = wb.flags;
+            mat.blendMode = wb.blendMode;
+            m.materials.push_back(mat);
+        }
+    } else {
+        M2Batch batch{};
+        batch.textureCount = std::min(1u, static_cast<uint32_t>(wom.texturePaths.size()));
+        batch.indexCount = static_cast<uint32_t>(m.indices.size());
+        batch.vertexCount = static_cast<uint32_t>(m.vertices.size());
+        m.batches.push_back(batch);
+        M2Material mat;
+        mat.flags = 0;
+        mat.blendMode = 0;
+        m.materials.push_back(mat);
+    }
+
+    // Copy bones (WOM2/WOM3) — pivot/parent only, animation tracks are filled
+    // from the WoM animation block below.
+    for (const auto& wb : wom.bones) {
+        M2Bone bone;
+        bone.keyBoneId = wb.keyBoneId;
+        bone.parentBone = wb.parentBone;
+        bone.pivot = wb.pivot;
+        bone.flags = wb.flags;
+        m.bones.push_back(bone);
+    }
+
+    // Copy animation sequence headers (id/duration/movingSpeed). Per-bone
+    // keyframes inside WoM are richer than M2Sequence captures so a future
+    // animator may want a deeper conversion; this is enough for length-based
+    // selection in the renderer.
+    for (const auto& wa : wom.animations) {
+        M2Sequence seq;
+        seq.id = wa.id;
+        seq.duration = wa.durationMs;
+        seq.movingSpeed = wa.movingSpeed;
+        m.sequences.push_back(seq);
+    }
+
+    return m;
+}
+
+WoweeModel WoweeModelLoader::tryLoadByGamePath(
+    const std::string& gamePath,
+    const std::vector<std::string>& extraPrefixes) {
+    std::string base = gamePath;
+    auto dot = base.rfind('.');
+    if (dot != std::string::npos) base = base.substr(0, dot);
+    std::replace(base.begin(), base.end(), '\\', '/');
+    auto tryPrefix = [&](const std::string& prefix) -> WoweeModel {
+        std::string full = prefix + base;
+        if (exists(full)) {
+            auto wom = load(full);
+            if (wom.isValid()) return wom;
+        }
+        return {};
+    };
+    for (const auto& p : extraPrefixes) {
+        if (auto w = tryPrefix(p); w.isValid()) return w;
+    }
+    for (const char* p : {"custom_zones/models/", "output/models/"}) {
+        if (auto w = tryPrefix(p); w.isValid()) return w;
+    }
+    return {};
 }
 
 } // namespace pipeline

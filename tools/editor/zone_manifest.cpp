@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <chrono>
 #include <ctime>
+#include <cmath>
+#include <algorithm>
 
 namespace wowee {
 namespace editor {
@@ -85,13 +87,23 @@ bool ZoneManifest::load(const std::string& path) {
         description = j.value("description", "");
         mapId = j.value("mapId", 9000u);
         baseHeight = j.value("baseHeight", 100.0f);
+        // Sanitize edited values — baseHeight propagates into terrain mesh
+        // generation; volume into audio mixer.
+        if (!std::isfinite(baseHeight)) baseHeight = 100.0f;
         hasCreatures = j.value("hasCreatures", false);
 
         tiles.clear();
         if (j.contains("tiles") && j["tiles"].is_array()) {
             for (const auto& t : j["tiles"]) {
-                if (t.is_array() && t.size() >= 2)
-                    tiles.push_back({t[0].get<int>(), t[1].get<int>()});
+                if (t.is_array() && t.size() >= 2) {
+                    int tx = t[0].get<int>();
+                    int ty = t[1].get<int>();
+                    // WoW tile grid is 64x64. Out-of-range coords would
+                    // generate ADT filenames the loader rejects, leaving
+                    // the zone with no terrain.
+                    if (tx < 0 || tx > 63 || ty < 0 || ty > 63) continue;
+                    tiles.push_back({tx, ty});
+                }
             }
         }
 
@@ -112,6 +124,12 @@ bool ZoneManifest::load(const std::string& path) {
             ambienceNight = a.value("ambienceNight", "");
             musicVolume = a.value("musicVolume", 0.7f);
             ambienceVolume = a.value("ambienceVolume", 0.5f);
+            // Clamp volumes to [0, 1] and reject NaN — mixer would otherwise
+            // produce silent or clipping output.
+            if (!std::isfinite(musicVolume)) musicVolume = 0.7f;
+            if (!std::isfinite(ambienceVolume)) ambienceVolume = 0.5f;
+            musicVolume = std::clamp(musicVolume, 0.0f, 1.0f);
+            ambienceVolume = std::clamp(ambienceVolume, 0.0f, 1.0f);
         }
 
         return !mapName.empty();

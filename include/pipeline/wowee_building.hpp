@@ -67,6 +67,15 @@ public:
 
     // Convert WMOModel to WOB (for editor export)
     static WoweeBuilding fromWMO(const class WMOModel& wmo, const std::string& name = "");
+
+    // Convenience: try loading <path-without-ext>.wob from the standard editor
+    // search paths (custom_zones/buildings/, output/buildings/). `extraPrefixes`
+    // are tried before the defaults — pass per-zone roots like
+    // {"output/<map>/buildings/", "custom_zones/<map>/buildings/"} when the
+    // caller knows the active zone. Returns valid building on hit.
+    static WoweeBuilding tryLoadByGamePath(
+        const std::string& gamePath,
+        const std::vector<std::string>& extraPrefixes = {});
 };
 
 } // namespace pipeline

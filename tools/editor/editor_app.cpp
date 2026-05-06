@@ -12,9 +12,11 @@
 #include "sql_exporter.hpp"
 #include "server_module_gen.hpp"
 #include "core/coordinates.hpp"
+#include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 #include "rendering/vk_context.hpp"
 #include "pipeline/adt_loader.hpp"
+#include "pipeline/wdt_loader.hpp"
 #include "pipeline/terrain_mesh.hpp"
 #include "core/logger.hpp"
 #include <imgui.h>
@@ -98,54 +100,100 @@ void EditorApp::run() {
 
         updateToasts(dt);
 
-        // Auto-save
-        if (autoSaveEnabled_ && terrain_.isLoaded() && terrainEditor_.hasUnsavedChanges()) {
-            autoSaveTimer_ += dt;
-            if (autoSaveTimer_ >= autoSaveInterval_) {
-                autoSaveTimer_ = 0.0f;
-                quickSave();
-                showToast("Auto-saved", 2.0f);
-                LOG_INFO("Auto-saved zone");
+        // Auto-save: any unsaved change (terrain edits, object/NPC placement,
+        // quest edits) qualifies. Previously only terrain changes counted.
+        if (autoSaveEnabled_ && terrain_.isLoaded()) {
+            bool dirty = terrainEditor_.hasUnsavedChanges() || autoSavePendingChanges_;
+            if (dirty) {
+                autoSaveTimer_ += dt;
+                if (autoSaveTimer_ >= autoSaveInterval_) {
+                    autoSaveTimer_ = 0.0f;
+                    autoSavePendingChanges_ = false;
+                    quickSave();
+                    showToast("Auto-saved", 2.0f);
+                    LOG_INFO("Auto-saved zone");
+                }
             }
         }
 
         // Refresh dirty terrain chunks
         refreshDirtyChunks();
 
+        // Periodic GPU model cache cleanup. Models that lost all instances
+        // (e.g. user removed every spawn of one creature) get evicted after
+        // the renderer's grace period. Without this the editor would slowly
+        // accumulate GPU memory across long sessions.
+        static float modelCleanupTimer = 0.0f;
+        modelCleanupTimer += dt;
+        if (modelCleanupTimer >= 30.0f) {
+            modelCleanupTimer = 0.0f;
+            if (auto* m2 = viewport_.getM2Renderer()) m2->cleanupUnusedModels();
+        }
+
         // Track object and NPC counts separately
         size_t objCount = objectPlacer_.objectCount();
         size_t npcCount = npcSpawner_.spawnCount();
         bool objChanged = (objCount != lastObjCount_);
-        bool npcChanged = (npcCount != lastNpcCount_) || objectsDirty_;
+        int npcSelIdx = npcSpawner_.getSelectedIndex();
+        bool npcSelChanged = (npcSelIdx != lastNpcSelIdx_);
+        bool npcChanged = (npcCount != lastNpcCount_) || objectsDirty_ || npcSelChanged;
 
         if (npcChanged) {
             // NPC markers are cheap — always update
             viewport_.updateNpcMarkers(npcSpawner_.getSpawns());
             lastNpcCount_ = npcCount;
+            lastNpcSelIdx_ = npcSelIdx;
         }
 
-        if (objChanged || objectsDirty_) {
-            // Full M2 rebuild only when placed objects change
-            objectsDirty_ = false;
-            lastObjCount_ = objCount;
-            if (objCount > 0 || npcCount > 0) {
-                vkDeviceWaitIdle(vkCtx->getDevice());
-                viewport_.rebuildObjects(objectPlacer_.getObjects(), npcSpawner_.getSpawns());
-            }
-            lastNpcCount_ = npcCount; // sync after rebuild
-        }
-
-        // Show gizmo arrows on selected object
+        // Show gizmo arrows on selected object or NPC. NPCs only support move
+        // (rotation is via the orientation slider; scale via the slider).
         auto& gizmo = viewport_.getGizmo();
         if (auto* sel = objectPlacer_.getSelected()) {
             gizmo.setTarget(sel->position, sel->scale);
+        } else if (auto* npc = npcSpawner_.getSelected()) {
+            gizmo.setTarget(npc->position, npc->scale);
         } else {
             gizmo.setMode(TransformMode::None);
+        }
+
+        // Patrol path visualization for the selected NPC.
+        // Adds a loop-back to the start so users can see the cycle the creature follows.
+        if (auto* selNpc = npcSpawner_.getSelected();
+            selNpc && !selNpc->patrolPath.empty()) {
+            std::vector<glm::vec3> pts;
+            pts.reserve(selNpc->patrolPath.size() + 2);
+            pts.push_back(selNpc->position);
+            for (const auto& wp : selNpc->patrolPath) pts.push_back(wp.position);
+            if (selNpc->patrolPath.size() >= 2) pts.push_back(selNpc->position);
+            viewport_.setPatrolPath(pts);
+        } else {
+            viewport_.clearPatrolPath();
         }
 
         uint32_t imageIndex = 0;
         VkCommandBuffer cmd = vkCtx->beginFrame(imageIndex);
         if (cmd == VK_NULL_HANDLE) continue;
+
+        // Rebuild objects AFTER beginFrame so instance SSBO uses correct frame index
+        // Debounce: wait 0.5s after last change before rebuilding to avoid
+        // clear+reload cycle on every click during rapid NPC placement
+        static float rebuildTimer = 0.0f;
+        if (objChanged || objectsDirty_) {
+            rebuildTimer = 0.5f;
+            objectsDirty_ = false;
+            lastObjCount_ = objCount;
+            lastNpcCount_ = npcCount;
+        }
+        if (rebuildTimer > 0.0f) {
+            rebuildTimer -= dt;
+            if (rebuildTimer <= 0.0f) {
+                rebuildTimer = 0.0f;
+                if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0) {
+                    vkDeviceWaitIdle(vkCtx->getDevice());
+                    viewport_.rebuildObjects(objectPlacer_.getObjects(), npcSpawner_.getSpawns());
+                }
+            }
+        }
 
         // Update M2 animations AFTER beginFrame (so getCurrentFrame is correct)
         viewport_.update(dt);
@@ -240,7 +288,10 @@ void EditorApp::processEvents() {
         ImGui_ImplSDL2_ProcessEvent(&event);
 
         if (event.type == SDL_QUIT) {
-            if (terrain_.isLoaded() && terrainEditor_.hasUnsavedChanges()) {
+            // Confirm-on-quit fires for any unsaved change — terrain edits OR
+            // object/NPC/quest changes (autoSavePendingChanges_).
+            bool dirty = terrainEditor_.hasUnsavedChanges() || autoSavePendingChanges_;
+            if (terrain_.isLoaded() && dirty) {
                 showQuitConfirm_ = true;
             } else {
                 window_->setShouldClose(true);
@@ -305,10 +356,10 @@ void EditorApp::processEvents() {
                 if (sc == SDL_SCANCODE_DELETE) {
                     if (objectPlacer_.getSelected()) {
                         objectPlacer_.deleteSelected();
-                        objectsDirty_ = true;
+                        objectsDirty_ = true; autoSavePendingChanges_ = true;
                     } else if (npcSpawner_.getSelected()) {
                         npcSpawner_.removeCreature(npcSpawner_.getSelectedIndex());
-                        objectsDirty_ = true;
+                        objectsDirty_ = true; autoSavePendingChanges_ = true;
                     }
                 }
                 if (sc == SDL_SCANCODE_S && (event.key.keysym.mod & KMOD_CTRL))
@@ -324,6 +375,43 @@ void EditorApp::processEvents() {
                 if (sc == SDL_SCANCODE_A && (event.key.keysym.mod & KMOD_CTRL)) {
                     objectPlacer_.selectAll();
                     showToast("Selected " + std::to_string(objectPlacer_.selectionCount()) + " objects");
+                }
+                // Ctrl+D = duplicate selected object or NPC, offset by (10,10) on the ground.
+                if (sc == SDL_SCANCODE_D && (event.key.keysym.mod & KMOD_CTRL)) {
+                    if (auto* sel = objectPlacer_.getSelected()) {
+                        std::string dupPath = sel->path;
+                        glm::vec3 dupPos = sel->position + glm::vec3(10.0f, 10.0f, 0.0f);
+                        glm::vec3 dupRot = sel->rotation;
+                        float dupScale = sel->scale;
+                        auto dupType = sel->type;
+                        objectPlacer_.clearSelection();
+                        objectPlacer_.setActivePath(dupPath, dupType);
+                        objectPlacer_.setPlacementScale(dupScale);
+                        objectPlacer_.setPlacementRotationY(dupRot.y);
+                        objectPlacer_.placeObject(dupPos);
+                        objectsDirty_ = true; autoSavePendingChanges_ = true;
+                        showToast("Duplicated object");
+                    } else if (auto* npc = npcSpawner_.getSelected()) {
+                        CreatureSpawn copy = *npc;
+                        copy.position += glm::vec3(10, 10, 0);
+                        npcSpawner_.placeCreature(copy);
+                        objectsDirty_ = true; autoSavePendingChanges_ = true;
+                        showToast("Duplicated NPC");
+                    }
+                }
+                // W: add patrol waypoint at cursor for the selected NPC (no modifiers,
+                // editor must be in NPC mode and an NPC must be selected with Patrol behavior).
+                if (sc == SDL_SCANCODE_W && mode_ == EditorMode::NPC &&
+                    !(event.key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_SHIFT))) {
+                    auto* sel = npcSpawner_.getSelected();
+                    if (sel && sel->behavior == CreatureBehavior::Patrol &&
+                        terrainEditor_.brush().isActive()) {
+                        PatrolPoint pp;
+                        pp.position = terrainEditor_.brush().getPosition();
+                        pp.waitTimeMs = 2000.0f;
+                        sel->patrolPath.push_back(pp);
+                        showToast("Added patrol waypoint #" + std::to_string(sel->patrolPath.size()));
+                    }
                 }
                 // Ctrl+Y = Redo (alternate binding)
                 if (sc == SDL_SCANCODE_Y && (event.key.keysym.mod & KMOD_CTRL)) {
@@ -344,7 +432,7 @@ void EditorApp::processEvents() {
                         if (mode_ == EditorMode::PlaceObject || mode_ == EditorMode::NPC) {
                             if (objectPlacer_.canUndoPlace()) {
                                 objectPlacer_.undoLastPlace();
-                                objectsDirty_ = true;
+                                objectsDirty_ = true; autoSavePendingChanges_ = true;
                                 showToast("Undo placement");
                             }
                         } else if (terrainEditor_.history().canUndo()) {
@@ -373,7 +461,7 @@ void EditorApp::processEvents() {
                                camera_.getCamera(),
                                static_cast<float>(ext.width),
                                static_cast<float>(ext.height));
-                // Apply transform to selected object
+                // Apply transform to selected object or NPC.
                 if (auto* sel = objectPlacer_.getSelected()) {
                     if (giz.getMode() == TransformMode::Move) {
                         sel->position += giz.getMoveDelta();
@@ -386,7 +474,23 @@ void EditorApp::processEvents() {
                         giz.beginDrag(glm::vec2(event.motion.x, event.motion.y));
                     }
                     giz.setTarget(sel->position, sel->scale);
-                    objectsDirty_ = true;
+                    objectsDirty_ = true; autoSavePendingChanges_ = true;
+                } else if (auto* npc = npcSpawner_.getSelected()) {
+                    if (giz.getMode() == TransformMode::Move) {
+                        npc->position += giz.getMoveDelta();
+                        giz.beginDrag(glm::vec2(event.motion.x, event.motion.y));
+                    } else if (giz.getMode() == TransformMode::Rotate) {
+                        // Apply yaw component only — NPCs only have orientation.
+                        npc->orientation += glm::degrees(giz.getRotateDelta().z);
+                        while (npc->orientation >= 360.0f) npc->orientation -= 360.0f;
+                        while (npc->orientation < 0.0f) npc->orientation += 360.0f;
+                        giz.beginDrag(glm::vec2(event.motion.x, event.motion.y));
+                    } else if (giz.getMode() == TransformMode::Scale) {
+                        npc->scale = std::max(0.1f, npc->scale + giz.getScaleDelta());
+                        giz.beginDrag(glm::vec2(event.motion.x, event.motion.y));
+                    }
+                    giz.setTarget(npc->position, npc->scale);
+                    objectsDirty_ = true; autoSavePendingChanges_ = true;
                 }
             } else {
                 camera_.processMouseMotion(event.motion.xrel, event.motion.yrel);
@@ -479,10 +583,16 @@ void EditorApp::processEvents() {
                             static_cast<float>(ext.height));
                         glm::vec3 hitPos;
                         if (terrainEditor_.raycastTerrain(ray, hitPos)) {
-                            auto& tmpl = npcSpawner_.getTemplate();
-                            tmpl.position = hitPos;
-                            npcSpawner_.placeCreature(tmpl);
-                            objectsDirty_ = true;
+                            // Plain left-click near an existing NPC selects it instead of
+                            // placing a duplicate. Shift+click forces placement.
+                            bool forcePlace = (event.key.keysym.mod & KMOD_SHIFT) != 0;
+                            int hit = forcePlace ? -1 : npcSpawner_.selectAt(hitPos, 4.0f);
+                            if (hit < 0) {
+                                auto& tmpl = npcSpawner_.getTemplate();
+                                tmpl.position = hitPos;
+                                npcSpawner_.placeCreature(tmpl);
+                                objectsDirty_ = true; autoSavePendingChanges_ = true;
+                            }
                         }
                     } else if (mode_ == EditorMode::Water) {
                         painting_ = true;
@@ -497,7 +607,7 @@ void EditorApp::processEvents() {
                         glm::vec3 hitPos;
                         if (terrainEditor_.raycastTerrain(ray, hitPos)) {
                             objectPlacer_.placeObject(hitPos);
-                            objectsDirty_ = true;
+                            objectsDirty_ = true; autoSavePendingChanges_ = true;
                         }
                     } else {
                         painting_ = true;
@@ -524,8 +634,28 @@ void EditorApp::processEvents() {
             }
         }
 
-        if (event.type == SDL_MOUSEWHEEL && !io.WantCaptureMouse)
-            camera_.processMouseWheel(event.wheel.y, (SDL_GetModState() & KMOD_SHIFT) != 0);
+        if (event.type == SDL_MOUSEWHEEL && !io.WantCaptureMouse) {
+            // Ctrl+wheel rotates the placement preview instead of zooming the camera.
+            // Step 15 deg, Shift makes it 5 deg for finer control.
+            bool ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+            bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+            if (ctrl && (mode_ == EditorMode::PlaceObject || mode_ == EditorMode::NPC)) {
+                float step = shift ? 5.0f : 15.0f;
+                if (mode_ == EditorMode::PlaceObject) {
+                    float r = objectPlacer_.getPlacementRotationY() + step * event.wheel.y;
+                    while (r >= 360.0f) r -= 360.0f;
+                    while (r < 0.0f) r += 360.0f;
+                    objectPlacer_.setPlacementRotationY(r);
+                } else {
+                    float r = npcSpawner_.getTemplate().orientation + step * event.wheel.y;
+                    while (r >= 360.0f) r -= 360.0f;
+                    while (r < 0.0f) r += 360.0f;
+                    npcSpawner_.getTemplate().orientation = r;
+                }
+            } else {
+                camera_.processMouseWheel(event.wheel.y, shift);
+            }
+        }
     }
 }
 
@@ -556,7 +686,8 @@ void EditorApp::updateTerrainEditing(float dt) {
             } else if (mode_ == EditorMode::NPC && !npcSpawner_.getTemplate().modelPath.empty()) {
                 viewport_.setGhostPreview(
                     npcSpawner_.getTemplate().modelPath, hitPos,
-                    glm::vec3(0, 0, 0), npcSpawner_.getTemplate().scale);
+                    glm::vec3(0, 0, npcSpawner_.getTemplate().orientation),
+                    npcSpawner_.getTemplate().scale);
             } else if (mode_ != EditorMode::PlaceObject && mode_ != EditorMode::NPC) {
                 viewport_.clearGhostPreview();
             }
@@ -663,7 +794,77 @@ void EditorApp::refreshDirtyChunks() {
     viewport_.loadTerrain(mesh, terrain_.textures, loadedTileX_, loadedTileY_);
 }
 
+bool EditorApp::loadWMOInstance(const std::string& mapName) {
+    std::string mapLower = mapName;
+    std::transform(mapLower.begin(), mapLower.end(), mapLower.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    std::string wdtPath = "world\\maps\\" + mapLower + "\\" + mapLower + ".wdt";
+    auto wdtData = assetManager_->readFile(wdtPath);
+    if (wdtData.empty()) return false;
+
+    auto wdtInfo = pipeline::parseWDT(wdtData);
+    if (!wdtInfo.isWMOOnly() || wdtInfo.rootWMOPath.empty()) return false;
+
+    LOG_INFO("WMO-only instance: ", mapName, " root=", wdtInfo.rootWMOPath);
+
+    clearAllObjects();
+    questEditor_.clear();
+    ui_.clearPath();
+    viewport_.clearTerrain();
+
+    // Create blank terrain as a floor reference
+    terrain_ = TerrainEditor::createBlankTerrain(32, 32, 0.0f, Biome::Rocky);
+    terrain_.coord = {32, 32};
+    terrainEditor_.setTerrain(&terrain_);
+    texturePainter_.setTerrain(&terrain_);
+    objectPlacer_.setTerrain(&terrain_);
+
+    auto mesh = pipeline::TerrainMeshGenerator::generate(terrain_);
+    viewport_.loadTerrain(mesh, terrain_.textures, 32, 32);
+
+    // Place the root WMO as an object
+    glm::vec3 wmoPos = core::coords::adtToWorld(
+        wdtInfo.position[0], wdtInfo.position[1], wdtInfo.position[2]);
+    glm::vec3 wmoRot(-wdtInfo.rotation[2], -wdtInfo.rotation[0],
+                      wdtInfo.rotation[1] + 180.0f);
+
+    PlacedObject wmo;
+    wmo.type = PlaceableType::WMO;
+    wmo.path = wdtInfo.rootWMOPath;
+    wmo.position = wmoPos;
+    wmo.rotation = wmoRot;
+    wmo.scale = 1.0f;
+    wmo.uniqueId = 1;
+    objectPlacer_.getObjects().push_back(wmo);
+    objectsDirty_ = true; autoSavePendingChanges_ = true;
+
+    loadedMap_ = mapName;
+    loadedTileX_ = 32;
+    loadedTileY_ = 32;
+    viewport_.setActiveMapName(mapName);
+
+    // Position camera near the WMO
+    camera_.setPosition(wmoPos + glm::vec3(0, 0, 50));
+    camera_.setYawPitch(0.0f, -30.0f);
+
+    showToast("WMO instance loaded: " + mapName);
+    LOG_INFO("WMO instance loaded: ", mapName, " at (",
+             wmoPos.x, ",", wmoPos.y, ",", wmoPos.z, ")");
+    return true;
+}
+
 void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
+    // Clear previous state before loading new tile
+    clearAllObjects();
+    questEditor_.clear();
+    ui_.clearPath();
+    viewport_.clearTerrain();
+    // Reset the zone manifest so previous zone's mapId/displayName/tiles
+    // don't bleed into the new export. zone.json on disk (if any) will be
+    // re-loaded later in this function.
+    zoneManifest_ = {};
+
     // Prefer open format (WOT/WHM) if available
     for (const char* dir : {"custom_zones", "output"}) {
         std::string wotBase = std::string(dir) + "/" + mapName + "/" + mapName + "_" +
@@ -684,6 +885,8 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 
         auto adtData = assetManager_->readFile(path.str());
         if (adtData.empty()) {
+            // Try WMO-only instance (dungeons like Dire Maul have no ADT tiles)
+            if (loadWMOInstance(mapName)) return;
             LOG_ERROR("ADT file not found: ", path.str());
             showToast("Zone not found: " + mapName + " [" + std::to_string(tileX) + "," + std::to_string(tileY) + "]");
             return;
@@ -701,6 +904,19 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     // Override internal coords with what we know from the filename
     // (instanced maps have arbitrary internal coord values)
     terrain_.coord = {tileX, tileY};
+
+    // Recompute chunk world positions from tile coordinates
+    // This fixes instanced maps where internal MCNK positions are wrong
+    float tileSize = 533.33333f;
+    float chunkSize = tileSize / 16.0f;
+    for (int cy = 0; cy < 16; cy++) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& chunk = terrain_.chunks[cy * 16 + cx];
+            if (!chunk.hasHeightMap()) continue;
+            chunk.position[0] = (32.0f - static_cast<float>(tileX)) * tileSize - cx * chunkSize;
+            chunk.position[1] = (32.0f - static_cast<float>(tileY)) * tileSize - cy * chunkSize;
+        }
+    }
 
     terrainEditor_.setTerrain(&terrain_);
     terrainEditor_.history().clear();
@@ -723,6 +939,7 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     loadedMap_ = mapName;
     loadedTileX_ = tileX;
     loadedTileY_ = tileY;
+    viewport_.setActiveMapName(mapName);
 
     // Track recent zones (deduplicate, max 8)
     recentZones_.erase(std::remove_if(recentZones_.begin(), recentZones_.end(),
@@ -748,13 +965,16 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 
     // Import doodad/WMO placements from the ADT itself
     // ADT positions are in ADT coordinate space — convert to render coords
+    // Import doodad placements — convert ADT rotation to render rotation
+    // ADT stores rotation as degrees [rotX, rotY, rotZ] in WoW space
+    // Render space: rX = -adtRotZ, rY = -adtRotX, rZ = adtRotY + 180
     for (const auto& dp : terrain_.doodadPlacements) {
         if (dp.nameId < terrain_.doodadNames.size()) {
             PlacedObject obj;
             obj.type = PlaceableType::M2;
             obj.path = terrain_.doodadNames[dp.nameId];
             obj.position = core::coords::adtToWorld(dp.position[0], dp.position[1], dp.position[2]);
-            obj.rotation = glm::vec3(dp.rotation[0], dp.rotation[1], dp.rotation[2]);
+            obj.rotation = glm::vec3(-dp.rotation[2], -dp.rotation[0], dp.rotation[1] + 180.0f);
             obj.scale = static_cast<float>(dp.scale) / 1024.0f;
             obj.uniqueId = dp.uniqueId;
             objectPlacer_.getObjects().push_back(obj);
@@ -766,14 +986,16 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
             obj.type = PlaceableType::WMO;
             obj.path = terrain_.wmoNames[wp.nameId];
             obj.position = core::coords::adtToWorld(wp.position[0], wp.position[1], wp.position[2]);
-            obj.rotation = glm::vec3(wp.rotation[0], wp.rotation[1], wp.rotation[2]);
-            obj.scale = 1.0f;
+            obj.rotation = glm::vec3(-wp.rotation[2], -wp.rotation[0], wp.rotation[1] + 180.0f);
+            // MODF scale is fixed-point u16 (1024 = 1.0); fall back to 1.0
+            // for older expansions where the scale slot was always 0.
+            obj.scale = wp.scale > 0 ? static_cast<float>(wp.scale) / 1024.0f : 1.0f;
             obj.uniqueId = wp.uniqueId;
             objectPlacer_.getObjects().push_back(obj);
         }
     }
     if (!terrain_.doodadPlacements.empty() || !terrain_.wmoPlacements.empty()) {
-        objectsDirty_ = true;
+        objectsDirty_ = true; autoSavePendingChanges_ = true;
         showToast("Imported " + std::to_string(terrain_.doodadPlacements.size()) +
                   " doodads + " + std::to_string(terrain_.wmoPlacements.size()) + " WMOs");
         LOG_INFO("Imported ", terrain_.doodadPlacements.size(), " doodads + ",
@@ -782,7 +1004,7 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 
     LOG_INFO("ADT loaded: ", mapName, " [", tileX, ",", tileY, "]");
 
-    // Try loading objects/NPCs/quests from zone directories
+    // Try loading objects/NPCs/quests/manifest from zone directories
     for (const char* dir : {"output", "custom_zones"}) {
         std::string zoneBase = std::string(dir) + "/" + mapName;
         if (objectPlacer_.objectCount() == 0)
@@ -794,9 +1016,17 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
         if (questEditor_.questCount() == 0)
             if (questEditor_.loadFromFile(zoneBase + "/quests.json"))
                 showToast("Loaded " + std::to_string(questEditor_.questCount()) + " quests");
+        // Restore the previously-saved zone manifest (mapId, displayName,
+        // flags, audio, etc.) so user-customized metadata persists across
+        // editor sessions.
+        if (zoneManifest_.mapName.empty())
+            zoneManifest_.load(zoneBase + "/zone.json");
     }
+    // Always set mapName from the loaded ADT in case zone.json was absent
+    // or stale.
+    if (zoneManifest_.mapName.empty()) zoneManifest_.mapName = mapName;
     if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0)
-        objectsDirty_ = true;
+        objectsDirty_ = true; autoSavePendingChanges_ = true;
 }
 
 void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome) {
@@ -818,6 +1048,7 @@ void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tile
     loadedMap_ = mapName;
     loadedTileX_ = tileX;
     loadedTileY_ = tileY;
+    viewport_.setActiveMapName(mapName);
     lastObjCount_ = 0;
     lastNpcCount_ = 0;
     objectsDirty_ = false;
@@ -874,6 +1105,10 @@ void EditorApp::exportZone(const std::string& outputDir) {
         if (!questEditor_.validateChains(chainErrors)) {
             for (const auto& err : chainErrors)
                 LOG_WARNING("Quest chain issue: ", err);
+            // Surface chain issues to the user — silently logging means most
+            // users won't notice a broken chain until they test in-game.
+            showToast("Quest chains have " + std::to_string(chainErrors.size()) +
+                      " issue(s) — see log", 5.0f);
         }
     }
 
@@ -891,24 +1126,29 @@ void EditorApp::exportZone(const std::string& outputDir) {
         objectPlacer_.saveToFile(objPath);
     }
 
-    // Convert placed M2 objects to WOM open format
-    if (objectPlacer_.objectCount() > 0) {
+    // Convert all referenced M2 models (placed objects + NPCs) to WOM open format.
+    // This makes the exported zone self-contained and free of proprietary M2/skin files.
+    {
         std::unordered_set<std::string> convertedModels;
+        auto convertOne = [&](const std::string& m2Path) {
+            if (m2Path.empty() || convertedModels.count(m2Path)) return;
+            auto wom = pipeline::WoweeModelLoader::fromM2(m2Path, assetManager_.get());
+            if (!wom.isValid()) return;
+            std::string womPath = m2Path;
+            std::replace(womPath.begin(), womPath.end(), '\\', '/');
+            auto dot = womPath.rfind('.');
+            if (dot != std::string::npos) womPath = womPath.substr(0, dot);
+            pipeline::WoweeModelLoader::save(wom, base + "/models/" + womPath);
+            convertedModels.insert(m2Path);
+        };
         for (const auto& obj : objectPlacer_.getObjects()) {
-            if (obj.type == PlaceableType::M2 && !convertedModels.count(obj.path)) {
-                auto wom = pipeline::WoweeModelLoader::fromM2(obj.path, assetManager_.get());
-                if (wom.isValid()) {
-                    std::string womPath = obj.path;
-                    std::replace(womPath.begin(), womPath.end(), '\\', '/');
-                    auto dot = womPath.rfind('.');
-                    if (dot != std::string::npos) womPath = womPath.substr(0, dot);
-                    pipeline::WoweeModelLoader::save(wom, base + "/models/" + womPath);
-                    convertedModels.insert(obj.path);
-                }
-            }
+            if (obj.type == PlaceableType::M2) convertOne(obj.path);
+        }
+        for (const auto& npc : npcSpawner_.getSpawns()) {
+            convertOne(npc.modelPath);
         }
         if (!convertedModels.empty())
-            LOG_INFO("Converted ", convertedModels.size(), " M2 models to WOM");
+            LOG_INFO("Converted ", convertedModels.size(), " M2 models to WOM (objects + NPCs)");
     }
 
     // Convert placed WMO buildings to WOB open format
@@ -948,12 +1188,39 @@ void EditorApp::exportZone(const std::string& outputDir) {
             LOG_INFO("Converted ", convertedWMOs.size(), " WMO buildings to WOB");
     }
 
-    // Export used textures as PNG (open format replacement for BLP)
-    auto usedTextures = TextureExporter::collectUsedTextures(terrain_);
-    if (!usedTextures.empty()) {
-        int exported = TextureExporter::exportTexturesAsPng(
-            assetManager_.get(), usedTextures, base + "/textures");
-        LOG_INFO("Exported ", exported, " textures as PNG");
+    // Export used textures as PNG (open format replacement for BLP).
+    // Includes terrain textures plus textures referenced by every placed M2/NPC model
+    // so the exported zone has every texture it needs to render without game data.
+    std::vector<std::string> usedTextures;
+    {
+        std::unordered_set<std::string> uniq;
+        for (auto& t : TextureExporter::collectUsedTextures(terrain_)) uniq.insert(std::move(t));
+        std::unordered_set<std::string> visitedM2;
+        std::unordered_set<std::string> visitedWMO;
+        auto addM2Tex = [&](const std::string& m2Path) {
+            if (m2Path.empty() || !visitedM2.insert(m2Path).second) return;
+            for (auto& t : TextureExporter::collectM2Textures(assetManager_.get(), m2Path))
+                uniq.insert(std::move(t));
+        };
+        auto addWMOTex = [&](const std::string& wmoPath) {
+            if (wmoPath.empty() || !visitedWMO.insert(wmoPath).second) return;
+            for (auto& t : TextureExporter::collectWMOTextures(assetManager_.get(), wmoPath))
+                uniq.insert(std::move(t));
+        };
+        for (const auto& obj : objectPlacer_.getObjects()) {
+            if (obj.type == PlaceableType::M2) addM2Tex(obj.path);
+            else if (obj.type == PlaceableType::WMO) addWMOTex(obj.path);
+        }
+        for (const auto& npc : npcSpawner_.getSpawns()) addM2Tex(npc.modelPath);
+
+        usedTextures.assign(uniq.begin(), uniq.end());
+        std::sort(usedTextures.begin(), usedTextures.end());
+        if (!usedTextures.empty()) {
+            int exported = TextureExporter::exportTexturesAsPng(
+                assetManager_.get(), usedTextures, base + "/textures");
+            LOG_INFO("Exported ", exported, " textures as PNG (terrain + ",
+                     visitedM2.size(), " M2s + ", visitedWMO.size(), " WMOs)");
+        }
     }
 
     // Export zone-relevant DBCs as JSON (open format replacement for DBC)
@@ -965,8 +1232,44 @@ void EditorApp::exportZone(const std::string& outputDir) {
     WoweeTerrain::exportOpen(terrain_, openBase, loadedTileX_, loadedTileY_);
     WoweeTerrain::exportNormalMap(terrain_, openBase + "_normals.png");
 
-    // Export collision mesh (.woc)
+    // Export collision mesh (.woc) — terrain plus placed WMO/M2 meshes so that
+    // movement queries on the exported zone respect buildings and large props.
     auto collision = pipeline::WoweeCollisionBuilder::fromTerrain(terrain_);
+    {
+        std::unordered_set<std::string> visitedWMOcol;
+        std::unordered_set<std::string> visitedM2col;
+        for (const auto& obj : objectPlacer_.getObjects()) {
+            if (obj.type == PlaceableType::WMO && visitedWMOcol.insert(obj.path).second) {
+                auto data = assetManager_->readFile(obj.path);
+                if (data.empty()) continue;
+                auto wmo = pipeline::WMOLoader::load(data);
+                std::string wmoBase = obj.path;
+                if (wmoBase.size() > 4) wmoBase = wmoBase.substr(0, wmoBase.size() - 4);
+                for (uint32_t gi = 0; gi < wmo.nGroups; gi++) {
+                    char suffix[16];
+                    std::snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+                    auto gd = assetManager_->readFile(wmoBase + suffix);
+                    if (!gd.empty()) pipeline::WMOLoader::loadGroup(gd, wmo, gi);
+                }
+                glm::mat4 t = glm::translate(glm::mat4(1.0f), obj.position);
+                glm::vec3 r = glm::radians(obj.rotation);
+                t = glm::rotate(t, r.x, glm::vec3(1, 0, 0));
+                t = glm::rotate(t, r.y, glm::vec3(0, 1, 0));
+                t = glm::rotate(t, r.z, glm::vec3(0, 0, 1));
+                t = glm::scale(t, glm::vec3(obj.scale));
+                for (const auto& g : wmo.groups) {
+                    std::vector<glm::vec3> verts;
+                    verts.reserve(g.vertices.size());
+                    for (const auto& v : g.vertices) verts.push_back(v.position);
+                    std::vector<uint32_t> idx;
+                    idx.reserve(g.indices.size());
+                    for (uint16_t i : g.indices) idx.push_back(i);
+                    uint8_t flags = (g.flags & 0x08) ? 0 : 0x08; // indoor flag
+                    pipeline::WoweeCollisionBuilder::addMesh(collision, verts, idx, t, flags);
+                }
+            }
+        }
+    }
     if (collision.isValid())
         pipeline::WoweeCollisionBuilder::save(collision, openBase + ".woc");
     WoweeTerrain::exportAlphaMaps(terrain_, base + "/alphamaps");
@@ -1007,7 +1310,10 @@ void EditorApp::exportZone(const std::string& outputDir) {
     // Scan output directory for all exported tiles (includes adjacent tiles)
     ZoneManifest& manifest = zoneManifest_;
     manifest.mapName = loadedMap_;
-    manifest.displayName = loadedMap_;
+    // Preserve user-set displayName from the Zone Metadata panel; only fill in
+    // the default when the user hasn't customized it.
+    if (manifest.displayName.empty()) manifest.displayName = loadedMap_;
+    manifest.tiles.clear();
     manifest.tiles.push_back({loadedTileX_, loadedTileY_});
     namespace fs = std::filesystem;
     if (fs::exists(base)) {
@@ -1085,6 +1391,10 @@ void EditorApp::exportZone(const std::string& outputDir) {
     LOG_INFO("  NPCs: ", npcSpawner_.spawnCount(), " creatures");
     LOG_INFO("  Quests: ", questEditor_.questCount());
     LOG_INFO("========================");
+
+    // Any path through exportZone counts as a save — clear the pending flag
+    // so the dirty asterisk and quit-confirm dialog go away.
+    autoSavePendingChanges_ = false;
 }
 
 void EditorApp::exportContentPack(const std::string& destPath) {
@@ -1098,11 +1408,25 @@ void EditorApp::exportContentPack(const std::string& destPath) {
     info.author = project_.author.empty() ? "Kelsi Davis" : project_.author;
     info.description = project_.description.empty()
         ? "Custom zone created with Wowee World Editor" : project_.description;
-    info.mapId = 9000;
-    if (ContentPacker::packZone(dir, loadedMap_, destPath, info))
-        showToast("Content pack exported: " + destPath);
-    else
+    // Honor the user-edited Map ID from the zone manifest panel rather than
+    // always emitting 9000.
+    info.mapId = zoneManifest_.mapId != 0 ? zoneManifest_.mapId : 9000;
+    if (ContentPacker::packZone(dir, loadedMap_, destPath, info)) {
+        // Report on-disk size so users can sanity-check the export. WCPs of
+        // a few MB are normal; tens of MB usually means lots of textures.
+        std::error_code ec;
+        auto bytes = std::filesystem::file_size(destPath, ec);
+        if (!ec) {
+            char msg[256];
+            std::snprintf(msg, sizeof(msg), "Content pack exported: %s (%.1f MB)",
+                          destPath.c_str(), bytes / (1024.0 * 1024.0));
+            showToast(msg);
+        } else {
+            showToast("Content pack exported: " + destPath);
+        }
+    } else {
         showToast("Failed to create content pack");
+    }
 }
 
 void EditorApp::exportOpenFormat(const std::string& basePath) {
@@ -1119,6 +1443,7 @@ void EditorApp::quickSave() {
     if (!terrain_.isLoaded()) return;
     std::string dir = lastSavePath_.empty() ? "output" : lastSavePath_;
     exportZone(dir);
+    autoSavePendingChanges_ = false;
 }
 
 void EditorApp::requestQuit() {
@@ -1223,15 +1548,36 @@ void EditorApp::addAdjacentTile(int offsetX, int offsetY) {
 }
 
 void EditorApp::flyToSelected() {
-    auto* sel = objectPlacer_.getSelected();
-    if (sel) {
-        camera_.setPosition(sel->position + glm::vec3(0, 0, 30));
-        return;
+    glm::vec3 target;
+    bool have = false;
+    if (auto* sel = objectPlacer_.getSelected()) {
+        target = sel->position;
+        have = true;
+    } else if (auto* npc = npcSpawner_.getSelected()) {
+        target = npc->position;
+        have = true;
     }
-    auto* npc = npcSpawner_.getSelected();
-    if (npc) {
-        camera_.setPosition(npc->position + glm::vec3(0, 0, 30));
-    }
+    if (!have) return;
+
+    // Place camera back-and-up from the target along the current view direction
+    // and aim it at the target. Distance scales with camera speed so it works
+    // both for tight spawn lists and for far-flung WMOs.
+    glm::vec3 fwd = camera_.getCamera().getForward();
+    if (glm::length(fwd) < 0.001f) fwd = glm::vec3(1, 0, 0);
+    glm::vec3 back = -glm::normalize(glm::vec3(fwd.x, fwd.y, 0.0f));
+    if (glm::length(back) < 0.001f) back = glm::vec3(-1, 0, 0);
+
+    glm::vec3 cam = target + back * 25.0f + glm::vec3(0, 0, 15);
+    camera_.setPosition(cam);
+
+    // Aim at target. Camera::getForward = (cos(yaw), sin(yaw), sin(pitch)),
+    // so to make it parallel to `to` we use atan2(to.y, to.x), not (x, y).
+    // The previous swap pointed the camera 90deg off from the target.
+    glm::vec3 to = target - cam;
+    float yaw = glm::degrees(std::atan2(to.y, to.x));
+    float horiz = std::sqrt(to.x * to.x + to.y * to.y);
+    float pitch = glm::degrees(std::atan2(to.z, horiz));
+    camera_.setYawPitch(yaw, pitch);
 }
 
 void EditorApp::generateCompleteZone() {
@@ -1309,17 +1655,34 @@ void EditorApp::centerOnTerrain() {
 }
 
 void EditorApp::snapSelectedToGround() {
-    auto* sel = objectPlacer_.getSelected();
-    if (!sel || !terrain_.isLoaded()) return;
+    if (!terrain_.isLoaded()) return;
 
-    // Cast ray straight down from object position
-    rendering::Ray ray;
-    ray.origin = sel->position + glm::vec3(0, 0, 500);
-    ray.direction = glm::vec3(0, 0, -1);
-    glm::vec3 hitPos;
-    if (terrainEditor_.raycastTerrain(ray, hitPos)) {
-        sel->position.z = hitPos.z;
-        objectsDirty_ = true;
+    auto castDown = [&](const glm::vec3& pos, glm::vec3& hit) {
+        rendering::Ray ray;
+        ray.origin = pos + glm::vec3(0, 0, 500);
+        ray.direction = glm::vec3(0, 0, -1);
+        return terrainEditor_.raycastTerrain(ray, hit);
+    };
+
+    if (auto* sel = objectPlacer_.getSelected()) {
+        glm::vec3 hitPos;
+        if (castDown(sel->position, hitPos)) {
+            sel->position.z = hitPos.z;
+            objectsDirty_ = true; autoSavePendingChanges_ = true;
+        }
+        return;
+    }
+
+    if (auto* npc = npcSpawner_.getSelected()) {
+        glm::vec3 hitPos;
+        if (castDown(npc->position, hitPos)) {
+            npc->position.z = hitPos.z;
+            objectsDirty_ = true; autoSavePendingChanges_ = true;
+        }
+        // Also snap each patrol waypoint
+        for (auto& wp : npc->patrolPath) {
+            if (castDown(wp.position, hitPos)) wp.position.z = hitPos.z;
+        }
     }
 }
 
@@ -1370,7 +1733,7 @@ void EditorApp::alignSelectedToTerrain() {
         alignOne(*sel);
     }
     if (count > 0) {
-        objectsDirty_ = true;
+        objectsDirty_ = true; autoSavePendingChanges_ = true;
         showToast("Aligned " + std::to_string(count) + " object(s) to terrain");
     }
 }

@@ -3,6 +3,7 @@
 #include <fstream>
 #include <cstring>
 #include <filesystem>
+#include <cmath>
 
 namespace wowee {
 namespace editor {
@@ -42,6 +43,9 @@ void ADTWriter::writeU16(std::vector<uint8_t>& buf, uint16_t val) {
 }
 
 void ADTWriter::writeFloat(std::vector<uint8_t>& buf, float val) {
+    // Reject NaN/inf — would silently turn into invisible terrain or
+    // off-map placements after the next ADT load.
+    if (!std::isfinite(val)) val = 0.0f;
     uint32_t bits;
     std::memcpy(&bits, &val, 4);
     writeU32(buf, bits);
@@ -154,6 +158,10 @@ void ADTWriter::writeMODF(std::vector<uint8_t>& buf, const pipeline::ADTTerrain&
         writeFloat(buf, p.extentUpper[2]);
         writeU16(buf, p.flags);
         writeU16(buf, p.doodadSet);
+        // MODF entry is 64 bytes total; the trailing nameSet + scale slots are
+        // populated when present (WotLK+) and default to (0, 1024) otherwise.
+        writeU16(buf, p.nameSet);
+        writeU16(buf, p.scale != 0 ? p.scale : 1024);
     }
     patchSize(buf, start);
 }

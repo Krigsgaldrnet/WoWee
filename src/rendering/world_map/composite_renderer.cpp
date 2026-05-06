@@ -30,7 +30,7 @@ void CompositeRenderer::ensureTextureSlots(size_t zoneCount, const std::vector<Z
             slots.overlays.resize(zones[i].overlays.size());
             for (size_t oi = 0; oi < zones[i].overlays.size(); oi++) {
                 const auto& ov = zones[i].overlays[oi];
-                slots.overlays[oi].tiles.resize(ov.tileCols * ov.tileRows, nullptr);
+                slots.overlays[oi].tiles.resize(static_cast<size_t>(ov.tileCols) * static_cast<size_t>(ov.tileRows), nullptr);
             }
         }
     }

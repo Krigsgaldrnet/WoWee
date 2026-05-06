@@ -83,6 +83,10 @@ bool QuestEditor::loadFromFile(const std::string& path) {
             q.description = jq.value("description", "");
             q.completionText = jq.value("completionText", "");
             q.requiredLevel = jq.value("requiredLevel", 1u);
+            // WoW levels 1-80 (WotLK). Cap to keep AzerothCore happy and
+            // catch obvious typos like "999".
+            if (q.requiredLevel == 0) q.requiredLevel = 1;
+            if (q.requiredLevel > 255) q.requiredLevel = 80;
             q.questGiverNpcId = jq.value("questGiverNpcId", 0u);
             q.turnInNpcId = jq.value("turnInNpcId", 0u);
             q.nextQuestId = jq.value("nextQuestId", 0u);
@@ -93,19 +97,38 @@ bool QuestEditor::loadFromFile(const std::string& path) {
                 q.reward.gold = jr.value("gold", 0u);
                 q.reward.silver = jr.value("silver", 0u);
                 q.reward.copper = jr.value("copper", 0u);
+                // Reward sanity caps. Highest WoW quest XP ~50k; gold realistic
+                // cap is hundreds. Catches typo entries like "100000000 gold".
+                if (q.reward.xp > 1'000'000) q.reward.xp = 1'000'000;
+                if (q.reward.gold > 10000) q.reward.gold = 10000;
+                if (q.reward.silver > 99) q.reward.silver = 99;
+                if (q.reward.copper > 99) q.reward.copper = 99;
                 if (jr.contains("items") && jr["items"].is_array()) {
-                    for (const auto& item : jr["items"])
+                    for (const auto& item : jr["items"]) {
+                        // Cap item reward count to 6 (WoW quest_template
+                        // RewardItemId[1..6] slot capacity).
+                        if (q.reward.itemRewards.size() >= 6) break;
                         q.reward.itemRewards.push_back(item.get<std::string>());
+                    }
                 }
             }
 
             if (jq.contains("objectives") && jq["objectives"].is_array()) {
                 for (const auto& jo : jq["objectives"]) {
                     QuestObjective obj;
-                    obj.type = static_cast<QuestObjectiveType>(jo.value("type", 0));
+                    int t = jo.value("type", 0);
+                    // Clamp to known QuestObjectiveType range to avoid
+                    // garbage enum values from edited JSON.
+                    if (t < 0 || t > 5) t = 0;
+                    obj.type = static_cast<QuestObjectiveType>(t);
                     obj.description = jo.value("desc", "");
                     obj.targetName = jo.value("target", "");
                     obj.targetCount = jo.value("count", 1u);
+                    if (obj.targetCount == 0) obj.targetCount = 1;
+                    if (obj.targetCount > 1000) obj.targetCount = 1000;
+                    // Cap stored objectives to 10 (matches SQL slot capacity)
+                    // — also bounds the per-quest memory.
+                    if (q.objectives.size() >= 10) break;
                     q.objectives.push_back(obj);
                 }
             }

@@ -40,6 +40,10 @@ std::vector<CustomZoneInfo> CustomZoneDiscovery::scanDirectory(const std::string
             info.author = j.value("author", "");
             info.description = j.value("description", "");
             info.mapId = j.value("mapId", 9000u);
+            // Cap mapId to a reasonable range. Custom maps live in 9000+;
+            // 0 / >65535 would either collide with stock maps or wrap u16
+            // map fields in DBC indexing.
+            if (info.mapId == 0 || info.mapId > 65535) info.mapId = 9000;
             info.directory = entry.path().string();
             info.hasCreatures = j.value("hasCreatures", false) ||
                                 fs::exists(entry.path().string() + "/creatures.json");
@@ -47,8 +51,14 @@ std::vector<CustomZoneInfo> CustomZoneDiscovery::scanDirectory(const std::string
 
             if (j.contains("tiles") && j["tiles"].is_array()) {
                 for (const auto& t : j["tiles"]) {
-                    if (t.is_array() && t.size() >= 2)
-                        info.tiles.push_back({t[0].get<int>(), t[1].get<int>()});
+                    if (t.is_array() && t.size() >= 2) {
+                        int tx = t[0].get<int>();
+                        int ty = t[1].get<int>();
+                        // WoW tile grid is 64x64. Drop bad entries instead
+                        // of feeding them to the loader.
+                        if (tx < 0 || tx > 63 || ty < 0 || ty > 63) continue;
+                        info.tiles.push_back({tx, ty});
+                    }
                 }
             }
 
