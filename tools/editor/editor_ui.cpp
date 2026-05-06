@@ -2170,6 +2170,24 @@ void EditorUI::renderQuestPanel(EditorApp& app) {
                 if (ImGui::InputText("Desc", objDesc, sizeof(objDesc))) obj.description = objDesc;
                 int cnt = obj.targetCount;
                 if (ImGui::InputInt("Count", &cnt)) obj.targetCount = std::max(1, cnt);
+                // Target ID input — for Kill objectives this is the creature
+                // entry, for Collect it's the item ID. SQL export keys off it.
+                char targetBuf[64] = {};
+                std::strncpy(targetBuf, obj.targetName.c_str(), sizeof(targetBuf) - 1);
+                if (ImGui::InputText("Target ID", targetBuf, sizeof(targetBuf)))
+                    obj.targetName = targetBuf;
+                // For Kill objectives, offer a dropdown of placed NPC entries.
+                if (obj.type == QuestObjectiveType::KillCreature) {
+                    if (ImGui::BeginCombo("Pick NPC", "(spawn list)")) {
+                        for (size_t si = 0; si < spawner.spawnCount(); si++) {
+                            const auto& s = spawner.getSpawns()[si];
+                            char lbl[96];
+                            std::snprintf(lbl, sizeof(lbl), "%s (id %u)", s.name.c_str(), s.id);
+                            if (ImGui::Selectable(lbl)) obj.targetName = std::to_string(s.id);
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
                 if (ImGui::SmallButton("Remove")) tmpl.objectives.erase(tmpl.objectives.begin() + oi--);
                 ImGui::PopID();
                 ImGui::Separator();
