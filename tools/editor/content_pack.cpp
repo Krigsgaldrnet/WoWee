@@ -208,10 +208,24 @@ bool ContentPacker::unpackZone(const std::string& wcpPath, const std::string& de
 
         std::vector<char> data(dataSize);
         in.read(data.data(), dataSize);
+        // Detect short reads — indicates the WCP was truncated mid-file.
+        // gcount() reflects the actual bytes read; if it's less than dataSize
+        // we'd write a partial file silently and the consumer would think
+        // the zone is intact.
+        auto bytesRead = in.gcount();
+        if (bytesRead != static_cast<std::streamsize>(dataSize)) {
+            LOG_ERROR("WCP file ", path, " truncated: expected ", dataSize,
+                      " got ", bytesRead);
+            return false;
+        }
 
         std::string fullPath = zoneDir + "/" + path;
         fs::create_directories(fs::path(fullPath).parent_path());
         std::ofstream fout(fullPath, std::ios::binary);
+        if (!fout) {
+            LOG_ERROR("WCP could not open output file: ", fullPath);
+            return false;
+        }
         fout.write(data.data(), dataSize);
     }
 
