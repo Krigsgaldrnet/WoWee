@@ -68,8 +68,25 @@ bool DBCFile::load(const std::vector<uint8_t>& dbcData) {
     recordSize = header.recordSize;
     stringBlockSize = header.stringBlockSize;
 
-    // Validate sizes
-    uint32_t expectedSize = sizeof(DBCHeader) + (recordCount * recordSize) + stringBlockSize;
+    // Reject absurd header values up front. Real DBCs cap at ~1M records
+    // and 1024 fields; large stringBlockSize is up to ~64MB. Multiplying
+    // these without bounds risks uint32 overflow on the totalRecordSize
+    // computation below — the resize would be tiny but the memcpy would
+    // read TB of memory.
+    if (recordCount > 10'000'000 || fieldCount > 1024 ||
+        recordSize > 1024 * 4 ||
+        stringBlockSize > 256u * 1024 * 1024) {
+        LOG_ERROR("DBC header rejected: recordCount=", recordCount,
+                  " fieldCount=", fieldCount, " recordSize=", recordSize,
+                  " stringBlockSize=", stringBlockSize);
+        return false;
+    }
+
+    // Validate sizes — use uint64 for the product so the overflow check
+    // above is the only path that allows a large recordCount * recordSize.
+    uint64_t expectedSize = sizeof(DBCHeader) +
+                            static_cast<uint64_t>(recordCount) * recordSize +
+                            stringBlockSize;
     if (dbcData.size() < expectedSize) {
         LOG_ERROR("DBC file truncated: expected ", expectedSize, " bytes, got ", dbcData.size());
         return false;
@@ -86,9 +103,10 @@ bool DBCFile::load(const std::vector<uint8_t>& dbcData) {
               fieldCount, " fields, ", recordSize, " bytes/record, ",
               stringBlockSize, " string bytes");
 
-    // Copy record data
+    // Copy record data. Use size_t for the product so it matches the
+    // header-validated 64-bit expectedSize math above.
     const uint8_t* recordStart = dbcData.data() + sizeof(DBCHeader);
-    uint32_t totalRecordSize = recordCount * recordSize;
+    size_t totalRecordSize = static_cast<size_t>(recordCount) * recordSize;
     recordData.resize(totalRecordSize);
     if (totalRecordSize > 0) {
         std::memcpy(recordData.data(), recordStart, totalRecordSize);
