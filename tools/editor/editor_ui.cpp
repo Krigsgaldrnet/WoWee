@@ -1906,6 +1906,15 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             int arm = tmpl.armor;
             if (ImGui::InputInt("Armor", &arm)) tmpl.armor = std::max(0, arm);
 
+            // Faction template ID (FactionTemplate.dbc). Common AzerothCore values:
+            // 7 = Stormwind, 35 = Friendly to all, 14 = Monster (hostile to all),
+            // 16 = Beast (Wild), 250 = Critter, 71 = Theramore, etc.
+            int fac = static_cast<int>(tmpl.faction);
+            if (ImGui::InputInt("Faction", &fac))
+                tmpl.faction = static_cast<uint32_t>(std::max(0, fac));
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("FactionTemplate ID. 7=Stormwind 14=Monster 16=Beast 35=Friendly 250=Critter");
+
             const char* behaviors[] = {"Stationary", "Patrol", "Wander", "Scripted"};
             int bIdx = static_cast<int>(tmpl.behavior);
             if (ImGui::Combo("Behavior", &bIdx, behaviors, 4))
