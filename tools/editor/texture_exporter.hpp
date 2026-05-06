@@ -15,6 +15,11 @@ public:
     // Collect all texture paths referenced by the terrain
     static std::vector<std::string> collectUsedTextures(const pipeline::ADTTerrain& terrain);
 
+    // Collect all texture paths referenced by an M2 model (loads the M2 from `am`).
+    // Returns lowercased game paths (e.g. "creature\\foo\\foo.blp"). Empty if M2 not found.
+    static std::vector<std::string> collectM2Textures(pipeline::AssetManager* am,
+                                                       const std::string& m2Path);
+
     // Export all used textures as PNG to an output directory
     // Returns count of successfully exported textures
     static int exportTexturesAsPng(pipeline::AssetManager* am,

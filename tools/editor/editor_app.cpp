@@ -1080,12 +1080,31 @@ void EditorApp::exportZone(const std::string& outputDir) {
             LOG_INFO("Converted ", convertedWMOs.size(), " WMO buildings to WOB");
     }
 
-    // Export used textures as PNG (open format replacement for BLP)
-    auto usedTextures = TextureExporter::collectUsedTextures(terrain_);
-    if (!usedTextures.empty()) {
-        int exported = TextureExporter::exportTexturesAsPng(
-            assetManager_.get(), usedTextures, base + "/textures");
-        LOG_INFO("Exported ", exported, " textures as PNG");
+    // Export used textures as PNG (open format replacement for BLP).
+    // Includes terrain textures plus textures referenced by every placed M2/NPC model
+    // so the exported zone has every texture it needs to render without game data.
+    std::vector<std::string> usedTextures;
+    {
+        std::unordered_set<std::string> uniq;
+        for (auto& t : TextureExporter::collectUsedTextures(terrain_)) uniq.insert(std::move(t));
+        std::unordered_set<std::string> visitedM2;
+        auto addM2Tex = [&](const std::string& m2Path) {
+            if (m2Path.empty() || !visitedM2.insert(m2Path).second) return;
+            for (auto& t : TextureExporter::collectM2Textures(assetManager_.get(), m2Path))
+                uniq.insert(std::move(t));
+        };
+        for (const auto& obj : objectPlacer_.getObjects()) {
+            if (obj.type == PlaceableType::M2) addM2Tex(obj.path);
+        }
+        for (const auto& npc : npcSpawner_.getSpawns()) addM2Tex(npc.modelPath);
+
+        usedTextures.assign(uniq.begin(), uniq.end());
+        std::sort(usedTextures.begin(), usedTextures.end());
+        if (!usedTextures.empty()) {
+            int exported = TextureExporter::exportTexturesAsPng(
+                assetManager_.get(), usedTextures, base + "/textures");
+            LOG_INFO("Exported ", exported, " textures as PNG (terrain + ", visitedM2.size(), " M2s)");
+        }
     }
 
     // Export zone-relevant DBCs as JSON (open format replacement for DBC)

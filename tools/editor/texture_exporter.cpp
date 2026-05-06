@@ -1,6 +1,7 @@
 #include "texture_exporter.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/blp_loader.hpp"
+#include "pipeline/m2_loader.hpp"
 #include "core/logger.hpp"
 #include <filesystem>
 #include <algorithm>
@@ -18,6 +19,30 @@ std::vector<std::string> TextureExporter::collectUsedTextures(const pipeline::AD
     std::vector<std::string> result(unique.begin(), unique.end());
     std::sort(result.begin(), result.end());
     return result;
+}
+
+std::vector<std::string> TextureExporter::collectM2Textures(pipeline::AssetManager* am,
+                                                              const std::string& m2Path) {
+    std::vector<std::string> out;
+    if (!am || m2Path.empty()) return out;
+
+    auto data = am->readFile(m2Path);
+    if (data.empty()) return out;
+    auto m2 = pipeline::M2Loader::load(data);
+    // Skin file holds geometry but textures live in the M2 header itself.
+    // Even if isValid() is false (no skin loaded), the texture list is populated.
+
+    std::unordered_set<std::string> unique;
+    for (const auto& tex : m2.textures) {
+        if (tex.filename.empty()) continue;
+        std::string p = tex.filename;
+        std::transform(p.begin(), p.end(), p.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        unique.insert(p);
+    }
+    out.assign(unique.begin(), unique.end());
+    std::sort(out.begin(), out.end());
+    return out;
 }
 
 int TextureExporter::exportTexturesAsPng(pipeline::AssetManager* am,
