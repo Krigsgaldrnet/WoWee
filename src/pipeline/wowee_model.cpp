@@ -312,9 +312,15 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
 
     // WOM2/WOM3: write bones and animations (always, even if empty for WOM3)
     if (hasAnim || hasBatches) {
-        uint32_t boneCount = static_cast<uint32_t>(model.bones.size());
+        // Cap counts at the load-side limits (512 bones, 1024 anims). Raw
+        // size() would let a pathological in-memory model write a file the
+        // loader silently rejects, leaving the post-truncation bytes to be
+        // misread as the next section.
+        uint32_t boneCount = static_cast<uint32_t>(
+            std::min<size_t>(model.bones.size(), 512));
         f.write(reinterpret_cast<const char*>(&boneCount), 4);
-        for (const auto& bone : model.bones) {
+        for (uint32_t bi = 0; bi < boneCount; bi++) {
+            const auto& bone = model.bones[bi];
             // Symmetric scrub with load — pivot NaN propagates through
             // skeleton matrices to every child bone; parent indices outside
             // bone array would walk off the end during matrix evaluation.
@@ -331,7 +337,8 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
             f.write(reinterpret_cast<const char*>(&bone.flags), 4);
         }
 
-        uint32_t animCount = static_cast<uint32_t>(model.animations.size());
+        uint32_t animCount = static_cast<uint32_t>(
+            std::min<size_t>(model.animations.size(), 1024));
         f.write(reinterpret_cast<const char*>(&animCount), 4);
         // Same NaN scrub as load — keyframes can carry corrupt source data
         // straight through fromM2 without ever round-tripping a load, so the
@@ -342,13 +349,16 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
             if (!std::isfinite(v.z)) v.z = def;
             return v;
         };
-        for (const auto& anim : model.animations) {
+        for (uint32_t ai = 0; ai < animCount; ai++) {
+            const auto& anim = model.animations[ai];
             f.write(reinterpret_cast<const char*>(&anim.id), 4);
             f.write(reinterpret_cast<const char*>(&anim.durationMs), 4);
             float movingSpeed = std::isfinite(anim.movingSpeed) ? anim.movingSpeed : 0.0f;
             f.write(reinterpret_cast<const char*>(&movingSpeed), 4);
 
-            for (size_t bi = 0; bi < model.bones.size(); bi++) {
+            // Iterate bones using the *capped* boneCount so the per-bone
+            // keyframe block stays aligned with what load expects to read.
+            for (size_t bi = 0; bi < boneCount; bi++) {
                 uint32_t kfCount = (bi < anim.boneKeyframes.size())
                     ? static_cast<uint32_t>(anim.boneKeyframes[bi].size()) : 0;
                 f.write(reinterpret_cast<const char*>(&kfCount), 4);
