@@ -5,6 +5,7 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <unordered_map>
 
 namespace wowee {
 namespace pipeline {
@@ -224,8 +225,17 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
         return static_cast<uint32_t>(outModel.textures.size() - 1);
     };
 
-    if (!building.groups.empty()) {
-        for (const auto& mat : building.groups[0].materials) {
+    // Collect unique materials across all groups. WMO has a single global
+    // materials array shared by every group's batches; pulling only from
+    // group[0] dropped per-group materials. Dedupe by (texture, blend, flags).
+    auto materialKey = [](const WoweeBuilding::Material& m) {
+        return m.texturePath + "|" + std::to_string(m.flags) + "|" + std::to_string(m.blendMode);
+    };
+    std::unordered_map<std::string, uint32_t> materialIndex;
+    for (const auto& grp : building.groups) {
+        for (const auto& mat : grp.materials) {
+            std::string key = materialKey(mat);
+            if (materialIndex.count(key)) continue;
             WMOMaterial wm{};
             wm.flags = mat.flags;
             wm.shader = mat.shader;
@@ -236,6 +246,7 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
             wm.color2 = 0;
             wm.texture3 = 0;
             wm.color3 = 0;
+            materialIndex[key] = static_cast<uint32_t>(outModel.materials.size());
             outModel.materials.push_back(wm);
         }
     }
