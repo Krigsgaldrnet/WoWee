@@ -42,7 +42,13 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
 
     uint16_t nameLen;
     f.read(reinterpret_cast<char*>(&nameLen), 2);
-    if (nameLen > 1024) nameLen = 0;
+    // Same desync risk as material texture paths: overlong length
+    // means the actual bytes are still on disk and reading 0 bytes
+    // would shift every subsequent length+data pair.
+    if (nameLen > 1024) {
+        LOG_ERROR("WOB name length rejected (", nameLen, "): ", basePath);
+        return WoweeBuilding{};
+    }
     bld.name.resize(nameLen);
     f.read(bld.name.data(), nameLen);
 
@@ -50,7 +56,11 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         WoweeBuilding::Group grp;
         uint16_t gnLen;
         f.read(reinterpret_cast<char*>(&gnLen), 2);
-        if (gnLen > 1024) gnLen = 0;
+        if (gnLen > 1024) {
+            LOG_ERROR("WOB group ", gi, " name length rejected (",
+                      gnLen, "): ", basePath);
+            return WoweeBuilding{};
+        }
         grp.name.resize(gnLen);
         f.read(grp.name.data(), gnLen);
 
@@ -108,7 +118,15 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         for (uint32_t ti = 0; ti < tc; ti++) {
             uint16_t tl;
             f.read(reinterpret_cast<char*>(&tl), 2);
-            if (tl > 1024) tl = 0;
+            // tl > 1024 means we'd previously zero-out tl and skip the
+            // read — but the original bytes are still on disk, so the
+            // next iteration would read garbage as the next length+path.
+            // Reject the whole load instead of silently desyncing.
+            if (tl > 1024) {
+                LOG_ERROR("WOB group ", gi, " texture path length rejected (",
+                          tl, "): ", basePath);
+                return WoweeBuilding{};
+            }
             std::string tp(tl, '\0');
             f.read(tp.data(), tl);
             rejectTraversal(tp, "group texture");
@@ -130,7 +148,14 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
                 WoweeBuilding::Material mat;
                 uint16_t pl;
                 f.read(reinterpret_cast<char*>(&pl), 2);
-                if (pl > 1024) pl = 0;
+                // Same load-desync risk as group texture paths above —
+                // overlong path means stale on-disk bytes would become
+                // the next material's length+data. Reject the load.
+                if (pl > 1024) {
+                    LOG_ERROR("WOB group ", gi, " material ", mi,
+                              " texture path length rejected (", pl, "): ", basePath);
+                    return WoweeBuilding{};
+                }
                 mat.texturePath.resize(pl);
                 f.read(mat.texturePath.data(), pl);
                 rejectTraversal(mat.texturePath, "material texture");
@@ -176,7 +201,11 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         WoweeBuilding::DoodadPlacement dp;
         uint16_t pl;
         f.read(reinterpret_cast<char*>(&pl), 2);
-        if (pl > 1024) pl = 0;
+        if (pl > 1024) {
+            LOG_ERROR("WOB doodad ", di, " model path length rejected (",
+                      pl, "): ", basePath);
+            return WoweeBuilding{};
+        }
         dp.modelPath.resize(pl);
         f.read(dp.modelPath.data(), pl);
         // Reject path-traversal in doodad model paths — these end up in
