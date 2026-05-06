@@ -422,11 +422,19 @@ M2Model WoweeModelLoader::toM2(const WoweeModel& wom) {
     for (uint32_t idx : wom.indices)
         m.indices.push_back(static_cast<uint16_t>(idx));
 
+    // Convert .png paths back to .blp so the M2 renderer's PNG override path
+    // engages — it's keyed on .blp extension, not .png. fromM2 stored .png to
+    // signal intent; toM2 has to undo that for the runtime to find textures.
     for (const auto& tp : wom.texturePaths) {
         M2Texture tex;
         tex.type = 0;
         tex.flags = 0;
         tex.filename = tp;
+        if (tex.filename.size() >= 4) {
+            std::string ext = tex.filename.substr(tex.filename.size() - 4);
+            if (ext == ".png" || ext == ".PNG")
+                tex.filename = tex.filename.substr(0, tex.filename.size() - 4) + ".blp";
+        }
         m.textures.push_back(tex);
     }
     m.textureLookup.clear();
