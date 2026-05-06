@@ -336,7 +336,7 @@ TEST_CASE("WOT metadata round-trip with placements", "[wot]") {
     {"layers": [0, 1], "holes": 5}
   ],
   "water": [
-    {"chunk": 0, "type": 5, "height": 50.0},
+    {"chunk": 0, "type": 3, "height": 50.0},
     null
   ],
   "doodadNames": ["World\\Doodad\\Tree01.m2", "World\\Doodad\\Rock03.m2"],
@@ -376,7 +376,7 @@ TEST_CASE("WOT metadata round-trip with placements", "[wot]") {
 
     // Water
     REQUIRE(terrain.waterData[0].hasWater());
-    REQUIRE(terrain.waterData[0].layers[0].liquidType == 5);
+    REQUIRE(terrain.waterData[0].layers[0].liquidType == 3); // 3=slime, in valid 0..3 range
     REQUIRE(terrain.waterData[0].layers[0].maxHeight == Catch::Approx(50.0f));
 
     // Doodad names and placements
@@ -510,4 +510,127 @@ TEST_CASE("WOC holes skip triangles", "[woc]") {
 
 TEST_CASE("WOB rejects missing file", "[wob]") {
     REQUIRE_FALSE(WoweeBuildingLoader::exists("nonexistent_path"));
+}
+
+// ============== Defensive hardening tests ==============
+
+TEST_CASE("WOT clamps out-of-range tile coords on load", "[wot][hardening]") {
+    ensureTestDir();
+    std::string wotPath = TEST_DIR + "/oor_tiles.wot";
+    {
+        std::ofstream f(wotPath);
+        f << R"({"format":"wot-1.0","tileX":200,"tileY":-5})";
+    }
+
+    ADTTerrain terrain{};
+    terrain.loaded = true;
+    REQUIRE(WoweeTerrainLoader::loadMetadata(wotPath, terrain));
+    // Out-of-range coords should fall back to 32 (map center).
+    REQUIRE(terrain.coord.x == 32);
+    REQUIRE(terrain.coord.y == 32);
+    std::filesystem::remove(wotPath);
+}
+
+TEST_CASE("WOT clamps out-of-range water liquid type", "[wot][hardening]") {
+    ensureTestDir();
+    std::string wotPath = TEST_DIR + "/oor_water.wot";
+    {
+        std::ofstream f(wotPath);
+        f << R"({"format":"wot-1.0","tileX":32,"tileY":32,
+            "water":[{"chunk":0,"type":99,"height":10.0}]})";
+    }
+
+    ADTTerrain terrain{};
+    terrain.loaded = true;
+    for (int i = 0; i < 256; i++) terrain.chunks[i].heightMap.loaded = true;
+    REQUIRE(WoweeTerrainLoader::loadMetadata(wotPath, terrain));
+    REQUIRE(terrain.waterData[0].hasWater());
+    // type=99 is unknown; loader maps to 0 (plain water).
+    REQUIRE(terrain.waterData[0].layers[0].liquidType == 0);
+    std::filesystem::remove(wotPath);
+}
+
+TEST_CASE("WOC load skips degenerate triangles", "[woc][hardening]") {
+    ensureTestDir();
+    std::string path = TEST_DIR + "/degen.woc";
+    {
+        // Hand-write a WOC with one valid triangle and one degenerate.
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31434F57; // "WOC1"
+        uint32_t triCount = 2;
+        uint32_t tx = 32, ty = 32;
+        glm::vec3 bmin(-1), bmax(1);
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&triCount), 4);
+        f.write(reinterpret_cast<const char*>(&tx), 4);
+        f.write(reinterpret_cast<const char*>(&ty), 4);
+        f.write(reinterpret_cast<const char*>(&bmin), 12);
+        f.write(reinterpret_cast<const char*>(&bmax), 12);
+        // Valid triangle
+        glm::vec3 v0(0, 0, 0), v1(1, 0, 0), v2(0, 1, 0);
+        uint8_t flags = 0x01;
+        f.write(reinterpret_cast<const char*>(&v0), 12);
+        f.write(reinterpret_cast<const char*>(&v1), 12);
+        f.write(reinterpret_cast<const char*>(&v2), 12);
+        f.write(reinterpret_cast<const char*>(&flags), 1);
+        // Degenerate triangle (all three vertices coincident)
+        glm::vec3 d(5, 5, 5);
+        f.write(reinterpret_cast<const char*>(&d), 12);
+        f.write(reinterpret_cast<const char*>(&d), 12);
+        f.write(reinterpret_cast<const char*>(&d), 12);
+        f.write(reinterpret_cast<const char*>(&flags), 1);
+    }
+
+    auto col = WoweeCollisionBuilder::load(path);
+    REQUIRE(col.isValid());
+    // Only the non-degenerate triangle should survive.
+    REQUIRE(col.triangles.size() == 1);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WOC rejects absurdly large triangle counts", "[woc][hardening]") {
+    ensureTestDir();
+    std::string path = TEST_DIR + "/huge_woc.woc";
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31434F57;
+        uint32_t triCount = 10'000'000; // > 2M cap
+        uint32_t tx = 32, ty = 32;
+        glm::vec3 bmin(0), bmax(0);
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&triCount), 4);
+        f.write(reinterpret_cast<const char*>(&tx), 4);
+        f.write(reinterpret_cast<const char*>(&ty), 4);
+        f.write(reinterpret_cast<const char*>(&bmin), 12);
+        f.write(reinterpret_cast<const char*>(&bmax), 12);
+    }
+
+    auto col = WoweeCollisionBuilder::load(path);
+    // 10M triangle WOC rejected — returns empty (isValid false).
+    REQUIRE_FALSE(col.isValid());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WOC clamps out-of-range tile coords on load", "[woc][hardening]") {
+    ensureTestDir();
+    std::string path = TEST_DIR + "/oor_tile_woc.woc";
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = 0x31434F57;
+        uint32_t triCount = 0;
+        uint32_t tx = 200, ty = 200; // out of 0..63
+        glm::vec3 bmin(0), bmax(0);
+        f.write(reinterpret_cast<const char*>(&magic), 4);
+        f.write(reinterpret_cast<const char*>(&triCount), 4);
+        f.write(reinterpret_cast<const char*>(&tx), 4);
+        f.write(reinterpret_cast<const char*>(&ty), 4);
+        f.write(reinterpret_cast<const char*>(&bmin), 12);
+        f.write(reinterpret_cast<const char*>(&bmax), 12);
+    }
+
+    auto col = WoweeCollisionBuilder::load(path);
+    // Out-of-range coords reclamped to 32 (map center).
+    REQUIRE(col.tileX == 32);
+    REQUIRE(col.tileY == 32);
+    std::filesystem::remove(path);
 }
