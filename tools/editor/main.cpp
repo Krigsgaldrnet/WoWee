@@ -473,6 +473,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         In-place rename (zone.json + slug-prefixed files + dir); no copy\n");
     std::printf("  --clear-zone-content <zoneDir> [--creatures] [--objects] [--quests] [--all]\n");
     std::printf("                         Wipe one or more content files (terrain + manifest preserved)\n");
+    std::printf("  --strip-zone <zoneDir> [--dry-run]\n");
+    std::printf("                         Remove derived outputs (.glb/.obj/.stl/.html/.dot/.csv/ZONE.md/DEPS.md)\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
     std::printf("  --regen-collision <zoneDir>  Rebuild every WOC under a zone dir and exit\n");
     std::printf("  --fix-zone <zoneDir>   Re-parse + re-save zone JSONs to apply latest scrubs/caps and exit\n");
@@ -673,7 +675,7 @@ int main(int argc, char* argv[]) {
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest",
-        "--copy-zone", "--rename-zone", "--clear-zone-content",
+        "--copy-zone", "--rename-zone", "--clear-zone-content", "--strip-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png", "--export-obj", "--import-obj",
         "--export-wob-obj", "--import-wob-obj",
@@ -8964,6 +8966,85 @@ int main(int argc, char* argv[]) {
                 }
             }
             std::printf("  removed  : %d file(s) total\n", deleted);
+            return 0;
+        } else if (std::strcmp(argv[i], "--strip-zone") == 0 && i + 1 < argc) {
+            // Cleanup pass: remove the derived outputs (.glb/.obj/.stl/
+            // .html/.dot/.csv/ZONE.md/DEPS.md) leaving only source files
+            // (zone.json + content JSONs + open binary formats). Useful
+            // before --pack-wcp so the archive doesn't carry redundant
+            // exports, or before committing to git so derived blobs
+            // don't bloat history.
+            //
+            // Optional --dry-run flag previews what would be removed
+            // without actually deleting anything.
+            std::string zoneDir = argv[++i];
+            bool dryRun = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--dry-run") == 0) {
+                dryRun = true;
+                i++;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "strip-zone: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            // Whitelist of derived extensions. PNG is special-cased: it
+            // can be either a derived export (heightmap preview at zone
+            // root) or a source sidecar (BLP→PNG inside data/). Only
+            // strip PNGs at the top-level zone dir.
+            auto isDerivedExt = [](const std::string& ext) {
+                return ext == ".glb" || ext == ".obj" || ext == ".stl" ||
+                       ext == ".html" || ext == ".dot" || ext == ".csv";
+            };
+            auto isDerivedFilename = [](const std::string& name) {
+                return name == "ZONE.md" || name == "DEPS.md" ||
+                       name == "quests.dot";
+            };
+            int removed = 0;
+            uint64_t bytesFreed = 0;
+            std::error_code ec;
+            // Top-level only — do NOT recurse into data/ (those are
+            // source sidecars).
+            for (const auto& e : fs::directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::string name = e.path().filename().string();
+                bool kill = false;
+                if (isDerivedExt(ext)) kill = true;
+                if (isDerivedFilename(name)) kill = true;
+                // PNG at zone root is derived (--export-png); PNGs inside
+                // data/ are source. Top-level loop only sees the root
+                // dir, so .png here is always derived.
+                if (ext == ".png") kill = true;
+                if (!kill) continue;
+                uint64_t sz = e.file_size(ec);
+                if (dryRun) {
+                    std::printf("  would remove: %s (%llu bytes)\n",
+                                name.c_str(),
+                                static_cast<unsigned long long>(sz));
+                } else {
+                    if (fs::remove(e.path(), ec)) {
+                        std::printf("  removed: %s (%llu bytes)\n",
+                                    name.c_str(),
+                                    static_cast<unsigned long long>(sz));
+                        removed++;
+                        bytesFreed += sz;
+                    } else {
+                        std::fprintf(stderr,
+                            "  WARN: failed to remove %s (%s)\n",
+                            name.c_str(), ec.message().c_str());
+                    }
+                }
+            }
+            std::printf("\nstrip-zone: %s%s\n",
+                        zoneDir.c_str(), dryRun ? " (dry-run)" : "");
+            if (dryRun) {
+                std::printf("  pass --dry-run off to actually delete\n");
+            } else {
+                std::printf("  removed  : %d file(s)\n", removed);
+                std::printf("  freed    : %.1f KB\n", bytesFreed / 1024.0);
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--pack-wcp") == 0 && i + 1 < argc) {
             // Pack a zone directory into a .wcp archive.
