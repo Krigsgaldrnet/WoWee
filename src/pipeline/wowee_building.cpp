@@ -96,12 +96,22 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
             if (idx > vMax) idx = 0;
         }
 
+        // Helper: clear path on traversal/absolute attempt.
+        auto rejectTraversal = [](std::string& s, const char* what) {
+            if (s.find("..") != std::string::npos ||
+                (!s.empty() && (s[0] == '/' || s[0] == '\\')) ||
+                (s.size() >= 2 && s[1] == ':')) {
+                LOG_WARNING("WOB ", what, " path rejected (traversal): ", s);
+                s.clear();
+            }
+        };
         for (uint32_t ti = 0; ti < tc; ti++) {
             uint16_t tl;
             f.read(reinterpret_cast<char*>(&tl), 2);
             if (tl > 1024) tl = 0;
             std::string tp(tl, '\0');
             f.read(tp.data(), tl);
+            rejectTraversal(tp, "group texture");
             grp.texturePaths.push_back(tp);
         }
 
@@ -115,6 +125,7 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
                 if (pl > 1024) pl = 0;
                 mat.texturePath.resize(pl);
                 f.read(mat.texturePath.data(), pl);
+                rejectTraversal(mat.texturePath, "material texture");
                 f.read(reinterpret_cast<char*>(&mat.flags), 4);
                 f.read(reinterpret_cast<char*>(&mat.shader), 4);
                 f.read(reinterpret_cast<char*>(&mat.blendMode), 4);

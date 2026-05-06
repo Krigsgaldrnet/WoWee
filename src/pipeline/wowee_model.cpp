@@ -113,6 +113,14 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
         if (pathLen > 1024) { pathLen = 0; }
         std::string path(pathLen, '\0');
         f.read(path.data(), pathLen);
+        // Reject path-traversal — texture paths from a hostile WOM are fed
+        // to the asset manager and could probe files outside assets/.
+        if (path.find("..") != std::string::npos ||
+            (!path.empty() && (path[0] == '/' || path[0] == '\\')) ||
+            (path.size() >= 2 && path[1] == ':')) {
+            LOG_WARNING("WOM texture path rejected (traversal): ", path);
+            path.clear();
+        }
         model.texturePaths.push_back(path);
     }
 
