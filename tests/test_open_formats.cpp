@@ -393,6 +393,32 @@ TEST_CASE("WOC save and load round-trip", "[woc]") {
     REQUIRE(loaded.steepCount() == 1);
 }
 
+TEST_CASE("WOC addMesh classifies walkability by slope", "[woc]") {
+    WoweeCollision col;
+    // Two triangles: one floor (walkable), one steep wall (not walkable).
+    std::vector<glm::vec3> verts = {
+        {0, 0, 0}, {10, 0, 0}, {0, 10, 0},   // flat floor
+        {0, 0, 0}, {1, 0, 10}, {0, 1, 10}    // near-vertical wall
+    };
+    std::vector<uint32_t> idx = {0, 1, 2, 3, 4, 5};
+    glm::mat4 identity(1.0f);
+    WoweeCollisionBuilder::addMesh(col, verts, idx, identity, 0);
+
+    REQUIRE(col.triangles.size() == 2);
+    REQUIRE((col.triangles[0].flags & 0x01) != 0); // floor walkable
+    REQUIRE((col.triangles[1].flags & 0x01) == 0); // wall not walkable
+}
+
+TEST_CASE("WOC addMesh respects extra flags", "[woc]") {
+    WoweeCollision col;
+    std::vector<glm::vec3> verts = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    std::vector<uint32_t> idx = {0, 1, 2};
+    WoweeCollisionBuilder::addMesh(col, verts, idx, glm::mat4(1.0f), 0x08); // indoor
+    REQUIRE(col.triangles.size() == 1);
+    REQUIRE((col.triangles[0].flags & 0x08) != 0); // indoor flag preserved
+    REQUIRE((col.triangles[0].flags & 0x01) != 0); // and walkable
+}
+
 TEST_CASE("WOC holes skip triangles", "[woc]") {
     ADTTerrain terrain{};
     terrain.loaded = true;
