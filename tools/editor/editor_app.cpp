@@ -99,14 +99,19 @@ void EditorApp::run() {
 
         updateToasts(dt);
 
-        // Auto-save
-        if (autoSaveEnabled_ && terrain_.isLoaded() && terrainEditor_.hasUnsavedChanges()) {
-            autoSaveTimer_ += dt;
-            if (autoSaveTimer_ >= autoSaveInterval_) {
-                autoSaveTimer_ = 0.0f;
-                quickSave();
-                showToast("Auto-saved", 2.0f);
-                LOG_INFO("Auto-saved zone");
+        // Auto-save: any unsaved change (terrain edits, object/NPC placement,
+        // quest edits) qualifies. Previously only terrain changes counted.
+        if (autoSaveEnabled_ && terrain_.isLoaded()) {
+            bool dirty = terrainEditor_.hasUnsavedChanges() || autoSavePendingChanges_;
+            if (dirty) {
+                autoSaveTimer_ += dt;
+                if (autoSaveTimer_ >= autoSaveInterval_) {
+                    autoSaveTimer_ = 0.0f;
+                    autoSavePendingChanges_ = false;
+                    quickSave();
+                    showToast("Auto-saved", 2.0f);
+                    LOG_INFO("Auto-saved zone");
+                }
             }
         }
 
@@ -333,10 +338,10 @@ void EditorApp::processEvents() {
                 if (sc == SDL_SCANCODE_DELETE) {
                     if (objectPlacer_.getSelected()) {
                         objectPlacer_.deleteSelected();
-                        objectsDirty_ = true;
+                        objectsDirty_ = true; autoSavePendingChanges_ = true;
                     } else if (npcSpawner_.getSelected()) {
                         npcSpawner_.removeCreature(npcSpawner_.getSelectedIndex());
-                        objectsDirty_ = true;
+                        objectsDirty_ = true; autoSavePendingChanges_ = true;
                     }
                 }
                 if (sc == SDL_SCANCODE_S && (event.key.keysym.mod & KMOD_CTRL))
@@ -366,13 +371,13 @@ void EditorApp::processEvents() {
                         objectPlacer_.setPlacementScale(dupScale);
                         objectPlacer_.setPlacementRotationY(dupRot.y);
                         objectPlacer_.placeObject(dupPos);
-                        objectsDirty_ = true;
+                        objectsDirty_ = true; autoSavePendingChanges_ = true;
                         showToast("Duplicated object");
                     } else if (auto* npc = npcSpawner_.getSelected()) {
                         CreatureSpawn copy = *npc;
                         copy.position += glm::vec3(10, 10, 0);
                         npcSpawner_.placeCreature(copy);
-                        objectsDirty_ = true;
+                        objectsDirty_ = true; autoSavePendingChanges_ = true;
                         showToast("Duplicated NPC");
                     }
                 }
@@ -409,7 +414,7 @@ void EditorApp::processEvents() {
                         if (mode_ == EditorMode::PlaceObject || mode_ == EditorMode::NPC) {
                             if (objectPlacer_.canUndoPlace()) {
                                 objectPlacer_.undoLastPlace();
-                                objectsDirty_ = true;
+                                objectsDirty_ = true; autoSavePendingChanges_ = true;
                                 showToast("Undo placement");
                             }
                         } else if (terrainEditor_.history().canUndo()) {
@@ -451,7 +456,7 @@ void EditorApp::processEvents() {
                         giz.beginDrag(glm::vec2(event.motion.x, event.motion.y));
                     }
                     giz.setTarget(sel->position, sel->scale);
-                    objectsDirty_ = true;
+                    objectsDirty_ = true; autoSavePendingChanges_ = true;
                 } else if (auto* npc = npcSpawner_.getSelected()) {
                     if (giz.getMode() == TransformMode::Move) {
                         npc->position += giz.getMoveDelta();
@@ -467,7 +472,7 @@ void EditorApp::processEvents() {
                         giz.beginDrag(glm::vec2(event.motion.x, event.motion.y));
                     }
                     giz.setTarget(npc->position, npc->scale);
-                    objectsDirty_ = true;
+                    objectsDirty_ = true; autoSavePendingChanges_ = true;
                 }
             } else {
                 camera_.processMouseMotion(event.motion.xrel, event.motion.yrel);
@@ -568,7 +573,7 @@ void EditorApp::processEvents() {
                                 auto& tmpl = npcSpawner_.getTemplate();
                                 tmpl.position = hitPos;
                                 npcSpawner_.placeCreature(tmpl);
-                                objectsDirty_ = true;
+                                objectsDirty_ = true; autoSavePendingChanges_ = true;
                             }
                         }
                     } else if (mode_ == EditorMode::Water) {
@@ -584,7 +589,7 @@ void EditorApp::processEvents() {
                         glm::vec3 hitPos;
                         if (terrainEditor_.raycastTerrain(ray, hitPos)) {
                             objectPlacer_.placeObject(hitPos);
-                            objectsDirty_ = true;
+                            objectsDirty_ = true; autoSavePendingChanges_ = true;
                         }
                     } else {
                         painting_ = true;
@@ -814,7 +819,7 @@ bool EditorApp::loadWMOInstance(const std::string& mapName) {
     wmo.scale = 1.0f;
     wmo.uniqueId = 1;
     objectPlacer_.getObjects().push_back(wmo);
-    objectsDirty_ = true;
+    objectsDirty_ = true; autoSavePendingChanges_ = true;
 
     loadedMap_ = mapName;
     loadedTileX_ = 32;
@@ -964,7 +969,7 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
         }
     }
     if (!terrain_.doodadPlacements.empty() || !terrain_.wmoPlacements.empty()) {
-        objectsDirty_ = true;
+        objectsDirty_ = true; autoSavePendingChanges_ = true;
         showToast("Imported " + std::to_string(terrain_.doodadPlacements.size()) +
                   " doodads + " + std::to_string(terrain_.wmoPlacements.size()) + " WMOs");
         LOG_INFO("Imported ", terrain_.doodadPlacements.size(), " doodads + ",
@@ -987,7 +992,7 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
                 showToast("Loaded " + std::to_string(questEditor_.questCount()) + " quests");
     }
     if (objectPlacer_.objectCount() > 0 || npcSpawner_.spawnCount() > 0)
-        objectsDirty_ = true;
+        objectsDirty_ = true; autoSavePendingChanges_ = true;
 }
 
 void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome) {
@@ -1342,6 +1347,7 @@ void EditorApp::quickSave() {
     if (!terrain_.isLoaded()) return;
     std::string dir = lastSavePath_.empty() ? "output" : lastSavePath_;
     exportZone(dir);
+    autoSavePendingChanges_ = false;
 }
 
 void EditorApp::requestQuit() {
@@ -1545,7 +1551,7 @@ void EditorApp::snapSelectedToGround() {
         glm::vec3 hitPos;
         if (castDown(sel->position, hitPos)) {
             sel->position.z = hitPos.z;
-            objectsDirty_ = true;
+            objectsDirty_ = true; autoSavePendingChanges_ = true;
         }
         return;
     }
@@ -1554,7 +1560,7 @@ void EditorApp::snapSelectedToGround() {
         glm::vec3 hitPos;
         if (castDown(npc->position, hitPos)) {
             npc->position.z = hitPos.z;
-            objectsDirty_ = true;
+            objectsDirty_ = true; autoSavePendingChanges_ = true;
         }
         // Also snap each patrol waypoint
         for (auto& wp : npc->patrolPath) {
@@ -1610,7 +1616,7 @@ void EditorApp::alignSelectedToTerrain() {
         alignOne(*sel);
     }
     if (count > 0) {
-        objectsDirty_ = true;
+        objectsDirty_ = true; autoSavePendingChanges_ = true;
         showToast("Aligned " + std::to_string(count) + " object(s) to terrain");
     }
 }

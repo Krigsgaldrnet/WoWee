@@ -84,7 +84,7 @@ public:
         }
         mode_ = m;
     }
-    void markObjectsDirty() { objectsDirty_ = true; }
+    void markObjectsDirty() { objectsDirty_ = true; autoSavePendingChanges_ = true; }
 
     void startGizmoMode(TransformMode mode);
     void setGizmoAxis(TransformAxis axis);
@@ -150,6 +150,7 @@ private:
     float autoSaveTimer_ = 0.0f;
     float autoSaveInterval_ = 300.0f;
     bool autoSaveEnabled_ = true;
+    bool autoSavePendingChanges_ = false;
     bool showQuitConfirm_ = false;
     ZoneManifest zoneManifest_;
 
