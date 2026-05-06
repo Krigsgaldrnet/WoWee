@@ -38,6 +38,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Append one object placement to <zoneDir>/objects.json and exit\n");
     std::printf("  --add-quest <zoneDir> <title> [giverId] [turnInId] [xp] [level]\n");
     std::printf("                         Append one quest to <zoneDir>/quests.json and exit\n");
+    std::printf("  --copy-zone <srcDir> <newName>\n");
+    std::printf("                         Duplicate a zone to custom_zones/<slug>/ with renamed slug-prefixed files\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
     std::printf("  --regen-collision <zoneDir>  Rebuild every WOC under a zone dir and exit\n");
     std::printf("  --fix-zone <zoneDir>   Re-parse + re-save zone JSONs to apply latest scrubs/caps and exit\n");
@@ -90,6 +92,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--zone-summary",
         "--scaffold-zone", "--add-creature", "--add-object", "--add-quest",
+        "--copy-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png",
         "--convert-m2", "--convert-wmo",
@@ -122,6 +125,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--add-quest") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--add-quest requires <zoneDir> <title>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--copy-zone") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--copy-zone requires <srcDir> <newName>\n");
             return 1;
         }
     }
@@ -1310,6 +1318,103 @@ int main(int argc, char* argv[]) {
             std::printf("  files    : %s.wot, %s.whm, zone.json\n",
                         slug.c_str(), slug.c_str());
             std::printf("  next step: run editor without args, then File → Open Zone\n");
+            return 0;
+        } else if (std::strcmp(argv[i], "--copy-zone") == 0 && i + 2 < argc) {
+            // Duplicate a zone — copy every file then rename slug-prefixed
+            // ones (heightmap/terrain/collision sidecars carry the slug in
+            // their filenames, e.g. "Sample_28_30.whm") so the new zone is
+            // self-consistent. Useful for templating: scaffold once, then
+            // copy-zone N times to create variants.
+            std::string srcDir = argv[++i];
+            std::string rawName = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr, "copy-zone: source dir not found: %s\n",
+                             srcDir.c_str());
+                return 1;
+            }
+            if (!fs::exists(srcDir + "/zone.json")) {
+                std::fprintf(stderr, "copy-zone: %s has no zone.json — not a zone dir\n",
+                             srcDir.c_str());
+                return 1;
+            }
+            // Slugify new name (matches scaffold-zone rules so the result
+            // round-trips through unpackZone / server module gen).
+            std::string newSlug;
+            for (char c : rawName) {
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') || c == '_' || c == '-') {
+                    newSlug += c;
+                } else if (c == ' ') {
+                    newSlug += '_';
+                }
+            }
+            if (newSlug.empty()) {
+                std::fprintf(stderr, "copy-zone: name '%s' has no valid characters\n",
+                             rawName.c_str());
+                return 1;
+            }
+            std::string dstDir = "custom_zones/" + newSlug;
+            if (fs::exists(dstDir)) {
+                std::fprintf(stderr, "copy-zone: destination already exists: %s\n",
+                             dstDir.c_str());
+                return 1;
+            }
+            // Read the source slug from its zone.json so we know what
+            // prefix to rewrite. Don't trust the directory name — a user
+            // could have renamed the dir without touching the manifest.
+            wowee::editor::ZoneManifest src;
+            if (!src.load(srcDir + "/zone.json")) {
+                std::fprintf(stderr, "copy-zone: failed to parse %s/zone.json\n",
+                             srcDir.c_str());
+                return 1;
+            }
+            std::string oldSlug = src.mapName;
+            if (oldSlug == newSlug) {
+                std::fprintf(stderr, "copy-zone: new slug matches old (%s); nothing to do\n",
+                             oldSlug.c_str());
+                return 1;
+            }
+            // Recursive copy preserves any subdirs (e.g. data/ for DBC sidecars).
+            std::error_code ec;
+            fs::create_directories(dstDir);
+            fs::copy(srcDir, dstDir,
+                     fs::copy_options::recursive | fs::copy_options::copy_symlinks,
+                     ec);
+            if (ec) {
+                std::fprintf(stderr, "copy-zone: copy failed: %s\n", ec.message().c_str());
+                return 1;
+            }
+            // Rename slug-prefixed files inside the destination. Match
+            // "<oldSlug>_..." or "<oldSlug>." so we catch both
+            // "Sample_28_30.whm" and a hypothetical "Sample.wdt".
+            int renamed = 0;
+            for (const auto& entry : fs::recursive_directory_iterator(dstDir)) {
+                if (!entry.is_regular_file()) continue;
+                std::string fname = entry.path().filename().string();
+                bool match = (fname.size() > oldSlug.size() + 1 &&
+                              fname.compare(0, oldSlug.size(), oldSlug) == 0 &&
+                              (fname[oldSlug.size()] == '_' ||
+                               fname[oldSlug.size()] == '.'));
+                if (!match) continue;
+                std::string newName = newSlug + fname.substr(oldSlug.size());
+                fs::rename(entry.path(), entry.path().parent_path() / newName, ec);
+                if (!ec) renamed++;
+            }
+            // Rewrite the destination's zone.json with the new slug so its
+            // files-block (rebuilt from mapName by save()) matches the
+            // renamed files on disk.
+            wowee::editor::ZoneManifest dst = src;
+            dst.mapName = newSlug;
+            dst.displayName = rawName;
+            if (!dst.save(dstDir + "/zone.json")) {
+                std::fprintf(stderr, "copy-zone: failed to write %s/zone.json\n",
+                             dstDir.c_str());
+                return 1;
+            }
+            std::printf("Copied %s -> %s\n", srcDir.c_str(), dstDir.c_str());
+            std::printf("  mapName  : %s -> %s\n", oldSlug.c_str(), newSlug.c_str());
+            std::printf("  renamed  : %d slug-prefixed file(s)\n", renamed);
             return 0;
         } else if (std::strcmp(argv[i], "--pack-wcp") == 0 && i + 1 < argc) {
             // Pack a zone directory into a .wcp archive.
