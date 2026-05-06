@@ -529,6 +529,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Render a hierarchical tree view of a zone's contents (no --json)\n");
     std::printf("  --export-zone-summary-md <zoneDir> [out.md]\n");
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
+    std::printf("  --export-zone-csv <zoneDir> [outDir]\n");
+    std::printf("                         Emit creatures.csv / objects.csv / quests.csv for spreadsheet workflows\n");
     std::printf("  --export-quest-graph <zoneDir> [out.dot]\n");
     std::printf("                         Render quest-chain DAG as Graphviz DOT (pipe to `dot -Tpng -o quests.png`)\n");
     std::printf("  --info <wom-base> [--json]\n");
@@ -635,6 +637,7 @@ int main(int argc, char* argv[]) {
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--zone-summary", "--info-zone-tree",
         "--export-zone-summary-md", "--export-quest-graph",
+        "--export-zone-csv",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--zone-stats", "--list-zone-deps",
         "--check-zone-refs",
@@ -3469,6 +3472,141 @@ int main(int argc, char* argv[]) {
             std::printf("  zone=%s, %zu tiles, %zu creatures, %zu objects, %zu quests\n",
                         zm.mapName.c_str(), zm.tiles.size(), sp.spawnCount(),
                         op.getObjects().size(), qe.questCount());
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-zone-csv") == 0 && i + 1 < argc) {
+            // Emit creatures.csv / objects.csv / quests.csv for designers
+            // who prefer spreadsheets over JSON. Round-trip back into the
+            // editor isn't supported yet, but for read-only analysis (sort
+            // by XP, group by faction, pivot tables in LibreOffice) CSV is
+            // the lingua franca of design data.
+            std::string zoneDir = argv[++i];
+            std::string outDir;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "export-zone-csv: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            if (outDir.empty()) outDir = zoneDir;
+            // CSV-escape: wrap any field containing comma/quote/newline in
+            // double quotes; double up internal quotes per RFC 4180.
+            auto csvEsc = [](const std::string& s) {
+                bool needs = s.find(',') != std::string::npos ||
+                             s.find('"') != std::string::npos ||
+                             s.find('\n') != std::string::npos;
+                if (!needs) return s;
+                std::string out = "\"";
+                for (char c : s) {
+                    if (c == '"') out += "\"\"";
+                    else out += c;
+                }
+                out += "\"";
+                return out;
+            };
+            int filesWritten = 0;
+            // Creatures
+            wowee::editor::NpcSpawner sp;
+            if (sp.loadFromFile(zoneDir + "/creatures.json")) {
+                std::string out = outDir + "/creatures.csv";
+                std::ofstream f(out);
+                if (!f) {
+                    std::fprintf(stderr, "cannot write %s\n", out.c_str());
+                    return 1;
+                }
+                f << "index,id,name,displayId,level,health,mana,faction,"
+                     "x,y,z,orientation,scale,hostile,questgiver,vendor,trainer\n";
+                for (size_t k = 0; k < sp.spawnCount(); ++k) {
+                    const auto& s = sp.getSpawns()[k];
+                    f << k << "," << s.id << "," << csvEsc(s.name) << ","
+                      << s.displayId << "," << s.level << ","
+                      << s.health << "," << s.mana << "," << s.faction << ","
+                      << s.position.x << "," << s.position.y << ","
+                      << s.position.z << "," << s.orientation << ","
+                      << s.scale << ","
+                      << (s.hostile ? 1 : 0) << ","
+                      << (s.questgiver ? 1 : 0) << ","
+                      << (s.vendor ? 1 : 0) << ","
+                      << (s.trainer ? 1 : 0) << "\n";
+                }
+                std::printf("  wrote %s (%zu rows)\n", out.c_str(), sp.spawnCount());
+                filesWritten++;
+            }
+            // Objects
+            wowee::editor::ObjectPlacer op;
+            if (op.loadFromFile(zoneDir + "/objects.json")) {
+                std::string out = outDir + "/objects.csv";
+                std::ofstream f(out);
+                if (!f) return 1;
+                f << "index,type,path,x,y,z,rotX,rotY,rotZ,scale\n";
+                for (size_t k = 0; k < op.getObjects().size(); ++k) {
+                    const auto& o = op.getObjects()[k];
+                    f << k << ","
+                      << (o.type == wowee::editor::PlaceableType::M2 ? "m2" : "wmo") << ","
+                      << csvEsc(o.path) << ","
+                      << o.position.x << "," << o.position.y << "," << o.position.z << ","
+                      << o.rotation.x << "," << o.rotation.y << "," << o.rotation.z << ","
+                      << o.scale << "\n";
+                }
+                std::printf("  wrote %s (%zu rows)\n", out.c_str(),
+                            op.getObjects().size());
+                filesWritten++;
+            }
+            // Quests — flatten to one row per quest. Objectives + items
+            // are joined into a single semicolon-separated cell so the
+            // CSV stays one-row-per-quest (designer-friendly for sorting).
+            wowee::editor::QuestEditor qe;
+            if (qe.loadFromFile(zoneDir + "/quests.json")) {
+                std::string out = outDir + "/quests.csv";
+                std::ofstream f(out);
+                if (!f) return 1;
+                f << "index,id,title,requiredLevel,giverNpcId,turnInNpcId,"
+                     "xp,gold,silver,copper,nextQuestId,objectiveCount,"
+                     "objectives,itemRewards\n";
+                using OT = wowee::editor::QuestObjectiveType;
+                auto typeName = [](OT t) {
+                    switch (t) {
+                        case OT::KillCreature: return "kill";
+                        case OT::CollectItem:  return "collect";
+                        case OT::TalkToNPC:    return "talk";
+                        case OT::ExploreArea:  return "explore";
+                        case OT::EscortNPC:    return "escort";
+                        case OT::UseObject:    return "use";
+                    }
+                    return "?";
+                };
+                for (size_t k = 0; k < qe.questCount(); ++k) {
+                    const auto& q = qe.getQuests()[k];
+                    std::string objs;
+                    for (size_t o = 0; o < q.objectives.size(); ++o) {
+                        if (o) objs += "; ";
+                        objs += std::string(typeName(q.objectives[o].type)) + ":" +
+                                q.objectives[o].targetName + "x" +
+                                std::to_string(q.objectives[o].targetCount);
+                    }
+                    std::string items;
+                    for (size_t r = 0; r < q.reward.itemRewards.size(); ++r) {
+                        if (r) items += "; ";
+                        items += q.reward.itemRewards[r];
+                    }
+                    f << k << "," << q.id << "," << csvEsc(q.title) << ","
+                      << q.requiredLevel << ","
+                      << q.questGiverNpcId << "," << q.turnInNpcId << ","
+                      << q.reward.xp << "," << q.reward.gold << ","
+                      << q.reward.silver << "," << q.reward.copper << ","
+                      << q.nextQuestId << ","
+                      << q.objectives.size() << ","
+                      << csvEsc(objs) << "," << csvEsc(items) << "\n";
+                }
+                std::printf("  wrote %s (%zu rows)\n", out.c_str(), qe.questCount());
+                filesWritten++;
+            }
+            if (filesWritten == 0) {
+                std::fprintf(stderr,
+                    "export-zone-csv: zone has no creatures/objects/quests to emit\n");
+                return 1;
+            }
+            std::printf("Exported %d CSV file(s) to %s\n", filesWritten, outDir.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--export-quest-graph") == 0 && i + 1 < argc) {
             // Render quest chains as a Graphviz DOT graph. Visualizing
