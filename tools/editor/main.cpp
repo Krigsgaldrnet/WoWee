@@ -514,6 +514,12 @@ static void printUsage(const char* argv0) {
     std::printf("                         List every texture path referenced by a WOM (with on-disk presence)\n");
     std::printf("  --info-doodads <wob-base> [--json]\n");
     std::printf("                         List every doodad placement in a WOB (model path, position, rotation, scale)\n");
+    std::printf("  --info-attachments <m2-path> [--json]\n");
+    std::printf("                         List M2 attachment points (weapon mounts, etc.) with bone + offset\n");
+    std::printf("  --info-particles <m2-path> [--json]\n");
+    std::printf("                         List M2 particle + ribbon emitters (texture, blend, bone)\n");
+    std::printf("  --info-sequences <m2-path> [--json]\n");
+    std::printf("                         List M2 animation sequences (id, duration, flags)\n");
     std::printf("  --info-wob <wob-base> [--json]\n");
     std::printf("                         Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path> [--json]\n");
@@ -577,6 +583,7 @@ int main(int argc, char* argv[]) {
     // with a helpful message instead of silently dropping into the GUI.
     static const char* kArgRequired[] = {
         "--data", "--info", "--info-batches", "--info-textures", "--info-doodads",
+        "--info-attachments", "--info-particles", "--info-sequences",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--list-missing-sidecars",
@@ -970,6 +977,188 @@ int main(int argc, char* argv[]) {
                             d.position.x, d.position.y, d.position.z,
                             d.rotation.x, d.rotation.y, d.rotation.z,
                             d.modelPath.c_str());
+            }
+            return 0;
+        } else if ((std::strcmp(argv[i], "--info-attachments") == 0 ||
+                    std::strcmp(argv[i], "--info-particles") == 0 ||
+                    std::strcmp(argv[i], "--info-sequences") == 0) &&
+                   i + 1 < argc) {
+            // Three M2 inspectors share an entry point — they all need
+            // the same M2Loader::load + skin merge dance, then differ
+            // only in which sub-array they iterate.
+            enum Kind { kAttach, kParticle, kSequence };
+            Kind kind;
+            const char* cmdName;
+            if (std::strcmp(argv[i], "--info-attachments") == 0) {
+                kind = kAttach; cmdName = "info-attachments";
+            } else if (std::strcmp(argv[i], "--info-particles") == 0) {
+                kind = kParticle; cmdName = "info-particles";
+            } else {
+                kind = kSequence; cmdName = "info-sequences";
+            }
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr, "%s: cannot open %s\n", cmdName, path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            // Auto-merge skin for vertex/index counts to match render.
+            std::vector<uint8_t> skinBytes;
+            {
+                std::string skinPath = path;
+                auto dot = skinPath.rfind('.');
+                if (dot != std::string::npos)
+                    skinPath = skinPath.substr(0, dot) + "00.skin";
+                std::ifstream sf(skinPath, std::ios::binary);
+                if (sf) {
+                    skinBytes.assign((std::istreambuf_iterator<char>(sf)),
+                                      std::istreambuf_iterator<char>());
+                }
+            }
+            auto m2 = wowee::pipeline::M2Loader::load(bytes);
+            if (!skinBytes.empty()) {
+                wowee::pipeline::M2Loader::loadSkin(skinBytes, m2);
+            }
+            if (kind == kAttach) {
+                if (jsonOut) {
+                    nlohmann::json j;
+                    j["m2"] = path;
+                    j["count"] = m2.attachments.size();
+                    nlohmann::json arr = nlohmann::json::array();
+                    for (size_t k = 0; k < m2.attachments.size(); ++k) {
+                        const auto& a = m2.attachments[k];
+                        arr.push_back({
+                            {"index", k}, {"id", a.id}, {"bone", a.bone},
+                            {"position", {a.position.x, a.position.y, a.position.z}}
+                        });
+                    }
+                    j["attachments"] = arr;
+                    std::printf("%s\n", j.dump(2).c_str());
+                    return 0;
+                }
+                std::printf("M2 attachments: %s (%zu)\n", path.c_str(),
+                            m2.attachments.size());
+                if (m2.attachments.empty()) {
+                    std::printf("  *no attachments*\n");
+                    return 0;
+                }
+                std::printf("  idx   id  bone  pos (x, y, z)\n");
+                for (size_t k = 0; k < m2.attachments.size(); ++k) {
+                    const auto& a = m2.attachments[k];
+                    std::printf("  %3zu  %3u  %4u  (%6.2f, %6.2f, %6.2f)\n",
+                                k, a.id, a.bone,
+                                a.position.x, a.position.y, a.position.z);
+                }
+                return 0;
+            }
+            if (kind == kParticle) {
+                auto blendName = [](uint8_t b) {
+                    switch (b) {
+                        case 0: return "opaque";
+                        case 1: return "alphakey";
+                        case 2: return "alpha";
+                        case 4: return "add";
+                    }
+                    return "?";
+                };
+                if (jsonOut) {
+                    nlohmann::json j;
+                    j["m2"] = path;
+                    j["particleEmitters"] = m2.particleEmitters.size();
+                    j["ribbonEmitters"] = m2.ribbonEmitters.size();
+                    nlohmann::json parts = nlohmann::json::array();
+                    for (size_t k = 0; k < m2.particleEmitters.size(); ++k) {
+                        const auto& p = m2.particleEmitters[k];
+                        parts.push_back({
+                            {"index", k}, {"particleId", p.particleId},
+                            {"bone", p.bone}, {"texture", p.texture},
+                            {"blendingType", p.blendingType},
+                            {"blendName", blendName(p.blendingType)},
+                            {"emitterType", p.emitterType},
+                            {"position", {p.position.x, p.position.y, p.position.z}}
+                        });
+                    }
+                    j["particles"] = parts;
+                    nlohmann::json ribbons = nlohmann::json::array();
+                    for (size_t k = 0; k < m2.ribbonEmitters.size(); ++k) {
+                        const auto& r = m2.ribbonEmitters[k];
+                        ribbons.push_back({
+                            {"index", k}, {"ribbonId", r.ribbonId},
+                            {"bone", r.bone},
+                            {"textureIndex", r.textureIndex},
+                            {"materialIndex", r.materialIndex},
+                            {"position", {r.position.x, r.position.y, r.position.z}}
+                        });
+                    }
+                    j["ribbons"] = ribbons;
+                    std::printf("%s\n", j.dump(2).c_str());
+                    return 0;
+                }
+                std::printf("M2 emitters: %s\n", path.c_str());
+                std::printf("  particles: %zu, ribbons: %zu\n",
+                            m2.particleEmitters.size(), m2.ribbonEmitters.size());
+                if (!m2.particleEmitters.empty()) {
+                    std::printf("\n  Particles:\n");
+                    std::printf("    idx   id  bone  tex  blend     type  pos (x, y, z)\n");
+                    for (size_t k = 0; k < m2.particleEmitters.size(); ++k) {
+                        const auto& p = m2.particleEmitters[k];
+                        std::printf("    %3zu  %3d  %4u  %3u  %-8s  %4u  (%5.1f, %5.1f, %5.1f)\n",
+                                    k, p.particleId, p.bone, p.texture,
+                                    blendName(p.blendingType), p.emitterType,
+                                    p.position.x, p.position.y, p.position.z);
+                    }
+                }
+                if (!m2.ribbonEmitters.empty()) {
+                    std::printf("\n  Ribbons:\n");
+                    std::printf("    idx   id  bone  tex  mat  pos (x, y, z)\n");
+                    for (size_t k = 0; k < m2.ribbonEmitters.size(); ++k) {
+                        const auto& r = m2.ribbonEmitters[k];
+                        std::printf("    %3zu  %3d  %4u  %3u  %3u  (%5.1f, %5.1f, %5.1f)\n",
+                                    k, r.ribbonId, r.bone, r.textureIndex, r.materialIndex,
+                                    r.position.x, r.position.y, r.position.z);
+                    }
+                }
+                return 0;
+            }
+            // kind == kSequence
+            if (jsonOut) {
+                nlohmann::json j;
+                j["m2"] = path;
+                j["count"] = m2.sequences.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (size_t k = 0; k < m2.sequences.size(); ++k) {
+                    const auto& s = m2.sequences[k];
+                    arr.push_back({
+                        {"index", k}, {"id", s.id},
+                        {"variation", s.variationIndex},
+                        {"durationMs", s.duration}, {"flags", s.flags},
+                        {"movingSpeed", s.movingSpeed},
+                        {"frequency", s.frequency},
+                        {"blendTimeMs", s.blendTime}
+                    });
+                }
+                j["sequences"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("M2 sequences: %s (%zu)\n", path.c_str(),
+                        m2.sequences.size());
+            if (m2.sequences.empty()) {
+                std::printf("  *no sequences*\n");
+                return 0;
+            }
+            std::printf("  idx   id  var  duration  flags    speed  blend\n");
+            for (size_t k = 0; k < m2.sequences.size(); ++k) {
+                const auto& s = m2.sequences[k];
+                std::printf("  %3zu  %3u  %3u  %8u  %5u   %5.2f  %5u\n",
+                            k, s.id, s.variationIndex,
+                            s.duration, s.flags,
+                            s.movingSpeed, s.blendTime);
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-wob") == 0 && i + 1 < argc) {
