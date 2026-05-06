@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstring>
 #include <unordered_map>
+#include <unordered_set>
 #include <map>
 #include <algorithm>
 #include <nlohmann/json.hpp>
@@ -418,6 +419,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Aggregate counts across every zone in <projectDir>\n");
     std::printf("  --list-zone-deps <zoneDir> [--json]\n");
     std::printf("                         List external M2/WMO model paths a zone references (objects + WOB doodads)\n");
+    std::printf("  --check-zone-refs <zoneDir> [--json]\n");
+    std::printf("                         Verify every referenced model/quest NPC actually exists; exit 1 on missing refs\n");
     std::printf("  --for-each-zone <projectDir> -- <cmd...>\n");
     std::printf("                         Run <cmd...> for every zone in <projectDir>; '{}' in cmd is replaced with the zone path\n");
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
@@ -582,6 +585,7 @@ int main(int argc, char* argv[]) {
         "--export-zone-summary-md",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--zone-stats", "--list-zone-deps",
+        "--check-zone-refs",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
@@ -6073,6 +6077,148 @@ int main(int argc, char* argv[]) {
             emit("Direct WMO placements", directWMO);
             emit("WOB doodad M2 refs",    doodadM2);
             return 0;
+        } else if (std::strcmp(argv[i], "--check-zone-refs") == 0 && i + 1 < argc) {
+            // Cross-reference checker: every model path in objects.json
+            // must resolve as either an open WOM/WOB sidecar or a
+            // proprietary M2/WMO; every quest's giver/turnIn NPC ID must
+            // appear in creatures.json (when the zone has creatures).
+            // Catches dangling references that --validate doesn't, since
+            // --validate only checks open-format file presence.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "check-zone-refs: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            // Try to find a model on disk in any of the conventional
+            // locations (zone-local, output/, custom_zones/, Data/).
+            // Strips extension and tries each open + proprietary variant.
+            auto stripExt = [](const std::string& p, const char* ext) {
+                size_t n = std::strlen(ext);
+                if (p.size() >= n) {
+                    std::string tail = p.substr(p.size() - n);
+                    std::string lower = tail;
+                    for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+                    if (lower == ext) return p.substr(0, p.size() - n);
+                }
+                return p;
+            };
+            auto modelExists = [&](const std::string& path, bool isWMO) {
+                std::string base;
+                std::vector<std::string> exts;
+                if (isWMO) {
+                    base = stripExt(path, ".wmo");
+                    exts = {".wob", ".wmo"};
+                } else {
+                    base = stripExt(path, ".m2");
+                    exts = {".wom", ".m2"};
+                }
+                std::vector<std::string> roots = {
+                    "", zoneDir + "/", "output/", "custom_zones/", "Data/"
+                };
+                for (const auto& root : roots) {
+                    for (const auto& ext : exts) {
+                        if (fs::exists(root + base + ext)) return true;
+                        // Case-fold fallback for case-sensitive filesystems
+                        // (designers usually type Mixed Case but Linux
+                        // stores asset paths lowercase after extraction).
+                        std::string lower = base + ext;
+                        for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+                        if (fs::exists(root + lower)) return true;
+                    }
+                }
+                return false;
+            };
+            std::vector<std::string> errors;
+            // Object placements -> models on disk
+            wowee::editor::ObjectPlacer op;
+            int objectsChecked = 0, objectsMissing = 0;
+            if (op.loadFromFile(zoneDir + "/objects.json")) {
+                for (size_t k = 0; k < op.getObjects().size(); ++k) {
+                    const auto& o = op.getObjects()[k];
+                    objectsChecked++;
+                    bool isWMO = (o.type == wowee::editor::PlaceableType::WMO);
+                    if (!modelExists(o.path, isWMO)) {
+                        objectsMissing++;
+                        if (errors.size() < 30) {
+                            errors.push_back("object[" + std::to_string(k) +
+                                             "] missing: " + o.path);
+                        }
+                    }
+                }
+            }
+            // Quest NPCs -> creatures.json IDs (only when creatures exist;
+            // otherwise NPC IDs may legitimately reference upstream content
+            // outside the zone).
+            wowee::editor::NpcSpawner sp;
+            wowee::editor::QuestEditor qe;
+            int questsChecked = 0, questsMissing = 0;
+            bool hasCreatures = sp.loadFromFile(zoneDir + "/creatures.json");
+            std::unordered_set<uint32_t> creatureIds;
+            if (hasCreatures) {
+                for (const auto& s : sp.getSpawns()) creatureIds.insert(s.id);
+            }
+            if (qe.loadFromFile(zoneDir + "/quests.json") && hasCreatures) {
+                for (size_t k = 0; k < qe.getQuests().size(); ++k) {
+                    const auto& q = qe.getQuests()[k];
+                    questsChecked++;
+                    bool localGiver = (q.questGiverNpcId != 0 &&
+                                       creatureIds.count(q.questGiverNpcId) == 0);
+                    bool localTurn  = (q.turnInNpcId != 0 &&
+                                       q.turnInNpcId != q.questGiverNpcId &&
+                                       creatureIds.count(q.turnInNpcId) == 0);
+                    // Only flag IDs that look 'small' (likely zone-local).
+                    // Production uses 6-digit IDs that reference upstream
+                    // content; designers wire those in deliberately.
+                    if (localGiver && q.questGiverNpcId < 100000) {
+                        questsMissing++;
+                        if (errors.size() < 30) {
+                            errors.push_back("quest[" + std::to_string(k) + "] '" +
+                                             q.title + "' giver " +
+                                             std::to_string(q.questGiverNpcId) +
+                                             " not in creatures.json");
+                        }
+                    }
+                    if (localTurn && q.turnInNpcId < 100000) {
+                        questsMissing++;
+                        if (errors.size() < 30) {
+                            errors.push_back("quest[" + std::to_string(k) + "] '" +
+                                             q.title + "' turn-in " +
+                                             std::to_string(q.turnInNpcId) +
+                                             " not in creatures.json");
+                        }
+                    }
+                }
+            }
+            int totalErrors = objectsMissing + questsMissing;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["objectsChecked"] = objectsChecked;
+                j["objectsMissing"] = objectsMissing;
+                j["questsChecked"] = questsChecked;
+                j["questsMissing"] = questsMissing;
+                j["errors"] = errors;
+                j["passed"] = (totalErrors == 0);
+                std::printf("%s\n", j.dump(2).c_str());
+                return totalErrors == 0 ? 0 : 1;
+            }
+            std::printf("Zone refs: %s\n", zoneDir.c_str());
+            std::printf("  objects checked  : %d (%d missing)\n",
+                        objectsChecked, objectsMissing);
+            std::printf("  quests checked   : %d (%d bad NPC refs)\n",
+                        questsChecked, questsMissing);
+            if (totalErrors == 0) {
+                std::printf("  PASSED\n");
+                return 0;
+            }
+            std::printf("  FAILED — %d issue(s):\n", totalErrors);
+            for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return 1;
         } else if (std::strcmp(argv[i], "--for-each-zone") == 0 && i + 1 < argc) {
             // Batch runner: enumerates zones in <projectDir> and runs the
             // command after '--' for each one. '{}' in the command is
