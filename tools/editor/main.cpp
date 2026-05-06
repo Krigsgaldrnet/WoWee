@@ -614,6 +614,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Compare two WOM models (verts, indices, bones, anims, batches, bounds)\n");
     std::printf("  --diff-wob <a-base> <b-base> [--json]\n");
     std::printf("                         Compare two WOB buildings (groups, portals, doodads, totals)\n");
+    std::printf("  --diff-whm <a-base> <b-base> [--json]\n");
+    std::printf("                         Compare two WHM/WOT terrain pairs (chunks, height range, placements)\n");
+    std::printf("  --diff-woc <a> <b> [--json]\n");
+    std::printf("                         Compare two WOC collision meshes (triangles, walkable/steep counts, tile)\n");
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
@@ -700,6 +704,16 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--diff-wob") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--diff-wob requires <a-base> <b-base>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--diff-whm") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--diff-whm requires <a-base> <b-base>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--diff-woc") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--diff-woc requires <a.woc> <b.woc>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 >= argc) {
@@ -3279,6 +3293,158 @@ int main(int argc, char* argv[]) {
                         nameMatch ? "" : "DIFF");
             std::printf("  %-12s: %s\n", "boundRadius",
                         radMatch ? "match" : "DIFF");
+            if (diffs == 0) {
+                std::printf("  IDENTICAL\n");
+                return 0;
+            }
+            return 1;
+        } else if (std::strcmp(argv[i], "--diff-whm") == 0 && i + 2 < argc) {
+            // Terrain diff. Catches the common "did my edit actually
+            // change anything?" question for heightmap tweaks. Compares
+            // chunk presence + height range + placement counts; not
+            // pointwise height compare since float perturbation from
+            // round-trips would false-flag.
+            std::string aBase = argv[++i];
+            std::string bBase = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            for (auto* base : {&aBase, &bBase}) {
+                for (const char* ext : {".wot", ".whm"}) {
+                    if (base->size() >= 4 && base->substr(base->size() - 4) == ext) {
+                        *base = base->substr(0, base->size() - 4);
+                        break;
+                    }
+                }
+            }
+            for (const auto& base : {aBase, bBase}) {
+                if (!wowee::pipeline::WoweeTerrainLoader::exists(base)) {
+                    std::fprintf(stderr,
+                        "diff-whm: WHM/WOT not found: %s.{whm,wot}\n", base.c_str());
+                    return 1;
+                }
+            }
+            wowee::pipeline::ADTTerrain a, b;
+            wowee::pipeline::WoweeTerrainLoader::load(aBase, a);
+            wowee::pipeline::WoweeTerrainLoader::load(bBase, b);
+            // Per-side height range walk — same as --info-whm.
+            auto stats = [](const wowee::pipeline::ADTTerrain& t) {
+                struct S { int loaded; float minH, maxH; } s{0, 1e30f, -1e30f};
+                for (const auto& c : t.chunks) {
+                    if (!c.heightMap.isLoaded()) continue;
+                    s.loaded++;
+                    for (float h : c.heightMap.heights) {
+                        if (std::isfinite(h)) {
+                            s.minH = std::min(s.minH, h);
+                            s.maxH = std::max(s.maxH, h);
+                        }
+                    }
+                }
+                if (s.loaded == 0) { s.minH = 0; s.maxH = 0; }
+                return s;
+            };
+            auto sa = stats(a);
+            auto sb = stats(b);
+            struct Row { const char* label; long long av, bv; };
+            std::vector<Row> rows = {
+                {"loadedChunks",  sa.loaded,                          sb.loaded},
+                {"doodadPlace",   (long long)a.doodadPlacements.size(),(long long)b.doodadPlacements.size()},
+                {"wmoPlace",      (long long)a.wmoPlacements.size(),  (long long)b.wmoPlacements.size()},
+                {"textures",      (long long)a.textures.size(),       (long long)b.textures.size()},
+                {"doodadNames",   (long long)a.doodadNames.size(),    (long long)b.doodadNames.size()},
+                {"wmoNames",      (long long)a.wmoNames.size(),       (long long)b.wmoNames.size()},
+            };
+            int diffs = 0;
+            for (const auto& r : rows) if (r.av != r.bv) diffs++;
+            // Tile coords + height range comparison (epsilon for floats).
+            bool tileMatch = (a.coord.x == b.coord.x && a.coord.y == b.coord.y);
+            if (!tileMatch) diffs++;
+            bool heightMatch = (std::abs(sa.minH - sb.minH) < 0.01f &&
+                                 std::abs(sa.maxH - sb.maxH) < 0.01f);
+            if (!heightMatch) diffs++;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["a"] = aBase; j["b"] = bBase;
+                for (const auto& r : rows) {
+                    j[r.label] = {{"a", r.av}, {"b", r.bv}};
+                }
+                j["tile"] = {{"a", {a.coord.x, a.coord.y}},
+                              {"b", {b.coord.x, b.coord.y}}};
+                j["heightRange"] = {{"a", {sa.minH, sa.maxH}},
+                                     {"b", {sb.minH, sb.maxH}}};
+                j["totalDiffs"] = diffs;
+                j["identical"] = (diffs == 0);
+                std::printf("%s\n", j.dump(2).c_str());
+                return diffs == 0 ? 0 : 1;
+            }
+            std::printf("Diff: %s vs %s\n", aBase.c_str(), bBase.c_str());
+            std::printf("                       a              b\n");
+            std::printf("  %-13s: (%4d,%4d)    (%4d,%4d)  %s\n",
+                        "tile", a.coord.x, a.coord.y, b.coord.x, b.coord.y,
+                        tileMatch ? "" : "DIFF");
+            for (const auto& r : rows) {
+                std::printf("  %-13s: %12lld %12lld  %s\n",
+                            r.label, r.av, r.bv,
+                            r.av == r.bv ? "" : "DIFF");
+            }
+            std::printf("  %-13s: [%.2f,%.2f]  [%.2f,%.2f]  %s\n",
+                        "heightRange", sa.minH, sa.maxH, sb.minH, sb.maxH,
+                        heightMatch ? "" : "DIFF");
+            if (diffs == 0) {
+                std::printf("  IDENTICAL\n");
+                return 0;
+            }
+            return 1;
+        } else if (std::strcmp(argv[i], "--diff-woc") == 0 && i + 2 < argc) {
+            // Collision-mesh diff. Confirms a --regen-collision pass
+            // actually changed something (or didn't, when the heightmap
+            // tweak was below the slope threshold).
+            std::string aPath = argv[++i];
+            std::string bPath = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            for (const auto& p : {aPath, bPath}) {
+                if (!std::filesystem::exists(p)) {
+                    std::fprintf(stderr, "diff-woc: WOC not found: %s\n", p.c_str());
+                    return 1;
+                }
+            }
+            auto a = wowee::pipeline::WoweeCollisionBuilder::load(aPath);
+            auto b = wowee::pipeline::WoweeCollisionBuilder::load(bPath);
+            struct Row { const char* label; long long av, bv; };
+            std::vector<Row> rows = {
+                {"triangles", (long long)a.triangles.size(), (long long)b.triangles.size()},
+                {"walkable",  (long long)a.walkableCount(),   (long long)b.walkableCount()},
+                {"steep",     (long long)a.steepCount(),      (long long)b.steepCount()},
+            };
+            int diffs = 0;
+            for (const auto& r : rows) if (r.av != r.bv) diffs++;
+            bool tileMatch = (a.tileX == b.tileX && a.tileY == b.tileY);
+            if (!tileMatch) diffs++;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["a"] = aPath; j["b"] = bPath;
+                for (const auto& r : rows) {
+                    j[r.label] = {{"a", r.av}, {"b", r.bv}};
+                }
+                j["tile"] = {{"a", {a.tileX, a.tileY}},
+                              {"b", {b.tileX, b.tileY}}};
+                j["totalDiffs"] = diffs;
+                j["identical"] = (diffs == 0);
+                std::printf("%s\n", j.dump(2).c_str());
+                return diffs == 0 ? 0 : 1;
+            }
+            std::printf("Diff: %s vs %s\n", aPath.c_str(), bPath.c_str());
+            std::printf("                       a              b\n");
+            std::printf("  %-12s: (%4u,%4u)    (%4u,%4u)  %s\n",
+                        "tile", a.tileX, a.tileY, b.tileX, b.tileY,
+                        tileMatch ? "" : "DIFF");
+            for (const auto& r : rows) {
+                std::printf("  %-12s: %12lld %12lld  %s\n",
+                            r.label, r.av, r.bv,
+                            r.av == r.bv ? "" : "DIFF");
+            }
             if (diffs == 0) {
                 std::printf("  IDENTICAL\n");
                 return 0;
