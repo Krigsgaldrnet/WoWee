@@ -1556,6 +1556,9 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
                        [](unsigned char c) { return std::tolower(c); });
 
         auto& browser = app.getAssetBrowser();
+        // Show pool counts so the user knows the search base.
+        ImGui::TextDisabled("Pool: %zu M2  %zu WMO",
+                            browser.getM2Models().size(), browser.getWMOs().size());
         float listHeight = ImGui::GetContentRegionAvail().y - 100;
         ImGui::BeginChild("ObjList", ImVec2(0, listHeight), true);
 
