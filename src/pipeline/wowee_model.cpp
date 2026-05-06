@@ -315,10 +315,20 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
 
         uint32_t animCount = static_cast<uint32_t>(model.animations.size());
         f.write(reinterpret_cast<const char*>(&animCount), 4);
+        // Same NaN scrub as load — keyframes can carry corrupt source data
+        // straight through fromM2 without ever round-tripping a load, so the
+        // save side has to defend independently.
+        auto sanV3 = [](glm::vec3 v, float def) {
+            if (!std::isfinite(v.x)) v.x = def;
+            if (!std::isfinite(v.y)) v.y = def;
+            if (!std::isfinite(v.z)) v.z = def;
+            return v;
+        };
         for (const auto& anim : model.animations) {
             f.write(reinterpret_cast<const char*>(&anim.id), 4);
             f.write(reinterpret_cast<const char*>(&anim.durationMs), 4);
-            f.write(reinterpret_cast<const char*>(&anim.movingSpeed), 4);
+            float movingSpeed = std::isfinite(anim.movingSpeed) ? anim.movingSpeed : 0.0f;
+            f.write(reinterpret_cast<const char*>(&movingSpeed), 4);
 
             for (size_t bi = 0; bi < model.bones.size(); bi++) {
                 uint32_t kfCount = (bi < anim.boneKeyframes.size())
@@ -326,10 +336,17 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
                 f.write(reinterpret_cast<const char*>(&kfCount), 4);
                 for (uint32_t ki = 0; ki < kfCount; ki++) {
                     const auto& kf = anim.boneKeyframes[bi][ki];
+                    glm::vec3 t = sanV3(kf.translation, 0.0f);
+                    glm::vec3 s = sanV3(kf.scale, 1.0f);
+                    glm::quat q = kf.rotation;
+                    if (!std::isfinite(q.x)) q.x = 0.0f;
+                    if (!std::isfinite(q.y)) q.y = 0.0f;
+                    if (!std::isfinite(q.z)) q.z = 0.0f;
+                    if (!std::isfinite(q.w)) q.w = 1.0f;
                     f.write(reinterpret_cast<const char*>(&kf.timeMs), 4);
-                    f.write(reinterpret_cast<const char*>(&kf.translation), 12);
-                    f.write(reinterpret_cast<const char*>(&kf.rotation), 16);
-                    f.write(reinterpret_cast<const char*>(&kf.scale), 12);
+                    f.write(reinterpret_cast<const char*>(&t), 12);
+                    f.write(reinterpret_cast<const char*>(&q), 16);
+                    f.write(reinterpret_cast<const char*>(&s), 12);
                 }
             }
         }
