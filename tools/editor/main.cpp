@@ -436,6 +436,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Duplicate a quest (with all objectives + rewards) and append it\n");
     std::printf("  --clone-creature <zoneDir> <idx> [newName] [dx dy dz]\n");
     std::printf("                         Duplicate a creature spawn (defaults: '<orig> (copy)' offset by 5 yards)\n");
+    std::printf("  --clone-object <zoneDir> <idx> [dx dy dz]\n");
+    std::printf("                         Duplicate an object placement (defaults: offset by 5 yards X)\n");
     std::printf("  --add-quest-reward-item <zoneDir> <questIdx> <itemPath> [more...]\n");
     std::printf("                         Append item reward(s) to a quest's reward.itemRewards list\n");
     std::printf("  --set-quest-reward <zoneDir> <questIdx> [--xp N] [--gold N] [--silver N] [--copper N]\n");
@@ -567,6 +569,7 @@ int main(int argc, char* argv[]) {
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
+        "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest",
         "--copy-zone", "--rename-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
@@ -630,6 +633,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--clone-creature") == 0 && i + 2 >= argc) {
             std::fprintf(stderr,
                 "--clone-creature requires <zoneDir> <idx>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--clone-object") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--clone-object requires <zoneDir> <idx>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--add-quest-reward-item") == 0 && i + 3 >= argc) {
@@ -4411,6 +4419,67 @@ int main(int argc, char* argv[]) {
                         idx, clone.name.c_str(),
                         clone.position.x, clone.position.y, clone.position.z,
                         sp.spawnCount());
+            return 0;
+        } else if (std::strcmp(argv[i], "--clone-object") == 0 && i + 2 < argc) {
+            // Symmetric to --clone-creature/--clone-quest. Common
+            // workflow: place one tree/lamp/barrel just right, then
+            // clone N copies along a path or around a square. Default
+            // 5-yard X offset prevents z-fighting; rotation/scale are
+            // preserved so a tilted object stays tilted.
+            std::string zoneDir = argv[++i];
+            std::string idxStr = argv[++i];
+            float dx = 5.0f, dy = 0.0f, dz = 0.0f;
+            if (i + 3 < argc && argv[i + 1][0] != '-') {
+                try {
+                    dx = std::stof(argv[++i]);
+                    dy = std::stof(argv[++i]);
+                    dz = std::stof(argv[++i]);
+                } catch (...) {
+                    std::fprintf(stderr, "clone-object: bad offset\n");
+                    return 1;
+                }
+            }
+            std::string path = zoneDir + "/objects.json";
+            if (!std::filesystem::exists(path)) {
+                std::fprintf(stderr, "clone-object: %s not found\n", path.c_str());
+                return 1;
+            }
+            int idx;
+            try { idx = std::stoi(idxStr); }
+            catch (...) {
+                std::fprintf(stderr, "clone-object: bad idx '%s'\n", idxStr.c_str());
+                return 1;
+            }
+            wowee::editor::ObjectPlacer placer;
+            if (!placer.loadFromFile(path)) {
+                std::fprintf(stderr, "clone-object: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            auto& objs = placer.getObjects();
+            if (idx < 0 || idx >= static_cast<int>(objs.size())) {
+                std::fprintf(stderr,
+                    "clone-object: idx %d out of range [0, %zu)\n",
+                    idx, objs.size());
+                return 1;
+            }
+            // Deep-copy by value. uniqueId is reset so the new object
+            // doesn't collide with the source's identifier in any
+            // downstream system that dedups by it.
+            wowee::editor::PlacedObject clone = objs[idx];
+            clone.uniqueId = 0;
+            clone.selected = false;
+            clone.position.x += dx;
+            clone.position.y += dy;
+            clone.position.z += dz;
+            objs.push_back(clone);
+            if (!placer.saveToFile(path)) {
+                std::fprintf(stderr, "clone-object: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            std::printf("Cloned object %d -> '%s' at (%.1f, %.1f, %.1f) (now %zu total)\n",
+                        idx, clone.path.c_str(),
+                        clone.position.x, clone.position.y, clone.position.z,
+                        objs.size());
             return 0;
         } else if (std::strcmp(argv[i], "--add-quest-reward-item") == 0 && i + 3 < argc) {
             // Append one or more item rewards to a quest. Multiple paths
