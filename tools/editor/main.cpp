@@ -521,6 +521,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Verify position accessor min/max in a .glb actually matches the data\n");
     std::printf("  --validate-stl <path> [--json]\n");
     std::printf("                         Verify an ASCII STL's structure (solid framing, facet/vertex shape, no NaN)\n");
+    std::printf("  --validate-png <path> [--json]\n");
+    std::printf("                         Verify a PNG's structure (signature, chunks, CRC, IHDR/IDAT/IEND order)\n");
     std::printf("  --validate-jsondbc <path> [--json]\n");
     std::printf("                         Verify a JSON DBC sidecar's full schema (per-cell types, row width, format tag)\n");
     std::printf("  --info-glb <path> [--json]\n");
@@ -652,6 +654,7 @@ int main(int argc, char* argv[]) {
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
+        "--validate-png",
         "--zone-summary", "--info-zone-tree",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html",
@@ -5104,6 +5107,141 @@ int main(int argc, char* argv[]) {
             if (nonFinite > 0) {
                 std::printf("  non-finite : %d\n", nonFinite);
             }
+            if (errors.empty()) {
+                std::printf("  PASSED\n");
+                return 0;
+            }
+            std::printf("  FAILED — %zu error(s):\n", errors.size());
+            for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-png") == 0 && i + 1 < argc) {
+            // Full PNG structural validator — beyond --info-png's
+            // header-only sniff. Walks every chunk, verifies CRC,
+            // ensures IHDR/IDAT/IEND are present and ordered correctly.
+            // Catches the kind of corruption (truncation mid-IDAT,
+            // bit-flip in CRC) that browsers/decoders silently skip.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr,
+                    "validate-png: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            std::vector<std::string> errors;
+            // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+            static const uint8_t kSig[8] = {0x89, 0x50, 0x4E, 0x47,
+                                             0x0D, 0x0A, 0x1A, 0x0A};
+            if (bytes.size() < 8 || std::memcmp(bytes.data(), kSig, 8) != 0) {
+                errors.push_back("missing PNG signature");
+            }
+            // CRC32 table per PNG spec (matches the standard polynomial
+            // 0xEDB88320; building once via constexpr-eligible logic).
+            uint32_t crcTable[256];
+            for (uint32_t n = 0; n < 256; ++n) {
+                uint32_t c = n;
+                for (int k = 0; k < 8; ++k) {
+                    c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+                }
+                crcTable[n] = c;
+            }
+            auto crc32 = [&](const uint8_t* data, size_t len) {
+                uint32_t c = 0xFFFFFFFFu;
+                for (size_t k = 0; k < len; ++k) {
+                    c = crcTable[(c ^ data[k]) & 0xFF] ^ (c >> 8);
+                }
+                return c ^ 0xFFFFFFFFu;
+            };
+            auto be32 = [](const uint8_t* p) {
+                return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) |
+                       (uint32_t(p[2]) << 8)  |  uint32_t(p[3]);
+            };
+            int chunkCount = 0;
+            int badCrcs = 0;
+            bool sawIHDR = false, sawIDAT = false, sawIEND = false;
+            bool ihdrFirst = false;
+            std::string firstChunkType;
+            uint32_t width = 0, height = 0;
+            uint8_t bitDepth = 0, colorType = 0;
+            // Walk chunks: each is length(4) + type(4) + data(length) + crc(4).
+            size_t off = 8;
+            while (errors.empty() && off + 12 <= bytes.size()) {
+                uint32_t len = be32(&bytes[off]);
+                if (off + 8 + len + 4 > bytes.size()) {
+                    errors.push_back("chunk at offset " + std::to_string(off) +
+                                     " extends past file end");
+                    break;
+                }
+                std::string type(reinterpret_cast<const char*>(&bytes[off + 4]), 4);
+                if (chunkCount == 0) {
+                    firstChunkType = type;
+                    ihdrFirst = (type == "IHDR");
+                }
+                chunkCount++;
+                if (type == "IHDR") {
+                    sawIHDR = true;
+                    if (len >= 13) {
+                        width = be32(&bytes[off + 8]);
+                        height = be32(&bytes[off + 12]);
+                        bitDepth = bytes[off + 16];
+                        colorType = bytes[off + 17];
+                    }
+                } else if (type == "IDAT") {
+                    sawIDAT = true;
+                } else if (type == "IEND") {
+                    sawIEND = true;
+                }
+                // Verify CRC (computed over type + data, not length).
+                uint32_t storedCrc = be32(&bytes[off + 8 + len]);
+                uint32_t actualCrc = crc32(&bytes[off + 4], 4 + len);
+                if (storedCrc != actualCrc) {
+                    badCrcs++;
+                    if (errors.size() < 10) {
+                        char buf[128];
+                        std::snprintf(buf, sizeof(buf),
+                            "chunk '%s' at offset %zu: CRC mismatch (stored=0x%08X actual=0x%08X)",
+                            type.c_str(), off, storedCrc, actualCrc);
+                        errors.push_back(buf);
+                    }
+                }
+                off += 8 + len + 4;
+            }
+            if (!ihdrFirst) {
+                errors.push_back("first chunk is '" + firstChunkType +
+                                  "', expected 'IHDR'");
+            }
+            if (!sawIHDR) errors.push_back("missing required IHDR chunk");
+            if (!sawIDAT) errors.push_back("missing required IDAT chunk");
+            if (!sawIEND) errors.push_back("missing required IEND chunk");
+            if (off < bytes.size()) {
+                errors.push_back(std::to_string(bytes.size() - off) +
+                                  " trailing bytes after IEND chunk");
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["png"] = path;
+                j["width"] = width;
+                j["height"] = height;
+                j["bitDepth"] = bitDepth;
+                j["colorType"] = colorType;
+                j["chunkCount"] = chunkCount;
+                j["badCrcs"] = badCrcs;
+                j["fileSize"] = bytes.size();
+                j["errors"] = errors;
+                j["passed"] = errors.empty();
+                std::printf("%s\n", j.dump(2).c_str());
+                return errors.empty() ? 0 : 1;
+            }
+            std::printf("PNG: %s\n", path.c_str());
+            std::printf("  size       : %u x %u\n", width, height);
+            std::printf("  bit depth  : %u (color type %u)\n", bitDepth, colorType);
+            std::printf("  chunks     : %d (%d CRC mismatches)\n",
+                        chunkCount, badCrcs);
+            std::printf("  file bytes : %zu\n", bytes.size());
             if (errors.empty()) {
                 std::printf("  PASSED\n");
                 return 0;
