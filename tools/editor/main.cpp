@@ -41,6 +41,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-quests <p>      Print quests.json summary (counts, rewards, chain errors) and exit\n");
     std::printf("  --info-wcp <wcp-path>  Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
+    std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
@@ -57,7 +58,8 @@ int main(int argc, char* argv[]) {
     static const char* kArgRequired[] = {
         "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
-        "--info-wcp", "--list-wcp", "--unpack-wcp", "--validate", "--scaffold-zone",
+        "--info-wcp", "--list-wcp", "--unpack-wcp", "--pack-wcp",
+        "--validate", "--scaffold-zone",
         "--convert-m2", "--convert-wmo",
     };
     for (int i = 1; i < argc; i++) {
@@ -432,6 +434,46 @@ int main(int argc, char* argv[]) {
             std::printf("  files    : %s.wot, %s.whm, zone.json\n",
                         slug.c_str(), slug.c_str());
             std::printf("  next step: run editor without args, then File → Open Zone\n");
+            return 0;
+        } else if (std::strcmp(argv[i], "--pack-wcp") == 0 && i + 1 < argc) {
+            // Pack a zone directory into a .wcp archive.
+            // Usage: --pack-wcp <zoneDirOrName> [destPath]
+            // If <zoneDirOrName> looks like a path (contains '/' or starts
+            // with '.'), use it directly; otherwise resolve under
+            // custom_zones/ then output/ (matching the discovery search
+            // order).
+            std::string nameOrDir = argv[++i];
+            std::string destPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                destPath = argv[++i];
+            }
+            namespace fs = std::filesystem;
+            std::string outputDir, mapName;
+            if (nameOrDir.find('/') != std::string::npos || nameOrDir[0] == '.') {
+                fs::path p = fs::absolute(nameOrDir);
+                outputDir = p.parent_path().string();
+                mapName = p.filename().string();
+            } else {
+                mapName = nameOrDir;
+                if (fs::exists("custom_zones/" + mapName)) outputDir = "custom_zones";
+                else if (fs::exists("output/" + mapName)) outputDir = "output";
+                else {
+                    std::fprintf(stderr,
+                        "--pack-wcp: zone '%s' not found in custom_zones/ or output/\n",
+                        mapName.c_str());
+                    return 1;
+                }
+            }
+            if (destPath.empty()) destPath = mapName + ".wcp";
+            wowee::editor::ContentPackInfo info;
+            info.name = mapName;
+            info.format = "wcp-1.0";
+            if (!wowee::editor::ContentPacker::packZone(outputDir, mapName, destPath, info)) {
+                std::fprintf(stderr, "WCP pack failed for %s/%s\n",
+                             outputDir.c_str(), mapName.c_str());
+                return 1;
+            }
+            std::printf("WCP packed: %s\n", destPath.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--unpack-wcp") == 0 && i + 1 < argc) {
             std::string wcpPath = argv[++i];
