@@ -39,13 +39,19 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
         return false;
     }
 
-    // Build info JSON
+    // Build info JSON. Cap string lengths so a stray gigantic field can't
+    // bloat the info JSON past the 16MB unpack cap (which would then make
+    // the pack unreadable via readInfo / unpackZone).
+    auto cap = [](std::string s, size_t n) {
+        if (s.size() > n) s.resize(n);
+        return s;
+    };
     nlohmann::json infoObj;
-    infoObj["format"] = info.format;
-    infoObj["name"] = info.name;
-    infoObj["author"] = info.author;
-    infoObj["description"] = info.description;
-    infoObj["version"] = info.version;
+    infoObj["format"] = cap(info.format, 64);
+    infoObj["name"] = cap(info.name, 100);
+    infoObj["author"] = cap(info.author, 100);
+    infoObj["description"] = cap(info.description, 4096);
+    infoObj["version"] = cap(info.version, 32);
     infoObj["mapId"] = info.mapId;
     infoObj["fileCount"] = files.size();
     nlohmann::json fileArr = nlohmann::json::array();
