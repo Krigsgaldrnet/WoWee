@@ -630,8 +630,15 @@ void EditorViewport::render(VkCommandBuffer cmd) {
 
     terrainRenderer_->render(cmd, perFrameSet, *camera_);
 
-    if (m2Renderer_)
+    if (m2Renderer_) {
+        static int diagCounter = 0;
+        if (m2Renderer_->getInstanceCount() > 0 && (diagCounter++ % 300) == 0) {
+            LOG_WARNING("M2 render: ", m2Renderer_->getModelCount(), " models, ",
+                        m2Renderer_->getInstanceCount(), " instances, ",
+                        m2Renderer_->getDrawCallCount(), " draws");
+        }
         m2Renderer_->render(cmd, perFrameSet, *camera_);
+    }
     if (wmoRenderer_)
         wmoRenderer_->render(cmd, perFrameSet, *camera_);
 
