@@ -1544,7 +1544,7 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         if (ImGui::Checkbox("Snap Ground", &snap))
             placer.setSnapToGround(snap);
         float scale = placer.getPlacementScale();
-        if (ImGui::SliderFloat("Scale", &scale, 0.1f, 10.0f, "%.2f"))
+        if (ImGui::DragFloat("Scale", &scale, 0.05f, 0.1f, 50.0f, "%.2f"))
             placer.setPlacementScale(scale);
 
         ImGui::Separator();
