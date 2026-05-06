@@ -595,6 +595,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print every field for one creature spawn (stats, behavior, AI, flags)\n");
     std::printf("  --info-quest <p> <idx> [--json]\n");
     std::printf("                         Print every field for one quest (objectives + reward + chain in one shot)\n");
+    std::printf("  --info-object <p> <idx> [--json]\n");
+    std::printf("                         Print every field for one object placement (type, path, transform)\n");
     std::printf("  --info-wcp <wcp-path> [--json]\n");
     std::printf("                         Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
@@ -635,7 +637,7 @@ int main(int argc, char* argv[]) {
         "--info-zone", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
         "--list-quest-objectives", "--list-quest-rewards",
-        "--info-creature", "--info-quest",
+        "--info-creature", "--info-quest", "--info-object",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
@@ -2688,6 +2690,61 @@ int main(int argc, char* argv[]) {
                             o.description.empty() ? "" : "  — ",
                             o.description.c_str());
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-object") == 0 && i + 2 < argc) {
+            // Single-object deep dive — every PlacedObject field for one
+            // entry. Completes the single-entity inspector trio
+            // (creature/quest/object).
+            std::string path = argv[++i];
+            std::string idxStr = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            int idx;
+            try { idx = std::stoi(idxStr); }
+            catch (...) {
+                std::fprintf(stderr, "info-object: bad idx '%s'\n", idxStr.c_str());
+                return 1;
+            }
+            wowee::editor::ObjectPlacer placer;
+            if (!placer.loadFromFile(path)) {
+                std::fprintf(stderr, "info-object: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            const auto& objs = placer.getObjects();
+            if (idx < 0 || idx >= static_cast<int>(objs.size())) {
+                std::fprintf(stderr,
+                    "info-object: idx %d out of range [0, %zu)\n",
+                    idx, objs.size());
+                return 1;
+            }
+            const auto& o = objs[idx];
+            const char* typeStr =
+                o.type == wowee::editor::PlaceableType::M2 ? "m2" : "wmo";
+            if (jsonOut) {
+                nlohmann::json j;
+                j["index"] = idx;
+                j["type"] = typeStr;
+                j["path"] = o.path;
+                j["nameId"] = o.nameId;
+                j["uniqueId"] = o.uniqueId;
+                j["position"] = {o.position.x, o.position.y, o.position.z};
+                j["rotation"] = {o.rotation.x, o.rotation.y, o.rotation.z};
+                j["scale"] = o.scale;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Object [%d]\n", idx);
+            std::printf("  type      : %s\n", typeStr);
+            std::printf("  path      : %s\n", o.path.c_str());
+            std::printf("  nameId    : %u\n", o.nameId);
+            std::printf("  uniqueId  : %u%s\n", o.uniqueId,
+                        o.uniqueId == 0 ? " (unassigned)" : "");
+            std::printf("  position  : (%.3f, %.3f, %.3f)\n",
+                        o.position.x, o.position.y, o.position.z);
+            std::printf("  rotation  : (%.2f, %.2f, %.2f) deg\n",
+                        o.rotation.x, o.rotation.y, o.rotation.z);
+            std::printf("  scale     : %.3f\n", o.scale);
             return 0;
         } else if (std::strcmp(argv[i], "--diff-wcp") == 0 && i + 2 < argc) {
             // Print which files differ between two WCP archives. Useful
