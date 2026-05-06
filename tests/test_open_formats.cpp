@@ -79,6 +79,13 @@ TEST_CASE("WOM2 magic differs from WOM1", "[wom]") {
     REQUIRE(0x314D4F57 != 0x324D4F57); // WOM1 != WOM2
 }
 
+TEST_CASE("WOM3 magic is distinct from WOM1/WOM2", "[wom]") {
+    // WOM3 = "WOM3" little-endian. Distinctness ensures the loader can
+    // tell which version a file is and pick the right read path.
+    REQUIRE(0x334D4F57 != 0x314D4F57); // WOM3 != WOM1
+    REQUIRE(0x334D4F57 != 0x324D4F57); // WOM3 != WOM2
+}
+
 TEST_CASE("WOM rejects invalid magic", "[wom]") {
     ensureTestDir();
     std::string path = TEST_DIR + "/bad.wom";
