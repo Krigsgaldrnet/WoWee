@@ -259,7 +259,11 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         }
         f.write(reinterpret_cast<const char*>(sanVerts.data()),
                 vc * sizeof(WoweeBuilding::Vertex));
-        f.write(reinterpret_cast<const char*>(grp.indices.data()), ic * 4);
+        // Clamp out-of-range indices on save too — symmetric with load.
+        const uint32_t vMax = vc > 0 ? vc - 1 : 0;
+        std::vector<uint32_t> sanIdx = grp.indices;
+        for (auto& idx : sanIdx) if (idx > vMax) idx = 0;
+        f.write(reinterpret_cast<const char*>(sanIdx.data()), ic * 4);
 
         for (const auto& tp : grp.texturePaths) writeStr(tp);
 
