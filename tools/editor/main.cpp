@@ -549,6 +549,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Emit creatures.csv / objects.csv / quests.csv for spreadsheet workflows\n");
     std::printf("  --export-zone-html <zoneDir> [out.html]\n");
     std::printf("                         Emit a single-file HTML viewer next to the zone .glb (model-viewer based)\n");
+    std::printf("  --export-project-html <projectDir> [out.html]\n");
+    std::printf("                         Generate an index.html linking to every zone's HTML viewer in <projectDir>\n");
     std::printf("  --export-quest-graph <zoneDir> [out.dot]\n");
     std::printf("                         Render quest-chain DAG as Graphviz DOT (pipe to `dot -Tpng -o quests.png`)\n");
     std::printf("  --info <wom-base> [--json]\n");
@@ -672,7 +674,7 @@ int main(int argc, char* argv[]) {
         "--validate-png",
         "--zone-summary", "--info-zone-tree", "--info-zone-bytes",
         "--export-zone-summary-md", "--export-quest-graph",
-        "--export-zone-csv", "--export-zone-html",
+        "--export-zone-csv", "--export-zone-html", "--export-project-html",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--zone-stats", "--info-tilemap",
         "--list-zone-deps", "--check-zone-refs", "--export-zone-deps-md",
@@ -4433,6 +4435,121 @@ int main(int argc, char* argv[]) {
             std::printf("Wrote %s\n", outPath.c_str());
             std::printf("  references %s (must sit next to .html)\n", glbHref.c_str());
             std::printf("  open in any modern browser — no install required\n");
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-project-html") == 0 && i + 1 < argc) {
+            // Project-level index page linking every zone's HTML viewer.
+            // Pairs with --export-zone-html (single zone) and
+            // --bake-zone-glb (terrain bake). Designed for github-pages
+            // style 'all my zones' showcase.
+            std::string projectDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "export-project-html: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = projectDir + "/index.html";
+            // Walk for zones (dirs with zone.json). For each, record:
+            //   - display name
+            //   - relative path to its .html viewer (or null if not generated)
+            //   - tile count, content counts
+            struct ZoneEntry {
+                std::string name, dirRel, htmlRel, glbRel;
+                bool htmlExists = false, glbExists = false;
+                int tiles = 0, creatures = 0, objects = 0, quests = 0;
+            };
+            std::vector<ZoneEntry> entries;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load((entry.path() / "zone.json").string())) continue;
+                ZoneEntry ze;
+                ze.name = zm.displayName.empty() ? zm.mapName : zm.displayName;
+                ze.dirRel = entry.path().filename().string();
+                ze.htmlRel = ze.dirRel + "/" + zm.mapName + ".html";
+                ze.glbRel = ze.dirRel + "/" + zm.mapName + ".glb";
+                ze.htmlExists = fs::exists(entry.path() / (zm.mapName + ".html"));
+                ze.glbExists = fs::exists(entry.path() / (zm.mapName + ".glb"));
+                ze.tiles = static_cast<int>(zm.tiles.size());
+                wowee::editor::NpcSpawner sp;
+                if (sp.loadFromFile((entry.path() / "creatures.json").string())) {
+                    ze.creatures = static_cast<int>(sp.spawnCount());
+                }
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile((entry.path() / "objects.json").string())) {
+                    ze.objects = static_cast<int>(op.getObjects().size());
+                }
+                wowee::editor::QuestEditor qe;
+                if (qe.loadFromFile((entry.path() / "quests.json").string())) {
+                    ze.quests = static_cast<int>(qe.questCount());
+                }
+                entries.push_back(ze);
+            }
+            std::sort(entries.begin(), entries.end(),
+                      [](const ZoneEntry& a, const ZoneEntry& b) {
+                          return a.name < b.name;
+                      });
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-project-html: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            out << "<!doctype html>\n"
+                   "<html lang=\"en\">\n"
+                   "<head>\n"
+                   "  <meta charset=\"utf-8\">\n"
+                   "  <title>Wowee Project — Zone Index</title>\n"
+                   "  <style>\n"
+                   "    body { margin:0; font-family: sans-serif; background:#1a1a1a; color:#eee; padding:20px; }\n"
+                   "    h1 { margin:0 0 8px; font-size:22px; }\n"
+                   "    .count { color:#aaa; font-size:14px; margin-bottom:24px; }\n"
+                   "    .zones { display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px; }\n"
+                   "    .zone { background:#2a2a2a; border:1px solid #444; border-radius:6px; padding:14px; }\n"
+                   "    .zone h3 { margin:0 0 6px; font-size:16px; }\n"
+                   "    .zone .stats { color:#aaa; font-size:13px; }\n"
+                   "    .zone a { color:#7af; text-decoration:none; font-size:13px; display:inline-block; margin-top:8px; }\n"
+                   "    .zone a:hover { text-decoration:underline; }\n"
+                   "    .zone .nolink { color:#666; font-style:italic; font-size:13px; margin-top:8px; }\n"
+                   "    .footer { margin-top:30px; color:#666; font-size:11px; }\n"
+                   "  </style>\n"
+                   "</head>\n"
+                   "<body>\n"
+                   "  <h1>Wowee Project — Zone Index</h1>\n"
+                   "  <div class=\"count\">" << entries.size() << " zone(s) found in <code>"
+                << projectDir << "</code></div>\n"
+                   "  <div class=\"zones\">\n";
+            for (const auto& z : entries) {
+                out << "    <div class=\"zone\">\n"
+                       "      <h3>" << z.name << "</h3>\n"
+                       "      <div class=\"stats\">"
+                    << z.tiles << " tile" << (z.tiles == 1 ? "" : "s") << " · "
+                    << z.creatures << " creature" << (z.creatures == 1 ? "" : "s") << " · "
+                    << z.objects << " object" << (z.objects == 1 ? "" : "s") << " · "
+                    << z.quests << " quest" << (z.quests == 1 ? "" : "s") << "</div>\n";
+                if (z.htmlExists) {
+                    out << "      <a href=\"" << z.htmlRel << "\">Open viewer →</a>\n";
+                } else if (z.glbExists) {
+                    out << "      <div class=\"nolink\">No HTML viewer (run --export-zone-html)</div>\n";
+                } else {
+                    out << "      <div class=\"nolink\">No .glb (run --bake-zone-glb)</div>\n";
+                }
+                out << "    </div>\n";
+            }
+            out << "  </div>\n"
+                   "  <div class=\"footer\">Generated by wowee_editor --export-project-html</div>\n"
+                   "</body>\n"
+                   "</html>\n";
+            out.close();
+            int withViewer = 0;
+            for (const auto& z : entries) if (z.htmlExists) withViewer++;
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  %zu zone(s) listed, %d with viewable HTML\n",
+                        entries.size(), withViewer);
             return 0;
         } else if (std::strcmp(argv[i], "--export-quest-graph") == 0 && i + 1 < argc) {
             // Render quest chains as a Graphviz DOT graph. Visualizing
