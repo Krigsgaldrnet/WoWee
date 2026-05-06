@@ -496,6 +496,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Deep-check a WHM/WOT terrain pair for NaN heights and bad placements\n");
     std::printf("  --validate-all <dir> [--json]\n");
     std::printf("                         Recursively run all per-format validators on every file\n");
+    std::printf("  --validate-glb <path> [--json]\n");
+    std::printf("                         Verify a glTF 2.0 binary's structure (magic, chunks, JSON, accessors)\n");
+    std::printf("  --info-glb <path> [--json]\n");
+    std::printf("                         Print glTF 2.0 binary metadata (chunks, mesh/primitive counts, accessors)\n");
     std::printf("  --zone-summary <zoneDir> [--json]\n");
     std::printf("                         One-shot validate + creature/object/quest counts and exit\n");
     std::printf("  --export-zone-summary-md <zoneDir> [out.md]\n");
@@ -583,7 +587,8 @@ int main(int argc, char* argv[]) {
         "--list-quest-objectives", "--list-quest-rewards",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
-        "--validate-whm", "--validate-all", "--zone-summary",
+        "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
+        "--zone-summary",
         "--export-zone-summary-md", "--export-quest-graph",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--zone-stats", "--list-zone-deps",
@@ -3177,6 +3182,184 @@ int main(int argc, char* argv[]) {
                 for (const auto& e : errs) std::printf("    - %s\n", e.c_str());
             }
             return 1;
+        } else if ((std::strcmp(argv[i], "--validate-glb") == 0 ||
+                    std::strcmp(argv[i], "--info-glb") == 0) && i + 1 < argc) {
+            // Shared handler: --validate-glb errors out on broken structure;
+            // --info-glb prints the same metadata but exits 0 unless the
+            // file is unreadable. Same parser, different verdict policy.
+            bool isValidate = (std::strcmp(argv[i], "--validate-glb") == 0);
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr,
+                    "%s: cannot open %s\n",
+                    isValidate ? "validate-glb" : "info-glb", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            std::vector<std::string> errors;
+            // 12-byte header: 'glTF' magic, version=2, total length.
+            uint32_t magic = 0, version = 0, totalLen = 0;
+            if (bytes.size() < 12) {
+                errors.push_back("file too short for glTF header (need 12 bytes)");
+            } else {
+                std::memcpy(&magic,    &bytes[0], 4);
+                std::memcpy(&version,  &bytes[4], 4);
+                std::memcpy(&totalLen, &bytes[8], 4);
+                if (magic != 0x46546C67) {
+                    errors.push_back("magic is not 'glTF' (0x46546C67)");
+                }
+                if (version != 2) {
+                    errors.push_back("version " + std::to_string(version) +
+                                     " not supported (only glTF 2.0)");
+                }
+                if (totalLen != bytes.size()) {
+                    errors.push_back("totalLength=" + std::to_string(totalLen) +
+                                     " != file size " + std::to_string(bytes.size()));
+                }
+            }
+            // JSON chunk follows: 4-byte length, 4-byte type ('JSON'),
+            // then payload. Then BIN chunk same shape.
+            uint32_t jsonLen = 0, jsonType = 0;
+            uint32_t binLen = 0, binType = 0;
+            std::string jsonStr;
+            std::vector<uint8_t> binData;
+            if (errors.empty()) {
+                if (bytes.size() < 20) {
+                    errors.push_back("missing JSON chunk header");
+                } else {
+                    std::memcpy(&jsonLen, &bytes[12], 4);
+                    std::memcpy(&jsonType, &bytes[16], 4);
+                    if (jsonType != 0x4E4F534A) {
+                        errors.push_back("first chunk type is not 'JSON' (0x4E4F534A)");
+                    }
+                    if (20 + jsonLen > bytes.size()) {
+                        errors.push_back("JSON chunk extends past file end");
+                    } else {
+                        jsonStr.assign(bytes.begin() + 20,
+                                        bytes.begin() + 20 + jsonLen);
+                    }
+                }
+                size_t binOff = 20 + jsonLen;
+                if (binOff + 8 <= bytes.size()) {
+                    std::memcpy(&binLen, &bytes[binOff], 4);
+                    std::memcpy(&binType, &bytes[binOff + 4], 4);
+                    if (binType != 0x004E4942) {
+                        errors.push_back("second chunk type is not 'BIN\\0' (0x004E4942)");
+                    }
+                    if (binOff + 8 + binLen > bytes.size()) {
+                        errors.push_back("BIN chunk extends past file end");
+                    } else {
+                        binData.assign(bytes.begin() + binOff + 8,
+                                        bytes.begin() + binOff + 8 + binLen);
+                    }
+                }
+                // BIN chunk is optional in spec; only flag missing if
+                // accessors below reference a buffer.
+            }
+            // Parse JSON and validate structure.
+            nlohmann::json gj;
+            int meshCount = 0, primitiveCount = 0, accessorCount = 0,
+                bufferViewCount = 0, bufferCount = 0;
+            std::string assetVersion;
+            if (errors.empty() && !jsonStr.empty()) {
+                try {
+                    gj = nlohmann::json::parse(jsonStr);
+                    assetVersion = gj.value("/asset/version"_json_pointer, std::string{});
+                    if (assetVersion != "2.0") {
+                        errors.push_back("asset.version is '" + assetVersion +
+                                         "', not '2.0'");
+                    }
+                    if (gj.contains("meshes") && gj["meshes"].is_array()) {
+                        meshCount = static_cast<int>(gj["meshes"].size());
+                        for (const auto& m : gj["meshes"]) {
+                            if (m.contains("primitives") && m["primitives"].is_array()) {
+                                primitiveCount += static_cast<int>(m["primitives"].size());
+                            }
+                        }
+                    }
+                    if (gj.contains("accessors") && gj["accessors"].is_array()) {
+                        accessorCount = static_cast<int>(gj["accessors"].size());
+                        // Verify each accessor's bufferView exists.
+                        for (size_t a = 0; a < gj["accessors"].size(); ++a) {
+                            const auto& acc = gj["accessors"][a];
+                            if (acc.contains("bufferView")) {
+                                int bv = acc["bufferView"];
+                                if (!gj.contains("bufferViews") ||
+                                    bv >= static_cast<int>(gj["bufferViews"].size())) {
+                                    errors.push_back("accessor " + std::to_string(a) +
+                                                     " bufferView=" + std::to_string(bv) +
+                                                     " out of range");
+                                }
+                            }
+                        }
+                    }
+                    if (gj.contains("bufferViews") && gj["bufferViews"].is_array()) {
+                        bufferViewCount = static_cast<int>(gj["bufferViews"].size());
+                        for (size_t b = 0; b < gj["bufferViews"].size(); ++b) {
+                            const auto& bv = gj["bufferViews"][b];
+                            uint32_t bo = bv.value("byteOffset", 0u);
+                            uint32_t bl = bv.value("byteLength", 0u);
+                            uint64_t end = uint64_t(bo) + bl;
+                            if (end > binLen) {
+                                errors.push_back("bufferView " + std::to_string(b) +
+                                                 " range [" + std::to_string(bo) +
+                                                 ", " + std::to_string(end) +
+                                                 ") past BIN chunk length " +
+                                                 std::to_string(binLen));
+                            }
+                        }
+                    }
+                    if (gj.contains("buffers") && gj["buffers"].is_array()) {
+                        bufferCount = static_cast<int>(gj["buffers"].size());
+                    }
+                } catch (const std::exception& e) {
+                    errors.push_back(std::string("JSON parse error: ") + e.what());
+                }
+            }
+            int errorCount = static_cast<int>(errors.size());
+            if (jsonOut) {
+                nlohmann::json j;
+                j["glb"] = path;
+                j["fileSize"] = bytes.size();
+                j["version"] = version;
+                j["assetVersion"] = assetVersion;
+                j["totalLength"] = totalLen;
+                j["jsonLength"] = jsonLen;
+                j["binLength"] = binLen;
+                j["meshes"] = meshCount;
+                j["primitives"] = primitiveCount;
+                j["accessors"] = accessorCount;
+                j["bufferViews"] = bufferViewCount;
+                j["buffers"] = bufferCount;
+                j["errorCount"] = errorCount;
+                j["errors"] = errors;
+                j["passed"] = errors.empty();
+                std::printf("%s\n", j.dump(2).c_str());
+                return (isValidate && errorCount > 0) ? 1 : 0;
+            }
+            std::printf("GLB: %s\n", path.c_str());
+            std::printf("  file bytes  : %zu\n", bytes.size());
+            std::printf("  glTF version: %u (asset.version=%s)\n",
+                        version, assetVersion.empty() ? "?" : assetVersion.c_str());
+            std::printf("  totalLength : %u\n", totalLen);
+            std::printf("  JSON chunk  : %u bytes\n", jsonLen);
+            std::printf("  BIN chunk   : %u bytes\n", binLen);
+            std::printf("  meshes      : %d (%d primitives)\n",
+                        meshCount, primitiveCount);
+            std::printf("  accessors   : %d  bufferViews: %d  buffers: %d\n",
+                        accessorCount, bufferViewCount, bufferCount);
+            if (errors.empty()) {
+                std::printf("  PASSED\n");
+                return 0;
+            }
+            std::printf("  FAILED — %d error(s):\n", errorCount);
+            for (const auto& e : errors) std::printf("    - %s\n", e.c_str());
+            return isValidate ? 1 : 0;
         } else if (std::strcmp(argv[i], "--export-obj") == 0 && i + 1 < argc) {
             // Convert WOM (our open M2 replacement) to Wavefront OBJ — a
             // universally supported text format that opens directly in
