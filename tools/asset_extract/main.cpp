@@ -37,10 +37,12 @@ static void printUsage(const char* prog) {
               << "                      Standalone post-extract pass on an existing tree —\n"
               << "                      writes open-format sidecars without re-running MPQ extract\n"
               << "                      --json emits a structured summary instead of text\n"
-              << "  --purge-proprietary <dir>\n"
+              << "  --purge-proprietary <dir> [--json]\n"
               << "                      Walk tree and dry-run report which proprietary files have\n"
               << "                      an open-format sidecar; add --confirm-purge to actually delete\n"
               << "  --confirm-purge     Required to actually delete files in --purge-proprietary mode\n"
+              << "  --json              Emit machine-readable summary in --upgrade-extract /\n"
+              << "                      --purge-proprietary modes\n"
               << "  --verify            CRC32 verify all extracted files\n"
               << "  --threads <N>       Number of extraction threads (default: auto)\n"
               << "  --verbose           Verbose output\n"
@@ -143,9 +145,11 @@ int main(int argc, char** argv) {
             std::cerr << "purge-proprietary: " << purgeDir << " does not exist\n";
             return 1;
         }
-        std::cout << (confirmPurge ? "Purging" : "Dry-run: would purge")
-                  << " proprietary files under " << purgeDir
-                  << " where open-format sidecar exists...\n";
+        if (!jsonOutput) {
+            std::cout << (confirmPurge ? "Purging" : "Dry-run: would purge")
+                      << " proprietary files under " << purgeDir
+                      << " where open-format sidecar exists...\n";
+        }
         // (proprietary ext, sidecar ext) pairs. .skin pairs with the
         // matching foo.m2's foo.wom (skin gets purged when WOM exists
         // because WOM stores merged geometry). Group .wmo (foo_NNN.wmo)
@@ -206,6 +210,16 @@ int main(int argc, char** argv) {
                 std::error_code rmEc;
                 if (fs::remove(p, rmEc)) removed++;
             }
+        }
+        if (jsonOutput) {
+            nlohmann::json j;
+            j["dir"] = purgeDir;
+            j["confirmed"] = confirmPurge;
+            j["candidates"] = toRemove;
+            j["removed"] = removed;
+            j["totalBytes"] = totalBytes;
+            std::cout << j.dump(2) << "\n";
+            return 0;
         }
         std::cout << (confirmPurge ? "  removed: " : "  would remove: ")
                   << toRemove << " files (" << (totalBytes / (1024.0 * 1024.0))
