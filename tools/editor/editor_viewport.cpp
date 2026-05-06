@@ -242,7 +242,10 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 wmoModelIds[obj.path] = modelId;
             }
             glm::vec3 wmoRotRad = glm::radians(obj.rotation);
-            wmoRenderer_->createInstance(modelId, obj.position, wmoRotRad);
+            // Pass through obj.scale so non-1.0 WMO instance scales (loaded
+            // from MODF, edited via the gizmo, or duplicated) actually render
+            // at the right size instead of always 1.0.
+            wmoRenderer_->createInstance(modelId, obj.position, wmoRotRad, obj.scale);
         }
     }
 
