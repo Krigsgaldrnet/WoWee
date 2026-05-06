@@ -1910,10 +1910,24 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
 
         // ---- Spawned list ----
         if (ImGui::CollapsingHeader("Spawned Creatures", ImGuiTreeNodeFlags_DefaultOpen)) {
+            static char spawnFilter[128] = "";
             ImGui::Text("%zu placed (double-click to fly to)", spawner.spawnCount());
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##spawnfilter", "Filter by name...", spawnFilter, sizeof(spawnFilter));
+            std::string filterLower(spawnFilter);
+            std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            int shown = 0;
             ImGui::BeginChild("SpawnList", ImVec2(0, 100), true);
             for (int i = 0; i < static_cast<int>(spawner.spawnCount()); i++) {
                 auto& s = spawner.getSpawns()[i];
+                if (!filterLower.empty()) {
+                    std::string nameLower = s.name;
+                    std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+                    if (nameLower.find(filterLower) == std::string::npos) continue;
+                }
+                if (++shown > 200) { ImGui::Text("... refine filter"); break; }
                 bool sel = (i == spawner.getSelectedIndex());
                 char label[128];
                 std::snprintf(label, sizeof(label), "%s Lv%u (%.0f,%.0f,%.0f)",
