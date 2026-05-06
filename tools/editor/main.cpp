@@ -581,6 +581,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-extract <dir> [--json]\n");
     std::printf("                         Walk extracted asset tree and report open-format coverage and exit\n");
+    std::printf("  --info-extract-tree <dir>\n");
+    std::printf("                         Hierarchical view of an extracted asset tree grouped by top-level dir + format\n");
     std::printf("  --info-png <path> [--json]\n");
     std::printf("                         Print PNG header (width, height, channels, bit depth) and exit\n");
     std::printf("  --info-blp <path> [--json]\n");
@@ -661,7 +663,7 @@ int main(int argc, char* argv[]) {
         "--info-bones", "--list-zone-textures",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
-        "--info-extract", "--list-missing-sidecars",
+        "--info-extract", "--info-extract-tree", "--list-missing-sidecars",
         "--info-png", "--info-jsondbc", "--info-blp",
         "--info-m2", "--info-wmo", "--info-adt",
         "--info-zone", "--info-wcp", "--list-wcp",
@@ -1662,6 +1664,90 @@ int main(int argc, char* argv[]) {
             }
             std::printf("\n");
             std::printf("  (run `asset_extract --emit-open` to fill missing sidecars)\n");
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-extract-tree") == 0 && i + 1 < argc) {
+            // Hierarchical view of an extracted asset directory grouped
+            // by top-level subdirectory and format. Useful for getting
+            // oriented after asset_extract finishes — '17 dirs, 142k
+            // files' is hard to reason about; this groups them for
+            // at-a-glance comprehension.
+            std::string dataDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(dataDir) || !fs::is_directory(dataDir)) {
+                std::fprintf(stderr,
+                    "info-extract-tree: %s is not a directory\n", dataDir.c_str());
+                return 1;
+            }
+            // Per-top-level-dir aggregation: per-extension count + bytes.
+            // Top-level discovery: every immediate child dir of dataDir.
+            struct ExtStats { int count = 0; uint64_t bytes = 0; };
+            struct DirStats {
+                std::string name;
+                int totalFiles = 0;
+                uint64_t totalBytes = 0;
+                std::map<std::string, ExtStats> byExt;
+            };
+            std::vector<DirStats> dirs;
+            std::error_code ec;
+            for (const auto& entry : fs::directory_iterator(dataDir, ec)) {
+                if (entry.is_regular_file()) continue;  // skip top-level files
+                if (!entry.is_directory()) continue;
+                DirStats d;
+                d.name = entry.path().filename().string();
+                for (const auto& f : fs::recursive_directory_iterator(entry.path(), ec)) {
+                    if (!f.is_regular_file()) continue;
+                    std::string ext = f.path().extension().string();
+                    std::transform(ext.begin(), ext.end(), ext.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+                    if (ext.empty()) ext = "(no-ext)";
+                    uint64_t sz = f.file_size(ec);
+                    if (ec) continue;
+                    d.totalFiles++;
+                    d.totalBytes += sz;
+                    auto& es = d.byExt[ext];
+                    es.count++;
+                    es.bytes += sz;
+                }
+                dirs.push_back(std::move(d));
+            }
+            std::sort(dirs.begin(), dirs.end(),
+                      [](const DirStats& a, const DirStats& b) {
+                          return a.totalBytes > b.totalBytes;
+                      });
+            int totalDirs = static_cast<int>(dirs.size());
+            int totalFiles = 0;
+            uint64_t totalBytes = 0;
+            for (const auto& d : dirs) {
+                totalFiles += d.totalFiles;
+                totalBytes += d.totalBytes;
+            }
+            std::printf("%s/  (%d dirs, %d files, %.1f MB)\n",
+                        dataDir.c_str(), totalDirs, totalFiles,
+                        totalBytes / (1024.0 * 1024.0));
+            for (size_t k = 0; k < dirs.size(); ++k) {
+                bool lastDir = (k == dirs.size() - 1);
+                const auto& d = dirs[k];
+                const char* dBranch = lastDir ? "└─ " : "├─ ";
+                const char* dCont   = lastDir ? "   " : "│  ";
+                std::printf("%s%s/  (%d files, %.1f MB)\n",
+                            dBranch, d.name.c_str(), d.totalFiles,
+                            d.totalBytes / (1024.0 * 1024.0));
+                // Sort extensions by byte size descending — heaviest first.
+                std::vector<std::pair<std::string, ExtStats>> exts(
+                    d.byExt.begin(), d.byExt.end());
+                std::sort(exts.begin(), exts.end(),
+                          [](const auto& a, const auto& b) {
+                              return a.second.bytes > b.second.bytes;
+                          });
+                for (size_t e = 0; e < exts.size(); ++e) {
+                    bool lastE = (e == exts.size() - 1);
+                    const char* eBranch = lastE ? "└─ " : "├─ ";
+                    const auto& [ext, st] = exts[e];
+                    std::printf("%s%s%-10s  %5d files  %8.1f KB\n",
+                                dCont, eBranch, ext.c_str(),
+                                st.count, st.bytes / 1024.0);
+                }
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--list-missing-sidecars") == 0 && i + 1 < argc) {
             // Actionable counterpart to --info-extract: emit one line per
