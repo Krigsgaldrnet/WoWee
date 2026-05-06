@@ -276,6 +276,7 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
     // assign sequential offsets here since none of our paths share suffixes.
     outModel.doodads.clear();
     outModel.doodadNames.clear();
+    outModel.doodadSets.clear();
     uint32_t doodadOffset = 0;
     for (const auto& dp : building.doodads) {
         // Convert WOM extension back to M2 for the runtime that may not have a
@@ -301,6 +302,18 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
         d.color = glm::vec4(1.0f);
         outModel.doodads.push_back(d);
         doodadOffset += static_cast<uint32_t>(mp.size() + 1);
+    }
+
+    // Renderer uses doodadSets[0] to know which slice of doodads to render.
+    // Without it, even with doodads populated, nothing draws. Emit a default
+    // "Set_$DefaultGlobal" set covering every doodad.
+    if (!outModel.doodads.empty()) {
+        WMODoodadSet ds{};
+        std::strncpy(ds.name, "Set_$DefaultGlobal", sizeof(ds.name) - 1);
+        ds.startIndex = 0;
+        ds.count = static_cast<uint32_t>(outModel.doodads.size());
+        ds.padding = 0;
+        outModel.doodadSets.push_back(ds);
     }
 
     return true;
