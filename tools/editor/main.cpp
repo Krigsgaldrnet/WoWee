@@ -474,6 +474,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert a WOM model to Wavefront OBJ for use in Blender/MeshLab\n");
     std::printf("  --export-glb <wom-base> [out.glb]\n");
     std::printf("                         Convert a WOM model to glTF 2.0 binary (.glb) — modern industry standard\n");
+    std::printf("  --export-stl <wom-base> [out.stl]\n");
+    std::printf("                         Convert a WOM model to ASCII STL — works with any 3D printer slicer\n");
     std::printf("  --export-wob-glb <wob-base> [out.glb]\n");
     std::printf("                         Convert a WOB building to glTF 2.0 binary (one mesh, per-group primitives)\n");
     std::printf("  --export-whm-glb <wot-base> [out.glb]\n");
@@ -623,6 +625,7 @@ int main(int argc, char* argv[]) {
         "--export-wob-obj", "--import-wob-obj",
         "--export-woc-obj", "--export-whm-obj",
         "--export-glb", "--export-wob-glb", "--export-whm-glb",
+        "--export-stl",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
         "--migrate-wom", "--migrate-zone",
@@ -4109,6 +4112,77 @@ int main(int argc, char* argv[]) {
             std::printf("Exported %s.wom -> %s\n", base.c_str(), outPath.c_str());
             std::printf("  %u verts, %u tris, %zu primitive(s), %u-byte binary chunk\n",
                         vCount, iCount / 3, primitives.size(), binLen);
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-stl") == 0 && i + 1 < argc) {
+            // ASCII STL export — single most universal 3D-printer format.
+            // Cura, PrusaSlicer, Bambu Studio, Slic3r, OctoPrint, MakerBot
+            // — every slicer made in the last 25 years opens STL natively.
+            // Lets WOM models drive physical prints with no conversion
+            // friction beyond this one command.
+            std::string base = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                std::fprintf(stderr, "WOM not found: %s.wom\n", base.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = base + ".stl";
+            auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            if (!wom.isValid()) {
+                std::fprintf(stderr, "WOM has no geometry: %s.wom\n", base.c_str());
+                return 1;
+            }
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr, "Failed to open output: %s\n", outPath.c_str());
+                return 1;
+            }
+            // STL solid name must be alphanumeric + underscores per loose
+            // convention; sanitize whatever the WOM name contains. Empty
+            // -> 'wowee_model'.
+            std::string solidName = wom.name.empty() ? "wowee_model" : wom.name;
+            for (auto& c : solidName) {
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                      (c >= '0' && c <= '9') || c == '_')) c = '_';
+            }
+            out << "solid " << solidName << "\n";
+            // Per-triangle facet — STL has no shared vertex pool, every
+            // triangle stands alone. Compute face normal from cross product
+            // (STL spec requires unit-length face normal; viewers fall
+            // back to per-vertex if zero, but most slicers want the real
+            // value for orientation hints).
+            uint32_t triCount = 0;
+            for (size_t k = 0; k + 2 < wom.indices.size(); k += 3) {
+                uint32_t i0 = wom.indices[k];
+                uint32_t i1 = wom.indices[k + 1];
+                uint32_t i2 = wom.indices[k + 2];
+                if (i0 >= wom.vertices.size() || i1 >= wom.vertices.size() ||
+                    i2 >= wom.vertices.size()) continue;
+                const auto& v0 = wom.vertices[i0].position;
+                const auto& v1 = wom.vertices[i1].position;
+                const auto& v2 = wom.vertices[i2].position;
+                glm::vec3 e1 = v1 - v0;
+                glm::vec3 e2 = v2 - v0;
+                glm::vec3 n = glm::cross(e1, e2);
+                float len = glm::length(n);
+                if (len > 1e-12f) n /= len;
+                else n = {0, 0, 1};  // degenerate — STL spec allows any unit normal
+                out << "  facet normal " << n.x << " " << n.y << " " << n.z << "\n"
+                    << "    outer loop\n"
+                    << "      vertex " << v0.x << " " << v0.y << " " << v0.z << "\n"
+                    << "      vertex " << v1.x << " " << v1.y << " " << v1.z << "\n"
+                    << "      vertex " << v2.x << " " << v2.y << " " << v2.z << "\n"
+                    << "    endloop\n"
+                    << "  endfacet\n";
+                triCount++;
+            }
+            out << "endsolid " << solidName << "\n";
+            out.close();
+            std::printf("Exported %s.wom -> %s\n", base.c_str(), outPath.c_str());
+            std::printf("  solid '%s', %u facets\n",
+                        solidName.c_str(), triCount);
             return 0;
         } else if (std::strcmp(argv[i], "--export-wob-glb") == 0 && i + 1 < argc) {
             // glTF 2.0 binary export for WOB. Same purpose as --export-glb
