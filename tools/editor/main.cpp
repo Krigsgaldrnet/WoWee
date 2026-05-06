@@ -36,7 +36,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --regen-collision <zoneDir>  Rebuild every WOC under a zone dir and exit\n");
     std::printf("  --fix-zone <zoneDir>   Re-parse + re-save zone JSONs to apply latest scrubs/caps and exit\n");
     std::printf("  --export-png <wot-base> Render heightmap, normal-map, and zone-map PNG previews\n");
-    std::printf("  --validate <zoneDir>   Score zone open-format completeness and exit\n");
+    std::printf("  --validate <zoneDir> [--json]\n");
+    std::printf("                         Score zone open-format completeness and exit\n");
     std::printf("  --zone-summary <zoneDir>  One-shot validate + creature/object/quest counts and exit\n");
     std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
@@ -622,8 +623,41 @@ int main(int argc, char* argv[]) {
             return v.openFormatScore() == 7 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
             std::string zoneDir = argv[++i];
+            // Optional --json after the dir for machine-readable output
+            // (matches --info-extract --json).
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             auto v = wowee::editor::ContentPacker::validateZone(zoneDir);
             int score = v.openFormatScore();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["score"] = score;
+                j["maxScore"] = 7;
+                j["formats"] = v.summary();
+                auto fmt = [&](const char* name, bool present, int count,
+                                bool valid = true, int invalid = 0) {
+                    nlohmann::json f;
+                    f["present"] = present;
+                    f["count"] = count;
+                    f["valid"] = valid;
+                    if (invalid > 0) f["invalid"] = invalid;
+                    j[name] = f;
+                };
+                fmt("wot", v.hasWot, v.wotCount);
+                fmt("whm", v.hasWhm, v.whmCount, v.whmValid);
+                fmt("wom", v.hasWom, v.womCount, v.womValid, v.womInvalidCount);
+                fmt("wob", v.hasWob, v.wobCount, v.wobValid, v.wobInvalidCount);
+                fmt("woc", v.hasWoc, v.wocCount, v.wocValid, v.wocInvalidCount);
+                fmt("png", v.hasPng, v.pngCount);
+                j["zoneJson"]   = v.hasZoneJson;
+                j["creatures"]  = v.hasCreatures;
+                j["quests"]     = v.hasQuests;
+                j["objects"]    = v.hasObjects;
+                std::printf("%s\n", j.dump(2).c_str());
+                return score == 7 ? 0 : 1;
+            }
             std::printf("Zone: %s\n", zoneDir.c_str());
             std::printf("Open format score: %d/7\n", score);
             std::printf("Formats: %s\n", v.summary().c_str());
