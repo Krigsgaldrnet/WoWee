@@ -142,8 +142,15 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
             s.modelPath = js.value("model", "");
             s.displayId = js.value("displayId", 0u);
             s.orientation = js.value("orientation", 0.0f);
+            // Normalise orientation to [0, 360) for consistent gizmo behaviour.
+            if (std::isfinite(s.orientation)) {
+                s.orientation = std::fmod(s.orientation, 360.0f);
+                if (s.orientation < 0.0f) s.orientation += 360.0f;
+            } else {
+                s.orientation = 0.0f;
+            }
             s.scale = js.value("scale", 1.0f);
-            if (s.scale < 0.1f) s.scale = 1.0f;
+            if (!std::isfinite(s.scale) || s.scale < 0.1f) s.scale = 1.0f;
             s.level = js.value("level", 1u);
             s.health = js.value("health", 100u);
             s.mana = js.value("mana", 0u);
