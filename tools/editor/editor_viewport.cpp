@@ -4,6 +4,7 @@
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/m2_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
+#include "pipeline/wowee_model.hpp"
 #include "core/logger.hpp"
 #include <cstring>
 #include <cmath>
@@ -239,24 +240,71 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
             if (it != m2ModelIds.end()) {
                 modelId = it->second;
             } else {
-                auto data = assetManager_->readFile(npc.modelPath);
-                if (data.empty()) {
-                    LOG_DEBUG("NPC model file not found: ", npc.modelPath);
-                    continue;
-                }
-                auto model = pipeline::M2Loader::load(data);
-                // Always try loading skin file (WotLK M2s need it for geometry)
+                // Try WOM open format first
+                pipeline::M2Model model;
+                bool loaded = false;
                 {
-                    std::string skinPath = npc.modelPath;
-                    auto dotPos = skinPath.rfind('.');
-                    if (dotPos != std::string::npos)
-                        skinPath = skinPath.substr(0, dotPos) + "00.skin";
-                    auto skinData = assetManager_->readFile(skinPath);
-                    if (!skinData.empty())
-                        pipeline::M2Loader::loadSkin(skinData, model);
+                    std::string womBase = npc.modelPath;
+                    auto womDot = womBase.rfind('.');
+                    if (womDot != std::string::npos) womBase = womBase.substr(0, womDot);
+                    std::replace(womBase.begin(), womBase.end(), '\\', '/');
+                    for (const char* prefix : {"custom_zones/models/", "output/models/"}) {
+                        if (pipeline::WoweeModelLoader::exists(std::string(prefix) + womBase)) {
+                            auto wom = pipeline::WoweeModelLoader::load(std::string(prefix) + womBase);
+                            if (wom.isValid()) {
+                                model.name = wom.name;
+                                model.boundRadius = wom.boundRadius;
+                                for (const auto& v : wom.vertices) {
+                                    pipeline::M2Vertex mv;
+                                    mv.position = v.position;
+                                    mv.normal = v.normal;
+                                    mv.texCoords[0] = v.texCoord;
+                                    std::memcpy(mv.boneWeights, v.boneWeights, 4);
+                                    std::memcpy(mv.boneIndices, v.boneIndices, 4);
+                                    model.vertices.push_back(mv);
+                                }
+                                for (uint32_t idx : wom.indices)
+                                    model.indices.push_back(static_cast<uint16_t>(idx));
+                                for (const auto& tp : wom.texturePaths) {
+                                    pipeline::M2Texture tex; tex.type = 0; tex.flags = 0; tex.filename = tp;
+                                    model.textures.push_back(tex);
+                                }
+                                model.textureLookup = {0};
+                                pipeline::M2Batch batch{};
+                                batch.textureCount = std::min(1u, static_cast<uint32_t>(wom.texturePaths.size()));
+                                batch.indexCount = static_cast<uint32_t>(model.indices.size());
+                                batch.vertexCount = static_cast<uint32_t>(model.vertices.size());
+                                model.batches.push_back(batch);
+                                pipeline::M2Material mat; mat.flags = 0; mat.blendMode = 0;
+                                model.materials.push_back(mat);
+                                loaded = true;
+                                LOG_INFO("NPC loaded from WOM: ", prefix, womBase);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Fall back to M2 from game data
+                if (!loaded) {
+                    auto data = assetManager_->readFile(npc.modelPath);
+                    if (data.empty()) {
+                        LOG_DEBUG("NPC model file not found: ", npc.modelPath);
+                        continue;
+                    }
+                    model = pipeline::M2Loader::load(data);
+                    {
+                        std::string skinPath = npc.modelPath;
+                        auto dotPos = skinPath.rfind('.');
+                        if (dotPos != std::string::npos)
+                            skinPath = skinPath.substr(0, dotPos) + "00.skin";
+                        auto skinData = assetManager_->readFile(skinPath);
+                        if (!skinData.empty())
+                            pipeline::M2Loader::loadSkin(skinData, model);
+                    }
                 }
                 if (!model.isValid()) {
-                    LOG_DEBUG("NPC model invalid after skin load: ", npc.modelPath,
+                    LOG_DEBUG("NPC model invalid: ", npc.modelPath,
                              " (verts=", model.vertices.size(), " idx=", model.indices.size(), ")");
                     continue;
                 }
