@@ -676,3 +676,79 @@ TEST_CASE("WOC clamps out-of-range tile coords on load", "[woc][hardening]") {
     REQUIRE(col.tileY == 32);
     std::filesystem::remove(path);
 }
+
+TEST_CASE("WOB save scrubs NaN portal vertices and group indices", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/nan_portal";
+
+    WoweeBuilding bld;
+    bld.name = "NaNPortal";
+    bld.boundRadius = 5.0f;
+
+    WoweeBuilding::Group g;
+    g.name = "G";
+    g.vertices.push_back({{0, 0, 0}, {0, 0, 1}, {0, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{1, 0, 0}, {0, 0, 1}, {1, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{0, 1, 0}, {0, 0, 1}, {0, 1}, {1, 1, 1, 1}});
+    g.indices = {0, 1, 2};
+    bld.groups.push_back(g);
+
+    // Portal with NaN vertices and out-of-range groupA/groupB
+    WoweeBuilding::Portal p;
+    p.groupA = 99;  // out of range (only 1 group)
+    p.groupB = 99;
+    float nan = std::numeric_limits<float>::quiet_NaN();
+    p.vertices.push_back(glm::vec3(nan, nan, nan));
+    p.vertices.push_back(glm::vec3(0, 0, 0));
+    p.vertices.push_back(glm::vec3(1, 0, 0));
+    bld.portals.push_back(p);
+
+    REQUIRE(WoweeBuildingLoader::save(bld, base));
+
+    auto reloaded = WoweeBuildingLoader::load(base);
+    REQUIRE(reloaded.isValid());
+    REQUIRE(reloaded.portals.size() == 1);
+    // NaN vertex should have been scrubbed to 0
+    const auto& v = reloaded.portals[0].vertices[0];
+    REQUIRE(std::isfinite(v.x));
+    REQUIRE(std::isfinite(v.y));
+    REQUIRE(std::isfinite(v.z));
+    REQUIRE(v == glm::vec3(0, 0, 0));
+    // Out-of-range group indices clamped to -1
+    REQUIRE(reloaded.portals[0].groupA == -1);
+    REQUIRE(reloaded.portals[0].groupB == -1);
+    std::filesystem::remove(base + ".wob");
+}
+
+TEST_CASE("WOB save scrubs NaN group bounds and vertex positions", "[wob][hardening]") {
+    ensureTestDir();
+    std::string base = TEST_DIR + "/nan_group";
+
+    WoweeBuilding bld;
+    bld.name = "NaNVerts";
+    bld.boundRadius = std::numeric_limits<float>::quiet_NaN();  // bad source
+
+    WoweeBuilding::Group g;
+    g.name = "G";
+    float nan = std::numeric_limits<float>::quiet_NaN();
+    g.boundMin = glm::vec3(nan);
+    g.boundMax = glm::vec3(nan);
+    g.vertices.push_back({{nan, nan, nan}, {nan, nan, nan}, {0, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{1, 0, 0}, {0, 0, 1}, {1, 0}, {1, 1, 1, 1}});
+    g.vertices.push_back({{0, 1, 0}, {0, 0, 1}, {0, 1}, {1, 1, 1, 1}});
+    g.indices = {0, 1, 2};
+    bld.groups.push_back(g);
+
+    REQUIRE(WoweeBuildingLoader::save(bld, base));
+    auto reloaded = WoweeBuildingLoader::load(base);
+    REQUIRE(reloaded.isValid());
+    // boundRadius defaulted to 1.0
+    REQUIRE(reloaded.boundRadius == 1.0f);
+    // Vertex 0 was all-NaN — scrubbed to zero/up-axis defaults
+    const auto& v = reloaded.groups[0].vertices[0];
+    REQUIRE(std::isfinite(v.position.x));
+    REQUIRE(v.position == glm::vec3(0, 0, 0));
+    // Normal default fallback is (0,0,1)
+    REQUIRE(v.normal == glm::vec3(0, 0, 1));
+    std::filesystem::remove(base + ".wob");
+}
