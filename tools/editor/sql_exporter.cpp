@@ -170,6 +170,23 @@ bool SQLExporter::exportQuests(const std::vector<Quest>& quests,
           << ") ON DUPLICATE KEY UPDATE `LogTitle`='" << escapeSql(q.title) << "';\n";
     }
 
+    // creature_queststarter / creature_questender link quests to NPCs.
+    // Without these the player can pick up the quest from no one.
+    f << "\n-- =============================================\n";
+    f << "-- creature_queststarter / _questender (quest links)\n";
+    f << "-- =============================================\n\n";
+    for (const auto& q : quests) {
+        uint32_t entry = startEntry + q.id;
+        if (q.questGiverNpcId > 0) {
+            f << "INSERT IGNORE INTO `creature_queststarter` (`id`, `quest`) VALUES ("
+              << q.questGiverNpcId << ", " << entry << ");\n";
+        }
+        if (q.turnInNpcId > 0) {
+            f << "INSERT IGNORE INTO `creature_questender` (`id`, `quest`) VALUES ("
+              << q.turnInNpcId << ", " << entry << ");\n";
+        }
+    }
+
     LOG_INFO("SQL quests exported: ", quests.size(), " quests");
     return true;
 }
