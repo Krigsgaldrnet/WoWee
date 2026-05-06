@@ -93,8 +93,13 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
 
         std::ifstream fin(full, std::ios::binary | std::ios::ate);
         std::streamsize sz = fin.tellg();
-        if (sz < 0 || static_cast<uint64_t>(sz) > 0xFFFFFFFFull) {
-            LOG_ERROR("WCP skipped file (size out of range): ", rel);
+        // Cap at the unpack-side per-file limit (256MB) so we never write
+        // a pack the loader will reject as a whole. Files that big are
+        // almost certainly an authoring mistake — log + skip the body
+        // instead of producing an unpackable archive.
+        constexpr uint64_t kMaxFileBytes = 256ull * 1024 * 1024;
+        if (sz < 0 || static_cast<uint64_t>(sz) > kMaxFileBytes) {
+            LOG_ERROR("WCP skipped file (size ", sz, " > 256MB cap): ", rel);
             uint32_t zero = 0;
             out.write(reinterpret_cast<const char*>(&zero), 4);
             continue;
