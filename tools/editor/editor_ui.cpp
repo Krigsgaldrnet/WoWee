@@ -1593,12 +1593,26 @@ void EditorUI::renderObjectPanel(EditorApp& app) {
         ImGui::Text("Placed: %zu objects (open format: WOM)", placer.objectCount());
         if (placer.objectCount() > 0 && ImGui::CollapsingHeader("Object List")) {
             ImGui::TextDisabled("Click to select, double-click to fly to");
+            static char placedFilter[128] = "";
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##placedfilter", "Filter by name...", placedFilter, sizeof(placedFilter));
+            std::string filterLower(placedFilter);
+            std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            int shown = 0;
             ImGui::BeginChild("ObjPlacedList", ImVec2(0, 100), true);
             for (int i = 0; i < static_cast<int>(placer.objectCount()); i++) {
                 auto& o = const_cast<std::vector<PlacedObject>&>(placer.getObjects())[i];
                 std::string disp = o.path;
                 auto sl = disp.rfind('\\');
                 if (sl != std::string::npos) disp = disp.substr(sl + 1);
+                if (!filterLower.empty()) {
+                    std::string nameLower = disp;
+                    std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+                    if (nameLower.find(filterLower) == std::string::npos) continue;
+                }
+                if (++shown > 200) { ImGui::Text("... refine filter"); break; }
                 char lbl[128];
                 std::snprintf(lbl, sizeof(lbl), "%s (%.0f,%.0f,%.0f)##obj%d",
                               disp.c_str(), o.position.x, o.position.y, o.position.z, i);
