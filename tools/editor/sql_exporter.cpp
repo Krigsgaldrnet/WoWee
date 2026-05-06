@@ -94,8 +94,14 @@ bool SQLExporter::exportCreatures(const std::vector<CreatureSpawn>& spawns,
         const float wowX = s.position.y;
         const float wowY = s.position.x;
         const float wowZ = s.position.z;
-        // AzerothCore expects orientation in radians; editor stores degrees.
-        const float orientRad = s.orientation * 3.14159265358979323846f / 180.0f;
+        // AzerothCore expects orientation in radians from +X (north). Editor's
+        // orientation is in degrees from +renderX (west). Convert via:
+        //   wowYaw = π/2 - editorYaw
+        constexpr float kPi = 3.14159265358979323846f;
+        const float editorYawRad = s.orientation * kPi / 180.0f;
+        float orientRad = kPi * 0.5f - editorYawRad;
+        while (orientRad < 0.0f) orientRad += 2.0f * kPi;
+        while (orientRad >= 2.0f * kPi) orientRad -= 2.0f * kPi;
         f << "INSERT INTO `creature` "
           << "(`guid`, `id`, `map`, `position_x`, `position_y`, `position_z`, "
           << "`orientation`, `spawntimesecs`, `wander_distance`, `MovementType`) VALUES ("
