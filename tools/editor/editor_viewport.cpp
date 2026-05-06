@@ -119,6 +119,7 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
     clearObjects();
     if (objects.empty() && npcs.empty()) return;
 
+    vkCtx_->beginUploadBatch();
     uint32_t nextModelId = 1;
     std::unordered_map<std::string, uint32_t> m2ModelIds, wmoModelIds;
 
@@ -359,7 +360,12 @@ void EditorViewport::rebuildObjects(const std::vector<PlacedObject>& objects,
                 }
                 if (!ok) { LOG_WARNING("NPC M2 bad vertices: ", npc.modelPath); continue; }
                 modelId = nextModelId++;
-                if (!m2Renderer_->loadModel(model, modelId)) continue;
+                if (!m2Renderer_->loadModel(model, modelId)) {
+                    LOG_WARNING("NPC M2 loadModel failed: ", npc.modelPath,
+                               " (", model.vertices.size(), "v ", model.indices.size(), "i ",
+                               model.batches.size(), "b)");
+                    continue;
+                }
                 vkCtx_->waitAllUploads();
                 vkCtx_->pollUploadBatches();
                 m2ModelIds[npc.modelPath] = modelId;
