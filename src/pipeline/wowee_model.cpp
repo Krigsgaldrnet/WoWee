@@ -73,6 +73,19 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
             model.vertices[i].texCoord = v1.uv;
         }
     }
+    // Sanitize per-vertex floats. NaN/inf positions crash the M2 vertex
+    // shader (silent device-lost on some drivers) — safer to render the
+    // vertex at the origin than corrupt the whole pipeline.
+    for (auto& v : model.vertices) {
+        if (!std::isfinite(v.position.x)) v.position.x = 0.0f;
+        if (!std::isfinite(v.position.y)) v.position.y = 0.0f;
+        if (!std::isfinite(v.position.z)) v.position.z = 0.0f;
+        if (!std::isfinite(v.normal.x)) v.normal.x = 0.0f;
+        if (!std::isfinite(v.normal.y)) v.normal.y = 0.0f;
+        if (!std::isfinite(v.normal.z)) v.normal.z = 1.0f;
+        if (!std::isfinite(v.texCoord.x)) v.texCoord.x = 0.0f;
+        if (!std::isfinite(v.texCoord.y)) v.texCoord.y = 0.0f;
+    }
 
     model.indices.resize(indexCount);
     f.read(reinterpret_cast<char*>(model.indices.data()), indexCount * 4);
