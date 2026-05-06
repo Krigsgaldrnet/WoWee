@@ -11,6 +11,7 @@ namespace pipeline {
 
 static constexpr uint32_t WOM_MAGIC = 0x314D4F57; // "WOM1"
 static constexpr uint32_t WOM2_MAGIC = 0x324D4F57; // "WOM2"
+static constexpr uint32_t WOM3_MAGIC = 0x334D4F57; // "WOM3"
 
 bool WoweeModelLoader::exists(const std::string& basePath) {
     return std::filesystem::exists(basePath + ".wom");
@@ -25,9 +26,10 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
 
     uint32_t magic;
     f.read(reinterpret_cast<char*>(&magic), 4);
-    bool isV2 = (magic == WOM2_MAGIC);
-    if (magic != WOM_MAGIC && magic != WOM2_MAGIC) return model;
-    model.version = isV2 ? 2 : 1;
+    bool isV2 = (magic == WOM2_MAGIC || magic == WOM3_MAGIC);
+    bool isV3 = (magic == WOM3_MAGIC);
+    if (magic != WOM_MAGIC && magic != WOM2_MAGIC && magic != WOM3_MAGIC) return model;
+    model.version = isV3 ? 3 : (isV2 ? 2 : 1);
 
     uint32_t vertCount, indexCount, texCount;
     f.read(reinterpret_cast<char*>(&vertCount), 4);
@@ -110,8 +112,25 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
         }
     }
 
-    LOG_INFO("WOM", (isV2 ? "2" : "1"), " loaded: ", basePath, " (", vertCount, " verts, ",
-             model.bones.size(), " bones, ", model.animations.size(), " anims)");
+    // WOM3: read batches (multi-material support)
+    if (isV3) {
+        uint32_t batchCount = 0;
+        if (f.read(reinterpret_cast<char*>(&batchCount), 4) && batchCount > 0 && batchCount <= 4096) {
+            model.batches.resize(batchCount);
+            for (uint32_t i = 0; i < batchCount; i++) {
+                auto& b = model.batches[i];
+                f.read(reinterpret_cast<char*>(&b.indexStart), 4);
+                f.read(reinterpret_cast<char*>(&b.indexCount), 4);
+                f.read(reinterpret_cast<char*>(&b.textureIndex), 4);
+                f.read(reinterpret_cast<char*>(&b.blendMode), 2);
+                f.read(reinterpret_cast<char*>(&b.flags), 2);
+            }
+        }
+    }
+
+    LOG_INFO("WOM", (isV3 ? "3" : (isV2 ? "2" : "1")), " loaded: ", basePath, " (",
+             vertCount, " verts, ", model.bones.size(), " bones, ",
+             model.animations.size(), " anims, ", model.batches.size(), " batches)");
     return model;
 }
 
@@ -124,7 +143,13 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
     if (!f) return false;
 
     bool hasAnim = model.hasAnimation();
-    uint32_t magic = hasAnim ? WOM2_MAGIC : WOM_MAGIC;
+    bool hasBatches = model.hasBatches();
+    // WOM3 implies WOM2 layout (vertex format with bones), so we only emit
+    // WOM3 if the model also has animation data — pure-batch static meshes
+    // still go to WOM1/WOM2 with batches written via the WOM3 trailing block
+    // when present alongside animation. For static-only with batches, write
+    // as WOM3 anyway (decoder handles missing bones).
+    uint32_t magic = hasBatches ? WOM3_MAGIC : (hasAnim ? WOM2_MAGIC : WOM_MAGIC);
     f.write(reinterpret_cast<const char*>(&magic), 4);
 
     uint32_t vertCount = static_cast<uint32_t>(model.vertices.size());
@@ -141,8 +166,8 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
     f.write(reinterpret_cast<const char*>(&nameLen), 2);
     f.write(model.name.data(), nameLen);
 
-    // WOM2 writes full vertex with bone data; WOM1 writes 32-byte vertex
-    if (hasAnim) {
+    // WOM2/WOM3 write full vertex with bone data; WOM1 writes 32-byte vertex
+    if (hasAnim || hasBatches) {
         f.write(reinterpret_cast<const char*>(model.vertices.data()),
                 vertCount * sizeof(WoweeModel::Vertex));
     } else {
@@ -161,8 +186,8 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
         f.write(path.data(), pathLen);
     }
 
-    // WOM2: write bones and animations
-    if (hasAnim) {
+    // WOM2/WOM3: write bones and animations (always, even if empty for WOM3)
+    if (hasAnim || hasBatches) {
         uint32_t boneCount = static_cast<uint32_t>(model.bones.size());
         f.write(reinterpret_cast<const char*>(&boneCount), 4);
         for (const auto& bone : model.bones) {
@@ -194,8 +219,22 @@ bool WoweeModelLoader::save(const WoweeModel& model, const std::string& basePath
         }
     }
 
-    LOG_INFO("WOM", (hasAnim ? "2" : "1"), " saved: ", womPath, " (", vertCount, " verts, ",
-             model.bones.size(), " bones, ", model.animations.size(), " anims)");
+    // WOM3: write batches
+    if (hasBatches) {
+        uint32_t batchCount = static_cast<uint32_t>(model.batches.size());
+        f.write(reinterpret_cast<const char*>(&batchCount), 4);
+        for (const auto& b : model.batches) {
+            f.write(reinterpret_cast<const char*>(&b.indexStart), 4);
+            f.write(reinterpret_cast<const char*>(&b.indexCount), 4);
+            f.write(reinterpret_cast<const char*>(&b.textureIndex), 4);
+            f.write(reinterpret_cast<const char*>(&b.blendMode), 2);
+            f.write(reinterpret_cast<const char*>(&b.flags), 2);
+        }
+    }
+
+    LOG_INFO("WOM", (hasBatches ? "3" : (hasAnim ? "2" : "1")), " saved: ", womPath,
+             " (", vertCount, " verts, ", model.bones.size(), " bones, ",
+             model.animations.size(), " anims, ", model.batches.size(), " batches)");
     return true;
 }
 
@@ -258,6 +297,25 @@ WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am)
         wb.pivot = b.pivot;
         wb.flags = b.flags;
         model.bones.push_back(wb);
+    }
+
+    // Convert batches with material/blend mode info (WOM3 feature).
+    // Each M2 batch maps to a WOM batch — preserves multi-submesh material structure.
+    for (const auto& mb : m2.batches) {
+        WoweeModel::Batch wb;
+        wb.indexStart = mb.indexStart;
+        wb.indexCount = mb.indexCount;
+        // Resolve textureLookup -> texture index
+        uint32_t lookupIdx = mb.textureIndex;
+        wb.textureIndex = (lookupIdx < m2.textureLookup.size())
+            ? static_cast<uint32_t>(std::max<int16_t>(0, m2.textureLookup[lookupIdx]))
+            : 0;
+        if (mb.materialIndex < m2.materials.size()) {
+            const auto& mat = m2.materials[mb.materialIndex];
+            wb.blendMode = mat.blendMode;
+            wb.flags = mat.flags;
+        }
+        model.batches.push_back(wb);
     }
 
     // Convert animations (first keyframe per bone per sequence)
@@ -353,18 +411,38 @@ M2Model WoweeModelLoader::toM2(const WoweeModel& wom) {
         tex.filename = tp;
         m.textures.push_back(tex);
     }
-    m.textureLookup = {0};
+    m.textureLookup.clear();
+    for (uint32_t i = 0; i < wom.texturePaths.size(); i++)
+        m.textureLookup.push_back(static_cast<int16_t>(i));
+    if (m.textureLookup.empty()) m.textureLookup.push_back(0);
 
-    M2Batch batch{};
-    batch.textureCount = std::min(1u, static_cast<uint32_t>(wom.texturePaths.size()));
-    batch.indexCount = static_cast<uint32_t>(m.indices.size());
-    batch.vertexCount = static_cast<uint32_t>(m.vertices.size());
-    m.batches.push_back(batch);
-
-    M2Material mat;
-    mat.flags = 0;
-    mat.blendMode = 0;
-    m.materials.push_back(mat);
+    if (wom.hasBatches()) {
+        for (const auto& wb : wom.batches) {
+            M2Batch batch{};
+            batch.indexStart = wb.indexStart;
+            batch.indexCount = wb.indexCount;
+            batch.vertexCount = static_cast<uint32_t>(m.vertices.size());
+            batch.textureCount = 1;
+            batch.textureIndex = static_cast<uint16_t>(
+                std::min<uint32_t>(wb.textureIndex, m.textureLookup.size() - 1));
+            batch.materialIndex = static_cast<uint16_t>(m.materials.size());
+            m.batches.push_back(batch);
+            M2Material mat;
+            mat.flags = wb.flags;
+            mat.blendMode = wb.blendMode;
+            m.materials.push_back(mat);
+        }
+    } else {
+        M2Batch batch{};
+        batch.textureCount = std::min(1u, static_cast<uint32_t>(wom.texturePaths.size()));
+        batch.indexCount = static_cast<uint32_t>(m.indices.size());
+        batch.vertexCount = static_cast<uint32_t>(m.vertices.size());
+        m.batches.push_back(batch);
+        M2Material mat;
+        mat.flags = 0;
+        mat.blendMode = 0;
+        m.materials.push_back(mat);
+    }
 
     return m;
 }
