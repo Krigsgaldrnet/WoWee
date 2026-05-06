@@ -482,6 +482,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert a WOB building to glTF 2.0 binary (one mesh, per-group primitives)\n");
     std::printf("  --export-whm-glb <wot-base> [out.glb]\n");
     std::printf("                         Convert WHM heightmap to glTF 2.0 binary terrain mesh (per-chunk primitives)\n");
+    std::printf("  --bake-zone-glb <zoneDir> [out.glb]\n");
+    std::printf("                         Bake every WHM tile in a zone into one glTF (one node per tile)\n");
     std::printf("  --import-obj <obj-path> [wom-base]\n");
     std::printf("                         Convert a Wavefront OBJ back into WOM (round-trips with --export-obj)\n");
     std::printf("  --export-wob-obj <wob-base> [out.obj]\n");
@@ -627,7 +629,7 @@ int main(int argc, char* argv[]) {
         "--export-wob-obj", "--import-wob-obj",
         "--export-woc-obj", "--export-whm-obj",
         "--export-glb", "--export-wob-glb", "--export-whm-glb",
-        "--export-stl", "--import-stl",
+        "--export-stl", "--import-stl", "--bake-zone-glb",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
         "--migrate-wom", "--migrate-zone",
@@ -4649,6 +4651,229 @@ int main(int argc, char* argv[]) {
             std::printf("Exported %s.whm -> %s\n", base.c_str(), outPath.c_str());
             std::printf("  %d chunks loaded, %u verts, %u tris, %zu primitives, %u-byte BIN\n",
                         loadedChunks, totalV, totalI / 3, primitives.size(), binLen);
+            return 0;
+        } else if (std::strcmp(argv[i], "--bake-zone-glb") == 0 && i + 1 < argc) {
+            // Bake every WHM tile in a zone into ONE .glb so the whole
+            // multi-tile zone opens in three.js / model-viewer with one
+            // file. Each tile becomes its own mesh+node so they can be
+            // toggled independently. v1: terrain only — object/WOB
+            // instances are a follow-up that needs careful per-mesh
+            // bufferView slicing.
+            std::string zoneDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "bake-zone-glb: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "bake-zone-glb: failed to parse zone.json\n");
+                return 1;
+            }
+            if (outPath.empty()) outPath = zoneDir + "/" + zm.mapName + ".glb";
+            if (zm.tiles.empty()) {
+                std::fprintf(stderr, "bake-zone-glb: zone has no tiles\n");
+                return 1;
+            }
+            constexpr float kTileSize = 533.33333f;
+            constexpr float kChunkSize = kTileSize / 16.0f;
+            constexpr float kVertSpacing = kChunkSize / 8.0f;
+            // Per-tile mesh metadata so we can create one node per tile
+            // and slice its index range from the shared bufferView.
+            struct TileMesh {
+                int tx, ty;
+                uint32_t vertOff, vertCount;
+                uint32_t idxOff, idxCount;
+            };
+            std::vector<TileMesh> tileMeshes;
+            std::vector<glm::vec3> positions;
+            std::vector<uint32_t>  indices;
+            int loadedTiles = 0;
+            glm::vec3 bMin{1e30f}, bMax{-1e30f};
+            for (const auto& [tx, ty] : zm.tiles) {
+                std::string tileBase = zoneDir + "/" + zm.mapName + "_" +
+                                       std::to_string(tx) + "_" + std::to_string(ty);
+                if (!wowee::pipeline::WoweeTerrainLoader::exists(tileBase)) {
+                    std::fprintf(stderr,
+                        "bake-zone-glb: tile (%d,%d) WHM/WOT missing — skipping\n",
+                        tx, ty);
+                    continue;
+                }
+                wowee::pipeline::ADTTerrain terrain;
+                wowee::pipeline::WoweeTerrainLoader::load(tileBase, terrain);
+                TileMesh tm{tx, ty, 0, 0, 0, 0};
+                tm.vertOff = static_cast<uint32_t>(positions.size());
+                tm.idxOff  = static_cast<uint32_t>(indices.size());
+                // Same per-chunk outer-grid layout as --export-whm-glb,
+                // but accumulated across all tiles so they share one
+                // global vertex+index pool.
+                for (int cx = 0; cx < 16; ++cx) {
+                    for (int cy = 0; cy < 16; ++cy) {
+                        const auto& chunk = terrain.getChunk(cx, cy);
+                        if (!chunk.heightMap.isLoaded()) continue;
+                        float chunkBaseX = (32.0f - terrain.coord.y) * kTileSize - cy * kChunkSize;
+                        float chunkBaseY = (32.0f - terrain.coord.x) * kTileSize - cx * kChunkSize;
+                        uint32_t chunkVertOff =
+                            static_cast<uint32_t>(positions.size());
+                        for (int row = 0; row < 9; ++row) {
+                            for (int col = 0; col < 9; ++col) {
+                                glm::vec3 p{
+                                    chunkBaseX - row * kVertSpacing,
+                                    chunkBaseY - col * kVertSpacing,
+                                    chunk.position[2] +
+                                        chunk.heightMap.heights[row * 17 + col]
+                                };
+                                positions.push_back(p);
+                                bMin = glm::min(bMin, p);
+                                bMax = glm::max(bMax, p);
+                            }
+                        }
+                        bool isHoleChunk = (chunk.holes != 0);
+                        for (int row = 0; row < 8; ++row) {
+                            for (int col = 0; col < 8; ++col) {
+                                if (isHoleChunk) {
+                                    int hx = col / 2, hy = row / 2;
+                                    if (chunk.holes & (1 << (hy * 4 + hx))) continue;
+                                }
+                                auto idx = [&](int r, int c) {
+                                    return chunkVertOff + r * 9 + c;
+                                };
+                                indices.push_back(idx(row, col));
+                                indices.push_back(idx(row, col + 1));
+                                indices.push_back(idx(row + 1, col + 1));
+                                indices.push_back(idx(row, col));
+                                indices.push_back(idx(row + 1, col + 1));
+                                indices.push_back(idx(row + 1, col));
+                            }
+                        }
+                    }
+                }
+                tm.vertCount = static_cast<uint32_t>(positions.size()) - tm.vertOff;
+                tm.idxCount  = static_cast<uint32_t>(indices.size()) - tm.idxOff;
+                if (tm.vertCount > 0 && tm.idxCount > 0) {
+                    tileMeshes.push_back(tm);
+                    loadedTiles++;
+                }
+            }
+            if (loadedTiles == 0) {
+                std::fprintf(stderr, "bake-zone-glb: no tiles loaded\n");
+                return 1;
+            }
+            // Pack BIN chunk same way as --export-whm-glb (positions +
+            // synthetic +Z normals + indices). Per-tile accessors slice
+            // their index region via byteOffset.
+            const uint32_t totalV = static_cast<uint32_t>(positions.size());
+            const uint32_t totalI = static_cast<uint32_t>(indices.size());
+            const uint32_t posOff = 0;
+            const uint32_t nrmOff = posOff + totalV * 12;
+            const uint32_t idxOff = nrmOff + totalV * 12;
+            const uint32_t binSize = idxOff + totalI * 4;
+            std::vector<uint8_t> bin(binSize);
+            for (uint32_t v = 0; v < totalV; ++v) {
+                std::memcpy(&bin[posOff + v * 12 + 0], &positions[v].x, 4);
+                std::memcpy(&bin[posOff + v * 12 + 4], &positions[v].y, 4);
+                std::memcpy(&bin[posOff + v * 12 + 8], &positions[v].z, 4);
+                float nx = 0, ny = 0, nz = 1;
+                std::memcpy(&bin[nrmOff + v * 12 + 0], &nx, 4);
+                std::memcpy(&bin[nrmOff + v * 12 + 4], &ny, 4);
+                std::memcpy(&bin[nrmOff + v * 12 + 8], &nz, 4);
+            }
+            std::memcpy(&bin[idxOff], indices.data(), totalI * 4);
+            // Build glTF JSON. One mesh + one node per tile so they can
+            // be toggled in viewers.
+            nlohmann::json gj;
+            gj["asset"] = {{"version", "2.0"},
+                            {"generator", "wowee_editor --bake-zone-glb"}};
+            gj["scene"] = 0;
+            gj["buffers"] = nlohmann::json::array({nlohmann::json{
+                {"byteLength", binSize}
+            }});
+            // Three shared bufferViews — pos, nrm, idx — sliced into
+            // per-tile primitives via byteOffset on the index accessor.
+            nlohmann::json bufferViews = nlohmann::json::array();
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", posOff},
+                                    {"byteLength", totalV * 12}, {"target", 34962}});
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", nrmOff},
+                                    {"byteLength", totalV * 12}, {"target", 34962}});
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", idxOff},
+                                    {"byteLength", totalI * 4},  {"target", 34963}});
+            gj["bufferViews"] = bufferViews;
+            // Shared position+normal accessors (covering the full pool;
+            // primitives reference them, the index accessor does the
+            // per-tile slicing).
+            nlohmann::json accessors = nlohmann::json::array();
+            accessors.push_back({
+                {"bufferView", 0}, {"componentType", 5126},
+                {"count", totalV}, {"type", "VEC3"},
+                {"min", {bMin.x, bMin.y, bMin.z}},
+                {"max", {bMax.x, bMax.y, bMax.z}}
+            });
+            accessors.push_back({{"bufferView", 1}, {"componentType", 5126},
+                                  {"count", totalV}, {"type", "VEC3"}});
+            // Per-tile mesh + node + indices accessor.
+            nlohmann::json meshes = nlohmann::json::array();
+            nlohmann::json nodes = nlohmann::json::array();
+            nlohmann::json sceneNodes = nlohmann::json::array();
+            for (const auto& tm : tileMeshes) {
+                uint32_t accIdx = static_cast<uint32_t>(accessors.size());
+                accessors.push_back({
+                    {"bufferView", 2},
+                    {"byteOffset", tm.idxOff * 4},
+                    {"componentType", 5125},
+                    {"count", tm.idxCount},
+                    {"type", "SCALAR"}
+                });
+                uint32_t meshIdx = static_cast<uint32_t>(meshes.size());
+                meshes.push_back({
+                    {"primitives", nlohmann::json::array({nlohmann::json{
+                        {"attributes", {{"POSITION", 0}, {"NORMAL", 1}}},
+                        {"indices", accIdx}, {"mode", 4}
+                    }})}
+                });
+                std::string nodeName = "tile_" + std::to_string(tm.tx) +
+                                       "_" + std::to_string(tm.ty);
+                uint32_t nodeIdx = static_cast<uint32_t>(nodes.size());
+                nodes.push_back({{"name", nodeName}, {"mesh", meshIdx}});
+                sceneNodes.push_back(nodeIdx);
+            }
+            gj["accessors"] = accessors;
+            gj["meshes"] = meshes;
+            gj["nodes"] = nodes;
+            gj["scenes"] = nlohmann::json::array({nlohmann::json{
+                {"nodes", sceneNodes}
+            }});
+            std::string jsonStr = gj.dump();
+            while (jsonStr.size() % 4 != 0) jsonStr += ' ';
+            uint32_t jsonLen = static_cast<uint32_t>(jsonStr.size());
+            uint32_t binLen = binSize;
+            uint32_t totalLen = 12 + 8 + jsonLen + 8 + binLen;
+            std::ofstream out(outPath, std::ios::binary);
+            if (!out) {
+                std::fprintf(stderr, "Failed to open output: %s\n", outPath.c_str());
+                return 1;
+            }
+            uint32_t magic = 0x46546C67, version = 2;
+            out.write(reinterpret_cast<const char*>(&magic), 4);
+            out.write(reinterpret_cast<const char*>(&version), 4);
+            out.write(reinterpret_cast<const char*>(&totalLen), 4);
+            uint32_t jsonChunkType = 0x4E4F534A;
+            out.write(reinterpret_cast<const char*>(&jsonLen), 4);
+            out.write(reinterpret_cast<const char*>(&jsonChunkType), 4);
+            out.write(jsonStr.data(), jsonLen);
+            uint32_t binChunkType = 0x004E4942;
+            out.write(reinterpret_cast<const char*>(&binLen), 4);
+            out.write(reinterpret_cast<const char*>(&binChunkType), 4);
+            out.write(reinterpret_cast<const char*>(bin.data()), binLen);
+            out.close();
+            std::printf("Baked %s -> %s\n", zoneDir.c_str(), outPath.c_str());
+            std::printf("  %d tile(s), %u verts, %u tris, %zu meshes, %u-byte BIN\n",
+                        loadedTiles, totalV, totalI / 3,
+                        meshes.size(), binLen);
             return 0;
         } else if (std::strcmp(argv[i], "--export-wob-obj") == 0 && i + 1 < argc) {
             // WOB is the WMO replacement; like --export-obj for WOM, this
