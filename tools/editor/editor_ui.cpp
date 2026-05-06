@@ -1925,7 +1925,17 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
         // ---- Spawned list ----
         if (ImGui::CollapsingHeader("Spawned Creatures", ImGuiTreeNodeFlags_DefaultOpen)) {
             static char spawnFilter[128] = "";
-            ImGui::Text("%zu placed (double-click to fly to)", spawner.spawnCount());
+            // Count hostile / friendly / quest givers / vendors
+            size_t hostile = 0, friendly = 0, qg = 0, vend = 0;
+            for (const auto& s : spawner.getSpawns()) {
+                if (s.hostile) hostile++; else friendly++;
+                if (s.questgiver) qg++;
+                if (s.vendor) vend++;
+            }
+            ImGui::Text("%zu placed", spawner.spawnCount());
+            ImGui::TextDisabled("Hostile: %zu  Friendly: %zu  Q-givers: %zu  Vendors: %zu",
+                                hostile, friendly, qg, vend);
+            ImGui::TextDisabled("Double-click an entry to fly to it");
             ImGui::SetNextItemWidth(-1);
             ImGui::InputTextWithHint("##spawnfilter", "Filter by name...", spawnFilter, sizeof(spawnFilter));
             std::string filterLower(spawnFilter);
