@@ -77,7 +77,18 @@ bool QuestEditor::loadFromFile(const std::string& path) {
         quests_.clear();
         uint32_t maxId = 0;
 
+        // Cap total quest count — a stale autosave or hand-edited file
+        // could carry thousands of empty quests, each emitting a
+        // quest_template INSERT (and queststarter/questender + chain
+        // walks) on export. 4096 covers any realistic zone.
+        constexpr size_t kMaxQuests = 4096;
+
         for (const auto& jq : arr) {
+            if (quests_.size() >= kMaxQuests) {
+                LOG_WARNING("Quest cap reached (", kMaxQuests,
+                            ") — remaining entries dropped");
+                break;
+            }
             Quest q;
             q.id = jq.value("id", 0u);
             q.title = jq.value("title", "Untitled");

@@ -337,7 +337,17 @@ bool ObjectPlacer::loadFromFile(const std::string& path) {
         selectedIndices_.clear();
         uniqueIdCounter_ = 1;
 
+        // Cap object count — a stale autosave or biome-populate runaway
+        // could produce 100k+ entries that bloat the renderer instance
+        // SSBO and drag the editor framerate to single digits.
+        constexpr size_t kMaxObjects = 100'000;
+
         for (const auto& jo : arr) {
+            if (objects_.size() >= kMaxObjects) {
+                LOG_WARNING("Object cap reached (", kMaxObjects,
+                            ") — remaining entries dropped");
+                break;
+            }
             PlacedObject obj;
             obj.type = static_cast<PlaceableType>(jo.value("type", 0));
             obj.path = jo.value("path", "");
