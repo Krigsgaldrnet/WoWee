@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <cmath>
 
 namespace wowee {
 namespace rendering {
@@ -15,10 +16,26 @@ class Camera {
 public:
     Camera();
 
-    void setPosition(const glm::vec3& pos) { position = pos; updateViewMatrix(); }
-    void setRotation(float yaw, float pitch) { this->yaw = yaw; this->pitch = pitch; updateViewMatrix(); }
-    void setAspectRatio(float aspect) { aspectRatio = aspect; updateProjectionMatrix(); }
-    void setFov(float fov) { this->fov = fov; updateProjectionMatrix(); }
+    void setPosition(const glm::vec3& pos) {
+        // Reject NaN/inf — would produce a NaN view matrix and freeze the
+        // GPU in some drivers, or produce garbage frustum culling.
+        if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) return;
+        position = pos; updateViewMatrix();
+    }
+    void setRotation(float yaw, float pitch) {
+        if (!std::isfinite(yaw) || !std::isfinite(pitch)) return;
+        this->yaw = yaw; this->pitch = pitch; updateViewMatrix();
+    }
+    void setAspectRatio(float aspect) {
+        // glm::perspective with aspect <= 0 produces NaN in the projection.
+        if (!std::isfinite(aspect) || aspect <= 0.0f) return;
+        aspectRatio = aspect; updateProjectionMatrix();
+    }
+    void setFov(float fov) {
+        // glm::perspective(0) is degenerate; >180 wraps the trig.
+        if (!std::isfinite(fov) || fov <= 0.0f || fov >= 180.0f) return;
+        this->fov = fov; updateProjectionMatrix();
+    }
 
     const glm::vec3& getPosition() const { return position; }
     const glm::mat4& getViewMatrix() const { return viewMatrix; }
