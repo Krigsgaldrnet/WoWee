@@ -2,6 +2,7 @@
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/blp_loader.hpp"
 #include "pipeline/m2_loader.hpp"
+#include "pipeline/wmo_loader.hpp"
 #include "core/logger.hpp"
 #include <filesystem>
 #include <algorithm>
@@ -36,6 +37,38 @@ std::vector<std::string> TextureExporter::collectM2Textures(pipeline::AssetManag
     for (const auto& tex : m2.textures) {
         if (tex.filename.empty()) continue;
         std::string p = tex.filename;
+        std::transform(p.begin(), p.end(), p.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        unique.insert(p);
+    }
+    out.assign(unique.begin(), unique.end());
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::vector<std::string> TextureExporter::collectWMOTextures(pipeline::AssetManager* am,
+                                                              const std::string& wmoPath) {
+    std::vector<std::string> out;
+    if (!am || wmoPath.empty()) return out;
+
+    auto rootData = am->readFile(wmoPath);
+    if (rootData.empty()) return out;
+    auto wmo = pipeline::WMOLoader::load(rootData);
+
+    // Load group files so any group-only texture references are populated too.
+    std::string base = wmoPath;
+    if (base.size() > 4) base = base.substr(0, base.size() - 4);
+    for (uint32_t gi = 0; gi < wmo.nGroups; gi++) {
+        char suffix[16];
+        std::snprintf(suffix, sizeof(suffix), "_%03u.wmo", gi);
+        auto gd = am->readFile(base + suffix);
+        if (!gd.empty()) pipeline::WMOLoader::loadGroup(gd, wmo, gi);
+    }
+
+    std::unordered_set<std::string> unique;
+    for (const auto& tex : wmo.textures) {
+        if (tex.empty()) continue;
+        std::string p = tex;
         std::transform(p.begin(), p.end(), p.begin(),
                        [](unsigned char c) { return std::tolower(c); });
         unique.insert(p);

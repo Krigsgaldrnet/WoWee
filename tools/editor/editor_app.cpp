@@ -1152,13 +1152,20 @@ void EditorApp::exportZone(const std::string& outputDir) {
         std::unordered_set<std::string> uniq;
         for (auto& t : TextureExporter::collectUsedTextures(terrain_)) uniq.insert(std::move(t));
         std::unordered_set<std::string> visitedM2;
+        std::unordered_set<std::string> visitedWMO;
         auto addM2Tex = [&](const std::string& m2Path) {
             if (m2Path.empty() || !visitedM2.insert(m2Path).second) return;
             for (auto& t : TextureExporter::collectM2Textures(assetManager_.get(), m2Path))
                 uniq.insert(std::move(t));
         };
+        auto addWMOTex = [&](const std::string& wmoPath) {
+            if (wmoPath.empty() || !visitedWMO.insert(wmoPath).second) return;
+            for (auto& t : TextureExporter::collectWMOTextures(assetManager_.get(), wmoPath))
+                uniq.insert(std::move(t));
+        };
         for (const auto& obj : objectPlacer_.getObjects()) {
             if (obj.type == PlaceableType::M2) addM2Tex(obj.path);
+            else if (obj.type == PlaceableType::WMO) addWMOTex(obj.path);
         }
         for (const auto& npc : npcSpawner_.getSpawns()) addM2Tex(npc.modelPath);
 
@@ -1167,7 +1174,8 @@ void EditorApp::exportZone(const std::string& outputDir) {
         if (!usedTextures.empty()) {
             int exported = TextureExporter::exportTexturesAsPng(
                 assetManager_.get(), usedTextures, base + "/textures");
-            LOG_INFO("Exported ", exported, " textures as PNG (terrain + ", visitedM2.size(), " M2s)");
+            LOG_INFO("Exported ", exported, " textures as PNG (terrain + ",
+                     visitedM2.size(), " M2s + ", visitedWMO.size(), " WMOs)");
         }
     }
 
