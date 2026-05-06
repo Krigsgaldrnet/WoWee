@@ -95,8 +95,15 @@ bool ZoneManifest::load(const std::string& path) {
         tiles.clear();
         if (j.contains("tiles") && j["tiles"].is_array()) {
             for (const auto& t : j["tiles"]) {
-                if (t.is_array() && t.size() >= 2)
-                    tiles.push_back({t[0].get<int>(), t[1].get<int>()});
+                if (t.is_array() && t.size() >= 2) {
+                    int tx = t[0].get<int>();
+                    int ty = t[1].get<int>();
+                    // WoW tile grid is 64x64. Out-of-range coords would
+                    // generate ADT filenames the loader rejects, leaving
+                    // the zone with no terrain.
+                    if (tx < 0 || tx > 63 || ty < 0 || ty > 63) continue;
+                    tiles.push_back({tx, ty});
+                }
             }
         }
 
