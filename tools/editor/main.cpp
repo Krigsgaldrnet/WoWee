@@ -537,6 +537,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         One-shot validate + creature/object/quest counts and exit\n");
     std::printf("  --info-zone-tree <zoneDir>\n");
     std::printf("                         Render a hierarchical tree view of a zone's contents (no --json)\n");
+    std::printf("  --info-zone-bytes <zoneDir> [--json]\n");
+    std::printf("                         Per-file size breakdown grouped by category, sorted largest-first\n");
     std::printf("  --export-zone-summary-md <zoneDir> [out.md]\n");
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
     std::printf("  --export-zone-csv <zoneDir> [outDir]\n");
@@ -664,7 +666,7 @@ int main(int argc, char* argv[]) {
         "--info-glb-tree",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png",
-        "--zone-summary", "--info-zone-tree",
+        "--zone-summary", "--info-zone-tree", "--info-zone-bytes",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
@@ -3941,6 +3943,107 @@ int main(int argc, char* argv[]) {
             for (size_t k = 0; k < diskFiles.size(); ++k) {
                 bool last = (k == diskFiles.size() - 1);
                 std::printf("   %s%s\n", branch(last), diskFiles[k].c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-zone-bytes") == 0 && i + 1 < argc) {
+            // Per-file size breakdown grouped by category, sorted by size
+            // descending. Useful for capacity planning ('which file is
+            // 80% of my zone?') and pre-strip-zone audits ('how much
+            // would --strip-zone free?'). --zone-stats aggregates across
+            // multiple zones; this drills into one zone's contents.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr,
+                    "info-zone-bytes: %s does not exist\n", zoneDir.c_str());
+                return 1;
+            }
+            // Categorize by extension into source vs derived buckets so
+            // the breakdown surfaces what would be stripped.
+            struct Entry {
+                std::string path;  // relative to zoneDir
+                uint64_t bytes;
+                std::string category;
+            };
+            std::vector<Entry> entries;
+            uint64_t totalBytes = 0;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::string name = e.path().filename().string();
+                std::string rel = fs::relative(e.path(), zoneDir, ec).string();
+                if (ec) rel = e.path().string();
+                std::string cat;
+                if (ext == ".whm" || ext == ".wot" || ext == ".woc") cat = "terrain";
+                else if (ext == ".wom") cat = "model (open)";
+                else if (ext == ".wob") cat = "building (open)";
+                else if (ext == ".m2" || ext == ".skin") cat = "model (proprietary)";
+                else if (ext == ".wmo") cat = "building (proprietary)";
+                else if (ext == ".blp") cat = "texture (proprietary)";
+                else if (ext == ".png") cat = "texture (open/derived)";
+                else if (ext == ".dbc") cat = "DBC (proprietary)";
+                else if (ext == ".json") cat = "json (source)";
+                else if (ext == ".glb" || ext == ".obj" || ext == ".stl") cat = "3D export (derived)";
+                else if (ext == ".html" || ext == ".dot" || ext == ".csv") cat = "doc (derived)";
+                else if (name == "ZONE.md" || name == "DEPS.md") cat = "doc (derived)";
+                else cat = "other";
+                uint64_t sz = e.file_size(ec);
+                if (ec) continue;
+                totalBytes += sz;
+                entries.push_back({rel, sz, cat});
+            }
+            // Sort largest first so the heaviest contributors are at the
+            // top of the table.
+            std::sort(entries.begin(), entries.end(),
+                      [](const Entry& a, const Entry& b) { return a.bytes > b.bytes; });
+            // Aggregate per-category for the summary footer.
+            std::map<std::string, std::pair<uint64_t, int>> byCategory;
+            for (const auto& e : entries) {
+                byCategory[e.category].first += e.bytes;
+                byCategory[e.category].second++;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["totalBytes"] = totalBytes;
+                j["fileCount"] = entries.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& e : entries) {
+                    arr.push_back({{"path", e.path},
+                                   {"bytes", e.bytes},
+                                   {"category", e.category}});
+                }
+                j["files"] = arr;
+                nlohmann::json catObj;
+                for (const auto& [c, p] : byCategory) {
+                    catObj[c] = {{"bytes", p.first}, {"count", p.second}};
+                }
+                j["byCategory"] = catObj;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone bytes: %s\n", zoneDir.c_str());
+            std::printf("  total: %llu bytes (%.1f KB) across %zu file(s)\n",
+                        static_cast<unsigned long long>(totalBytes),
+                        totalBytes / 1024.0, entries.size());
+            std::printf("\n  Per-file (largest first):\n");
+            std::printf("  %-50s %12s  category\n", "path", "bytes");
+            for (const auto& e : entries) {
+                std::printf("  %-50s %12llu  %s\n",
+                            e.path.substr(0, 50).c_str(),
+                            static_cast<unsigned long long>(e.bytes),
+                            e.category.c_str());
+            }
+            std::printf("\n  Per-category:\n");
+            for (const auto& [c, p] : byCategory) {
+                std::printf("  %-26s %4d files  %12llu bytes  (%5.1f%%)\n",
+                            c.c_str(), p.second,
+                            static_cast<unsigned long long>(p.first),
+                            totalBytes ? (100.0 * p.first / totalBytes) : 0.0);
             }
             return 0;
         } else if (std::strcmp(argv[i], "--export-zone-summary-md") == 0 && i + 1 < argc) {
