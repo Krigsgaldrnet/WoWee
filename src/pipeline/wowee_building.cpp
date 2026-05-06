@@ -308,12 +308,16 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
         const auto& portal = bld.portals[pi];
         f.write(reinterpret_cast<const char*>(&portal.groupA), 4);
         f.write(reinterpret_cast<const char*>(&portal.groupB), 4);
-        uint32_t pvCount = static_cast<uint32_t>(portal.vertices.size());
+        // Cap per-portal vertex count at the load limit (4096). Real
+        // portals are 4-12 verts; >4096 would be rejected on round-trip.
+        uint32_t pvCount = static_cast<uint32_t>(
+            std::min<size_t>(portal.vertices.size(), 4096));
         f.write(reinterpret_cast<const char*>(&pvCount), 4);
         // Sanitize vertices on the way out — NaN portal vertices break
         // the WMO portal-frustum cull and fail-back to drawing the entire
         // building, defeating the indoor optimization.
-        std::vector<glm::vec3> sanPortal = portal.vertices;
+        std::vector<glm::vec3> sanPortal(portal.vertices.begin(),
+                                          portal.vertices.begin() + pvCount);
         for (auto& v : sanPortal) {
             if (!std::isfinite(v.x)) v.x = 0.0f;
             if (!std::isfinite(v.y)) v.y = 0.0f;
