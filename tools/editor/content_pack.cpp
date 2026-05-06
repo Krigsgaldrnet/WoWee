@@ -46,6 +46,14 @@ bool ContentPacker::packZone(const std::string& outputDir, const std::string& ma
         }
         std::string rel = fs::relative(entry.path(), srcDir).string();
         std::replace(rel.begin(), rel.end(), '\\', '/');
+        // fs::relative can return "../foo" when srcDir is a symlink that
+        // resolves outside the pack root; reject those before they're
+        // baked into a WCP that the unpacker will then refuse wholesale.
+        if (rel.find("..") != std::string::npos ||
+            (!rel.empty() && rel[0] == '/')) {
+            LOG_WARNING("WCP skipping out-of-tree file: ", entry.path().string());
+            continue;
+        }
         files.push_back({rel, entry.path().string()});
     }
 
