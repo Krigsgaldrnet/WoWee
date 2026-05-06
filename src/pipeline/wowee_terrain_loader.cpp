@@ -172,8 +172,13 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
             if (!std::isfinite(b)) b = 0.0f;
             if (!std::isfinite(c)) c = 0.0f;
         };
+        // Caps match the editor-side ObjectPlacer (100k for objects). Per-
+        // tile, real ADTs cap at ~64k MDDF entries (uint32 indices) and
+        // far fewer in practice (~5k for dense zones).
+        constexpr size_t kMaxPlacements = 100'000;
         if (j.contains("doodads") && j["doodads"].is_array()) {
             for (const auto& jd : j["doodads"]) {
+                if (terrain.doodadPlacements.size() >= kMaxPlacements) break;
                 ADTTerrain::DoodadPlacement dp{};
                 dp.nameId = jd.value("nameId", 0u);
                 dp.uniqueId = jd.value("uniqueId", 0u);
@@ -198,6 +203,7 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
         }
         if (j.contains("wmos") && j["wmos"].is_array()) {
             for (const auto& jw : j["wmos"]) {
+                if (terrain.wmoPlacements.size() >= kMaxPlacements) break;
                 ADTTerrain::WMOPlacement wp{};
                 wp.nameId = jw.value("nameId", 0u);
                 wp.uniqueId = jw.value("uniqueId", 0u);
