@@ -37,6 +37,91 @@
 // Both validators are called from the per-file CLI commands AND
 // from --validate-all which walks a zone dir. Returning a vector
 // of error strings (empty == passed) keeps callers simple.
+// Minimal SHA-256 implementation (FIPS 180-4) used by --export-zone-checksum
+// to produce hashes that interoperate with `sha256sum -c`. Not exposed beyond
+// this file — about 90 LoC, no external deps. See RFC 6234 for the algorithm.
+namespace wowee_sha256 {
+struct State {
+    uint32_t h[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+    uint64_t totalBits = 0;
+    uint8_t buf[64] = {};
+    size_t bufLen = 0;
+};
+static inline uint32_t rotr(uint32_t x, uint32_t n) { return (x >> n) | (x << (32 - n)); }
+static void compress(State& s, const uint8_t* block) {
+    static const uint32_t K[64] = {
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2,
+    };
+    uint32_t w[64];
+    for (int i = 0; i < 16; ++i) {
+        w[i] = (uint32_t(block[i*4]) << 24) | (uint32_t(block[i*4+1]) << 16) |
+               (uint32_t(block[i*4+2]) << 8) | uint32_t(block[i*4+3]);
+    }
+    for (int i = 16; i < 64; ++i) {
+        uint32_t s0 = rotr(w[i-15], 7) ^ rotr(w[i-15], 18) ^ (w[i-15] >> 3);
+        uint32_t s1 = rotr(w[i-2], 17) ^ rotr(w[i-2], 19) ^ (w[i-2] >> 10);
+        w[i] = w[i-16] + s0 + w[i-7] + s1;
+    }
+    uint32_t a = s.h[0], b = s.h[1], c = s.h[2], d = s.h[3];
+    uint32_t e = s.h[4], f = s.h[5], g = s.h[6], h = s.h[7];
+    for (int i = 0; i < 64; ++i) {
+        uint32_t S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+        uint32_t ch = (e & f) ^ (~e & g);
+        uint32_t t1 = h + S1 + ch + K[i] + w[i];
+        uint32_t S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+        uint32_t mj = (a & b) ^ (a & c) ^ (b & c);
+        uint32_t t2 = S0 + mj;
+        h = g; g = f; f = e; e = d + t1;
+        d = c; c = b; b = a; a = t1 + t2;
+    }
+    s.h[0] += a; s.h[1] += b; s.h[2] += c; s.h[3] += d;
+    s.h[4] += e; s.h[5] += f; s.h[6] += g; s.h[7] += h;
+}
+static void update(State& s, const uint8_t* data, size_t len) {
+    s.totalBits += len * 8;
+    while (len > 0) {
+        size_t take = std::min(len, sizeof(s.buf) - s.bufLen);
+        std::memcpy(s.buf + s.bufLen, data, take);
+        s.bufLen += take; data += take; len -= take;
+        if (s.bufLen == 64) { compress(s, s.buf); s.bufLen = 0; }
+    }
+}
+static std::string hexFinal(State& s) {
+    s.buf[s.bufLen++] = 0x80;
+    if (s.bufLen > 56) {
+        std::memset(s.buf + s.bufLen, 0, 64 - s.bufLen);
+        compress(s, s.buf); s.bufLen = 0;
+    }
+    std::memset(s.buf + s.bufLen, 0, 56 - s.bufLen);
+    for (int i = 7; i >= 0; --i) s.buf[56 + (7 - i)] = (s.totalBits >> (i * 8)) & 0xFF;
+    compress(s, s.buf);
+    char out[65] = {};
+    for (int i = 0; i < 8; ++i) {
+        std::snprintf(out + i * 8, 9, "%08x", s.h[i]);
+    }
+    return std::string(out);
+}
+static std::string fileHex(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return "";
+    State s;
+    char chunk[16384];
+    while (in.read(chunk, sizeof(chunk)) || in.gcount() > 0) {
+        update(s, reinterpret_cast<const uint8_t*>(chunk),
+               static_cast<size_t>(in.gcount()));
+    }
+    return hexFinal(s);
+}
+}  // namespace wowee_sha256
+
 static std::vector<std::string> validateWomErrors(
         const wowee::pipeline::WoweeModel& wom) {
     std::vector<std::string> errors;
@@ -555,6 +640,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
     std::printf("  --export-zone-csv <zoneDir> [outDir]\n");
     std::printf("                         Emit creatures.csv / objects.csv / quests.csv for spreadsheet workflows\n");
+    std::printf("  --export-zone-checksum <zoneDir> [out.sha256]\n");
+    std::printf("                         Emit a SHA-256 manifest of every source file in a zone (for integrity checks)\n");
     std::printf("  --export-zone-html <zoneDir> [out.html]\n");
     std::printf("                         Emit a single-file HTML viewer next to the zone .glb (model-viewer based)\n");
     std::printf("  --export-project-html <projectDir> [out.html]\n");
@@ -691,6 +778,7 @@ int main(int argc, char* argv[]) {
         "--zone-summary", "--info-zone-tree", "--info-zone-bytes",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
+        "--export-zone-checksum",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--zone-stats", "--info-tilemap",
         "--list-zone-deps", "--check-zone-refs", "--check-zone-content",
@@ -4544,6 +4632,66 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             std::printf("Exported %d CSV file(s) to %s\n", filesWritten, outDir.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-zone-checksum") == 0 && i + 1 < argc) {
+            // SHA-256 manifest of every source file in a zone, in the
+            // standard sha256sum format ('<hex>  <relpath>'). Lets users
+            // verify zone integrity after a download or transfer with the
+            // standard system tool:
+            //   wowee_editor --export-zone-checksum custom_zones/MyZone
+            //   sha256sum -c custom_zones/MyZone/SHA256SUMS
+            std::string zoneDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "export-zone-checksum: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = zoneDir + "/SHA256SUMS";
+            // Source files only — derived outputs (.glb/.obj/.stl/.html/
+            // ZONE.md/DEPS.md/quests.dot/SHA256SUMS itself) are excluded
+            // since they're regeneratable and would invalidate the
+            // checksum on every rebuild.
+            auto isDerived = [](const fs::path& p) {
+                std::string ext = p.extension().string();
+                std::string name = p.filename().string();
+                if (ext == ".glb" || ext == ".obj" || ext == ".stl" ||
+                    ext == ".html" || ext == ".dot" || ext == ".csv") return true;
+                if (name == "ZONE.md" || name == "DEPS.md" ||
+                    name == "SHA256SUMS" || name == "Makefile") return true;
+                if (ext == ".png") return true;  // BLP→PNG renders at root
+                return false;
+            };
+            std::vector<std::pair<std::string, std::string>> entries;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                if (isDerived(e.path())) continue;
+                std::string hex = wowee_sha256::fileHex(e.path().string());
+                if (hex.empty()) continue;
+                std::string rel = fs::relative(e.path(), zoneDir, ec).string();
+                if (ec) rel = e.path().string();
+                entries.push_back({hex, rel});
+            }
+            std::sort(entries.begin(), entries.end(),
+                      [](const auto& a, const auto& b) { return a.second < b.second; });
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-zone-checksum: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            for (const auto& [hash, path] : entries) {
+                // sha256sum format: 64-char hex, two spaces, path.
+                out << hash << "  " << path << "\n";
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  %zu file(s) hashed (source only, derived excluded)\n",
+                        entries.size());
+            std::printf("  verify with: sha256sum -c %s\n", outPath.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--export-zone-html") == 0 && i + 1 < argc) {
             // Generate a single-file HTML viewer next to the zone .glb.
