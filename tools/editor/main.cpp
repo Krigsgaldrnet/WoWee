@@ -3,6 +3,7 @@
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wowee_collision.hpp"
+#include "pipeline/wowee_terrain_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/custom_zone_discovery.hpp"
@@ -24,6 +25,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
+    std::printf("  --info-wot <wot-base>  Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-wcp <wcp-path>  Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
@@ -116,6 +118,52 @@ int main(int argc, char* argv[]) {
                 std::printf("    %-10s : %zu\n", cat.c_str(), count);
             }
             std::printf("  total bytes : %.2f MB\n", totalSize / (1024.0 * 1024.0));
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-wot") == 0 && i + 1 < argc) {
+            std::string base = argv[++i];
+            // Accept "/path/file.wot", "/path/file.whm", or "/path/file"; the
+            // loader pairs both extensions from the same base path.
+            for (const char* ext : {".wot", ".whm"}) {
+                if (base.size() >= 4 && base.substr(base.size() - 4) == ext) {
+                    base = base.substr(0, base.size() - 4);
+                    break;
+                }
+            }
+            if (!wowee::pipeline::WoweeTerrainLoader::exists(base)) {
+                std::fprintf(stderr, "WOT/WHM not found at base: %s\n", base.c_str());
+                return 1;
+            }
+            wowee::pipeline::ADTTerrain terrain;
+            if (!wowee::pipeline::WoweeTerrainLoader::load(base, terrain)) {
+                std::fprintf(stderr, "Failed to load WOT/WHM: %s\n", base.c_str());
+                return 1;
+            }
+            int chunksWithHeights = 0, chunksWithLayers = 0, chunksWithWater = 0;
+            float minH = 1e30f, maxH = -1e30f;
+            for (int ci = 0; ci < 256; ci++) {
+                const auto& c = terrain.chunks[ci];
+                if (c.hasHeightMap()) {
+                    chunksWithHeights++;
+                    for (float h : c.heightMap.heights) {
+                        float total = c.position[2] + h;
+                        if (total < minH) minH = total;
+                        if (total > maxH) maxH = total;
+                    }
+                }
+                if (!c.layers.empty()) chunksWithLayers++;
+                if (terrain.waterData[ci].hasWater()) chunksWithWater++;
+            }
+            std::printf("WOT/WHM: %s\n", base.c_str());
+            std::printf("  tile         : (%d, %d)\n", terrain.coord.x, terrain.coord.y);
+            std::printf("  chunks       : %d/256 with heightmap\n", chunksWithHeights);
+            std::printf("  layers       : %d/256 chunks with texture layers\n", chunksWithLayers);
+            std::printf("  water        : %d/256 chunks with water\n", chunksWithWater);
+            std::printf("  textures     : %zu\n", terrain.textures.size());
+            std::printf("  doodads      : %zu\n", terrain.doodadPlacements.size());
+            std::printf("  WMOs         : %zu\n", terrain.wmoPlacements.size());
+            if (chunksWithHeights > 0) {
+                std::printf("  height range : [%.2f, %.2f]\n", minH, maxH);
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--info-woc") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
