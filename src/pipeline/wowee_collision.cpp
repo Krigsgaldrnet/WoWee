@@ -162,17 +162,28 @@ bool WoweeCollisionBuilder::save(const WoweeCollision& collision, const std::str
     if (!f) return false;
 
     f.write(reinterpret_cast<const char*>(&WOC_MAGIC), 4);
+    // Sanitize bounds before writing — produces a clean WOC even when an
+    // in-memory collision has been polluted by addMesh on bad input.
+    auto sanVec = [](glm::vec3 v) {
+        if (!std::isfinite(v.x)) v.x = 0.0f;
+        if (!std::isfinite(v.y)) v.y = 0.0f;
+        if (!std::isfinite(v.z)) v.z = 0.0f;
+        return v;
+    };
     uint32_t triCount = static_cast<uint32_t>(collision.triangles.size());
     f.write(reinterpret_cast<const char*>(&triCount), 4);
     f.write(reinterpret_cast<const char*>(&collision.tileX), 4);
     f.write(reinterpret_cast<const char*>(&collision.tileY), 4);
-    f.write(reinterpret_cast<const char*>(&collision.bounds.min), 12);
-    f.write(reinterpret_cast<const char*>(&collision.bounds.max), 12);
+    glm::vec3 bmin = sanVec(collision.bounds.min);
+    glm::vec3 bmax = sanVec(collision.bounds.max);
+    f.write(reinterpret_cast<const char*>(&bmin), 12);
+    f.write(reinterpret_cast<const char*>(&bmax), 12);
 
     for (const auto& tri : collision.triangles) {
-        f.write(reinterpret_cast<const char*>(&tri.v0), 12);
-        f.write(reinterpret_cast<const char*>(&tri.v1), 12);
-        f.write(reinterpret_cast<const char*>(&tri.v2), 12);
+        glm::vec3 v0 = sanVec(tri.v0), v1 = sanVec(tri.v1), v2 = sanVec(tri.v2);
+        f.write(reinterpret_cast<const char*>(&v0), 12);
+        f.write(reinterpret_cast<const char*>(&v1), 12);
+        f.write(reinterpret_cast<const char*>(&v2), 12);
         f.write(reinterpret_cast<const char*>(&tri.flags), 1);
     }
 
