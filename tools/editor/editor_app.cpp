@@ -125,10 +125,13 @@ void EditorApp::run() {
             lastNpcCount_ = npcCount;
         }
 
-        // Show gizmo arrows on selected object
+        // Show gizmo arrows on selected object or NPC. NPCs only support move
+        // (rotation is via the orientation slider; scale via the slider).
         auto& gizmo = viewport_.getGizmo();
         if (auto* sel = objectPlacer_.getSelected()) {
             gizmo.setTarget(sel->position, sel->scale);
+        } else if (auto* npc = npcSpawner_.getSelected()) {
+            gizmo.setTarget(npc->position, npc->scale);
         } else {
             gizmo.setMode(TransformMode::None);
         }
@@ -435,7 +438,7 @@ void EditorApp::processEvents() {
                                camera_.getCamera(),
                                static_cast<float>(ext.width),
                                static_cast<float>(ext.height));
-                // Apply transform to selected object
+                // Apply transform to selected object or NPC.
                 if (auto* sel = objectPlacer_.getSelected()) {
                     if (giz.getMode() == TransformMode::Move) {
                         sel->position += giz.getMoveDelta();
@@ -448,6 +451,22 @@ void EditorApp::processEvents() {
                         giz.beginDrag(glm::vec2(event.motion.x, event.motion.y));
                     }
                     giz.setTarget(sel->position, sel->scale);
+                    objectsDirty_ = true;
+                } else if (auto* npc = npcSpawner_.getSelected()) {
+                    if (giz.getMode() == TransformMode::Move) {
+                        npc->position += giz.getMoveDelta();
+                        giz.beginDrag(glm::vec2(event.motion.x, event.motion.y));
+                    } else if (giz.getMode() == TransformMode::Rotate) {
+                        // Apply yaw component only — NPCs only have orientation.
+                        npc->orientation += glm::degrees(giz.getRotateDelta().z);
+                        while (npc->orientation >= 360.0f) npc->orientation -= 360.0f;
+                        while (npc->orientation < 0.0f) npc->orientation += 360.0f;
+                        giz.beginDrag(glm::vec2(event.motion.x, event.motion.y));
+                    } else if (giz.getMode() == TransformMode::Scale) {
+                        npc->scale = std::max(0.1f, npc->scale + giz.getScaleDelta());
+                        giz.beginDrag(glm::vec2(event.motion.x, event.motion.y));
+                    }
+                    giz.setTarget(npc->position, npc->scale);
                     objectsDirty_ = true;
                 }
             } else {
