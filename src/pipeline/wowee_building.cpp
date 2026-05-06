@@ -72,10 +72,17 @@ WoweeBuilding WoweeBuildingLoader::load(const std::string& basePath) {
         }
         grp.indices.resize(ic);
         f.read(reinterpret_cast<char*>(grp.indices.data()), ic * 4);
+        // Same out-of-range index clamp as the WOM loader — bad indices
+        // would crash the GPU draw on the WMO group.
+        const uint32_t vMax = vc > 0 ? vc - 1 : 0;
+        for (auto& idx : grp.indices) {
+            if (idx > vMax) idx = 0;
+        }
 
         for (uint32_t ti = 0; ti < tc; ti++) {
             uint16_t tl;
             f.read(reinterpret_cast<char*>(&tl), 2);
+            if (tl > 1024) tl = 0;
             std::string tp(tl, '\0');
             f.read(tp.data(), tl);
             grp.texturePaths.push_back(tp);
