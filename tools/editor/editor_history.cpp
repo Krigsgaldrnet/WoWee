@@ -5,6 +5,9 @@ namespace editor {
 
 ChunkSnapshot EditorHistory::captureChunk(const pipeline::ADTTerrain& terrain, int idx) {
     ChunkSnapshot snap;
+    // ADTTerrain.chunks is std::array<MapChunk, 256>; out-of-range
+    // would be undefined behaviour. Return an empty snapshot instead.
+    if (idx < 0 || idx >= 256) return snap;
     snap.chunkIndex = idx;
     snap.heights = terrain.chunks[idx].heightMap.heights;
     snap.alphaMap = terrain.chunks[idx].alphaMap;
@@ -13,6 +16,7 @@ ChunkSnapshot EditorHistory::captureChunk(const pipeline::ADTTerrain& terrain, i
 }
 
 void EditorHistory::restoreChunk(pipeline::ADTTerrain& terrain, const ChunkSnapshot& snap) {
+    if (snap.chunkIndex < 0 || snap.chunkIndex >= 256) return;
     terrain.chunks[snap.chunkIndex].heightMap.heights = snap.heights;
     terrain.chunks[snap.chunkIndex].alphaMap = snap.alphaMap;
     terrain.chunks[snap.chunkIndex].layers = snap.layers;
