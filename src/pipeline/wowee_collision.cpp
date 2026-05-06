@@ -195,6 +195,20 @@ WoweeCollision WoweeCollisionBuilder::load(const std::string& path) {
     f.read(reinterpret_cast<char*>(&col.tileY), 4);
     f.read(reinterpret_cast<char*>(&col.bounds.min), 12);
     f.read(reinterpret_cast<char*>(&col.bounds.max), 12);
+    // A whole-tile collision mesh tops out at ~256*128 = 32K terrain triangles
+    // plus building overlays. >2M is corrupted and would OOM us.
+    if (triCount > 2'000'000) {
+        LOG_ERROR("WOC triCount rejected (", triCount, "): ", path);
+        return WoweeCollision{};
+    }
+    // Tile coords are valid 0..63 in WoW; cap higher values that suggest
+    // a corrupted file rather than letting them propagate.
+    if (col.tileX > 63 || col.tileY > 63) {
+        LOG_WARNING("WOC tile coord out of range (", col.tileX, ",", col.tileY,
+                    ") — clamping");
+        if (col.tileX > 63) col.tileX = 32;
+        if (col.tileY > 63) col.tileY = 32;
+    }
 
     col.triangles.reserve(triCount);
     auto fixVec = [](glm::vec3& v) {
