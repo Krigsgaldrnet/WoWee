@@ -20,7 +20,9 @@ bool ZoneManifest::save(const std::string& path) const {
     j["displayName"] = displayName;
     j["mapId"] = mapId;
     j["biome"] = biome;
-    j["baseHeight"] = baseHeight;
+    // Scrub before serialization — nlohmann throws on NaN/inf, which would
+    // wipe the entire manifest save and lose all zone settings.
+    j["baseHeight"] = std::isfinite(baseHeight) ? baseHeight : 100.0f;
     j["hasCreatures"] = hasCreatures;
     j["description"] = description;
     j["editorVersion"] = "1.0.0";
@@ -60,8 +62,10 @@ bool ZoneManifest::save(const std::string& path) const {
         if (!musicTrack.empty()) audio["music"] = musicTrack;
         if (!ambienceDay.empty()) audio["ambienceDay"] = ambienceDay;
         if (!ambienceNight.empty()) audio["ambienceNight"] = ambienceNight;
-        audio["musicVolume"] = musicVolume;
-        audio["ambienceVolume"] = ambienceVolume;
+        audio["musicVolume"] = std::isfinite(musicVolume)
+            ? std::clamp(musicVolume, 0.0f, 1.0f) : 0.7f;
+        audio["ambienceVolume"] = std::isfinite(ambienceVolume)
+            ? std::clamp(ambienceVolume, 0.0f, 1.0f) : 0.5f;
         j["audio"] = audio;
     }
 
