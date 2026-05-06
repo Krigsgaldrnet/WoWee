@@ -594,6 +594,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Bake every WHM tile in a zone into one Wavefront OBJ (one g-block per tile)\n");
     std::printf("  --bake-project-obj <projectDir> [out.obj]\n");
     std::printf("                         Bake every zone in a project into one Wavefront OBJ (one g-block per zone)\n");
+    std::printf("  --bake-project-stl <projectDir> [out.stl]\n");
+    std::printf("                         Bake every zone in a project into one ASCII STL for full-project printing\n");
+    std::printf("  --bake-project-glb <projectDir> [out.glb]\n");
+    std::printf("                         Bake every zone in a project into one glTF 2.0 (one mesh per zone)\n");
     std::printf("  --import-obj <obj-path> [wom-base]\n");
     std::printf("                         Convert a Wavefront OBJ back into WOM (round-trips with --export-obj)\n");
     std::printf("  --export-wob-obj <wob-base> [out.obj]\n");
@@ -799,7 +803,7 @@ int main(int argc, char* argv[]) {
         "--export-glb", "--export-wob-glb", "--export-whm-glb",
         "--export-stl", "--import-stl",
         "--bake-zone-glb", "--bake-zone-stl", "--bake-zone-obj",
-        "--bake-project-obj",
+        "--bake-project-obj", "--bake-project-stl", "--bake-project-glb",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
         "--migrate-wom", "--migrate-zone", "--migrate-jsondbc",
@@ -7765,6 +7769,256 @@ int main(int argc, char* argv[]) {
             std::printf("  %d zone(s), %d tiles, %d verts, %llu tris\n",
                         totalZones, totalTiles, totalVerts,
                         static_cast<unsigned long long>(totalFaces));
+            return 0;
+        } else if ((std::strcmp(argv[i], "--bake-project-stl") == 0 ||
+                    std::strcmp(argv[i], "--bake-project-glb") == 0) &&
+                   i + 1 < argc) {
+            // STL + glTF project bakes share the per-zone walking logic
+            // with --bake-project-obj. Only the output emission differs:
+            //   STL → per-triangle 'facet normal'+'outer loop'+vertex×3
+            //   GLB → packed BIN chunk + JSON describing per-zone meshes
+            // Coords match across all three exporters so an .obj/.stl/
+            // .glb of the same source line up spatially when overlaid.
+            bool isStl = (std::strcmp(argv[i], "--bake-project-stl") == 0);
+            const char* cmdName = isStl ? "bake-project-stl" : "bake-project-glb";
+            std::string projectDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "%s: %s is not a directory\n", cmdName, projectDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) {
+                outPath = projectDir + "/project." + (isStl ? "stl" : "glb");
+            }
+            std::vector<std::string> zoneDirs;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zoneDirs.push_back(entry.path().string());
+            }
+            std::sort(zoneDirs.begin(), zoneDirs.end());
+            if (zoneDirs.empty()) {
+                std::fprintf(stderr, "%s: no zones found\n", cmdName);
+                return 1;
+            }
+            constexpr float kTileSize = 533.33333f;
+            constexpr float kChunkSize = kTileSize / 16.0f;
+            constexpr float kVertSpacing = kChunkSize / 8.0f;
+            // Common pass: collect per-zone vertex+index pools. STL emits
+            // per-triangle facets directly; GLB packs everything into BIN.
+            struct ZonePool {
+                std::string name;
+                std::vector<glm::vec3> verts;
+                std::vector<uint32_t> indices;
+            };
+            std::vector<ZonePool> zones;
+            int totalZones = 0, totalTiles = 0;
+            glm::vec3 bMin{1e30f}, bMax{-1e30f};
+            for (const auto& zoneDir : zoneDirs) {
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load(zoneDir + "/zone.json")) continue;
+                ZonePool zp;
+                zp.name = zm.mapName;
+                int zoneTiles = 0;
+                for (const auto& [tx, ty] : zm.tiles) {
+                    std::string tileBase = zoneDir + "/" + zm.mapName + "_" +
+                                            std::to_string(tx) + "_" + std::to_string(ty);
+                    if (!wowee::pipeline::WoweeTerrainLoader::exists(tileBase)) continue;
+                    wowee::pipeline::ADTTerrain terrain;
+                    wowee::pipeline::WoweeTerrainLoader::load(tileBase, terrain);
+                    zoneTiles++;
+                    for (int cx = 0; cx < 16; ++cx) {
+                        for (int cy = 0; cy < 16; ++cy) {
+                            const auto& chunk = terrain.getChunk(cx, cy);
+                            if (!chunk.heightMap.isLoaded()) continue;
+                            float chunkBaseX = (32.0f - terrain.coord.y) * kTileSize - cy * kChunkSize;
+                            float chunkBaseY = (32.0f - terrain.coord.x) * kTileSize - cx * kChunkSize;
+                            uint32_t chunkBase = static_cast<uint32_t>(zp.verts.size());
+                            for (int row = 0; row < 9; ++row) {
+                                for (int col = 0; col < 9; ++col) {
+                                    glm::vec3 p{
+                                        chunkBaseX - row * kVertSpacing,
+                                        chunkBaseY - col * kVertSpacing,
+                                        chunk.position[2] +
+                                            chunk.heightMap.heights[row * 17 + col]
+                                    };
+                                    zp.verts.push_back(p);
+                                    bMin = glm::min(bMin, p);
+                                    bMax = glm::max(bMax, p);
+                                }
+                            }
+                            bool isHoleChunk = (chunk.holes != 0);
+                            for (int row = 0; row < 8; ++row) {
+                                for (int col = 0; col < 8; ++col) {
+                                    if (isHoleChunk) {
+                                        int hx = col / 2, hy = row / 2;
+                                        if (chunk.holes & (1 << (hy * 4 + hx))) continue;
+                                    }
+                                    auto idx = [&](int r, int c) {
+                                        return chunkBase + r * 9 + c;
+                                    };
+                                    zp.indices.push_back(idx(row, col));
+                                    zp.indices.push_back(idx(row, col + 1));
+                                    zp.indices.push_back(idx(row + 1, col + 1));
+                                    zp.indices.push_back(idx(row, col));
+                                    zp.indices.push_back(idx(row + 1, col + 1));
+                                    zp.indices.push_back(idx(row + 1, col));
+                                }
+                            }
+                        }
+                    }
+                }
+                if (zp.verts.empty()) continue;
+                totalTiles += zoneTiles;
+                totalZones++;
+                zones.push_back(std::move(zp));
+            }
+            if (zones.empty()) {
+                std::fprintf(stderr, "%s: no loadable terrain found\n", cmdName);
+                return 1;
+            }
+            if (isStl) {
+                std::ofstream out(outPath);
+                if (!out) {
+                    std::fprintf(stderr, "%s: cannot write %s\n", cmdName, outPath.c_str());
+                    return 1;
+                }
+                out << "solid wowee_project\n";
+                uint64_t triCount = 0;
+                for (const auto& zp : zones) {
+                    for (size_t k = 0; k + 2 < zp.indices.size(); k += 3) {
+                        const auto& v0 = zp.verts[zp.indices[k]];
+                        const auto& v1 = zp.verts[zp.indices[k + 1]];
+                        const auto& v2 = zp.verts[zp.indices[k + 2]];
+                        glm::vec3 n = glm::cross(v1 - v0, v2 - v0);
+                        float len = glm::length(n);
+                        if (len > 1e-12f) n /= len; else n = {0, 0, 1};
+                        out << "  facet normal " << n.x << " " << n.y << " " << n.z << "\n"
+                            << "    outer loop\n"
+                            << "      vertex " << v0.x << " " << v0.y << " " << v0.z << "\n"
+                            << "      vertex " << v1.x << " " << v1.y << " " << v1.z << "\n"
+                            << "      vertex " << v2.x << " " << v2.y << " " << v2.z << "\n"
+                            << "    endloop\n"
+                            << "  endfacet\n";
+                        triCount++;
+                    }
+                }
+                out << "endsolid wowee_project\n";
+                out.close();
+                std::printf("Baked %s -> %s\n", projectDir.c_str(), outPath.c_str());
+                std::printf("  %d zone(s), %d tiles, %llu facets\n",
+                            totalZones, totalTiles,
+                            static_cast<unsigned long long>(triCount));
+                return 0;
+            }
+            // GLB path: pack positions+normals+indices into one BIN chunk,
+            // one mesh+node per zone with sliced index accessor.
+            uint32_t totalV = 0, totalI = 0;
+            for (const auto& zp : zones) {
+                totalV += static_cast<uint32_t>(zp.verts.size());
+                totalI += static_cast<uint32_t>(zp.indices.size());
+            }
+            const uint32_t posOff = 0;
+            const uint32_t nrmOff = posOff + totalV * 12;
+            const uint32_t idxOff = nrmOff + totalV * 12;
+            const uint32_t binSize = idxOff + totalI * 4;
+            std::vector<uint8_t> bin(binSize);
+            uint32_t vCursor = 0, iCursor = 0;
+            // Per-zone bookkeeping for accessor slicing.
+            struct ZoneSlice { std::string name; uint32_t vOff, vCnt, iOff, iCnt; };
+            std::vector<ZoneSlice> slices;
+            for (const auto& zp : zones) {
+                ZoneSlice s{zp.name, vCursor, static_cast<uint32_t>(zp.verts.size()),
+                             iCursor, static_cast<uint32_t>(zp.indices.size())};
+                for (const auto& v : zp.verts) {
+                    std::memcpy(&bin[posOff + vCursor * 12 + 0], &v.x, 4);
+                    std::memcpy(&bin[posOff + vCursor * 12 + 4], &v.y, 4);
+                    std::memcpy(&bin[posOff + vCursor * 12 + 8], &v.z, 4);
+                    float nx = 0, ny = 0, nz = 1;
+                    std::memcpy(&bin[nrmOff + vCursor * 12 + 0], &nx, 4);
+                    std::memcpy(&bin[nrmOff + vCursor * 12 + 4], &ny, 4);
+                    std::memcpy(&bin[nrmOff + vCursor * 12 + 8], &nz, 4);
+                    vCursor++;
+                }
+                // Offset zone indices by the global vertBase so they
+                // resolve into the merged pool.
+                for (uint32_t idx : zp.indices) {
+                    uint32_t global = idx + s.vOff;
+                    std::memcpy(&bin[idxOff + iCursor * 4], &global, 4);
+                    iCursor++;
+                }
+                slices.push_back(s);
+            }
+            nlohmann::json gj;
+            gj["asset"] = {{"version", "2.0"},
+                            {"generator", "wowee_editor --bake-project-glb"}};
+            gj["scene"] = 0;
+            gj["buffers"] = nlohmann::json::array({{{"byteLength", binSize}}});
+            nlohmann::json bvs = nlohmann::json::array();
+            bvs.push_back({{"buffer", 0}, {"byteOffset", posOff},
+                            {"byteLength", totalV * 12}, {"target", 34962}});
+            bvs.push_back({{"buffer", 0}, {"byteOffset", nrmOff},
+                            {"byteLength", totalV * 12}, {"target", 34962}});
+            bvs.push_back({{"buffer", 0}, {"byteOffset", idxOff},
+                            {"byteLength", totalI * 4},  {"target", 34963}});
+            gj["bufferViews"] = bvs;
+            nlohmann::json accessors = nlohmann::json::array();
+            accessors.push_back({{"bufferView", 0}, {"componentType", 5126},
+                                  {"count", totalV}, {"type", "VEC3"},
+                                  {"min", {bMin.x, bMin.y, bMin.z}},
+                                  {"max", {bMax.x, bMax.y, bMax.z}}});
+            accessors.push_back({{"bufferView", 1}, {"componentType", 5126},
+                                  {"count", totalV}, {"type", "VEC3"}});
+            nlohmann::json meshes = nlohmann::json::array();
+            nlohmann::json nodes = nlohmann::json::array();
+            nlohmann::json sceneNodes = nlohmann::json::array();
+            for (const auto& s : slices) {
+                uint32_t accIdx = static_cast<uint32_t>(accessors.size());
+                accessors.push_back({{"bufferView", 2},
+                                      {"byteOffset", s.iOff * 4},
+                                      {"componentType", 5125},
+                                      {"count", s.iCnt}, {"type", "SCALAR"}});
+                uint32_t meshIdx = static_cast<uint32_t>(meshes.size());
+                meshes.push_back({{"primitives", nlohmann::json::array({nlohmann::json{
+                    {"attributes", {{"POSITION", 0}, {"NORMAL", 1}}},
+                    {"indices", accIdx}, {"mode", 4}}})}});
+                uint32_t nodeIdx = static_cast<uint32_t>(nodes.size());
+                nodes.push_back({{"name", "zone_" + s.name}, {"mesh", meshIdx}});
+                sceneNodes.push_back(nodeIdx);
+            }
+            gj["accessors"] = accessors;
+            gj["meshes"] = meshes;
+            gj["nodes"] = nodes;
+            gj["scenes"] = nlohmann::json::array({{{"nodes", sceneNodes}}});
+            std::string jsonStr = gj.dump();
+            while (jsonStr.size() % 4 != 0) jsonStr += ' ';
+            uint32_t jsonLen = static_cast<uint32_t>(jsonStr.size());
+            uint32_t binLen = binSize;
+            uint32_t totalLen = 12 + 8 + jsonLen + 8 + binLen;
+            std::ofstream out(outPath, std::ios::binary);
+            if (!out) {
+                std::fprintf(stderr, "%s: cannot write %s\n", cmdName, outPath.c_str());
+                return 1;
+            }
+            uint32_t magic = 0x46546C67, version = 2;
+            out.write(reinterpret_cast<const char*>(&magic), 4);
+            out.write(reinterpret_cast<const char*>(&version), 4);
+            out.write(reinterpret_cast<const char*>(&totalLen), 4);
+            uint32_t jt = 0x4E4F534A;
+            out.write(reinterpret_cast<const char*>(&jsonLen), 4);
+            out.write(reinterpret_cast<const char*>(&jt), 4);
+            out.write(jsonStr.data(), jsonLen);
+            uint32_t bt = 0x004E4942;
+            out.write(reinterpret_cast<const char*>(&binLen), 4);
+            out.write(reinterpret_cast<const char*>(&bt), 4);
+            out.write(reinterpret_cast<const char*>(bin.data()), binLen);
+            out.close();
+            std::printf("Baked %s -> %s\n", projectDir.c_str(), outPath.c_str());
+            std::printf("  %d zone(s), %d tiles, %u verts, %u tris, %u-byte BIN\n",
+                        totalZones, totalTiles, totalV, totalI / 3, binLen);
             return 0;
         } else if (std::strcmp(argv[i], "--export-wob-obj") == 0 && i + 1 < argc) {
             // WOB is the WMO replacement; like --export-obj for WOM, this
