@@ -428,6 +428,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Aggregate counts across every zone in <projectDir>\n");
     std::printf("  --list-zone-deps <zoneDir> [--json]\n");
     std::printf("                         List external M2/WMO model paths a zone references (objects + WOB doodads)\n");
+    std::printf("  --export-zone-deps-md <zoneDir> [out.md]\n");
+    std::printf("                         Markdown dep table for a zone (with on-disk presence column)\n");
     std::printf("  --check-zone-refs <zoneDir> [--json]\n");
     std::printf("                         Verify every referenced model/quest NPC actually exists; exit 1 on missing refs\n");
     std::printf("  --for-each-zone <projectDir> -- <cmd...>\n");
@@ -662,7 +664,7 @@ int main(int argc, char* argv[]) {
         "--export-zone-csv", "--export-zone-html",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--zone-stats", "--list-zone-deps",
-        "--check-zone-refs",
+        "--check-zone-refs", "--export-zone-deps-md",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
@@ -9154,6 +9156,122 @@ int main(int argc, char* argv[]) {
             emit("Direct M2 placements",  directM2);
             emit("Direct WMO placements", directWMO);
             emit("WOB doodad M2 refs",    doodadM2);
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-zone-deps-md") == 0 && i + 1 < argc) {
+            // Markdown counterpart to --list-zone-deps. Writes a sortable
+            // GitHub-rendered table of every external model the zone
+            // references plus on-disk presence (so PR reviewers see at a
+            // glance whether dependencies are accounted for in the
+            // accompanying asset bundle).
+            std::string zoneDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "export-zone-deps-md: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            zm.load(zoneDir + "/zone.json");
+            if (outPath.empty()) outPath = zoneDir + "/DEPS.md";
+            // Same dep-collection pass as --list-zone-deps.
+            std::map<std::string, int> directM2;
+            std::map<std::string, int> directWMO;
+            std::map<std::string, int> doodadM2;
+            wowee::editor::ObjectPlacer op;
+            if (op.loadFromFile(zoneDir + "/objects.json")) {
+                for (const auto& o : op.getObjects()) {
+                    if (o.type == wowee::editor::PlaceableType::M2)  directM2[o.path]++;
+                    else if (o.type == wowee::editor::PlaceableType::WMO) directWMO[o.path]++;
+                }
+            }
+            int wobCount = 0;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file() ||
+                    e.path().extension() != ".wob") continue;
+                wobCount++;
+                std::string base = e.path().string();
+                if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+                for (const auto& d : bld.doodads) {
+                    if (!d.modelPath.empty()) doodadM2[d.modelPath]++;
+                }
+            }
+            // Resolve dep on disk. Same heuristic as --check-zone-refs:
+            // try both open + proprietary in conventional roots.
+            auto stripExt = [](const std::string& p, const char* ext) {
+                size_t n = std::strlen(ext);
+                if (p.size() >= n) {
+                    std::string tail = p.substr(p.size() - n);
+                    std::string lower = tail;
+                    for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+                    if (lower == ext) return p.substr(0, p.size() - n);
+                }
+                return p;
+            };
+            auto resolveStatus = [&](const std::string& path, bool isWMO) {
+                std::string base, openExt, propExt;
+                if (isWMO) {
+                    base = stripExt(path, ".wmo");
+                    openExt = ".wob"; propExt = ".wmo";
+                } else {
+                    base = stripExt(path, ".m2");
+                    openExt = ".wom"; propExt = ".m2";
+                }
+                std::vector<std::string> roots = {
+                    "", zoneDir + "/", "output/", "custom_zones/", "Data/"
+                };
+                bool hasOpen = false, hasProp = false;
+                for (const auto& root : roots) {
+                    if (fs::exists(root + base + openExt)) hasOpen = true;
+                    if (fs::exists(root + base + propExt)) hasProp = true;
+                }
+                if (hasOpen && hasProp) return "open + proprietary";
+                if (hasOpen) return "open only";
+                if (hasProp) return "proprietary only";
+                return "MISSING";
+            };
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-zone-deps-md: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            out << "# Dependencies — " <<
+                (zm.displayName.empty() ? zm.mapName : zm.displayName) << "\n\n";
+            out << "*Auto-generated by `wowee_editor --export-zone-deps-md`. "
+                   "Status is best-effort — checks zone-local, output/, "
+                   "custom_zones/, Data/ roots in that order.*\n\n";
+            auto emitTable = [&](const char* heading,
+                                  const std::map<std::string,int>& m,
+                                  bool isWMO) {
+                out << "## " << heading << " (" << m.size() << ")\n\n";
+                if (m.empty()) {
+                    out << "*None.*\n\n";
+                    return;
+                }
+                out << "| Refs | Path | Status |\n";
+                out << "|---:|---|---|\n";
+                for (const auto& [path, count] : m) {
+                    out << "| " << count << " | `" << path << "` | "
+                        << resolveStatus(path, isWMO) << " |\n";
+                }
+                out << "\n";
+            };
+            emitTable("Direct M2 placements",  directM2,  false);
+            emitTable("Direct WMO placements", directWMO, true);
+            emitTable("WOB doodad M2 refs",    doodadM2,  false);
+            out << "## Summary\n\n";
+            out << "- Zone: `" << zm.mapName << "`\n";
+            out << "- WOBs scanned: " << wobCount << "\n";
+            out << "- Unique dependencies: " <<
+                directM2.size() + directWMO.size() + doodadM2.size() << "\n";
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  %zu M2 placements, %zu WMO placements, %zu WOB doodad refs\n",
+                        directM2.size(), directWMO.size(), doodadM2.size());
             return 0;
         } else if (std::strcmp(argv[i], "--check-zone-refs") == 0 && i + 1 < argc) {
             // Cross-reference checker: every model path in objects.json
