@@ -476,6 +476,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert a WOM model to glTF 2.0 binary (.glb) — modern industry standard\n");
     std::printf("  --export-stl <wom-base> [out.stl]\n");
     std::printf("                         Convert a WOM model to ASCII STL — works with any 3D printer slicer\n");
+    std::printf("  --import-stl <stl-path> [wom-base]\n");
+    std::printf("                         Convert an ASCII STL back into WOM (round-trips with --export-stl)\n");
     std::printf("  --export-wob-glb <wob-base> [out.glb]\n");
     std::printf("                         Convert a WOB building to glTF 2.0 binary (one mesh, per-group primitives)\n");
     std::printf("  --export-whm-glb <wot-base> [out.glb]\n");
@@ -625,7 +627,7 @@ int main(int argc, char* argv[]) {
         "--export-wob-obj", "--import-wob-obj",
         "--export-woc-obj", "--export-whm-obj",
         "--export-glb", "--export-wob-glb", "--export-whm-glb",
-        "--export-stl",
+        "--export-stl", "--import-stl",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
         "--migrate-wom", "--migrate-zone",
@@ -4183,6 +4185,128 @@ int main(int argc, char* argv[]) {
             std::printf("Exported %s.wom -> %s\n", base.c_str(), outPath.c_str());
             std::printf("  solid '%s', %u facets\n",
                         solidName.c_str(), triCount);
+            return 0;
+        } else if (std::strcmp(argv[i], "--import-stl") == 0 && i + 1 < argc) {
+            // ASCII STL -> WOM. Closes the STL round trip so designers can
+            // edit prints in TinkerCAD/Meshmixer/SolidWorks and bring them
+            // back to the engine. Dedupes vertices on (pos, normal) so the
+            // resulting WOM vertex buffer stays compact.
+            std::string stlPath = argv[++i];
+            std::string womBase;
+            if (i + 1 < argc && argv[i + 1][0] != '-') womBase = argv[++i];
+            if (!std::filesystem::exists(stlPath)) {
+                std::fprintf(stderr, "STL not found: %s\n", stlPath.c_str());
+                return 1;
+            }
+            if (womBase.empty()) {
+                womBase = stlPath;
+                if (womBase.size() >= 4 &&
+                    womBase.substr(womBase.size() - 4) == ".stl") {
+                    womBase = womBase.substr(0, womBase.size() - 4);
+                }
+            }
+            std::ifstream in(stlPath);
+            if (!in) {
+                std::fprintf(stderr, "Failed to open STL: %s\n", stlPath.c_str());
+                return 1;
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.version = 1;
+            // Dedupe key: 6 floats (pos + normal) packed as a string. Loose
+            // matching, but exact for round-trips since we write the same
+            // floats back. Real-world STLs from CAD tools rarely benefit
+            // from looser tolerance — they already share verts at the
+            // exporter level.
+            std::unordered_map<std::string, uint32_t> dedupe;
+            auto interVert = [&](const glm::vec3& pos, const glm::vec3& nrm) {
+                char key[128];
+                std::snprintf(key, sizeof(key), "%.6f|%.6f|%.6f|%.6f|%.6f|%.6f",
+                              pos.x, pos.y, pos.z, nrm.x, nrm.y, nrm.z);
+                auto it = dedupe.find(key);
+                if (it != dedupe.end()) return it->second;
+                wowee::pipeline::WoweeModel::Vertex v;
+                v.position = pos;
+                v.normal = nrm;
+                v.texCoord = {0, 0};
+                uint32_t idx = static_cast<uint32_t>(wom.vertices.size());
+                wom.vertices.push_back(v);
+                dedupe[key] = idx;
+                return idx;
+            };
+            std::string line;
+            std::string solidName;
+            // Per-facet state: parsed normal + accumulating vertex queue.
+            glm::vec3 currentNormal{0, 0, 1};
+            std::vector<glm::vec3> facetVerts;
+            int facetCount = 0;
+            while (std::getline(in, line)) {
+                while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
+                    line.pop_back();
+                std::istringstream ss(line);
+                std::string tok;
+                ss >> tok;
+                if (tok == "solid" && solidName.empty()) {
+                    ss >> solidName;
+                } else if (tok == "facet") {
+                    std::string normalKw;
+                    ss >> normalKw;
+                    if (normalKw == "normal") {
+                        ss >> currentNormal.x >> currentNormal.y >> currentNormal.z;
+                    }
+                    facetVerts.clear();
+                } else if (tok == "vertex") {
+                    glm::vec3 v;
+                    ss >> v.x >> v.y >> v.z;
+                    facetVerts.push_back(v);
+                } else if (tok == "endfacet") {
+                    if (facetVerts.size() == 3) {
+                        // Use the facet normal for all 3 verts since STL
+                        // doesn't carry per-vertex normals. Glue-points to
+                        // adjacent facets will get distinct verts (which is
+                        // correct for faceted-shading STL geometry).
+                        for (const auto& v : facetVerts) {
+                            wom.indices.push_back(interVert(v, currentNormal));
+                        }
+                        facetCount++;
+                    }
+                    facetVerts.clear();
+                }
+                // 'outer loop', 'endloop', 'endsolid' ignored — we infer
+                // from the vertex count per facet.
+            }
+            if (wom.vertices.empty() || wom.indices.empty()) {
+                std::fprintf(stderr,
+                    "import-stl: no geometry parsed from %s\n", stlPath.c_str());
+                return 1;
+            }
+            wom.name = solidName.empty()
+                ? std::filesystem::path(stlPath).stem().string()
+                : solidName;
+            // Compute bounds — renderer culls by these so wrong values
+            // make models disappear at distance.
+            wom.boundMin = wom.vertices[0].position;
+            wom.boundMax = wom.boundMin;
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            glm::vec3 center = (wom.boundMin + wom.boundMax) * 0.5f;
+            float r2 = 0;
+            for (const auto& v : wom.vertices) {
+                glm::vec3 d = v.position - center;
+                r2 = std::max(r2, glm::dot(d, d));
+            }
+            wom.boundRadius = std::sqrt(r2);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr, "import-stl: failed to write %s.wom\n",
+                             womBase.c_str());
+                return 1;
+            }
+            std::printf("Imported %s -> %s.wom\n", stlPath.c_str(), womBase.c_str());
+            std::printf("  %d facets, %zu verts (deduped), bounds [%.2f, %.2f, %.2f] - [%.2f, %.2f, %.2f]\n",
+                        facetCount, wom.vertices.size(),
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
             return 0;
         } else if (std::strcmp(argv[i], "--export-wob-glb") == 0 && i + 1 < argc) {
             // glTF 2.0 binary export for WOB. Same purpose as --export-glb
