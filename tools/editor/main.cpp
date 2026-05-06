@@ -21,6 +21,7 @@
 #include <cstring>
 #include <unordered_map>
 #include <algorithm>
+#include <nlohmann/json.hpp>
 
 static void printUsage(const char* argv0) {
     std::printf("Usage: %s --data <path> [options]\n\n", argv0);
@@ -41,7 +42,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
     std::printf("  --info-wot <wot-base>  Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
-    std::printf("  --info-extract <dir>   Walk extracted asset tree and report open-format coverage and exit\n");
+    std::printf("  --info-extract <dir> [--json]\n");
+    std::printf("                         Walk extracted asset tree and report open-format coverage and exit\n");
     std::printf("  --info-zone <dir|json> Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
     std::printf("  --info-creatures <p>   Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-objects <p>     Print objects.json summary (counts, types, scale range) and exit\n");
@@ -217,6 +219,10 @@ int main(int argc, char* argv[]) {
             // extension + open-format coverage. Useful for seeing whether
             // a user ran asset_extract with --emit-open.
             std::string dataDir = argv[++i];
+            // Optional --json after the dir for machine-readable output.
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             namespace fs = std::filesystem;
             if (!fs::exists(dataDir)) {
                 std::fprintf(stderr, "info-extract: %s does not exist\n", dataDir.c_str());
@@ -270,6 +276,34 @@ int main(int argc, char* argv[]) {
             auto pct = [](uint64_t x, uint64_t total) {
                 return total == 0 ? 0.0 : (100.0 * x) / total;
             };
+            if (jsonOut) {
+                // Machine-readable summary for CI scripts; matches the
+                // structure of the human-readable lines below.
+                nlohmann::json j;
+                j["dir"] = dataDir;
+                j["totalBytes"] = totalBytes;
+                j["proprietaryBytes"] = propBytes;
+                j["openBytes"] = openBytes;
+                auto fmtFmt = [&](const char* name, uint64_t prop, uint64_t open) {
+                    nlohmann::json f;
+                    f["proprietary"] = prop;
+                    f["sidecar"] = open;
+                    f["coverage"] = pct(open, prop);
+                    j[name] = f;
+                };
+                fmtFmt("blp_png",   blpCount, pngSidecar);
+                fmtFmt("dbc_json",  dbcCount, jsonSidecar);
+                fmtFmt("m2_wom",    m2Count,  womSidecar);
+                fmtFmt("wmo_wob",   wmoCount, wobSidecar);
+                fmtFmt("adt_whm",   adtCount, whmSidecar);
+                uint64_t openTotal = pngSidecar + jsonSidecar + womSidecar +
+                                     wobSidecar + whmSidecar;
+                uint64_t propTotal = blpCount + dbcCount + m2Count +
+                                     wmoCount + adtCount;
+                j["overallCoverage"] = pct(openTotal, propTotal);
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
             std::printf("Extracted asset tree: %s\n", dataDir.c_str());
             std::printf("  total bytes  : %.2f GB\n", totalBytes / (1024.0 * 1024.0 * 1024.0));
             std::printf("  BLP textures : %lu  (%lu PNG sidecar = %.1f%% open)\n",
