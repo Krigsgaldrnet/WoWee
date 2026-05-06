@@ -86,6 +86,11 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
 
         terrain.coord.x = j.value("tileX", 0);
         terrain.coord.y = j.value("tileY", 0);
+        // Out-of-range tile coords would compute chunk positions tens of
+        // thousands of units away from any other zone tile. Clamp to the
+        // 64x64 grid so loaded terrain always lands at a valid spot.
+        if (terrain.coord.x < 0 || terrain.coord.x > 63) terrain.coord.x = 32;
+        if (terrain.coord.y < 0 || terrain.coord.y > 63) terrain.coord.y = 32;
 
         // Compute chunk world positions from tile coordinates
         float tileSize = 533.33333f;
@@ -146,6 +151,12 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
             for (const auto& n : j["doodadNames"])
                 terrain.doodadNames.push_back(n.get<std::string>());
         }
+        // Helper used by both doodad and WMO loaders below.
+        auto san3 = [](float& a, float& b, float& c) {
+            if (!std::isfinite(a)) a = 0.0f;
+            if (!std::isfinite(b)) b = 0.0f;
+            if (!std::isfinite(c)) c = 0.0f;
+        };
         if (j.contains("doodads") && j["doodads"].is_array()) {
             for (const auto& jd : j["doodads"]) {
                 ADTTerrain::DoodadPlacement dp{};
@@ -157,6 +168,8 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
                 if (jd.contains("rot") && jd["rot"].size() >= 3) {
                     dp.rotation[0] = jd["rot"][0]; dp.rotation[1] = jd["rot"][1]; dp.rotation[2] = jd["rot"][2];
                 }
+                san3(dp.position[0], dp.position[1], dp.position[2]);
+                san3(dp.rotation[0], dp.rotation[1], dp.rotation[2]);
                 dp.scale = jd.value("scale", 1024);
                 dp.flags = jd.value("flags", 0);
                 terrain.doodadPlacements.push_back(dp);
@@ -179,6 +192,8 @@ bool WoweeTerrainLoader::loadMetadata(const std::string& wotPath, ADTTerrain& te
                 if (jw.contains("rot") && jw["rot"].size() >= 3) {
                     wp.rotation[0] = jw["rot"][0]; wp.rotation[1] = jw["rot"][1]; wp.rotation[2] = jw["rot"][2];
                 }
+                san3(wp.position[0], wp.position[1], wp.position[2]);
+                san3(wp.rotation[0], wp.rotation[1], wp.rotation[2]);
                 wp.flags = jw.value("flags", 0);
                 wp.doodadSet = jw.value("doodadSet", 0);
                 terrain.wmoPlacements.push_back(wp);
