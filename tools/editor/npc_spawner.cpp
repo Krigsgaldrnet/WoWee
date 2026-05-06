@@ -109,6 +109,15 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
 
 void NpcSpawner::scatter(const CreatureSpawn& base, const glm::vec3& center,
                           float radius, int count) {
+    // Defensive bounds — UI sliders cap these, but the function is also
+    // callable programmatically. radius<=0 would either throw from the
+    // uniform distribution constructor or divide by zero on the sqrt
+    // line; an absurd count would freeze the editor and OOM.
+    if (count <= 0 || count > 10000) return;
+    if (!std::isfinite(radius) || radius <= 0.0f) return;
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
+        !std::isfinite(center.z)) return;
+
     std::mt19937 rng(static_cast<uint32_t>(center.x * 100 + center.y * 37));
     std::uniform_real_distribution<float> distAngle(0.0f, 6.2831853f);
     std::uniform_real_distribution<float> distDist(0.0f, radius);
