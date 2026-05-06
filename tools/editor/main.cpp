@@ -38,7 +38,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --export-png <wot-base> Render heightmap, normal-map, and zone-map PNG previews\n");
     std::printf("  --validate <zoneDir> [--json]\n");
     std::printf("                         Score zone open-format completeness and exit\n");
-    std::printf("  --zone-summary <zoneDir>  One-shot validate + creature/object/quest counts and exit\n");
+    std::printf("  --zone-summary <zoneDir> [--json]\n");
+    std::printf("                         One-shot validate + creature/object/quest counts and exit\n");
     std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
     std::printf("  --info-wob <wob-base>  Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path>  Print WOC collision metadata (triangle counts, bounds) and exit\n");
@@ -590,57 +591,102 @@ int main(int argc, char* argv[]) {
             // Collapses the most common multi-step inspection into a single
             // command; useful for CI reports and quick sanity checks.
             std::string zoneDir = argv[++i];
+            // Optional --json after the dir for machine-readable output.
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
             namespace fs = std::filesystem;
             if (!fs::exists(zoneDir)) {
                 std::fprintf(stderr, "zone-summary: %s does not exist\n", zoneDir.c_str());
                 return 1;
             }
             auto v = wowee::editor::ContentPacker::validateZone(zoneDir);
+
+            // Read creature/object/quest data once so both human and JSON
+            // outputs share the same numbers.
+            int creatureTotal = 0, hostile = 0, qg = 0, vendor = 0;
+            int objectTotal = 0, m2Count = 0, wmoCount = 0;
+            int questTotal = 0, chainWarnings = 0;
+            std::string creaturesPath = zoneDir + "/creatures.json";
+            if (fs::exists(creaturesPath)) {
+                wowee::editor::NpcSpawner sp;
+                if (sp.loadFromFile(creaturesPath)) {
+                    creatureTotal = static_cast<int>(sp.getSpawns().size());
+                    for (const auto& s : sp.getSpawns()) {
+                        if (s.hostile) hostile++;
+                        if (s.questgiver) qg++;
+                        if (s.vendor) vendor++;
+                    }
+                }
+            }
+            std::string objectsPath = zoneDir + "/objects.json";
+            if (fs::exists(objectsPath)) {
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(objectsPath)) {
+                    objectTotal = static_cast<int>(op.getObjects().size());
+                    for (const auto& o : op.getObjects()) {
+                        if (o.type == wowee::editor::PlaceableType::M2) m2Count++;
+                        else wmoCount++;
+                    }
+                }
+            }
+            std::string questsPath = zoneDir + "/quests.json";
+            if (fs::exists(questsPath)) {
+                wowee::editor::QuestEditor qe;
+                if (qe.loadFromFile(questsPath)) {
+                    questTotal = static_cast<int>(qe.getQuests().size());
+                    std::vector<std::string> errors;
+                    qe.validateChains(errors);
+                    chainWarnings = static_cast<int>(errors.size());
+                }
+            }
+
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["score"] = v.openFormatScore();
+                j["maxScore"] = 7;
+                j["formats"] = v.summary();
+                j["counts"] = {
+                    {"wot", v.wotCount}, {"whm", v.whmCount},
+                    {"wom", v.womCount}, {"wob", v.wobCount},
+                    {"woc", v.wocCount}, {"png", v.pngCount},
+                };
+                j["creatures"] = {
+                    {"total", creatureTotal},
+                    {"hostile", hostile},
+                    {"questgiver", qg},
+                    {"vendor", vendor},
+                };
+                j["objects"] = {
+                    {"total", objectTotal},
+                    {"m2", m2Count},
+                    {"wmo", wmoCount},
+                };
+                j["quests"] = {
+                    {"total", questTotal},
+                    {"chainWarnings", chainWarnings},
+                };
+                std::printf("%s\n", j.dump(2).c_str());
+                return v.openFormatScore() == 7 ? 0 : 1;
+            }
             std::printf("Zone: %s\n", zoneDir.c_str());
             std::printf("  open formats : %d/7  (%s)\n",
                         v.openFormatScore(), v.summary().c_str());
             std::printf("  WOT/WHM      : %d/%d   WOM: %d   WOB: %d   WOC: %d   PNG: %d\n",
                         v.wotCount, v.whmCount, v.womCount, v.wobCount,
                         v.wocCount, v.pngCount);
-            // Creature stats
-            std::string creaturesPath = zoneDir + "/creatures.json";
-            if (fs::exists(creaturesPath)) {
-                wowee::editor::NpcSpawner sp;
-                if (sp.loadFromFile(creaturesPath)) {
-                    int hostile = 0, qg = 0, vendor = 0;
-                    for (const auto& s : sp.getSpawns()) {
-                        if (s.hostile) hostile++;
-                        if (s.questgiver) qg++;
-                        if (s.vendor) vendor++;
-                    }
-                    std::printf("  creatures    : %zu  (%d hostile, %d quest, %d vendor)\n",
-                                sp.getSpawns().size(), hostile, qg, vendor);
-                }
+            if (creatureTotal > 0) {
+                std::printf("  creatures    : %d  (%d hostile, %d quest, %d vendor)\n",
+                            creatureTotal, hostile, qg, vendor);
             }
-            // Object stats
-            std::string objectsPath = zoneDir + "/objects.json";
-            if (fs::exists(objectsPath)) {
-                wowee::editor::ObjectPlacer op;
-                if (op.loadFromFile(objectsPath)) {
-                    int m2 = 0, wmo = 0;
-                    for (const auto& o : op.getObjects()) {
-                        if (o.type == wowee::editor::PlaceableType::M2) m2++;
-                        else wmo++;
-                    }
-                    std::printf("  objects      : %zu  (%d M2, %d WMO)\n",
-                                op.getObjects().size(), m2, wmo);
-                }
+            if (objectTotal > 0) {
+                std::printf("  objects      : %d  (%d M2, %d WMO)\n",
+                            objectTotal, m2Count, wmoCount);
             }
-            // Quest stats
-            std::string questsPath = zoneDir + "/quests.json";
-            if (fs::exists(questsPath)) {
-                wowee::editor::QuestEditor qe;
-                if (qe.loadFromFile(questsPath)) {
-                    std::vector<std::string> errors;
-                    qe.validateChains(errors);
-                    std::printf("  quests       : %zu  (%zu chain warnings)\n",
-                                qe.getQuests().size(), errors.size());
-                }
+            if (questTotal > 0) {
+                std::printf("  quests       : %d  (%d chain warnings)\n",
+                            questTotal, chainWarnings);
             }
             return v.openFormatScore() == 7 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
