@@ -702,6 +702,19 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
     // (instanced maps have arbitrary internal coord values)
     terrain_.coord = {tileX, tileY};
 
+    // Recompute chunk world positions from tile coordinates
+    // This fixes instanced maps where internal MCNK positions are wrong
+    float tileSize = 533.33333f;
+    float chunkSize = tileSize / 16.0f;
+    for (int cy = 0; cy < 16; cy++) {
+        for (int cx = 0; cx < 16; cx++) {
+            auto& chunk = terrain_.chunks[cy * 16 + cx];
+            if (!chunk.hasHeightMap()) continue;
+            chunk.position[0] = (32.0f - static_cast<float>(tileX)) * tileSize - cx * chunkSize;
+            chunk.position[1] = (32.0f - static_cast<float>(tileY)) * tileSize - cy * chunkSize;
+        }
+    }
+
     terrainEditor_.setTerrain(&terrain_);
     terrainEditor_.history().clear();
     texturePainter_.setTerrain(&terrain_);
