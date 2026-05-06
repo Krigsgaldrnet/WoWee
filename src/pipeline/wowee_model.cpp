@@ -324,5 +324,65 @@ WoweeModel WoweeModelLoader::fromM2(const std::string& m2Path, AssetManager* am)
     return model;
 }
 
+M2Model WoweeModelLoader::toM2(const WoweeModel& wom) {
+    M2Model m;
+    if (!wom.isValid()) return m;
+
+    m.name = wom.name;
+    m.boundRadius = wom.boundRadius;
+
+    m.vertices.reserve(wom.vertices.size());
+    for (const auto& v : wom.vertices) {
+        M2Vertex mv;
+        mv.position = v.position;
+        mv.normal = v.normal;
+        mv.texCoords[0] = v.texCoord;
+        std::memcpy(mv.boneWeights, v.boneWeights, 4);
+        std::memcpy(mv.boneIndices, v.boneIndices, 4);
+        m.vertices.push_back(mv);
+    }
+
+    m.indices.reserve(wom.indices.size());
+    for (uint32_t idx : wom.indices)
+        m.indices.push_back(static_cast<uint16_t>(idx));
+
+    for (const auto& tp : wom.texturePaths) {
+        M2Texture tex;
+        tex.type = 0;
+        tex.flags = 0;
+        tex.filename = tp;
+        m.textures.push_back(tex);
+    }
+    m.textureLookup = {0};
+
+    M2Batch batch{};
+    batch.textureCount = std::min(1u, static_cast<uint32_t>(wom.texturePaths.size()));
+    batch.indexCount = static_cast<uint32_t>(m.indices.size());
+    batch.vertexCount = static_cast<uint32_t>(m.vertices.size());
+    m.batches.push_back(batch);
+
+    M2Material mat;
+    mat.flags = 0;
+    mat.blendMode = 0;
+    m.materials.push_back(mat);
+
+    return m;
+}
+
+WoweeModel WoweeModelLoader::tryLoadByGamePath(const std::string& gamePath) {
+    std::string base = gamePath;
+    auto dot = base.rfind('.');
+    if (dot != std::string::npos) base = base.substr(0, dot);
+    std::replace(base.begin(), base.end(), '\\', '/');
+    for (const char* prefix : {"custom_zones/models/", "output/models/"}) {
+        std::string full = std::string(prefix) + base;
+        if (exists(full)) {
+            auto wom = load(full);
+            if (wom.isValid()) return wom;
+        }
+    }
+    return {};
+}
+
 } // namespace pipeline
 } // namespace wowee

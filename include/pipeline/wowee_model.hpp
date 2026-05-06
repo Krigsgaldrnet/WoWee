@@ -9,6 +9,8 @@
 namespace wowee {
 namespace pipeline {
 
+struct M2Model;
+
 // Wowee Open Model format (.wom) — novel format, no Blizzard IP
 // WOM1: static geometry | WOM2: + bones + animations
 struct WoweeModel {
@@ -68,6 +70,14 @@ public:
 
     // Check if a .wom exists
     static bool exists(const std::string& basePath);
+
+    // Convert WoweeModel to an in-memory M2Model so the M2Renderer can consume it.
+    // Single batch, single material — sufficient for static and simple animated meshes.
+    static M2Model toM2(const WoweeModel& wom);
+
+    // Convenience: try loading <path-without-ext>.wom from the standard editor
+    // search paths (custom_zones/models/, output/models/). Returns valid model on hit.
+    static WoweeModel tryLoadByGamePath(const std::string& gamePath);
 };
 
 } // namespace pipeline
