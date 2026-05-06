@@ -191,6 +191,72 @@ TEST_CASE("WOB toWMOModel conversion", "[wob]") {
     REQUIRE(wmoOut.groups[0].indices.size() == 3);
 }
 
+TEST_CASE("WOB toWMOModel restores materials/portals/doodads/doodadSet", "[wob]") {
+    WoweeBuilding bld;
+    bld.name = "Full";
+    bld.boundRadius = 10.0f;
+
+    WoweeBuilding::Group g0;
+    g0.name = "RoomA";
+    g0.isOutdoor = false;
+    g0.boundMin = glm::vec3(-5);
+    g0.boundMax = glm::vec3(5);
+    g0.vertices.push_back({{0,0,0}, {0,0,1}, {0,0}, {1,1,1,1}});
+    g0.vertices.push_back({{1,0,0}, {0,0,1}, {1,0}, {1,1,1,1}});
+    g0.vertices.push_back({{0,1,0}, {0,0,1}, {0,1}, {1,1,1,1}});
+    g0.indices = {0, 1, 2};
+    WoweeBuilding::Material mA{"textures/wallA.png", 0x10, 1, 0};
+    WoweeBuilding::Material mB{"textures/wallB.png", 0x20, 2, 1};
+    g0.materials = {mA, mB};
+    bld.groups.push_back(g0);
+
+    // A second group with one of A's materials and a unique one — verifies
+    // dedupe works across groups.
+    WoweeBuilding::Group g1;
+    g1.name = "RoomB";
+    g1.isOutdoor = true;
+    g1.vertices = g0.vertices;
+    g1.indices = {0, 1, 2};
+    WoweeBuilding::Material mC{"textures/floorC.png", 0x40, 3, 2};
+    g1.materials = {mA, mC};  // mA shared with g0
+    bld.groups.push_back(g1);
+
+    WoweeBuilding::Portal p;
+    p.groupA = 0; p.groupB = 1;
+    p.vertices = {{0,0,0}, {1,0,0}, {1,0,3}, {0,0,3}};
+    bld.portals.push_back(p);
+
+    WoweeBuilding::DoodadPlacement dp;
+    dp.modelPath = "models/chair.wom";
+    dp.position = {2, 3, 0};
+    dp.rotation = {0, 45, 0};
+    dp.scale = 1.5f;
+    bld.doodads.push_back(dp);
+
+    WMOModel out;
+    REQUIRE(WoweeBuildingLoader::toWMOModel(bld, out));
+    REQUIRE(out.nGroups == 2);
+    // Materials deduped: mA, mB, mC = 3
+    REQUIRE(out.materials.size() == 3);
+    // Textures deduped (paths converted .png -> .blp for renderer override)
+    REQUIRE(out.textures.size() == 3);
+    // Outdoor flag survives (0x08 set on g1)
+    REQUIRE((out.groups[1].flags & 0x08) != 0);
+    REQUIRE((out.groups[0].flags & 0x08) == 0);
+    // Portal restored with refs to both groups
+    REQUIRE(out.portals.size() == 1);
+    REQUIRE(out.portals[0].vertexCount == 4);
+    REQUIRE(out.portalVertices.size() == 4);
+    REQUIRE(out.portalRefs.size() == 2);
+    // Doodad restored, .wom path converted back to .m2 for runtime
+    REQUIRE(out.doodads.size() == 1);
+    REQUIRE(out.doodadNames[out.doodads[0].nameIndex] == "models/chair.m2");
+    REQUIRE(out.doodads[0].scale == Catch::Approx(1.5f));
+    // Default doodadSet emitted
+    REQUIRE(out.doodadSets.size() == 1);
+    REQUIRE(out.doodadSets[0].count == 1);
+}
+
 // ============== WHM/WOT Tests ==============
 
 TEST_CASE("WHM heightmap save and load round-trip", "[whm]") {
