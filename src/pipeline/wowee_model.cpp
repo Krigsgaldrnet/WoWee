@@ -5,6 +5,7 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <cmath>
 
 namespace wowee {
 namespace pipeline {
@@ -38,6 +39,18 @@ WoweeModel WoweeModelLoader::load(const std::string& basePath) {
     f.read(reinterpret_cast<char*>(&model.boundRadius), 4);
     f.read(reinterpret_cast<char*>(&model.boundMin), 12);
     f.read(reinterpret_cast<char*>(&model.boundMax), 12);
+
+    // Bound sanity — radius drives M2 culling, min/max drive collision AABBs.
+    // NaN/inf would either cull-out the model or crash the cull math.
+    if (!std::isfinite(model.boundRadius) || model.boundRadius < 0.0f)
+        model.boundRadius = 1.0f;
+    auto sanitiseVec = [](glm::vec3& v) {
+        if (!std::isfinite(v.x)) v.x = 0.0f;
+        if (!std::isfinite(v.y)) v.y = 0.0f;
+        if (!std::isfinite(v.z)) v.z = 0.0f;
+    };
+    sanitiseVec(model.boundMin);
+    sanitiseVec(model.boundMax);
 
     uint16_t nameLen;
     f.read(reinterpret_cast<char*>(&nameLen), 2);
