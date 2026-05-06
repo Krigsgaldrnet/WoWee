@@ -1038,6 +1038,12 @@ void EditorApp::loadADT(const std::string& mapName, int tileX, int tileY) {
 }
 
 void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tileY, float baseHeight, Biome biome) {
+    if (tileX < 0 || tileX > 63 || tileY < 0 || tileY > 63) {
+        LOG_ERROR("createNewTerrain rejected: tile (", tileX, ",", tileY,
+                  ") out of valid 0..63 range");
+        return;
+    }
+    if (!std::isfinite(baseHeight)) baseHeight = 0.0f;
     terrain_ = TerrainEditor::createBlankTerrain(tileX, tileY, baseHeight, biome);
     // Clear all previous state
     clearAllObjects();
