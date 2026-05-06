@@ -31,10 +31,14 @@ void NpcSpawner::removeCreature(int index) {
 
 int NpcSpawner::selectAt(const glm::vec3& worldPos, float maxDist) {
     clearSelection();
+    if (!std::isfinite(worldPos.x) || !std::isfinite(worldPos.y) ||
+        !std::isfinite(worldPos.z) || !std::isfinite(maxDist)) return -1;
     float bestDist = maxDist;
     int bestIdx = -1;
     for (int i = 0; i < static_cast<int>(spawns_.size()); i++) {
-        float dist = glm::length(spawns_[i].position - worldPos);
+        const auto& p = spawns_[i].position;
+        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) continue;
+        float dist = glm::length(p - worldPos);
         if (dist < bestDist) { bestDist = dist; bestIdx = i; }
     }
     if (bestIdx >= 0) {
