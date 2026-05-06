@@ -19,6 +19,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
     std::printf("  --list-zones           List discovered custom zones and exit\n");
     std::printf("  --validate <zoneDir>   Score zone open-format completeness and exit\n");
+    std::printf("  --info <wom-base>      Print WOM file metadata (version, counts) and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
     std::printf("Novel open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON\n");
@@ -36,6 +37,29 @@ int main(int argc, char* argv[]) {
             adtMap = argv[++i];
             adtX = std::atoi(argv[++i]);
             adtY = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--info") == 0 && i + 1 < argc) {
+            std::string base = argv[++i];
+            // Allow either "/path/to/file.wom" or "/path/to/file"; load() expects no extension.
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                std::fprintf(stderr, "WOM not found: %s.wom\n", base.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            std::printf("WOM: %s.wom\n", base.c_str());
+            std::printf("  version    : %u%s\n", wom.version,
+                        wom.version == 3 ? " (multi-batch)" :
+                        wom.version == 2 ? " (animated)" : " (static)");
+            std::printf("  name       : %s\n", wom.name.c_str());
+            std::printf("  vertices   : %zu\n", wom.vertices.size());
+            std::printf("  indices    : %zu (%zu tris)\n", wom.indices.size(), wom.indices.size() / 3);
+            std::printf("  textures   : %zu\n", wom.texturePaths.size());
+            std::printf("  bones      : %zu\n", wom.bones.size());
+            std::printf("  animations : %zu\n", wom.animations.size());
+            std::printf("  batches    : %zu\n", wom.batches.size());
+            std::printf("  boundRadius: %.2f\n", wom.boundRadius);
+            return 0;
         } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
             std::string zoneDir = argv[++i];
             auto v = wowee::editor::ContentPacker::validateZone(zoneDir);
