@@ -59,6 +59,10 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
     auto dir = std::filesystem::path(path).parent_path();
     if (!dir.empty()) std::filesystem::create_directories(dir);
 
+    // nlohmann::json throws on NaN/inf serialization. Scrub on the way
+    // out so a stale in-memory state can't take down the whole save.
+    auto san = [](float x) { return std::isfinite(x) ? x : 0.0f; };
+    auto sanPos = [&](float x, float def) { return std::isfinite(x) ? x : def; };
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& s : spawns_) {
         nlohmann::json js;
@@ -66,9 +70,9 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
         js["name"] = s.name;
         js["model"] = s.modelPath;
         js["displayId"] = s.displayId;
-        js["position"] = {s.position.x, s.position.y, s.position.z};
-        js["orientation"] = s.orientation;
-        js["scale"] = s.scale;
+        js["position"] = {san(s.position.x), san(s.position.y), san(s.position.z)};
+        js["orientation"] = san(s.orientation);
+        js["scale"] = sanPos(s.scale, 1.0f);
         js["level"] = s.level;
         js["health"] = s.health;
         js["mana"] = s.mana;
@@ -77,9 +81,9 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
         js["armor"] = s.armor;
         js["faction"] = s.faction;
         js["behavior"] = static_cast<int>(s.behavior);
-        js["wanderRadius"] = s.wanderRadius;
-        js["aggroRadius"] = s.aggroRadius;
-        js["leashRadius"] = s.leashRadius;
+        js["wanderRadius"] = san(s.wanderRadius);
+        js["aggroRadius"] = san(s.aggroRadius);
+        js["leashRadius"] = san(s.leashRadius);
         js["respawnTimeMs"] = s.respawnTimeMs;
         js["hostile"] = s.hostile;
         js["questgiver"] = s.questgiver;
@@ -93,7 +97,8 @@ bool NpcSpawner::saveToFile(const std::string& path) const {
 
         nlohmann::json patrol = nlohmann::json::array();
         for (const auto& p : s.patrolPath) {
-            patrol.push_back({p.position.x, p.position.y, p.position.z, p.waitTimeMs});
+            patrol.push_back({san(p.position.x), san(p.position.y),
+                              san(p.position.z), sanPos(p.waitTimeMs, 2000.0f)});
         }
         js["patrol"] = patrol;
         arr.push_back(js);
