@@ -152,17 +152,33 @@ bool NpcSpawner::loadFromFile(const std::string& path) {
             s.scale = js.value("scale", 1.0f);
             if (!std::isfinite(s.scale) || s.scale < 0.1f) s.scale = 1.0f;
             s.level = js.value("level", 1u);
+            // WoW level cap is 80 (WotLK) but allow up to 255 for special
+            // bosses; 0 is invalid.
+            if (s.level == 0) s.level = 1;
+            if (s.level > 255) s.level = 255;
             s.health = js.value("health", 100u);
+            if (s.health == 0) s.health = 1;
             s.mana = js.value("mana", 0u);
             s.minDamage = js.value("minDamage", 5u);
             s.maxDamage = js.value("maxDamage", 10u);
+            // maxDmg should be >= minDmg.
+            if (s.maxDamage < s.minDamage) s.maxDamage = s.minDamage;
             s.armor = js.value("armor", 0u);
             s.faction = js.value("faction", 0u);
-            s.behavior = static_cast<CreatureBehavior>(js.value("behavior", 0));
+            int beh = js.value("behavior", 0);
+            if (beh < 0 || beh > 3) beh = 0;
+            s.behavior = static_cast<CreatureBehavior>(beh);
             s.wanderRadius = js.value("wanderRadius", 0.0f);
+            if (!std::isfinite(s.wanderRadius) || s.wanderRadius < 0.0f) s.wanderRadius = 0.0f;
+            if (s.wanderRadius > 1000.0f) s.wanderRadius = 1000.0f;
             s.aggroRadius = js.value("aggroRadius", 15.0f);
+            if (!std::isfinite(s.aggroRadius) || s.aggroRadius < 0.0f) s.aggroRadius = 0.0f;
             s.leashRadius = js.value("leashRadius", 40.0f);
+            if (!std::isfinite(s.leashRadius) || s.leashRadius < 0.0f) s.leashRadius = 40.0f;
             s.respawnTimeMs = js.value("respawnTimeMs", 60000u);
+            // Cap respawn at 24h — typo guard, also matches AzerothCore.
+            if (s.respawnTimeMs > 86'400'000u) s.respawnTimeMs = 86'400'000u;
+            if (s.respawnTimeMs < 1000u) s.respawnTimeMs = 1000u;
             s.hostile = js.value("hostile", false);
             s.questgiver = js.value("questgiver", false);
             s.vendor = js.value("vendor", false);
