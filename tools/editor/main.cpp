@@ -192,20 +192,25 @@ int main(int argc, char* argv[]) {
             std::printf("Open format score: %d/7\n", score);
             std::printf("Formats: %s\n", v.summary().c_str());
             std::printf("Files present:\n");
-            std::printf("  WOT  (terrain meta)   : %s\n", v.hasWot ? "yes" : "no");
-            std::printf("  WHM  (heightmap)      : %s%s\n",
-                        v.hasWhm ? "yes" : "no",
+            std::printf("  WOT  (terrain meta)   : %s (%d)\n",
+                        v.hasWot ? "yes" : "no", v.wotCount);
+            std::printf("  WHM  (heightmap)      : %s (%d)%s\n",
+                        v.hasWhm ? "yes" : "no", v.whmCount,
                         v.hasWhm && !v.whmValid ? " (BAD MAGIC)" : "");
-            std::printf("  WOM  (models)         : %s%s\n",
-                        v.hasWom ? "yes" : "no",
-                        v.hasWom && !v.womValid ? " (BAD MAGIC)" : "");
-            std::printf("  WOB  (buildings)      : %s%s\n",
-                        v.hasWob ? "yes" : "no",
-                        v.hasWob && !v.wobValid ? " (BAD MAGIC)" : "");
-            std::printf("  WOC  (collision)      : %s%s\n",
-                        v.hasWoc ? "yes" : "no",
-                        v.hasWoc && !v.wocValid ? " (BAD MAGIC)" : "");
-            std::printf("  PNG  (textures)       : %s\n", v.hasPng ? "yes" : "no");
+            std::printf("  WOM  (models)         : %s (%d)%s\n",
+                        v.hasWom ? "yes" : "no", v.womCount,
+                        v.womInvalidCount > 0 ?
+                            (" (" + std::to_string(v.womInvalidCount) + " invalid)").c_str() : "");
+            std::printf("  WOB  (buildings)      : %s (%d)%s\n",
+                        v.hasWob ? "yes" : "no", v.wobCount,
+                        v.wobInvalidCount > 0 ?
+                            (" (" + std::to_string(v.wobInvalidCount) + " invalid)").c_str() : "");
+            std::printf("  WOC  (collision)      : %s (%d)%s\n",
+                        v.hasWoc ? "yes" : "no", v.wocCount,
+                        v.wocInvalidCount > 0 ?
+                            (" (" + std::to_string(v.wocInvalidCount) + " invalid)").c_str() : "");
+            std::printf("  PNG  (textures)       : %s (%d)\n",
+                        v.hasPng ? "yes" : "no", v.pngCount);
             std::printf("  zone.json             : %s\n", v.hasZoneJson ? "yes" : "no");
             std::printf("  creatures.json        : %s\n", v.hasCreatures ? "yes" : "no");
             std::printf("  quests.json           : %s\n", v.hasQuests ? "yes" : "no");

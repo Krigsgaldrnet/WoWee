@@ -277,25 +277,28 @@ ContentPacker::ValidationResult ContentPacker::validateZone(const std::string& z
         if (!entry.is_regular_file()) continue;
         std::string ext = entry.path().extension().string();
         std::string fname = entry.path().filename().string();
-        if (ext == ".wot") r.hasWot = true;
+        if (ext == ".wot") { r.hasWot = true; r.wotCount++; }
         if (ext == ".whm") {
-            r.hasWhm = true;
+            r.hasWhm = true; r.whmCount++;
             if (checkMagic(entry.path().string(), WHM_MAGIC)) r.whmValid = true;
         }
         if (ext == ".wom") {
-            r.hasWom = true;
+            r.hasWom = true; r.womCount++;
             if (checkAnyMagic(entry.path().string(), {WOM_MAGIC, WOM2_MAGIC, WOM3_MAGIC}))
                 r.womValid = true;
+            else r.womInvalidCount++;
         }
         if (ext == ".wob") {
-            r.hasWob = true;
+            r.hasWob = true; r.wobCount++;
             if (checkMagic(entry.path().string(), WOB_MAGIC)) r.wobValid = true;
+            else r.wobInvalidCount++;
         }
         if (ext == ".woc") {
-            r.hasWoc = true;
+            r.hasWoc = true; r.wocCount++;
             if (checkMagic(entry.path().string(), WOC_MAGIC)) r.wocValid = true;
+            else r.wocInvalidCount++;
         }
-        if (ext == ".png") r.hasPng = true;
+        if (ext == ".png") { r.hasPng = true; r.pngCount++; }
         if (fname == "zone.json") r.hasZoneJson = true;
         if (fname == "creatures.json") r.hasCreatures = true;
         if (fname == "quests.json") r.hasQuests = true;
