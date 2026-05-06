@@ -456,6 +456,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --export-png <wot-base> Render heightmap, normal-map, and zone-map PNG previews\n");
     std::printf("  --export-obj <wom-base> [out.obj]\n");
     std::printf("                         Convert a WOM model to Wavefront OBJ for use in Blender/MeshLab\n");
+    std::printf("  --export-glb <wom-base> [out.glb]\n");
+    std::printf("                         Convert a WOM model to glTF 2.0 binary (.glb) — modern industry standard\n");
     std::printf("  --import-obj <obj-path> [wom-base]\n");
     std::printf("                         Convert a Wavefront OBJ back into WOM (round-trips with --export-obj)\n");
     std::printf("  --export-wob-obj <wob-base> [out.obj]\n");
@@ -569,6 +571,7 @@ int main(int argc, char* argv[]) {
         "--export-png", "--export-obj", "--import-obj",
         "--export-wob-obj", "--import-wob-obj",
         "--export-woc-obj", "--export-whm-obj",
+        "--export-glb",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
     };
@@ -2926,6 +2929,187 @@ int main(int argc, char* argv[]) {
             std::printf("  %zu verts, %zu tris, %zu groups\n",
                         wom.vertices.size(), wom.indices.size() / 3,
                         wom.batches.empty() ? size_t(1) : wom.batches.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-glb") == 0 && i + 1 < argc) {
+            // glTF 2.0 binary (.glb) export — modern industry standard
+            // that, unlike OBJ, supports skinning + animations + PBR
+            // materials natively. v1 here writes positions/normals/UVs/
+            // indices as a single mesh (or one primitive per WOM3 batch);
+            // bones/anims are deliberately not yet emitted because glTF's
+            // joint matrix layout differs from WOM's bone tree and needs
+            // a careful re-mapping pass.
+            //
+            // Why this matters: glTF is what Sketchfab, Three.js, Babylon.js,
+            // and Unity/Unreal-via-import all consume. Shipping WOM through
+            // .glb makes our open binary format viewable in any modern
+            // browser-based 3D viewer with zero conversion friction.
+            std::string base = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                outPath = argv[++i];
+            }
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                std::fprintf(stderr, "WOM not found: %s.wom\n", base.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = base + ".glb";
+            auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            if (!wom.isValid()) {
+                std::fprintf(stderr, "WOM has no geometry: %s.wom\n", base.c_str());
+                return 1;
+            }
+            // BIN chunk layout — sections ordered so each accessor's
+            // byteOffset is naturally aligned for its component type:
+            //   positions (vec3 float)  : 12 bytes/vert, offset 0
+            //   normals   (vec3 float)  : 12 bytes/vert
+            //   uvs       (vec2 float)  :  8 bytes/vert
+            //   indices   (uint32)      :  4 bytes each
+            // After 32 bytes per vertex, indices start at a 4-byte aligned
+            // offset for free.
+            const uint32_t vCount = static_cast<uint32_t>(wom.vertices.size());
+            const uint32_t iCount = static_cast<uint32_t>(wom.indices.size());
+            const uint32_t posOff = 0;
+            const uint32_t nrmOff = posOff + vCount * 12;
+            const uint32_t uvOff  = nrmOff + vCount * 12;
+            const uint32_t idxOff = uvOff  + vCount * 8;
+            const uint32_t binSize = idxOff + iCount * 4;
+            std::vector<uint8_t> bin(binSize);
+            // Pack positions
+            for (uint32_t v = 0; v < vCount; ++v) {
+                const auto& vert = wom.vertices[v];
+                std::memcpy(&bin[posOff + v * 12 + 0], &vert.position.x, 4);
+                std::memcpy(&bin[posOff + v * 12 + 4], &vert.position.y, 4);
+                std::memcpy(&bin[posOff + v * 12 + 8], &vert.position.z, 4);
+                std::memcpy(&bin[nrmOff + v * 12 + 0], &vert.normal.x, 4);
+                std::memcpy(&bin[nrmOff + v * 12 + 4], &vert.normal.y, 4);
+                std::memcpy(&bin[nrmOff + v * 12 + 8], &vert.normal.z, 4);
+                std::memcpy(&bin[uvOff  + v * 8  + 0], &vert.texCoord.x, 4);
+                std::memcpy(&bin[uvOff  + v * 8  + 4], &vert.texCoord.y, 4);
+            }
+            std::memcpy(&bin[idxOff], wom.indices.data(), iCount * 4);
+            // Compute bounds for the position accessor's min/max — glTF
+            // viewers rely on these for camera framing and culling.
+            glm::vec3 bMin{1e30f}, bMax{-1e30f};
+            for (const auto& v : wom.vertices) {
+                bMin = glm::min(bMin, v.position);
+                bMax = glm::max(bMax, v.position);
+            }
+            // Build the JSON structure. nlohmann::json keeps insertion
+            // order in dump(), but glTF readers are key-based so order
+            // doesn't matter functionally.
+            nlohmann::json gj;
+            gj["asset"] = {{"version", "2.0"},
+                            {"generator", "wowee_editor --export-glb"}};
+            gj["scene"] = 0;
+            gj["scenes"] = nlohmann::json::array({nlohmann::json{{"nodes", {0}}}});
+            gj["nodes"] = nlohmann::json::array({nlohmann::json{
+                {"name", wom.name.empty() ? "WoweeModel" : wom.name},
+                {"mesh", 0}
+            }});
+            gj["buffers"] = nlohmann::json::array({nlohmann::json{
+                {"byteLength", binSize}
+            }});
+            // BufferViews: one per attribute + one per index range.
+            // Per WOM3 batch we slice the index bufferView with separate
+            // accessors so each batch becomes its own primitive.
+            nlohmann::json bufferViews = nlohmann::json::array();
+            // 0: positions, 1: normals, 2: uvs, 3: indices (whole range)
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", posOff},
+                                    {"byteLength", vCount * 12},
+                                    {"target", 34962}}); // ARRAY_BUFFER
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", nrmOff},
+                                    {"byteLength", vCount * 12},
+                                    {"target", 34962}});
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", uvOff},
+                                    {"byteLength", vCount * 8},
+                                    {"target", 34962}});
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", idxOff},
+                                    {"byteLength", iCount * 4},
+                                    {"target", 34963}}); // ELEMENT_ARRAY_BUFFER
+            gj["bufferViews"] = bufferViews;
+            // Accessors: 0=position, 1=normal, 2=uv, 3..N=indices (one
+            // per primitive, sliced from bufferView 3).
+            nlohmann::json accessors = nlohmann::json::array();
+            accessors.push_back({
+                {"bufferView", 0}, {"componentType", 5126}, // FLOAT
+                {"count", vCount}, {"type", "VEC3"},
+                {"min", {bMin.x, bMin.y, bMin.z}},
+                {"max", {bMax.x, bMax.y, bMax.z}}
+            });
+            accessors.push_back({
+                {"bufferView", 1}, {"componentType", 5126},
+                {"count", vCount}, {"type", "VEC3"}
+            });
+            accessors.push_back({
+                {"bufferView", 2}, {"componentType", 5126},
+                {"count", vCount}, {"type", "VEC2"}
+            });
+            // Build primitives — one per WOM3 batch, or one over the
+            // whole index range if no batches.
+            nlohmann::json primitives = nlohmann::json::array();
+            auto addPrimitive = [&](uint32_t idxStart, uint32_t idxCount) {
+                uint32_t accessorIdx = static_cast<uint32_t>(accessors.size());
+                accessors.push_back({
+                    {"bufferView", 3},
+                    {"byteOffset", idxStart * 4},
+                    {"componentType", 5125}, // UNSIGNED_INT
+                    {"count", idxCount},
+                    {"type", "SCALAR"}
+                });
+                primitives.push_back({
+                    {"attributes", {{"POSITION", 0}, {"NORMAL", 1}, {"TEXCOORD_0", 2}}},
+                    {"indices", accessorIdx},
+                    {"mode", 4} // TRIANGLES
+                });
+            };
+            if (wom.batches.empty()) {
+                addPrimitive(0, iCount);
+            } else {
+                for (const auto& b : wom.batches) {
+                    addPrimitive(b.indexStart, b.indexCount);
+                }
+            }
+            gj["accessors"] = accessors;
+            gj["meshes"] = nlohmann::json::array({nlohmann::json{
+                {"primitives", primitives}
+            }});
+            // Serialize JSON to bytes; pad to 4-byte boundary with spaces
+            // (glTF spec requires JSON chunk padded with 0x20).
+            std::string jsonStr = gj.dump();
+            while (jsonStr.size() % 4 != 0) jsonStr += ' ';
+            // BIN chunk pads to 4-byte boundary with zeros (already
+            // satisfied since binSize = idxOff + iCount*4 and idxOff is
+            // 4-byte aligned).
+            uint32_t jsonLen = static_cast<uint32_t>(jsonStr.size());
+            uint32_t binLen = binSize;
+            uint32_t totalLen = 12 + 8 + jsonLen + 8 + binLen;
+            std::ofstream out(outPath, std::ios::binary);
+            if (!out) {
+                std::fprintf(stderr, "Failed to open output: %s\n", outPath.c_str());
+                return 1;
+            }
+            // Header: magic, version, total length (all little-endian uint32)
+            uint32_t magic = 0x46546C67;  // 'glTF'
+            uint32_t version = 2;
+            out.write(reinterpret_cast<const char*>(&magic), 4);
+            out.write(reinterpret_cast<const char*>(&version), 4);
+            out.write(reinterpret_cast<const char*>(&totalLen), 4);
+            // JSON chunk header + payload
+            uint32_t jsonChunkType = 0x4E4F534A;  // 'JSON'
+            out.write(reinterpret_cast<const char*>(&jsonLen), 4);
+            out.write(reinterpret_cast<const char*>(&jsonChunkType), 4);
+            out.write(jsonStr.data(), jsonLen);
+            // BIN chunk header + payload
+            uint32_t binChunkType = 0x004E4942;  // 'BIN\0'
+            out.write(reinterpret_cast<const char*>(&binLen), 4);
+            out.write(reinterpret_cast<const char*>(&binChunkType), 4);
+            out.write(reinterpret_cast<const char*>(bin.data()), binLen);
+            out.close();
+            std::printf("Exported %s.wom -> %s\n", base.c_str(), outPath.c_str());
+            std::printf("  %u verts, %u tris, %zu primitive(s), %u-byte binary chunk\n",
+                        vCount, iCount / 3, primitives.size(), binLen);
             return 0;
         } else if (std::strcmp(argv[i], "--export-wob-obj") == 0 && i + 1 < argc) {
             // WOB is the WMO replacement; like --export-obj for WOM, this
