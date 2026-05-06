@@ -413,6 +413,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --convert-blp-png <blp-path> [out.png]\n");
     std::printf("                         Convert one BLP texture to PNG sidecar\n");
     std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
+    std::printf("  --for-each-zone <projectDir> -- <cmd...>\n");
+    std::printf("                         Run <cmd...> for every zone in <projectDir>; '{}' in cmd is replaced with the zone path\n");
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
     std::printf("  --add-tile <zoneDir> <tx> <ty> [baseHeight]\n");
     std::printf("                         Add a new ADT tile to an existing zone (extends the manifest's tiles list)\n");
@@ -554,6 +556,7 @@ int main(int argc, char* argv[]) {
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--zone-summary",
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
+        "--for-each-zone",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
@@ -4754,6 +4757,90 @@ int main(int argc, char* argv[]) {
                 }
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--for-each-zone") == 0 && i + 1 < argc) {
+            // Batch runner: enumerates zones in <projectDir> and runs the
+            // command after '--' for each one. '{}' in the command is
+            // substituted with the zone path (find -exec convention).
+            //
+            //   wowee_editor --for-each-zone custom_zones -- \\
+            //     wowee_editor --validate-all {}
+            //
+            // Returns the count of failed runs as the exit code (capped
+            // at 255 so the shell can still see it).
+            std::string projectDir = argv[++i];
+            // The literal '--' separates the projectDir from the command.
+            // Skip it; everything after is the command template.
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--") == 0) ++i;
+            if (i + 1 >= argc) {
+                std::fprintf(stderr,
+                    "for-each-zone: need command after '--'\n");
+                return 1;
+            }
+            // Collect command tokens until end of argv. Don't try to be
+            // clever about quoting — just escape each token for shell
+            // safety using single quotes (' inside is escaped as '\\'').
+            std::vector<std::string> cmdTokens;
+            for (int k = i + 1; k < argc; ++k) cmdTokens.push_back(argv[k]);
+            i = argc - 1;  // consume rest of argv
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr, "for-each-zone: %s is not a directory\n",
+                             projectDir.c_str());
+                return 1;
+            }
+            // Find every child dir that contains a zone.json — that's the
+            // canonical 'is this a zone?' test the rest of the editor uses.
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (fs::exists(entry.path() / "zone.json")) {
+                    zones.push_back(entry.path().string());
+                }
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::fprintf(stderr, "for-each-zone: no zones found in %s\n",
+                             projectDir.c_str());
+                return 1;
+            }
+            auto shellEscape = [](const std::string& s) {
+                std::string out = "'";
+                for (char c : s) {
+                    if (c == '\'') out += "'\\''";
+                    else out += c;
+                }
+                out += "'";
+                return out;
+            };
+            int failed = 0;
+            for (const auto& zone : zones) {
+                std::string cmd;
+                for (size_t k = 0; k < cmdTokens.size(); ++k) {
+                    if (k > 0) cmd += " ";
+                    std::string token = cmdTokens[k];
+                    // Replace {} with zone path (every occurrence).
+                    size_t pos;
+                    while ((pos = token.find("{}")) != std::string::npos) {
+                        token.replace(pos, 2, zone);
+                    }
+                    cmd += shellEscape(token);
+                }
+                std::printf("[%s]\n", zone.c_str());
+                // Flush before std::system so the header lands above the
+                // child's output rather than after (parent stdout is line-
+                // buffered, child writes go straight to the terminal).
+                std::fflush(stdout);
+                int rc = std::system(cmd.c_str());
+                if (rc != 0) {
+                    failed++;
+                    std::fprintf(stderr,
+                        "for-each-zone: command exited %d for %s\n",
+                        rc, zone.c_str());
+                }
+            }
+            std::printf("\nfor-each-zone: %zu zones, %d failed\n",
+                        zones.size(), failed);
+            return failed > 255 ? 255 : failed;
         } else if (std::strcmp(argv[i], "--version") == 0 || std::strcmp(argv[i], "-v") == 0) {
             std::printf("Wowee World Editor v1.0.0\n");
             std::printf("Open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON (all novel)\n");
