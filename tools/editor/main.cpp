@@ -36,6 +36,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Append one creature spawn to <zoneDir>/creatures.json and exit\n");
     std::printf("  --add-object <zoneDir> <m2|wmo> <gamePath> <x> <y> <z> [scale]\n");
     std::printf("                         Append one object placement to <zoneDir>/objects.json and exit\n");
+    std::printf("  --add-quest <zoneDir> <title> [giverId] [turnInId] [xp] [level]\n");
+    std::printf("                         Append one quest to <zoneDir>/quests.json and exit\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
     std::printf("  --regen-collision <zoneDir>  Rebuild every WOC under a zone dir and exit\n");
     std::printf("  --fix-zone <zoneDir>   Re-parse + re-save zone JSONs to apply latest scrubs/caps and exit\n");
@@ -87,7 +89,7 @@ int main(int argc, char* argv[]) {
         "--info-extract", "--info-zone", "--info-wcp", "--list-wcp",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--zone-summary",
-        "--scaffold-zone", "--add-creature", "--add-object",
+        "--scaffold-zone", "--add-creature", "--add-object", "--add-quest",
         "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png",
         "--convert-m2", "--convert-wmo",
@@ -115,6 +117,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--add-object") == 0 && i + 6 >= argc) {
             std::fprintf(stderr,
                 "--add-object requires <zoneDir> <m2|wmo> <gamePath> <x> <y> <z>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--add-quest") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--add-quest requires <zoneDir> <title>\n");
             return 1;
         }
     }
@@ -1107,6 +1114,45 @@ int main(int argc, char* argv[]) {
             std::printf("WOC built: %s (%zu triangles, %zu walkable, %zu steep)\n",
                         outPath.c_str(),
                         col.triangles.size(), col.walkableCount(), col.steepCount());
+            return 0;
+        } else if (std::strcmp(argv[i], "--add-quest") == 0 && i + 2 < argc) {
+            // Append a single quest to a zone's quests.json.
+            // Args: <zoneDir> <title> [giverId] [turnInId] [xp] [level]
+            std::string zoneDir = argv[++i];
+            std::string title = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr, "add-quest: zone '%s' does not exist\n",
+                             zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::Quest q;
+            q.title = title;
+            // Optional positional args after title. Each is read in order;
+            // an empty string or '-' stops consumption so users can omit
+            // later fields.
+            auto tryReadUint = [&](uint32_t& target) {
+                if (i + 1 >= argc || argv[i + 1][0] == '-') return false;
+                try {
+                    target = static_cast<uint32_t>(std::stoul(argv[i + 1]));
+                    ++i;
+                    return true;
+                } catch (...) { return false; }
+            };
+            tryReadUint(q.questGiverNpcId);
+            tryReadUint(q.turnInNpcId);
+            tryReadUint(q.reward.xp);
+            tryReadUint(q.requiredLevel);
+            wowee::editor::QuestEditor qe;
+            std::string path = zoneDir + "/quests.json";
+            if (fs::exists(path)) qe.loadFromFile(path);
+            qe.addQuest(q);
+            if (!qe.saveToFile(path)) {
+                std::fprintf(stderr, "add-quest: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            std::printf("Added quest '%s' to %s (now %zu total)\n",
+                        title.c_str(), path.c_str(), qe.questCount());
             return 0;
         } else if (std::strcmp(argv[i], "--add-object") == 0 && i + 5 < argc) {
             // Append a single object placement to a zone's objects.json.
