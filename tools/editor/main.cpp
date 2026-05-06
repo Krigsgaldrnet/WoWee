@@ -429,6 +429,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Append one objective to a quest by index\n");
     std::printf("  --remove-quest-objective <zoneDir> <questIdx> <objIdx>\n");
     std::printf("                         Remove the objective at given 0-based index from a quest\n");
+    std::printf("  --clone-quest <zoneDir> <questIdx> [newTitle]\n");
+    std::printf("                         Duplicate a quest (with all objectives + rewards) and append it\n");
     std::printf("  --add-quest-reward-item <zoneDir> <questIdx> <itemPath> [more...]\n");
     std::printf("                         Append item reward(s) to a quest's reward.itemRewards list\n");
     std::printf("  --set-quest-reward <zoneDir> <questIdx> [--xp N] [--gold N] [--silver N] [--copper N]\n");
@@ -549,7 +551,7 @@ int main(int argc, char* argv[]) {
         "--scaffold-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
-        "--remove-quest-objective",
+        "--remove-quest-objective", "--clone-quest",
         "--remove-creature", "--remove-object", "--remove-quest",
         "--copy-zone", "--rename-zone",
         "--build-woc", "--regen-collision", "--fix-zone",
@@ -602,6 +604,11 @@ int main(int argc, char* argv[]) {
         if (std::strcmp(argv[i], "--remove-quest-objective") == 0 && i + 3 >= argc) {
             std::fprintf(stderr,
                 "--remove-quest-objective requires <zoneDir> <questIdx> <objIdx>\n");
+            return 1;
+        }
+        if (std::strcmp(argv[i], "--clone-quest") == 0 && i + 2 >= argc) {
+            std::fprintf(stderr,
+                "--clone-quest requires <zoneDir> <questIdx>\n");
             return 1;
         }
         if (std::strcmp(argv[i], "--add-quest-reward-item") == 0 && i + 3 >= argc) {
@@ -3691,6 +3698,64 @@ int main(int argc, char* argv[]) {
             std::printf("Removed objective '%s' (was index %d) from quest %d ('%s'), now %zu remaining\n",
                         removedDesc.c_str(), oIdx, qIdx, q->title.c_str(),
                         q->objectives.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--clone-quest") == 0 && i + 2 < argc) {
+            // Duplicate a quest. Useful for templating: create a base
+            // quest with objectives + rewards once, then clone N times
+            // for variants ('Slay Wolves', 'Slay Bears' with the same
+            // shape). Optional newTitle replaces the cloned copy's title;
+            // omit to get '<original> (copy)'.
+            std::string zoneDir = argv[++i];
+            std::string idxStr = argv[++i];
+            std::string newTitle;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                newTitle = argv[++i];
+            }
+            std::string path = zoneDir + "/quests.json";
+            if (!std::filesystem::exists(path)) {
+                std::fprintf(stderr, "clone-quest: %s not found\n", path.c_str());
+                return 1;
+            }
+            int qIdx;
+            try { qIdx = std::stoi(idxStr); }
+            catch (...) {
+                std::fprintf(stderr, "clone-quest: bad questIdx '%s'\n", idxStr.c_str());
+                return 1;
+            }
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr, "clone-quest: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            if (qIdx < 0 || qIdx >= static_cast<int>(qe.questCount())) {
+                std::fprintf(stderr,
+                    "clone-quest: questIdx %d out of range [0, %zu)\n",
+                    qIdx, qe.questCount());
+                return 1;
+            }
+            // Deep-copy by value via vector iteration; .objectives and
+            // .reward are STL containers so the copy is automatic.
+            wowee::editor::Quest clone = qe.getQuests()[qIdx];
+            // Reset id so the editor's auto-id sequence assigns a fresh
+            // one — addQuest does this internally if id==0.
+            clone.id = 0;
+            // Reset chain link too — copying a chained quest with the
+            // same nextQuestId would corrupt the chain semantics.
+            clone.nextQuestId = 0;
+            clone.title = newTitle.empty()
+                ? (clone.title + " (copy)")
+                : newTitle;
+            qe.addQuest(clone);
+            if (!qe.saveToFile(path)) {
+                std::fprintf(stderr, "clone-quest: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            std::printf("Cloned quest %d -> '%s' (now %zu total)\n",
+                        qIdx, clone.title.c_str(), qe.questCount());
+            std::printf("  carried %zu objective(s), %zu item reward(s), xp=%u\n",
+                        clone.objectives.size(),
+                        clone.reward.itemRewards.size(),
+                        clone.reward.xp);
             return 0;
         } else if (std::strcmp(argv[i], "--add-quest-reward-item") == 0 && i + 3 < argc) {
             // Append one or more item rewards to a quest. Multiple paths
