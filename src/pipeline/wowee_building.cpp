@@ -519,11 +519,21 @@ WoweeBuilding WoweeBuildingLoader::fromWMO(const WMOModel& wmo, const std::strin
         if (dot != std::string::npos)
             dp.modelPath = dp.modelPath.substr(0, dot) + ".wom";
         dp.position = doodad.position;
-        // Convert quaternion rotation to euler angles
+        // Sanitize position before euler conversion. NaN in the source
+        // quaternion would propagate to NaN euler angles and ruin the
+        // doodad transform forever after; same for the position floats.
+        for (int k = 0; k < 3; k++)
+            if (!std::isfinite(dp.position[k])) dp.position[k] = 0.0f;
         glm::quat q(doodad.rotation.w, doodad.rotation.x,
                      doodad.rotation.y, doodad.rotation.z);
+        if (!std::isfinite(q.w) || !std::isfinite(q.x) ||
+            !std::isfinite(q.y) || !std::isfinite(q.z))
+            q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // identity
         dp.rotation = glm::degrees(glm::eulerAngles(q));
-        dp.scale = doodad.scale;
+        for (int k = 0; k < 3; k++)
+            if (!std::isfinite(dp.rotation[k])) dp.rotation[k] = 0.0f;
+        dp.scale = (std::isfinite(doodad.scale) && doodad.scale > 0.0001f)
+                       ? doodad.scale : 1.0f;
         bld.doodads.push_back(dp);
     }
 
