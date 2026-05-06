@@ -1,5 +1,6 @@
 #include "object_placer.hpp"
 #include "terrain_biomes.hpp"
+#include "core/coordinates.hpp"
 #include "core/logger.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -346,12 +347,16 @@ void ObjectPlacer::syncToTerrain() {
             m2Names.push_back(obj.path);
             foundM2:
 
+            // Editor stores positions in render/world coords; ADT files use
+            // ADT-space placement coords. Convert back so re-loading the saved
+            // ADT yields identical world positions.
+            glm::vec3 adtPos = core::coords::worldToAdt(obj.position);
             pipeline::ADTTerrain::DoodadPlacement dp{};
             dp.nameId = nameId;
             dp.uniqueId = obj.uniqueId;
-            dp.position[0] = obj.position.x;
-            dp.position[1] = obj.position.y;
-            dp.position[2] = obj.position.z;
+            dp.position[0] = adtPos.x;
+            dp.position[1] = adtPos.y;
+            dp.position[2] = adtPos.z;
             dp.rotation[0] = obj.rotation.x;
             dp.rotation[1] = obj.rotation.y;
             dp.rotation[2] = obj.rotation.z;
@@ -368,12 +373,13 @@ void ObjectPlacer::syncToTerrain() {
             wmoNames.push_back(obj.path);
             foundWMO:
 
+            glm::vec3 adtPos = core::coords::worldToAdt(obj.position);
             pipeline::ADTTerrain::WMOPlacement wp{};
             wp.nameId = nameId;
             wp.uniqueId = obj.uniqueId;
-            wp.position[0] = obj.position.x;
-            wp.position[1] = obj.position.y;
-            wp.position[2] = obj.position.z;
+            wp.position[0] = adtPos.x;
+            wp.position[1] = adtPos.y;
+            wp.position[2] = adtPos.z;
             wp.rotation[0] = obj.rotation.x;
             wp.rotation[1] = obj.rotation.y;
             wp.rotation[2] = obj.rotation.z;
