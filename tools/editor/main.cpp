@@ -1,4 +1,5 @@
 #include "editor_app.hpp"
+#include "content_pack.hpp"
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
 #include "pipeline/wmo_loader.hpp"
@@ -17,6 +18,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)\n");
     std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
     std::printf("  --list-zones           List discovered custom zones and exit\n");
+    std::printf("  --validate <zoneDir>   Score zone open-format completeness and exit\n");
     std::printf("  --version              Show version and format info\n\n");
     std::printf("Wowee World Editor v1.0.0 — by Kelsi Davis\n");
     std::printf("Novel open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON\n");
@@ -34,6 +36,33 @@ int main(int argc, char* argv[]) {
             adtMap = argv[++i];
             adtX = std::atoi(argv[++i]);
             adtY = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
+            std::string zoneDir = argv[++i];
+            auto v = wowee::editor::ContentPacker::validateZone(zoneDir);
+            int score = v.openFormatScore();
+            std::printf("Zone: %s\n", zoneDir.c_str());
+            std::printf("Open format score: %d/7\n", score);
+            std::printf("Formats: %s\n", v.summary().c_str());
+            std::printf("Files present:\n");
+            std::printf("  WOT  (terrain meta)   : %s\n", v.hasWot ? "yes" : "no");
+            std::printf("  WHM  (heightmap)      : %s%s\n",
+                        v.hasWhm ? "yes" : "no",
+                        v.hasWhm && !v.whmValid ? " (BAD MAGIC)" : "");
+            std::printf("  WOM  (models)         : %s%s\n",
+                        v.hasWom ? "yes" : "no",
+                        v.hasWom && !v.womValid ? " (BAD MAGIC)" : "");
+            std::printf("  WOB  (buildings)      : %s%s\n",
+                        v.hasWob ? "yes" : "no",
+                        v.hasWob && !v.wobValid ? " (BAD MAGIC)" : "");
+            std::printf("  WOC  (collision)      : %s%s\n",
+                        v.hasWoc ? "yes" : "no",
+                        v.hasWoc && !v.wocValid ? " (BAD MAGIC)" : "");
+            std::printf("  PNG  (textures)       : %s\n", v.hasPng ? "yes" : "no");
+            std::printf("  zone.json             : %s\n", v.hasZoneJson ? "yes" : "no");
+            std::printf("  creatures.json        : %s\n", v.hasCreatures ? "yes" : "no");
+            std::printf("  quests.json           : %s\n", v.hasQuests ? "yes" : "no");
+            std::printf("  objects.json          : %s\n", v.hasObjects ? "yes" : "no");
+            return score == 7 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--list-zones") == 0) {
             auto zones = wowee::pipeline::CustomZoneDiscovery::scan({"custom_zones", "output"});
             if (zones.empty()) {
