@@ -490,6 +490,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
     std::printf("  --info <wom-base> [--json]\n");
     std::printf("                         Print WOM file metadata (version, counts) and exit\n");
+    std::printf("  --info-batches <wom-base> [--json]\n");
+    std::printf("                         Per-batch breakdown of a WOM3 (index range, texture, blend mode, flags)\n");
     std::printf("  --info-wob <wob-base> [--json]\n");
     std::printf("                         Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path> [--json]\n");
@@ -552,7 +554,7 @@ int main(int argc, char* argv[]) {
     // Detect non-GUI options that are missing their argument and bail out
     // with a helpful message instead of silently dropping into the GUI.
     static const char* kArgRequired[] = {
-        "--data", "--info", "--info-wob", "--info-woc", "--info-wot",
+        "--data", "--info", "--info-batches", "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--list-missing-sidecars",
         "--info-png", "--info-jsondbc", "--info-blp",
@@ -727,6 +729,94 @@ int main(int argc, char* argv[]) {
             std::printf("  animations : %zu\n", wom.animations.size());
             std::printf("  batches    : %zu\n", wom.batches.size());
             std::printf("  boundRadius: %.2f\n", wom.boundRadius);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-batches") == 0 && i + 1 < argc) {
+            // Per-batch breakdown of a WOM3 (multi-material) model.
+            // --info shows the total batch count; this drills into each
+            // one's index range, texture, blend mode, and flags. Useful
+            // for debugging 'why is this submesh transparent?' or
+            // 'which batch has the bad UV?'.
+            std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                std::fprintf(stderr, "WOM not found: %s.wom\n", base.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            // Blend modes per WoweeModel::Batch comment:
+            //   0=opaque, 1=alpha-test, 2=alpha, 3=add
+            auto blendName = [](uint16_t b) {
+                switch (b) {
+                    case 0: return "opaque";
+                    case 1: return "alpha-test";
+                    case 2: return "alpha";
+                    case 3: return "add";
+                }
+                return "?";
+            };
+            // Flags bits:
+            //   bit 0 (0x01) = unlit
+            //   bit 1 (0x02) = two-sided
+            //   bit 2 (0x04) = no z-write
+            auto flagsStr = [](uint16_t f) {
+                std::string s;
+                if (f & 0x01) s += "unlit ";
+                if (f & 0x02) s += "two-sided ";
+                if (f & 0x04) s += "no-zwrite ";
+                if (s.empty()) s = "-";
+                else s.pop_back();  // drop trailing space
+                return s;
+            };
+            if (jsonOut) {
+                nlohmann::json j;
+                j["wom"] = base + ".wom";
+                j["version"] = wom.version;
+                j["totalBatches"] = wom.batches.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (size_t k = 0; k < wom.batches.size(); ++k) {
+                    const auto& b = wom.batches[k];
+                    std::string tex = (b.textureIndex < wom.texturePaths.size())
+                                       ? wom.texturePaths[b.textureIndex]
+                                       : std::string("<oob>");
+                    arr.push_back({
+                        {"index", k},
+                        {"indexStart", b.indexStart},
+                        {"indexCount", b.indexCount},
+                        {"triangles", b.indexCount / 3},
+                        {"textureIndex", b.textureIndex},
+                        {"texturePath", tex},
+                        {"blendMode", b.blendMode},
+                        {"blendName", blendName(b.blendMode)},
+                        {"flags", b.flags},
+                        {"flagsStr", flagsStr(b.flags)},
+                    });
+                }
+                j["batches"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("WOM batches: %s.wom (v%u, %zu batches)\n",
+                        base.c_str(), wom.version, wom.batches.size());
+            if (wom.batches.empty()) {
+                std::printf("  *no batches (WOM1/WOM2 single-material model)*\n");
+                return 0;
+            }
+            std::printf("  idx  iStart  iCount  tris   blend       flags          texture\n");
+            for (size_t k = 0; k < wom.batches.size(); ++k) {
+                const auto& b = wom.batches[k];
+                std::string tex = (b.textureIndex < wom.texturePaths.size())
+                                   ? wom.texturePaths[b.textureIndex]
+                                   : std::string("<oob>");
+                std::printf("  %3zu  %6u  %6u  %5u  %-10s  %-13s  %s\n",
+                            k, b.indexStart, b.indexCount, b.indexCount / 3,
+                            blendName(b.blendMode),
+                            flagsStr(b.flags).c_str(),
+                            tex.c_str());
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--info-wob") == 0 && i + 1 < argc) {
             std::string base = argv[++i];
