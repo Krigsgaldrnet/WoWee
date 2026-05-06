@@ -32,6 +32,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --list-zones           List discovered custom zones and exit\n");
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
+    std::printf("  --regen-collision <zoneDir>  Rebuild every WOC under a zone dir and exit\n");
     std::printf("  --export-png <wot-base> Render heightmap, normal-map, and zone-map PNG previews\n");
     std::printf("  --validate <zoneDir>   Score zone open-format completeness and exit\n");
     std::printf("  --zone-summary <zoneDir>  One-shot validate + creature/object/quest counts and exit\n");
@@ -64,7 +65,7 @@ int main(int argc, char* argv[]) {
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-wcp", "--list-wcp", "--unpack-wcp", "--pack-wcp",
         "--validate", "--zone-summary",
-        "--scaffold-zone", "--build-woc", "--export-png",
+        "--scaffold-zone", "--build-woc", "--regen-collision", "--export-png",
         "--convert-m2", "--convert-wmo",
     };
     for (int i = 1; i < argc; i++) {
@@ -510,6 +511,42 @@ int main(int argc, char* argv[]) {
             wowee::editor::WoweeTerrain::exportZoneMap(terrain, base + "_zone.png", 512);
             std::printf("Exported PNGs: %s_{heightmap,normals,zone}.png\n", base.c_str());
             return 0;
+        } else if (std::strcmp(argv[i], "--regen-collision") == 0 && i + 1 < argc) {
+            // Find all WHM/WOT pairs under a zone dir and rebuild WOC for each.
+            // Useful after sculpting changes when you want to re-derive
+            // collision in batch instead of one tile at a time.
+            std::string zoneDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr, "regen-collision: %s does not exist\n",
+                             zoneDir.c_str());
+                return 1;
+            }
+            int rebuilt = 0, failed = 0;
+            for (auto& entry : fs::recursive_directory_iterator(zoneDir)) {
+                if (!entry.is_regular_file()) continue;
+                if (entry.path().extension() != ".whm") continue;
+                std::string base = entry.path().string();
+                base = base.substr(0, base.size() - 4); // strip .whm
+                wowee::pipeline::ADTTerrain terrain;
+                if (!wowee::pipeline::WoweeTerrainLoader::load(base, terrain)) {
+                    std::fprintf(stderr, "  FAILED to load: %s\n", base.c_str());
+                    failed++;
+                    continue;
+                }
+                auto col = wowee::pipeline::WoweeCollisionBuilder::fromTerrain(terrain);
+                std::string outPath = base + ".woc";
+                if (wowee::pipeline::WoweeCollisionBuilder::save(col, outPath)) {
+                    std::printf("  WOC rebuilt: %s (%zu triangles)\n",
+                                outPath.c_str(), col.triangles.size());
+                    rebuilt++;
+                } else {
+                    std::fprintf(stderr, "  FAILED to save: %s\n", outPath.c_str());
+                    failed++;
+                }
+            }
+            std::printf("regen-collision: %d rebuilt, %d failed\n", rebuilt, failed);
+            return failed > 0 ? 1 : 0;
         } else if (std::strcmp(argv[i], "--build-woc") == 0 && i + 1 < argc) {
             // Generate a WOC collision mesh from a WHM/WOT terrain pair.
             // Uses terrain triangles only (no WMO overlays); useful as a
