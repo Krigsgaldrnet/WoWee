@@ -403,6 +403,10 @@ static void printUsage(const char* argv0) {
     std::printf("  --adt <map> <x> <y>    Load an ADT tile on startup\n");
     std::printf("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)\n");
     std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
+    std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
+    std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
+    std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
+    std::printf("                         Convert a wowee JSON DBC back to binary DBC for private-server compat\n");
     std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
     std::printf("  --add-creature <zoneDir> <name> <x> <y> <z> [displayId] [level]\n");
@@ -527,6 +531,7 @@ int main(int argc, char* argv[]) {
         "--export-wob-obj", "--import-wob-obj",
         "--export-woc-obj", "--export-whm-obj",
         "--convert-m2", "--convert-wmo",
+        "--convert-dbc-json", "--convert-json-dbc",
     };
     for (int i = 1; i < argc; i++) {
         for (const char* opt : kArgRequired) {
@@ -3986,6 +3991,210 @@ int main(int argc, char* argv[]) {
             } else {
                 std::fprintf(stderr, "FAILED: cannot initialize asset manager\n");
                 return 1;
+            }
+            return 0;
+        }
+        if (std::strcmp(argv[i], "--convert-dbc-json") == 0 && i + 1 < argc) {
+            // Standalone DBC -> JSON sidecar conversion. Mirrors what
+            // asset_extract --emit-open does for one file at a time, so
+            // designers don't have to re-run a full extraction just to
+            // refresh one DBC sidecar.
+            std::string dbcPath = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                outPath = argv[++i];
+            }
+            if (outPath.empty()) {
+                outPath = dbcPath;
+                if (outPath.size() >= 4 &&
+                    outPath.substr(outPath.size() - 4) == ".dbc") {
+                    outPath = outPath.substr(0, outPath.size() - 4);
+                }
+                outPath += ".json";
+            }
+            std::ifstream in(dbcPath, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr, "convert-dbc-json: cannot open %s\n", dbcPath.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            wowee::pipeline::DBCFile dbc;
+            if (!dbc.load(bytes)) {
+                std::fprintf(stderr, "convert-dbc-json: failed to parse %s\n", dbcPath.c_str());
+                return 1;
+            }
+            // Same JSON schema asset_extract emits, so the editor's runtime
+            // overlay loader picks the file up without changes.
+            nlohmann::json j;
+            j["format"] = "wowee-dbc-json-1.0";
+            j["source"] = std::filesystem::path(dbcPath).filename().string();
+            j["recordCount"] = dbc.getRecordCount();
+            j["fieldCount"] = dbc.getFieldCount();
+            nlohmann::json records = nlohmann::json::array();
+            for (uint32_t r = 0; r < dbc.getRecordCount(); ++r) {
+                nlohmann::json row = nlohmann::json::array();
+                for (uint32_t f = 0; f < dbc.getFieldCount(); ++f) {
+                    // Same heuristic as open_format_emitter::emitJsonFromDbc:
+                    // prefer string > float > uint32 based on what the
+                    // bytes plausibly are. Round-trips through loadJSON.
+                    uint32_t val = dbc.getUInt32(r, f);
+                    std::string s = dbc.getString(r, f);
+                    if (!s.empty() && s[0] != '\0' && s.size() < 200) {
+                        row.push_back(s);
+                    } else {
+                        float fv = dbc.getFloat(r, f);
+                        if (val != 0 && fv != 0.0f && fv > -1e10f && fv < 1e10f &&
+                            static_cast<uint32_t>(fv) != val) {
+                            row.push_back(fv);
+                        } else {
+                            row.push_back(val);
+                        }
+                    }
+                }
+                records.push_back(std::move(row));
+            }
+            j["records"] = std::move(records);
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr, "convert-dbc-json: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            out << j.dump(2) << "\n";
+            std::printf("Converted %s -> %s\n", dbcPath.c_str(), outPath.c_str());
+            std::printf("  %u records x %u fields\n",
+                        dbc.getRecordCount(), dbc.getFieldCount());
+            return 0;
+        }
+        if (std::strcmp(argv[i], "--convert-json-dbc") == 0 && i + 1 < argc) {
+            // Reverse direction — JSON sidecar back to binary DBC. Useful
+            // for shipping edited content to private servers (AzerothCore /
+            // TrinityCore) which only consume binary DBC. The output is
+            // byte-compatible with the original Blizzard format.
+            std::string jsonPath = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                outPath = argv[++i];
+            }
+            if (outPath.empty()) {
+                outPath = jsonPath;
+                if (outPath.size() >= 5 &&
+                    outPath.substr(outPath.size() - 5) == ".json") {
+                    outPath = outPath.substr(0, outPath.size() - 5);
+                }
+                outPath += ".dbc";
+            }
+            std::ifstream in(jsonPath);
+            if (!in) {
+                std::fprintf(stderr, "convert-json-dbc: cannot open %s\n", jsonPath.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try { in >> doc; }
+            catch (const std::exception& e) {
+                std::fprintf(stderr, "convert-json-dbc: bad JSON in %s (%s)\n",
+                             jsonPath.c_str(), e.what());
+                return 1;
+            }
+            uint32_t fieldCount = doc.value("fieldCount", 0u);
+            if (!doc.contains("records") || !doc["records"].is_array()) {
+                std::fprintf(stderr, "convert-json-dbc: missing 'records' array in %s\n",
+                             jsonPath.c_str());
+                return 1;
+            }
+            const auto& records = doc["records"];
+            uint32_t recordCount = static_cast<uint32_t>(records.size());
+            if (fieldCount == 0 && recordCount > 0 && records[0].is_array()) {
+                // Tolerate JSON files that drop fieldCount — derive from row.
+                fieldCount = static_cast<uint32_t>(records[0].size());
+            }
+            if (fieldCount == 0) {
+                std::fprintf(stderr,
+                    "convert-json-dbc: cannot determine fieldCount in %s\n",
+                    jsonPath.c_str());
+                return 1;
+            }
+            uint32_t recordSize = fieldCount * 4;
+            // Build records + string block. Strings are deduped: identical
+            // strings reuse the same offset in the block. The first byte
+            // of the block is always '\0' so offset=0 means empty string,
+            // matching Blizzard's convention.
+            std::vector<uint8_t> recordBytes(recordCount * recordSize, 0);
+            std::vector<uint8_t> stringBlock;
+            stringBlock.push_back(0);  // leading NUL — empty-string offset
+            std::unordered_map<std::string, uint32_t> stringOffsets;
+            stringOffsets[""] = 0;
+            auto internString = [&](const std::string& s) -> uint32_t {
+                if (s.empty()) return 0;
+                auto it = stringOffsets.find(s);
+                if (it != stringOffsets.end()) return it->second;
+                uint32_t off = static_cast<uint32_t>(stringBlock.size());
+                for (char c : s) stringBlock.push_back(static_cast<uint8_t>(c));
+                stringBlock.push_back(0);
+                stringOffsets[s] = off;
+                return off;
+            };
+            int convertErrors = 0;
+            for (uint32_t r = 0; r < recordCount; ++r) {
+                const auto& row = records[r];
+                if (!row.is_array() || row.size() != fieldCount) {
+                    convertErrors++;
+                    continue;
+                }
+                uint8_t* dst = recordBytes.data() + r * recordSize;
+                for (uint32_t f = 0; f < fieldCount; ++f) {
+                    uint32_t val = 0;
+                    const auto& cell = row[f];
+                    if (cell.is_string()) {
+                        val = internString(cell.get<std::string>());
+                    } else if (cell.is_number_float()) {
+                        float fv = cell.get<float>();
+                        std::memcpy(&val, &fv, 4);
+                    } else if (cell.is_number_unsigned()) {
+                        val = cell.get<uint32_t>();
+                    } else if (cell.is_number_integer()) {
+                        // Negative ints reinterpret as uint32 (DBC has no
+                        // separate signed type; the consumer interprets).
+                        int32_t sv = cell.get<int32_t>();
+                        std::memcpy(&val, &sv, 4);
+                    } else if (cell.is_boolean()) {
+                        val = cell.get<bool>() ? 1u : 0u;
+                    } else if (cell.is_null()) {
+                        val = 0;
+                    } else {
+                        convertErrors++;
+                    }
+                    // Little-endian write — DBC is always LE per Blizzard
+                    // format spec, regardless of host architecture.
+                    dst[f * 4 + 0] =  val        & 0xFF;
+                    dst[f * 4 + 1] = (val >>  8) & 0xFF;
+                    dst[f * 4 + 2] = (val >> 16) & 0xFF;
+                    dst[f * 4 + 3] = (val >> 24) & 0xFF;
+                }
+            }
+            // Header: WDBC magic + 4 uint32s (recordCount, fieldCount,
+            // recordSize, stringBlockSize).
+            std::ofstream out(outPath, std::ios::binary);
+            if (!out) {
+                std::fprintf(stderr, "convert-json-dbc: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            uint32_t header[5] = {
+                0x43424457u,                       // 'WDBC' little-endian
+                recordCount, fieldCount, recordSize,
+                static_cast<uint32_t>(stringBlock.size())
+            };
+            out.write(reinterpret_cast<const char*>(header), sizeof(header));
+            out.write(reinterpret_cast<const char*>(recordBytes.data()),
+                      recordBytes.size());
+            out.write(reinterpret_cast<const char*>(stringBlock.data()),
+                      stringBlock.size());
+            out.close();
+            std::printf("Converted %s -> %s\n", jsonPath.c_str(), outPath.c_str());
+            std::printf("  %u records x %u fields, %zu-byte string block\n",
+                        recordCount, fieldCount, stringBlock.size());
+            if (convertErrors > 0) {
+                std::printf("  warning: %d cell(s) had unrecognized types\n", convertErrors);
             }
             return 0;
         }
