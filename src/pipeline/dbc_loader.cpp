@@ -398,9 +398,22 @@ bool DBCFile::loadJSON(const std::vector<uint8_t>& jsonData) {
             fieldCount = static_cast<uint32_t>(records[0].size());
         }
         if (fieldCount == 0) return false;
+        // Sanity caps. Real DBCs cap at ~250 fields and a few million
+        // records (Spell.dbc is the biggest at ~50K rows). Multi-million
+        // products would OOM the recordData allocation below.
+        if (fieldCount > 1024) {
+            LOG_ERROR("JSON DBC: fieldCount ", fieldCount, " too large");
+            return false;
+        }
 
         recordSize = fieldCount * 4;
         recordCount = static_cast<uint32_t>(records.size());
+        if (recordCount > 5'000'000 ||
+            static_cast<uint64_t>(recordCount) * recordSize > (256ull << 20)) {
+            LOG_ERROR("JSON DBC: recordCount ", recordCount, " * recordSize ",
+                      recordSize, " exceeds 256MB cap");
+            return false;
+        }
 
         stringBlock.clear();
         stringBlock.push_back(0);
