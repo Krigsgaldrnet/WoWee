@@ -350,6 +350,9 @@ void ObjectPlacer::syncToTerrain() {
             // Editor stores positions in render/world coords; ADT files use
             // ADT-space placement coords. Convert back so re-loading the saved
             // ADT yields identical world positions.
+            // Inverse of the load-time transform:
+            //   load: obj.rot = (-dp.rot[2], -dp.rot[0], dp.rot[1] + 180)
+            //   save: dp.rot  = (-obj.rot.y, obj.rot.z - 180, -obj.rot.x)
             glm::vec3 adtPos = core::coords::worldToAdt(obj.position);
             pipeline::ADTTerrain::DoodadPlacement dp{};
             dp.nameId = nameId;
@@ -357,9 +360,9 @@ void ObjectPlacer::syncToTerrain() {
             dp.position[0] = adtPos.x;
             dp.position[1] = adtPos.y;
             dp.position[2] = adtPos.z;
-            dp.rotation[0] = obj.rotation.x;
-            dp.rotation[1] = obj.rotation.y;
-            dp.rotation[2] = obj.rotation.z;
+            dp.rotation[0] = -obj.rotation.y;
+            dp.rotation[1] = obj.rotation.z - 180.0f;
+            dp.rotation[2] = -obj.rotation.x;
             dp.scale = static_cast<uint16_t>(obj.scale * 1024.0f);
             dp.flags = 0;
             terrain_->doodadPlacements.push_back(dp);
@@ -380,9 +383,9 @@ void ObjectPlacer::syncToTerrain() {
             wp.position[0] = adtPos.x;
             wp.position[1] = adtPos.y;
             wp.position[2] = adtPos.z;
-            wp.rotation[0] = obj.rotation.x;
-            wp.rotation[1] = obj.rotation.y;
-            wp.rotation[2] = obj.rotation.z;
+            wp.rotation[0] = -obj.rotation.y;
+            wp.rotation[1] = obj.rotation.z - 180.0f;
+            wp.rotation[2] = -obj.rotation.x;
             wp.flags = 0;
             wp.doodadSet = 0;
             terrain_->wmoPlacements.push_back(wp);
