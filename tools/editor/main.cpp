@@ -15,6 +15,7 @@
 #include "pipeline/wowee_collision.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
+#include "pipeline/m2_loader.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/custom_zone_discovery.hpp"
 #include "core/logger.hpp"
@@ -486,6 +487,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print PNG header (width, height, channels, bit depth) and exit\n");
     std::printf("  --info-blp <path> [--json]\n");
     std::printf("                         Print BLP texture header (format, compression, mips, dimensions) and exit\n");
+    std::printf("  --info-m2 <path> [--json]\n");
+    std::printf("                         Print proprietary M2 model metadata (verts, bones, anims, particles)\n");
+    std::printf("  --info-wmo <path> [--json]\n");
+    std::printf("                         Print proprietary WMO building metadata (groups, portals, doodads)\n");
     std::printf("  --info-jsondbc <path> [--json]\n");
     std::printf("                         Print JSON DBC sidecar metadata (records, fields, source) and exit\n");
     std::printf("  --list-missing-sidecars <dir> [--json]\n");
@@ -534,6 +539,7 @@ int main(int argc, char* argv[]) {
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--list-missing-sidecars",
         "--info-png", "--info-jsondbc", "--info-blp",
+        "--info-m2", "--info-wmo",
         "--info-zone", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
         "--list-quest-objectives", "--list-quest-rewards",
@@ -1166,6 +1172,176 @@ int main(int argc, char* argv[]) {
             std::printf("  mip levels : %d\n", img.mipLevels);
             std::printf("  file bytes : %llu\n", static_cast<unsigned long long>(fsz));
             std::printf("  decoded RGBA bytes: %zu\n", img.data.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-m2") == 0 && i + 1 < argc) {
+            // Inspect a proprietary M2 model. Pairs with --info to inspect
+            // the WOM equivalent, so users can see what was preserved/lost
+            // by the M2 -> WOM conversion (e.g. M2 has particles + ribbons,
+            // WOM doesn't yet).
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr, "info-m2: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            // Auto-merge matching <base>00.skin if present (WotLK+ models
+            // store geometry there) so vertex/index counts match what
+            // gets rendered.
+            std::vector<uint8_t> skinBytes;
+            {
+                std::string skinPath = path;
+                auto dot = skinPath.rfind('.');
+                if (dot != std::string::npos)
+                    skinPath = skinPath.substr(0, dot) + "00.skin";
+                std::ifstream sf(skinPath, std::ios::binary);
+                if (sf) {
+                    skinBytes.assign((std::istreambuf_iterator<char>(sf)),
+                                      std::istreambuf_iterator<char>());
+                }
+            }
+            auto m2 = wowee::pipeline::M2Loader::load(bytes);
+            if (!skinBytes.empty()) {
+                wowee::pipeline::M2Loader::loadSkin(skinBytes, m2);
+            }
+            if (!m2.isValid()) {
+                std::fprintf(stderr, "info-m2: failed to parse %s\n", path.c_str());
+                return 1;
+            }
+            std::error_code ec;
+            uint64_t fsz = std::filesystem::file_size(path, ec);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["m2"] = path;
+                j["name"] = m2.name;
+                j["version"] = m2.version;
+                j["fileSize"] = fsz;
+                j["skinFound"] = !skinBytes.empty();
+                j["vertices"] = m2.vertices.size();
+                j["indices"] = m2.indices.size();
+                j["triangles"] = m2.indices.size() / 3;
+                j["bones"] = m2.bones.size();
+                j["sequences"] = m2.sequences.size();
+                j["batches"] = m2.batches.size();
+                j["textures"] = m2.textures.size();
+                j["materials"] = m2.materials.size();
+                j["attachments"] = m2.attachments.size();
+                j["particles"] = m2.particleEmitters.size();
+                j["ribbons"] = m2.ribbonEmitters.size();
+                j["collisionTris"] = m2.collisionIndices.size() / 3;
+                j["boundRadius"] = m2.boundRadius;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("M2: %s\n", path.c_str());
+            std::printf("  name        : %s\n", m2.name.c_str());
+            std::printf("  version     : %u\n", m2.version);
+            std::printf("  file bytes  : %llu\n", static_cast<unsigned long long>(fsz));
+            std::printf("  skin file   : %s\n", skinBytes.empty() ? "not found" : "loaded");
+            std::printf("  vertices    : %zu\n", m2.vertices.size());
+            std::printf("  triangles   : %zu (%zu indices)\n",
+                        m2.indices.size() / 3, m2.indices.size());
+            std::printf("  bones       : %zu\n", m2.bones.size());
+            std::printf("  sequences   : %zu (animations)\n", m2.sequences.size());
+            std::printf("  batches     : %zu\n", m2.batches.size());
+            std::printf("  textures    : %zu\n", m2.textures.size());
+            std::printf("  materials   : %zu\n", m2.materials.size());
+            std::printf("  attachments : %zu\n", m2.attachments.size());
+            std::printf("  particles   : %zu\n", m2.particleEmitters.size());
+            std::printf("  ribbons     : %zu\n", m2.ribbonEmitters.size());
+            std::printf("  collision   : %zu tris\n", m2.collisionIndices.size() / 3);
+            std::printf("  boundRadius : %.2f\n", m2.boundRadius);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-wmo") == 0 && i + 1 < argc) {
+            // Inspect a proprietary WMO building. Like --info-m2 this
+            // pairs with --info-wob (the open WOB equivalent inspector)
+            // so users can verify the conversion preserves group counts,
+            // portal counts, and doodad references.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr, "info-wmo: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            auto wmo = wowee::pipeline::WMOLoader::load(bytes);
+            // Try to locate group files (Foo_NNN.wmo) sitting next to the
+            // root file and merge their geometry. Without this the
+            // group/vertex counts would all be 0 since the root file only
+            // has metadata.
+            namespace fs = std::filesystem;
+            std::string base = path;
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wmo")
+                base = base.substr(0, base.size() - 4);
+            // Pre-allocate the groups array — loadGroup writes into
+            // model.groups[gi] and bails if the slot doesn't exist.
+            if (wmo.groups.size() < wmo.nGroups) wmo.groups.resize(wmo.nGroups);
+            int groupsLoaded = 0;
+            for (uint32_t gi = 0; gi < wmo.nGroups; ++gi) {
+                // "_000.wmo" is 8 chars + NUL = 9 bytes; previous 8-byte
+                // buffer was truncating to "_000.wm" and silently failing
+                // every lookup.
+                char buf[16];
+                std::snprintf(buf, sizeof(buf), "_%03u.wmo", gi);
+                std::string gp = base + buf;
+                std::ifstream gf(gp, std::ios::binary);
+                if (!gf) continue;
+                std::vector<uint8_t> gd((std::istreambuf_iterator<char>(gf)),
+                                         std::istreambuf_iterator<char>());
+                if (wowee::pipeline::WMOLoader::loadGroup(gd, wmo, gi)) groupsLoaded++;
+            }
+            if (!wmo.isValid()) {
+                std::fprintf(stderr, "info-wmo: failed to parse %s\n", path.c_str());
+                return 1;
+            }
+            // Total vertex/index counts across loaded groups — this is the
+            // useful number for sizing comparisons against WOB.
+            size_t totalV = 0, totalI = 0;
+            for (const auto& g : wmo.groups) {
+                totalV += g.vertices.size();
+                totalI += g.indices.size();
+            }
+            std::error_code ec;
+            uint64_t fsz = fs::file_size(path, ec);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["wmo"] = path;
+                j["version"] = wmo.version;
+                j["fileSize"] = fsz;
+                j["groups"] = wmo.nGroups;
+                j["groupsLoaded"] = groupsLoaded;
+                j["portals"] = wmo.nPortals;
+                j["lights"] = wmo.nLights;
+                j["doodadDefs"] = wmo.doodads.size();
+                j["doodadSets"] = wmo.doodadSets.size();
+                j["materials"] = wmo.materials.size();
+                j["textures"] = wmo.textures.size();
+                j["totalVerts"] = totalV;
+                j["totalTris"] = totalI / 3;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("WMO: %s\n", path.c_str());
+            std::printf("  version       : %u\n", wmo.version);
+            std::printf("  file bytes    : %llu\n", static_cast<unsigned long long>(fsz));
+            std::printf("  groups        : %u (%d loaded from group files)\n",
+                        wmo.nGroups, groupsLoaded);
+            std::printf("  portals       : %u\n", wmo.nPortals);
+            std::printf("  lights        : %u\n", wmo.nLights);
+            std::printf("  doodad defs   : %zu (%zu sets)\n",
+                        wmo.doodads.size(), wmo.doodadSets.size());
+            std::printf("  materials     : %zu\n", wmo.materials.size());
+            std::printf("  textures      : %zu\n", wmo.textures.size());
+            std::printf("  total verts   : %zu\n", totalV);
+            std::printf("  total tris    : %zu\n", totalI / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--info-jsondbc") == 0 && i + 1 < argc) {
             // Inspect a JSON DBC sidecar (the JSON output of asset_extract
