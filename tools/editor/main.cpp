@@ -16,6 +16,7 @@
 #include "pipeline/wowee_terrain_loader.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "pipeline/m2_loader.hpp"
+#include "pipeline/adt_loader.hpp"
 #include "pipeline/asset_manager.hpp"
 #include "pipeline/custom_zone_discovery.hpp"
 #include "core/logger.hpp"
@@ -493,6 +494,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print proprietary M2 model metadata (verts, bones, anims, particles)\n");
     std::printf("  --info-wmo <path> [--json]\n");
     std::printf("                         Print proprietary WMO building metadata (groups, portals, doodads)\n");
+    std::printf("  --info-adt <path> [--json]\n");
+    std::printf("                         Print proprietary ADT terrain metadata (chunks, placements, textures)\n");
     std::printf("  --info-jsondbc <path> [--json]\n");
     std::printf("                         Print JSON DBC sidecar metadata (records, fields, source) and exit\n");
     std::printf("  --list-missing-sidecars <dir> [--json]\n");
@@ -541,7 +544,7 @@ int main(int argc, char* argv[]) {
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--list-missing-sidecars",
         "--info-png", "--info-jsondbc", "--info-blp",
-        "--info-m2", "--info-wmo",
+        "--info-m2", "--info-wmo", "--info-adt",
         "--info-zone", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
         "--list-quest-objectives", "--list-quest-rewards",
@@ -1349,6 +1352,81 @@ int main(int argc, char* argv[]) {
             std::printf("  textures      : %zu\n", wmo.textures.size());
             std::printf("  total verts   : %zu\n", totalV);
             std::printf("  total tris    : %zu\n", totalI / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-adt") == 0 && i + 1 < argc) {
+            // Inspect a proprietary ADT terrain tile. Pairs with
+            // --info-wot/--info-whm (open WOT/WHM equivalents) so users
+            // can verify the conversion preserves chunk/doodad/wmo counts.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr, "info-adt: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            auto terrain = wowee::pipeline::ADTLoader::load(bytes);
+            if (!terrain.isLoaded()) {
+                std::fprintf(stderr, "info-adt: failed to parse %s\n", path.c_str());
+                return 1;
+            }
+            // Walk chunks and tally height range + loaded count + water/holes.
+            int loadedChunks = 0, holeChunks = 0, waterChunks = 0;
+            float minH = 1e30f, maxH = -1e30f;
+            for (size_t c = 0; c < 256; ++c) {
+                const auto& chunk = terrain.chunks[c];
+                if (!chunk.heightMap.isLoaded()) continue;
+                loadedChunks++;
+                if (chunk.holes != 0) holeChunks++;
+                if (terrain.waterData[c].hasWater()) waterChunks++;
+                for (float h : chunk.heightMap.heights) {
+                    if (std::isfinite(h)) {
+                        if (h < minH) minH = h;
+                        if (h > maxH) maxH = h;
+                    }
+                }
+            }
+            std::error_code ec;
+            uint64_t fsz = std::filesystem::file_size(path, ec);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["adt"] = path;
+                j["version"] = terrain.version;
+                j["fileSize"] = fsz;
+                j["coord"] = {terrain.coord.x, terrain.coord.y};
+                j["loadedChunks"] = loadedChunks;
+                j["holeChunks"] = holeChunks;
+                j["waterChunks"] = waterChunks;
+                j["heightMin"] = (loadedChunks > 0) ? minH : 0.0f;
+                j["heightMax"] = (loadedChunks > 0) ? maxH : 0.0f;
+                j["textures"] = terrain.textures.size();
+                j["doodadNames"] = terrain.doodadNames.size();
+                j["wmoNames"] = terrain.wmoNames.size();
+                j["doodadPlacements"] = terrain.doodadPlacements.size();
+                j["wmoPlacements"] = terrain.wmoPlacements.size();
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("ADT: %s\n", path.c_str());
+            std::printf("  version          : %u\n", terrain.version);
+            std::printf("  file bytes       : %llu\n", static_cast<unsigned long long>(fsz));
+            std::printf("  coord            : (%d, %d)\n", terrain.coord.x, terrain.coord.y);
+            std::printf("  chunks loaded    : %d/256\n", loadedChunks);
+            if (loadedChunks > 0) {
+                std::printf("  height range     : [%.2f, %.2f]\n", minH, maxH);
+            }
+            std::printf("  hole chunks      : %d (with cave/gap masks)\n", holeChunks);
+            std::printf("  water chunks     : %d\n", waterChunks);
+            std::printf("  textures         : %zu\n", terrain.textures.size());
+            std::printf("  doodad names     : %zu (%zu placements)\n",
+                        terrain.doodadNames.size(),
+                        terrain.doodadPlacements.size());
+            std::printf("  wmo names        : %zu (%zu placements)\n",
+                        terrain.wmoNames.size(),
+                        terrain.wmoPlacements.size());
             return 0;
         } else if (std::strcmp(argv[i], "--info-jsondbc") == 0 && i + 1 < argc) {
             // Inspect a JSON DBC sidecar (the JSON output of asset_extract
