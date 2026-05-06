@@ -200,14 +200,19 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
     f.write(reinterpret_cast<const char*>(&dc), 4);
     f.write(reinterpret_cast<const char*>(&bld.boundRadius), 4);
 
-    uint16_t nl = static_cast<uint16_t>(bld.name.size());
-    f.write(reinterpret_cast<const char*>(&nl), 2);
-    f.write(bld.name.data(), nl);
+    // Truncate length-prefixed strings to fit their u16 length field — without
+    // this, names over 65535 chars would silently get a wrap-around length and
+    // produce a corrupt file (the string text would be longer than the saved
+    // length and shift everything after it).
+    auto writeStr = [&](const std::string& s, size_t maxLen = 1024) {
+        uint16_t len = static_cast<uint16_t>(std::min<size_t>(s.size(), maxLen));
+        f.write(reinterpret_cast<const char*>(&len), 2);
+        f.write(s.data(), len);
+    };
+    writeStr(bld.name);
 
     for (const auto& grp : bld.groups) {
-        uint16_t gnl = static_cast<uint16_t>(grp.name.size());
-        f.write(reinterpret_cast<const char*>(&gnl), 2);
-        f.write(grp.name.data(), gnl);
+        writeStr(grp.name);
 
         uint32_t vc = static_cast<uint32_t>(grp.vertices.size());
         uint32_t ic = static_cast<uint32_t>(grp.indices.size());
@@ -224,19 +229,13 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
                 vc * sizeof(WoweeBuilding::Vertex));
         f.write(reinterpret_cast<const char*>(grp.indices.data()), ic * 4);
 
-        for (const auto& tp : grp.texturePaths) {
-            uint16_t tl = static_cast<uint16_t>(tp.size());
-            f.write(reinterpret_cast<const char*>(&tl), 2);
-            f.write(tp.data(), tl);
-        }
+        for (const auto& tp : grp.texturePaths) writeStr(tp);
 
         // Write material data
         uint32_t mc = static_cast<uint32_t>(grp.materials.size());
         f.write(reinterpret_cast<const char*>(&mc), 4);
         for (const auto& mat : grp.materials) {
-            uint16_t pl = static_cast<uint16_t>(mat.texturePath.size());
-            f.write(reinterpret_cast<const char*>(&pl), 2);
-            f.write(mat.texturePath.data(), pl);
+            writeStr(mat.texturePath);
             f.write(reinterpret_cast<const char*>(&mat.flags), 4);
             f.write(reinterpret_cast<const char*>(&mat.shader), 4);
             f.write(reinterpret_cast<const char*>(&mat.blendMode), 4);
@@ -252,9 +251,7 @@ bool WoweeBuildingLoader::save(const WoweeBuilding& bld, const std::string& base
     }
 
     for (const auto& dp : bld.doodads) {
-        uint16_t pl = static_cast<uint16_t>(dp.modelPath.size());
-        f.write(reinterpret_cast<const char*>(&pl), 2);
-        f.write(dp.modelPath.data(), pl);
+        writeStr(dp.modelPath);
         f.write(reinterpret_cast<const char*>(&dp.position), 12);
         f.write(reinterpret_cast<const char*>(&dp.rotation), 12);
         f.write(reinterpret_cast<const char*>(&dp.scale), 4);
