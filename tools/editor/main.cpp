@@ -487,6 +487,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert WHM heightmap to glTF 2.0 binary terrain mesh (per-chunk primitives)\n");
     std::printf("  --bake-zone-glb <zoneDir> [out.glb]\n");
     std::printf("                         Bake every WHM tile in a zone into one glTF (one node per tile)\n");
+    std::printf("  --bake-zone-stl <zoneDir> [out.stl]\n");
+    std::printf("                         Bake every WHM tile in a zone into one STL for 3D-printing the terrain\n");
     std::printf("  --import-obj <obj-path> [wom-base]\n");
     std::printf("                         Convert a Wavefront OBJ back into WOM (round-trips with --export-obj)\n");
     std::printf("  --export-wob-obj <wob-base> [out.obj]\n");
@@ -639,7 +641,7 @@ int main(int argc, char* argv[]) {
         "--export-wob-obj", "--import-wob-obj",
         "--export-woc-obj", "--export-whm-obj",
         "--export-glb", "--export-wob-glb", "--export-whm-glb",
-        "--export-stl", "--import-stl", "--bake-zone-glb",
+        "--export-stl", "--import-stl", "--bake-zone-glb", "--bake-zone-stl",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
         "--migrate-wom", "--migrate-zone",
@@ -5135,6 +5137,130 @@ int main(int argc, char* argv[]) {
             std::printf("  %d tile(s), %u verts, %u tris, %zu meshes, %u-byte BIN\n",
                         loadedTiles, totalV, totalI / 3,
                         meshes.size(), binLen);
+            return 0;
+        } else if (std::strcmp(argv[i], "--bake-zone-stl") == 0 && i + 1 < argc) {
+            // STL counterpart to --bake-zone-glb. Designers can 3D-print a
+            // miniature of an entire multi-tile zone in one slicer load —
+            // useful for tabletop RPG props or a physical reference of a
+            // playtest area.
+            std::string zoneDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "bake-zone-stl: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "bake-zone-stl: failed to parse zone.json\n");
+                return 1;
+            }
+            if (outPath.empty()) outPath = zoneDir + "/" + zm.mapName + ".stl";
+            if (zm.tiles.empty()) {
+                std::fprintf(stderr, "bake-zone-stl: zone has no tiles\n");
+                return 1;
+            }
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr, "bake-zone-stl: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            constexpr float kTileSize = 533.33333f;
+            constexpr float kChunkSize = kTileSize / 16.0f;
+            constexpr float kVertSpacing = kChunkSize / 8.0f;
+            // Solid name sanitized to alphanum + underscore.
+            std::string solidName = zm.mapName;
+            for (auto& c : solidName) {
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                      (c >= '0' && c <= '9') || c == '_')) c = '_';
+            }
+            if (solidName.empty()) solidName = "wowee_zone";
+            out << "solid " << solidName << "\n";
+            int loadedTiles = 0, holesSkipped = 0;
+            uint64_t triCount = 0;
+            // For each tile, generate the same 9x9 outer-grid mesh and
+            // emit per-triangle facets directly (STL has no shared
+            // vertex pool — each triangle stands alone). Compute face
+            // normal from cross product (slicers use it for orientation).
+            for (const auto& [tx, ty] : zm.tiles) {
+                std::string tileBase = zoneDir + "/" + zm.mapName + "_" +
+                                       std::to_string(tx) + "_" + std::to_string(ty);
+                if (!wowee::pipeline::WoweeTerrainLoader::exists(tileBase)) {
+                    std::fprintf(stderr,
+                        "bake-zone-stl: tile (%d, %d) WHM/WOT missing — skipping\n",
+                        tx, ty);
+                    continue;
+                }
+                wowee::pipeline::ADTTerrain terrain;
+                wowee::pipeline::WoweeTerrainLoader::load(tileBase, terrain);
+                loadedTiles++;
+                for (int cx = 0; cx < 16; ++cx) {
+                    for (int cy = 0; cy < 16; ++cy) {
+                        const auto& chunk = terrain.getChunk(cx, cy);
+                        if (!chunk.heightMap.isLoaded()) continue;
+                        float chunkBaseX = (32.0f - terrain.coord.y) * kTileSize - cy * kChunkSize;
+                        float chunkBaseY = (32.0f - terrain.coord.x) * kTileSize - cx * kChunkSize;
+                        // Pre-compute the 9x9 vertex grid for this chunk.
+                        glm::vec3 V[9][9];
+                        for (int row = 0; row < 9; ++row) {
+                            for (int col = 0; col < 9; ++col) {
+                                V[row][col] = {
+                                    chunkBaseX - row * kVertSpacing,
+                                    chunkBaseY - col * kVertSpacing,
+                                    chunk.position[2] +
+                                        chunk.heightMap.heights[row * 17 + col]
+                                };
+                            }
+                        }
+                        bool isHoleChunk = (chunk.holes != 0);
+                        auto emitTri = [&](const glm::vec3& a,
+                                           const glm::vec3& b,
+                                           const glm::vec3& c) {
+                            glm::vec3 e1 = b - a, e2 = c - a;
+                            glm::vec3 n = glm::cross(e1, e2);
+                            float len = glm::length(n);
+                            if (len > 1e-12f) n /= len;
+                            else n = {0, 0, 1};
+                            out << "  facet normal " << n.x << " " << n.y << " " << n.z << "\n"
+                                << "    outer loop\n"
+                                << "      vertex " << a.x << " " << a.y << " " << a.z << "\n"
+                                << "      vertex " << b.x << " " << b.y << " " << b.z << "\n"
+                                << "      vertex " << c.x << " " << c.y << " " << c.z << "\n"
+                                << "    endloop\n"
+                                << "  endfacet\n";
+                            triCount++;
+                        };
+                        for (int row = 0; row < 8; ++row) {
+                            for (int col = 0; col < 8; ++col) {
+                                if (isHoleChunk) {
+                                    int hx = col / 2, hy = row / 2;
+                                    if (chunk.holes & (1 << (hy * 4 + hx))) {
+                                        holesSkipped++;
+                                        continue;
+                                    }
+                                }
+                                emitTri(V[row][col], V[row][col + 1], V[row + 1][col + 1]);
+                                emitTri(V[row][col], V[row + 1][col + 1], V[row + 1][col]);
+                            }
+                        }
+                    }
+                }
+            }
+            out << "endsolid " << solidName << "\n";
+            out.close();
+            if (loadedTiles == 0) {
+                std::fprintf(stderr, "bake-zone-stl: no tiles loaded\n");
+                std::filesystem::remove(outPath);
+                return 1;
+            }
+            std::printf("Baked %s -> %s\n", zoneDir.c_str(), outPath.c_str());
+            std::printf("  %d tile(s), %llu facets, %d hole quads skipped\n",
+                        loadedTiles, static_cast<unsigned long long>(triCount),
+                        holesSkipped);
             return 0;
         } else if (std::strcmp(argv[i], "--export-wob-obj") == 0 && i + 1 < argc) {
             // WOB is the WMO replacement; like --export-obj for WOM, this
