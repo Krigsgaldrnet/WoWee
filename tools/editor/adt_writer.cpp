@@ -154,11 +154,10 @@ void ADTWriter::writeMODF(std::vector<uint8_t>& buf, const pipeline::ADTTerrain&
         writeFloat(buf, p.extentUpper[2]);
         writeU16(buf, p.flags);
         writeU16(buf, p.doodadSet);
-        // MODF entry is 64 bytes total; we wrote 60, pad with nameSet(0) + scale(1024).
-        // Loader treats entrySize as 64, so missing trailing bytes mis-align the
-        // next entry. scale=1024 = 1.0 in MODF's fixed-point u16 encoding.
-        writeU16(buf, 0);
-        writeU16(buf, 1024);
+        // MODF entry is 64 bytes total; the trailing nameSet + scale slots are
+        // populated when present (WotLK+) and default to (0, 1024) otherwise.
+        writeU16(buf, p.nameSet);
+        writeU16(buf, p.scale != 0 ? p.scale : 1024);
     }
     patchSize(buf, start);
 }

@@ -248,6 +248,13 @@ void ADTLoader::parseMODF(const uint8_t* data, size_t size, ADTTerrain& terrain)
         placement.extentUpper[2] = readFloat(data, offset + 52);
         placement.flags = readUInt16(data, offset + 56);
         placement.doodadSet = readUInt16(data, offset + 58);
+        // WotLK MODF entries include trailing nameSet + scale (4 bytes); older
+        // expansions left them as padding.
+        if (offset + 64 <= size) {
+            placement.nameSet = readUInt16(data, offset + 60);
+            placement.scale = readUInt16(data, offset + 62);
+            if (placement.scale == 0) placement.scale = 1024;
+        }
 
         terrain.wmoPlacements.push_back(placement);
     }
