@@ -537,9 +537,9 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a two-color stripe pattern (default 16px diagonal, 256x256)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
-    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone> [size]\n");
+    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
-    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder|torus|cone> <colorHex|pattern> [size]\n");
+    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> <colorHex|pattern> [size]\n");
     std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
     std::printf("  --gen-mesh-stairs <wom-base> <steps> [stepHeight] [stepDepth] [width]\n");
     std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
@@ -16710,9 +16710,72 @@ int main(int argc, char* argv[]) {
                     wom.indices.push_back(botRingStart + sg + 1);
                     wom.indices.push_back(botRingStart + sg);
                 }
+            } else if (s == "ramp") {
+                // Right-triangular prism: a wedge that climbs along
+                // +X. Footprint is size×size on XY (centered on origin
+                // in X, Y from 0 to size); rises from Z=0 at -X to
+                // Z=size at +X. Useful for ramps onto platforms,
+                // simple roof slopes, cliff faces.
+                //
+                // 6 verts × 5 faces = 18 verts so per-face normals
+                // stay flat: top slope, bottom, back-tall, +Y side,
+                // -Y side. Front-short (X = -size/2) is open since
+                // the ramp meets ground there at zero height.
+                // Actually we still emit 5 faces — the "front" edge
+                // is just where slope and ground meet, no separate
+                // face needed.
+                float xMin = -h, xMax = h;
+                float yMin = 0,  yMax = size;
+                float zMin = 0,  zMax = size;
+                // Faces: top slope (normal = normalize(-1,0,1) since
+                // the slope rises with +X going up, normal points
+                // up-and-back).
+                float slopeLen = std::sqrt(size * size + size * size);
+                float nSlopeX = -size / slopeLen;
+                float nSlopeZ =  size / slopeLen;
+                struct Face { float nx, ny, nz; float verts[4][3]; };
+                Face faces[5] = {
+                    // Top sloped quad: from (xMin, yMin, zMin) up to
+                    // (xMax, yMin/yMax, zMax)
+                    { nSlopeX, 0, nSlopeZ,
+                       {{xMin, yMin, zMin},{xMin, yMax, zMin},
+                        {xMax, yMax, zMax},{xMax, yMin, zMax}}},
+                    // Bottom (-Z normal)
+                    { 0, 0, -1,
+                       {{xMin, yMin, zMin},{xMax, yMin, zMin},
+                        {xMax, yMax, zMin},{xMin, yMax, zMin}}},
+                    // Back-tall vertical wall (+X)
+                    { 1, 0, 0,
+                       {{xMax, yMin, zMin},{xMax, yMin, zMax},
+                        {xMax, yMax, zMax},{xMax, yMax, zMin}}},
+                    // -Y side triangle (degenerate quad — last 2 verts
+                    // collapse to a point — but indexing uniformly is
+                    // simpler than a special tri path)
+                    { 0, -1, 0,
+                       {{xMin, yMin, zMin},{xMax, yMin, zMin},
+                        {xMax, yMin, zMax},{xMax, yMin, zMax}}},
+                    // +Y side triangle (same shape mirrored)
+                    { 0, 1, 0,
+                       {{xMin, yMax, zMin},{xMax, yMax, zMax},
+                        {xMax, yMax, zMin},{xMax, yMax, zMin}}},
+                };
+                float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+                for (auto& f : faces) {
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    for (int k = 0; k < 4; ++k) {
+                        addVertex(f.verts[k][0], f.verts[k][1], f.verts[k][2],
+                                   f.nx, f.ny, f.nz, uvs[k][0], uvs[k][1]);
+                    }
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 1);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 3);
+                }
             } else {
                 std::fprintf(stderr,
-                    "gen-mesh: shape must be cube, plane, sphere, cylinder, torus, or cone (got '%s')\n",
+                    "gen-mesh: shape must be cube, plane, sphere, cylinder, torus, cone, or ramp (got '%s')\n",
                     shape.c_str());
                 return 1;
             }
