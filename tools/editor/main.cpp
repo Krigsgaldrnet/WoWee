@@ -592,6 +592,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Generate a Makefile that rebuilds every derived output for a zone\n");
     std::printf("  --gen-project-makefile <projectDir> [out.mk]\n");
     std::printf("                         Generate a top-level Makefile that delegates to each zone's per-zone Makefile\n");
+    std::printf("  --repair-project <projectDir> [--dry-run]\n");
+    std::printf("                         Run --repair-zone across every zone (manifest drift fixes, per-zone summary)\n");
     std::printf("  --repair-zone <zoneDir> [--dry-run]\n");
     std::printf("                         Auto-fix manifest/disk drift (missing tiles in manifest, hasCreatures flag)\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
@@ -895,7 +897,8 @@ int main(int argc, char* argv[]) {
         "--remove-creature", "--remove-object", "--remove-quest",
         "--copy-zone", "--rename-zone", "--remove-zone",
         "--clear-zone-content", "--strip-zone", "--strip-project",
-        "--repair-zone", "--gen-makefile", "--gen-project-makefile",
+        "--repair-zone", "--repair-project",
+        "--gen-makefile", "--gen-project-makefile",
         "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png", "--export-obj", "--import-obj",
         "--export-wob-obj", "--import-wob-obj",
@@ -13015,6 +13018,54 @@ int main(int argc, char* argv[]) {
                 std::printf("  re-run without --dry-run to apply\n");
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--repair-project") == 0 && i + 1 < argc) {
+            // Project-wide wrapper around --repair-zone. Spawns the
+            // binary per-zone so each zone's full repair report
+            // streams through, then aggregates a final tally. Honors
+            // --dry-run for safe previews.
+            std::string projectDir = argv[++i];
+            bool dryRun = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--dry-run") == 0) {
+                dryRun = true; i++;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "repair-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            std::string self = argv[0];
+            int totalFailed = 0;
+            std::printf("repair-project: %s%s\n",
+                        projectDir.c_str(), dryRun ? " (dry-run)" : "");
+            std::printf("  zones : %zu\n", zones.size());
+            for (const auto& zoneDir : zones) {
+                std::printf("\n--- %s ---\n",
+                            fs::path(zoneDir).filename().string().c_str());
+                // Flush so the section marker lands before the spawned
+                // child's stdout — std::system inherits FDs but each
+                // process has its own buffer.
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --repair-zone \"" +
+                                  zoneDir + "\"" + (dryRun ? " --dry-run" : "");
+                int rc = std::system(cmd.c_str());
+                if (rc != 0) totalFailed++;
+            }
+            std::printf("\n--- summary ---\n");
+            std::printf("  zones processed : %zu\n", zones.size());
+            std::printf("  failures        : %d\n", totalFailed);
+            if (dryRun) {
+                std::printf("  re-run without --dry-run to apply changes\n");
+            }
+            return totalFailed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--gen-makefile") == 0 && i + 1 < argc) {
             // Generate a Makefile that rebuilds every derived output for
             // a zone. With this in place, designers can `make` to refresh
