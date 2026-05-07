@@ -534,6 +534,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
     std::printf("  --remove-item <zoneDir> <index>\n");
     std::printf("                         Remove item at given 0-based index from <zoneDir>/items.json\n");
+    std::printf("  --clone-item <zoneDir> <index> [newName]\n");
+    std::printf("                         Duplicate the item at index, assign next free id (and optional name override)\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -940,6 +942,7 @@ int main(int argc, char* argv[]) {
         "--list-items",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
+        "--clone-item",
         "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest", "--remove-item",
         "--copy-zone", "--rename-zone", "--remove-zone",
@@ -12703,6 +12706,79 @@ int main(int argc, char* argv[]) {
             std::printf("Removed item '%s' (id=%u) from %s (now %zu total)\n",
                         removedName.c_str(), removedId,
                         path.c_str(), items.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--clone-item") == 0 && i + 2 < argc) {
+            // Duplicate the item at given 0-based index. Auto-assigns
+            // the smallest unused positive id; optional <newName>
+            // overrides the cloned name (without it the new entry
+            // gets " (copy)" appended).
+            std::string zoneDir = argv[++i];
+            int idx = -1;
+            try { idx = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "clone-item: index must be an integer\n");
+                return 1;
+            }
+            std::string newName;
+            if (i + 1 < argc && argv[i + 1][0] != '-') newName = argv[++i];
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "clone-item: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "clone-item: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "clone-item: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            auto& items = doc["items"];
+            if (idx < 0 || static_cast<size_t>(idx) >= items.size()) {
+                std::fprintf(stderr,
+                    "clone-item: index %d out of range (have %zu)\n",
+                    idx, items.size());
+                return 1;
+            }
+            // Pick the next free id.
+            std::set<uint32_t> used;
+            for (const auto& it : items) {
+                if (it.contains("id") && it["id"].is_number_unsigned()) {
+                    used.insert(it["id"].get<uint32_t>());
+                }
+            }
+            uint32_t newId = 1;
+            while (used.count(newId)) ++newId;
+            nlohmann::json clone = items[idx];
+            clone["id"] = newId;
+            if (!newName.empty()) {
+                clone["name"] = newName;
+            } else {
+                std::string oldName = clone.value("name", std::string("(unnamed)"));
+                clone["name"] = oldName + " (copy)";
+            }
+            items.push_back(clone);
+            std::ofstream out(path);
+            if (!out) {
+                std::fprintf(stderr,
+                    "clone-item: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            out << doc.dump(2);
+            out.close();
+            std::printf("Cloned item idx %d to '%s' (id=%u) in %s (now %zu total)\n",
+                        idx, clone["name"].get<std::string>().c_str(),
+                        newId, path.c_str(), items.size());
             return 0;
         } else if (std::strcmp(argv[i], "--scaffold-zone") == 0 && i + 1 < argc) {
             // Generate a minimal valid empty zone — useful for kickstarting
