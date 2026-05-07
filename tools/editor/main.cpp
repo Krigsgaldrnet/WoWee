@@ -573,6 +573,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Add random creatures/objects to a zone (seeded for reproducibility)\n");
     std::printf("  --random-populate-items <zoneDir> [--seed N] [--count N] [--max-quality Q]\n");
     std::printf("                         Generate random items.json entries (seeded; quality cap defaults to epic=4)\n");
+    std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
+    std::printf("                         End-to-end: scaffold-zone + random-populate-zone + random-populate-items\n");
     std::printf("  --info-zone-audio <zoneDir> [--json]\n");
     std::printf("                         Print zone audio config (music + ambience tracks, volumes)\n");
     std::printf("  --info-project-audio <projectDir> [--json]\n");
@@ -1037,6 +1039,7 @@ int main(int argc, char* argv[]) {
         "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns",
+        "--gen-random-zone",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13425,6 +13428,109 @@ int main(int argc, char* argv[]) {
             std::printf("  added        : %d\n", added);
             std::printf("  total items  : %zu\n", doc["items"].size());
             std::printf("  max quality  : %d\n", maxQuality);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-random-zone") == 0 && i + 1 < argc) {
+            // End-to-end random zone generator. Composes scaffold-zone
+            // + random-populate-zone + random-populate-items in one
+            // invocation. Useful for "I just want a complete test
+            // zone, don't make me chain three commands."
+            //
+            // Args:
+            //   <name>                   required (becomes the slug)
+            //   [tx ty]                  optional (default 32 32)
+            //   --seed N                 default 42
+            //   --creatures N            default 20
+            //   --objects N              default 10
+            //   --items N                default 25
+            //
+            // Honors --random-populate-zone's hard caps + the existing
+            // scaffold-zone validation. Sub-commands' output streams
+            // through.
+            std::string name = argv[++i];
+            int tx = 32, ty = 32;
+            uint32_t seed = 42;
+            int creatures = 20, objects = 10, items = 25;
+            // Optional positional tx/ty (must be before any --flags).
+            if (i + 2 < argc && argv[i + 1][0] != '-' && argv[i + 2][0] != '-') {
+                try { tx = std::stoi(argv[++i]); ty = std::stoi(argv[++i]); }
+                catch (...) {}
+            }
+            while (i + 2 < argc && argv[i + 1][0] == '-') {
+                std::string flag = argv[++i];
+                if (flag == "--seed")
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+                else if (flag == "--creatures")
+                    try { creatures = std::stoi(argv[++i]); } catch (...) {}
+                else if (flag == "--objects")
+                    try { objects = std::stoi(argv[++i]); } catch (...) {}
+                else if (flag == "--items")
+                    try { items = std::stoi(argv[++i]); } catch (...) {}
+                else {
+                    std::fprintf(stderr,
+                        "gen-random-zone: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            // Slug-clean the name to match scaffold-zone's expectations.
+            std::string slug;
+            for (char c : name) {
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') || c == '_' || c == '-') {
+                    slug += c;
+                } else if (c == ' ') {
+                    slug += '_';
+                }
+            }
+            if (slug.empty()) {
+                std::fprintf(stderr,
+                    "gen-random-zone: name '%s' has no valid characters\n",
+                    name.c_str());
+                return 1;
+            }
+            std::string self = argv[0];
+            namespace fs = std::filesystem;
+            std::string zoneDir = "custom_zones/" + slug;
+            std::printf("gen-random-zone: %s (tile %d, %d)\n",
+                        slug.c_str(), tx, ty);
+            std::fflush(stdout);
+            // 1. Scaffold.
+            std::string scaffoldCmd = "\"" + self + "\" --scaffold-zone \"" +
+                                       slug + "\" " + std::to_string(tx) + " " +
+                                       std::to_string(ty);
+            int rc = std::system(scaffoldCmd.c_str());
+            if (rc != 0) {
+                std::fprintf(stderr,
+                    "gen-random-zone: scaffold step failed (rc=%d)\n", rc);
+                return 1;
+            }
+            // 2. Random populate.
+            std::fflush(stdout);
+            std::string popCmd = "\"" + self + "\" --random-populate-zone \"" +
+                                  zoneDir + "\" --seed " + std::to_string(seed) +
+                                  " --creatures " + std::to_string(creatures) +
+                                  " --objects " + std::to_string(objects);
+            rc = std::system(popCmd.c_str());
+            if (rc != 0) {
+                std::fprintf(stderr,
+                    "gen-random-zone: populate step failed (rc=%d)\n", rc);
+                return 1;
+            }
+            // 3. Random items.
+            std::fflush(stdout);
+            std::string itemsCmd = "\"" + self + "\" --random-populate-items \"" +
+                                    zoneDir + "\" --seed " + std::to_string(seed + 1) +
+                                    " --count " + std::to_string(items);
+            rc = std::system(itemsCmd.c_str());
+            if (rc != 0) {
+                std::fprintf(stderr,
+                    "gen-random-zone: items step failed (rc=%d)\n", rc);
+                return 1;
+            }
+            std::printf("\ngen-random-zone: complete\n");
+            std::printf("  zone dir  : %s\n", zoneDir.c_str());
+            std::printf("  creatures : %d\n", creatures);
+            std::printf("  objects   : %d\n", objects);
+            std::printf("  items     : %d\n", items);
             return 0;
         } else if (std::strcmp(argv[i], "--info-zone-audio") == 0 && i + 1 < argc) {
             // Print the audio configuration stored in zone.json:
