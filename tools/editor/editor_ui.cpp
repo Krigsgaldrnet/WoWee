@@ -83,17 +83,34 @@ void EditorUI::render(EditorApp& app) {
         auto& cam = app.getEditorCamera().getCamera();
         auto vp2 = ImGui::GetMainViewport();
         glm::mat4 viewProj = cam.getProjectionMatrix() * cam.getViewMatrix();
-        for (const auto& npc : app.getNpcSpawner().getSpawns()) {
+        bool selectedOnly = app.getViewport().getNpcNameplatesSelectedOnly();
+        int selIdx = app.getNpcSpawner().getSelectedIndex();
+        const auto& spawns = app.getNpcSpawner().getSpawns();
+        for (size_t i = 0; i < spawns.size(); ++i) {
+            const auto& npc = spawns[i];
+            // Toggle: when selectedOnly is on, skip every NPC except the
+            // selected one. Was previously always-on, which got noisy on
+            // populated zones.
+            if (selectedOnly && static_cast<int>(i) != selIdx) continue;
+            // Z offset: was 35 yards (way too high; nameplates floated in
+            // the sky). Drop to ~3.5 yards which sits just above an
+            // average creature's head and reads as attached.
             glm::vec4 clip = viewProj * glm::vec4(npc.position.x, npc.position.y,
-                                                    npc.position.z + 35.0f, 1.0f);
+                                                    npc.position.z + 3.5f, 1.0f);
             if (clip.w <= 0.01f) continue;
             glm::vec3 ndc = glm::vec3(clip) / clip.w;
             float sx = (ndc.x * 0.5f + 0.5f) * vp2->Size.x;
             float sy = (ndc.y * 0.5f + 0.5f) * vp2->Size.y;
             if (sx < 0 || sx > vp2->Size.x || sy < 0 || sy > vp2->Size.y) continue;
 
+            // Center the text on the projected position by measuring the
+            // actual string width — the previous fixed -30 X offset
+            // misaligned every name that wasn't ~6 chars long.
+            ImVec2 textSz = ImGui::CalcTextSize(npc.name.c_str());
             ImVec4 col = npc.hostile ? ImVec4(1, 0.3f, 0.3f, 0.9f) : ImVec4(0.3f, 1, 0.3f, 0.9f);
-            ImGui::GetForegroundDrawList()->AddText(ImVec2(sx - 30, sy - 10), ImGui::ColorConvertFloat4ToU32(col),
+            ImGui::GetForegroundDrawList()->AddText(
+                ImVec2(sx - textSz.x * 0.5f, sy - textSz.y - 2),
+                ImGui::ColorConvertFloat4ToU32(col),
                 npc.name.c_str());
         }
     }
@@ -1818,6 +1835,9 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
         bool showMarkers = app.getViewport().getShowNpcMarkers();
         if (ImGui::Checkbox("Show Position Markers", &showMarkers))
             app.getViewport().setShowNpcMarkers(showMarkers);
+        bool selOnly = app.getViewport().getNpcNameplatesSelectedOnly();
+        if (ImGui::Checkbox("Nameplate on selected only", &selOnly))
+            app.getViewport().setNpcNameplatesSelectedOnly(selOnly);
         ImGui::Separator();
 
         // ---- Creature Browser ----

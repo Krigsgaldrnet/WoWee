@@ -62,6 +62,14 @@ public:
     void setWireframe(bool enabled);
     void setShowNpcMarkers(bool show) { showNpcMarkers_ = show; }
     bool getShowNpcMarkers() const { return showNpcMarkers_; }
+
+    // Nameplates: when true, only show the floating name label on the
+    // currently-selected NPC; otherwise show on all of them. Default true
+    // to keep the viewport quiet — was previously always-on, which got
+    // noisy fast on populated zones.
+    void setNpcNameplatesSelectedOnly(bool sel) { npcNameplatesSelectedOnly_ = sel; }
+    bool getNpcNameplatesSelectedOnly() const { return npcNameplatesSelectedOnly_; }
+
     bool isWireframe() const { return wireframe_; }
 
     void setClearColor(float r, float g, float b) { clearR_=r; clearG_=g; clearB_=b; }
@@ -143,6 +151,7 @@ private:
 
     // NPC position markers
     bool showNpcMarkers_ = true;
+    bool npcNameplatesSelectedOnly_ = true;
     VkBuffer npcMarkerVB_ = VK_NULL_HANDLE;
     VmaAllocation npcMarkerVBAlloc_ = VK_NULL_HANDLE;
     uint32_t npcMarkerVertCount_ = 0;
