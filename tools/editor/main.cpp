@@ -575,6 +575,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Generate random items.json entries (seeded; quality cap defaults to epic=4)\n");
     std::printf("  --info-zone-audio <zoneDir> [--json]\n");
     std::printf("                         Print zone audio config (music + ambience tracks, volumes)\n");
+    std::printf("  --snap-zone-to-ground <zoneDir>\n");
+    std::printf("                         Re-snap every creature/object in a zone to actual terrain height\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
     std::printf("  --export-zone-items-md <zoneDir> [out.md]\n");
@@ -1022,7 +1024,7 @@ int main(int argc, char* argv[]) {
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
         "--random-populate-zone", "--random-populate-items",
-        "--info-zone-audio",
+        "--info-zone-audio", "--snap-zone-to-ground",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13455,6 +13457,107 @@ int main(int argc, char* argv[]) {
                         zm.ambienceNight.empty() ? "(none)" : zm.ambienceNight.c_str());
             std::printf("  music vol     : %.2f\n", zm.musicVolume);
             std::printf("  ambience vol  : %.2f\n", zm.ambienceVolume);
+            return 0;
+        } else if (std::strcmp(argv[i], "--snap-zone-to-ground") == 0 && i + 1 < argc) {
+            // Walk every creature + object in a zone and snap their Z
+            // to the actual terrain height. Useful after terrain edits
+            // or after --random-populate-zone if the spawn baseZ
+            // doesn't match the carved terrain.
+            //
+            // Height lookup walks the loaded WHM tiles and finds the
+            // chunk containing each spawn's (x, y), then uses the
+            // chunk's average heightmap height + base.
+            std::string zoneDir = argv[++i];
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "snap-zone-to-ground: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "snap-zone-to-ground: failed to parse %s\n",
+                    manifestPath.c_str());
+                return 1;
+            }
+            // Load all tiles into a flat map keyed by (tx, ty).
+            struct LoadedTile {
+                wowee::pipeline::ADTTerrain terrain;
+                int tx, ty;
+            };
+            std::vector<LoadedTile> tiles;
+            for (const auto& [tx, ty] : zm.tiles) {
+                std::string base = zoneDir + "/" + zm.mapName + "_" +
+                                    std::to_string(tx) + "_" + std::to_string(ty);
+                if (!wowee::pipeline::WoweeTerrainLoader::exists(base)) continue;
+                LoadedTile lt;
+                lt.tx = tx; lt.ty = ty;
+                if (wowee::pipeline::WoweeTerrainLoader::load(base, lt.terrain)) {
+                    tiles.push_back(std::move(lt));
+                }
+            }
+            if (tiles.empty()) {
+                std::fprintf(stderr,
+                    "snap-zone-to-ground: no .whm tiles loaded\n");
+                return 1;
+            }
+            // Compute terrain height at world (x, y) by finding the
+            // chunk that contains it and averaging its heightmap. Each
+            // chunk is 33.33y across; chunk position[1]=wowX origin,
+            // [0]=wowY origin.
+            constexpr float kChunkSize = 33.33333f;
+            auto sampleHeight = [&](float wx, float wy) -> float {
+                for (const auto& lt : tiles) {
+                    for (const auto& chunk : lt.terrain.chunks) {
+                        if (!chunk.heightMap.isLoaded()) continue;
+                        float cx0 = chunk.position[1];
+                        float cy0 = chunk.position[0];
+                        if (wx < cx0 || wx >= cx0 + kChunkSize) continue;
+                        if (wy < cy0 || wy >= cy0 + kChunkSize) continue;
+                        // Use average heightmap height to dodge the
+                        // need for full bilinear sampling. Good enough
+                        // for spawn placement; finer interpolation is
+                        // a future optimization.
+                        float sum = 0; int n = 0;
+                        for (float h : chunk.heightMap.heights) {
+                            if (std::isfinite(h)) { sum += h; n++; }
+                        }
+                        if (n == 0) return chunk.position[2];
+                        return chunk.position[2] + sum / n;
+                    }
+                }
+                return zm.baseHeight;  // outside any loaded chunk
+            };
+            int snappedC = 0, snappedO = 0;
+            // Creatures.
+            wowee::editor::NpcSpawner spawner;
+            std::string cpath = zoneDir + "/creatures.json";
+            if (fs::exists(cpath) && spawner.loadFromFile(cpath)) {
+                auto& spawns = spawner.getSpawns();
+                for (auto& s : spawns) {
+                    s.position.z = sampleHeight(s.position.x, s.position.y);
+                    snappedC++;
+                }
+                if (snappedC > 0) spawner.saveToFile(cpath);
+            }
+            // Objects.
+            wowee::editor::ObjectPlacer placer;
+            std::string opath = zoneDir + "/objects.json";
+            if (fs::exists(opath) && placer.loadFromFile(opath)) {
+                auto& objs = placer.getObjects();
+                for (auto& o : objs) {
+                    o.position.z = sampleHeight(o.position.x, o.position.y);
+                    snappedO++;
+                }
+                if (snappedO > 0) placer.saveToFile(opath);
+            }
+            std::printf("snap-zone-to-ground: %s\n", zoneDir.c_str());
+            std::printf("  tiles loaded : %zu\n", tiles.size());
+            std::printf("  creatures    : %d snapped\n", snappedC);
+            std::printf("  objects      : %d snapped\n", snappedO);
             return 0;
         } else if (std::strcmp(argv[i], "--list-items") == 0 && i + 1 < argc) {
             // Inspect <zoneDir>/items.json. Pretty-prints id / quality
