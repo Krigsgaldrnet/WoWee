@@ -760,6 +760,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Meta-stats on the CLI surface (command count by category prefix)\n");
     std::printf("  --info-cli-help <pattern>\n");
     std::printf("                         Substring-search the help text and print matching command lines\n");
+    std::printf("  --validate-cli-help [--json]\n");
+    std::printf("                         Self-check: every kArgRequired flag must appear in the help text\n");
     std::printf("  --gen-completion <bash|zsh>\n");
     std::printf("                         Print a shell-completion script for wowee_editor (source it from your rc file)\n");
     std::printf("  --version              Show version and format info\n\n");
@@ -12067,6 +12069,51 @@ int main(int argc, char* argv[]) {
             }
             std::fprintf(stderr, "\n%d line(s) matched '%s'\n", matches, pattern.c_str());
             return 0;
+        } else if (std::strcmp(argv[i], "--validate-cli-help") == 0) {
+            // Self-check: every flag we declare in kArgRequired (the list
+            // of commands needing positional args) must appear in the
+            // help text printUsage emits. Catches drift where someone
+            // adds a handler + argument check but forgets the help line.
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            // Capture printUsage's stdout.
+            FILE* old = stdout;
+            FILE* tmp = std::tmpfile();
+            if (!tmp) { std::fprintf(stderr, "validate-cli-help: tmpfile failed\n"); return 1; }
+            stdout = tmp;
+            printUsage(argv[0]);
+            stdout = old;
+            std::fseek(tmp, 0, SEEK_SET);
+            std::string helpText;
+            char chunk[1024];
+            while (std::fgets(chunk, sizeof(chunk), tmp)) helpText += chunk;
+            std::fclose(tmp);
+            // Walk kArgRequired and check each appears in the help.
+            std::vector<std::string> missing;
+            for (const char* opt : kArgRequired) {
+                if (helpText.find(opt) == std::string::npos) {
+                    missing.push_back(opt);
+                }
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["totalArgRequired"] = sizeof(kArgRequired) / sizeof(kArgRequired[0]);
+                j["missing"] = missing;
+                j["passed"] = missing.empty();
+                std::printf("%s\n", j.dump(2).c_str());
+                return missing.empty() ? 0 : 1;
+            }
+            std::printf("CLI help self-check\n");
+            std::printf("  kArgRequired entries : %zu\n",
+                        sizeof(kArgRequired) / sizeof(kArgRequired[0]));
+            if (missing.empty()) {
+                std::printf("  PASSED — every kArgRequired flag is documented\n");
+                return 0;
+            }
+            std::printf("  FAILED — %zu flag(s) missing from help text:\n", missing.size());
+            for (const auto& m : missing) std::printf("    - %s\n", m.c_str());
+            return 1;
         } else if (std::strcmp(argv[i], "--gen-completion") == 0 && i + 1 < argc) {
             // Emit a bash or zsh completion script. Re-execs the editor's
             // own --list-commands at completion time so newly-added flags
