@@ -191,6 +191,22 @@ private:
     // reads this so subsequent generations honor the active biome instead of
     // reapplying the same hardcoded heightband textures every time.
     Biome activeBiome_ = Biome::Grassland;
+
+    // "Click on terrain to place crater" mode. The Crater button arms this
+    // with the user's chosen radius/depth/rim; the next left-click on
+    // terrain consumes it and creates the crater at the actual click
+    // position. Solves the UX problem where pressing the button used a
+    // stale brush position because the cursor was on the button itself.
+public:
+    struct PendingCrater {
+        bool active = false;
+        float radius = 30.0f;
+        float depth = 10.0f;
+        float rim = 3.0f;
+    };
+    PendingCrater& pendingCrater() { return pendingCrater_; }
+private:
+    PendingCrater pendingCrater_;
 };
 
 } // namespace editor

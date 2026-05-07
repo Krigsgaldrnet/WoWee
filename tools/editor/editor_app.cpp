@@ -351,6 +351,10 @@ void EditorApp::processEvents() {
                         objectPlacer_.clearSelection();
                         npcSpawner_.clearSelection();
                         ui_.clearPath();
+                        if (pendingCrater_.active) {
+                            pendingCrater_.active = false;
+                            showToast("Crater placement cancelled");
+                        }
                     }
                 }
                 if (sc == SDL_SCANCODE_DELETE) {
@@ -531,6 +535,31 @@ void EditorApp::processEvents() {
                     giz.endDrag();
                     giz.setMode(TransformMode::None);
                 } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+                    // Pending crater placement: take precedence over the
+                    // mode-based click handling below so the next click
+                    // anywhere on terrain spawns the crater instead of
+                    // doing whatever the current mode does.
+                    if (pendingCrater_.active) {
+                        auto ext = window_->getVkContext()->getSwapchainExtent();
+                        rendering::Ray ray = camera_.getCamera().screenToWorldRay(
+                            static_cast<float>(event.button.x),
+                            static_cast<float>(event.button.y),
+                            static_cast<float>(ext.width),
+                            static_cast<float>(ext.height));
+                        glm::vec3 hitPos;
+                        if (terrainEditor_.raycastTerrain(ray, hitPos)) {
+                            terrainEditor_.createCrater(hitPos,
+                                                          pendingCrater_.radius,
+                                                          pendingCrater_.depth,
+                                                          pendingCrater_.rim);
+                            showToast("Crater placed");
+                            pendingCrater_.active = false;
+                        }
+                        // If the click missed terrain, leave the mode armed
+                        // so the user can try again without re-pressing the
+                        // button.
+                        continue;
+                    }
                     // Path point capture (river/road tool)
                     // Alt+click eyedropper in paint mode
                     if (mode_ == EditorMode::Paint && (SDL_GetModState() & KMOD_ALT)) {

@@ -1236,10 +1236,25 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Radius##crater", &craterRadius, 5.0f, 100.0f);
             ImGui::SliderFloat("Depth##crater", &craterDepth, 2.0f, 50.0f);
             ImGui::SliderFloat("Rim Height##crater", &craterRim, 0.0f, 15.0f);
-            auto& brush5 = app.getTerrainEditor().brush();
-            if (ImGui::Button("Create Crater at Cursor", ImVec2(-1, 0)) ) {
-                app.getTerrainEditor().createCrater(brush5.getPosition(), craterRadius, craterDepth, craterRim);
-                app.showToast("Crater created");
+            // Click-to-place: arm pendingCrater so the next left-click on
+            // terrain spawns the crater there, not at the (stale) brush
+            // position that was last set before the cursor moved onto the
+            // button.
+            auto& pc = app.pendingCrater();
+            if (pc.active) {
+                ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1),
+                    "ARMED — click on terrain to place");
+                if (ImGui::Button("Cancel##crater", ImVec2(-1, 0))) {
+                    pc.active = false;
+                }
+            } else {
+                if (ImGui::Button("Click on terrain to place crater", ImVec2(-1, 0))) {
+                    pc.active = true;
+                    pc.radius = craterRadius;
+                    pc.depth = craterDepth;
+                    pc.rim = craterRim;
+                    app.showToast("Click on terrain to place crater (Esc to cancel)");
+                }
             }
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Bowl with raised rim. Fill with water for a lake.");
         }
