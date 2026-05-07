@@ -516,6 +516,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Per-format migration-progress report (m2 vs wom, wmo vs wob, blp vs png, dbc vs json)\n");
     std::printf("  --strip-data-tree <srcDir> [--dry-run]\n");
     std::printf("                         Delete proprietary files (.m2/.wmo/.blp/.dbc) that already have an open sidecar\n");
+    std::printf("  --audit-data-tree <srcDir>\n");
+    std::printf("                         CI gate: exit 1 if any proprietary file lacks an open sidecar (100%% migration check)\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -939,6 +941,7 @@ int main(int argc, char* argv[]) {
         "--convert-blp-png", "--convert-blp-batch",
         "--migrate-wom", "--migrate-zone", "--migrate-project",
         "--migrate-data-tree", "--info-data-tree", "--strip-data-tree",
+        "--audit-data-tree",
         "--migrate-jsondbc",
     };
     for (int i = 1; i < argc; i++) {
@@ -13782,6 +13785,103 @@ int main(int argc, char* argv[]) {
                 std::printf("\n  re-run without --dry-run to apply\n");
             }
             return failed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--audit-data-tree") == 0 && i + 1 < argc) {
+            // Non-destructive CI gate. Walks <srcDir> and exits 1 if
+            // any proprietary file (.m2/.wmo/.blp/.dbc) lacks a
+            // matching open sidecar at the same (parent, stem). The
+            // pre-strip safety check: don't run --strip-data-tree
+            // until this returns exit 0.
+            //
+            // Lists missing sidecars (capped at 50) so the user can
+            // re-run --migrate-data-tree to fill them in.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "audit-data-tree: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            static const std::vector<std::pair<std::string, std::string>>
+                kPairs = {
+                    {".m2",  ".wom"},
+                    {".wmo", ".wob"},
+                    {".blp", ".png"},
+                    {".dbc", ".json"},
+                };
+            // Build (parent, stem) sets per open ext for fast lookup.
+            std::map<std::string, std::set<std::pair<std::string, std::string>>>
+                openSets;
+            std::map<std::string, std::vector<std::string>> propByExt;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                bool isOpen = false;
+                for (const auto& [propExt, openExt] : kPairs) {
+                    if (ext == openExt) {
+                        openSets[openExt].insert(
+                            {e.path().parent_path().string(),
+                             e.path().stem().string()});
+                        isOpen = true;
+                        break;
+                    }
+                }
+                if (isOpen) continue;
+                for (const auto& [propExt, _] : kPairs) {
+                    if (ext == propExt) {
+                        propByExt[propExt].push_back(e.path().string());
+                        break;
+                    }
+                }
+            }
+            // Check each proprietary file for its sidecar.
+            int totalProp = 0, totalMissing = 0;
+            std::vector<std::string> missing;
+            std::map<std::string, int> missingPerExt;
+            for (const auto& [propExt, openExt] : kPairs) {
+                const auto& openSet = openSets[openExt];
+                for (const auto& fullPath : propByExt[propExt]) {
+                    totalProp++;
+                    fs::path p(fullPath);
+                    std::pair<std::string, std::string> key{
+                        p.parent_path().string(), p.stem().string()};
+                    if (openSet.count(key)) continue;
+                    totalMissing++;
+                    missingPerExt[propExt]++;
+                    missing.push_back(fullPath);
+                }
+            }
+            std::sort(missing.begin(), missing.end());
+            std::printf("audit-data-tree: %s\n", srcDir.c_str());
+            std::printf("  proprietary files : %d\n", totalProp);
+            std::printf("  missing sidecars  : %d\n", totalMissing);
+            if (totalMissing == 0) {
+                if (totalProp > 0) {
+                    std::printf("\n  PASSED — every proprietary file has an open sidecar\n");
+                } else {
+                    std::printf("\n  PASSED — no proprietary files present\n");
+                }
+                return 0;
+            }
+            std::printf("\n  FAILED — re-run --migrate-data-tree to fill the gaps\n");
+            std::printf("\n  Per-extension missing:\n");
+            for (const auto& [ext, count] : missingPerExt) {
+                std::printf("    %-5s : %d\n", ext.c_str(), count);
+            }
+            std::printf("\n  Missing sidecars (sorted):\n");
+            size_t shown = 0;
+            for (const auto& m : missing) {
+                if (shown >= 50) {
+                    std::printf("    ... and %zu more\n", missing.size() - shown);
+                    break;
+                }
+                std::printf("    - %s\n", m.c_str());
+                shown++;
+            }
+            return 1;
         } else if (std::strcmp(argv[i], "--repair-zone") == 0 && i + 1 < argc) {
             // Auto-fix the common manifest-vs-disk drift issues that
             // accumulate when a zone is hand-edited or partially copied:
