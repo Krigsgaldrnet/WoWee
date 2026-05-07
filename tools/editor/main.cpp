@@ -568,6 +568,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Edit fields on an existing item in place; only specified flags are changed\n");
     std::printf("  --remove-item <zoneDir> <index>\n");
     std::printf("                         Remove item at given 0-based index from <zoneDir>/items.json\n");
+    std::printf("  --copy-zone-items <fromZoneDir> <toZoneDir> [--merge]\n");
+    std::printf("                         Copy items from one zone to another (default replaces; --merge appends with re-id)\n");
     std::printf("  --clone-item <zoneDir> <index> [newName]\n");
     std::printf("                         Duplicate the item at index, assign next free id (and optional name override)\n");
     std::printf("  --validate-items <zoneDir>\n");
@@ -1000,6 +1002,7 @@ int main(int argc, char* argv[]) {
         "--info-project-items",
         "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest", "--remove-item",
+        "--copy-zone-items",
         "--copy-zone", "--rename-zone", "--remove-zone",
         "--clear-zone-content", "--strip-zone", "--strip-project",
         "--repair-zone", "--repair-project",
@@ -13548,6 +13551,104 @@ int main(int argc, char* argv[]) {
             std::printf("Removed item '%s' (id=%u) from %s (now %zu total)\n",
                         removedName.c_str(), removedId,
                         path.c_str(), items.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--copy-zone-items") == 0 && i + 2 < argc) {
+            // Copy items from one zone to another. Default mode
+            // replaces the destination items.json wholesale; --merge
+            // appends each source item to the existing destination
+            // list, re-id'ing on collision so the destination's
+            // existing IDs are preserved and the source's new
+            // entries get fresh ones.
+            std::string fromZone = argv[++i];
+            std::string toZone = argv[++i];
+            bool mergeMode = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--merge") == 0) {
+                mergeMode = true; i++;
+            }
+            namespace fs = std::filesystem;
+            std::string srcPath = fromZone + "/items.json";
+            if (!fs::exists(srcPath)) {
+                std::fprintf(stderr,
+                    "copy-zone-items: %s has no items.json\n", fromZone.c_str());
+                return 1;
+            }
+            if (!fs::exists(toZone) || !fs::is_directory(toZone)) {
+                std::fprintf(stderr,
+                    "copy-zone-items: dest %s is not a directory\n",
+                    toZone.c_str());
+                return 1;
+            }
+            nlohmann::json src;
+            try {
+                std::ifstream in(srcPath);
+                in >> src;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "copy-zone-items: %s is not valid JSON\n", srcPath.c_str());
+                return 1;
+            }
+            if (!src.contains("items") || !src["items"].is_array()) {
+                std::fprintf(stderr,
+                    "copy-zone-items: %s has no 'items' array\n",
+                    srcPath.c_str());
+                return 1;
+            }
+            std::string dstPath = toZone + "/items.json";
+            nlohmann::json dst = nlohmann::json::object({{"items",
+                                  nlohmann::json::array()}});
+            int copied = 0, reIded = 0;
+            if (mergeMode && fs::exists(dstPath)) {
+                try {
+                    std::ifstream in(dstPath);
+                    in >> dst;
+                } catch (...) {}
+                if (!dst.contains("items") || !dst["items"].is_array()) {
+                    dst["items"] = nlohmann::json::array();
+                }
+                std::set<uint32_t> usedIds;
+                for (const auto& it : dst["items"]) {
+                    if (it.contains("id") && it["id"].is_number_unsigned()) {
+                        usedIds.insert(it["id"].get<uint32_t>());
+                    }
+                }
+                for (const auto& it : src["items"]) {
+                    nlohmann::json newItem = it;
+                    uint32_t srcId = it.value("id", 0u);
+                    if (srcId == 0 || usedIds.count(srcId)) {
+                        // Pick the next free id.
+                        uint32_t fresh = 1;
+                        while (usedIds.count(fresh)) ++fresh;
+                        newItem["id"] = fresh;
+                        usedIds.insert(fresh);
+                        if (srcId != 0) reIded++;
+                    } else {
+                        usedIds.insert(srcId);
+                    }
+                    dst["items"].push_back(newItem);
+                    copied++;
+                }
+            } else {
+                // Replace mode: destination becomes a verbatim copy of
+                // the source items array.
+                dst["items"] = src["items"];
+                copied = static_cast<int>(src["items"].size());
+            }
+            std::ofstream out(dstPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "copy-zone-items: failed to write %s\n", dstPath.c_str());
+                return 1;
+            }
+            out << dst.dump(2);
+            out.close();
+            std::printf("Copied %d item(s) from %s to %s\n",
+                        copied, fromZone.c_str(), toZone.c_str());
+            std::printf("  mode      : %s\n",
+                        mergeMode ? "merge (append + re-id)" : "replace");
+            std::printf("  dst total : %zu\n", dst["items"].size());
+            if (reIded > 0) {
+                std::printf("  re-ided   : %d (id collisions)\n", reIded);
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--clone-item") == 0 && i + 2 < argc) {
             // Duplicate the item at given 0-based index. Auto-assigns
