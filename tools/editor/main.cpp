@@ -532,6 +532,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
+    std::printf("  --remove-item <zoneDir> <index>\n");
+    std::printf("                         Remove item at given 0-based index from <zoneDir>/items.json\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -939,7 +941,7 @@ int main(int argc, char* argv[]) {
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--clone-object",
-        "--remove-creature", "--remove-object", "--remove-quest",
+        "--remove-creature", "--remove-object", "--remove-quest", "--remove-item",
         "--copy-zone", "--rename-zone", "--remove-zone",
         "--clear-zone-content", "--strip-zone", "--strip-project",
         "--repair-zone", "--repair-project",
@@ -12645,6 +12647,62 @@ int main(int argc, char* argv[]) {
                             k, id, ilvl, stack,
                             qualityNames[quality], displayId, name.c_str());
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--remove-item") == 0 && i + 2 < argc) {
+            // Remove the item at given 0-based index from <zoneDir>/
+            // items.json. Mirrors --remove-creature/--remove-object/
+            // --remove-quest semantics — bounds-checked, file rewrites
+            // on success, exit 1 on out-of-range.
+            std::string zoneDir = argv[++i];
+            int idx = -1;
+            try { idx = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "remove-item: index must be an integer\n");
+                return 1;
+            }
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "remove-item: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "remove-item: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "remove-item: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            auto& items = doc["items"];
+            if (idx < 0 || static_cast<size_t>(idx) >= items.size()) {
+                std::fprintf(stderr,
+                    "remove-item: index %d out of range (have %zu)\n",
+                    idx, items.size());
+                return 1;
+            }
+            std::string removedName = items[idx].value("name", std::string("(unnamed)"));
+            uint32_t removedId = items[idx].value("id", 0u);
+            items.erase(items.begin() + idx);
+            std::ofstream out(path);
+            if (!out) {
+                std::fprintf(stderr,
+                    "remove-item: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            out << doc.dump(2);
+            out.close();
+            std::printf("Removed item '%s' (id=%u) from %s (now %zu total)\n",
+                        removedName.c_str(), removedId,
+                        path.c_str(), items.size());
             return 0;
         } else if (std::strcmp(argv[i], "--scaffold-zone") == 0 && i + 1 < argc) {
             // Generate a minimal valid empty zone — useful for kickstarting
