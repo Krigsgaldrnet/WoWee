@@ -536,6 +536,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Remove item at given 0-based index from <zoneDir>/items.json\n");
     std::printf("  --clone-item <zoneDir> <index> [newName]\n");
     std::printf("                         Duplicate the item at index, assign next free id (and optional name override)\n");
+    std::printf("  --validate-items <zoneDir>\n");
+    std::printf("                         Schema check on items.json: duplicate ids, quality range, required fields\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -942,7 +944,7 @@ int main(int argc, char* argv[]) {
         "--list-items",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
-        "--clone-item",
+        "--clone-item", "--validate-items",
         "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest", "--remove-item",
         "--copy-zone", "--rename-zone", "--remove-zone",
@@ -12780,6 +12782,108 @@ int main(int argc, char* argv[]) {
                         idx, clone["name"].get<std::string>().c_str(),
                         newId, path.c_str(), items.size());
             return 0;
+        } else if (std::strcmp(argv[i], "--validate-items") == 0 && i + 1 < argc) {
+            // Schema validator for items.json. Catches what
+            // --add-item / --clone-item only enforce on insertion
+            // (e.g., duplicate ids if the file was hand-edited),
+            // plus general field-range issues. Exit 1 if any error.
+            std::string zoneDir = argv[++i];
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "validate-items: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "validate-items: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "validate-items: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            const auto& items = doc["items"];
+            std::vector<std::string> errors;
+            std::map<uint32_t, std::vector<size_t>> idIndices;  // id -> [item indices]
+            for (size_t k = 0; k < items.size(); ++k) {
+                const auto& it = items[k];
+                if (!it.is_object()) {
+                    errors.push_back("item " + std::to_string(k) +
+                                      ": not a JSON object");
+                    continue;
+                }
+                if (!it.contains("id") || !it["id"].is_number_unsigned() ||
+                    it["id"].get<uint32_t>() == 0) {
+                    errors.push_back("item " + std::to_string(k) +
+                                      ": missing/invalid 'id' (must be positive uint)");
+                } else {
+                    idIndices[it["id"].get<uint32_t>()].push_back(k);
+                }
+                if (!it.contains("name") || !it["name"].is_string() ||
+                    it["name"].get<std::string>().empty()) {
+                    errors.push_back("item " + std::to_string(k) +
+                                      ": missing/empty 'name'");
+                }
+                if (it.contains("quality") && it["quality"].is_number_unsigned()) {
+                    uint32_t q = it["quality"].get<uint32_t>();
+                    if (q > 6) {
+                        errors.push_back("item " + std::to_string(k) +
+                                          ": quality " + std::to_string(q) +
+                                          " out of range (must be 0..6)");
+                    }
+                }
+                // itemLevel / stackable should be reasonable; flag
+                // pathological values that almost certainly indicate
+                // a typo (e.g., million-level item).
+                if (it.contains("itemLevel") &&
+                    it["itemLevel"].is_number_unsigned()) {
+                    uint32_t lvl = it["itemLevel"].get<uint32_t>();
+                    if (lvl > 1000) {
+                        errors.push_back("item " + std::to_string(k) +
+                                          ": itemLevel " + std::to_string(lvl) +
+                                          " is suspiciously high (>1000)");
+                    }
+                }
+                if (it.contains("stackable") &&
+                    it["stackable"].is_number_unsigned()) {
+                    uint32_t s = it["stackable"].get<uint32_t>();
+                    if (s == 0 || s > 1000) {
+                        errors.push_back("item " + std::to_string(k) +
+                                          ": stackable " + std::to_string(s) +
+                                          " out of range (must be 1..1000)");
+                    }
+                }
+            }
+            for (const auto& [id, indices] : idIndices) {
+                if (indices.size() > 1) {
+                    std::string idxList;
+                    for (size_t v : indices) {
+                        if (!idxList.empty()) idxList += ", ";
+                        idxList += std::to_string(v);
+                    }
+                    errors.push_back("duplicate id " + std::to_string(id) +
+                                      " at item indices [" + idxList + "]");
+                }
+            }
+            std::printf("validate-items: %s\n", path.c_str());
+            std::printf("  items checked : %zu\n", items.size());
+            std::printf("  errors        : %zu\n", errors.size());
+            if (errors.empty()) {
+                std::printf("\n  PASSED\n");
+                return 0;
+            }
+            std::printf("\n  Errors:\n");
+            for (const auto& e : errors) {
+                std::printf("    - %s\n", e.c_str());
+            }
+            return 1;
         } else if (std::strcmp(argv[i], "--scaffold-zone") == 0 && i + 1 < argc) {
             // Generate a minimal valid empty zone — useful for kickstarting
             // a new authoring session without needing to launch the GUI.
