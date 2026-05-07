@@ -524,6 +524,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Top-down PNG of creature + object spawn positions (per-tile-bounded)\n");
     std::printf("  --check-zone-refs <zoneDir> [--json]\n");
     std::printf("                         Verify every referenced model/quest NPC actually exists; exit 1 on missing refs\n");
+    std::printf("  --check-project-refs <projectDir> [--json]\n");
+    std::printf("                         Run --check-zone-refs across every zone in <projectDir>\n");
     std::printf("  --check-zone-content <zoneDir> [--json]\n");
     std::printf("                         Sanity-check creature/object/quest fields for plausible values\n");
     std::printf("  --check-project-content <projectDir> [--json]\n");
@@ -854,7 +856,7 @@ int main(int argc, char* argv[]) {
         "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--for-each-tile", "--zone-stats", "--info-tilemap",
         "--list-zone-deps", "--check-zone-refs", "--check-zone-content",
-        "--check-project-content",
+        "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13430,6 +13432,141 @@ int main(int argc, char* argv[]) {
             }
             std::printf("\n  %d zone(s) have content warnings\n",
                         projectFailedZones);
+            return 1;
+        } else if (std::strcmp(argv[i], "--check-project-refs") == 0 && i + 1 < argc) {
+            // Project-level cross-reference checker. Walks every zone
+            // and runs the same model-path / NPC-id checks as
+            // --check-zone-refs. Aggregates per zone with file-level
+            // breakdown. Exit 1 if any zone has dangling refs.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "check-project-refs: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Same model-resolve logic as --check-zone-refs, applied
+            // per zone with the appropriate root list.
+            auto stripExt = [](const std::string& p, const char* ext) {
+                size_t n = std::strlen(ext);
+                if (p.size() >= n) {
+                    std::string tail = p.substr(p.size() - n);
+                    std::string lower = tail;
+                    for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+                    if (lower == ext) return p.substr(0, p.size() - n);
+                }
+                return p;
+            };
+            struct ZoneRow { std::string name; int objCheck, objMiss, qCheck, qMiss; };
+            std::vector<ZoneRow> rows;
+            int projectFailedZones = 0;
+            for (const auto& zoneDir : zones) {
+                ZoneRow row{fs::path(zoneDir).filename().string(), 0, 0, 0, 0};
+                auto modelExists = [&](const std::string& path, bool isWMO) {
+                    std::string base;
+                    std::vector<std::string> exts;
+                    if (isWMO) {
+                        base = stripExt(path, ".wmo");
+                        exts = {".wob", ".wmo"};
+                    } else {
+                        base = stripExt(path, ".m2");
+                        exts = {".wom", ".m2"};
+                    }
+                    std::vector<std::string> roots = {
+                        "", zoneDir + "/", "output/", "custom_zones/", "Data/"
+                    };
+                    for (const auto& root : roots) {
+                        for (const auto& ext : exts) {
+                            if (fs::exists(root + base + ext)) return true;
+                            std::string lower = base + ext;
+                            for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+                            if (fs::exists(root + lower)) return true;
+                        }
+                    }
+                    return false;
+                };
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(zoneDir + "/objects.json")) {
+                    for (const auto& o : op.getObjects()) {
+                        row.objCheck++;
+                        bool isWMO = (o.type == wowee::editor::PlaceableType::WMO);
+                        if (!modelExists(o.path, isWMO)) row.objMiss++;
+                    }
+                }
+                wowee::editor::NpcSpawner sp;
+                wowee::editor::QuestEditor qe;
+                bool hasCreatures = sp.loadFromFile(zoneDir + "/creatures.json");
+                std::unordered_set<uint32_t> creatureIds;
+                if (hasCreatures) {
+                    for (const auto& s : sp.getSpawns()) creatureIds.insert(s.id);
+                }
+                if (qe.loadFromFile(zoneDir + "/quests.json") && hasCreatures) {
+                    for (const auto& q : qe.getQuests()) {
+                        row.qCheck++;
+                        bool localGiver = (q.questGiverNpcId != 0 &&
+                                            q.questGiverNpcId < 100000 &&
+                                            creatureIds.count(q.questGiverNpcId) == 0);
+                        bool localTurn  = (q.turnInNpcId != 0 &&
+                                            q.turnInNpcId < 100000 &&
+                                            q.turnInNpcId != q.questGiverNpcId &&
+                                            creatureIds.count(q.turnInNpcId) == 0);
+                        if (localGiver) row.qMiss++;
+                        if (localTurn) row.qMiss++;
+                    }
+                }
+                if (row.objMiss + row.qMiss > 0) projectFailedZones++;
+                rows.push_back(row);
+            }
+            int allPassed = (projectFailedZones == 0);
+            int totalMiss = 0;
+            for (const auto& r : rows) totalMiss += r.objMiss + r.qMiss;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["projectDir"] = projectDir;
+                j["totalZones"] = zones.size();
+                j["failedZones"] = projectFailedZones;
+                j["totalMissing"] = totalMiss;
+                j["passed"] = bool(allPassed);
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"zone", r.name},
+                                    {"objectsChecked", r.objCheck},
+                                    {"objectsMissing", r.objMiss},
+                                    {"questsChecked", r.qCheck},
+                                    {"questsMissing", r.qMiss}});
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return allPassed ? 0 : 1;
+            }
+            std::printf("check-project-refs: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu (%d failed)\n",
+                        zones.size(), projectFailedZones);
+            std::printf("  total missing: %d\n", totalMiss);
+            std::printf("\n  zone                       obj_chk obj_miss  q_chk  q_miss  status\n");
+            for (const auto& r : rows) {
+                int rowMiss = r.objMiss + r.qMiss;
+                std::printf("  %-26s   %5d    %5d  %5d   %5d  %s\n",
+                            r.name.substr(0, 26).c_str(),
+                            r.objCheck, r.objMiss, r.qCheck, r.qMiss,
+                            rowMiss == 0 ? "PASS" : "FAIL");
+            }
+            if (allPassed) {
+                std::printf("\n  ALL ZONES PASSED\n");
+                return 0;
+            }
+            std::printf("\n  %d zone(s) have dangling refs\n", projectFailedZones);
             return 1;
         } else if (std::strcmp(argv[i], "--for-each-zone") == 0 && i + 1 < argc) {
             // Batch runner: enumerates zones in <projectDir> and runs the
