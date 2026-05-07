@@ -526,6 +526,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Markdown migration-progress report (per-pair table, share %%, recommended next steps)\n");
     std::printf("  --gen-texture <out.png> <colorHex|pattern> [W H]\n");
     std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
+    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere> [size]\n");
+    std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -909,7 +911,7 @@ int main(int argc, char* argv[]) {
         "--validate-project-open-only", "--audit-project",
         "--bench-validate-project", "--bench-bake-project",
         "--bench-migrate-data-tree", "--list-data-tree-largest",
-        "--export-data-tree-md", "--gen-texture",
+        "--export-data-tree-md", "--gen-texture", "--gen-mesh",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -13976,6 +13978,159 @@ int main(int argc, char* argv[]) {
             std::printf("Wrote %s\n", outPath.c_str());
             std::printf("  size      : %dx%d\n", W, H);
             std::printf("  spec      : %s\n", spec.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
+            // Synthesize a procedural primitive WOM. Generates proper
+            // per-face normals, planar UVs, a bounding box, and a
+            // single batch covering all indices so the model renders
+            // immediately in the editor without further processing.
+            //
+            // Shapes:
+            //   cube   — 24 verts / 12 tris, axis-aligned, ±size/2
+            //   plane  — 4 verts / 2 tris, on XY plane (Z=0), ±size/2
+            //   sphere — UV sphere, 16 segments × 12 stacks, radius=size/2
+            std::string womBase = argv[++i];
+            std::string shape = argv[++i];
+            float size = 1.0f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { size = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (size <= 0.0f) {
+                std::fprintf(stderr,
+                    "gen-mesh: size must be positive (got %g)\n", size);
+                return 1;
+            }
+            // Strip .wom if user passed a full filename — saver expects base.
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // Helper to push a vertex with explicit normal + uv.
+            auto addVertex = [&](float x, float y, float z,
+                                  float nx, float ny, float nz,
+                                  float u, float v) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = glm::vec3(x, y, z);
+                vtx.normal = glm::vec3(nx, ny, nz);
+                vtx.texCoord = glm::vec2(u, v);
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            std::string s = shape;
+            std::transform(s.begin(), s.end(), s.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            float h = size * 0.5f;
+            if (s == "cube") {
+                // 6 faces, 4 verts each (so per-face normals are flat).
+                struct Face { float nx, ny, nz; float verts[4][3]; };
+                Face faces[6] = {
+                    { 0,  0,  1, {{-h,-h, h},{ h,-h, h},{ h, h, h},{-h, h, h}}},  // +Z
+                    { 0,  0, -1, {{ h,-h,-h},{-h,-h,-h},{-h, h,-h},{ h, h,-h}}},  // -Z
+                    { 1,  0,  0, {{ h,-h, h},{ h,-h,-h},{ h, h,-h},{ h, h, h}}},  // +X
+                    {-1,  0,  0, {{-h,-h,-h},{-h,-h, h},{-h, h, h},{-h, h,-h}}},  // -X
+                    { 0,  1,  0, {{-h, h, h},{ h, h, h},{ h, h,-h},{-h, h,-h}}},  // +Y
+                    { 0, -1,  0, {{-h,-h,-h},{ h,-h,-h},{ h,-h, h},{-h,-h, h}}},  // -Y
+                };
+                float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+                for (auto& f : faces) {
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    for (int k = 0; k < 4; ++k) {
+                        addVertex(f.verts[k][0], f.verts[k][1], f.verts[k][2],
+                                  f.nx, f.ny, f.nz, uvs[k][0], uvs[k][1]);
+                    }
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 1);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 3);
+                }
+            } else if (s == "plane") {
+                addVertex(-h, -h, 0,  0, 0, 1,  0, 0);
+                addVertex( h, -h, 0,  0, 0, 1,  1, 0);
+                addVertex( h,  h, 0,  0, 0, 1,  1, 1);
+                addVertex(-h,  h, 0,  0, 0, 1,  0, 1);
+                wom.indices = {0, 1, 2, 0, 2, 3};
+            } else if (s == "sphere") {
+                const int segments = 16;
+                const int stacks = 12;
+                float r = h;
+                for (int st = 0; st <= stacks; ++st) {
+                    float v = static_cast<float>(st) / stacks;
+                    float phi = v * 3.14159265358979f;
+                    float sphi = std::sin(phi), cphi = std::cos(phi);
+                    for (int sg = 0; sg <= segments; ++sg) {
+                        float u = static_cast<float>(sg) / segments;
+                        float theta = u * 2.0f * 3.14159265358979f;
+                        float stheta = std::sin(theta), ctheta = std::cos(theta);
+                        float nx = sphi * ctheta;
+                        float ny = sphi * stheta;
+                        float nz = cphi;
+                        addVertex(r * nx, r * ny, r * nz, nx, ny, nz, u, v);
+                    }
+                }
+                int stride = segments + 1;
+                for (int st = 0; st < stacks; ++st) {
+                    for (int sg = 0; sg < segments; ++sg) {
+                        uint32_t a = st * stride + sg;
+                        uint32_t b = a + 1;
+                        uint32_t c = a + stride;
+                        uint32_t d = c + 1;
+                        wom.indices.push_back(a);
+                        wom.indices.push_back(c);
+                        wom.indices.push_back(b);
+                        wom.indices.push_back(b);
+                        wom.indices.push_back(c);
+                        wom.indices.push_back(d);
+                    }
+                }
+            } else {
+                std::fprintf(stderr,
+                    "gen-mesh: shape must be cube, plane, or sphere (got '%s')\n",
+                    shape.c_str());
+                return 1;
+            }
+            // Compute bounds from the vertex positions we just emitted.
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            // Single material batch covering everything — keeps the
+            // model immediately renderable.
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            // Empty texture path slot so batch.textureIndex=0 is a
+            // valid index into texturePaths. The user can later set a
+            // real path or run --gen-texture next to it.
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  shape    : %s\n", s.c_str());
+            std::printf("  size     : %.3f\n", size);
+            std::printf("  vertices : %zu\n", wom.vertices.size());
+            std::printf("  indices  : %zu (%zu tri%s)\n",
+                        wom.indices.size(), wom.indices.size() / 3,
+                        wom.indices.size() / 3 == 1 ? "" : "s");
+            std::printf("  bounds   : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
             return 0;
         } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
             // Non-destructive companion to --migrate-data-tree. Walks
