@@ -525,6 +525,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         ASCII-render the 64x64 WoW ADT grid showing tile claims by zone\n");
     std::printf("  --list-project-orphans <projectDir> [--json]\n");
     std::printf("                         Find .wom/.wob files in zones not referenced by any objects.json or doodad list\n");
+    std::printf("  --remove-project-orphans <projectDir> [--dry-run]\n");
+    std::printf("                         Delete the orphan .wom/.wob files surfaced by --list-project-orphans\n");
     std::printf("  --list-zone-deps <zoneDir> [--json]\n");
     std::printf("                         List external M2/WMO model paths a zone references (objects + WOB doodads)\n");
     std::printf("  --export-zone-deps-md <zoneDir> [out.md]\n");
@@ -896,7 +898,7 @@ int main(int argc, char* argv[]) {
         "--validate-project-checksum",
         "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--for-each-tile", "--zone-stats", "--info-tilemap",
-        "--list-zone-deps", "--list-project-orphans",
+        "--list-zone-deps", "--list-project-orphans", "--remove-project-orphans",
         "--check-zone-refs", "--check-zone-content",
         "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
@@ -14219,6 +14221,128 @@ int main(int argc, char* argv[]) {
                             o.path.c_str());
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--remove-project-orphans") == 0 && i + 1 < argc) {
+            // Destructive companion to --list-project-orphans. Reuses
+            // the same reference-collection + orphan-detection logic
+            // and then deletes the resulting files. --dry-run shows
+            // what would be removed without touching anything.
+            std::string projectDir = argv[++i];
+            bool dryRun = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--dry-run") == 0) {
+                dryRun = true; i++;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "remove-project-orphans: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Same normalize + reference collection as --list-project-orphans.
+            // Keep both functions in sync if the matching rules evolve.
+            auto normalize = [](std::string p) {
+                while (p.size() >= 2 && p[0] == '.' && p[1] == '/') p.erase(0, 2);
+                std::string ext = fs::path(p).extension().string();
+                if (ext == ".wom" || ext == ".wob" || ext == ".m2" || ext == ".wmo") {
+                    p = p.substr(0, p.size() - ext.size());
+                }
+                return p;
+            };
+            std::set<std::string> referencedBases;
+            for (const auto& zoneDir : zones) {
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(zoneDir + "/objects.json")) {
+                    for (const auto& o : op.getObjects()) {
+                        if (o.path.empty()) continue;
+                        std::string norm = normalize(o.path);
+                        referencedBases.insert(norm);
+                        referencedBases.insert(fs::path(norm).filename().string());
+                    }
+                }
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wob") continue;
+                    std::string base = e.path().string();
+                    if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                    auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+                    for (const auto& d : bld.doodads) {
+                        if (d.modelPath.empty()) continue;
+                        std::string norm = normalize(d.modelPath);
+                        referencedBases.insert(norm);
+                        referencedBases.insert(fs::path(norm).filename().string());
+                    }
+                }
+            }
+            int removed = 0, failed = 0;
+            uint64_t freedBytes = 0;
+            for (const auto& zoneDir : zones) {
+                std::string zoneName = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                std::vector<fs::path> toRemove;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    if (ext != ".wom" && ext != ".wob") continue;
+                    std::string rel = fs::relative(e.path(), zoneDir, ec).string();
+                    if (ec) rel = e.path().filename().string();
+                    std::string normRel = rel.substr(0, rel.size() - ext.size());
+                    std::string leaf = e.path().stem().string();
+                    if (referencedBases.count(normRel) ||
+                        referencedBases.count(leaf)) continue;
+                    toRemove.push_back(e.path());
+                }
+                // Materialize the deletion list before removing so we
+                // don't mutate the directory while iterating.
+                for (const auto& p : toRemove) {
+                    uint64_t sz = fs::file_size(p, ec);
+                    if (ec) sz = 0;
+                    std::string rel = fs::relative(p, zoneDir, ec).string();
+                    if (ec) rel = p.filename().string();
+                    if (dryRun) {
+                        std::printf("  would remove: %s/%s (%llu bytes)\n",
+                                    zoneName.c_str(), rel.c_str(),
+                                    static_cast<unsigned long long>(sz));
+                        removed++;
+                        freedBytes += sz;
+                    } else {
+                        if (fs::remove(p, ec)) {
+                            std::printf("  removed: %s/%s (%llu bytes)\n",
+                                        zoneName.c_str(), rel.c_str(),
+                                        static_cast<unsigned long long>(sz));
+                            removed++;
+                            freedBytes += sz;
+                        } else {
+                            std::fprintf(stderr,
+                                "  WARN: failed to remove %s (%s)\n",
+                                p.c_str(), ec.message().c_str());
+                            failed++;
+                        }
+                    }
+                }
+            }
+            std::printf("\nremove-project-orphans: %s%s\n",
+                        projectDir.c_str(), dryRun ? " (dry-run)" : "");
+            std::printf("  zones    : %zu\n", zones.size());
+            std::printf("  refs     : %zu (normalized basenames)\n",
+                        referencedBases.size());
+            std::printf("  %s : %d file(s)\n",
+                        dryRun ? "would remove" : "removed     ", removed);
+            std::printf("  freed    : %.1f KB\n", freedBytes / 1024.0);
+            if (failed > 0) {
+                std::printf("  FAILED   : %d (see stderr)\n", failed);
+            }
+            if (dryRun && removed > 0) {
+                std::printf("  re-run without --dry-run to apply\n");
+            }
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--export-zone-deps-md") == 0 && i + 1 < argc) {
             // Markdown counterpart to --list-zone-deps. Writes a sortable
             // GitHub-rendered table of every external model the zone
