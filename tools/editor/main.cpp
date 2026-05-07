@@ -586,6 +586,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Wipe one or more content files (terrain + manifest preserved)\n");
     std::printf("  --strip-zone <zoneDir> [--dry-run]\n");
     std::printf("                         Remove derived outputs (.glb/.obj/.stl/.html/.dot/.csv/ZONE.md/DEPS.md)\n");
+    std::printf("  --strip-project <projectDir> [--dry-run]\n");
+    std::printf("                         Run --strip-zone across every zone (per-zone counts + aggregate freed bytes)\n");
     std::printf("  --gen-makefile <zoneDir> [out.mk]\n");
     std::printf("                         Generate a Makefile that rebuilds every derived output for a zone\n");
     std::printf("  --gen-project-makefile <projectDir> [out.mk]\n");
@@ -887,7 +889,7 @@ int main(int argc, char* argv[]) {
         "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest",
         "--copy-zone", "--rename-zone", "--remove-zone",
-        "--clear-zone-content", "--strip-zone",
+        "--clear-zone-content", "--strip-zone", "--strip-project",
         "--repair-zone", "--gen-makefile", "--gen-project-makefile",
         "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png", "--export-obj", "--import-obj",
@@ -12645,6 +12647,95 @@ int main(int argc, char* argv[]) {
                 std::printf("  freed    : %.1f KB\n", bytesFreed / 1024.0);
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--strip-project") == 0 && i + 1 < argc) {
+            // Project-wide wrapper around --strip-zone. Walks every zone
+            // in <projectDir>, removes derived outputs at each zone's
+            // top level, and reports per-zone removed/freed counts plus
+            // an aggregate. Honors --dry-run for safe previews.
+            std::string projectDir = argv[++i];
+            bool dryRun = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--dry-run") == 0) {
+                dryRun = true;
+                i++;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "strip-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            // Same derived-classifier as --strip-zone — keep in sync.
+            auto isDerivedExt = [](const std::string& ext) {
+                return ext == ".glb" || ext == ".obj" || ext == ".stl" ||
+                       ext == ".html" || ext == ".dot" || ext == ".csv";
+            };
+            auto isDerivedFilename = [](const std::string& name) {
+                return name == "ZONE.md" || name == "DEPS.md" ||
+                       name == "quests.dot";
+            };
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow { std::string name; int removed = 0; uint64_t freed = 0; };
+            std::vector<ZRow> rows;
+            int totalRemoved = 0;
+            uint64_t totalFreed = 0;
+            int totalFailed = 0;
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                for (const auto& e : fs::directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    std::string name = e.path().filename().string();
+                    bool kill = false;
+                    if (isDerivedExt(ext)) kill = true;
+                    if (isDerivedFilename(name)) kill = true;
+                    if (ext == ".png") kill = true;
+                    if (!kill) continue;
+                    uint64_t sz = e.file_size(ec);
+                    if (dryRun) {
+                        r.removed++;
+                        r.freed += sz;
+                    } else {
+                        if (fs::remove(e.path(), ec)) {
+                            r.removed++;
+                            r.freed += sz;
+                        } else {
+                            std::fprintf(stderr,
+                                "  WARN: failed to remove %s/%s (%s)\n",
+                                r.name.c_str(), name.c_str(),
+                                ec.message().c_str());
+                            totalFailed++;
+                        }
+                    }
+                }
+                totalRemoved += r.removed;
+                totalFreed += r.freed;
+                rows.push_back(r);
+            }
+            std::printf("strip-project: %s%s\n",
+                        projectDir.c_str(), dryRun ? " (dry-run)" : "");
+            std::printf("  zones    : %zu\n", zones.size());
+            std::printf("\n  zone                       removed       freed\n");
+            for (const auto& r : rows) {
+                std::printf("  %-26s  %5d   %9.1f KB\n",
+                            r.name.substr(0, 26).c_str(),
+                            r.removed, r.freed / 1024.0);
+            }
+            std::printf("\n  totals%s : %d file(s), %.1f KB\n",
+                        dryRun ? " (would-remove)" : "          ",
+                        totalRemoved, totalFreed / 1024.0);
+            if (dryRun) {
+                std::printf("  pass --dry-run off to actually delete\n");
+            }
+            return totalFailed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--repair-zone") == 0 && i + 1 < argc) {
             // Auto-fix the common manifest-vs-disk drift issues that
             // accumulate when a zone is hand-edited or partially copied:
