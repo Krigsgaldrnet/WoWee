@@ -716,6 +716,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Histogram of creature counts grouped by faction id\n");
     std::printf("  --info-creatures-by-level <p> [--json]\n");
     std::printf("                         Distribution of creature levels (min/max/avg + per-level counts)\n");
+    std::printf("  --info-objects-by-path <p> [--json]\n");
+    std::printf("                         Histogram of object placements grouped by model path (most-used first)\n");
+    std::printf("  --info-objects-by-type <p> [--json]\n");
+    std::printf("                         M2 vs WMO breakdown plus scale distribution (min/max/avg)\n");
     std::printf("  --info-objects <p> [--json]\n");
     std::printf("                         Print objects.json summary (counts, types, scale range) and exit\n");
     std::printf("  --info-quests <p> [--json]\n");
@@ -801,6 +805,7 @@ int main(int argc, char* argv[]) {
         "--info-creature", "--info-quest", "--info-object",
         "--info-quest-graph-stats",
         "--info-creatures-by-faction", "--info-creatures-by-level",
+        "--info-objects-by-path", "--info-objects-by-type",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-project",
@@ -2633,6 +2638,104 @@ int main(int argc, char* argv[]) {
                 for (int b = 0; b < barLen; ++b) std::printf("█");
                 std::printf("\n");
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-objects-by-path") == 0 && i + 1 < argc) {
+            // Most-used model paths with counts. Designers can quickly
+            // spot which trees/lamps/walls dominate a zone — helps with
+            // both texture-budget audits and 'this looks repetitive,
+            // diversify the doodads' design feedback.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::ObjectPlacer placer;
+            if (!placer.loadFromFile(path)) {
+                std::fprintf(stderr,
+                    "info-objects-by-path: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            std::map<std::string, int> hist;
+            for (const auto& o : placer.getObjects()) hist[o.path]++;
+            // Sort by count descending.
+            std::vector<std::pair<std::string, int>> sorted(hist.begin(), hist.end());
+            std::sort(sorted.begin(), sorted.end(),
+                      [](const auto& a, const auto& b) { return a.second > b.second; });
+            int total = static_cast<int>(placer.getObjects().size());
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["totalObjects"] = total;
+                j["uniquePaths"] = hist.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& [p, c] : sorted) {
+                    arr.push_back({{"path", p}, {"count", c}});
+                }
+                j["paths"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Objects by path: %s (%d total, %zu unique)\n",
+                        path.c_str(), total, hist.size());
+            std::printf("  count   share   path\n");
+            for (const auto& [p, c] : sorted) {
+                double pct = total > 0 ? 100.0 * c / total : 0.0;
+                std::printf("  %5d   %5.1f%%  %s\n", c, pct, p.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-objects-by-type") == 0 && i + 1 < argc) {
+            // M2 vs WMO split + per-type scale stats. Catches scale
+            // outliers ('this WMO is at 0.001 scale, did you mean 1.0?')
+            // and gives a sense of zone composition (mostly props vs
+            // mostly buildings).
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::ObjectPlacer placer;
+            if (!placer.loadFromFile(path)) {
+                std::fprintf(stderr,
+                    "info-objects-by-type: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            int m2Count = 0, wmoCount = 0;
+            float m2Min = 1e30f, m2Max = -1e30f;
+            float wmoMin = 1e30f, wmoMax = -1e30f;
+            double m2SumScale = 0, wmoSumScale = 0;
+            for (const auto& o : placer.getObjects()) {
+                if (o.type == wowee::editor::PlaceableType::M2) {
+                    m2Count++;
+                    m2Min = std::min(m2Min, o.scale);
+                    m2Max = std::max(m2Max, o.scale);
+                    m2SumScale += o.scale;
+                } else {
+                    wmoCount++;
+                    wmoMin = std::min(wmoMin, o.scale);
+                    wmoMax = std::max(wmoMax, o.scale);
+                    wmoSumScale += o.scale;
+                }
+            }
+            double m2Avg = m2Count > 0 ? m2SumScale / m2Count : 0.0;
+            double wmoAvg = wmoCount > 0 ? wmoSumScale / wmoCount : 0.0;
+            if (m2Count == 0) { m2Min = 0; m2Max = 0; }
+            if (wmoCount == 0) { wmoMin = 0; wmoMax = 0; }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["totalObjects"] = m2Count + wmoCount;
+                j["m2"] = {{"count", m2Count},
+                            {"scaleMin", m2Min}, {"scaleMax", m2Max},
+                            {"scaleAvg", m2Avg}};
+                j["wmo"] = {{"count", wmoCount},
+                             {"scaleMin", wmoMin}, {"scaleMax", wmoMax},
+                             {"scaleAvg", wmoAvg}};
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Objects by type: %s\n", path.c_str());
+            std::printf("  M2  : %d  (scale %.2f-%.2f, avg %.2f)\n",
+                        m2Count, m2Min, m2Max, m2Avg);
+            std::printf("  WMO : %d  (scale %.2f-%.2f, avg %.2f)\n",
+                        wmoCount, wmoMin, wmoMax, wmoAvg);
             return 0;
         } else if (std::strcmp(argv[i], "--list-creatures") == 0 && i + 1 < argc) {
             // Verbose enumeration of every spawn — needed because
