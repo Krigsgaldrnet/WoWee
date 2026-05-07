@@ -837,6 +837,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Per-mesh listing of every .wom in a zone (verts, tris, bones, textures, bytes)\n");
     std::printf("  --info-mesh <wom-base> [--json]\n");
     std::printf("                         Single-mesh detail: bounds, version, batches, bones, textures, attachments in one view\n");
+    std::printf("  --info-mesh-storage-budget <wom-base> [--json]\n");
+    std::printf("                         Estimated bytes-per-category breakdown for a single WOM (vertices/indices/bones/...)\n");
     std::printf("  --list-project-meshes <projectDir> [--json]\n");
     std::printf("                         Per-mesh listing across every zone in a project (sorted by triangle count)\n");
     std::printf("  --info-project-models-total <projectDir> [--json]\n");
@@ -962,6 +964,7 @@ int main(int argc, char* argv[]) {
         "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
         "--list-zone-meshes", "--list-project-meshes", "--info-mesh",
+        "--info-mesh-storage-budget",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--info-extract-tree", "--info-extract-budget",
@@ -2311,6 +2314,125 @@ int main(int argc, char* argv[]) {
                                 ? "(empty placeholder)"
                                 : wom.texturePaths[k].c_str());
                 }
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-mesh-storage-budget") == 0 && i + 1 < argc) {
+            // Estimated bytes-per-category breakdown for a WOM.
+            // Numbers are based on the in-memory struct sizes, not
+            // the actual on-disk encoding (which has framing
+            // overhead) — but the relative shares are accurate and
+            // help users decide where shrinking efforts pay off.
+            //
+            // For example: a heightmap mesh's bytes are dominated by
+            // vertices, so reducing vertex count is the lever to
+            // pull. A skeletal mesh's animation keyframes can dwarf
+            // the geometry itself — surfacing that lets the user
+            // know to consider --strip-mesh --anims.
+            std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom") {
+                base = base.substr(0, base.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                std::fprintf(stderr,
+                    "info-mesh-storage-budget: %s.wom does not exist\n",
+                    base.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "info-mesh-storage-budget: failed to load %s.wom\n",
+                    base.c_str());
+                return 1;
+            }
+            // Per-category byte estimates. Vertex is 12+12+8+4+4=40
+            // bytes (pos/normal/uv/4 weights/4 indices). Index is
+            // 4 bytes. Bone is 4+2+12+4=22 bytes. Batch is 4+4+4+2+
+            // 2=16. Animation keyframe is 4+12+16+12=44 bytes.
+            // Texture path is summed length plus a small per-string
+            // overhead.
+            uint64_t vertBytes = wom.vertices.size() * 40;
+            uint64_t idxBytes = wom.indices.size() * 4;
+            uint64_t boneBytes = wom.bones.size() * 22;
+            uint64_t batchBytes = wom.batches.size() * 16;
+            uint64_t animBytes = 0;
+            size_t totalKeyframes = 0;
+            for (const auto& a : wom.animations) {
+                animBytes += 12;  // id + duration + movingSpeed
+                for (const auto& bone : a.boneKeyframes) {
+                    animBytes += bone.size() * 44;
+                    totalKeyframes += bone.size();
+                }
+            }
+            uint64_t texBytes = 0;
+            for (const auto& t : wom.texturePaths) texBytes += t.size() + 8;
+            namespace fs = std::filesystem;
+            uint64_t actualBytes = fs::file_size(base + ".wom");
+            uint64_t estBytes = vertBytes + idxBytes + boneBytes +
+                                 batchBytes + animBytes + texBytes;
+            struct Row { const char* name; uint64_t bytes; };
+            std::vector<Row> rows = {
+                {"vertices  ", vertBytes},
+                {"indices   ", idxBytes},
+                {"bones     ", boneBytes},
+                {"animations", animBytes},
+                {"batches   ", batchBytes},
+                {"textures  ", texBytes},
+            };
+            if (jsonOut) {
+                nlohmann::json j;
+                j["base"] = base;
+                j["fileBytes"] = actualBytes;
+                j["estimatedBytes"] = estBytes;
+                j["categories"] = nlohmann::json::object();
+                for (const auto& r : rows) {
+                    double share = estBytes > 0
+                                   ? 100.0 * r.bytes / estBytes : 0.0;
+                    j["categories"][r.name] = {{"bytes", r.bytes},
+                                                {"share", share}};
+                }
+                j["counts"] = {{"vertices", wom.vertices.size()},
+                                {"indices", wom.indices.size()},
+                                {"bones", wom.bones.size()},
+                                {"animations", wom.animations.size()},
+                                {"keyframes", totalKeyframes},
+                                {"batches", wom.batches.size()},
+                                {"textures", wom.texturePaths.size()}};
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Mesh storage budget: %s.wom\n", base.c_str());
+            std::printf("  on-disk    : %llu bytes (%.1f KB)\n",
+                        static_cast<unsigned long long>(actualBytes),
+                        actualBytes / 1024.0);
+            std::printf("  estimated  : %llu bytes (sum of in-memory parts)\n",
+                        static_cast<unsigned long long>(estBytes));
+            std::printf("\n  Per-category (estimated):\n");
+            for (const auto& r : rows) {
+                if (r.bytes == 0) continue;
+                double share = estBytes > 0
+                               ? 100.0 * r.bytes / estBytes : 0.0;
+                std::printf("    %s : %10llu bytes  (%5.1f%%)\n",
+                            r.name,
+                            static_cast<unsigned long long>(r.bytes),
+                            share);
+            }
+            std::printf("\n  Tips:\n");
+            if (animBytes > vertBytes && wom.animations.size() > 0) {
+                std::printf("    - animations dominate; --strip-mesh "
+                            "--anims would save %.1f KB\n",
+                            animBytes / 1024.0);
+            }
+            if (boneBytes > vertBytes / 2 && wom.bones.size() > 0) {
+                std::printf("    - bones non-trivial; consider "
+                            "--strip-mesh --bones for static placement\n");
+            }
+            if (vertBytes > estBytes / 2) {
+                std::printf("    - vertices dominate; check if a "
+                            "lower-poly variant works for placement\n");
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-project-models-total") == 0 && i + 1 < argc) {
