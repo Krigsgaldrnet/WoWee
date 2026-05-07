@@ -581,6 +581,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Re-snap every creature/object in a zone to actual terrain height\n");
     std::printf("  --audit-zone-spawns <zoneDir> [--threshold yards]\n");
     std::printf("                         List spawns whose Z is more than <threshold> yards off from the terrain (default 5)\n");
+    std::printf("  --list-zone-spawns <zoneDir> [--json]\n");
+    std::printf("                         Combined creature+object listing for a zone (kind, name, position, key fields)\n");
     std::printf("  --audit-project-spawns <projectDir> [--threshold yards]\n");
     std::printf("                         Run --audit-zone-spawns across every zone (per-zone summary + total)\n");
     std::printf("  --snap-project-to-ground <projectDir>\n");
@@ -1034,7 +1036,7 @@ int main(int argc, char* argv[]) {
         "--random-populate-zone", "--random-populate-items",
         "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
         "--info-project-audio", "--snap-project-to-ground",
-        "--audit-project-spawns",
+        "--audit-project-spawns", "--list-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13767,6 +13769,82 @@ int main(int argc, char* argv[]) {
             }
             std::printf("\n  Run --snap-zone-to-ground to fix in bulk.\n");
             return 1;
+        } else if (std::strcmp(argv[i], "--list-zone-spawns") == 0 && i + 1 < argc) {
+            // Combined creature + object listing. Useful for a quick
+            // "what's in this zone" survey without running both
+            // --info-creatures and --info-objects separately.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "list-zone-spawns: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::NpcSpawner spawner;
+            wowee::editor::ObjectPlacer placer;
+            spawner.loadFromFile(zoneDir + "/creatures.json");
+            placer.loadFromFile(zoneDir + "/objects.json");
+            const auto& spawns = spawner.getSpawns();
+            const auto& objs = placer.getObjects();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["creatureCount"] = spawns.size();
+                j["objectCount"] = objs.size();
+                nlohmann::json carr = nlohmann::json::array();
+                for (const auto& s : spawns) {
+                    carr.push_back({{"name", s.name},
+                                     {"level", s.level},
+                                     {"x", s.position.x},
+                                     {"y", s.position.y},
+                                     {"z", s.position.z},
+                                     {"hostile", s.hostile}});
+                }
+                j["creatures"] = carr;
+                nlohmann::json oarr = nlohmann::json::array();
+                for (const auto& o : objs) {
+                    oarr.push_back({{"path", o.path},
+                                     {"type", o.type == wowee::editor::PlaceableType::M2 ? "m2" : "wmo"},
+                                     {"x", o.position.x},
+                                     {"y", o.position.y},
+                                     {"z", o.position.z},
+                                     {"scale", o.scale}});
+                }
+                j["objects"] = oarr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone spawns: %s\n", zoneDir.c_str());
+            std::printf("  creatures : %zu\n", spawns.size());
+            std::printf("  objects   : %zu\n", objs.size());
+            if (!spawns.empty()) {
+                std::printf("\n  Creatures:\n");
+                std::printf("    idx  lvl  hostile  x         y         z         name\n");
+                for (size_t k = 0; k < spawns.size(); ++k) {
+                    const auto& s = spawns[k];
+                    std::printf("    %3zu  %3u  %-7s  %8.1f  %8.1f  %8.1f  %s\n",
+                                k, s.level, s.hostile ? "yes" : "no",
+                                s.position.x, s.position.y, s.position.z,
+                                s.name.c_str());
+                }
+            }
+            if (!objs.empty()) {
+                std::printf("\n  Objects:\n");
+                std::printf("    idx  type  scale  x         y         z         path\n");
+                for (size_t k = 0; k < objs.size(); ++k) {
+                    const auto& o = objs[k];
+                    std::printf("    %3zu  %-4s  %5.2f  %8.1f  %8.1f  %8.1f  %s\n",
+                                k,
+                                o.type == wowee::editor::PlaceableType::M2 ? "m2" : "wmo",
+                                o.scale,
+                                o.position.x, o.position.y, o.position.z,
+                                o.path.c_str());
+                }
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--audit-project-spawns") == 0 && i + 1 < argc) {
             // Project-wide wrapper around --audit-zone-spawns. Spawns
             // the binary per-zone (only those with creatures.json or
