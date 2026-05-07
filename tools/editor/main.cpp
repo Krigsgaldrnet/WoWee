@@ -538,6 +538,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
     std::printf("  --info-item <zoneDir> <id|index> [--json]\n");
     std::printf("                         Detail view for one item (lookup by id, or by index if prefixed with '#')\n");
+    std::printf("  --set-item <zoneDir> <id|#index> [--name S] [--quality N] [--displayId N] [--itemLevel N] [--stackable N]\n");
+    std::printf("                         Edit fields on an existing item in place; only specified flags are changed\n");
     std::printf("  --remove-item <zoneDir> <index>\n");
     std::printf("                         Remove item at given 0-based index from <zoneDir>/items.json\n");
     std::printf("  --clone-item <zoneDir> <index> [newName]\n");
@@ -953,7 +955,7 @@ int main(int argc, char* argv[]) {
         "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
-        "--list-items", "--info-item",
+        "--list-items", "--info-item", "--set-item",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--clone-item", "--validate-items", "--info-project-items",
@@ -12894,6 +12896,155 @@ int main(int argc, char* argv[]) {
                     std::printf("    %s = %s\n",
                                 k.c_str(), it[k].dump().c_str());
                 }
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--set-item") == 0 && i + 2 < argc) {
+            // Edit fields on an existing item in place. Lookup is by
+            // id by default; '#N' for index lookup. Only specified
+            // flags are changed; everything else is preserved
+            // verbatim — including any extra fields added by hand.
+            //
+            // Supported flags: --name, --quality, --displayId,
+            // --itemLevel, --stackable. Each takes one positional
+            // argument that follows the flag.
+            std::string zoneDir = argv[++i];
+            std::string lookup = argv[++i];
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "set-item: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "set-item: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "set-item: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            auto& items = doc["items"];
+            int foundIdx = -1;
+            if (!lookup.empty() && lookup[0] == '#') {
+                try {
+                    int idx = std::stoi(lookup.substr(1));
+                    if (idx >= 0 && static_cast<size_t>(idx) < items.size())
+                        foundIdx = idx;
+                } catch (...) {}
+            } else {
+                uint32_t targetId = 0;
+                try { targetId = static_cast<uint32_t>(std::stoul(lookup)); }
+                catch (...) {
+                    std::fprintf(stderr,
+                        "set-item: lookup '%s' is not a number\n",
+                        lookup.c_str());
+                    return 1;
+                }
+                for (size_t k = 0; k < items.size(); ++k) {
+                    if (items[k].contains("id") &&
+                        items[k]["id"].is_number_unsigned() &&
+                        items[k]["id"].get<uint32_t>() == targetId) {
+                        foundIdx = static_cast<int>(k);
+                        break;
+                    }
+                }
+            }
+            if (foundIdx < 0) {
+                std::fprintf(stderr,
+                    "set-item: no match for '%s' in %s\n",
+                    lookup.c_str(), path.c_str());
+                return 1;
+            }
+            auto& it = items[foundIdx];
+            std::vector<std::string> changes;
+            // Walk the remaining args looking for known --field value
+            // pairs. Anything unrecognized is reported and aborts so
+            // typos don't silently no-op.
+            while (i + 2 < argc) {
+                std::string flag = argv[i + 1];
+                std::string val = argv[i + 2];
+                if (flag.size() < 2 || flag[0] != '-' || flag[1] != '-') break;
+                if (flag == "--name") {
+                    it["name"] = val;
+                    changes.push_back("name=" + val);
+                } else if (flag == "--quality") {
+                    try {
+                        uint32_t q = static_cast<uint32_t>(std::stoul(val));
+                        if (q > 6) {
+                            std::fprintf(stderr,
+                                "set-item: quality %u out of range (0..6)\n", q);
+                            return 1;
+                        }
+                        it["quality"] = q;
+                        changes.push_back("quality=" + val);
+                    } catch (...) {
+                        std::fprintf(stderr,
+                            "set-item: --quality needs a number\n");
+                        return 1;
+                    }
+                } else if (flag == "--displayId") {
+                    try {
+                        it["displayId"] = static_cast<uint32_t>(std::stoul(val));
+                        changes.push_back("displayId=" + val);
+                    } catch (...) {
+                        std::fprintf(stderr,
+                            "set-item: --displayId needs a number\n");
+                        return 1;
+                    }
+                } else if (flag == "--itemLevel") {
+                    try {
+                        it["itemLevel"] = static_cast<uint32_t>(std::stoul(val));
+                        changes.push_back("itemLevel=" + val);
+                    } catch (...) {
+                        std::fprintf(stderr,
+                            "set-item: --itemLevel needs a number\n");
+                        return 1;
+                    }
+                } else if (flag == "--stackable") {
+                    try {
+                        uint32_t s = static_cast<uint32_t>(std::stoul(val));
+                        if (s == 0 || s > 1000) {
+                            std::fprintf(stderr,
+                                "set-item: stackable %u out of range (1..1000)\n", s);
+                            return 1;
+                        }
+                        it["stackable"] = s;
+                        changes.push_back("stackable=" + val);
+                    } catch (...) {
+                        std::fprintf(stderr,
+                            "set-item: --stackable needs a number\n");
+                        return 1;
+                    }
+                } else {
+                    std::fprintf(stderr,
+                        "set-item: unknown flag '%s' (typo?)\n", flag.c_str());
+                    return 1;
+                }
+                i += 2;
+            }
+            if (changes.empty()) {
+                std::fprintf(stderr,
+                    "set-item: no field flags supplied — nothing to change\n");
+                return 1;
+            }
+            std::ofstream out(path);
+            if (!out) {
+                std::fprintf(stderr,
+                    "set-item: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            out << doc.dump(2);
+            out.close();
+            std::printf("Updated item %d in %s:\n", foundIdx, path.c_str());
+            for (const auto& c : changes) {
+                std::printf("  %s\n", c.c_str());
             }
             return 0;
         } else if (std::strcmp(argv[i], "--remove-item") == 0 && i + 2 < argc) {
