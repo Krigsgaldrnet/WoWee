@@ -1738,6 +1738,18 @@ void EditorApp::randomPopulateZone(int creatureCount, int objectCount,
         "World/Generic/Stump.wmo",
         "World/Generic/Mushroom.wmo",
     };
+    // Ground-snap helper: cast a downward ray from far above the (x,y)
+    // position to find the actual terrain height. Without this, spawns
+    // sit at baseZ which can be metres below or above the carved
+    // terrain after generation.
+    auto groundZ = [&](float x, float y) -> float {
+        rendering::Ray ray;
+        ray.origin = glm::vec3(x, y, baseZ + 500.0f);
+        ray.direction = glm::vec3(0, 0, -1);
+        glm::vec3 hit;
+        if (terrainEditor_.raycastTerrain(ray, hit)) return hit.z;
+        return baseZ;  // fall back to base if the ray misses
+    };
     int placedCreatures = 0, placedObjects = 0;
     for (int n = 0; n < creatureCount; ++n) {
         const auto& [name, baseLvl] = kRandomCreatures[
@@ -1746,7 +1758,7 @@ void EditorApp::randomPopulateZone(int creatureCount, int objectCount,
         s.name = name;
         s.position.x = rangeF(wMinX, wMaxX);
         s.position.y = rangeF(wMinY, wMaxY);
-        s.position.z = baseZ;
+        s.position.z = groundZ(s.position.x, s.position.y);
         int lvl = std::max(1, static_cast<int>(baseLvl) + rangeI(-1, 2));
         s.level = static_cast<uint32_t>(lvl);
         s.health = 50 + s.level * 10;
@@ -1764,7 +1776,7 @@ void EditorApp::randomPopulateZone(int creatureCount, int objectCount,
         o.type = PlaceableType::WMO;
         o.position.x = rangeF(wMinX, wMaxX);
         o.position.y = rangeF(wMinY, wMaxY);
-        o.position.z = baseZ;
+        o.position.z = groundZ(o.position.x, o.position.y);
         o.rotation = glm::vec3(0.0f, rangeF(0.0f, 6.28f), 0.0f);
         o.scale = rangeF(0.8f, 1.4f);
         o.uniqueId = ++maxUid;
