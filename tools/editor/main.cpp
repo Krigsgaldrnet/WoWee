@@ -530,6 +530,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a linear gradient PNG (default vertical, 256x256)\n");
     std::printf("  --gen-texture-noise <out.png> [seed] [W H]\n");
     std::printf("                         Synthesize a smooth value-noise PNG (deterministic from seed; default 256x256)\n");
+    std::printf("  --gen-texture-radial <out.png> <centerHex> <edgeHex> [W H]\n");
+    std::printf("                         Synthesize a radial gradient PNG (center→edge, smooth distance-based blend)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone> [size]\n");
@@ -970,6 +972,7 @@ int main(int argc, char* argv[]) {
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--gen-texture-noise", "--rotate-mesh",
         "--center-mesh", "--flip-mesh-normals",
+        "--gen-texture-radial",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -15568,6 +15571,115 @@ int main(int argc, char* argv[]) {
             std::printf("  size  : %dx%d\n", W, H);
             std::printf("  seed  : %u\n", seed);
             std::printf("  type  : smooth value noise (16x16 bilinear lattice)\n");
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-radial") == 0 && i + 3 < argc) {
+            // Radial gradient: centerHex at the image center fading
+            // smoothly to edgeHex at the corner. Useful for spell
+            // glow rings, vignettes, soft-edged decals — the
+            // common "circular blob" cases that linear gradients
+            // can't produce.
+            //
+            // Distance is normalized so the corner is t=1 (image is
+            // not necessarily square). A smoothstep curve gives a
+            // soft falloff rather than a harsh disc edge.
+            std::string outPath = argv[++i];
+            std::string centerHex = argv[++i];
+            std::string edgeHex = argv[++i];
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+                std::fprintf(stderr,
+                    "gen-texture-radial: invalid size %dx%d (1..8192)\n",
+                    W, H);
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t rc, gc, bc, re, ge, be;
+            if (!parseHex(centerHex, rc, gc, bc)) {
+                std::fprintf(stderr,
+                    "gen-texture-radial: '%s' is not a valid hex color\n",
+                    centerHex.c_str());
+                return 1;
+            }
+            if (!parseHex(edgeHex, re, ge, be)) {
+                std::fprintf(stderr,
+                    "gen-texture-radial: '%s' is not a valid hex color\n",
+                    edgeHex.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            float cx = (W - 1) * 0.5f;
+            float cy = (H - 1) * 0.5f;
+            // Max distance is the corner (cx, cy itself = half-diag).
+            float maxD = std::sqrt(cx * cx + cy * cy);
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    float dx = x - cx;
+                    float dy = y - cy;
+                    float d = std::sqrt(dx * dx + dy * dy);
+                    float t = (maxD > 0) ? (d / maxD) : 0.0f;
+                    if (t > 1.0f) t = 1.0f;
+                    // Smoothstep so the falloff is soft.
+                    float smt = t * t * (3.0f - 2.0f * t);
+                    auto lerp = [](uint8_t a, uint8_t b, float t) {
+                        return static_cast<uint8_t>(a + (b - a) * t + 0.5f);
+                    };
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = lerp(rc, re, smt);
+                    pixels[i2 + 1] = lerp(gc, ge, smt);
+                    pixels[i2 + 2] = lerp(bc, be, smt);
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-radial: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size   : %dx%d\n", W, H);
+            std::printf("  center : %s (rgb %u,%u,%u)\n",
+                        centerHex.c_str(), rc, gc, bc);
+            std::printf("  edge   : %s (rgb %u,%u,%u)\n",
+                        edgeHex.c_str(), re, ge, be);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
