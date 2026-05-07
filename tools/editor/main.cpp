@@ -538,6 +538,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
     std::printf("  --add-texture-to-mesh <wom-base> <png-path> [batchIdx]\n");
     std::printf("                         Bind an existing PNG into a WOM's texturePaths and point batchIdx (default 0) at it\n");
+    std::printf("  --scale-mesh <wom-base> <factor>\n");
+    std::printf("                         Uniformly scale every vertex and bounds by <factor> (factor > 0)\n");
+    std::printf("  --translate-mesh <wom-base> <dx> <dy> <dz>\n");
+    std::printf("                         Offset every vertex and bounds by (dx, dy, dz)\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -953,6 +957,7 @@ int main(int argc, char* argv[]) {
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-texture-gradient",
+        "--scale-mesh", "--translate-mesh",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -16094,6 +16099,122 @@ int main(int argc, char* argv[]) {
                 std::printf("        copy or move %s -> %s before shipping\n",
                             pngPath.c_str(), expected.c_str());
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--scale-mesh") == 0 && i + 2 < argc) {
+            // Uniformly scale a WOM in place. Multiplies every
+            // vertex position, every bone pivot, and the bounds by
+            // <factor>. Normals are unchanged (uniform scale
+            // preserves direction). Useful for "I imported this OBJ
+            // but it's the wrong size" cleanup.
+            std::string womBase = argv[++i];
+            float factor = 1.0f;
+            try { factor = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "scale-mesh: <factor> must be a number\n");
+                return 1;
+            }
+            if (factor <= 0.0f || !std::isfinite(factor)) {
+                std::fprintf(stderr,
+                    "scale-mesh: factor must be positive and finite (got %g)\n",
+                    factor);
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "scale-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "scale-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            for (auto& v : wom.vertices) v.position *= factor;
+            for (auto& b : wom.bones) b.pivot *= factor;
+            // Animation translations also scale; rotation/scale
+            // tracks are dimensionless.
+            for (auto& a : wom.animations) {
+                for (auto& bone : a.boneKeyframes) {
+                    for (auto& kf : bone) kf.translation *= factor;
+                }
+            }
+            wom.boundMin *= factor;
+            wom.boundMax *= factor;
+            wom.boundRadius *= factor;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "scale-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Scaled %s.wom by %g\n", womBase.c_str(), factor);
+            std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            std::printf("  new radius : %.3f\n", wom.boundRadius);
+            return 0;
+        } else if (std::strcmp(argv[i], "--translate-mesh") == 0 && i + 4 < argc) {
+            // Offset every vertex (and bones / anim translations /
+            // bounds) by (dx, dy, dz). Useful for re-centering a
+            // mesh whose origin was wrong on import, or for shifting
+            // a procedural primitive that isn't centered the way
+            // you want.
+            std::string womBase = argv[++i];
+            float dx = 0, dy = 0, dz = 0;
+            try {
+                dx = std::stof(argv[++i]);
+                dy = std::stof(argv[++i]);
+                dz = std::stof(argv[++i]);
+            } catch (...) {
+                std::fprintf(stderr,
+                    "translate-mesh: dx/dy/dz must be numbers\n");
+                return 1;
+            }
+            if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) {
+                std::fprintf(stderr,
+                    "translate-mesh: offsets must be finite\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "translate-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "translate-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            glm::vec3 d(dx, dy, dz);
+            for (auto& v : wom.vertices) v.position += d;
+            for (auto& b : wom.bones) b.pivot += d;
+            // Bone-relative animation translations don't shift with
+            // the model — only the bone pivots do, since translations
+            // are in bone-local space. Leave anim keyframes alone.
+            wom.boundMin += d;
+            wom.boundMax += d;
+            // Radius is unchanged (translation is rigid, doesn't
+            // change extent).
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "translate-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Translated %s.wom by (%g, %g, %g)\n",
+                        womBase.c_str(), dx, dy, dz);
+            std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
             return 0;
         } else if (std::strcmp(argv[i], "--add-texture-to-zone") == 0 && i + 2 < argc) {
             // Import an existing PNG into a zone directory. Useful
