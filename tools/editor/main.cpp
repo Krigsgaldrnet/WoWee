@@ -740,6 +740,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print every field for one object placement (type, path, transform)\n");
     std::printf("  --info-wcp <wcp-path> [--json]\n");
     std::printf("                         Print WCP archive metadata (name, files) and exit\n");
+    std::printf("  --info-pack-budget <wcp-path> [--json]\n");
+    std::printf("                         Per-extension byte breakdown of a WCP archive (sized largest-first)\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
     std::printf("  --diff-wcp <a> <b> [--json]\n");
     std::printf("                         Compare two WCPs file-by-file; exit 0 if identical, 1 otherwise\n");
@@ -791,7 +793,7 @@ int main(int argc, char* argv[]) {
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--info-extract-tree", "--list-missing-sidecars",
-        "--info-png", "--info-jsondbc", "--info-blp",
+        "--info-png", "--info-jsondbc", "--info-blp", "--info-pack-budget",
         "--info-m2", "--info-wmo", "--info-adt",
         "--info-zone", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
@@ -4204,6 +4206,71 @@ int main(int argc, char* argv[]) {
                 std::printf("    %-10s : %zu\n", cat.c_str(), count);
             }
             std::printf("  total bytes : %.2f MB\n", totalSize / (1024.0 * 1024.0));
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-pack-budget") == 0 && i + 1 < argc) {
+            // Per-extension byte breakdown of a WCP archive. --info-wcp
+            // gives counts per category; this gives bytes per extension
+            // so users can spot what's bloating an archive before
+            // shipping. ('Why is my pack 80MB? Oh, the .glb baked
+            // outputs got included.')
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::ContentPackInfo info;
+            if (!wowee::editor::ContentPacker::readInfo(path, info)) {
+                std::fprintf(stderr,
+                    "info-pack-budget: failed to read %s\n", path.c_str());
+                return 1;
+            }
+            // Sum bytes per extension (lower-cased).
+            std::map<std::string, std::pair<int, uint64_t>> byExt;
+            uint64_t totalBytes = 0;
+            for (const auto& f : info.files) {
+                std::string ext;
+                auto dot = f.path.find_last_of('.');
+                if (dot != std::string::npos) ext = f.path.substr(dot);
+                else ext = "(no-ext)";
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                                [](unsigned char c) { return std::tolower(c); });
+                byExt[ext].first++;
+                byExt[ext].second += f.size;
+                totalBytes += f.size;
+            }
+            // Sort by bytes descending.
+            std::vector<std::pair<std::string, std::pair<int, uint64_t>>> sorted(
+                byExt.begin(), byExt.end());
+            std::sort(sorted.begin(), sorted.end(),
+                      [](const auto& a, const auto& b) {
+                          return a.second.second > b.second.second;
+                      });
+            if (jsonOut) {
+                nlohmann::json j;
+                j["wcp"] = path;
+                j["totalFiles"] = info.files.size();
+                j["totalBytes"] = totalBytes;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& [ext, cb] : sorted) {
+                    arr.push_back({{"ext", ext},
+                                    {"count", cb.first},
+                                    {"bytes", cb.second}});
+                }
+                j["byExtension"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("WCP budget: %s\n", path.c_str());
+            std::printf("  total: %zu file(s), %.2f MB\n",
+                        info.files.size(), totalBytes / (1024.0 * 1024.0));
+            std::printf("\n  ext           count        bytes      KB    share\n");
+            for (const auto& [ext, cb] : sorted) {
+                double pct = totalBytes > 0
+                    ? 100.0 * cb.second / totalBytes : 0.0;
+                std::printf("  %-12s %6d  %11llu  %6.1f  %5.1f%%\n",
+                            ext.c_str(), cb.first,
+                            static_cast<unsigned long long>(cb.second),
+                            cb.second / 1024.0, pct);
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--info-wot") == 0 && i + 1 < argc) {
             std::string base = argv[++i];
