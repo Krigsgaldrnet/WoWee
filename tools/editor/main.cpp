@@ -561,6 +561,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Invert every vertex normal (use for inside-out meshes or two-sided pre-flip)\n");
     std::printf("  --mirror-mesh <wom-base> <x|y|z>\n");
     std::printf("                         Mirror every vertex + normal across the chosen axis (also flips winding)\n");
+    std::printf("  --smooth-mesh-normals <wom-base>\n");
+    std::printf("                         Recompute per-vertex normals as area-weighted averages of incident face normals\n");
     std::printf("  --merge-meshes <a-base> <b-base> <out-base>\n");
     std::printf("                         Combine two WOMs into one (vertex/index buffers concatenated, batches preserved)\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
@@ -986,6 +988,7 @@ int main(int argc, char* argv[]) {
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--gen-texture-noise", "--rotate-mesh",
         "--center-mesh", "--flip-mesh-normals", "--mirror-mesh",
+        "--smooth-mesh-normals",
         "--merge-meshes",
         "--gen-texture-radial", "--gen-texture-stripes",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
@@ -17188,6 +17191,87 @@ int main(int argc, char* argv[]) {
             std::printf("  new bounds       : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
                         wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
                         wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--smooth-mesh-normals") == 0 && i + 1 < argc) {
+            // Recompute per-vertex normals as the area-weighted
+            // average of incident face normals. Useful when:
+            //   - Imported geometry has no normals (--import-obj
+            //     leaves them zero or face-flat).
+            //   - Custom transforms have desynced normals from the
+            //     positions (e.g., user post-processed the WOM
+            //     externally).
+            //   - Faceted-by-construction meshes (cube, stairs) need
+            //     a smooth re-shade for stylistic reasons.
+            //
+            // The cross-product magnitude is twice the triangle area,
+            // which weights large faces more — bigger triangles
+            // contribute more to the local surface direction.
+            std::string womBase = argv[++i];
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "smooth-mesh-normals: %s.wom does not exist\n",
+                    womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "smooth-mesh-normals: failed to load %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            // Reset vertex normals to zero so the accumulator sums
+            // cleanly.
+            for (auto& v : wom.vertices) v.normal = glm::vec3(0);
+            for (size_t k = 0; k + 2 < wom.indices.size(); k += 3) {
+                uint32_t i0 = wom.indices[k];
+                uint32_t i1 = wom.indices[k + 1];
+                uint32_t i2 = wom.indices[k + 2];
+                if (i0 >= wom.vertices.size() ||
+                    i1 >= wom.vertices.size() ||
+                    i2 >= wom.vertices.size()) continue;
+                glm::vec3 p0 = wom.vertices[i0].position;
+                glm::vec3 p1 = wom.vertices[i1].position;
+                glm::vec3 p2 = wom.vertices[i2].position;
+                // Cross product magnitude == 2 * triangle area, used
+                // as the weight.
+                glm::vec3 faceN = glm::cross(p1 - p0, p2 - p0);
+                wom.vertices[i0].normal += faceN;
+                wom.vertices[i1].normal += faceN;
+                wom.vertices[i2].normal += faceN;
+            }
+            int normalized = 0, degenerate = 0;
+            for (auto& v : wom.vertices) {
+                float len = glm::length(v.normal);
+                if (len > 1e-6f) {
+                    v.normal /= len;
+                    normalized++;
+                } else {
+                    // Vertex unreferenced or sum cancelled — fall
+                    // back to "up" rather than leaving zero so the
+                    // shader doesn't get a dark NaN spot.
+                    v.normal = glm::vec3(0, 1, 0);
+                    degenerate++;
+                }
+            }
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "smooth-mesh-normals: failed to save %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            std::printf("Smoothed normals on %s.wom\n", womBase.c_str());
+            std::printf("  vertices touched : %zu\n", wom.vertices.size());
+            std::printf("  triangles read   : %zu\n", wom.indices.size() / 3);
+            std::printf("  normalized       : %d\n", normalized);
+            if (degenerate > 0) {
+                std::printf("  degenerate       : %d (set to (0,1,0))\n",
+                            degenerate);
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--merge-meshes") == 0 && i + 3 < argc) {
             // Combine two WOMs into one. The second mesh's indices
