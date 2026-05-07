@@ -518,6 +518,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Delete proprietary files (.m2/.wmo/.blp/.dbc) that already have an open sidecar\n");
     std::printf("  --audit-data-tree <srcDir>\n");
     std::printf("                         CI gate: exit 1 if any proprietary file lacks an open sidecar (100%% migration check)\n");
+    std::printf("  --bench-migrate-data-tree <srcDir> [--json]\n");
+    std::printf("                         Time each step of --migrate-data-tree (m2/wmo/blp/dbc) and report wall-clock per step\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -900,6 +902,7 @@ int main(int argc, char* argv[]) {
         "--validate-whm", "--validate-all", "--validate-project",
         "--validate-project-open-only", "--audit-project",
         "--bench-validate-project", "--bench-bake-project",
+        "--bench-migrate-data-tree",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -13557,6 +13560,76 @@ int main(int argc, char* argv[]) {
             std::printf("\n  %d step(s) reported failures (re-run individually for detail)\n",
                         totalFailed);
             return 1;
+        } else if (std::strcmp(argv[i], "--bench-migrate-data-tree") == 0 && i + 1 < argc) {
+            // Time each --migrate-data-tree step end-to-end. Useful
+            // for capacity planning ("how long will the full extracted
+            // Data tree take?") and regression detection (a recent
+            // change shouldn't make M2 conversion 2x slower).
+            //
+            // Sub-batches are dispatched the same way --migrate-data-
+            // tree dispatches them — so the timings here are exactly
+            // what the user will experience running the migration.
+            std::string srcDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "bench-migrate-data-tree: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            std::string self = argv[0];
+            struct Step {
+                const char* name;
+                const char* flag;
+                double ms = 0;
+                int rc = 0;
+            };
+            std::vector<Step> steps = {
+                {"M2  → WOM ", "--convert-m2-batch",  0, 0},
+                {"WMO → WOB ", "--convert-wmo-batch", 0, 0},
+                {"BLP → PNG ", "--convert-blp-batch", 0, 0},
+                {"DBC → JSON", "--convert-dbc-batch", 0, 0},
+            };
+            double totalMs = 0;
+            for (auto& s : steps) {
+                std::string cmd = "\"" + self + "\" " + s.flag + " \"" + srcDir + "\"";
+                cmd += " >/dev/null 2>&1";
+                auto t0 = std::chrono::steady_clock::now();
+                s.rc = std::system(cmd.c_str());
+                auto t1 = std::chrono::steady_clock::now();
+                s.ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                totalMs += s.ms;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["srcDir"] = srcDir;
+                j["totalMs"] = totalMs;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& s : steps) {
+                    double share = totalMs > 0 ? 100.0 * s.ms / totalMs : 0.0;
+                    arr.push_back({{"name", s.name},
+                                    {"flag", s.flag},
+                                    {"ms", s.ms},
+                                    {"share", share},
+                                    {"rc", s.rc}});
+                }
+                j["steps"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("bench-migrate-data-tree: %s\n", srcDir.c_str());
+            std::printf("  total : %.1f ms (%.2f s)\n", totalMs, totalMs / 1000.0);
+            std::printf("\n  step               wall-clock     share   status\n");
+            for (const auto& s : steps) {
+                double share = totalMs > 0 ? 100.0 * s.ms / totalMs : 0.0;
+                std::printf("  %-15s   %8.1f ms   %5.1f%%   %s (rc=%d)\n",
+                            s.name, s.ms, share,
+                            s.rc == 0 ? "ok" : "FAIL", s.rc);
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
             // Non-destructive companion to --migrate-data-tree. Walks
             // <srcDir> recursively, counts files per format pair
