@@ -678,6 +678,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Per-zone byte rollup with proprietary-vs-open category split (size audit)\n");
     std::printf("  --validate-project-open-only <projectDir>\n");
     std::printf("                         Exit 1 if any proprietary Blizzard assets (.m2/.wmo/.blp/.dbc) remain — release gate\n");
+    std::printf("  --audit-project <projectDir>\n");
+    std::printf("                         Run validate-project + open-only + check-project-refs together; one PASS/FAIL\n");
     std::printf("  --info-zone-bytes <zoneDir> [--json]\n");
     std::printf("                         Per-file size breakdown grouped by category, sorted largest-first\n");
     std::printf("  --info-zone-extents <zoneDir> [--json]\n");
@@ -868,7 +870,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-project",
-        "--validate-project-open-only",
+        "--validate-project-open-only", "--audit-project",
         "--bench-validate-project", "--bench-bake-project",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
@@ -7417,6 +7419,68 @@ int main(int argc, char* argv[]) {
                 std::printf("    - %s\n", h.c_str());
                 shown++;
             }
+            return 1;
+        } else if (std::strcmp(argv[i], "--audit-project") == 0 && i + 1 < argc) {
+            // Composite CI gate. Re-invokes the binary to run the four
+            // most important per-project checks back-to-back and rolls
+            // their exit codes into a single PASS/FAIL verdict. Emits
+            // a one-line summary for each sub-check plus the final
+            // overall result. Designed to be the only command CI needs
+            // to run before --pack-wcp.
+            //
+            // Sub-checks:
+            //   1. validate-project        (per-format integrity)
+            //   2. validate-project-open-only (no proprietary leaks)
+            //   3. check-project-refs      (every model/NPC ref resolves)
+            //   4. check-project-content   (sane field values)
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "audit-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            // Use the binary's own path so the audit works from any cwd.
+            std::string self = argv[0];
+            // Quote both to survive paths with spaces; redirect each
+            // sub-check's stdout to a separate temp file so the final
+            // verdict isn't drowned in their output.
+            auto runStep = [&](const std::string& flag) -> int {
+                std::string cmd = "\"" + self + "\" " + flag + " \"" + projectDir + "\"";
+                // Suppress stdout so the audit's own report stays
+                // readable; users can rerun the individual sub-check
+                // for full output if needed.
+                cmd += " >/dev/null 2>&1";
+                // std::system returns 0 on success across POSIX and
+                // Windows. Anything else is a failure for our purposes;
+                // we just need PASS/FAIL granularity here.
+                return std::system(cmd.c_str());
+            };
+            struct Step { const char* name; const char* flag; int rc; };
+            std::vector<Step> steps = {
+                {"format validation       ", "--validate-project",          0},
+                {"open-only release gate  ", "--validate-project-open-only", 0},
+                {"reference integrity     ", "--check-project-refs",         0},
+                {"content field sanity    ", "--check-project-content",      0},
+            };
+            int totalFailed = 0;
+            std::printf("audit-project: %s\n\n", projectDir.c_str());
+            for (auto& s : steps) {
+                s.rc = runStep(s.flag);
+                bool pass = (s.rc == 0);
+                std::printf("  [%s] %s  (%s, rc=%d)\n",
+                            pass ? "PASS" : "FAIL",
+                            s.name, s.flag, s.rc);
+                if (!pass) totalFailed++;
+            }
+            std::printf("\n");
+            if (totalFailed == 0) {
+                std::printf("OVERALL: PASS — project is release-ready\n");
+                return 0;
+            }
+            std::printf("OVERALL: FAIL — %d sub-check(s) failed\n", totalFailed);
+            std::printf("  rerun a failing sub-check directly for detailed output\n");
             return 1;
         } else if (std::strcmp(argv[i], "--bench-validate-project") == 0 && i + 1 < argc) {
             // Time --validate-project per zone. Reports avg/min/max
