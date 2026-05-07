@@ -524,6 +524,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Verify every referenced model/quest NPC actually exists; exit 1 on missing refs\n");
     std::printf("  --check-zone-content <zoneDir> [--json]\n");
     std::printf("                         Sanity-check creature/object/quest fields for plausible values\n");
+    std::printf("  --check-project-content <projectDir> [--json]\n");
+    std::printf("                         Run --check-zone-content across every zone in <projectDir>\n");
     std::printf("  --for-each-zone <projectDir> -- <cmd...>\n");
     std::printf("                         Run <cmd...> for every zone in <projectDir>; '{}' in cmd is replaced with the zone path\n");
     std::printf("  --for-each-tile <zoneDir> -- <cmd...>\n");
@@ -843,6 +845,7 @@ int main(int argc, char* argv[]) {
         "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--for-each-tile", "--zone-stats", "--info-tilemap",
         "--list-zone-deps", "--check-zone-refs", "--check-zone-content",
+        "--check-project-content",
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13115,6 +13118,113 @@ int main(int argc, char* argv[]) {
             }
             std::printf("  FAILED — %d total warning(s):\n", total);
             for (const auto& w : warnings) std::printf("    - %s\n", w.c_str());
+            return 1;
+        } else if (std::strcmp(argv[i], "--check-project-content") == 0 && i + 1 < argc) {
+            // Project-level content sanity check. Walks every zone and
+            // runs the same per-zone checks that --check-zone-content
+            // does, aggregating warnings per zone. Exit 1 if any zone
+            // has any warning. Designed for CI gates before --pack-wcp.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "check-project-content: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Same per-zone walks as --check-zone-content. Reuse the
+            // logic by counting issues directly here (cheaper than
+            // shelling out to a sub-invocation per zone).
+            struct ZoneRow { std::string name; int creatureWarn, objectWarn, questWarn; };
+            std::vector<ZoneRow> rows;
+            int projectFailedZones = 0;
+            for (const auto& zoneDir : zones) {
+                ZoneRow row{fs::path(zoneDir).filename().string(), 0, 0, 0};
+                wowee::editor::NpcSpawner sp;
+                if (sp.loadFromFile(zoneDir + "/creatures.json")) {
+                    for (const auto& s : sp.getSpawns()) {
+                        if (s.name.empty()) row.creatureWarn++;
+                        if (s.health == 0) row.creatureWarn++;
+                        if (s.level == 0) row.creatureWarn++;
+                        if (s.minDamage > s.maxDamage) row.creatureWarn++;
+                        if (s.scale <= 0.0f || !std::isfinite(s.scale)) row.creatureWarn++;
+                        if (s.displayId == 0) row.creatureWarn++;
+                    }
+                }
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(zoneDir + "/objects.json")) {
+                    for (const auto& o : op.getObjects()) {
+                        if (o.path.empty()) row.objectWarn++;
+                        if (o.scale <= 0.0f || !std::isfinite(o.scale)) row.objectWarn++;
+                        if (!std::isfinite(o.position.x) ||
+                            !std::isfinite(o.position.y) ||
+                            !std::isfinite(o.position.z)) row.objectWarn++;
+                    }
+                }
+                wowee::editor::QuestEditor qe;
+                if (qe.loadFromFile(zoneDir + "/quests.json")) {
+                    for (const auto& q : qe.getQuests()) {
+                        if (q.title.empty()) row.questWarn++;
+                        if (q.objectives.empty()) row.questWarn++;
+                        if (q.reward.xp == 0 && q.reward.itemRewards.empty() &&
+                            q.reward.gold == 0 && q.reward.silver == 0 &&
+                            q.reward.copper == 0) row.questWarn++;
+                        if (q.requiredLevel == 0) row.questWarn++;
+                    }
+                }
+                int rowTotal = row.creatureWarn + row.objectWarn + row.questWarn;
+                if (rowTotal > 0) projectFailedZones++;
+                rows.push_back(row);
+            }
+            int allPassed = (projectFailedZones == 0);
+            int totalWarn = 0;
+            for (const auto& r : rows) totalWarn += r.creatureWarn + r.objectWarn + r.questWarn;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["projectDir"] = projectDir;
+                j["totalZones"] = zones.size();
+                j["failedZones"] = projectFailedZones;
+                j["totalWarnings"] = totalWarn;
+                j["passed"] = bool(allPassed);
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"zone", r.name},
+                                    {"creatureWarn", r.creatureWarn},
+                                    {"objectWarn", r.objectWarn},
+                                    {"questWarn", r.questWarn}});
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return allPassed ? 0 : 1;
+            }
+            std::printf("check-project-content: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu (%d failed)\n",
+                        zones.size(), projectFailedZones);
+            std::printf("  total warns  : %d\n", totalWarn);
+            std::printf("\n  zone                       creat  object   quest  status\n");
+            for (const auto& r : rows) {
+                int rowTotal = r.creatureWarn + r.objectWarn + r.questWarn;
+                std::printf("  %-26s  %5d   %5d   %5d  %s\n",
+                            r.name.substr(0, 26).c_str(),
+                            r.creatureWarn, r.objectWarn, r.questWarn,
+                            rowTotal == 0 ? "PASS" : "FAIL");
+            }
+            if (allPassed) {
+                std::printf("\n  ALL ZONES PASSED\n");
+                return 0;
+            }
+            std::printf("\n  %d zone(s) have content warnings\n",
+                        projectFailedZones);
             return 1;
         } else if (std::strcmp(argv[i], "--for-each-zone") == 0 && i + 1 < argc) {
             // Batch runner: enumerates zones in <projectDir> and runs the
