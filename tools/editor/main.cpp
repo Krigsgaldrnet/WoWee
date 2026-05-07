@@ -643,6 +643,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Verify a JSON DBC sidecar's full schema (per-cell types, row width, format tag)\n");
     std::printf("  --info-glb <path> [--json]\n");
     std::printf("                         Print glTF 2.0 binary metadata (chunks, mesh/primitive counts, accessors)\n");
+    std::printf("  --info-glb-bytes <path> [--json]\n");
+    std::printf("                         Per-section + per-bufferView byte breakdown of a .glb file\n");
     std::printf("  --info-glb-tree <path>\n");
     std::printf("                         Render glTF structure as a tree (scenes/nodes/meshes/primitives)\n");
     std::printf("  --zone-summary <zoneDir> [--json]\n");
@@ -825,7 +827,7 @@ int main(int argc, char* argv[]) {
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-project",
         "--bench-validate-project",
-        "--validate-glb", "--info-glb", "--info-glb-tree",
+        "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
         "--zone-summary", "--info-zone-tree", "--info-project-tree",
@@ -7004,6 +7006,175 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 std::printf("] (%d nodes)\n", nodeRefs);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-glb-bytes") == 0 && i + 1 < argc) {
+            // Per-section + per-bufferView byte breakdown of a .glb. Useful
+            // for understanding what's bloating a baked .glb (vertex attrs
+            // vs indices, position vs uv vs normal data, mesh-level
+            // payloads). Pairs with --info-glb (counts) and --info-glb-tree
+            // (structure).
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                std::fprintf(stderr,
+                    "info-glb-bytes: cannot open %s\n", path.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+            if (bytes.size() < 28) {
+                std::fprintf(stderr, "info-glb-bytes: file too short\n");
+                return 1;
+            }
+            uint32_t magic, version;
+            std::memcpy(&magic, &bytes[0], 4);
+            std::memcpy(&version, &bytes[4], 4);
+            if (magic != 0x46546C67 || version != 2) {
+                std::fprintf(stderr, "info-glb-bytes: not glTF 2.0\n");
+                return 1;
+            }
+            uint32_t jsonLen, binLen = 0;
+            std::memcpy(&jsonLen, &bytes[12], 4);
+            std::string jsonStr(bytes.begin() + 20,
+                                 bytes.begin() + 20 + jsonLen);
+            size_t binOff = 20 + jsonLen;
+            if (binOff + 8 <= bytes.size()) {
+                std::memcpy(&binLen, &bytes[binOff], 4);
+            }
+            uint32_t headerBytes = 12;        // magic+version+totalLength
+            uint32_t jsonHdrBytes = 8;        // jsonLen + jsonType
+            uint32_t binHdrBytes = (binLen > 0) ? 8 : 0;
+            nlohmann::json gj;
+            try { gj = nlohmann::json::parse(jsonStr); }
+            catch (const std::exception& e) {
+                std::fprintf(stderr,
+                    "info-glb-bytes: JSON parse failed: %s\n", e.what());
+                return 1;
+            }
+            // Per-bufferView size table.
+            struct BV { int idx; uint32_t off, len; std::string label; };
+            std::vector<BV> bufferViews;
+            if (gj.contains("bufferViews") && gj["bufferViews"].is_array()) {
+                for (size_t k = 0; k < gj["bufferViews"].size(); ++k) {
+                    const auto& bv = gj["bufferViews"][k];
+                    BV b;
+                    b.idx = static_cast<int>(k);
+                    b.off = bv.value("byteOffset", 0u);
+                    b.len = bv.value("byteLength", 0u);
+                    int target = bv.value("target", 0);
+                    b.label = (target == 34962) ? "vertex" :
+                              (target == 34963) ? "index" : "other";
+                    bufferViews.push_back(b);
+                }
+            }
+            // Bucket bufferViews by purpose using accessor types.
+            // Walk accessors: each references a bufferView, with type
+            // (VEC3/VEC2/SCALAR) hinting at content (position/uv/etc.)
+            std::map<std::string, uint64_t> bytesByPurpose;
+            if (gj.contains("accessors") && gj["accessors"].is_array() &&
+                gj.contains("meshes") && gj["meshes"].is_array()) {
+                std::set<int> seenAccessors;
+                for (const auto& m : gj["meshes"]) {
+                    if (!m.contains("primitives") || !m["primitives"].is_array()) continue;
+                    for (const auto& p : m["primitives"]) {
+                        if (!p.contains("attributes")) continue;
+                        for (auto it = p["attributes"].begin();
+                             it != p["attributes"].end(); ++it) {
+                            int ai = it.value().get<int>();
+                            if (seenAccessors.count(ai)) continue;
+                            seenAccessors.insert(ai);
+                            if (ai < 0 || ai >= static_cast<int>(gj["accessors"].size())) continue;
+                            const auto& acc = gj["accessors"][ai];
+                            int bv = acc.value("bufferView", -1);
+                            if (bv < 0 || bv >= static_cast<int>(bufferViews.size())) continue;
+                            std::string typeStr = acc.value("type", std::string{});
+                            int comp = acc.value("componentType", 0);
+                            uint32_t cnt = acc.value("count", 0u);
+                            uint32_t byteStride =
+                                typeStr == "VEC3" ? 12 :
+                                typeStr == "VEC2" ? 8 :
+                                typeStr == "VEC4" ? 16 :
+                                typeStr == "SCALAR" ?
+                                    (comp == 5126 ? 4 : comp == 5125 ? 4 :
+                                     comp == 5123 ? 2 : comp == 5121 ? 1 : 4) : 4;
+                            uint64_t b = uint64_t(cnt) * byteStride;
+                            bytesByPurpose[it.key()] += b;
+                        }
+                        // Indices accessor.
+                        if (p.contains("indices")) {
+                            int ai = p["indices"].get<int>();
+                            if (seenAccessors.count(ai)) continue;
+                            seenAccessors.insert(ai);
+                            if (ai < 0 || ai >= static_cast<int>(gj["accessors"].size())) continue;
+                            const auto& acc = gj["accessors"][ai];
+                            uint32_t cnt = acc.value("count", 0u);
+                            int comp = acc.value("componentType", 0);
+                            uint32_t s = (comp == 5125 ? 4 : comp == 5123 ? 2 : 4);
+                            bytesByPurpose["INDICES"] += uint64_t(cnt) * s;
+                        }
+                    }
+                }
+            }
+            uint64_t totalBytes = bytes.size();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["glb"] = path;
+                j["totalBytes"] = totalBytes;
+                j["sections"] = {
+                    {"header", headerBytes},
+                    {"jsonHeader", jsonHdrBytes},
+                    {"json", jsonLen},
+                    {"binHeader", binHdrBytes},
+                    {"bin", binLen}
+                };
+                nlohmann::json bvArr = nlohmann::json::array();
+                for (const auto& bv : bufferViews) {
+                    bvArr.push_back({{"index", bv.idx},
+                                      {"target", bv.label},
+                                      {"bytes", bv.len}});
+                }
+                j["bufferViews"] = bvArr;
+                nlohmann::json byPurp = nlohmann::json::object();
+                for (const auto& [p, b] : bytesByPurpose) byPurp[p] = b;
+                j["byPurpose"] = byPurp;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("GLB bytes: %s\n", path.c_str());
+            std::printf("  total: %llu bytes (%.2f MB)\n",
+                        static_cast<unsigned long long>(totalBytes),
+                        totalBytes / (1024.0 * 1024.0));
+            std::printf("\n  Sections:\n");
+            auto pct = [&](uint64_t v) {
+                return totalBytes ? 100.0 * v / totalBytes : 0.0;
+            };
+            std::printf("    header     : %5u bytes  %5.2f%%\n", headerBytes, pct(headerBytes));
+            std::printf("    JSON hdr   : %5u bytes  %5.2f%%\n", jsonHdrBytes, pct(jsonHdrBytes));
+            std::printf("    JSON       : %5u bytes  %5.2f%%\n", jsonLen, pct(jsonLen));
+            std::printf("    BIN hdr    : %5u bytes  %5.2f%%\n", binHdrBytes, pct(binHdrBytes));
+            std::printf("    BIN        : %5u bytes  %5.2f%%\n", binLen, pct(binLen));
+            if (!bufferViews.empty()) {
+                std::printf("\n  BufferViews:\n");
+                std::printf("    idx  target   bytes      MB    share-of-bin\n");
+                for (const auto& bv : bufferViews) {
+                    double bvPct = binLen ? 100.0 * bv.len / binLen : 0.0;
+                    std::printf("    %3d  %-7s  %8u  %6.2f  %5.2f%%\n",
+                                bv.idx, bv.label.c_str(), bv.len,
+                                bv.len / (1024.0 * 1024.0), bvPct);
+                }
+            }
+            if (!bytesByPurpose.empty()) {
+                std::printf("\n  By attribute:\n");
+                for (const auto& [p, b] : bytesByPurpose) {
+                    double bPct = binLen ? 100.0 * b / binLen : 0.0;
+                    std::printf("    %-12s %8llu bytes  (%.2f%% of BIN)\n",
+                                p.c_str(),
+                                static_cast<unsigned long long>(b), bPct);
+                }
             }
             return 0;
         } else if (std::strcmp(argv[i], "--check-glb-bounds") == 0 && i + 1 < argc) {
