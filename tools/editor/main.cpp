@@ -528,9 +528,9 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
-    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus> [size]\n");
+    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone> [size]\n");
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
-    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder|torus> <colorHex|pattern> [size]\n");
+    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder|torus|cone> <colorHex|pattern> [size]\n");
     std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
     std::printf("  --gen-mesh-stairs <wom-base> <steps> [stepHeight] [stepDepth] [width]\n");
     std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
@@ -15355,9 +15355,77 @@ int main(int argc, char* argv[]) {
                         wom.indices.push_back(d);
                     }
                 }
+            } else if (s == "cone") {
+                // Cone with apex at +Y. radius=size/2, height=size.
+                // 24 side segments. Side has smooth radial-ish normals
+                // (slanted up by half the slope angle) for a curved
+                // shaded surface; bottom cap has flat -Y normal.
+                const int segments = 24;
+                float r = h;
+                float H = size;
+                // Slant length used for the side normal Y component.
+                // Side normal direction: (cos(a), nyComponent, sin(a))
+                // where the slope is r/H per unit of horizontal travel.
+                // Normalize so the normal has unit length.
+                float sideXZScale = H / std::sqrt(H * H + r * r);
+                float sideY = r / std::sqrt(H * H + r * r);
+                // Side ring (apex repeated per segment so each tri has
+                // its own apex vertex with the correct normal).
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * 3.14159265358979f;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    // Base vertex (Y = 0).
+                    addVertex(r * ca, 0.0f, r * sa,
+                               sideXZScale * ca, sideY, sideXZScale * sa,
+                               u, 1.0f);
+                    // Apex vertex (Y = H), one per ring step so the
+                    // top vertex carries the segment-specific normal.
+                    addVertex(0.0f, H, 0.0f,
+                               sideXZScale * ca, sideY, sideXZScale * sa,
+                               u, 0.0f);
+                }
+                // Side triangle indices.
+                for (int sg = 0; sg < segments; ++sg) {
+                    uint32_t base = sg * 2;
+                    // Two tris per quad band. The apex collapses to a
+                    // point, so really one triangle per segment, but
+                    // emitting both keeps the indexing uniform across
+                    // the cylinder/cone code paths.
+                    uint32_t a = base + 0;     // base k
+                    uint32_t b = base + 1;     // apex k
+                    uint32_t c = base + 2;     // base k+1
+                    uint32_t d = base + 3;     // apex k+1
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    // Second triangle would be (b,c,d) but b == d at
+                    // the apex visually — we still emit it so the
+                    // per-vertex normals on b and d shade the joining
+                    // seam smoothly.
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+                // Bottom cap fan (flat -Y normal).
+                uint32_t botCenter = static_cast<uint32_t>(wom.vertices.size());
+                addVertex(0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.5f, 0.5f);
+                uint32_t botRingStart = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * 3.14159265358979f;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    addVertex(r * ca, 0.0f, r * sa, 0.0f, -1.0f, 0.0f,
+                               0.5f + 0.5f * ca, 0.5f - 0.5f * sa);
+                }
+                for (int sg = 0; sg < segments; ++sg) {
+                    wom.indices.push_back(botCenter);
+                    wom.indices.push_back(botRingStart + sg + 1);
+                    wom.indices.push_back(botRingStart + sg);
+                }
             } else {
                 std::fprintf(stderr,
-                    "gen-mesh: shape must be cube, plane, sphere, cylinder, or torus (got '%s')\n",
+                    "gen-mesh: shape must be cube, plane, sphere, cylinder, torus, or cone (got '%s')\n",
                     shape.c_str());
                 return 1;
             }
