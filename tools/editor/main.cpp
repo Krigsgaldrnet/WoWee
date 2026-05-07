@@ -526,6 +526,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Markdown migration-progress report (per-pair table, share %%, recommended next steps)\n");
     std::printf("  --gen-texture <out.png> <colorHex|pattern> [W H]\n");
     std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
+    std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
+    std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder> [size]\n");
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
     std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder> <colorHex|pattern> [size]\n");
@@ -937,7 +939,7 @@ int main(int argc, char* argv[]) {
         "--bench-validate-project", "--bench-bake-project",
         "--bench-migrate-data-tree", "--list-data-tree-largest",
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
-        "--add-texture-to-mesh",
+        "--add-texture-to-mesh", "--add-texture-to-zone",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -15375,6 +15377,96 @@ int main(int argc, char* argv[]) {
                 std::printf("        copy or move %s -> %s before shipping\n",
                             pngPath.c_str(), expected.c_str());
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--add-texture-to-zone") == 0 && i + 2 < argc) {
+            // Import an existing PNG into a zone directory. Useful
+            // for the "I have an artist-painted texture, get it into
+            // my project" workflow — complements --gen-texture
+            // (procedural placeholder) and --convert-blp-png (legacy
+            // BLP migration).
+            //
+            // Optional <renameTo> argument lets the user store the
+            // PNG under a project-specific name (e.g., a generic
+            // "stone.png" downloaded from a tileset becomes
+            // "courtyard_floor.png" in the zone).
+            //
+            // Refuses to overwrite an existing destination unless the
+            // source and destination are byte-identical (idempotent
+            // re-runs are safe).
+            std::string zoneDir = argv[++i];
+            std::string srcPng = argv[++i];
+            std::string renameTo;
+            if (i + 1 < argc && argv[i + 1][0] != '-') renameTo = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir) || !fs::is_directory(zoneDir)) {
+                std::fprintf(stderr,
+                    "add-texture-to-zone: %s is not a directory\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            if (!fs::exists(srcPng) || !fs::is_regular_file(srcPng)) {
+                std::fprintf(stderr,
+                    "add-texture-to-zone: %s is not a file\n",
+                    srcPng.c_str());
+                return 1;
+            }
+            // Sanity-check: must end in .png (any case) so users
+            // don't accidentally drop a .blp/.tga and get surprised
+            // when nothing renders.
+            std::string srcExt = fs::path(srcPng).extension().string();
+            std::transform(srcExt.begin(), srcExt.end(), srcExt.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            if (srcExt != ".png") {
+                std::fprintf(stderr,
+                    "add-texture-to-zone: %s is not a .png "
+                    "(use --convert-blp-png for .blp first)\n",
+                    srcPng.c_str());
+                return 1;
+            }
+            std::string destLeaf = renameTo.empty()
+                                   ? fs::path(srcPng).filename().string()
+                                   : renameTo;
+            // If the rename arg lacks an extension, append .png so
+            // common typos ("stone" -> "stone.png") just work.
+            if (fs::path(destLeaf).extension().string().empty()) {
+                destLeaf += ".png";
+            }
+            std::string destPath = zoneDir + "/" + destLeaf;
+            std::error_code ec;
+            if (fs::exists(destPath)) {
+                // Allow re-running if the bytes already match — makes
+                // makefile-driven workflows idempotent.
+                if (fs::file_size(srcPng, ec) == fs::file_size(destPath, ec)) {
+                    std::ifstream a(srcPng, std::ios::binary);
+                    std::ifstream b(destPath, std::ios::binary);
+                    std::stringstream sa, sb;
+                    sa << a.rdbuf(); sb << b.rdbuf();
+                    if (sa.str() == sb.str()) {
+                        std::printf("Already present: %s (no-op)\n",
+                                    destPath.c_str());
+                        return 0;
+                    }
+                }
+                std::fprintf(stderr,
+                    "add-texture-to-zone: %s already exists with different "
+                    "content (delete it first if intentional)\n",
+                    destPath.c_str());
+                return 1;
+            }
+            fs::copy_file(srcPng, destPath, ec);
+            if (ec) {
+                std::fprintf(stderr,
+                    "add-texture-to-zone: copy failed (%s)\n",
+                    ec.message().c_str());
+                return 1;
+            }
+            uint64_t bytes = fs::file_size(destPath, ec);
+            std::printf("Imported %s -> %s\n",
+                        srcPng.c_str(), destPath.c_str());
+            std::printf("  bytes : %llu\n",
+                        static_cast<unsigned long long>(bytes));
+            std::printf("  next  : --add-texture-to-mesh <wom-base> %s\n",
+                        destPath.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
             // Non-destructive companion to --migrate-data-tree. Walks
