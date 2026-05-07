@@ -30,6 +30,8 @@
 #include <cctype>
 #include <cstdio>
 #include <chrono>
+#include <functional>
+#include <memory>
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include "stb_image_write.h"
@@ -767,6 +769,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print WCP archive metadata (name, files) and exit\n");
     std::printf("  --info-pack-budget <wcp-path> [--json]\n");
     std::printf("                         Per-extension byte breakdown of a WCP archive (sized largest-first)\n");
+    std::printf("  --info-pack-tree <wcp-path>\n");
+    std::printf("                         Render a tree view of a WCP's directory structure with byte sizes\n");
     std::printf("  --list-wcp <wcp-path>  Print every file inside a WCP archive (sorted by path) and exit\n");
     std::printf("  --diff-wcp <a> <b> [--json]\n");
     std::printf("                         Compare two WCPs file-by-file; exit 0 if identical, 1 otherwise\n");
@@ -820,6 +824,7 @@ int main(int argc, char* argv[]) {
         "--info-extract", "--info-extract-tree", "--info-extract-budget",
         "--list-missing-sidecars",
         "--info-png", "--info-jsondbc", "--info-blp", "--info-pack-budget",
+        "--info-pack-tree",
         "--info-m2", "--info-wmo", "--info-adt",
         "--info-zone", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
@@ -4613,6 +4618,84 @@ int main(int argc, char* argv[]) {
                             static_cast<unsigned long long>(cb.second),
                             cb.second / 1024.0, pct);
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-pack-tree") == 0 && i + 1 < argc) {
+            // Tree view of a WCP's directory layout with per-file byte
+            // sizes. --list-wcp shows the flat sorted file list;
+            // --info-pack-tree gives the hierarchical view that's
+            // easier to read for archives with subdirectories (textures
+            // under data/, models under buildings/, etc.).
+            std::string path = argv[++i];
+            wowee::editor::ContentPackInfo info;
+            if (!wowee::editor::ContentPacker::readInfo(path, info)) {
+                std::fprintf(stderr,
+                    "info-pack-tree: failed to read %s\n", path.c_str());
+                return 1;
+            }
+            // Build a directory tree from flat file paths. Sub-tree
+            // children are sorted alphabetically with files before dirs
+            // (by-convention filesystem-tree look).
+            struct Node {
+                std::map<std::string, std::shared_ptr<Node>> children;
+                bool isFile = false;
+                uint64_t bytes = 0;
+            };
+            auto root = std::make_shared<Node>();
+            auto split = [](const std::string& p) {
+                std::vector<std::string> parts;
+                std::string cur;
+                for (char c : p) {
+                    if (c == '/' || c == '\\') {
+                        if (!cur.empty()) { parts.push_back(cur); cur.clear(); }
+                    } else cur += c;
+                }
+                if (!cur.empty()) parts.push_back(cur);
+                return parts;
+            };
+            uint64_t totalBytes = 0;
+            for (const auto& f : info.files) {
+                auto parts = split(f.path);
+                if (parts.empty()) continue;
+                Node* cur = root.get();
+                for (size_t k = 0; k < parts.size(); ++k) {
+                    auto& child = cur->children[parts[k]];
+                    if (!child) child = std::make_shared<Node>();
+                    if (k == parts.size() - 1) {
+                        child->isFile = true;
+                        child->bytes = f.size;
+                    }
+                    cur = child.get();
+                }
+                totalBytes += f.size;
+            }
+            // Recursive renderer with box-drawing connectors. Aggregates
+            // child bytes up so directories show their subtotal.
+            std::function<uint64_t(const Node*, const std::string&)> render =
+                [&](const Node* n, const std::string& prefix) -> uint64_t {
+                size_t i = 0;
+                size_t total = n->children.size();
+                uint64_t subtotal = 0;
+                for (const auto& [name, child] : n->children) {
+                    bool last = (++i == total);
+                    const char* branch = last ? "└─ " : "├─ ";
+                    const char* cont   = last ? "   " : "│  ";
+                    if (child->isFile) {
+                        std::printf("%s%s%s  (%llu bytes)\n",
+                                    prefix.c_str(), branch, name.c_str(),
+                                    static_cast<unsigned long long>(child->bytes));
+                        subtotal += child->bytes;
+                    } else {
+                        // Directory — recurse, then print header with subtotal.
+                        std::printf("%s%s%s/\n",
+                                    prefix.c_str(), branch, name.c_str());
+                        subtotal += render(child.get(), prefix + cont);
+                    }
+                }
+                return subtotal;
+            };
+            std::printf("%s  (%zu files, %.2f KB)\n",
+                        path.c_str(), info.files.size(), totalBytes / 1024.0);
+            render(root.get(), "");
             return 0;
         } else if (std::strcmp(argv[i], "--info-wot") == 0 && i + 1 < argc) {
             std::string base = argv[++i];
