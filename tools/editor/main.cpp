@@ -528,9 +528,9 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
-    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder> [size]\n");
+    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus> [size]\n");
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
-    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder> <colorHex|pattern> [size]\n");
+    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder|torus> <colorHex|pattern> [size]\n");
     std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
     std::printf("  --add-texture-to-mesh <wom-base> <png-path> [batchIdx]\n");
     std::printf("                         Bind an existing PNG into a WOM's texturePaths and point batchIdx (default 0) at it\n");
@@ -15163,9 +15163,53 @@ int main(int argc, char* argv[]) {
                     wom.indices.push_back(botRingStart + sg + 1);
                     wom.indices.push_back(botRingStart + sg);
                 }
+            } else if (s == "torus") {
+                // Torus around the Y axis. Major radius (ring center
+                // distance from origin) = size/2, minor radius (tube
+                // thickness) = size/8 — the 4:1 ratio reads as a
+                // ring rather than a fat donut. 32 ring segments × 16
+                // tube segments = ~544 verts / ~1024 tris.
+                const int ringSeg = 32;
+                const int tubeSeg = 16;
+                float R = h;          // major radius
+                float r = h * 0.25f;  // minor radius (h/4)
+                for (int i2 = 0; i2 <= ringSeg; ++i2) {
+                    float u = static_cast<float>(i2) / ringSeg;
+                    float theta = u * 2.0f * 3.14159265358979f;
+                    float ct = std::cos(theta), st = std::sin(theta);
+                    for (int j2 = 0; j2 <= tubeSeg; ++j2) {
+                        float v = static_cast<float>(j2) / tubeSeg;
+                        float phi = v * 2.0f * 3.14159265358979f;
+                        float cp = std::cos(phi), sp = std::sin(phi);
+                        // Position on the surface.
+                        float x = (R + r * cp) * ct;
+                        float y = r * sp;
+                        float z = (R + r * cp) * st;
+                        // Normal: from the tube center outward.
+                        float nx = cp * ct;
+                        float ny = sp;
+                        float nz = cp * st;
+                        addVertex(x, y, z, nx, ny, nz, u, v);
+                    }
+                }
+                int stride = tubeSeg + 1;
+                for (int i2 = 0; i2 < ringSeg; ++i2) {
+                    for (int j2 = 0; j2 < tubeSeg; ++j2) {
+                        uint32_t a = i2 * stride + j2;
+                        uint32_t b = a + 1;
+                        uint32_t c = a + stride;
+                        uint32_t d = c + 1;
+                        wom.indices.push_back(a);
+                        wom.indices.push_back(c);
+                        wom.indices.push_back(b);
+                        wom.indices.push_back(b);
+                        wom.indices.push_back(c);
+                        wom.indices.push_back(d);
+                    }
+                }
             } else {
                 std::fprintf(stderr,
-                    "gen-mesh: shape must be cube, plane, sphere, or cylinder (got '%s')\n",
+                    "gen-mesh: shape must be cube, plane, sphere, cylinder, or torus (got '%s')\n",
                     shape.c_str());
                 return 1;
             }
