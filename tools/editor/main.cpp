@@ -581,6 +581,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Re-snap every creature/object in a zone to actual terrain height\n");
     std::printf("  --audit-zone-spawns <zoneDir> [--threshold yards]\n");
     std::printf("                         List spawns whose Z is more than <threshold> yards off from the terrain (default 5)\n");
+    std::printf("  --audit-project-spawns <projectDir> [--threshold yards]\n");
+    std::printf("                         Run --audit-zone-spawns across every zone (per-zone summary + total)\n");
     std::printf("  --snap-project-to-ground <projectDir>\n");
     std::printf("                         Run --snap-zone-to-ground across every zone (per-zone summary + totals)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -1032,6 +1034,7 @@ int main(int argc, char* argv[]) {
         "--random-populate-zone", "--random-populate-items",
         "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
         "--info-project-audio", "--snap-project-to-ground",
+        "--audit-project-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13763,6 +13766,70 @@ int main(int argc, char* argv[]) {
                             iss.name.substr(0, 40).c_str());
             }
             std::printf("\n  Run --snap-zone-to-ground to fix in bulk.\n");
+            return 1;
+        } else if (std::strcmp(argv[i], "--audit-project-spawns") == 0 && i + 1 < argc) {
+            // Project-wide wrapper around --audit-zone-spawns. Spawns
+            // the binary per-zone (only those with creatures.json or
+            // objects.json), aggregates how many issues each zone has,
+            // and exits 1 if any zone reports problems. CI-friendly
+            // pre-release placement check.
+            std::string projectDir = argv[++i];
+            std::string thresholdArg;
+            if (i + 2 < argc && std::strcmp(argv[i + 1], "--threshold") == 0) {
+                thresholdArg = argv[i + 2];
+                i += 2;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "audit-project-spawns: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                bool hasContent = fs::exists(entry.path() / "creatures.json") ||
+                                   fs::exists(entry.path() / "objects.json");
+                if (!hasContent) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::printf("audit-project-spawns: %s\n", projectDir.c_str());
+                std::printf("  no zones with creatures.json or objects.json\n");
+                return 0;
+            }
+            std::string self = argv[0];
+            int passed = 0, failed = 0;
+            std::printf("audit-project-spawns: %s\n", projectDir.c_str());
+            std::printf("  zones to audit : %zu\n", zones.size());
+            if (!thresholdArg.empty()) {
+                std::printf("  threshold      : %s yards\n", thresholdArg.c_str());
+            }
+            std::printf("\n");
+            for (const auto& zoneDir : zones) {
+                std::printf("--- %s ---\n",
+                            fs::path(zoneDir).filename().string().c_str());
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --audit-zone-spawns \"" +
+                                   zoneDir + "\"";
+                if (!thresholdArg.empty()) {
+                    cmd += " --threshold " + thresholdArg;
+                }
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) passed++;
+                else failed++;
+            }
+            std::printf("\n--- summary ---\n");
+            std::printf("  passed : %d\n", passed);
+            std::printf("  failed : %d\n", failed);
+            if (failed == 0) {
+                std::printf("\n  ALL ZONES PASSED\n");
+                return 0;
+            }
+            std::printf("\n  Run --snap-project-to-ground to fix in bulk.\n");
             return 1;
         } else if (std::strcmp(argv[i], "--snap-project-to-ground") == 0 && i + 1 < argc) {
             // Orchestrator wrapper around --snap-zone-to-ground. Spawns
