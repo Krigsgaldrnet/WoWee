@@ -530,6 +530,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
     std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere> <colorHex|pattern> [size]\n");
     std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
+    std::printf("  --add-texture-to-mesh <wom-base> <png-path> [batchIdx]\n");
+    std::printf("                         Bind an existing PNG into a WOM's texturePaths and point batchIdx (default 0) at it\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -926,6 +928,7 @@ int main(int argc, char* argv[]) {
         "--bench-validate-project", "--bench-bake-project",
         "--bench-migrate-data-tree", "--list-data-tree-largest",
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
+        "--add-texture-to-mesh",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -14710,6 +14713,103 @@ int main(int argc, char* argv[]) {
             std::printf("  color    : %s\n", colorSpec.c_str());
             std::printf("  vertices : %zu\n", wom.vertices.size());
             std::printf("  texture  : %s (wired into batch 0)\n", pngLeaf.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--add-texture-to-mesh") == 0 && i + 2 < argc) {
+            // Manual companion to --gen-mesh-textured. Binds an
+            // existing PNG to a WOM by appending it to texturePaths
+            // (or reusing the slot if already present) and pointing
+            // the chosen batch at it.
+            //
+            // The PNG path stored in the WOM is just the leaf — the
+            // runtime resolves textures relative to the model's own
+            // directory, so the user is responsible for placing the
+            // PNG next to the WOM.
+            std::string womBase = argv[++i];
+            std::string pngPath = argv[++i];
+            int batchIdx = 0;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { batchIdx = std::stoi(argv[++i]); }
+                catch (...) {
+                    std::fprintf(stderr,
+                        "add-texture-to-mesh: batchIdx must be an integer\n");
+                    return 1;
+                }
+            }
+            // Strip .wom if user passed a full filename.
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            namespace fs = std::filesystem;
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: %s.wom does not exist\n",
+                    womBase.c_str());
+                return 1;
+            }
+            if (!fs::exists(pngPath)) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: png '%s' does not exist\n",
+                    pngPath.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: failed to load %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            if (wom.batches.empty()) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: %s.wom has no batches "
+                    "(run --migrate-wom to upgrade WOM1/WOM2 first)\n",
+                    womBase.c_str());
+                return 1;
+            }
+            if (batchIdx < 0 ||
+                static_cast<size_t>(batchIdx) >= wom.batches.size()) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: batchIdx %d out of range "
+                    "(have %zu batches)\n",
+                    batchIdx, wom.batches.size());
+                return 1;
+            }
+            std::string pngLeaf = fs::path(pngPath).filename().string();
+            // Reuse texture slot if the leaf is already in the table;
+            // otherwise append a new slot at the end.
+            uint32_t texIdx = static_cast<uint32_t>(wom.texturePaths.size());
+            for (size_t k = 0; k < wom.texturePaths.size(); ++k) {
+                if (wom.texturePaths[k] == pngLeaf) {
+                    texIdx = static_cast<uint32_t>(k);
+                    break;
+                }
+            }
+            if (texIdx == wom.texturePaths.size()) {
+                wom.texturePaths.push_back(pngLeaf);
+            }
+            wom.batches[batchIdx].textureIndex = texIdx;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: failed to re-save %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            std::printf("Bound %s -> %s.wom batch %d (texture slot %u)\n",
+                        pngLeaf.c_str(), womBase.c_str(),
+                        batchIdx, texIdx);
+            std::printf("  total texture slots : %zu\n", wom.texturePaths.size());
+            // Warn if the PNG isn't sitting next to the WOM — the
+            // runtime resolves leaf paths relative to the WOM dir.
+            std::string womDir = fs::path(womBase).parent_path().string();
+            if (womDir.empty()) womDir = ".";
+            std::string expected = womDir + "/" + pngLeaf;
+            if (!fs::exists(expected)) {
+                std::printf("  NOTE: %s does not exist next to the WOM\n",
+                            expected.c_str());
+                std::printf("        copy or move %s -> %s before shipping\n",
+                            pngPath.c_str(), expected.c_str());
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
             // Non-destructive companion to --migrate-data-tree. Walks
