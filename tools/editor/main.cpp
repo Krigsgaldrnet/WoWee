@@ -554,6 +554,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Translate so the bounds center lands at origin (no scale/rotation change)\n");
     std::printf("  --flip-mesh-normals <wom-base>\n");
     std::printf("                         Invert every vertex normal (use for inside-out meshes or two-sided pre-flip)\n");
+    std::printf("  --mirror-mesh <wom-base> <x|y|z>\n");
+    std::printf("                         Mirror every vertex + normal across the chosen axis (also flips winding)\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -975,7 +977,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-stairs", "--gen-texture-gradient",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--gen-texture-noise", "--rotate-mesh",
-        "--center-mesh", "--flip-mesh-normals",
+        "--center-mesh", "--flip-mesh-normals", "--mirror-mesh",
         "--gen-texture-radial",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
@@ -16850,6 +16852,81 @@ int main(int argc, char* argv[]) {
             }
             std::printf("Flipped normals on %s.wom (%zu vertices)\n",
                         womBase.c_str(), wom.vertices.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--mirror-mesh") == 0 && i + 2 < argc) {
+            // Mirror every vertex + normal across the chosen axis.
+            // Negating just one position component reverses face
+            // winding (the triangle's signed area flips), so we
+            // also swap the second and third index of every triangle
+            // to keep front-faces facing forward and lighting
+            // correct. Bone pivots mirror too.
+            //
+            // Useful for "I have a left arm, mirror it for the right
+            // arm" content reuse. The output is byte-stable
+            // independent of execution order.
+            std::string womBase = argv[++i];
+            std::string axisStr = argv[++i];
+            std::transform(axisStr.begin(), axisStr.end(), axisStr.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            int axis = -1;
+            if (axisStr == "x") axis = 0;
+            else if (axisStr == "y") axis = 1;
+            else if (axisStr == "z") axis = 2;
+            else {
+                std::fprintf(stderr,
+                    "mirror-mesh: axis must be x, y, or z (got '%s')\n",
+                    axisStr.c_str());
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "mirror-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "mirror-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            for (auto& v : wom.vertices) {
+                v.position[axis] = -v.position[axis];
+                v.normal[axis] = -v.normal[axis];
+            }
+            for (auto& b : wom.bones) {
+                b.pivot[axis] = -b.pivot[axis];
+            }
+            // Flip winding: swap idx[1] and idx[2] of every triangle.
+            // Indices are stored as a flat list of triangle triples.
+            for (size_t k = 0; k + 2 < wom.indices.size(); k += 3) {
+                std::swap(wom.indices[k + 1], wom.indices[k + 2]);
+            }
+            // Bounds: the mirrored extent on this axis is just the
+            // negation of the previous extent — recompute from
+            // vertices to be safe.
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "mirror-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Mirrored %s.wom across %s axis\n",
+                        womBase.c_str(), axisStr.c_str());
+            std::printf("  vertices touched : %zu\n", wom.vertices.size());
+            std::printf("  triangles flipped: %zu\n", wom.indices.size() / 3);
+            std::printf("  new bounds       : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
             return 0;
         } else if (std::strcmp(argv[i], "--add-texture-to-zone") == 0 && i + 2 < argc) {
             // Import an existing PNG into a zone directory. Useful
