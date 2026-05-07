@@ -573,6 +573,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Add random creatures/objects to a zone (seeded for reproducibility)\n");
     std::printf("  --random-populate-items <zoneDir> [--seed N] [--count N] [--max-quality Q]\n");
     std::printf("                         Generate random items.json entries (seeded; quality cap defaults to epic=4)\n");
+    std::printf("  --info-zone-audio <zoneDir> [--json]\n");
+    std::printf("                         Print zone audio config (music + ambience tracks, volumes)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
     std::printf("  --export-zone-items-md <zoneDir> [out.md]\n");
@@ -1020,6 +1022,7 @@ int main(int argc, char* argv[]) {
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
         "--random-populate-zone", "--random-populate-items",
+        "--info-zone-audio",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13408,6 +13411,50 @@ int main(int argc, char* argv[]) {
             std::printf("  added        : %d\n", added);
             std::printf("  total items  : %zu\n", doc["items"].size());
             std::printf("  max quality  : %d\n", maxQuality);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-zone-audio") == 0 && i + 1 < argc) {
+            // Print the audio configuration stored in zone.json:
+            // music track, day/night ambience, volume sliders.
+            // Useful for spot-checking that the zone has been wired
+            // up to the right audio assets before bake/export.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "info-zone-audio: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "info-zone-audio: failed to parse %s\n",
+                    manifestPath.c_str());
+                return 1;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["music"] = zm.musicTrack;
+                j["ambienceDay"] = zm.ambienceDay;
+                j["ambienceNight"] = zm.ambienceNight;
+                j["musicVolume"] = zm.musicVolume;
+                j["ambienceVolume"] = zm.ambienceVolume;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone audio: %s\n", zoneDir.c_str());
+            std::printf("  music         : %s\n",
+                        zm.musicTrack.empty() ? "(none)" : zm.musicTrack.c_str());
+            std::printf("  ambience day  : %s\n",
+                        zm.ambienceDay.empty() ? "(none)" : zm.ambienceDay.c_str());
+            std::printf("  ambience night: %s\n",
+                        zm.ambienceNight.empty() ? "(none)" : zm.ambienceNight.c_str());
+            std::printf("  music vol     : %.2f\n", zm.musicVolume);
+            std::printf("  ambience vol  : %.2f\n", zm.ambienceVolume);
             return 0;
         } else if (std::strcmp(argv[i], "--list-items") == 0 && i + 1 < argc) {
             // Inspect <zoneDir>/items.json. Pretty-prints id / quality
