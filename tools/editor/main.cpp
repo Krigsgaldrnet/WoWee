@@ -552,6 +552,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Duplicate the item at index, assign next free id (and optional name override)\n");
     std::printf("  --validate-items <zoneDir>\n");
     std::printf("                         Schema check on items.json: duplicate ids, quality range, required fields\n");
+    std::printf("  --validate-project-items <projectDir>\n");
+    std::printf("                         Run --validate-items across every zone (per-zone PASS/FAIL + aggregate)\n");
     std::printf("  --info-project-items <projectDir> [--json]\n");
     std::printf("                         Aggregate item counts and quality histogram across every zone in a project\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
@@ -967,7 +969,8 @@ int main(int argc, char* argv[]) {
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
-        "--clone-item", "--validate-items", "--info-project-items",
+        "--clone-item", "--validate-items", "--validate-project-items",
+        "--info-project-items",
         "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest", "--remove-item",
         "--copy-zone", "--rename-zone", "--remove-zone",
@@ -13486,6 +13489,57 @@ int main(int argc, char* argv[]) {
             std::printf("\n  Errors:\n");
             for (const auto& e : errors) {
                 std::printf("    - %s\n", e.c_str());
+            }
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-project-items") == 0 && i + 1 < argc) {
+            // Project-wide wrapper around --validate-items. Spawns
+            // the binary per-zone (only zones that have items.json)
+            // so each zone's full error report streams through, then
+            // aggregates a final tally. Exit 1 if any zone fails.
+            //
+            // Skips zones without items.json — those have nothing to
+            // validate and shouldn't count as failures.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "validate-project-items: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                if (!fs::exists(entry.path() / "items.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::printf("validate-project-items: %s\n", projectDir.c_str());
+                std::printf("  no zones with items.json — nothing to validate\n");
+                return 0;
+            }
+            std::string self = argv[0];
+            int passed = 0, failed = 0;
+            std::printf("validate-project-items: %s\n", projectDir.c_str());
+            std::printf("  zones with items : %zu\n\n", zones.size());
+            for (const auto& zoneDir : zones) {
+                std::printf("--- %s ---\n",
+                            fs::path(zoneDir).filename().string().c_str());
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --validate-items \"" +
+                                   zoneDir + "\"";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) passed++;
+                else failed++;
+            }
+            std::printf("\n--- summary ---\n");
+            std::printf("  passed : %d\n", passed);
+            std::printf("  failed : %d\n", failed);
+            if (failed == 0) {
+                std::printf("\n  ALL ZONES PASSED\n");
+                return 0;
             }
             return 1;
         } else if (std::strcmp(argv[i], "--info-project-items") == 0 && i + 1 < argc) {
