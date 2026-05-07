@@ -622,6 +622,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Deep-check a WHM/WOT terrain pair for NaN heights and bad placements\n");
     std::printf("  --validate-all <dir> [--json]\n");
     std::printf("                         Recursively run all per-format validators on every file\n");
+    std::printf("  --validate-project <projectDir> [--json]\n");
+    std::printf("                         Run --validate-all on every zone in <projectDir>; exit 1 if any zone fails\n");
     std::printf("  --validate-glb <path> [--json]\n");
     std::printf("                         Verify a glTF 2.0 binary's structure (magic, chunks, JSON, accessors)\n");
     std::printf("  --check-glb-bounds <path> [--json]\n");
@@ -797,8 +799,8 @@ int main(int argc, char* argv[]) {
         "--info-creatures-by-faction", "--info-creatures-by-level",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
-        "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
-        "--info-glb-tree",
+        "--validate-whm", "--validate-all", "--validate-project",
+        "--validate-glb", "--info-glb", "--info-glb-tree",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
         "--zone-summary", "--info-zone-tree", "--info-project-tree",
@@ -5876,6 +5878,105 @@ int main(int argc, char* argv[]) {
                 std::printf("  %s:\n", path.c_str());
                 for (const auto& e : errs) std::printf("    - %s\n", e.c_str());
             }
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-project") == 0 && i + 1 < argc) {
+            // Project-level validate. Walks every zone in <projectDir>
+            // and runs the per-format validators (same as --validate-all).
+            // Aggregates pass/fail counts; exits 1 if any zone has any
+            // validation errors. Designed for CI gates before --pack-wcp.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "validate-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Per-zone pass/fail with file-level breakdown.
+            struct ZoneResult { std::string name; int totalFiles, failedFiles, totalErrors; };
+            std::vector<ZoneResult> results;
+            int projectFailedZones = 0;
+            for (const auto& zoneDir : zones) {
+                ZoneResult r{zoneDir, 0, 0, 0};
+                std::error_code ec;
+                for (const auto& entry : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!entry.is_regular_file()) continue;
+                    std::string ext = entry.path().extension().string();
+                    std::string base = entry.path().string();
+                    base = base.substr(0, base.size() - ext.size());
+                    std::vector<std::string> errs;
+                    if (ext == ".wom") {
+                        r.totalFiles++;
+                        auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                        errs = validateWomErrors(wom);
+                    } else if (ext == ".wob") {
+                        r.totalFiles++;
+                        auto wob = wowee::pipeline::WoweeBuildingLoader::load(base);
+                        errs = validateWobErrors(wob);
+                    } else if (ext == ".woc") {
+                        r.totalFiles++;
+                        auto woc = wowee::pipeline::WoweeCollisionBuilder::load(entry.path().string());
+                        errs = validateWocErrors(woc);
+                    } else if (ext == ".whm") {
+                        r.totalFiles++;
+                        wowee::pipeline::ADTTerrain terrain;
+                        wowee::pipeline::WoweeTerrainLoader::load(base, terrain);
+                        errs = validateWhmErrors(terrain);
+                    }
+                    if (!errs.empty()) {
+                        r.failedFiles++;
+                        r.totalErrors += static_cast<int>(errs.size());
+                    }
+                }
+                if (r.failedFiles > 0) projectFailedZones++;
+                results.push_back(r);
+            }
+            int allPassed = (projectFailedZones == 0);
+            if (jsonOut) {
+                nlohmann::json j;
+                j["projectDir"] = projectDir;
+                j["totalZones"] = zones.size();
+                j["failedZones"] = projectFailedZones;
+                j["passed"] = bool(allPassed);
+                nlohmann::json zarr = nlohmann::json::array();
+                for (const auto& r : results) {
+                    zarr.push_back({
+                        {"zone", r.name},
+                        {"totalFiles", r.totalFiles},
+                        {"failedFiles", r.failedFiles},
+                        {"totalErrors", r.totalErrors}
+                    });
+                }
+                j["zones"] = zarr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return allPassed ? 0 : 1;
+            }
+            std::printf("validate-project: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu (%d failed)\n",
+                        zones.size(), projectFailedZones);
+            std::printf("\n  zone                       files  failed  errors  status\n");
+            for (const auto& r : results) {
+                std::string shortName = fs::path(r.name).filename().string();
+                std::printf("  %-26s  %5d  %6d  %6d  %s\n",
+                            shortName.substr(0, 26).c_str(),
+                            r.totalFiles, r.failedFiles, r.totalErrors,
+                            r.failedFiles == 0 ? "PASS" : "FAIL");
+            }
+            if (allPassed) {
+                std::printf("\n  ALL ZONES PASSED\n");
+                return 0;
+            }
+            std::printf("\n  %d zone(s) failed validation\n", projectFailedZones);
             return 1;
         } else if ((std::strcmp(argv[i], "--validate-glb") == 0 ||
                     std::strcmp(argv[i], "--info-glb") == 0) && i + 1 < argc) {
