@@ -442,7 +442,11 @@ void EditorApp::processEvents() {
                     }
                 }
             }
-            if (!io.WantCaptureKeyboard)
+            // Use WantTextInput (true only while typing into a text widget)
+            // instead of WantCaptureKeyboard (true whenever any ImGui panel
+            // has focus). Otherwise hovering over a panel silently disables
+            // the WASD/QE flycam, which was the practical user complaint.
+            if (!io.WantTextInput)
                 camera_.processKeyEvent(event.key);
         }
 
