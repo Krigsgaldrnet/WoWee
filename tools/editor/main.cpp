@@ -514,6 +514,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Convert a wowee JSON DBC back to binary DBC for private-server compat\n");
     std::printf("  --convert-blp-png <blp-path> [out.png]\n");
     std::printf("                         Convert one BLP texture to PNG sidecar\n");
+    std::printf("  --convert-blp-batch <srcDir>\n");
+    std::printf("                         Bulk BLP→PNG conversion across every .blp in <srcDir> (sidecars next to source)\n");
     std::printf("  --migrate-wom <wom-base> [out-base]\n");
     std::printf("                         Upgrade an older WOM (v1/v2) to WOM3 with a default single-batch entry\n");
     std::printf("  --migrate-zone <zoneDir>\n");
@@ -925,7 +927,8 @@ int main(int argc, char* argv[]) {
         "--bake-project-obj", "--bake-project-stl", "--bake-project-glb",
         "--convert-m2", "--convert-m2-batch",
         "--convert-wmo", "--convert-wmo-batch",
-        "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
+        "--convert-dbc-json", "--convert-json-dbc",
+        "--convert-blp-png", "--convert-blp-batch",
         "--migrate-wom", "--migrate-zone", "--migrate-project",
         "--migrate-jsondbc",
     };
@@ -13402,6 +13405,52 @@ int main(int argc, char* argv[]) {
             }
             std::printf("\n  summary     : %d ok, %d failed (out of %zu)\n",
                         ok, failed, wmoFiles.size());
+            return failed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--convert-blp-batch") == 0 && i + 1 < argc) {
+            // Bulk BLP→PNG conversion. Walks <srcDir> recursively for
+            // every .blp file and re-invokes --convert-blp-png per
+            // file via a child process. The single-file converter
+            // writes the .png as a sidecar next to the source by
+            // default, so a batched run mirrors the standard "PNG
+            // sidecar everywhere" layout.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "convert-blp-batch: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> blpFiles;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (ext != ".blp") continue;
+                blpFiles.push_back(e.path().string());
+            }
+            std::sort(blpFiles.begin(), blpFiles.end());
+            std::printf("convert-blp-batch: %s\n", srcDir.c_str());
+            std::printf("  candidates : %zu .blp file(s)\n", blpFiles.size());
+            std::string self = argv[0];
+            int ok = 0, failed = 0;
+            for (const auto& blp : blpFiles) {
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --convert-blp-png \"" + blp + "\"";
+                cmd += " >/dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) {
+                    ok++;
+                    std::printf("  [ok]   %s\n", blp.c_str());
+                } else {
+                    failed++;
+                    std::printf("  [FAIL] %s (rc=%d)\n", blp.c_str(), rc);
+                }
+            }
+            std::printf("\n  summary    : %d ok, %d failed (out of %zu)\n",
+                        ok, failed, blpFiles.size());
             return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--repair-zone") == 0 && i + 1 < argc) {
             // Auto-fix the common manifest-vs-disk drift issues that
