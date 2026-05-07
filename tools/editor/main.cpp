@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include "stb_image_write.h"
+#include "stb_image.h"  // implementation in stb_image_impl.cpp
 
 // ─── Open-format consistency checks ─────────────────────────────
 // Both validators are called from the per-file CLI commands AND
@@ -542,6 +543,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
     std::printf("  --gen-mesh-stairs <wom-base> <steps> [stepHeight] [stepDepth] [width]\n");
     std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
+    std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
+    std::printf("                         Convert a grayscale PNG into a heightmap mesh (W×H verts, 2(W-1)(H-1) tris)\n");
     std::printf("  --add-texture-to-mesh <wom-base> <png-path> [batchIdx]\n");
     std::printf("                         Bind an existing PNG into a WOM's texturePaths and point batchIdx (default 0) at it\n");
     std::printf("  --scale-mesh <wom-base> <factor>\n");
@@ -979,6 +982,7 @@ int main(int argc, char* argv[]) {
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-texture-gradient",
+        "--gen-mesh-from-heightmap",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--gen-texture-noise", "--rotate-mesh",
         "--center-mesh", "--flip-mesh-normals", "--mirror-mesh",
@@ -16503,6 +16507,149 @@ int main(int argc, char* argv[]) {
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             std::printf("  span      : %.3fL × %.3fH × %.3fW\n",
                         steps * stepDepth, steps * stepHeight, width);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-from-heightmap") == 0 && i + 2 < argc) {
+            // Convert a grayscale PNG into a heightmap mesh. Each
+            // pixel becomes one vertex; brightness becomes Y. The
+            // mesh is centered on the XZ plane with X spanning
+            // [-W*scaleXZ/2, +W*scaleXZ/2] and Z spanning the same
+            // for H. Default scaleXZ=0.1 (so a 64×64 PNG covers a
+            // 6.4×6.4 yard patch) and scaleY=2.0 (so full white
+            // pixels rise 2 yards above black).
+            //
+            // Normals are computed from finite differences against
+            // the height field — gives smooth shading across the
+            // surface. Single batch covers all indices; one empty
+            // texture slot for downstream binding via --add-
+            // texture-to-mesh.
+            std::string womBase = argv[++i];
+            std::string pngPath = argv[++i];
+            float scaleXZ = 0.1f;
+            float scaleY = 2.0f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { scaleXZ = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { scaleY = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (scaleXZ <= 0 || !std::isfinite(scaleXZ) ||
+                !std::isfinite(scaleY)) {
+                std::fprintf(stderr,
+                    "gen-mesh-from-heightmap: scales must be finite, scaleXZ > 0\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            int W, H, comp;
+            // Force 1-channel grayscale on read; stb downsamples
+            // automatically.
+            uint8_t* data = stbi_load(pngPath.c_str(), &W, &H, &comp, 1);
+            if (!data) {
+                std::fprintf(stderr,
+                    "gen-mesh-from-heightmap: cannot read %s (%s)\n",
+                    pngPath.c_str(), stbi_failure_reason());
+                return 1;
+            }
+            if (W < 2 || H < 2) {
+                std::fprintf(stderr,
+                    "gen-mesh-from-heightmap: image must be at least 2x2 (got %dx%d)\n",
+                    W, H);
+                stbi_image_free(data);
+                return 1;
+            }
+            // Capacity guard: a 1024x1024 PNG would be 1M verts /
+            // ~6M tris — well past what makes sense for a single
+            // WOM placeholder. Cap at 512×512 = 262K verts.
+            if (W > 512 || H > 512) {
+                std::fprintf(stderr,
+                    "gen-mesh-from-heightmap: image too large (%dx%d > 512x512)\n",
+                    W, H);
+                stbi_image_free(data);
+                return 1;
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            float halfW = W * scaleXZ * 0.5f;
+            float halfH = H * scaleXZ * 0.5f;
+            auto sample = [&](int x, int y) {
+                if (x < 0) x = 0; if (x >= W) x = W - 1;
+                if (y < 0) y = 0; if (y >= H) y = H - 1;
+                return data[y * W + x] / 255.0f * scaleY;
+            };
+            wom.vertices.reserve(static_cast<size_t>(W) * H);
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    float h = sample(x, y);
+                    // Central-difference normal: (-dh/dx, 1, -dh/dz),
+                    // normalized.
+                    float dx = (sample(x + 1, y) - sample(x - 1, y)) /
+                               (2.0f * scaleXZ);
+                    float dz = (sample(x, y + 1) - sample(x, y - 1)) /
+                               (2.0f * scaleXZ);
+                    glm::vec3 n(-dx, 1.0f, -dz);
+                    n = glm::normalize(n);
+                    wowee::pipeline::WoweeModel::Vertex v;
+                    v.position = glm::vec3(x * scaleXZ - halfW,
+                                            h,
+                                            y * scaleXZ - halfH);
+                    v.normal = n;
+                    v.texCoord = glm::vec2(static_cast<float>(x) / (W - 1),
+                                            static_cast<float>(y) / (H - 1));
+                    wom.vertices.push_back(v);
+                }
+            }
+            wom.indices.reserve(static_cast<size_t>(W - 1) * (H - 1) * 6);
+            for (int y = 0; y < H - 1; ++y) {
+                for (int x = 0; x < W - 1; ++x) {
+                    uint32_t a = y * W + x;
+                    uint32_t b = a + 1;
+                    uint32_t c = a + W;
+                    uint32_t d = c + 1;
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+            }
+            stbi_image_free(data);
+            // Bounds from vertex extents.
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-from-heightmap: failed to save %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom from %s\n",
+                        womBase.c_str(), pngPath.c_str());
+            std::printf("  source PNG : %dx%d\n", W, H);
+            std::printf("  scaleXZ    : %g (mesh span %.2f × %.2f)\n",
+                        scaleXZ, W * scaleXZ, H * scaleXZ);
+            std::printf("  scaleY     : %g (height range %.3f to %.3f)\n",
+                        scaleY, wom.boundMin.y, wom.boundMax.y);
+            std::printf("  vertices   : %zu\n", wom.vertices.size());
+            std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--add-texture-to-mesh") == 0 && i + 2 < argc) {
             // Manual companion to --gen-mesh-textured. Binds an
