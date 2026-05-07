@@ -562,6 +562,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Render items.json as a Markdown table grouped by quality (rare/epic/etc.)\n");
     std::printf("  --export-project-items-md <projectDir> [out.md]\n");
     std::printf("                         Project-wide items markdown: per-zone sections, project quality histogram\n");
+    std::printf("  --export-project-items-csv <projectDir> [out.csv]\n");
+    std::printf("                         Single CSV with every item across every zone (zone column added for grouping)\n");
     std::printf("  --info-item <zoneDir> <id|index> [--json]\n");
     std::printf("                         Detail view for one item (lookup by id, or by index if prefixed with '#')\n");
     std::printf("  --set-item <zoneDir> <id|#index> [--name S] [--quality N] [--displayId N] [--itemLevel N] [--stackable N]\n");
@@ -995,7 +997,7 @@ int main(int argc, char* argv[]) {
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
-        "--export-project-items-md",
+        "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--clone-item", "--validate-items", "--validate-project-items",
@@ -13495,6 +13497,81 @@ int main(int argc, char* argv[]) {
             std::printf("Wrote %s\n", outPath.c_str());
             std::printf("  zones with items : %zu\n", zoneItems.size());
             std::printf("  total items      : %d\n", totalItems);
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-project-items-csv") == 0 && i + 1 < argc) {
+            // Single CSV with every item across every zone. The
+            // zone name is the first column so a pivot table can
+            // group by it; everything else mirrors --export-zone-csv
+            // items columns. Saves running the per-zone CSV exporter
+            // N times and concatenating manually.
+            std::string projectDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "export-project-items-csv: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = projectDir + "/items.csv";
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                if (!fs::exists(entry.path() / "items.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // CSV-escape the same way --export-zone-csv does.
+            auto csvEsc = [](const std::string& s) {
+                bool needs = s.find(',') != std::string::npos ||
+                             s.find('"') != std::string::npos ||
+                             s.find('\n') != std::string::npos;
+                if (!needs) return s;
+                std::string out = "\"";
+                for (char c : s) {
+                    if (c == '"') out += "\"\"";
+                    else out += c;
+                }
+                out += "\"";
+                return out;
+            };
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-project-items-csv: cannot write %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            out << "zone,index,id,name,quality,itemLevel,displayId,stackable\n";
+            int totalRows = 0;
+            for (const auto& zoneDir : zones) {
+                std::string zoneName = fs::path(zoneDir).filename().string();
+                std::string ipath = zoneDir + "/items.json";
+                nlohmann::json doc;
+                try {
+                    std::ifstream in(ipath);
+                    in >> doc;
+                } catch (...) { continue; }
+                if (!doc.contains("items") || !doc["items"].is_array()) continue;
+                const auto& items = doc["items"];
+                for (size_t k = 0; k < items.size(); ++k) {
+                    const auto& it = items[k];
+                    out << csvEsc(zoneName) << "," << k << ","
+                        << it.value("id", 0u) << ","
+                        << csvEsc(it.value("name", std::string())) << ","
+                        << it.value("quality", 1u) << ","
+                        << it.value("itemLevel", 1u) << ","
+                        << it.value("displayId", 0u) << ","
+                        << it.value("stackable", 1u) << "\n";
+                    totalRows++;
+                }
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  zones with items : %zu\n", zones.size());
+            std::printf("  rows             : %d\n", totalRows);
             return 0;
         } else if (std::strcmp(argv[i], "--remove-item") == 0 && i + 2 < argc) {
             // Remove the item at given 0-based index from <zoneDir>/
