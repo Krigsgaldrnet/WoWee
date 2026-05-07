@@ -688,6 +688,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Emit a SHA-256 manifest of every source file in a zone (for integrity checks)\n");
     std::printf("  --export-project-checksum <projectDir> [out.sha256]\n");
     std::printf("                         Project-wide SHA-256 manifest (paths are zone-relative) + single project fingerprint\n");
+    std::printf("  --validate-project-checksum <projectDir> [in.sha256]\n");
+    std::printf("                         Verify PROJECT_SHA256SUMS in-tool (cross-platform, no sha256sum dependency)\n");
     std::printf("  --export-zone-html <zoneDir> [out.html]\n");
     std::printf("                         Emit a single-file HTML viewer next to the zone .glb (model-viewer based)\n");
     std::printf("  --export-project-html <projectDir> [out.html]\n");
@@ -867,6 +869,7 @@ int main(int argc, char* argv[]) {
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
         "--export-project-md", "--export-zone-checksum", "--export-project-checksum",
+        "--validate-project-checksum",
         "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--for-each-tile", "--zone-stats", "--info-tilemap",
         "--list-zone-deps", "--check-zone-refs", "--check-zone-content",
@@ -6222,6 +6225,65 @@ int main(int argc, char* argv[]) {
             std::printf("  fingerprint  : %s\n", fingerprint.c_str());
             std::printf("  verify with  : sha256sum -c %s\n", outPath.c_str());
             return 0;
+        } else if (std::strcmp(argv[i], "--validate-project-checksum") == 0 && i + 1 < argc) {
+            // In-tool verification of the manifest produced by
+            // --export-project-checksum. Equivalent to 'sha256sum -c
+            // PROJECT_SHA256SUMS' but cross-platform — Windows and
+            // CI runners without coreutils don't need an external tool.
+            // Exit 1 if any file is missing or its hash drifted.
+            std::string projectDir = argv[++i];
+            std::string inPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') inPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "validate-project-checksum: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (inPath.empty()) inPath = projectDir + "/PROJECT_SHA256SUMS";
+            std::ifstream in(inPath);
+            if (!in) {
+                std::fprintf(stderr,
+                    "validate-project-checksum: cannot read %s\n", inPath.c_str());
+                return 1;
+            }
+            int ok = 0, missing = 0, mismatched = 0;
+            std::vector<std::string> failures;
+            std::string line;
+            while (std::getline(in, line)) {
+                if (line.empty()) continue;
+                // sha256sum format: 64-char hex, two spaces, path.
+                if (line.size() < 66 || line[64] != ' ' || line[65] != ' ') {
+                    std::fprintf(stderr,
+                        "  malformed line (skipped): %s\n", line.c_str());
+                    continue;
+                }
+                std::string expected = line.substr(0, 64);
+                std::string rel = line.substr(66);
+                std::string full = projectDir + "/" + rel;
+                if (!fs::exists(full)) {
+                    missing++;
+                    failures.push_back(rel + " (missing)");
+                    continue;
+                }
+                std::string actual = wowee_sha256::fileHex(full);
+                if (actual != expected) {
+                    mismatched++;
+                    failures.push_back(rel + " (hash mismatch)");
+                    continue;
+                }
+                ok++;
+            }
+            std::printf("validate-project-checksum: %s\n", inPath.c_str());
+            std::printf("  ok         : %d\n", ok);
+            std::printf("  missing    : %d\n", missing);
+            std::printf("  mismatched : %d\n", mismatched);
+            if (!failures.empty()) {
+                std::printf("\n  Failures:\n");
+                for (const auto& f : failures) std::printf("    - %s\n", f.c_str());
+            }
+            return (missing == 0 && mismatched == 0) ? 0 : 1;
         } else if (std::strcmp(argv[i], "--export-zone-html") == 0 && i + 1 < argc) {
             // Generate a single-file HTML viewer next to the zone .glb.
             // Anyone with a modern browser can open it — no installs, no
