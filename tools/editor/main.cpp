@@ -585,6 +585,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         List spawns whose Z is more than <threshold> yards off from the terrain (default 5)\n");
     std::printf("  --list-zone-spawns <zoneDir> [--json]\n");
     std::printf("                         Combined creature+object listing for a zone (kind, name, position, key fields)\n");
+    std::printf("  --list-project-spawns <projectDir> [--json]\n");
+    std::printf("                         Combined creature+object listing across every zone (zone column added)\n");
     std::printf("  --audit-project-spawns <projectDir> [--threshold yards]\n");
     std::printf("                         Run --audit-zone-spawns across every zone (per-zone summary + total)\n");
     std::printf("  --snap-project-to-ground <projectDir>\n");
@@ -1038,7 +1040,7 @@ int main(int argc, char* argv[]) {
         "--random-populate-zone", "--random-populate-items",
         "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
         "--info-project-audio", "--snap-project-to-ground",
-        "--audit-project-spawns", "--list-zone-spawns",
+        "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -13949,6 +13951,105 @@ int main(int argc, char* argv[]) {
                                 o.position.x, o.position.y, o.position.z,
                                 o.path.c_str());
                 }
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-project-spawns") == 0 && i + 1 < argc) {
+            // Project-wide companion to --list-zone-spawns. Combines
+            // creatures + objects across every zone into one big
+            // listing keyed by (zone, kind, name). Useful for project-
+            // wide review and for piping into spreadsheets via --json.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "list-project-spawns: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            int totalCreat = 0, totalObj = 0;
+            struct Row {
+                std::string zone, kind, name;
+                float x, y, z;
+                std::string extra;
+            };
+            std::vector<Row> rows;
+            for (const auto& zoneDir : zones) {
+                std::string zname = fs::path(zoneDir).filename().string();
+                wowee::editor::NpcSpawner spawner;
+                if (spawner.loadFromFile(zoneDir + "/creatures.json")) {
+                    for (const auto& s : spawner.getSpawns()) {
+                        Row r;
+                        r.zone = zname;
+                        r.kind = "creature";
+                        r.name = s.name;
+                        r.x = s.position.x; r.y = s.position.y;
+                        r.z = s.position.z;
+                        r.extra = "lvl " + std::to_string(s.level);
+                        rows.push_back(r);
+                        totalCreat++;
+                    }
+                }
+                wowee::editor::ObjectPlacer placer;
+                if (placer.loadFromFile(zoneDir + "/objects.json")) {
+                    for (const auto& o : placer.getObjects()) {
+                        Row r;
+                        r.zone = zname;
+                        r.kind = "object";
+                        r.name = o.path;
+                        r.x = o.position.x; r.y = o.position.y;
+                        r.z = o.position.z;
+                        char buf[32];
+                        std::snprintf(buf, sizeof(buf), "scale %.2f", o.scale);
+                        r.extra = buf;
+                        rows.push_back(r);
+                        totalObj++;
+                    }
+                }
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["creatureCount"] = totalCreat;
+                j["objectCount"] = totalObj;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"zone", r.zone},
+                                    {"kind", r.kind},
+                                    {"name", r.name},
+                                    {"x", r.x}, {"y", r.y}, {"z", r.z},
+                                    {"extra", r.extra}});
+                }
+                j["spawns"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project spawns: %s\n", projectDir.c_str());
+            std::printf("  zones      : %zu\n", zones.size());
+            std::printf("  creatures  : %d\n", totalCreat);
+            std::printf("  objects    : %d\n", totalObj);
+            if (rows.empty()) {
+                std::printf("\n  *no spawns in any zone*\n");
+                return 0;
+            }
+            std::printf("\n  zone                  kind      x         y         z         info       name\n");
+            for (const auto& r : rows) {
+                std::printf("  %-20s  %-8s  %8.1f  %8.1f  %8.1f  %-10s %s\n",
+                            r.zone.substr(0, 20).c_str(),
+                            r.kind.c_str(),
+                            r.x, r.y, r.z,
+                            r.extra.c_str(),
+                            r.name.substr(0, 60).c_str());
             }
             return 0;
         } else if (std::strcmp(argv[i], "--audit-project-spawns") == 0 && i + 1 < argc) {
