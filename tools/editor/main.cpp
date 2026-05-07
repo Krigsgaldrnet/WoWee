@@ -528,6 +528,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere> [size]\n");
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
+    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere> <colorHex|pattern> [size]\n");
+    std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -923,7 +925,7 @@ int main(int argc, char* argv[]) {
         "--validate-project-open-only", "--audit-project",
         "--bench-validate-project", "--bench-bake-project",
         "--bench-migrate-data-tree", "--list-data-tree-largest",
-        "--export-data-tree-md", "--gen-texture", "--gen-mesh",
+        "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -14635,6 +14637,79 @@ int main(int argc, char* argv[]) {
             std::printf("  bounds   : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
                         wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
                         wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-textured") == 0 && i + 3 < argc) {
+            // One-shot composer: --gen-mesh + --gen-texture wired
+            // together so the resulting WOM's texturePaths[0] points
+            // at the freshly-written PNG sidecar. Output is a model
+            // that renders with the synthesized texture out of the
+            // box — useful for prototyping textured props without
+            // chaining three commands by hand.
+            //
+            // The texture is written next to the mesh as
+            //   <wom-base>.png
+            // and the WOM's texturePaths[0] is set to that filename
+            // (just the leaf — runtime resolves it relative to the
+            // model's own directory).
+            std::string womBase = argv[++i];
+            std::string shape = argv[++i];
+            std::string colorSpec = argv[++i];
+            std::string sizeArg;
+            if (i + 1 < argc && argv[i + 1][0] != '-') sizeArg = argv[++i];
+            // Strip .wom if user passed full filename.
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            std::string self = argv[0];
+            // 1) Mesh.
+            std::string meshCmd = "\"" + self + "\" --gen-mesh \"" + womBase +
+                                   "\" " + shape;
+            if (!sizeArg.empty()) meshCmd += " " + sizeArg;
+            meshCmd += " >/dev/null 2>&1";
+            int rc = std::system(meshCmd.c_str());
+            if (rc != 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-textured: gen-mesh step failed (rc=%d)\n", rc);
+                return 1;
+            }
+            // 2) Texture as a PNG sidecar at the mesh's base path.
+            std::string pngPath = womBase + ".png";
+            std::string texCmd = "\"" + self + "\" --gen-texture \"" + pngPath +
+                                  "\" \"" + colorSpec + "\" 256 256";
+            texCmd += " >/dev/null 2>&1";
+            rc = std::system(texCmd.c_str());
+            if (rc != 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-textured: gen-texture step failed (rc=%d)\n", rc);
+                return 1;
+            }
+            // 3) Load the WOM, set texturePaths[0] to the PNG leaf,
+            //    and re-save so the binding is permanent.
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "gen-mesh-textured: cannot load %s.wom after gen-mesh\n",
+                    womBase.c_str());
+                return 1;
+            }
+            std::string pngLeaf = std::filesystem::path(pngPath).filename().string();
+            if (wom.texturePaths.empty()) {
+                wom.texturePaths.push_back(pngLeaf);
+            } else {
+                wom.texturePaths[0] = pngLeaf;
+            }
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-textured: failed to re-save %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom + %s\n", womBase.c_str(), pngPath.c_str());
+            std::printf("  shape    : %s\n", shape.c_str());
+            std::printf("  color    : %s\n", colorSpec.c_str());
+            std::printf("  vertices : %zu\n", wom.vertices.size());
+            std::printf("  texture  : %s (wired into batch 0)\n", pngLeaf.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
             // Non-destructive companion to --migrate-data-tree. Walks
