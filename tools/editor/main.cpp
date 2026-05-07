@@ -544,6 +544,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
     std::printf("  --export-zone-items-md <zoneDir> [out.md]\n");
     std::printf("                         Render items.json as a Markdown table grouped by quality (rare/epic/etc.)\n");
+    std::printf("  --export-project-items-md <projectDir> [out.md]\n");
+    std::printf("                         Project-wide items markdown: per-zone sections, project quality histogram\n");
     std::printf("  --info-item <zoneDir> <id|index> [--json]\n");
     std::printf("                         Detail view for one item (lookup by id, or by index if prefixed with '#')\n");
     std::printf("  --set-item <zoneDir> <id|#index> [--name S] [--quality N] [--displayId N] [--itemLevel N] [--stackable N]\n");
@@ -969,6 +971,7 @@ int main(int argc, char* argv[]) {
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
+        "--export-project-items-md",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--clone-item", "--validate-items", "--validate-project-items",
@@ -13261,6 +13264,108 @@ int main(int argc, char* argv[]) {
             std::printf("Wrote %s\n", outPath.c_str());
             std::printf("  total items : %zu\n", items.size());
             std::printf("  qualities   : %zu (used)\n", byQuality.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-project-items-md") == 0 && i + 1 < argc) {
+            // Project-wide items markdown. Walks every zone in
+            // <projectDir> and emits one document with: project-wide
+            // header + total + quality histogram, then per-zone
+            // sections each containing a table (ID/name/quality/
+            // ilvl/displayId/stack). Easier to scan than running
+            // --export-zone-items-md N times.
+            std::string projectDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "export-project-items-md: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = projectDir + "/ITEMS.md";
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                if (!fs::exists(entry.path() / "items.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            static const char* qualityNames[] = {
+                "Poor", "Common", "Uncommon", "Rare", "Epic",
+                "Legendary", "Artifact"
+            };
+            int totalItems = 0;
+            std::map<int, int> globalQ;
+            // Per-zone collected items so we don't have to re-read
+            // each items.json twice.
+            struct ZItems {
+                std::string name;
+                nlohmann::json items;
+            };
+            std::vector<ZItems> zoneItems;
+            for (const auto& zoneDir : zones) {
+                std::string ipath = zoneDir + "/items.json";
+                nlohmann::json doc;
+                try {
+                    std::ifstream in(ipath);
+                    in >> doc;
+                } catch (...) { continue; }
+                if (!doc.contains("items") || !doc["items"].is_array()) continue;
+                ZItems z;
+                z.name = fs::path(zoneDir).filename().string();
+                z.items = doc["items"];
+                for (const auto& it : z.items) {
+                    int q = static_cast<int>(it.value("quality", 1u));
+                    if (q < 0 || q > 6) q = 0;
+                    globalQ[q]++;
+                    totalItems++;
+                }
+                zoneItems.push_back(std::move(z));
+            }
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-project-items-md: cannot write %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            out << "# Project Items: "
+                << fs::path(projectDir).filename().string() << "\n\n";
+            out << "Source: `" << projectDir << "`  \n";
+            out << "Zones with items: **" << zoneItems.size() << "**  \n";
+            out << "Total items: **" << totalItems << "**\n\n";
+            out << "## Project quality breakdown\n\n";
+            out << "| Quality | Count |\n|---|---:|\n";
+            for (int q = 6; q >= 0; --q) {
+                auto it = globalQ.find(q);
+                if (it == globalQ.end()) continue;
+                out << "| " << qualityNames[q] << " | "
+                    << it->second << " |\n";
+            }
+            out << "\n";
+            for (const auto& z : zoneItems) {
+                out << "## Zone: " << z.name << "\n\n";
+                out << "Items: **" << z.items.size() << "**\n\n";
+                out << "| ID | Name | Quality | iLvl | Display | Stack |\n";
+                out << "|---:|---|---|---:|---:|---:|\n";
+                for (const auto& it : z.items) {
+                    int q = static_cast<int>(it.value("quality", 1u));
+                    if (q < 0 || q > 6) q = 0;
+                    std::string name = it.value("name", std::string("(unnamed)"));
+                    out << "| " << it.value("id", 0u) << " | "
+                        << name << " | "
+                        << qualityNames[q] << " | "
+                        << it.value("itemLevel", 1u) << " | "
+                        << it.value("displayId", 0u) << " | "
+                        << it.value("stackable", 1u) << " |\n";
+                }
+                out << "\n";
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  zones with items : %zu\n", zoneItems.size());
+            std::printf("  total items      : %d\n", totalItems);
             return 0;
         } else if (std::strcmp(argv[i], "--remove-item") == 0 && i + 2 < argc) {
             // Remove the item at given 0-based index from <zoneDir>/
