@@ -545,6 +545,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
     std::printf("                         Convert a grayscale PNG into a heightmap mesh (W×H verts, 2(W-1)(H-1) tris)\n");
+    std::printf("  --export-mesh-heightmap <wom-base> <out.png> <W> <H>\n");
+    std::printf("                         Extract a grayscale heightmap PNG from a row-major W×H heightmap mesh\n");
     std::printf("  --add-texture-to-mesh <wom-base> <png-path> [batchIdx]\n");
     std::printf("                         Bind an existing PNG into a WOM's texturePaths and point batchIdx (default 0) at it\n");
     std::printf("  --scale-mesh <wom-base> <factor>\n");
@@ -984,7 +986,7 @@ int main(int argc, char* argv[]) {
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-texture-gradient",
-        "--gen-mesh-from-heightmap",
+        "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--gen-texture-noise", "--rotate-mesh",
         "--center-mesh", "--flip-mesh-normals", "--mirror-mesh",
@@ -16653,6 +16655,90 @@ int main(int argc, char* argv[]) {
                         scaleY, wom.boundMin.y, wom.boundMax.y);
             std::printf("  vertices   : %zu\n", wom.vertices.size());
             std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-mesh-heightmap") == 0 && i + 4 < argc) {
+            // Inverse of --gen-mesh-from-heightmap: extract a
+            // grayscale PNG from a row-major W×H heightmap mesh.
+            // The user supplies W and H since arbitrary meshes
+            // aren't necessarily heightmap-shaped — taking the
+            // dimensions explicitly avoids guessing wrong on a
+            // mesh with vertex count W*H but a different layout.
+            //
+            // Y values are normalized to 0..255 using the mesh
+            // bounds (Y_min → 0, Y_max → 255). Round-trips with
+            // --gen-mesh-from-heightmap modulo the 1-byte
+            // quantization step.
+            std::string womBase = argv[++i];
+            std::string outPath = argv[++i];
+            int W = 0, H = 0;
+            try {
+                W = std::stoi(argv[++i]);
+                H = std::stoi(argv[++i]);
+            } catch (...) {
+                std::fprintf(stderr,
+                    "export-mesh-heightmap: W and H must be integers\n");
+                return 1;
+            }
+            if (W < 2 || H < 2 || W > 8192 || H > 8192) {
+                std::fprintf(stderr,
+                    "export-mesh-heightmap: W and H must be 2..8192\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "export-mesh-heightmap: %s.wom does not exist\n",
+                    womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "export-mesh-heightmap: failed to load %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            size_t expected = static_cast<size_t>(W) * H;
+            if (wom.vertices.size() < expected) {
+                std::fprintf(stderr,
+                    "export-mesh-heightmap: %s.wom has %zu vertices, "
+                    "need at least %zu for %dx%d\n",
+                    womBase.c_str(), wom.vertices.size(), expected, W, H);
+                return 1;
+            }
+            float yMin = wom.boundMin.y;
+            float yMax = wom.boundMax.y;
+            float range = yMax - yMin;
+            std::vector<uint8_t> pixels(expected * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    size_t idx = static_cast<size_t>(y) * W + x;
+                    float h = wom.vertices[idx].position.y;
+                    float t = (range > 1e-6f) ? (h - yMin) / range : 0.0f;
+                    if (t < 0) t = 0; if (t > 1) t = 1;
+                    uint8_t g = static_cast<uint8_t>(t * 255.0f + 0.5f);
+                    size_t i2 = idx * 3;
+                    pixels[i2 + 0] = g;
+                    pixels[i2 + 1] = g;
+                    pixels[i2 + 2] = g;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "export-mesh-heightmap: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s from %s.wom\n",
+                        outPath.c_str(), womBase.c_str());
+            std::printf("  size       : %dx%d\n", W, H);
+            std::printf("  height     : %.3f to %.3f (mapped to 0..255)\n",
+                        yMin, yMax);
+            std::printf("  pixels     : %zu (W*H)\n", expected);
             return 0;
         } else if (std::strcmp(argv[i], "--add-texture-to-mesh") == 0 && i + 2 < argc) {
             // Manual companion to --gen-mesh-textured. Binds an
