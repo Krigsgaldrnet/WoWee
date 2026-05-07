@@ -1702,6 +1702,84 @@ void EditorApp::generateCompleteZone() {
     showToast("Zone generated!");
 }
 
+void EditorApp::randomPopulateZone(int creatureCount, int objectCount,
+                                      uint32_t seed) {
+    if (!terrain_.isLoaded() || loadedTileX_ < 0 || loadedTileY_ < 0) {
+        showToast("Load a tile first");
+        return;
+    }
+    // Loaded tile world bbox. Each tile is 533.33y; WoW grid centers
+    // tile (32, 32) at origin (+X = -wowY tile, +Y = -wowX tile).
+    constexpr float kTileSize = 533.33333f;
+    float wMinX = (32.0f - loadedTileY_ - 1) * kTileSize;
+    float wMaxX = (32.0f - loadedTileY_)     * kTileSize;
+    float wMinY = (32.0f - loadedTileX_ - 1) * kTileSize;
+    float wMaxY = (32.0f - loadedTileX_)     * kTileSize;
+    float baseZ = terrain_.chunks[0].position[2];
+
+    uint32_t rng = seed ? seed : 1u;
+    auto next01 = [&]() {
+        rng = rng * 1664525u + 1013904223u;
+        return (rng >> 8) / float(1 << 24);
+    };
+    auto rangeF = [&](float a, float b) { return a + next01() * (b - a); };
+    auto rangeI = [&](int a, int b) {
+        return a + static_cast<int>(next01() * (b - a + 1));
+    };
+    static const std::vector<std::pair<const char*, uint32_t>> kRandomCreatures = {
+        {"Wolf", 5}, {"Boar", 4}, {"Bear", 7}, {"Spider", 3},
+        {"Bandit", 6}, {"Kobold", 4}, {"Murloc", 5}, {"Skeleton", 5},
+        {"Wisp", 3}, {"Goblin", 5}, {"Stag", 4}, {"Crab", 3},
+    };
+    static const std::vector<const char*> kRandomObjects = {
+        "World/Generic/Tree01.wmo",
+        "World/Generic/Boulder.wmo",
+        "World/Generic/Bush.wmo",
+        "World/Generic/Stump.wmo",
+        "World/Generic/Mushroom.wmo",
+    };
+    int placedCreatures = 0, placedObjects = 0;
+    for (int n = 0; n < creatureCount; ++n) {
+        const auto& [name, baseLvl] = kRandomCreatures[
+            rangeI(0, static_cast<int>(kRandomCreatures.size()) - 1)];
+        CreatureSpawn s;
+        s.name = name;
+        s.position.x = rangeF(wMinX, wMaxX);
+        s.position.y = rangeF(wMinY, wMaxY);
+        s.position.z = baseZ;
+        int lvl = std::max(1, static_cast<int>(baseLvl) + rangeI(-1, 2));
+        s.level = static_cast<uint32_t>(lvl);
+        s.health = 50 + s.level * 10;
+        s.orientation = rangeF(0.0f, 360.0f);
+        npcSpawner_.placeCreature(s);
+        placedCreatures++;
+    }
+    auto& objs = objectPlacer_.getObjects();
+    uint32_t maxUid = 0;
+    for (const auto& o : objs) maxUid = std::max(maxUid, o.uniqueId);
+    for (int n = 0; n < objectCount; ++n) {
+        PlacedObject o;
+        o.path = kRandomObjects[
+            rangeI(0, static_cast<int>(kRandomObjects.size()) - 1)];
+        o.type = PlaceableType::WMO;
+        o.position.x = rangeF(wMinX, wMaxX);
+        o.position.y = rangeF(wMinY, wMaxY);
+        o.position.z = baseZ;
+        o.rotation = glm::vec3(0.0f, rangeF(0.0f, 6.28f), 0.0f);
+        o.scale = rangeF(0.8f, 1.4f);
+        o.uniqueId = ++maxUid;
+        o.nameId = 0;
+        o.selected = false;
+        objs.push_back(o);
+        placedObjects++;
+    }
+    objectsDirty_ = true;
+    autoSavePendingChanges_ = true;
+    viewport_.updateNpcMarkers(npcSpawner_.getSpawns());
+    showToast("Populated: " + std::to_string(placedCreatures) +
+              " creatures + " + std::to_string(placedObjects) + " objects");
+}
+
 void EditorApp::clearAllObjects() {
     vkDeviceWaitIdle(window_->getVkContext()->getDevice());
     objectPlacer_.clearAll();

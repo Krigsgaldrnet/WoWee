@@ -98,6 +98,10 @@ public:
     int batchConvertAssets(const std::string& dataDir);
     void clearAllObjects();
     void generateCompleteZone();
+    // Drop N random creatures + M random objects within the loaded
+    // tile's world bbox. Mirrors the --random-populate-zone CLI
+    // command so users can do bulk population from inside the editor.
+    void randomPopulateZone(int creatureCount, int objectCount, uint32_t seed);
     void centerOnTerrain();
 
     // Multi-tile support

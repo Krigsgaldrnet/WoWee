@@ -379,6 +379,22 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             }
             if (ImGui::MenuItem("Generate Complete Zone", nullptr, false, app.hasTerrainLoaded()))
                 app.generateCompleteZone();
+            if (ImGui::BeginMenu("Random Populate", app.hasTerrainLoaded())) {
+                static int rpCreatures = 20;
+                static int rpObjects = 10;
+                static int rpSeed = 42;
+                ImGui::SliderInt("Creatures##rp", &rpCreatures, 0, 200);
+                ImGui::SliderInt("Objects##rp", &rpObjects, 0, 200);
+                ImGui::InputInt("Seed##rp", &rpSeed);
+                if (rpSeed < 0) rpSeed = 0;
+                if (ImGui::Button("Populate##rp", ImVec2(-1, 0))) {
+                    app.randomPopulateZone(rpCreatures, rpObjects,
+                                            static_cast<uint32_t>(rpSeed));
+                }
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                    "Same seed → same population (reproducible)");
+                ImGui::EndMenu();
+            }
             if (ImGui::MenuItem("Clear All Objects/NPCs", nullptr, false, app.hasTerrainLoaded())) {
                 if (app.getObjectPlacer().objectCount() > 0 || app.getNpcSpawner().spawnCount() > 0)
                     app.clearAllObjects();
