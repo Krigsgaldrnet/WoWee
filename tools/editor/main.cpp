@@ -526,9 +526,9 @@ static void printUsage(const char* argv0) {
     std::printf("                         Markdown migration-progress report (per-pair table, share %%, recommended next steps)\n");
     std::printf("  --gen-texture <out.png> <colorHex|pattern> [W H]\n");
     std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
-    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere> [size]\n");
+    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder> [size]\n");
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
-    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere> <colorHex|pattern> [size]\n");
+    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder> <colorHex|pattern> [size]\n");
     std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
     std::printf("  --add-texture-to-mesh <wom-base> <png-path> [batchIdx]\n");
     std::printf("                         Bind an existing PNG into a WOM's texturePaths and point batchIdx (default 0) at it\n");
@@ -15097,9 +15097,73 @@ int main(int argc, char* argv[]) {
                         wom.indices.push_back(d);
                     }
                 }
+            } else if (s == "cylinder") {
+                // Capped cylinder along the Y axis. radius=size/2,
+                // height=size. 24 side segments — smooth enough for
+                // pillars and torches without exploding the vertex
+                // count. UVs: side wraps the texture once around;
+                // caps map [0..1] from a square sampled at the disc.
+                const int segments = 24;
+                float r = h;
+                // Side ring: 2 vertex rows (top, bottom), each with
+                // (segments+1) verts so UV-seam doesn't share verts.
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * 3.14159265358979f;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    // Bottom ring (Y = -h).
+                    addVertex(r * ca, -h, r * sa, ca, 0, sa, u, 0);
+                    // Top ring (Y = +h).
+                    addVertex(r * ca,  h, r * sa, ca, 0, sa, u, 1);
+                }
+                // Side quad indices.
+                for (int sg = 0; sg < segments; ++sg) {
+                    uint32_t a = sg * 2;
+                    uint32_t b = a + 1;
+                    uint32_t c = a + 2;
+                    uint32_t d = a + 3;
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+                // Top cap fan.
+                uint32_t topCenter = static_cast<uint32_t>(wom.vertices.size());
+                addVertex(0, h, 0, 0, 1, 0, 0.5f, 0.5f);
+                uint32_t topRingStart = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * 3.14159265358979f;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    addVertex(r * ca, h, r * sa, 0, 1, 0,
+                               0.5f + 0.5f * ca, 0.5f + 0.5f * sa);
+                }
+                for (int sg = 0; sg < segments; ++sg) {
+                    wom.indices.push_back(topCenter);
+                    wom.indices.push_back(topRingStart + sg);
+                    wom.indices.push_back(topRingStart + sg + 1);
+                }
+                // Bottom cap fan (winding flipped so normal points -Y).
+                uint32_t botCenter = static_cast<uint32_t>(wom.vertices.size());
+                addVertex(0, -h, 0, 0, -1, 0, 0.5f, 0.5f);
+                uint32_t botRingStart = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * 3.14159265358979f;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    addVertex(r * ca, -h, r * sa, 0, -1, 0,
+                               0.5f + 0.5f * ca, 0.5f - 0.5f * sa);
+                }
+                for (int sg = 0; sg < segments; ++sg) {
+                    wom.indices.push_back(botCenter);
+                    wom.indices.push_back(botRingStart + sg + 1);
+                    wom.indices.push_back(botRingStart + sg);
+                }
             } else {
                 std::fprintf(stderr,
-                    "gen-mesh: shape must be cube, plane, or sphere (got '%s')\n",
+                    "gen-mesh: shape must be cube, plane, sphere, or cylinder (got '%s')\n",
                     shape.c_str());
                 return 1;
             }
