@@ -3000,6 +3000,29 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
                 }
                 ImGui::EndCombo();
             }
+            // "Play preview" via OS default audio player. Avoids
+            // pulling SDL_mixer into the editor binary just for the
+            // preview workflow — the user already has a working audio
+            // player and this hands the file off to it. macOS uses
+            // 'open', most Linux desktops use 'xdg-open', Windows
+            // uses 'start ""'.
+            auto playFile = [](const std::string& path) {
+                if (path.empty()) return;
+#if defined(__APPLE__)
+                std::string cmd = "open \"" + path + "\" >/dev/null 2>&1 &";
+#elif defined(_WIN32)
+                std::string cmd = "start \"\" \"" + path + "\"";
+#else
+                std::string cmd = "xdg-open \"" + path + "\" >/dev/null 2>&1 &";
+#endif
+                std::system(cmd.c_str());
+            };
+            if (!manifest.musicTrack.empty()) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Play##music")) playFile(manifest.musicTrack);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Open in OS default audio player");
+            }
             // Day-ambience dropdown.
             if (ImGui::BeginCombo("Ambience File##audio",
                                     manifest.ambienceDay.empty()
@@ -3018,6 +3041,10 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
                     }
                 }
                 ImGui::EndCombo();
+            }
+            if (!manifest.ambienceDay.empty()) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Play##ambDay")) playFile(manifest.ambienceDay);
             }
 
             if (ImGui::InputText("Music##audio", musicBuf, sizeof(musicBuf)))
