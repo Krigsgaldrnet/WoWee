@@ -514,6 +514,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Run all four bulk converters (m2/wmo/blp/dbc) end-to-end on an extracted Data tree\n");
     std::printf("  --info-data-tree <srcDir> [--json]\n");
     std::printf("                         Per-format migration-progress report (m2 vs wom, wmo vs wob, blp vs png, dbc vs json)\n");
+    std::printf("  --strip-data-tree <srcDir> [--dry-run]\n");
+    std::printf("                         Delete proprietary files (.m2/.wmo/.blp/.dbc) that already have an open sidecar\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -936,7 +938,7 @@ int main(int argc, char* argv[]) {
         "--convert-dbc-json", "--convert-dbc-batch", "--convert-json-dbc",
         "--convert-blp-png", "--convert-blp-batch",
         "--migrate-wom", "--migrate-zone", "--migrate-project",
-        "--migrate-data-tree", "--info-data-tree",
+        "--migrate-data-tree", "--info-data-tree", "--strip-data-tree",
         "--migrate-jsondbc",
     };
     for (int i = 1; i < argc; i++) {
@@ -13664,6 +13666,122 @@ int main(int argc, char* argv[]) {
                             p.orphanOpenCount, share);
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--strip-data-tree") == 0 && i + 1 < argc) {
+            // Destructive cleanup. Walks <srcDir>, finds every
+            // proprietary file (.m2/.wmo/.blp/.dbc) that already has
+            // a matching open sidecar at the same (parent, stem),
+            // and deletes the proprietary file. Sidecar match uses
+            // case-insensitive extension comparison.
+            //
+            // Honors --dry-run for safe previews. Mirrors the
+            // --strip-zone convention (defaults to actually delete).
+            //
+            // Recommended workflow: --info-data-tree to see the
+            // share, --migrate-data-tree to fill in missing sidecars,
+            // --strip-data-tree --dry-run to confirm the kill list,
+            // then --strip-data-tree to apply.
+            std::string srcDir = argv[++i];
+            bool dryRun = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--dry-run") == 0) {
+                dryRun = true; i++;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "strip-data-tree: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            // Build the (parent, stem) set of every open file first.
+            // The proprietary→open ext map serves both as the strip
+            // target list and as the per-pair routing table.
+            static const std::vector<std::pair<std::string, std::string>>
+                kPairs = {
+                    {".m2",  ".wom"},
+                    {".wmo", ".wob"},
+                    {".blp", ".png"},
+                    {".dbc", ".json"},
+                };
+            std::map<std::string, std::set<std::pair<std::string, std::string>>>
+                openSets;  // open ext -> set of (parent, stem)
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                for (const auto& [_, openExt] : kPairs) {
+                    if (ext == openExt) {
+                        openSets[openExt].insert(
+                            {e.path().parent_path().string(),
+                             e.path().stem().string()});
+                        break;
+                    }
+                }
+            }
+            // Walk again, this time deleting (or previewing) each
+            // proprietary file whose key appears in its pair's open
+            // set.
+            int removed = 0, failed = 0;
+            uint64_t freedBytes = 0;
+            std::map<std::string, int> perExtRemoved;
+            for (const auto& [propExt, openExt] : kPairs) {
+                const auto& openSet = openSets[openExt];
+                if (openSet.empty()) continue;
+                for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    std::transform(ext.begin(), ext.end(), ext.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+                    if (ext != propExt) continue;
+                    std::pair<std::string, std::string> key{
+                        e.path().parent_path().string(),
+                        e.path().stem().string()};
+                    if (!openSet.count(key)) continue;  // no sidecar — keep
+                    uint64_t sz = e.file_size(ec);
+                    if (ec) sz = 0;
+                    if (dryRun) {
+                        std::printf("  would remove: %s (%llu bytes)\n",
+                                    e.path().c_str(),
+                                    static_cast<unsigned long long>(sz));
+                        removed++;
+                        perExtRemoved[propExt]++;
+                        freedBytes += sz;
+                    } else {
+                        if (fs::remove(e.path(), ec)) {
+                            std::printf("  removed: %s (%llu bytes)\n",
+                                        e.path().c_str(),
+                                        static_cast<unsigned long long>(sz));
+                            removed++;
+                            perExtRemoved[propExt]++;
+                            freedBytes += sz;
+                        } else {
+                            std::fprintf(stderr,
+                                "  WARN: failed to remove %s (%s)\n",
+                                e.path().c_str(), ec.message().c_str());
+                            failed++;
+                        }
+                    }
+                }
+            }
+            std::printf("\nstrip-data-tree: %s%s\n",
+                        srcDir.c_str(), dryRun ? " (dry-run)" : "");
+            std::printf("  %s : %d file(s)\n",
+                        dryRun ? "would remove" : "removed     ", removed);
+            std::printf("  freed        : %.1f KB\n", freedBytes / 1024.0);
+            if (!perExtRemoved.empty()) {
+                std::printf("\n  Per-extension:\n");
+                for (const auto& [ext, count] : perExtRemoved) {
+                    std::printf("    %-5s : %d\n", ext.c_str(), count);
+                }
+            }
+            if (failed > 0) {
+                std::printf("\n  FAILED       : %d (see stderr)\n", failed);
+            }
+            if (dryRun && removed > 0) {
+                std::printf("\n  re-run without --dry-run to apply\n");
+            }
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--repair-zone") == 0 && i + 1 < argc) {
             // Auto-fix the common manifest-vs-disk drift issues that
             // accumulate when a zone is hand-edited or partially copied:
