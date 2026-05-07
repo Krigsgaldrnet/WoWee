@@ -524,6 +524,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Top-N largest proprietary files (.m2/.wmo/.blp/.dbc) for migration prioritization\n");
     std::printf("  --export-data-tree-md <srcDir> [out.md]\n");
     std::printf("                         Markdown migration-progress report (per-pair table, share %%, recommended next steps)\n");
+    std::printf("  --gen-texture <out.png> <colorHex|pattern> [W H]\n");
+    std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -907,7 +909,7 @@ int main(int argc, char* argv[]) {
         "--validate-project-open-only", "--audit-project",
         "--bench-validate-project", "--bench-bake-project",
         "--bench-migrate-data-tree", "--list-data-tree-largest",
-        "--export-data-tree-md",
+        "--export-data-tree-md", "--gen-texture",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -13864,6 +13866,116 @@ int main(int argc, char* argv[]) {
             std::printf("  share       : %.1f%%\n", overallShare);
             std::printf("  proprietary : %d files, %.2f MB\n",
                         totalProp, totalPropBytes / (1024.0 * 1024.0));
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture") == 0 && i + 2 < argc) {
+            // Synthesize a placeholder PNG texture. Lets users add a
+            // working texture to their project without an external
+            // image editor — useful for prototyping new meshes,
+            // filling out a zone before art is final, or generating
+            // test fixtures.
+            //
+            // <colorHex|pattern>:
+            //   "RRGGBB" or "RGB" hex (case-insensitive) → solid color
+            //   "checker" → 32x32 black/white checkerboard
+            //   "grid"    → black background with white 1-px grid every 16
+            std::string outPath = argv[++i];
+            std::string spec = argv[++i];
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+                std::fprintf(stderr,
+                    "gen-texture: invalid size %dx%d (must be 1..8192)\n", W, H);
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            std::string lower = spec;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            if (lower == "checker") {
+                for (int y = 0; y < H; ++y) {
+                    for (int x = 0; x < W; ++x) {
+                        bool dark = ((x / 32) + (y / 32)) & 1;
+                        uint8_t v = dark ? 16 : 240;
+                        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                        pixels[i2 + 0] = v;
+                        pixels[i2 + 1] = v;
+                        pixels[i2 + 2] = v;
+                    }
+                }
+            } else if (lower == "grid") {
+                for (int y = 0; y < H; ++y) {
+                    for (int x = 0; x < W; ++x) {
+                        bool line = (x % 16 == 0) || (y % 16 == 0);
+                        uint8_t v = line ? 240 : 32;
+                        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                        pixels[i2 + 0] = v;
+                        pixels[i2 + 1] = v;
+                        pixels[i2 + 2] = v;
+                    }
+                }
+            } else {
+                // Hex color. Accept "RGB" (3 chars) or "RRGGBB" (6 chars),
+                // optional leading '#'.
+                std::string hex = lower;
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHex = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                uint8_t r = 0, g = 0, b = 0;
+                if (hex.size() == 6) {
+                    int hi, lo;
+                    if ((hi = fromHex(hex[0])) < 0) goto bad_color;
+                    if ((lo = fromHex(hex[1])) < 0) goto bad_color;
+                    r = static_cast<uint8_t>((hi << 4) | lo);
+                    if ((hi = fromHex(hex[2])) < 0) goto bad_color;
+                    if ((lo = fromHex(hex[3])) < 0) goto bad_color;
+                    g = static_cast<uint8_t>((hi << 4) | lo);
+                    if ((hi = fromHex(hex[4])) < 0) goto bad_color;
+                    if ((lo = fromHex(hex[5])) < 0) goto bad_color;
+                    b = static_cast<uint8_t>((hi << 4) | lo);
+                } else if (hex.size() == 3) {
+                    int v0, v1, v2;
+                    if ((v0 = fromHex(hex[0])) < 0) goto bad_color;
+                    if ((v1 = fromHex(hex[1])) < 0) goto bad_color;
+                    if ((v2 = fromHex(hex[2])) < 0) goto bad_color;
+                    r = static_cast<uint8_t>((v0 << 4) | v0);
+                    g = static_cast<uint8_t>((v1 << 4) | v1);
+                    b = static_cast<uint8_t>((v2 << 4) | v2);
+                } else {
+                    goto bad_color;
+                }
+                for (int y = 0; y < H; ++y) {
+                    for (int x = 0; x < W; ++x) {
+                        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                        pixels[i2 + 0] = r;
+                        pixels[i2 + 1] = g;
+                        pixels[i2 + 2] = b;
+                    }
+                }
+                goto color_ok;
+              bad_color:
+                std::fprintf(stderr,
+                    "gen-texture: '%s' is not a valid hex color or 'checker'/'grid'\n",
+                    spec.c_str());
+                return 1;
+              color_ok: ;
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture: stbi_write_png failed for %s\n", outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  spec      : %s\n", spec.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
             // Non-destructive companion to --migrate-data-tree. Walks
