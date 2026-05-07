@@ -1133,6 +1133,75 @@ void TerrainEditor::fillWater(float height, uint16_t liquidType) {
     dirty_ = true;
 }
 
+void TerrainEditor::fillWaterAlongPath(const glm::vec3& start, const glm::vec3& end,
+                                          float width, uint16_t liquidType) {
+    if (!terrain_) return;
+    if (!std::isfinite(start.x) || !std::isfinite(start.y) ||
+        !std::isfinite(end.x) || !std::isfinite(end.y) ||
+        !std::isfinite(width) || width <= 0.0f) return;
+    glm::vec2 lineStart(start.x, start.y);
+    glm::vec2 lineEnd(end.x, end.y);
+    float lineLen = glm::length(lineEnd - lineStart);
+    if (lineLen < 1e-4f) return;
+    glm::vec2 lineDir = (lineEnd - lineStart) / lineLen;
+
+    // Each chunk is 33.33 yards across, so a chunk's diagonal half is
+    // ~23.6 yards. Treat any chunk whose center lies within
+    // `width + chunkHalfDiag` of the river segment as "intersected" so
+    // the water layer covers any cell the carved channel touches.
+    constexpr float kChunkSize = 33.33333f;
+    const float chunkHalfDiag = kChunkSize * 0.7071f;  // sqrt(2)/2 of size
+
+    int filled = 0;
+    for (int ci = 0; ci < 256; ci++) {
+        auto& chunk = terrain_->chunks[ci];
+        if (!chunk.hasHeightMap()) continue;
+        // Chunk center in world coords. position[0]=wowY, [1]=wowX so the
+        // 2D vector here is (X, Y) for the chunk's center.
+        glm::vec2 chunkCenter(chunk.position[1] + kChunkSize * 0.5f,
+                               chunk.position[0] + kChunkSize * 0.5f);
+        glm::vec2 toC = chunkCenter - lineStart;
+        float t = glm::dot(toC, lineDir);
+        t = std::clamp(t, 0.0f, lineLen);
+        glm::vec2 closest = lineStart + lineDir * t;
+        float dist = glm::length(chunkCenter - closest);
+        if (dist > width + chunkHalfDiag) continue;
+
+        // Find min terrain height in this chunk after carving — water
+        // goes to that level + a small offset so it visibly fills the
+        // channel without overflowing onto banks.
+        float minH = 1e30f;
+        for (int v = 0; v < 145; v++) {
+            float absH = chunk.position[2] + chunk.heightMap.heights[v];
+            if (absH < minH) minH = absH;
+        }
+        if (minH > 1e29f) continue;
+        float waterH = minH + 0.5f;
+
+        auto& water = terrain_->waterData[ci];
+        if (water.layers.empty()) {
+            pipeline::ADTTerrain::WaterLayer wl;
+            wl.liquidType = liquidType;
+            wl.flags = 0;
+            wl.minHeight = waterH;
+            wl.maxHeight = waterH;
+            wl.x = 0; wl.y = 0; wl.width = 9; wl.height = 9;
+            wl.heights.assign(81, waterH);
+            wl.mask.assign(8, 0xFF);
+            water.layers.push_back(wl);
+        } else {
+            auto& wl = water.layers[0];
+            wl.liquidType = liquidType;
+            wl.minHeight = waterH;
+            wl.maxHeight = waterH;
+            std::fill(wl.heights.begin(), wl.heights.end(), waterH);
+        }
+        dirtyChunks_.push_back(ci);
+        filled++;
+    }
+    if (filled > 0) dirty_ = true;
+}
+
 void TerrainEditor::smoothBeaches(float waterHeight, float beachWidth) {
     if (!terrain_) return;
     recordGeneratorUndo();

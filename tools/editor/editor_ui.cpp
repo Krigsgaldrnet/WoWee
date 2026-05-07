@@ -1049,7 +1049,13 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                         app.getTerrainEditor().carveRiver(pathStart_, pathEnd_, pathWidth_, pathDepth_);
                         app.getTexturePainter().paintAlongPath(pathStart_, pathEnd_, pathWidth_ * 1.5f,
                             "Tileset\\Ashenvale\\AshenvaleSand.blp");
-                        app.showToast("River carved + banks textured");
+                        // After carving, fill water in the chunks along
+                        // the river path so the channel actually looks
+                        // like a river. liquidType 0 = water (1=ocean,
+                        // 2=magma, 3=slime).
+                        app.getTerrainEditor().fillWaterAlongPath(
+                            pathStart_, pathEnd_, pathWidth_, 0);
+                        app.showToast("River carved + banks textured + water filled");
                     } else {
                         app.getTerrainEditor().flattenRoad(pathStart_, pathEnd_, pathWidth_);
                         app.getTexturePainter().paintAlongPath(pathStart_, pathEnd_, pathWidth_,

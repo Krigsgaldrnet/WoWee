@@ -127,6 +127,14 @@ public:
     // Fill entire tile with water at a height
     void fillWater(float height, uint16_t liquidType);
 
+    // Add a water layer only to chunks the line segment passes through
+    // (within `width`). Used by the river tool so rivers actually fill
+    // with water without flooding the rest of the tile. Per-chunk water
+    // height is computed from the post-carve terrain so the water sits
+    // in the carved channel.
+    void fillWaterAlongPath(const glm::vec3& start, const glm::vec3& end,
+                              float width, uint16_t liquidType);
+
     // Smooth terrain near water level to create natural beaches
     void smoothBeaches(float waterHeight, float beachWidth);
 
