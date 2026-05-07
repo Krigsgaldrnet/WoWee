@@ -152,14 +152,23 @@ void EditorUI::processActions(EditorApp& app) {
 }
 
 void EditorUI::setPathPoint(const glm::vec3& pos) {
+    // Hard cap so a runaway click handler doesn't grow the polyline
+    // unboundedly. 64 segments is more than enough for a tile-sized
+    // river or road.
+    constexpr size_t kMaxPathPoints = 64;
+    if (pathPoints_.size() >= kMaxPathPoints) return;
     if (pathCapture_ == PathCapture::WaitingStart) {
-        pathStart_ = pos;
-        pathStartSet_ = true;
+        pathPoints_.clear();
+        pathPoints_.push_back(pos);
         pathCapture_ = PathCapture::WaitingEnd;
     } else if (pathCapture_ == PathCapture::WaitingEnd) {
-        pathEnd_ = pos;
-        pathEndSet_ = true;
-        pathCapture_ = PathCapture::None;
+        pathPoints_.push_back(pos);
+        // After the second point we stay in capture mode but switch to
+        // WaitingMore so the user can either click "Apply" with the
+        // 2-segment polyline or keep adding waypoints.
+        pathCapture_ = PathCapture::WaitingMore;
+    } else if (pathCapture_ == PathCapture::WaitingMore) {
+        pathPoints_.push_back(pos);
     }
 }
 
@@ -1023,11 +1032,9 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Width##path", &pathWidth_, 2.0f, 50.0f);
             if (pathMode_ == 0) ImGui::SliderFloat("Depth##path", &pathDepth_, 1.0f, 30.0f);
 
-            if (pathCapture_ == PathCapture::None && !pathStartSet_) {
+            if (pathCapture_ == PathCapture::None && pathPoints_.empty()) {
                 if (ImGui::Button("Click Start Point", ImVec2(-1, 0))) {
                     pathCapture_ = PathCapture::WaitingStart;
-                    pathStartSet_ = false;
-                    pathEndSet_ = false;
                     app.showToast("Click terrain to set start point");
                 }
             } else if (pathCapture_ == PathCapture::WaitingStart) {
@@ -1036,39 +1043,54 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                     pathCapture_ = PathCapture::None;
                 }
             } else if (pathCapture_ == PathCapture::WaitingEnd) {
-                ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1), "Start set at (%.0f, %.0f) — click for END",
-                                   pathStart_.x, pathStart_.y);
+                ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+                                    "Start at (%.0f, %.0f) — click for next point",
+                                    pathPoints_[0].x, pathPoints_[0].y);
                 if (ImGui::SmallButton("Cancel##path")) {
                     clearPath();
                 }
-            } else if (pathStartSet_ && pathEndSet_) {
+            } else if (pathCapture_ == PathCapture::WaitingMore || isPathReady()) {
+                // Multi-point: show running count and let the user keep
+                // clicking to add waypoints, or hit Apply with the current
+                // polyline. The Apply branch iterates each segment.
                 ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1),
-                    "Start: (%.0f,%.0f) End: (%.0f,%.0f)", pathStart_.x, pathStart_.y, pathEnd_.x, pathEnd_.y);
+                                    "%zu point(s) captured — click for more, or Apply",
+                                    pathPoints_.size());
                 if (ImGui::Button("Apply Path", ImVec2(-1, 0))) {
-                    if (pathMode_ == 0) {
-                        app.getTerrainEditor().carveRiver(pathStart_, pathEnd_, pathWidth_, pathDepth_);
-                        app.getTexturePainter().paintAlongPath(pathStart_, pathEnd_, pathWidth_ * 1.5f,
-                            "Tileset\\Ashenvale\\AshenvaleSand.blp");
-                        // After carving, fill water in the chunks along
-                        // the river path so the channel actually looks
-                        // like a river. liquidType 0 = water (1=ocean,
-                        // 2=magma, 3=slime).
-                        app.getTerrainEditor().fillWaterAlongPath(
-                            pathStart_, pathEnd_, pathWidth_, 0);
-                        app.showToast("River carved + banks textured + water filled");
-                    } else {
-                        app.getTerrainEditor().flattenRoad(pathStart_, pathEnd_, pathWidth_);
-                        app.getTexturePainter().paintAlongPath(pathStart_, pathEnd_, pathWidth_,
-                            "Tileset\\Elwynn\\ElwynnCobblestoneBase.blp");
-                        app.showToast("Road flattened + textured");
+                    int segCount = 0;
+                    for (size_t k = 0; k + 1 < pathPoints_.size(); ++k) {
+                        const glm::vec3& a = pathPoints_[k];
+                        const glm::vec3& b = pathPoints_[k + 1];
+                        if (pathMode_ == 0) {
+                            app.getTerrainEditor().carveRiver(a, b, pathWidth_, pathDepth_);
+                            app.getTexturePainter().paintAlongPath(a, b,
+                                pathWidth_ * 1.5f,
+                                "Tileset\\Ashenvale\\AshenvaleSand.blp");
+                            app.getTerrainEditor().fillWaterAlongPath(a, b,
+                                pathWidth_, 0);
+                        } else {
+                            app.getTerrainEditor().flattenRoad(a, b, pathWidth_);
+                            app.getTexturePainter().paintAlongPath(a, b,
+                                pathWidth_,
+                                "Tileset\\Elwynn\\ElwynnCobblestoneBase.blp");
+                        }
+                        segCount++;
                     }
+                    if (pathMode_ == 0)
+                        app.showToast("River applied across " +
+                                       std::to_string(segCount) + " segment(s)");
+                    else
+                        app.showToast("Road applied across " +
+                                       std::to_string(segCount) + " segment(s)");
                     clearPath();
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Reset##path")) clearPath();
-            } else if (pathStartSet_) {
-                if (ImGui::Button("Click End Point", ImVec2(-1, 0)))
-                    pathCapture_ = PathCapture::WaitingEnd;
+            } else if (!pathPoints_.empty()) {
+                // Captured at least one point but the user dismissed the
+                // capture mode without setting more — let them resume.
+                if (ImGui::Button("Click Next Point", ImVec2(-1, 0)))
+                    pathCapture_ = PathCapture::WaitingMore;
             }
         }
 

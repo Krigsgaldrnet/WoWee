@@ -24,15 +24,23 @@ public:
 
     PaintMode getPaintMode() const { return paintMode_; }
 
-    // Path point capture: when active, next terrain click sets the point
-    enum class PathCapture { None, WaitingStart, WaitingEnd };
+    // Path point capture: when active, next terrain click appends a
+    // point. WaitingStart for the first, WaitingMore for any subsequent
+    // (the user can keep clicking until they hit Apply or Finish).
+    enum class PathCapture { None, WaitingStart, WaitingEnd, WaitingMore };
     PathCapture getPathCapture() const { return pathCapture_; }
     void setPathPoint(const glm::vec3& pos);
-    glm::vec3 getPathStart() const { return pathStart_; }
-    glm::vec3 getPathEnd() const { return pathEnd_; }
-    bool isPathReady() const { return pathStartSet_ && pathEndSet_; }
+    // Backwards-compatible getters: start = first point, end = last.
+    glm::vec3 getPathStart() const {
+        return pathPoints_.empty() ? glm::vec3(0) : pathPoints_.front();
+    }
+    glm::vec3 getPathEnd() const {
+        return pathPoints_.empty() ? glm::vec3(0) : pathPoints_.back();
+    }
+    const std::vector<glm::vec3>& getPathPoints() const { return pathPoints_; }
+    bool isPathReady() const { return pathPoints_.size() >= 2; }
     float getPathWidth() const { return pathWidth_; }
-    void clearPath() { pathStartSet_ = false; pathEndSet_ = false; pathCapture_ = PathCapture::None; }
+    void clearPath() { pathPoints_.clear(); pathCapture_ = PathCapture::None; }
 
 private:
     void renderMenuBar(EditorApp& app);
@@ -86,8 +94,7 @@ private:
 
     // Path point capture
     PathCapture pathCapture_ = PathCapture::None;
-    glm::vec3 pathStart_{0}, pathEnd_{0};
-    bool pathStartSet_ = false, pathEndSet_ = false;
+    std::vector<glm::vec3> pathPoints_;
     int pathMode_ = 0; // 0=river, 1=road
     float pathWidth_ = 8.0f, pathDepth_ = 5.0f;
 };
