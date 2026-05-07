@@ -526,6 +526,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Markdown migration-progress report (per-pair table, share %%, recommended next steps)\n");
     std::printf("  --gen-texture <out.png> <colorHex|pattern> [W H]\n");
     std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
+    std::printf("  --gen-texture-gradient <out.png> <fromHex> <toHex> [vertical|horizontal] [W H]\n");
+    std::printf("                         Synthesize a linear gradient PNG (default vertical, 256x256)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone> [size]\n");
@@ -946,7 +948,7 @@ int main(int argc, char* argv[]) {
         "--bench-migrate-data-tree", "--list-data-tree-largest",
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
-        "--gen-mesh-stairs",
+        "--gen-mesh-stairs", "--gen-texture-gradient",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -15138,6 +15140,123 @@ int main(int argc, char* argv[]) {
             std::printf("Wrote %s\n", outPath.c_str());
             std::printf("  size      : %dx%d\n", W, H);
             std::printf("  spec      : %s\n", spec.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-gradient") == 0 && i + 3 < argc) {
+            // Linear two-color gradient. Useful for sky strips, UI
+            // fills, glow rings, dirt-on-grass terrain blends — the
+            // common "fade" cases that --gen-texture's solid/checker/
+            // grid don't cover.
+            //
+            // Direction: "vertical" (top→bottom, default) or
+            // "horizontal" (left→right). Colors are hex like
+            // --gen-texture.
+            std::string outPath = argv[++i];
+            std::string fromHex = argv[++i];
+            std::string toHex = argv[++i];
+            bool horizontal = false;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                std::string dir = argv[i + 1];
+                std::transform(dir.begin(), dir.end(), dir.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (dir == "horizontal" || dir == "vertical") {
+                    horizontal = (dir == "horizontal");
+                    i++;
+                }
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+                std::fprintf(stderr,
+                    "gen-texture-gradient: invalid size %dx%d (1..8192)\n",
+                    W, H);
+                return 1;
+            }
+            // Hex parser: shared local helper for both endpoints. Same
+            // RRGGBB / RGB rules as --gen-texture.
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t r0, g0, b0, r1, g1, b1;
+            if (!parseHex(fromHex, r0, g0, b0)) {
+                std::fprintf(stderr,
+                    "gen-texture-gradient: '%s' is not a valid hex color\n",
+                    fromHex.c_str());
+                return 1;
+            }
+            if (!parseHex(toHex, r1, g1, b1)) {
+                std::fprintf(stderr,
+                    "gen-texture-gradient: '%s' is not a valid hex color\n",
+                    toHex.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    float t;
+                    if (horizontal) {
+                        t = (W <= 1) ? 0.0f : float(x) / float(W - 1);
+                    } else {
+                        t = (H <= 1) ? 0.0f : float(y) / float(H - 1);
+                    }
+                    auto lerp = [](uint8_t a, uint8_t b, float t) {
+                        return static_cast<uint8_t>(a + (b - a) * t + 0.5f);
+                    };
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = lerp(r0, r1, t);
+                    pixels[i2 + 1] = lerp(g0, g1, t);
+                    pixels[i2 + 2] = lerp(b0, b1, t);
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-gradient: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size       : %dx%d\n", W, H);
+            std::printf("  direction  : %s\n",
+                        horizontal ? "horizontal" : "vertical");
+            std::printf("  from       : %s (rgb %u,%u,%u)\n",
+                        fromHex.c_str(), r0, g0, b0);
+            std::printf("  to         : %s (rgb %u,%u,%u)\n",
+                        toHex.c_str(), r1, g1, b1);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
