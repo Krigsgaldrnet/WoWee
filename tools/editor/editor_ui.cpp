@@ -1032,6 +1032,40 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Width##path", &pathWidth_, 2.0f, 50.0f);
             if (pathMode_ == 0) ImGui::SliderFloat("Depth##path", &pathDepth_, 1.0f, 30.0f);
 
+            // "Painting roads to/from models" — append the position of
+            // the currently-selected object or NPC as a path waypoint.
+            // Common workflow: place inn + town hall, select inn → click
+            // append, select town hall → click append, click Apply Path.
+            // The path then runs between them as a road.
+            const auto* selObj = app.getObjectPlacer().getSelected();
+            const auto* selNpc = app.getNpcSpawner().getSelected();
+            const char* srcLabel = selObj ? "object" :
+                                    selNpc ? "NPC" : nullptr;
+            glm::vec3 srcPos(0);
+            if (selObj) srcPos = selObj->position;
+            else if (selNpc) srcPos = selNpc->position;
+            if (srcLabel) {
+                std::string btn = std::string("Append selected ") + srcLabel +
+                                   " as path point";
+                if (ImGui::Button(btn.c_str(), ImVec2(-1, 0))) {
+                    // setPathPoint only acts when capture is in one of
+                    // its waiting states. If we're idle, kick to
+                    // WaitingStart for the first append; subsequent
+                    // appends progress through Waiting* automatically.
+                    if (pathCapture_ == PathCapture::None) {
+                        pathCapture_ = pathPoints_.empty()
+                                       ? PathCapture::WaitingStart
+                                       : PathCapture::WaitingMore;
+                    }
+                    setPathPoint(srcPos);
+                    app.showToast("Path point added at selected " +
+                                   std::string(srcLabel));
+                }
+            } else {
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                    "Select an object or NPC to append its position as a path point.");
+            }
+
             if (pathCapture_ == PathCapture::None && pathPoints_.empty()) {
                 if (ImGui::Button("Click Start Point", ImVec2(-1, 0))) {
                     pathCapture_ = PathCapture::WaitingStart;
