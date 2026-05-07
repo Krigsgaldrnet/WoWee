@@ -535,6 +535,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a radial gradient PNG (center→edge, smooth distance-based blend)\n");
     std::printf("  --gen-texture-stripes <out.png> <colorAHex> <colorBHex> [stripePx] [diagonal|horizontal|vertical] [W H]\n");
     std::printf("                         Synthesize a two-color stripe pattern (default 16px diagonal, 256x256)\n");
+    std::printf("  --gen-texture-dots <out.png> <bgHex> <dotHex> [dotRadius] [spacing] [W H]\n");
+    std::printf("                         Synthesize a polka-dot pattern (default radius 8, spacing 32, 256x256)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -1019,7 +1021,7 @@ int main(int argc, char* argv[]) {
         "--center-mesh", "--flip-mesh-normals", "--mirror-mesh",
         "--smooth-mesh-normals",
         "--merge-meshes",
-        "--gen-texture-radial", "--gen-texture-stripes",
+        "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -17205,6 +17207,110 @@ int main(int argc, char* argv[]) {
             std::printf("  direction : %s\n", dir.c_str());
             std::printf("  stripe    : %d px\n", stripePx);
             std::printf("  colors    : %s + %s\n", aHex.c_str(), bHex.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-dots") == 0 && i + 3 < argc) {
+            // Polka-dot pattern: solid background with circular dots
+            // on a regular grid. Useful for fabric/clothing textures,
+            // game-board patterns, or quick decorative tiling.
+            std::string outPath = argv[++i];
+            std::string bgHex = argv[++i];
+            std::string dotHex = argv[++i];
+            int radius = 8, spacing = 32;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { radius = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { spacing = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                radius < 1 || radius > 1024 ||
+                spacing < 2 || spacing > 4096) {
+                std::fprintf(stderr,
+                    "gen-texture-dots: invalid dims (W/H 1..8192, radius 1..1024, spacing 2..4096)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t br, bg, bb, dr, dg, db;
+            if (!parseHex(bgHex, br, bg, bb)) {
+                std::fprintf(stderr,
+                    "gen-texture-dots: '%s' is not a valid hex color\n",
+                    bgHex.c_str());
+                return 1;
+            }
+            if (!parseHex(dotHex, dr, dg, db)) {
+                std::fprintf(stderr,
+                    "gen-texture-dots: '%s' is not a valid hex color\n",
+                    dotHex.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            float r2 = static_cast<float>(radius) * radius;
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    // Distance to the nearest grid point.
+                    int gx = (x + spacing / 2) / spacing * spacing;
+                    int gy = (y + spacing / 2) / spacing * spacing;
+                    float dx = static_cast<float>(x - gx);
+                    float dy = static_cast<float>(y - gy);
+                    bool inDot = (dx * dx + dy * dy) < r2;
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = inDot ? dr : br;
+                    pixels[i2 + 1] = inDot ? dg : bg;
+                    pixels[i2 + 2] = inDot ? db : bb;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-dots: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  bg        : %s\n", bgHex.c_str());
+            std::printf("  dot       : %s\n", dotHex.c_str());
+            std::printf("  radius    : %d px\n", radius);
+            std::printf("  spacing   : %d px\n", spacing);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
