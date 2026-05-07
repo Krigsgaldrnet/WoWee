@@ -520,6 +520,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         CI gate: exit 1 if any proprietary file lacks an open sidecar (100%% migration check)\n");
     std::printf("  --bench-migrate-data-tree <srcDir> [--json]\n");
     std::printf("                         Time each step of --migrate-data-tree (m2/wmo/blp/dbc) and report wall-clock per step\n");
+    std::printf("  --list-data-tree-largest <srcDir> [N]\n");
+    std::printf("                         Top-N largest proprietary files (.m2/.wmo/.blp/.dbc) for migration prioritization\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -902,7 +904,7 @@ int main(int argc, char* argv[]) {
         "--validate-whm", "--validate-all", "--validate-project",
         "--validate-project-open-only", "--audit-project",
         "--bench-validate-project", "--bench-bake-project",
-        "--bench-migrate-data-tree",
+        "--bench-migrate-data-tree", "--list-data-tree-largest",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -13628,6 +13630,108 @@ int main(int argc, char* argv[]) {
                 std::printf("  %-15s   %8.1f ms   %5.1f%%   %s (rc=%d)\n",
                             s.name, s.ms, share,
                             s.rc == 0 ? "ok" : "FAIL", s.rc);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-data-tree-largest") == 0 && i + 1 < argc) {
+            // Top-N largest proprietary files (.m2/.wmo/.blp/.dbc).
+            // Helps prioritize migration: convert the biggest files
+            // first to free the most disk space sooner. Annotates
+            // each file with whether an open sidecar already exists,
+            // so users can see at a glance which heavy hitters are
+            // already migrated vs still pending.
+            //
+            // Default N = 20. Sized for a terminal page; use --json
+            // (or pass a larger N) for full lists.
+            std::string srcDir = argv[++i];
+            int N = 20;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { N = std::stoi(argv[++i]); } catch (...) {}
+                if (N < 1) N = 20;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "list-data-tree-largest: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            static const std::vector<std::pair<std::string, std::string>>
+                kPairs = {
+                    {".m2",  ".wom"},
+                    {".wmo", ".wob"},
+                    {".blp", ".png"},
+                    {".dbc", ".json"},
+                };
+            // Open sidecar set for the migration-status annotation.
+            std::map<std::string, std::set<std::pair<std::string, std::string>>>
+                openSets;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                for (const auto& [_, openExt] : kPairs) {
+                    if (ext == openExt) {
+                        openSets[openExt].insert(
+                            {e.path().parent_path().string(),
+                             e.path().stem().string()});
+                        break;
+                    }
+                }
+            }
+            struct Entry {
+                std::string path;
+                uint64_t bytes;
+                std::string ext;
+                bool migrated;
+            };
+            std::vector<Entry> entries;
+            uint64_t totalBytes = 0;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                std::string openExt;
+                for (const auto& [propExt, oExt] : kPairs) {
+                    if (ext == propExt) { openExt = oExt; break; }
+                }
+                if (openExt.empty()) continue;
+                uint64_t sz = e.file_size(ec);
+                if (ec) sz = 0;
+                std::pair<std::string, std::string> key{
+                    e.path().parent_path().string(),
+                    e.path().stem().string()};
+                bool migrated = openSets[openExt].count(key) > 0;
+                entries.push_back({e.path().string(), sz, ext, migrated});
+                totalBytes += sz;
+            }
+            std::sort(entries.begin(), entries.end(),
+                      [](const Entry& a, const Entry& b) {
+                          return a.bytes > b.bytes;
+                      });
+            int shown = std::min(static_cast<int>(entries.size()), N);
+            uint64_t shownBytes = 0;
+            for (int k = 0; k < shown; ++k) shownBytes += entries[k].bytes;
+            std::printf("list-data-tree-largest: %s\n", srcDir.c_str());
+            std::printf("  proprietary files : %zu (total %.1f MB)\n",
+                        entries.size(), totalBytes / (1024.0 * 1024.0));
+            std::printf("  showing top       : %d (%.1f MB, %.1f%% of total)\n",
+                        shown, shownBytes / (1024.0 * 1024.0),
+                        totalBytes ? 100.0 * shownBytes / totalBytes : 0.0);
+            if (entries.empty()) {
+                std::printf("\n  (no proprietary files found)\n");
+                return 0;
+            }
+            std::printf("\n  rank   ext     bytes      status   path\n");
+            for (int k = 0; k < shown; ++k) {
+                const auto& e = entries[k];
+                std::printf("  %4d   %-4s  %10llu  %-7s  %s\n",
+                            k + 1, e.ext.c_str(),
+                            static_cast<unsigned long long>(e.bytes),
+                            e.migrated ? "migrate" : "pending",
+                            e.path.c_str());
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
