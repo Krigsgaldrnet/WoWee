@@ -523,6 +523,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Aggregate counts across every zone in <projectDir>\n");
     std::printf("  --info-tilemap <projectDir> [--json]\n");
     std::printf("                         ASCII-render the 64x64 WoW ADT grid showing tile claims by zone\n");
+    std::printf("  --list-project-orphans <projectDir> [--json]\n");
+    std::printf("                         Find .wom/.wob files in zones not referenced by any objects.json or doodad list\n");
     std::printf("  --list-zone-deps <zoneDir> [--json]\n");
     std::printf("                         List external M2/WMO model paths a zone references (objects + WOB doodads)\n");
     std::printf("  --export-zone-deps-md <zoneDir> [out.md]\n");
@@ -894,7 +896,8 @@ int main(int argc, char* argv[]) {
         "--validate-project-checksum",
         "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--for-each-tile", "--zone-stats", "--info-tilemap",
-        "--list-zone-deps", "--check-zone-refs", "--check-zone-content",
+        "--list-zone-deps", "--list-project-orphans",
+        "--check-zone-refs", "--check-zone-content",
         "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest",
@@ -14080,6 +14083,141 @@ int main(int argc, char* argv[]) {
             emit("Direct M2 placements",  directM2);
             emit("Direct WMO placements", directWMO);
             emit("WOB doodad M2 refs",    doodadM2);
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-project-orphans") == 0 && i + 1 < argc) {
+            // Inverse of --list-zone-deps. Walks every zone in
+            // <projectDir>, collects the set of .wom/.wob files
+            // sitting on disk and the set of paths actually
+            // referenced by objects.json placements + WOB doodad
+            // lists. Files in the first set but not the second are
+            // orphans — candidates for removal before --pack-wcp so
+            // the archive doesn't carry dead weight.
+            //
+            // Comparison is by basename (extension stripped) since
+            // the reference paths sometimes include the extension and
+            // sometimes don't.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "list-project-orphans: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Project-wide reference set. Normalize by stripping
+            // extension and any leading "./".
+            auto normalize = [](std::string p) {
+                while (p.size() >= 2 && p[0] == '.' && p[1] == '/') p.erase(0, 2);
+                std::string ext = fs::path(p).extension().string();
+                if (ext == ".wom" || ext == ".wob" || ext == ".m2" || ext == ".wmo") {
+                    p = p.substr(0, p.size() - ext.size());
+                }
+                return p;
+            };
+            std::set<std::string> referencedBases;  // normalized basenames
+            for (const auto& zoneDir : zones) {
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(zoneDir + "/objects.json")) {
+                    for (const auto& o : op.getObjects()) {
+                        if (o.path.empty()) continue;
+                        // Reference can be relative to zone or just a
+                        // bare model name; record both forms for the
+                        // membership test.
+                        std::string norm = normalize(o.path);
+                        referencedBases.insert(norm);
+                        // Also try the leaf basename so unqualified
+                        // refs match.
+                        referencedBases.insert(fs::path(norm).filename().string());
+                    }
+                }
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wob") continue;
+                    std::string base = e.path().string();
+                    if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                    auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+                    for (const auto& d : bld.doodads) {
+                        if (d.modelPath.empty()) continue;
+                        std::string norm = normalize(d.modelPath);
+                        referencedBases.insert(norm);
+                        referencedBases.insert(fs::path(norm).filename().string());
+                    }
+                }
+            }
+            // Now walk every zone again and flag orphan .wom/.wob files.
+            struct Orphan { std::string zone, path; uint64_t bytes; };
+            std::vector<Orphan> orphans;
+            uint64_t totalOrphanBytes = 0;
+            for (const auto& zoneDir : zones) {
+                std::string zoneName = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    if (ext != ".wom" && ext != ".wob") continue;
+                    std::string rel = fs::relative(e.path(), zoneDir, ec).string();
+                    if (ec) rel = e.path().filename().string();
+                    std::string normRel = rel.substr(0, rel.size() - ext.size());
+                    std::string leaf = e.path().stem().string();
+                    if (referencedBases.count(normRel) ||
+                        referencedBases.count(leaf)) {
+                        continue;  // referenced, not orphan
+                    }
+                    uint64_t sz = e.file_size(ec);
+                    if (ec) sz = 0;
+                    orphans.push_back({zoneName, rel, sz});
+                    totalOrphanBytes += sz;
+                }
+            }
+            std::sort(orphans.begin(), orphans.end(),
+                      [](const Orphan& a, const Orphan& b) {
+                          if (a.zone != b.zone) return a.zone < b.zone;
+                          return a.path < b.path;
+                      });
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["referencedCount"] = referencedBases.size();
+                j["orphanCount"] = orphans.size();
+                j["orphanBytes"] = totalOrphanBytes;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& o : orphans) {
+                    arr.push_back({{"zone", o.zone},
+                                    {"path", o.path},
+                                    {"bytes", o.bytes}});
+                }
+                j["orphans"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project orphans: %s\n", projectDir.c_str());
+            std::printf("  zones scanned    : %zu\n", zones.size());
+            std::printf("  refs collected   : %zu (normalized basenames)\n",
+                        referencedBases.size());
+            std::printf("  orphan .wom/.wob : %zu file(s), %.1f KB\n",
+                        orphans.size(), totalOrphanBytes / 1024.0);
+            if (orphans.empty()) {
+                std::printf("\n  (no orphans — every model file is referenced)\n");
+                return 0;
+            }
+            std::printf("\n  zone                  bytes      path\n");
+            for (const auto& o : orphans) {
+                std::printf("  %-20s  %8llu   %s\n",
+                            o.zone.substr(0, 20).c_str(),
+                            static_cast<unsigned long long>(o.bytes),
+                            o.path.c_str());
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--export-zone-deps-md") == 0 && i + 1 < argc) {
             // Markdown counterpart to --list-zone-deps. Writes a sortable
