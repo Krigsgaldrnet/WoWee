@@ -579,6 +579,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Audio config table across every zone (which zones have music/ambience set)\n");
     std::printf("  --snap-zone-to-ground <zoneDir>\n");
     std::printf("                         Re-snap every creature/object in a zone to actual terrain height\n");
+    std::printf("  --snap-project-to-ground <projectDir>\n");
+    std::printf("                         Run --snap-zone-to-ground across every zone (per-zone summary + totals)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
     std::printf("  --export-zone-items-md <zoneDir> [out.md]\n");
@@ -1027,7 +1029,7 @@ int main(int argc, char* argv[]) {
         "--add-creature", "--add-object", "--add-quest", "--add-item",
         "--random-populate-zone", "--random-populate-items",
         "--info-zone-audio", "--snap-zone-to-ground",
-        "--info-project-audio",
+        "--info-project-audio", "--snap-project-to-ground",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13650,6 +13652,52 @@ int main(int argc, char* argv[]) {
             std::printf("  creatures    : %d snapped\n", snappedC);
             std::printf("  objects      : %d snapped\n", snappedO);
             return 0;
+        } else if (std::strcmp(argv[i], "--snap-project-to-ground") == 0 && i + 1 < argc) {
+            // Orchestrator wrapper around --snap-zone-to-ground. Spawns
+            // the binary per-zone (only zones with at least one of
+            // creatures.json or objects.json since pure-terrain zones
+            // have nothing to snap), aggregates a final summary.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "snap-project-to-ground: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                bool hasContent = fs::exists(entry.path() / "creatures.json") ||
+                                   fs::exists(entry.path() / "objects.json");
+                if (!hasContent) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::printf("snap-project-to-ground: %s\n", projectDir.c_str());
+                std::printf("  no zones with creatures.json or objects.json\n");
+                return 0;
+            }
+            std::string self = argv[0];
+            int passed = 0, failed = 0;
+            std::printf("snap-project-to-ground: %s\n", projectDir.c_str());
+            std::printf("  zones to snap : %zu\n\n", zones.size());
+            for (const auto& zoneDir : zones) {
+                std::printf("--- %s ---\n",
+                            fs::path(zoneDir).filename().string().c_str());
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --snap-zone-to-ground \"" +
+                                   zoneDir + "\"";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) passed++;
+                else failed++;
+            }
+            std::printf("\n--- summary ---\n");
+            std::printf("  zones snapped : %d\n", passed);
+            std::printf("  failed        : %d\n", failed);
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--list-items") == 0 && i + 1 < argc) {
             // Inspect <zoneDir>/items.json. Pretty-prints id / quality
             // / item level / display id / name as a table; also
