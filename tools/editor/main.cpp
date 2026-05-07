@@ -524,6 +524,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Sanity-check creature/object/quest fields for plausible values\n");
     std::printf("  --for-each-zone <projectDir> -- <cmd...>\n");
     std::printf("                         Run <cmd...> for every zone in <projectDir>; '{}' in cmd is replaced with the zone path\n");
+    std::printf("  --for-each-tile <zoneDir> -- <cmd...>\n");
+    std::printf("                         Run <cmd...> for every tile in <zoneDir>; '{}' replaced with the tile-base path\n");
     std::printf("  --scaffold-zone <name> [tx ty]  Create a blank zone in custom_zones/<name>/ and exit\n");
     std::printf("  --mvp-zone <name> [tx ty]\n");
     std::printf("                         Scaffold + add a creature + object + quest (with objective+reward) for quick demos\n");
@@ -825,7 +827,7 @@ int main(int argc, char* argv[]) {
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
         "--export-project-md", "--export-zone-checksum",
         "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
-        "--for-each-zone", "--zone-stats", "--info-tilemap",
+        "--for-each-zone", "--for-each-tile", "--zone-stats", "--info-tilemap",
         "--list-zone-deps", "--check-zone-refs", "--check-zone-content",
         "--export-zone-deps-md",
         "--add-creature", "--add-object", "--add-quest",
@@ -12573,6 +12575,83 @@ int main(int argc, char* argv[]) {
             }
             std::printf("\nfor-each-zone: %zu zones, %d failed\n",
                         zones.size(), failed);
+            return failed > 255 ? 255 : failed;
+        } else if (std::strcmp(argv[i], "--for-each-tile") == 0 && i + 1 < argc) {
+            // Per-tile batch runner. --for-each-zone iterates zones in
+            // a project; this iterates tiles within a zone. The '{}' in
+            // the command template is replaced with the tile-base path
+            // (zoneDir/mapName_TX_TY) — the form most tile-level
+            // editor commands take.
+            //
+            //   wowee_editor --for-each-tile MyZone -- \\
+            //     wowee_editor --build-woc {}
+            //   wowee_editor --for-each-tile MyZone -- \\
+            //     wowee_editor --validate-whm {}
+            std::string zoneDir = argv[++i];
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--") == 0) ++i;
+            if (i + 1 >= argc) {
+                std::fprintf(stderr,
+                    "for-each-tile: need command after '--'\n");
+                return 1;
+            }
+            std::vector<std::string> cmdTokens;
+            for (int k = i + 1; k < argc; ++k) cmdTokens.push_back(argv[k]);
+            i = argc - 1;
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "for-each-tile: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr, "for-each-tile: parse failed\n");
+                return 1;
+            }
+            if (zm.tiles.empty()) {
+                std::fprintf(stderr, "for-each-tile: zone has no tiles\n");
+                return 1;
+            }
+            // Same shell-escape + cmd-substitution as --for-each-zone.
+            auto shellEscape = [](const std::string& s) {
+                std::string out = "'";
+                for (char c : s) {
+                    if (c == '\'') out += "'\\''";
+                    else out += c;
+                }
+                out += "'";
+                return out;
+            };
+            int failed = 0;
+            // Sort tiles so order is deterministic across runs.
+            auto tiles = zm.tiles;
+            std::sort(tiles.begin(), tiles.end());
+            for (const auto& [tx, ty] : tiles) {
+                std::string tileBase = zoneDir + "/" + zm.mapName + "_" +
+                                        std::to_string(tx) + "_" + std::to_string(ty);
+                std::string cmd;
+                for (size_t k = 0; k < cmdTokens.size(); ++k) {
+                    if (k > 0) cmd += " ";
+                    std::string token = cmdTokens[k];
+                    size_t pos;
+                    while ((pos = token.find("{}")) != std::string::npos) {
+                        token.replace(pos, 2, tileBase);
+                    }
+                    cmd += shellEscape(token);
+                }
+                std::printf("[%s (%d, %d)]\n", tileBase.c_str(), tx, ty);
+                std::fflush(stdout);
+                int rc = std::system(cmd.c_str());
+                if (rc != 0) {
+                    failed++;
+                    std::fprintf(stderr,
+                        "for-each-tile: command exited %d for (%d, %d)\n",
+                        rc, tx, ty);
+                }
+            }
+            std::printf("\nfor-each-tile: %zu tiles, %d failed\n",
+                        tiles.size(), failed);
             return failed > 255 ? 255 : failed;
         } else if (std::strcmp(argv[i], "--version") == 0 || std::strcmp(argv[i], "-v") == 0) {
             std::printf("Wowee World Editor v1.0.0\n");
