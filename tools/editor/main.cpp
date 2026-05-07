@@ -123,6 +123,11 @@ static std::string fileHex(const std::string& path) {
     }
     return hexFinal(s);
 }
+static std::string hex(const uint8_t* data, size_t len) {
+    State s;
+    update(s, data, len);
+    return hexFinal(s);
+}
 }  // namespace wowee_sha256
 
 static std::vector<std::string> validateWomErrors(
@@ -681,6 +686,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Emit creatures.csv / objects.csv / quests.csv for spreadsheet workflows\n");
     std::printf("  --export-zone-checksum <zoneDir> [out.sha256]\n");
     std::printf("                         Emit a SHA-256 manifest of every source file in a zone (for integrity checks)\n");
+    std::printf("  --export-project-checksum <projectDir> [out.sha256]\n");
+    std::printf("                         Project-wide SHA-256 manifest (paths are zone-relative) + single project fingerprint\n");
     std::printf("  --export-zone-html <zoneDir> [out.html]\n");
     std::printf("                         Emit a single-file HTML viewer next to the zone .glb (model-viewer based)\n");
     std::printf("  --export-project-html <projectDir> [out.html]\n");
@@ -857,7 +864,7 @@ int main(int argc, char* argv[]) {
         "--info-zone-density",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
-        "--export-project-md", "--export-zone-checksum",
+        "--export-project-md", "--export-zone-checksum", "--export-project-checksum",
         "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--for-each-tile", "--zone-stats", "--info-tilemap",
         "--list-zone-deps", "--check-zone-refs", "--check-zone-content",
@@ -5998,6 +6005,88 @@ int main(int argc, char* argv[]) {
             std::printf("  %zu file(s) hashed (source only, derived excluded)\n",
                         entries.size());
             std::printf("  verify with: sha256sum -c %s\n", outPath.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-project-checksum") == 0 && i + 1 < argc) {
+            // Project-wide manifest in the same sha256sum format, with
+            // paths kept relative to <projectDir> (so entries look like
+            // "<hex>  <zoneName>/<file>"). Also emits a single SHA-256
+            // fingerprint over the manifest itself — a one-line
+            // identity for the whole project, handy for CI release
+            // gates and reproducibility checks.
+            //
+            //   wowee_editor --export-project-checksum custom_zones
+            //   sha256sum -c custom_zones/PROJECT_SHA256SUMS
+            std::string projectDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "export-project-checksum: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = projectDir + "/PROJECT_SHA256SUMS";
+            // Same derived-output filter as --export-zone-checksum.
+            auto isDerived = [](const fs::path& p) {
+                std::string ext = p.extension().string();
+                std::string name = p.filename().string();
+                if (ext == ".glb" || ext == ".obj" || ext == ".stl" ||
+                    ext == ".html" || ext == ".dot" || ext == ".csv") return true;
+                if (name == "ZONE.md" || name == "DEPS.md" ||
+                    name == "SHA256SUMS" || name == "PROJECT_SHA256SUMS" ||
+                    name == "Makefile") return true;
+                if (ext == ".png") return true;
+                return false;
+            };
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            std::vector<std::pair<std::string, std::string>> entries;
+            for (const auto& zoneDir : zones) {
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (isDerived(e.path())) continue;
+                    std::string hex = wowee_sha256::fileHex(e.path().string());
+                    if (hex.empty()) continue;
+                    std::string rel = fs::relative(e.path(), projectDir, ec).string();
+                    if (ec) rel = e.path().string();
+                    entries.push_back({hex, rel});
+                }
+            }
+            std::sort(entries.begin(), entries.end(),
+                      [](const auto& a, const auto& b) { return a.second < b.second; });
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-project-checksum: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            // Hash the manifest body inline so the project fingerprint
+            // is byte-identical to what `sha256sum PROJECT_SHA256SUMS`
+            // would yield on the written file.
+            std::string body;
+            body.reserve(entries.size() * 80);
+            for (const auto& [hash, path] : entries) {
+                body += hash;
+                body += "  ";
+                body += path;
+                body += "\n";
+            }
+            out << body;
+            out.close();
+            std::string fingerprint = wowee_sha256::hex(
+                reinterpret_cast<const uint8_t*>(body.data()), body.size());
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  zones        : %zu\n", zones.size());
+            std::printf("  files hashed : %zu\n", entries.size());
+            std::printf("  fingerprint  : %s\n", fingerprint.c_str());
+            std::printf("  verify with  : sha256sum -c %s\n", outPath.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--export-zone-html") == 0 && i + 1 < argc) {
             // Generate a single-file HTML viewer next to the zone .glb.
