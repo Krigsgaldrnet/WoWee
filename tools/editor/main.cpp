@@ -536,6 +536,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
+    std::printf("  --info-item <zoneDir> <id|index> [--json]\n");
+    std::printf("                         Detail view for one item (lookup by id, or by index if prefixed with '#')\n");
     std::printf("  --remove-item <zoneDir> <index>\n");
     std::printf("                         Remove item at given 0-based index from <zoneDir>/items.json\n");
     std::printf("  --clone-item <zoneDir> <index> [newName]\n");
@@ -948,7 +950,7 @@ int main(int argc, char* argv[]) {
         "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
-        "--list-items",
+        "--list-items", "--info-item",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--clone-item", "--validate-items", "--info-project-items",
@@ -12658,6 +12660,107 @@ int main(int argc, char* argv[]) {
                 std::printf("  %3zu   %5u   %4u   %5u   %-10s   %9u   %s\n",
                             k, id, ilvl, stack,
                             qualityNames[quality], displayId, name.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-item") == 0 && i + 2 < argc) {
+            // Single-item detail view. Lookup is by id by default;
+            // prefix the argument with '#' (e.g., "#3") to look up by
+            // 0-based array index instead. Useful for inspecting all
+            // fields of a single record without sifting through the
+            // full --list-items table.
+            std::string zoneDir = argv[++i];
+            std::string lookup = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "info-item: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "info-item: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "info-item: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            const auto& items = doc["items"];
+            int foundIdx = -1;
+            if (!lookup.empty() && lookup[0] == '#') {
+                try {
+                    int idx = std::stoi(lookup.substr(1));
+                    if (idx >= 0 && static_cast<size_t>(idx) < items.size())
+                        foundIdx = idx;
+                } catch (...) {}
+            } else {
+                uint32_t targetId = 0;
+                try { targetId = static_cast<uint32_t>(std::stoul(lookup)); }
+                catch (...) {
+                    std::fprintf(stderr,
+                        "info-item: lookup '%s' is not a number "
+                        "(use '#N' for index lookup)\n", lookup.c_str());
+                    return 1;
+                }
+                for (size_t k = 0; k < items.size(); ++k) {
+                    if (items[k].contains("id") &&
+                        items[k]["id"].is_number_unsigned() &&
+                        items[k]["id"].get<uint32_t>() == targetId) {
+                        foundIdx = static_cast<int>(k);
+                        break;
+                    }
+                }
+            }
+            if (foundIdx < 0) {
+                std::fprintf(stderr,
+                    "info-item: no match for '%s' in %s\n",
+                    lookup.c_str(), path.c_str());
+                return 1;
+            }
+            const auto& it = items[foundIdx];
+            if (jsonOut) {
+                std::printf("%s\n", it.dump(2).c_str());
+                return 0;
+            }
+            static const char* qualityNames[] = {
+                "poor", "common", "uncommon", "rare", "epic",
+                "legendary", "artifact"
+            };
+            uint32_t quality = it.value("quality", 1u);
+            if (quality > 6) quality = 0;
+            std::printf("Item %d in %s\n", foundIdx, path.c_str());
+            std::printf("  id          : %u\n", it.value("id", 0u));
+            std::printf("  name        : %s\n",
+                        it.value("name", std::string("(unnamed)")).c_str());
+            std::printf("  quality     : %u (%s)\n",
+                        quality, qualityNames[quality]);
+            std::printf("  itemLevel   : %u\n", it.value("itemLevel", 1u));
+            std::printf("  displayId   : %u\n", it.value("displayId", 0u));
+            std::printf("  stackable   : %u\n", it.value("stackable", 1u));
+            // Surface any extra fields the user added by hand so
+            // info-item stays useful as the schema evolves.
+            std::vector<std::string> extras;
+            for (auto& [k, v] : it.items()) {
+                if (k == "id" || k == "name" || k == "quality" ||
+                    k == "itemLevel" || k == "displayId" ||
+                    k == "stackable") continue;
+                extras.push_back(k);
+            }
+            if (!extras.empty()) {
+                std::printf("\n  Extra fields:\n");
+                for (const auto& k : extras) {
+                    std::printf("    %s = %s\n",
+                                k.c_str(), it[k].dump().c_str());
+                }
             }
             return 0;
         } else if (std::strcmp(argv[i], "--remove-item") == 0 && i + 2 < argc) {
