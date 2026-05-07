@@ -802,6 +802,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Aggregate WOM/WOB stats across a zone (verts, tris, bones, batches, doodads)\n");
     std::printf("  --list-zone-meshes <zoneDir> [--json]\n");
     std::printf("                         Per-mesh listing of every .wom in a zone (verts, tris, bones, textures, bytes)\n");
+    std::printf("  --info-mesh <wom-base> [--json]\n");
+    std::printf("                         Single-mesh detail: bounds, version, batches, bones, textures, attachments in one view\n");
     std::printf("  --list-project-meshes <projectDir> [--json]\n");
     std::printf("                         Per-mesh listing across every zone in a project (sorted by triangle count)\n");
     std::printf("  --info-project-models-total <projectDir> [--json]\n");
@@ -926,7 +928,7 @@ int main(int argc, char* argv[]) {
         "--info-bones", "--export-bones-dot", "--list-zone-textures",
         "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
-        "--list-zone-meshes", "--list-project-meshes",
+        "--list-zone-meshes", "--list-project-meshes", "--info-mesh",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--info-extract-tree", "--info-extract-budget",
@@ -2164,6 +2166,110 @@ int main(int argc, char* argv[]) {
                             r.version, r.verts, r.tris, r.bones,
                             static_cast<unsigned long long>(r.bytes),
                             r.path.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-mesh") == 0 && i + 1 < argc) {
+            // Single-mesh detail view aggregating bounds, version,
+            // batches, bones, animations, and texture slots into one
+            // report. Composite of what --info-batches / --info-bones
+            // / --info-batches show separately. Useful authoring
+            // command: pass a WOM and see everything about it without
+            // running three sub-commands.
+            std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom") {
+                base = base.substr(0, base.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                std::fprintf(stderr,
+                    "info-mesh: %s.wom does not exist\n", base.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "info-mesh: failed to load %s.wom\n", base.c_str());
+                return 1;
+            }
+            // Per-batch material summary.
+            static const char* blendNames[] = {
+                "opaque", "alpha-test", "alpha", "additive", "?", "?", "?", "?"
+            };
+            if (jsonOut) {
+                nlohmann::json j;
+                j["base"] = base;
+                j["name"] = wom.name;
+                j["version"] = wom.version;
+                j["bounds"] = {{"min", {wom.boundMin.x, wom.boundMin.y, wom.boundMin.z}},
+                                {"max", {wom.boundMax.x, wom.boundMax.y, wom.boundMax.z}},
+                                {"radius", wom.boundRadius}};
+                j["counts"] = {{"vertices", wom.vertices.size()},
+                                {"indices", wom.indices.size()},
+                                {"triangles", wom.indices.size() / 3},
+                                {"bones", wom.bones.size()},
+                                {"animations", wom.animations.size()},
+                                {"batches", wom.batches.size()},
+                                {"textures", wom.texturePaths.size()}};
+                nlohmann::json bs = nlohmann::json::array();
+                for (const auto& b : wom.batches) {
+                    std::string tex;
+                    if (b.textureIndex < wom.texturePaths.size())
+                        tex = wom.texturePaths[b.textureIndex];
+                    bs.push_back({{"indexStart", b.indexStart},
+                                   {"indexCount", b.indexCount},
+                                   {"triangles", b.indexCount / 3},
+                                   {"textureIndex", b.textureIndex},
+                                   {"texture", tex},
+                                   {"blendMode", b.blendMode},
+                                   {"flags", b.flags}});
+                }
+                j["batchDetail"] = bs;
+                j["texturePaths"] = wom.texturePaths;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Mesh: %s.wom\n", base.c_str());
+            std::printf("  name       : %s\n", wom.name.c_str());
+            std::printf("  version    : v%u\n", wom.version);
+            std::printf("\n  Counts:\n");
+            std::printf("    vertices  : %zu\n", wom.vertices.size());
+            std::printf("    triangles : %zu\n", wom.indices.size() / 3);
+            std::printf("    bones     : %zu\n", wom.bones.size());
+            std::printf("    anims     : %zu\n", wom.animations.size());
+            std::printf("    batches   : %zu\n", wom.batches.size());
+            std::printf("    textures  : %zu\n", wom.texturePaths.size());
+            std::printf("\n  Bounds:\n");
+            std::printf("    min       : (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z);
+            std::printf("    max       : (%.3f, %.3f, %.3f)\n",
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            std::printf("    radius    : %.3f\n", wom.boundRadius);
+            if (!wom.batches.empty()) {
+                std::printf("\n  Batches:\n");
+                std::printf("    idx  iStart  iCount  tris   blend       texture\n");
+                for (size_t k = 0; k < wom.batches.size(); ++k) {
+                    const auto& b = wom.batches[k];
+                    std::string tex = "<oob>";
+                    if (b.textureIndex < wom.texturePaths.size())
+                        tex = wom.texturePaths[b.textureIndex];
+                    if (tex.empty()) tex = "(empty)";
+                    int blend = b.blendMode < 8 ? b.blendMode : 0;
+                    std::printf("    %3zu  %6u  %6u  %4u   %-10s  %s\n",
+                                k, b.indexStart, b.indexCount,
+                                b.indexCount / 3, blendNames[blend],
+                                tex.c_str());
+                }
+            }
+            if (!wom.texturePaths.empty()) {
+                std::printf("\n  Texture slots:\n");
+                for (size_t k = 0; k < wom.texturePaths.size(); ++k) {
+                    std::printf("    [%zu] %s\n", k,
+                                wom.texturePaths[k].empty()
+                                ? "(empty placeholder)"
+                                : wom.texturePaths[k].c_str());
+                }
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-project-models-total") == 0 && i + 1 < argc) {
