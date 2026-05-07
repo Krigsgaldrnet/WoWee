@@ -106,6 +106,11 @@ public:
     // mirror of the --snap-zone-to-ground CLI; useful after terrain
     // edits or random population to fix floating/buried spawns.
     void snapAllSpawnsToGround();
+    // Count spawns whose Z is more than `threshold` yards off from
+    // the terrain. Returns the issue count; 0 means clean. Used by
+    // the in-editor "Audit Spawns" menu to surface placement bugs
+    // without dropping to CLI.
+    int auditSpawnsAgainstTerrain(float threshold = 5.0f) const;
     void centerOnTerrain();
 
     // Multi-tile support

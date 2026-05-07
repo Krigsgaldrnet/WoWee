@@ -1830,6 +1830,30 @@ void EditorApp::snapAllSpawnsToGround() {
               std::to_string(snappedO) + " object(s) to ground");
 }
 
+int EditorApp::auditSpawnsAgainstTerrain(float threshold) const {
+    if (!terrain_.isLoaded()) return 0;
+    auto castDown = [&](const glm::vec3& pos, glm::vec3& hit) {
+        rendering::Ray ray;
+        ray.origin = pos + glm::vec3(0, 0, 500);
+        ray.direction = glm::vec3(0, 0, -1);
+        return const_cast<TerrainEditor&>(terrainEditor_).raycastTerrain(ray, hit);
+    };
+    int issues = 0;
+    for (const auto& s : npcSpawner_.getSpawns()) {
+        glm::vec3 hit;
+        if (castDown(s.position, hit)) {
+            if (std::fabs(s.position.z - hit.z) > threshold) issues++;
+        }
+    }
+    for (const auto& o : objectPlacer_.getObjects()) {
+        glm::vec3 hit;
+        if (castDown(o.position, hit)) {
+            if (std::fabs(o.position.z - hit.z) > threshold) issues++;
+        }
+    }
+    return issues;
+}
+
 void EditorApp::clearAllObjects() {
     vkDeviceWaitIdle(window_->getVkContext()->getDevice());
     objectPlacer_.clearAll();

@@ -403,6 +403,19 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                 ImGui::SetTooltip(
                     "Re-snap every creature + object's Z to actual terrain height.\n"
                     "Run after terrain edits to fix floating/buried spawns.");
+            if (ImGui::MenuItem("Audit Spawns Against Terrain", nullptr, false,
+                                  app.hasTerrainLoaded())) {
+                int issues = app.auditSpawnsAgainstTerrain(5.0f);
+                if (issues == 0)
+                    app.showToast("Audit clean — every spawn within 5y of terrain");
+                else
+                    app.showToast(std::to_string(issues) +
+                                   " spawn(s) more than 5y off terrain — try Snap All");
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Count spawns whose Z is more than 5y off terrain.\n"
+                    "Surfaces placement bugs without modifying anything.");
             if (ImGui::MenuItem("Clear All Objects/NPCs", nullptr, false, app.hasTerrainLoaded())) {
                 if (app.getObjectPlacer().objectCount() > 0 || app.getNpcSpawner().spawnCount() > 0)
                     app.clearAllObjects();
