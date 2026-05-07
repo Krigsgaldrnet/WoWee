@@ -569,6 +569,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Combine two WOMs into one (vertex/index buffers concatenated, batches preserved)\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
+    std::printf("  --random-populate-zone <zoneDir> [--seed N] [--creatures N] [--objects N]\n");
+    std::printf("                         Add random creatures/objects to a zone (seeded for reproducibility)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
     std::printf("  --export-zone-items-md <zoneDir> [out.md]\n");
@@ -1015,6 +1017,7 @@ int main(int argc, char* argv[]) {
         "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
+        "--random-populate-zone",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13135,6 +13138,158 @@ int main(int argc, char* argv[]) {
                         name.c_str(), id,
                         qualityNames[quality], itemLevel,
                         path.c_str(), doc["items"].size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--random-populate-zone") == 0 && i + 1 < argc) {
+            // Randomly add creatures and/or objects to a zone for
+            // playtest scenarios. Reads the zone manifest's tile
+            // bounds so spawn positions stay inside the actual
+            // playable area. Seeded LCG for reproducibility — same
+            // seed always produces the same population.
+            //
+            // Flags:
+            //   --seed N      (default 42)
+            //   --creatures N (default 20)
+            //   --objects N   (default 10)
+            std::string zoneDir = argv[++i];
+            uint32_t seed = 42;
+            int creatureCount = 20;
+            int objectCount = 10;
+            while (i + 2 < argc && argv[i + 1][0] == '-') {
+                std::string flag = argv[++i];
+                if (flag == "--seed") {
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                    catch (...) {}
+                } else if (flag == "--creatures") {
+                    try { creatureCount = std::stoi(argv[++i]); }
+                    catch (...) {}
+                } else if (flag == "--objects") {
+                    try { objectCount = std::stoi(argv[++i]); }
+                    catch (...) {}
+                } else {
+                    std::fprintf(stderr,
+                        "random-populate-zone: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "random-populate-zone: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "random-populate-zone: failed to parse %s\n",
+                    manifestPath.c_str());
+                return 1;
+            }
+            if (zm.tiles.empty()) {
+                std::fprintf(stderr,
+                    "random-populate-zone: zone has no tiles to populate\n");
+                return 1;
+            }
+            // Compute the world AABB the zone occupies so spawns land
+            // inside it. Each tile is 533.33y; WoW grid centers tile
+            // (32, 32) at world origin.
+            constexpr float kTileSize = 533.33333f;
+            int tMinX = 64, tMaxX = -1, tMinY = 64, tMaxY = -1;
+            for (const auto& [tx, ty] : zm.tiles) {
+                tMinX = std::min(tMinX, tx); tMaxX = std::max(tMaxX, tx);
+                tMinY = std::min(tMinY, ty); tMaxY = std::max(tMaxY, ty);
+            }
+            float wMinX = (32.0f - tMaxY - 1) * kTileSize;
+            float wMaxX = (32.0f - tMinY)     * kTileSize;
+            float wMinY = (32.0f - tMaxX - 1) * kTileSize;
+            float wMaxY = (32.0f - tMinX)     * kTileSize;
+            float baseZ = zm.baseHeight;
+
+            uint32_t rng = seed ? seed : 1u;
+            auto next01 = [&]() {
+                rng = rng * 1664525u + 1013904223u;
+                return (rng >> 8) / float(1 << 24);
+            };
+            auto rangeF = [&](float a, float b) { return a + next01() * (b - a); };
+            auto rangeI = [&](int a, int b) {
+                return a + static_cast<int>(next01() * (b - a + 1));
+            };
+
+            // Tiny bestiary so the random output reads as plausible
+            // rather than "Creature1 / Creature2".
+            static const std::vector<std::pair<const char*, uint32_t>> kRandomCreatures = {
+                {"Wolf", 5},      {"Boar", 4},     {"Bear", 7},
+                {"Spider", 3},    {"Bandit", 6},   {"Kobold", 4},
+                {"Murloc", 5},    {"Skeleton", 5}, {"Wisp", 3},
+                {"Goblin", 5},    {"Stag", 4},     {"Crab", 3},
+            };
+            static const std::vector<const char*> kRandomObjects = {
+                "World/Generic/Tree01.wmo",
+                "World/Generic/Boulder.wmo",
+                "World/Generic/Bush.wmo",
+                "World/Generic/Stump.wmo",
+                "World/Generic/Mushroom.wmo",
+            };
+
+            // Creatures.
+            wowee::editor::NpcSpawner spawner;
+            std::string cpath = zoneDir + "/creatures.json";
+            if (fs::exists(cpath)) spawner.loadFromFile(cpath);
+            int placedCreatures = 0;
+            for (int n = 0; n < creatureCount; ++n) {
+                const auto& [name, baseLvl] = kRandomCreatures[
+                    rangeI(0, static_cast<int>(kRandomCreatures.size()) - 1)];
+                wowee::editor::CreatureSpawn s;
+                s.name = name;
+                s.position.x = rangeF(wMinX, wMaxX);
+                s.position.y = rangeF(wMinY, wMaxY);
+                s.position.z = baseZ;
+                int lvl = std::max(1, static_cast<int>(baseLvl) + rangeI(-1, 2));
+                s.level = static_cast<uint32_t>(lvl);
+                s.health = 50 + s.level * 10;
+                s.orientation = rangeF(0.0f, 360.0f);
+                spawner.placeCreature(s);
+                placedCreatures++;
+            }
+            if (placedCreatures > 0) spawner.saveToFile(cpath);
+            // Objects.
+            wowee::editor::ObjectPlacer placer;
+            std::string opath = zoneDir + "/objects.json";
+            if (fs::exists(opath)) placer.loadFromFile(opath);
+            int placedObjects = 0;
+            // Push PlacedObject directly into the placer's vector so
+            // we don't fight placeObject()'s early-return on empty
+            // activePath_. uniqueId starts after any existing objects
+            // to keep IDs collision-free.
+            auto& objs = placer.getObjects();
+            uint32_t maxUid = 0;
+            for (const auto& o : objs) maxUid = std::max(maxUid, o.uniqueId);
+            for (int n = 0; n < objectCount; ++n) {
+                wowee::editor::PlacedObject o;
+                o.path = kRandomObjects[
+                    rangeI(0, static_cast<int>(kRandomObjects.size()) - 1)];
+                o.type = wowee::editor::PlaceableType::WMO;
+                o.position.x = rangeF(wMinX, wMaxX);
+                o.position.y = rangeF(wMinY, wMaxY);
+                o.position.z = baseZ;
+                o.rotation = glm::vec3(0.0f, rangeF(0.0f, 6.28f), 0.0f);
+                o.scale = rangeF(0.8f, 1.4f);
+                o.uniqueId = ++maxUid;
+                o.nameId = 0;
+                o.selected = false;
+                objs.push_back(o);
+                placedObjects++;
+            }
+            if (placedObjects > 0) placer.saveToFile(opath);
+            std::printf("random-populate-zone: %s\n", zoneDir.c_str());
+            std::printf("  seed       : %u\n", seed);
+            std::printf("  zone bbox  : (%.0f, %.0f) - (%.0f, %.0f)\n",
+                        wMinX, wMinY, wMaxX, wMaxY);
+            std::printf("  creatures  : %d added (%zu total)\n",
+                        placedCreatures, spawner.spawnCount());
+            std::printf("  objects    : %d added (%zu total)\n",
+                        placedObjects, placer.getObjects().size());
             return 0;
         } else if (std::strcmp(argv[i], "--list-items") == 0 && i + 1 < argc) {
             // Inspect <zoneDir>/items.json. Pretty-prints id / quality
