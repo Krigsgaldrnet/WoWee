@@ -522,6 +522,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Time each step of --migrate-data-tree (m2/wmo/blp/dbc) and report wall-clock per step\n");
     std::printf("  --list-data-tree-largest <srcDir> [N]\n");
     std::printf("                         Top-N largest proprietary files (.m2/.wmo/.blp/.dbc) for migration prioritization\n");
+    std::printf("  --export-data-tree-md <srcDir> [out.md]\n");
+    std::printf("                         Markdown migration-progress report (per-pair table, share %%, recommended next steps)\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -905,6 +907,7 @@ int main(int argc, char* argv[]) {
         "--validate-project-open-only", "--audit-project",
         "--bench-validate-project", "--bench-bake-project",
         "--bench-migrate-data-tree", "--list-data-tree-largest",
+        "--export-data-tree-md",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -13733,6 +13736,134 @@ int main(int argc, char* argv[]) {
                             e.migrated ? "migrate" : "pending",
                             e.path.c_str());
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-data-tree-md") == 0 && i + 1 < argc) {
+            // Markdown migration-progress report. Drops cleanly into
+            // PR descriptions, CI artifacts, or status pages on
+            // GitHub Pages. Same numbers as --info-data-tree but
+            // formatted as a Markdown table with a status badge,
+            // bytes summary, and recommended next steps so a reader
+            // can act on the report without consulting the CLI help.
+            std::string srcDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "export-data-tree-md: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = srcDir + "/MIGRATION.md";
+            static const std::vector<std::pair<std::string, std::string>>
+                kPairs = {
+                    {".m2",  ".wom"},
+                    {".wmo", ".wob"},
+                    {".blp", ".png"},
+                    {".dbc", ".json"},
+                };
+            // Same scan as --info-data-tree.
+            std::map<std::string, std::set<std::pair<std::string, std::string>>>
+                byExt;
+            std::map<std::string, uint64_t> bytesByExt;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                byExt[ext].insert({e.path().parent_path().string(),
+                                   e.path().stem().string()});
+                uint64_t sz = e.file_size(ec);
+                if (!ec) bytesByExt[ext] += sz;
+            }
+            struct Row {
+                std::string prop, open;
+                int propCount, sidecarCount, orphanOpenCount;
+                uint64_t propBytes;
+                double share;
+            };
+            std::vector<Row> rows;
+            int totalProp = 0, totalSidecar = 0, totalOrphan = 0;
+            uint64_t totalPropBytes = 0;
+            for (const auto& [propExt, openExt] : kPairs) {
+                Row r{propExt, openExt, 0, 0, 0, 0, 0.0};
+                const auto& propSet = byExt[propExt];
+                const auto& openSet = byExt[openExt];
+                r.propCount = static_cast<int>(propSet.size());
+                for (const auto& key : openSet) {
+                    if (propSet.count(key)) r.sidecarCount++;
+                    else r.orphanOpenCount++;
+                }
+                r.propBytes = bytesByExt[propExt];
+                r.share = r.propCount > 0
+                          ? 100.0 * r.sidecarCount / r.propCount
+                          : 100.0;
+                totalProp += r.propCount;
+                totalSidecar += r.sidecarCount;
+                totalOrphan += r.orphanOpenCount;
+                totalPropBytes += r.propBytes;
+                rows.push_back(r);
+            }
+            double overallShare = totalProp > 0
+                                  ? 100.0 * totalSidecar / totalProp
+                                  : 100.0;
+            const char* badge =
+                overallShare >= 100.0 ? "**100% migrated**" :
+                overallShare >= 75.0  ? "**Mostly migrated**" :
+                overallShare >= 25.0  ? "*Partially migrated*" :
+                                        "*Migration pending*";
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-data-tree-md: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            out << "# Data Tree Migration Report\n\n";
+            out << "Source: `" << srcDir << "`\n\n";
+            out << "Status: " << badge << " (" << std::fixed;
+            out.precision(1);
+            out << overallShare << "% sidecar coverage)\n\n";
+            out << "## Summary\n\n";
+            out << "- Proprietary files: **" << totalProp << "** ("
+                << std::fixed;
+            out.precision(2);
+            out << (totalPropBytes / (1024.0 * 1024.0)) << " MB)\n";
+            out << "- Open sidecars present: **" << totalSidecar << "**\n";
+            out << "- Orphan open files (no proprietary source): **"
+                << totalOrphan << "**\n\n";
+            out << "## Per-format pairs\n\n";
+            out << "| Pair | Proprietary | Sidecars | Orphan open | Prop bytes | Share |\n";
+            out << "|------|------------:|---------:|------------:|-----------:|------:|\n";
+            for (const auto& r : rows) {
+                out << "| " << r.prop << " → " << r.open << " | "
+                    << r.propCount << " | "
+                    << r.sidecarCount << " | "
+                    << r.orphanOpenCount << " | "
+                    << r.propBytes << " | "
+                    << std::fixed;
+                out.precision(1);
+                out << r.share << "% |\n";
+            }
+            out << "\n## Recommended next steps\n\n";
+            if (overallShare < 100.0) {
+                out << "1. Run `wowee_editor --migrate-data-tree " << srcDir
+                    << "` to fill in the missing sidecars.\n";
+                out << "2. Run `wowee_editor --audit-data-tree " << srcDir
+                    << "` to confirm 100% coverage.\n";
+                out << "3. Run `wowee_editor --strip-data-tree " << srcDir
+                    << "` to delete the proprietary originals.\n";
+            } else {
+                out << "All proprietary files are migrated. Run "
+                    << "`wowee_editor --strip-data-tree " << srcDir
+                    << "` to delete the originals and ship the open-only tree.\n";
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  status      : %s\n", badge);
+            std::printf("  share       : %.1f%%\n", overallShare);
+            std::printf("  proprietary : %d files, %.2f MB\n",
+                        totalProp, totalPropBytes / (1024.0 * 1024.0));
             return 0;
         } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
             // Non-destructive companion to --migrate-data-tree. Walks
