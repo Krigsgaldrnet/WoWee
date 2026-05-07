@@ -542,6 +542,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Uniformly scale every vertex and bounds by <factor> (factor > 0)\n");
     std::printf("  --translate-mesh <wom-base> <dx> <dy> <dz>\n");
     std::printf("                         Offset every vertex and bounds by (dx, dy, dz)\n");
+    std::printf("  --strip-mesh <wom-base> [--bones] [--anims] [--all]\n");
+    std::printf("                         Drop bones / animations from a WOM in place (smaller file, static-only use)\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -957,7 +959,7 @@ int main(int argc, char* argv[]) {
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-texture-gradient",
-        "--scale-mesh", "--translate-mesh",
+        "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -16215,6 +16217,91 @@ int main(int argc, char* argv[]) {
             std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
                         wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
                         wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--strip-mesh") == 0 && i + 1 < argc) {
+            // Drop bones and/or animations from a WOM in place. Use
+            // case: a model imported with full skeleton + anims that
+            // will only ever be placed as static decoration — there's
+            // no point shipping the bone data, and stripping it can
+            // shrink the file substantially.
+            //
+            // Default (no flags) is a no-op so the user explicitly
+            // opts in to destruction. --bones drops bones (and
+            // therefore animations, since they reference bones).
+            // --anims drops only animations. --all is shorthand for
+            // both.
+            std::string womBase = argv[++i];
+            bool dropBones = false, dropAnims = false;
+            while (i + 1 < argc && argv[i + 1][0] == '-') {
+                std::string flag = argv[++i];
+                if (flag == "--bones") { dropBones = true; }
+                else if (flag == "--anims") { dropAnims = true; }
+                else if (flag == "--all") { dropBones = true; dropAnims = true; }
+                else {
+                    std::fprintf(stderr,
+                        "strip-mesh: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            if (!dropBones && !dropAnims) {
+                std::fprintf(stderr,
+                    "strip-mesh: no --bones / --anims / --all specified — nothing to do\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            namespace fs = std::filesystem;
+            std::string fullPath = womBase + ".wom";
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "strip-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            uint64_t bytesBefore = fs::file_size(fullPath);
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "strip-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            size_t bonesBefore = wom.bones.size();
+            size_t animsBefore = wom.animations.size();
+            if (dropBones) {
+                wom.bones.clear();
+                // Bones implies anims (anims reference bones).
+                wom.animations.clear();
+                // Reset per-vertex skinning to identity-on-bone-0 so
+                // a renderer that expects the field doesn't read
+                // stale indices.
+                for (auto& v : wom.vertices) {
+                    v.boneWeights[0] = 255;
+                    v.boneWeights[1] = 0;
+                    v.boneWeights[2] = 0;
+                    v.boneWeights[3] = 0;
+                    v.boneIndices[0] = 0;
+                    v.boneIndices[1] = 0;
+                    v.boneIndices[2] = 0;
+                    v.boneIndices[3] = 0;
+                }
+            } else if (dropAnims) {
+                wom.animations.clear();
+            }
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "strip-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            uint64_t bytesAfter = fs::file_size(fullPath);
+            std::printf("Stripped %s.wom\n", womBase.c_str());
+            std::printf("  bones      : %zu -> %zu\n", bonesBefore, wom.bones.size());
+            std::printf("  animations : %zu -> %zu\n", animsBefore, wom.animations.size());
+            std::printf("  bytes      : %llu -> %llu (%+lld)\n",
+                        static_cast<unsigned long long>(bytesBefore),
+                        static_cast<unsigned long long>(bytesAfter),
+                        static_cast<long long>(bytesAfter) -
+                          static_cast<long long>(bytesBefore));
             return 0;
         } else if (std::strcmp(argv[i], "--add-texture-to-zone") == 0 && i + 2 < argc) {
             // Import an existing PNG into a zone directory. Useful
