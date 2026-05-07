@@ -652,6 +652,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Compute the zone's bounding box (XY tile range, Z height min/max)\n");
     std::printf("  --info-zone-water <zoneDir> [--json]\n");
     std::printf("                         Aggregate water-layer stats across all tiles (layer count, types, area)\n");
+    std::printf("  --info-zone-density <zoneDir> [--json]\n");
+    std::printf("                         Per-tile density (creatures/objects/quests per tile + overall avg)\n");
     std::printf("  --export-zone-summary-md <zoneDir> [out.md]\n");
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
     std::printf("  --export-zone-csv <zoneDir> [outDir]\n");
@@ -814,6 +816,7 @@ int main(int argc, char* argv[]) {
         "--validate-png", "--validate-blp",
         "--zone-summary", "--info-zone-tree", "--info-project-tree",
         "--info-zone-bytes", "--info-zone-extents", "--info-zone-water",
+        "--info-zone-density",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
         "--export-project-md", "--export-zone-checksum",
@@ -5069,6 +5072,109 @@ int main(int argc, char* argv[]) {
                 }
             } else {
                 std::printf("  (no water in this zone)\n");
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-zone-density") == 0 && i + 1 < argc) {
+            // Per-tile content density. Catches sparse zones (5 mobs
+            // across 16 tiles → boring) and over-stuffed ones (200 mobs
+            // in 1 tile → frame-rate bomb). Per-tile bucket uses tile
+            // (tx, ty) computed from world position by reversing the
+            // WoW grid transform.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "info-zone-density: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr, "info-zone-density: parse failed\n");
+                return 1;
+            }
+            // Per-(tx, ty) bucket of counts.
+            struct TileBucket { int creatures = 0, objects = 0; };
+            std::map<std::pair<int,int>, TileBucket> tiles;
+            for (const auto& [tx, ty] : zm.tiles) tiles[{tx, ty}] = {};
+            // Reverse the WoW grid transform: world (X, Y) -> tile (tx, ty).
+            // From --info-zone-extents:
+            //   worldX = (32 - tileY) * 533.33 - subX
+            //   worldY = (32 - tileX) * 533.33 - subY
+            // So:
+            //   tileX = floor(32 - worldY / 533.33)
+            //   tileY = floor(32 - worldX / 533.33)
+            constexpr float kTileSize = 533.33333f;
+            auto worldToTile = [](float wx, float wy) -> std::pair<int,int> {
+                int tx = static_cast<int>(std::floor(32.0f - wy / kTileSize));
+                int ty = static_cast<int>(std::floor(32.0f - wx / kTileSize));
+                return {tx, ty};
+            };
+            wowee::editor::NpcSpawner sp;
+            int totalCreat = 0;
+            if (sp.loadFromFile(zoneDir + "/creatures.json")) {
+                totalCreat = static_cast<int>(sp.spawnCount());
+                for (const auto& s : sp.getSpawns()) {
+                    auto t = worldToTile(s.position.x, s.position.y);
+                    auto it = tiles.find(t);
+                    if (it != tiles.end()) it->second.creatures++;
+                    // Out-of-zone spawns silently dropped — they'll
+                    // surface in --check-zone-refs / --check-zone-content.
+                }
+            }
+            wowee::editor::ObjectPlacer op;
+            int totalObj = 0;
+            if (op.loadFromFile(zoneDir + "/objects.json")) {
+                totalObj = static_cast<int>(op.getObjects().size());
+                for (const auto& o : op.getObjects()) {
+                    auto t = worldToTile(o.position.x, o.position.y);
+                    auto it = tiles.find(t);
+                    if (it != tiles.end()) it->second.objects++;
+                }
+            }
+            wowee::editor::QuestEditor qe;
+            int totalQ = 0;
+            if (qe.loadFromFile(zoneDir + "/quests.json")) {
+                totalQ = static_cast<int>(qe.questCount());
+            }
+            int tileCount = static_cast<int>(tiles.size());
+            double avgCreatPerTile = tileCount > 0 ? double(totalCreat) / tileCount : 0.0;
+            double avgObjPerTile = tileCount > 0 ? double(totalObj) / tileCount : 0.0;
+            double questsPerTile = tileCount > 0 ? double(totalQ) / tileCount : 0.0;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["tileCount"] = tileCount;
+                j["totals"] = {{"creatures", totalCreat},
+                                {"objects", totalObj},
+                                {"quests", totalQ}};
+                j["averages"] = {{"creaturesPerTile", avgCreatPerTile},
+                                  {"objectsPerTile", avgObjPerTile},
+                                  {"questsPerTile", questsPerTile}};
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& [coord, b] : tiles) {
+                    arr.push_back({{"tile", {coord.first, coord.second}},
+                                    {"creatures", b.creatures},
+                                    {"objects", b.objects}});
+                }
+                j["perTile"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone density: %s\n", zoneDir.c_str());
+            std::printf("  tiles      : %d\n", tileCount);
+            std::printf("  totals     : %d creatures, %d objects, %d quests\n",
+                        totalCreat, totalObj, totalQ);
+            std::printf("  per-tile   : %.2f creatures, %.2f objects, %.2f quests\n",
+                        avgCreatPerTile, avgObjPerTile, questsPerTile);
+            std::printf("\n  Per-tile breakdown:\n");
+            std::printf("    tile        creatures  objects\n");
+            for (const auto& [coord, b] : tiles) {
+                std::printf("    (%2d, %2d)         %5d    %5d\n",
+                            coord.first, coord.second, b.creatures, b.objects);
             }
             return 0;
         } else if (std::strcmp(argv[i], "--export-zone-summary-md") == 0 && i + 1 < argc) {
