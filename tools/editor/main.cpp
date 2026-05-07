@@ -526,8 +526,54 @@ static void printUsage(const char* argv0) {
     std::printf("                         Markdown migration-progress report (per-pair table, share %%, recommended next steps)\n");
     std::printf("  --gen-texture <out.png> <colorHex|pattern> [W H]\n");
     std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
-    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere> [size]\n");
+    std::printf("  --gen-texture-gradient <out.png> <fromHex> <toHex> [vertical|horizontal] [W H]\n");
+    std::printf("                         Synthesize a linear gradient PNG (default vertical, 256x256)\n");
+    std::printf("  --gen-texture-noise <out.png> [seed] [W H]\n");
+    std::printf("                         Synthesize a smooth value-noise PNG (deterministic from seed; default 256x256)\n");
+    std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
+    std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
+    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone> [size]\n");
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
+    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder|torus|cone> <colorHex|pattern> [size]\n");
+    std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
+    std::printf("  --gen-mesh-stairs <wom-base> <steps> [stepHeight] [stepDepth] [width]\n");
+    std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
+    std::printf("  --add-texture-to-mesh <wom-base> <png-path> [batchIdx]\n");
+    std::printf("                         Bind an existing PNG into a WOM's texturePaths and point batchIdx (default 0) at it\n");
+    std::printf("  --scale-mesh <wom-base> <factor>\n");
+    std::printf("                         Uniformly scale every vertex and bounds by <factor> (factor > 0)\n");
+    std::printf("  --translate-mesh <wom-base> <dx> <dy> <dz>\n");
+    std::printf("                         Offset every vertex and bounds by (dx, dy, dz)\n");
+    std::printf("  --strip-mesh <wom-base> [--bones] [--anims] [--all]\n");
+    std::printf("                         Drop bones / animations from a WOM in place (smaller file, static-only use)\n");
+    std::printf("  --rotate-mesh <wom-base> <x|y|z> <degrees>\n");
+    std::printf("                         Rotate every vertex + normal around the chosen axis by <degrees>\n");
+    std::printf("  --center-mesh <wom-base>\n");
+    std::printf("                         Translate so the bounds center lands at origin (no scale/rotation change)\n");
+    std::printf("  --flip-mesh-normals <wom-base>\n");
+    std::printf("                         Invert every vertex normal (use for inside-out meshes or two-sided pre-flip)\n");
+    std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
+    std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
+    std::printf("  --list-items <zoneDir> [--json]\n");
+    std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
+    std::printf("  --export-zone-items-md <zoneDir> [out.md]\n");
+    std::printf("                         Render items.json as a Markdown table grouped by quality (rare/epic/etc.)\n");
+    std::printf("  --export-project-items-md <projectDir> [out.md]\n");
+    std::printf("                         Project-wide items markdown: per-zone sections, project quality histogram\n");
+    std::printf("  --info-item <zoneDir> <id|index> [--json]\n");
+    std::printf("                         Detail view for one item (lookup by id, or by index if prefixed with '#')\n");
+    std::printf("  --set-item <zoneDir> <id|#index> [--name S] [--quality N] [--displayId N] [--itemLevel N] [--stackable N]\n");
+    std::printf("                         Edit fields on an existing item in place; only specified flags are changed\n");
+    std::printf("  --remove-item <zoneDir> <index>\n");
+    std::printf("                         Remove item at given 0-based index from <zoneDir>/items.json\n");
+    std::printf("  --clone-item <zoneDir> <index> [newName]\n");
+    std::printf("                         Duplicate the item at index, assign next free id (and optional name override)\n");
+    std::printf("  --validate-items <zoneDir>\n");
+    std::printf("                         Schema check on items.json: duplicate ids, quality range, required fields\n");
+    std::printf("  --validate-project-items <projectDir>\n");
+    std::printf("                         Run --validate-items across every zone (per-zone PASS/FAIL + aggregate)\n");
+    std::printf("  --info-project-items <projectDir> [--json]\n");
+    std::printf("                         Aggregate item counts and quality histogram across every zone in a project\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -729,7 +775,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --export-zone-summary-md <zoneDir> [out.md]\n");
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
     std::printf("  --export-zone-csv <zoneDir> [outDir]\n");
-    std::printf("                         Emit creatures.csv / objects.csv / quests.csv for spreadsheet workflows\n");
+    std::printf("                         Emit creatures.csv / objects.csv / quests.csv / items.csv for spreadsheet workflows\n");
     std::printf("  --export-zone-checksum <zoneDir> [out.sha256]\n");
     std::printf("                         Emit a SHA-256 manifest of every source file in a zone (for integrity checks)\n");
     std::printf("  --export-project-checksum <projectDir> [out.sha256]\n");
@@ -768,6 +814,12 @@ static void printUsage(const char* argv0) {
     std::printf("                         Aggregate texture refs across all WOM models in a zone (deduped)\n");
     std::printf("  --info-zone-models-total <zoneDir> [--json]\n");
     std::printf("                         Aggregate WOM/WOB stats across a zone (verts, tris, bones, batches, doodads)\n");
+    std::printf("  --list-zone-meshes <zoneDir> [--json]\n");
+    std::printf("                         Per-mesh listing of every .wom in a zone (verts, tris, bones, textures, bytes)\n");
+    std::printf("  --info-mesh <wom-base> [--json]\n");
+    std::printf("                         Single-mesh detail: bounds, version, batches, bones, textures, attachments in one view\n");
+    std::printf("  --list-project-meshes <projectDir> [--json]\n");
+    std::printf("                         Per-mesh listing across every zone in a project (sorted by triangle count)\n");
     std::printf("  --info-project-models-total <projectDir> [--json]\n");
     std::printf("                         Aggregate WOM/WOB stats across an entire project (per-zone breakdown + totals)\n");
     std::printf("  --info-wob <wob-base> [--json]\n");
@@ -890,6 +942,7 @@ int main(int argc, char* argv[]) {
         "--info-bones", "--export-bones-dot", "--list-zone-textures",
         "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
+        "--list-zone-meshes", "--list-project-meshes", "--info-mesh",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--info-extract-tree", "--info-extract-budget",
@@ -911,7 +964,12 @@ int main(int argc, char* argv[]) {
         "--validate-project-open-only", "--audit-project",
         "--bench-validate-project", "--bench-bake-project",
         "--bench-migrate-data-tree", "--list-data-tree-largest",
-        "--export-data-tree-md", "--gen-texture", "--gen-mesh",
+        "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
+        "--add-texture-to-mesh", "--add-texture-to-zone",
+        "--gen-mesh-stairs", "--gen-texture-gradient",
+        "--scale-mesh", "--translate-mesh", "--strip-mesh",
+        "--gen-texture-noise", "--rotate-mesh",
+        "--center-mesh", "--flip-mesh-normals",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -930,11 +988,15 @@ int main(int argc, char* argv[]) {
         "--check-zone-refs", "--check-zone-content",
         "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
-        "--add-creature", "--add-object", "--add-quest",
+        "--add-creature", "--add-object", "--add-quest", "--add-item",
+        "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
+        "--export-project-items-md",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
+        "--clone-item", "--validate-items", "--validate-project-items",
+        "--info-project-items",
         "--clone-object",
-        "--remove-creature", "--remove-object", "--remove-quest",
+        "--remove-creature", "--remove-object", "--remove-quest", "--remove-item",
         "--copy-zone", "--rename-zone", "--remove-zone",
         "--clear-zone-content", "--strip-zone", "--strip-project",
         "--repair-zone", "--repair-project",
@@ -1910,6 +1972,322 @@ int main(int argc, char* argv[]) {
             std::printf("\n  Combined  :\n");
             std::printf("    vertices  : %llu\n", static_cast<unsigned long long>(womVerts + wobVerts));
             std::printf("    triangles : %llu\n", static_cast<unsigned long long>((womIndices + wobIndices) / 3));
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-zone-meshes") == 0 && i + 1 < argc) {
+            // Per-mesh breakdown of every .wom file in <zoneDir>.
+            // Complements --info-zone-models-total (aggregate)
+            // by surfacing individual mesh metrics — useful for
+            // spotting outliers ("which mesh is using 80% of my
+            // triangle budget?") and for content audits.
+            //
+            // Sorted by triangle count descending so the heaviest
+            // meshes float to the top of the table.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr,
+                    "list-zone-meshes: %s does not exist\n", zoneDir.c_str());
+                return 1;
+            }
+            struct Row {
+                std::string path;
+                size_t verts;
+                size_t tris;
+                size_t bones;
+                size_t batches;
+                size_t textures;
+                uint64_t bytes;
+                uint32_t version;
+            };
+            std::vector<Row> rows;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                if (e.path().extension() != ".wom") continue;
+                std::string base = e.path().string();
+                if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                Row r;
+                r.path = fs::relative(e.path(), zoneDir, ec).string();
+                if (ec) r.path = e.path().filename().string();
+                r.verts = wom.vertices.size();
+                r.tris = wom.indices.size() / 3;
+                r.bones = wom.bones.size();
+                r.batches = wom.batches.size();
+                r.textures = wom.texturePaths.size();
+                r.bytes = e.file_size(ec);
+                if (ec) r.bytes = 0;
+                r.version = wom.version;
+                rows.push_back(r);
+            }
+            std::sort(rows.begin(), rows.end(),
+                      [](const Row& a, const Row& b) { return a.tris > b.tris; });
+            uint64_t totVerts = 0, totTris = 0, totBones = 0, totBytes = 0;
+            for (const auto& r : rows) {
+                totVerts += r.verts; totTris += r.tris;
+                totBones += r.bones; totBytes += r.bytes;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["meshCount"] = rows.size();
+                j["totals"] = {{"vertices", totVerts},
+                                {"triangles", totTris},
+                                {"bones", totBones},
+                                {"bytes", totBytes}};
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"path", r.path},
+                                    {"version", r.version},
+                                    {"vertices", r.verts},
+                                    {"triangles", r.tris},
+                                    {"bones", r.bones},
+                                    {"batches", r.batches},
+                                    {"textures", r.textures},
+                                    {"bytes", r.bytes}});
+                }
+                j["meshes"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone meshes: %s\n", zoneDir.c_str());
+            std::printf("  meshes : %zu\n", rows.size());
+            std::printf("  totals : %llu verts, %llu tris, %llu bones, %.1f KB\n",
+                        static_cast<unsigned long long>(totVerts),
+                        static_cast<unsigned long long>(totTris),
+                        static_cast<unsigned long long>(totBones),
+                        totBytes / 1024.0);
+            if (rows.empty()) {
+                std::printf("\n  *no .wom files in this zone*\n");
+                return 0;
+            }
+            std::printf("\n  v   verts    tris   bones  batch  tex    bytes  path\n");
+            for (const auto& r : rows) {
+                std::printf("  v%u %6zu  %6zu  %5zu  %5zu  %3zu  %7llu  %s\n",
+                            r.version, r.verts, r.tris, r.bones,
+                            r.batches, r.textures,
+                            static_cast<unsigned long long>(r.bytes),
+                            r.path.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-project-meshes") == 0 && i + 1 < argc) {
+            // Project-wide companion to --list-zone-meshes. Walks
+            // every zone in <projectDir>, collects every .wom across
+            // all zones, sorts by triangle count descending, and
+            // reports a global per-mesh table with the originating
+            // zone in the first column.
+            //
+            // Useful for project-wide outlier detection ("which mesh
+            // anywhere in the project is the heaviest?") and for
+            // mesh-sharing audits.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "list-project-meshes: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct Row {
+                std::string zone, path;
+                size_t verts, tris, bones, batches, textures;
+                uint64_t bytes;
+                uint32_t version;
+            };
+            std::vector<Row> rows;
+            for (const auto& zoneDir : zones) {
+                std::string zoneName = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wom") continue;
+                    std::string base = e.path().string();
+                    if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                    Row r;
+                    r.zone = zoneName;
+                    r.path = fs::relative(e.path(), zoneDir, ec).string();
+                    if (ec) r.path = e.path().filename().string();
+                    r.verts = wom.vertices.size();
+                    r.tris = wom.indices.size() / 3;
+                    r.bones = wom.bones.size();
+                    r.batches = wom.batches.size();
+                    r.textures = wom.texturePaths.size();
+                    r.bytes = e.file_size(ec);
+                    if (ec) r.bytes = 0;
+                    r.version = wom.version;
+                    rows.push_back(r);
+                }
+            }
+            std::sort(rows.begin(), rows.end(),
+                      [](const Row& a, const Row& b) { return a.tris > b.tris; });
+            uint64_t totVerts = 0, totTris = 0, totBones = 0, totBytes = 0;
+            for (const auto& r : rows) {
+                totVerts += r.verts; totTris += r.tris;
+                totBones += r.bones; totBytes += r.bytes;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["meshCount"] = rows.size();
+                j["totals"] = {{"vertices", totVerts},
+                                {"triangles", totTris},
+                                {"bones", totBones},
+                                {"bytes", totBytes}};
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"zone", r.zone},
+                                    {"path", r.path},
+                                    {"version", r.version},
+                                    {"vertices", r.verts},
+                                    {"triangles", r.tris},
+                                    {"bones", r.bones},
+                                    {"batches", r.batches},
+                                    {"textures", r.textures},
+                                    {"bytes", r.bytes}});
+                }
+                j["meshes"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project meshes: %s\n", projectDir.c_str());
+            std::printf("  zones  : %zu\n", zones.size());
+            std::printf("  meshes : %zu\n", rows.size());
+            std::printf("  totals : %llu verts, %llu tris, %llu bones, %.1f KB\n",
+                        static_cast<unsigned long long>(totVerts),
+                        static_cast<unsigned long long>(totTris),
+                        static_cast<unsigned long long>(totBones),
+                        totBytes / 1024.0);
+            if (rows.empty()) {
+                std::printf("\n  *no .wom files in any zone*\n");
+                return 0;
+            }
+            std::printf("\n  zone                    v    verts    tris   bones    bytes  path\n");
+            for (const auto& r : rows) {
+                std::printf("  %-22s v%u %6zu  %6zu  %5zu  %7llu  %s\n",
+                            r.zone.substr(0, 22).c_str(),
+                            r.version, r.verts, r.tris, r.bones,
+                            static_cast<unsigned long long>(r.bytes),
+                            r.path.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-mesh") == 0 && i + 1 < argc) {
+            // Single-mesh detail view aggregating bounds, version,
+            // batches, bones, animations, and texture slots into one
+            // report. Composite of what --info-batches / --info-bones
+            // / --info-batches show separately. Useful authoring
+            // command: pass a WOM and see everything about it without
+            // running three sub-commands.
+            std::string base = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom") {
+                base = base.substr(0, base.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                std::fprintf(stderr,
+                    "info-mesh: %s.wom does not exist\n", base.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "info-mesh: failed to load %s.wom\n", base.c_str());
+                return 1;
+            }
+            // Per-batch material summary.
+            static const char* blendNames[] = {
+                "opaque", "alpha-test", "alpha", "additive", "?", "?", "?", "?"
+            };
+            if (jsonOut) {
+                nlohmann::json j;
+                j["base"] = base;
+                j["name"] = wom.name;
+                j["version"] = wom.version;
+                j["bounds"] = {{"min", {wom.boundMin.x, wom.boundMin.y, wom.boundMin.z}},
+                                {"max", {wom.boundMax.x, wom.boundMax.y, wom.boundMax.z}},
+                                {"radius", wom.boundRadius}};
+                j["counts"] = {{"vertices", wom.vertices.size()},
+                                {"indices", wom.indices.size()},
+                                {"triangles", wom.indices.size() / 3},
+                                {"bones", wom.bones.size()},
+                                {"animations", wom.animations.size()},
+                                {"batches", wom.batches.size()},
+                                {"textures", wom.texturePaths.size()}};
+                nlohmann::json bs = nlohmann::json::array();
+                for (const auto& b : wom.batches) {
+                    std::string tex;
+                    if (b.textureIndex < wom.texturePaths.size())
+                        tex = wom.texturePaths[b.textureIndex];
+                    bs.push_back({{"indexStart", b.indexStart},
+                                   {"indexCount", b.indexCount},
+                                   {"triangles", b.indexCount / 3},
+                                   {"textureIndex", b.textureIndex},
+                                   {"texture", tex},
+                                   {"blendMode", b.blendMode},
+                                   {"flags", b.flags}});
+                }
+                j["batchDetail"] = bs;
+                j["texturePaths"] = wom.texturePaths;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Mesh: %s.wom\n", base.c_str());
+            std::printf("  name       : %s\n", wom.name.c_str());
+            std::printf("  version    : v%u\n", wom.version);
+            std::printf("\n  Counts:\n");
+            std::printf("    vertices  : %zu\n", wom.vertices.size());
+            std::printf("    triangles : %zu\n", wom.indices.size() / 3);
+            std::printf("    bones     : %zu\n", wom.bones.size());
+            std::printf("    anims     : %zu\n", wom.animations.size());
+            std::printf("    batches   : %zu\n", wom.batches.size());
+            std::printf("    textures  : %zu\n", wom.texturePaths.size());
+            std::printf("\n  Bounds:\n");
+            std::printf("    min       : (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z);
+            std::printf("    max       : (%.3f, %.3f, %.3f)\n",
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            std::printf("    radius    : %.3f\n", wom.boundRadius);
+            if (!wom.batches.empty()) {
+                std::printf("\n  Batches:\n");
+                std::printf("    idx  iStart  iCount  tris   blend       texture\n");
+                for (size_t k = 0; k < wom.batches.size(); ++k) {
+                    const auto& b = wom.batches[k];
+                    std::string tex = "<oob>";
+                    if (b.textureIndex < wom.texturePaths.size())
+                        tex = wom.texturePaths[b.textureIndex];
+                    if (tex.empty()) tex = "(empty)";
+                    int blend = b.blendMode < 8 ? b.blendMode : 0;
+                    std::printf("    %3zu  %6u  %6u  %4u   %-10s  %s\n",
+                                k, b.indexStart, b.indexCount,
+                                b.indexCount / 3, blendNames[blend],
+                                tex.c_str());
+                }
+            }
+            if (!wom.texturePaths.empty()) {
+                std::printf("\n  Texture slots:\n");
+                for (size_t k = 0; k < wom.texturePaths.size(); ++k) {
+                    std::printf("    [%zu] %s\n", k,
+                                wom.texturePaths[k].empty()
+                                ? "(empty placeholder)"
+                                : wom.texturePaths[k].c_str());
+                }
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--info-project-models-total") == 0 && i + 1 < argc) {
             // Multi-zone aggregate. Walks every zone in <projectDir>,
@@ -6752,9 +7130,39 @@ int main(int argc, char* argv[]) {
                 std::printf("  wrote %s (%zu rows)\n", out.c_str(), qe.questCount());
                 filesWritten++;
             }
+            // Items — read items.json inline since the items pipeline
+            // doesn't have a dedicated editor class yet.
+            std::string itemsPath = zoneDir + "/items.json";
+            if (fs::exists(itemsPath)) {
+                nlohmann::json doc;
+                try {
+                    std::ifstream in(itemsPath);
+                    in >> doc;
+                } catch (...) {}
+                if (doc.contains("items") && doc["items"].is_array()) {
+                    std::string out = outDir + "/items.csv";
+                    std::ofstream f(out);
+                    if (f) {
+                        f << "index,id,name,quality,itemLevel,displayId,stackable\n";
+                        const auto& arr = doc["items"];
+                        for (size_t k = 0; k < arr.size(); ++k) {
+                            const auto& it = arr[k];
+                            f << k << ","
+                              << it.value("id", 0u) << ","
+                              << csvEsc(it.value("name", std::string())) << ","
+                              << it.value("quality", 1u) << ","
+                              << it.value("itemLevel", 1u) << ","
+                              << it.value("displayId", 0u) << ","
+                              << it.value("stackable", 1u) << "\n";
+                        }
+                        std::printf("  wrote %s (%zu rows)\n", out.c_str(), arr.size());
+                        filesWritten++;
+                    }
+                }
+            }
             if (filesWritten == 0) {
                 std::fprintf(stderr,
-                    "export-zone-csv: zone has no creatures/objects/quests to emit\n");
+                    "export-zone-csv: zone has no creatures/objects/quests/items to emit\n");
                 return 1;
             }
             std::printf("Exported %d CSV file(s) to %s\n", filesWritten, outDir.c_str());
@@ -12476,6 +12884,988 @@ int main(int argc, char* argv[]) {
             std::printf("Added creature '%s' to %s (now %zu total)\n",
                         name.c_str(), path.c_str(), spawner.spawnCount());
             return 0;
+        } else if (std::strcmp(argv[i], "--add-item") == 0 && i + 2 < argc) {
+            // Append one item entry to <zoneDir>/items.json. Inline
+            // JSON without a dedicated editor class — items.json is
+            // a simple {"items": [...]} array of records, and the
+            // schema is small enough that we don't need NpcSpawner-
+            // style infrastructure yet.
+            //
+            // Schema per item:
+            //   id (uint32) — Item.dbc primary key (auto-increments
+            //                 from 1 if omitted)
+            //   name (string)
+            //   quality (uint8) — 0..6 (poor..artifact, default 1)
+            //   displayId (uint32) — ItemDisplayInfo index (default 0)
+            //   itemLevel (uint32) — default 1
+            //   stackable (uint32) — max stack size (default 1)
+            std::string zoneDir = argv[++i];
+            std::string name = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr,
+                    "add-item: zone '%s' does not exist\n", zoneDir.c_str());
+                return 1;
+            }
+            uint32_t id = 0, displayId = 0, itemLevel = 1;
+            uint32_t quality = 1;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { id = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { quality = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+                if (quality > 6) quality = 1;
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { displayId = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { itemLevel = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+            }
+            std::string path = zoneDir + "/items.json";
+            nlohmann::json doc = nlohmann::json::object({{"items",
+                                                          nlohmann::json::array()}});
+            if (fs::exists(path)) {
+                std::ifstream in(path);
+                try { in >> doc; } catch (...) {
+                    std::fprintf(stderr,
+                        "add-item: %s exists but is not valid JSON\n",
+                        path.c_str());
+                    return 1;
+                }
+                if (!doc.contains("items") || !doc["items"].is_array()) {
+                    doc["items"] = nlohmann::json::array();
+                }
+            }
+            // Auto-assign id if user passed 0 / nothing — pick the
+            // smallest unused positive integer so the items.json
+            // numbering stays contiguous.
+            if (id == 0) {
+                std::set<uint32_t> used;
+                for (const auto& it : doc["items"]) {
+                    if (it.contains("id") && it["id"].is_number_unsigned()) {
+                        used.insert(it["id"].get<uint32_t>());
+                    }
+                }
+                id = 1;
+                while (used.count(id)) ++id;
+            }
+            // Reject duplicate id so the user notices a collision.
+            for (const auto& it : doc["items"]) {
+                if (it.contains("id") && it["id"].is_number_unsigned() &&
+                    it["id"].get<uint32_t>() == id) {
+                    std::fprintf(stderr,
+                        "add-item: id %u already in use in %s\n",
+                        id, path.c_str());
+                    return 1;
+                }
+            }
+            nlohmann::json item = {
+                {"id", id},
+                {"name", name},
+                {"quality", quality},
+                {"displayId", displayId},
+                {"itemLevel", itemLevel},
+                {"stackable", 1},
+            };
+            doc["items"].push_back(item);
+            std::ofstream out(path);
+            if (!out) {
+                std::fprintf(stderr,
+                    "add-item: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            out << doc.dump(2);
+            out.close();
+            static const char* qualityNames[] = {
+                "poor", "common", "uncommon", "rare", "epic",
+                "legendary", "artifact"
+            };
+            std::printf("Added item '%s' (id=%u, quality=%s, ilvl=%u) to %s (now %zu total)\n",
+                        name.c_str(), id,
+                        qualityNames[quality], itemLevel,
+                        path.c_str(), doc["items"].size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-items") == 0 && i + 1 < argc) {
+            // Inspect <zoneDir>/items.json. Pretty-prints id / quality
+            // / item level / display id / name as a table; also
+            // supports --json for machine-readable output.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "list-items: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "list-items: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "list-items: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            const auto& items = doc["items"];
+            if (jsonOut) {
+                std::printf("%s\n", items.dump(2).c_str());
+                return 0;
+            }
+            static const char* qualityNames[] = {
+                "poor", "common", "uncommon", "rare", "epic",
+                "legendary", "artifact"
+            };
+            std::printf("Zone items: %s\n", path.c_str());
+            std::printf("  count : %zu\n\n", items.size());
+            if (items.empty()) {
+                std::printf("  *no items*\n");
+                return 0;
+            }
+            std::printf("  idx   id     ilvl   stack   quality      displayId   name\n");
+            for (size_t k = 0; k < items.size(); ++k) {
+                const auto& it = items[k];
+                uint32_t id = it.value("id", 0u);
+                uint32_t quality = it.value("quality", 1u);
+                uint32_t ilvl = it.value("itemLevel", 1u);
+                uint32_t displayId = it.value("displayId", 0u);
+                uint32_t stack = it.value("stackable", 1u);
+                std::string name = it.value("name", std::string());
+                if (quality > 6) quality = 0;
+                std::printf("  %3zu   %5u   %4u   %5u   %-10s   %9u   %s\n",
+                            k, id, ilvl, stack,
+                            qualityNames[quality], displayId, name.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-item") == 0 && i + 2 < argc) {
+            // Single-item detail view. Lookup is by id by default;
+            // prefix the argument with '#' (e.g., "#3") to look up by
+            // 0-based array index instead. Useful for inspecting all
+            // fields of a single record without sifting through the
+            // full --list-items table.
+            std::string zoneDir = argv[++i];
+            std::string lookup = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "info-item: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "info-item: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "info-item: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            const auto& items = doc["items"];
+            int foundIdx = -1;
+            if (!lookup.empty() && lookup[0] == '#') {
+                try {
+                    int idx = std::stoi(lookup.substr(1));
+                    if (idx >= 0 && static_cast<size_t>(idx) < items.size())
+                        foundIdx = idx;
+                } catch (...) {}
+            } else {
+                uint32_t targetId = 0;
+                try { targetId = static_cast<uint32_t>(std::stoul(lookup)); }
+                catch (...) {
+                    std::fprintf(stderr,
+                        "info-item: lookup '%s' is not a number "
+                        "(use '#N' for index lookup)\n", lookup.c_str());
+                    return 1;
+                }
+                for (size_t k = 0; k < items.size(); ++k) {
+                    if (items[k].contains("id") &&
+                        items[k]["id"].is_number_unsigned() &&
+                        items[k]["id"].get<uint32_t>() == targetId) {
+                        foundIdx = static_cast<int>(k);
+                        break;
+                    }
+                }
+            }
+            if (foundIdx < 0) {
+                std::fprintf(stderr,
+                    "info-item: no match for '%s' in %s\n",
+                    lookup.c_str(), path.c_str());
+                return 1;
+            }
+            const auto& it = items[foundIdx];
+            if (jsonOut) {
+                std::printf("%s\n", it.dump(2).c_str());
+                return 0;
+            }
+            static const char* qualityNames[] = {
+                "poor", "common", "uncommon", "rare", "epic",
+                "legendary", "artifact"
+            };
+            uint32_t quality = it.value("quality", 1u);
+            if (quality > 6) quality = 0;
+            std::printf("Item %d in %s\n", foundIdx, path.c_str());
+            std::printf("  id          : %u\n", it.value("id", 0u));
+            std::printf("  name        : %s\n",
+                        it.value("name", std::string("(unnamed)")).c_str());
+            std::printf("  quality     : %u (%s)\n",
+                        quality, qualityNames[quality]);
+            std::printf("  itemLevel   : %u\n", it.value("itemLevel", 1u));
+            std::printf("  displayId   : %u\n", it.value("displayId", 0u));
+            std::printf("  stackable   : %u\n", it.value("stackable", 1u));
+            // Surface any extra fields the user added by hand so
+            // info-item stays useful as the schema evolves.
+            std::vector<std::string> extras;
+            for (auto& [k, v] : it.items()) {
+                if (k == "id" || k == "name" || k == "quality" ||
+                    k == "itemLevel" || k == "displayId" ||
+                    k == "stackable") continue;
+                extras.push_back(k);
+            }
+            if (!extras.empty()) {
+                std::printf("\n  Extra fields:\n");
+                for (const auto& k : extras) {
+                    std::printf("    %s = %s\n",
+                                k.c_str(), it[k].dump().c_str());
+                }
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--set-item") == 0 && i + 2 < argc) {
+            // Edit fields on an existing item in place. Lookup is by
+            // id by default; '#N' for index lookup. Only specified
+            // flags are changed; everything else is preserved
+            // verbatim — including any extra fields added by hand.
+            //
+            // Supported flags: --name, --quality, --displayId,
+            // --itemLevel, --stackable. Each takes one positional
+            // argument that follows the flag.
+            std::string zoneDir = argv[++i];
+            std::string lookup = argv[++i];
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "set-item: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "set-item: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "set-item: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            auto& items = doc["items"];
+            int foundIdx = -1;
+            if (!lookup.empty() && lookup[0] == '#') {
+                try {
+                    int idx = std::stoi(lookup.substr(1));
+                    if (idx >= 0 && static_cast<size_t>(idx) < items.size())
+                        foundIdx = idx;
+                } catch (...) {}
+            } else {
+                uint32_t targetId = 0;
+                try { targetId = static_cast<uint32_t>(std::stoul(lookup)); }
+                catch (...) {
+                    std::fprintf(stderr,
+                        "set-item: lookup '%s' is not a number\n",
+                        lookup.c_str());
+                    return 1;
+                }
+                for (size_t k = 0; k < items.size(); ++k) {
+                    if (items[k].contains("id") &&
+                        items[k]["id"].is_number_unsigned() &&
+                        items[k]["id"].get<uint32_t>() == targetId) {
+                        foundIdx = static_cast<int>(k);
+                        break;
+                    }
+                }
+            }
+            if (foundIdx < 0) {
+                std::fprintf(stderr,
+                    "set-item: no match for '%s' in %s\n",
+                    lookup.c_str(), path.c_str());
+                return 1;
+            }
+            auto& it = items[foundIdx];
+            std::vector<std::string> changes;
+            // Walk the remaining args looking for known --field value
+            // pairs. Anything unrecognized is reported and aborts so
+            // typos don't silently no-op.
+            while (i + 2 < argc) {
+                std::string flag = argv[i + 1];
+                std::string val = argv[i + 2];
+                if (flag.size() < 2 || flag[0] != '-' || flag[1] != '-') break;
+                if (flag == "--name") {
+                    it["name"] = val;
+                    changes.push_back("name=" + val);
+                } else if (flag == "--quality") {
+                    try {
+                        uint32_t q = static_cast<uint32_t>(std::stoul(val));
+                        if (q > 6) {
+                            std::fprintf(stderr,
+                                "set-item: quality %u out of range (0..6)\n", q);
+                            return 1;
+                        }
+                        it["quality"] = q;
+                        changes.push_back("quality=" + val);
+                    } catch (...) {
+                        std::fprintf(stderr,
+                            "set-item: --quality needs a number\n");
+                        return 1;
+                    }
+                } else if (flag == "--displayId") {
+                    try {
+                        it["displayId"] = static_cast<uint32_t>(std::stoul(val));
+                        changes.push_back("displayId=" + val);
+                    } catch (...) {
+                        std::fprintf(stderr,
+                            "set-item: --displayId needs a number\n");
+                        return 1;
+                    }
+                } else if (flag == "--itemLevel") {
+                    try {
+                        it["itemLevel"] = static_cast<uint32_t>(std::stoul(val));
+                        changes.push_back("itemLevel=" + val);
+                    } catch (...) {
+                        std::fprintf(stderr,
+                            "set-item: --itemLevel needs a number\n");
+                        return 1;
+                    }
+                } else if (flag == "--stackable") {
+                    try {
+                        uint32_t s = static_cast<uint32_t>(std::stoul(val));
+                        if (s == 0 || s > 1000) {
+                            std::fprintf(stderr,
+                                "set-item: stackable %u out of range (1..1000)\n", s);
+                            return 1;
+                        }
+                        it["stackable"] = s;
+                        changes.push_back("stackable=" + val);
+                    } catch (...) {
+                        std::fprintf(stderr,
+                            "set-item: --stackable needs a number\n");
+                        return 1;
+                    }
+                } else {
+                    std::fprintf(stderr,
+                        "set-item: unknown flag '%s' (typo?)\n", flag.c_str());
+                    return 1;
+                }
+                i += 2;
+            }
+            if (changes.empty()) {
+                std::fprintf(stderr,
+                    "set-item: no field flags supplied — nothing to change\n");
+                return 1;
+            }
+            std::ofstream out(path);
+            if (!out) {
+                std::fprintf(stderr,
+                    "set-item: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            out << doc.dump(2);
+            out.close();
+            std::printf("Updated item %d in %s:\n", foundIdx, path.c_str());
+            for (const auto& c : changes) {
+                std::printf("  %s\n", c.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-zone-items-md") == 0 && i + 1 < argc) {
+            // Render items.json as a Markdown table grouped by
+            // quality. Useful for design docs, PR descriptions, and
+            // GitHub Pages — one rendered page communicates the loot
+            // landscape better than scrolling through JSON.
+            std::string zoneDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "export-zone-items-md: %s has no items.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "export-zone-items-md: %s is not valid JSON\n",
+                    path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "export-zone-items-md: %s has no 'items' array\n",
+                    path.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = zoneDir + "/ITEMS.md";
+            const auto& items = doc["items"];
+            static const char* qualityNames[] = {
+                "Poor", "Common", "Uncommon", "Rare", "Epic",
+                "Legendary", "Artifact"
+            };
+            // Bucket by quality so the report reads top-down from
+            // best loot to filler. Reverse iteration over the buckets.
+            std::map<int, std::vector<size_t>> byQuality;
+            for (size_t k = 0; k < items.size(); ++k) {
+                uint32_t q = items[k].value("quality", 1u);
+                if (q > 6) q = 0;
+                byQuality[q].push_back(k);
+            }
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-zone-items-md: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            std::string zoneName = fs::path(zoneDir).filename().string();
+            out << "# Items: " << zoneName << "\n\n";
+            out << "Source: `" << path << "`  \n";
+            out << "Total items: **" << items.size() << "**\n\n";
+            // Quality histogram up top.
+            out << "## Quality breakdown\n\n";
+            out << "| Quality | Count |\n|---|---:|\n";
+            for (int q = 6; q >= 0; --q) {
+                auto it = byQuality.find(q);
+                if (it == byQuality.end()) continue;
+                out << "| " << qualityNames[q] << " | "
+                    << it->second.size() << " |\n";
+            }
+            out << "\n";
+            // Per-quality sections, best first.
+            for (int q = 6; q >= 0; --q) {
+                auto qit = byQuality.find(q);
+                if (qit == byQuality.end()) continue;
+                out << "## " << qualityNames[q] << "\n\n";
+                out << "| ID | Name | iLvl | Display | Stack |\n";
+                out << "|---:|---|---:|---:|---:|\n";
+                for (size_t k : qit->second) {
+                    const auto& it = items[k];
+                    std::string name = it.value("name", std::string("(unnamed)"));
+                    out << "| " << it.value("id", 0u) << " | "
+                        << name << " | "
+                        << it.value("itemLevel", 1u) << " | "
+                        << it.value("displayId", 0u) << " | "
+                        << it.value("stackable", 1u) << " |\n";
+                }
+                out << "\n";
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  total items : %zu\n", items.size());
+            std::printf("  qualities   : %zu (used)\n", byQuality.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-project-items-md") == 0 && i + 1 < argc) {
+            // Project-wide items markdown. Walks every zone in
+            // <projectDir> and emits one document with: project-wide
+            // header + total + quality histogram, then per-zone
+            // sections each containing a table (ID/name/quality/
+            // ilvl/displayId/stack). Easier to scan than running
+            // --export-zone-items-md N times.
+            std::string projectDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "export-project-items-md: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = projectDir + "/ITEMS.md";
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                if (!fs::exists(entry.path() / "items.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            static const char* qualityNames[] = {
+                "Poor", "Common", "Uncommon", "Rare", "Epic",
+                "Legendary", "Artifact"
+            };
+            int totalItems = 0;
+            std::map<int, int> globalQ;
+            // Per-zone collected items so we don't have to re-read
+            // each items.json twice.
+            struct ZItems {
+                std::string name;
+                nlohmann::json items;
+            };
+            std::vector<ZItems> zoneItems;
+            for (const auto& zoneDir : zones) {
+                std::string ipath = zoneDir + "/items.json";
+                nlohmann::json doc;
+                try {
+                    std::ifstream in(ipath);
+                    in >> doc;
+                } catch (...) { continue; }
+                if (!doc.contains("items") || !doc["items"].is_array()) continue;
+                ZItems z;
+                z.name = fs::path(zoneDir).filename().string();
+                z.items = doc["items"];
+                for (const auto& it : z.items) {
+                    int q = static_cast<int>(it.value("quality", 1u));
+                    if (q < 0 || q > 6) q = 0;
+                    globalQ[q]++;
+                    totalItems++;
+                }
+                zoneItems.push_back(std::move(z));
+            }
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-project-items-md: cannot write %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            out << "# Project Items: "
+                << fs::path(projectDir).filename().string() << "\n\n";
+            out << "Source: `" << projectDir << "`  \n";
+            out << "Zones with items: **" << zoneItems.size() << "**  \n";
+            out << "Total items: **" << totalItems << "**\n\n";
+            out << "## Project quality breakdown\n\n";
+            out << "| Quality | Count |\n|---|---:|\n";
+            for (int q = 6; q >= 0; --q) {
+                auto it = globalQ.find(q);
+                if (it == globalQ.end()) continue;
+                out << "| " << qualityNames[q] << " | "
+                    << it->second << " |\n";
+            }
+            out << "\n";
+            for (const auto& z : zoneItems) {
+                out << "## Zone: " << z.name << "\n\n";
+                out << "Items: **" << z.items.size() << "**\n\n";
+                out << "| ID | Name | Quality | iLvl | Display | Stack |\n";
+                out << "|---:|---|---|---:|---:|---:|\n";
+                for (const auto& it : z.items) {
+                    int q = static_cast<int>(it.value("quality", 1u));
+                    if (q < 0 || q > 6) q = 0;
+                    std::string name = it.value("name", std::string("(unnamed)"));
+                    out << "| " << it.value("id", 0u) << " | "
+                        << name << " | "
+                        << qualityNames[q] << " | "
+                        << it.value("itemLevel", 1u) << " | "
+                        << it.value("displayId", 0u) << " | "
+                        << it.value("stackable", 1u) << " |\n";
+                }
+                out << "\n";
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  zones with items : %zu\n", zoneItems.size());
+            std::printf("  total items      : %d\n", totalItems);
+            return 0;
+        } else if (std::strcmp(argv[i], "--remove-item") == 0 && i + 2 < argc) {
+            // Remove the item at given 0-based index from <zoneDir>/
+            // items.json. Mirrors --remove-creature/--remove-object/
+            // --remove-quest semantics — bounds-checked, file rewrites
+            // on success, exit 1 on out-of-range.
+            std::string zoneDir = argv[++i];
+            int idx = -1;
+            try { idx = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "remove-item: index must be an integer\n");
+                return 1;
+            }
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "remove-item: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "remove-item: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "remove-item: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            auto& items = doc["items"];
+            if (idx < 0 || static_cast<size_t>(idx) >= items.size()) {
+                std::fprintf(stderr,
+                    "remove-item: index %d out of range (have %zu)\n",
+                    idx, items.size());
+                return 1;
+            }
+            std::string removedName = items[idx].value("name", std::string("(unnamed)"));
+            uint32_t removedId = items[idx].value("id", 0u);
+            items.erase(items.begin() + idx);
+            std::ofstream out(path);
+            if (!out) {
+                std::fprintf(stderr,
+                    "remove-item: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            out << doc.dump(2);
+            out.close();
+            std::printf("Removed item '%s' (id=%u) from %s (now %zu total)\n",
+                        removedName.c_str(), removedId,
+                        path.c_str(), items.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--clone-item") == 0 && i + 2 < argc) {
+            // Duplicate the item at given 0-based index. Auto-assigns
+            // the smallest unused positive id; optional <newName>
+            // overrides the cloned name (without it the new entry
+            // gets " (copy)" appended).
+            std::string zoneDir = argv[++i];
+            int idx = -1;
+            try { idx = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "clone-item: index must be an integer\n");
+                return 1;
+            }
+            std::string newName;
+            if (i + 1 < argc && argv[i + 1][0] != '-') newName = argv[++i];
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "clone-item: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "clone-item: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "clone-item: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            auto& items = doc["items"];
+            if (idx < 0 || static_cast<size_t>(idx) >= items.size()) {
+                std::fprintf(stderr,
+                    "clone-item: index %d out of range (have %zu)\n",
+                    idx, items.size());
+                return 1;
+            }
+            // Pick the next free id.
+            std::set<uint32_t> used;
+            for (const auto& it : items) {
+                if (it.contains("id") && it["id"].is_number_unsigned()) {
+                    used.insert(it["id"].get<uint32_t>());
+                }
+            }
+            uint32_t newId = 1;
+            while (used.count(newId)) ++newId;
+            nlohmann::json clone = items[idx];
+            clone["id"] = newId;
+            if (!newName.empty()) {
+                clone["name"] = newName;
+            } else {
+                std::string oldName = clone.value("name", std::string("(unnamed)"));
+                clone["name"] = oldName + " (copy)";
+            }
+            items.push_back(clone);
+            std::ofstream out(path);
+            if (!out) {
+                std::fprintf(stderr,
+                    "clone-item: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            out << doc.dump(2);
+            out.close();
+            std::printf("Cloned item idx %d to '%s' (id=%u) in %s (now %zu total)\n",
+                        idx, clone["name"].get<std::string>().c_str(),
+                        newId, path.c_str(), items.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--validate-items") == 0 && i + 1 < argc) {
+            // Schema validator for items.json. Catches what
+            // --add-item / --clone-item only enforce on insertion
+            // (e.g., duplicate ids if the file was hand-edited),
+            // plus general field-range issues. Exit 1 if any error.
+            std::string zoneDir = argv[++i];
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "validate-items: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "validate-items: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "validate-items: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            const auto& items = doc["items"];
+            std::vector<std::string> errors;
+            std::map<uint32_t, std::vector<size_t>> idIndices;  // id -> [item indices]
+            for (size_t k = 0; k < items.size(); ++k) {
+                const auto& it = items[k];
+                if (!it.is_object()) {
+                    errors.push_back("item " + std::to_string(k) +
+                                      ": not a JSON object");
+                    continue;
+                }
+                if (!it.contains("id") || !it["id"].is_number_unsigned() ||
+                    it["id"].get<uint32_t>() == 0) {
+                    errors.push_back("item " + std::to_string(k) +
+                                      ": missing/invalid 'id' (must be positive uint)");
+                } else {
+                    idIndices[it["id"].get<uint32_t>()].push_back(k);
+                }
+                if (!it.contains("name") || !it["name"].is_string() ||
+                    it["name"].get<std::string>().empty()) {
+                    errors.push_back("item " + std::to_string(k) +
+                                      ": missing/empty 'name'");
+                }
+                if (it.contains("quality") && it["quality"].is_number_unsigned()) {
+                    uint32_t q = it["quality"].get<uint32_t>();
+                    if (q > 6) {
+                        errors.push_back("item " + std::to_string(k) +
+                                          ": quality " + std::to_string(q) +
+                                          " out of range (must be 0..6)");
+                    }
+                }
+                // itemLevel / stackable should be reasonable; flag
+                // pathological values that almost certainly indicate
+                // a typo (e.g., million-level item).
+                if (it.contains("itemLevel") &&
+                    it["itemLevel"].is_number_unsigned()) {
+                    uint32_t lvl = it["itemLevel"].get<uint32_t>();
+                    if (lvl > 1000) {
+                        errors.push_back("item " + std::to_string(k) +
+                                          ": itemLevel " + std::to_string(lvl) +
+                                          " is suspiciously high (>1000)");
+                    }
+                }
+                if (it.contains("stackable") &&
+                    it["stackable"].is_number_unsigned()) {
+                    uint32_t s = it["stackable"].get<uint32_t>();
+                    if (s == 0 || s > 1000) {
+                        errors.push_back("item " + std::to_string(k) +
+                                          ": stackable " + std::to_string(s) +
+                                          " out of range (must be 1..1000)");
+                    }
+                }
+            }
+            for (const auto& [id, indices] : idIndices) {
+                if (indices.size() > 1) {
+                    std::string idxList;
+                    for (size_t v : indices) {
+                        if (!idxList.empty()) idxList += ", ";
+                        idxList += std::to_string(v);
+                    }
+                    errors.push_back("duplicate id " + std::to_string(id) +
+                                      " at item indices [" + idxList + "]");
+                }
+            }
+            std::printf("validate-items: %s\n", path.c_str());
+            std::printf("  items checked : %zu\n", items.size());
+            std::printf("  errors        : %zu\n", errors.size());
+            if (errors.empty()) {
+                std::printf("\n  PASSED\n");
+                return 0;
+            }
+            std::printf("\n  Errors:\n");
+            for (const auto& e : errors) {
+                std::printf("    - %s\n", e.c_str());
+            }
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-project-items") == 0 && i + 1 < argc) {
+            // Project-wide wrapper around --validate-items. Spawns
+            // the binary per-zone (only zones that have items.json)
+            // so each zone's full error report streams through, then
+            // aggregates a final tally. Exit 1 if any zone fails.
+            //
+            // Skips zones without items.json — those have nothing to
+            // validate and shouldn't count as failures.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "validate-project-items: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                if (!fs::exists(entry.path() / "items.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::printf("validate-project-items: %s\n", projectDir.c_str());
+                std::printf("  no zones with items.json — nothing to validate\n");
+                return 0;
+            }
+            std::string self = argv[0];
+            int passed = 0, failed = 0;
+            std::printf("validate-project-items: %s\n", projectDir.c_str());
+            std::printf("  zones with items : %zu\n\n", zones.size());
+            for (const auto& zoneDir : zones) {
+                std::printf("--- %s ---\n",
+                            fs::path(zoneDir).filename().string().c_str());
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --validate-items \"" +
+                                   zoneDir + "\"";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) passed++;
+                else failed++;
+            }
+            std::printf("\n--- summary ---\n");
+            std::printf("  passed : %d\n", passed);
+            std::printf("  failed : %d\n", failed);
+            if (failed == 0) {
+                std::printf("\n  ALL ZONES PASSED\n");
+                return 0;
+            }
+            return 1;
+        } else if (std::strcmp(argv[i], "--info-project-items") == 0 && i + 1 < argc) {
+            // Project-wide rollup of items.json across zones. Reports
+            // per-zone item counts plus project-wide totals and a
+            // quality histogram. Useful for "do my zones have enough
+            // loot variety?" capacity checks.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-items: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            static const char* qualityNames[] = {
+                "poor", "common", "uncommon", "rare", "epic",
+                "legendary", "artifact"
+            };
+            struct ZRow {
+                std::string name;
+                int count = 0;
+                int qHist[7] = {};
+            };
+            std::vector<ZRow> rows;
+            int totalItems = 0;
+            int globalQHist[7] = {};
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                std::string path = zoneDir + "/items.json";
+                if (fs::exists(path)) {
+                    nlohmann::json doc;
+                    try {
+                        std::ifstream in(path);
+                        in >> doc;
+                    } catch (...) {}
+                    if (doc.contains("items") && doc["items"].is_array()) {
+                        r.count = static_cast<int>(doc["items"].size());
+                        for (const auto& it : doc["items"]) {
+                            uint32_t q = it.value("quality", 1u);
+                            if (q > 6) q = 0;
+                            r.qHist[q]++;
+                            globalQHist[q]++;
+                        }
+                    }
+                }
+                totalItems += r.count;
+                rows.push_back(r);
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["totalItems"] = totalItems;
+                nlohmann::json qual;
+                for (int q = 0; q <= 6; ++q) qual[qualityNames[q]] = globalQHist[q];
+                j["quality"] = qual;
+                nlohmann::json zarr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    nlohmann::json zq;
+                    for (int q = 0; q <= 6; ++q) zq[qualityNames[q]] = r.qHist[q];
+                    zarr.push_back({{"name", r.name},
+                                    {"count", r.count},
+                                    {"quality", zq}});
+                }
+                j["zones"] = zarr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project items: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu\n", zones.size());
+            std::printf("  total items  : %d\n\n", totalItems);
+            std::printf("  Quality histogram (project-wide):\n");
+            for (int q = 0; q <= 6; ++q) {
+                if (globalQHist[q] == 0) continue;
+                std::printf("    %-10s : %d\n", qualityNames[q], globalQHist[q]);
+            }
+            std::printf("\n  zone                  items   poor common uncommon rare epic legend art\n");
+            for (const auto& r : rows) {
+                std::printf("  %-20s  %5d  %5d  %6d  %8d  %4d  %4d  %6d  %3d\n",
+                            r.name.substr(0, 20).c_str(), r.count,
+                            r.qHist[0], r.qHist[1], r.qHist[2],
+                            r.qHist[3], r.qHist[4], r.qHist[5], r.qHist[6]);
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--scaffold-zone") == 0 && i + 1 < argc) {
             // Generate a minimal valid empty zone — useful for kickstarting
             // a new authoring session without needing to launch the GUI.
@@ -13979,6 +15369,206 @@ int main(int argc, char* argv[]) {
             std::printf("  size      : %dx%d\n", W, H);
             std::printf("  spec      : %s\n", spec.c_str());
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-gradient") == 0 && i + 3 < argc) {
+            // Linear two-color gradient. Useful for sky strips, UI
+            // fills, glow rings, dirt-on-grass terrain blends — the
+            // common "fade" cases that --gen-texture's solid/checker/
+            // grid don't cover.
+            //
+            // Direction: "vertical" (top→bottom, default) or
+            // "horizontal" (left→right). Colors are hex like
+            // --gen-texture.
+            std::string outPath = argv[++i];
+            std::string fromHex = argv[++i];
+            std::string toHex = argv[++i];
+            bool horizontal = false;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                std::string dir = argv[i + 1];
+                std::transform(dir.begin(), dir.end(), dir.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (dir == "horizontal" || dir == "vertical") {
+                    horizontal = (dir == "horizontal");
+                    i++;
+                }
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+                std::fprintf(stderr,
+                    "gen-texture-gradient: invalid size %dx%d (1..8192)\n",
+                    W, H);
+                return 1;
+            }
+            // Hex parser: shared local helper for both endpoints. Same
+            // RRGGBB / RGB rules as --gen-texture.
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t r0, g0, b0, r1, g1, b1;
+            if (!parseHex(fromHex, r0, g0, b0)) {
+                std::fprintf(stderr,
+                    "gen-texture-gradient: '%s' is not a valid hex color\n",
+                    fromHex.c_str());
+                return 1;
+            }
+            if (!parseHex(toHex, r1, g1, b1)) {
+                std::fprintf(stderr,
+                    "gen-texture-gradient: '%s' is not a valid hex color\n",
+                    toHex.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    float t;
+                    if (horizontal) {
+                        t = (W <= 1) ? 0.0f : float(x) / float(W - 1);
+                    } else {
+                        t = (H <= 1) ? 0.0f : float(y) / float(H - 1);
+                    }
+                    auto lerp = [](uint8_t a, uint8_t b, float t) {
+                        return static_cast<uint8_t>(a + (b - a) * t + 0.5f);
+                    };
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = lerp(r0, r1, t);
+                    pixels[i2 + 1] = lerp(g0, g1, t);
+                    pixels[i2 + 2] = lerp(b0, b1, t);
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-gradient: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size       : %dx%d\n", W, H);
+            std::printf("  direction  : %s\n",
+                        horizontal ? "horizontal" : "vertical");
+            std::printf("  from       : %s (rgb %u,%u,%u)\n",
+                        fromHex.c_str(), r0, g0, b0);
+            std::printf("  to         : %s (rgb %u,%u,%u)\n",
+                        toHex.c_str(), r1, g1, b1);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-noise") == 0 && i + 1 < argc) {
+            // Smooth value-noise PNG. Useful for terrain detail
+            // overlays, dirt/grass blends, magic-fog backdrops —
+            // anywhere a "natural-looking" pseudo-random texture
+            // beats a flat color or grid.
+            //
+            // Algorithm: bilinearly-interpolated 16×16 random lattice
+            // sampled per pixel. Cheaper than perlin and produces a
+            // similar visual signal at this resolution.
+            //
+            // Deterministic from the integer seed so CI runs and
+            // re-runs are reproducible. Output is grayscale
+            // (R==G==B per pixel) so users can tint it externally.
+            std::string outPath = argv[++i];
+            uint32_t seed = 1;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+                std::fprintf(stderr,
+                    "gen-texture-noise: invalid size %dx%d (1..8192)\n",
+                    W, H);
+                return 1;
+            }
+            // Tiny LCG (numerical recipes constants) so noise is
+            // dependency-free and bit-for-bit identical across
+            // platforms.
+            const int latticeSize = 17;  // 16 cells × bilinear corners
+            std::vector<float> lattice(latticeSize * latticeSize);
+            uint32_t state = seed ? seed : 1u;
+            auto next = [&]() -> float {
+                state = state * 1664525u + 1013904223u;
+                return (state >> 8) / float(1 << 24);
+            };
+            for (auto& v : lattice) v = next();
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                float fy = static_cast<float>(y) / H * (latticeSize - 1);
+                int yi = static_cast<int>(fy);
+                if (yi >= latticeSize - 1) yi = latticeSize - 2;
+                float fty = fy - yi;
+                // Smoothstep so cell boundaries don't show as bands.
+                float ty = fty * fty * (3.0f - 2.0f * fty);
+                for (int x = 0; x < W; ++x) {
+                    float fx = static_cast<float>(x) / W * (latticeSize - 1);
+                    int xi = static_cast<int>(fx);
+                    if (xi >= latticeSize - 1) xi = latticeSize - 2;
+                    float ftx = fx - xi;
+                    float tx = ftx * ftx * (3.0f - 2.0f * ftx);
+                    float a = lattice[yi * latticeSize + xi];
+                    float b = lattice[yi * latticeSize + xi + 1];
+                    float c = lattice[(yi + 1) * latticeSize + xi];
+                    float d = lattice[(yi + 1) * latticeSize + xi + 1];
+                    float ab = a + (b - a) * tx;
+                    float cd = c + (d - c) * tx;
+                    float v = ab + (cd - ab) * ty;
+                    uint8_t g = static_cast<uint8_t>(v * 255.0f + 0.5f);
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = g;
+                    pixels[i2 + 1] = g;
+                    pixels[i2 + 2] = g;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-noise: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size  : %dx%d\n", W, H);
+            std::printf("  seed  : %u\n", seed);
+            std::printf("  type  : smooth value noise (16x16 bilinear lattice)\n");
+            return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
             // per-face normals, planar UVs, a bounding box, and a
@@ -14087,9 +15677,185 @@ int main(int argc, char* argv[]) {
                         wom.indices.push_back(d);
                     }
                 }
+            } else if (s == "cylinder") {
+                // Capped cylinder along the Y axis. radius=size/2,
+                // height=size. 24 side segments — smooth enough for
+                // pillars and torches without exploding the vertex
+                // count. UVs: side wraps the texture once around;
+                // caps map [0..1] from a square sampled at the disc.
+                const int segments = 24;
+                float r = h;
+                // Side ring: 2 vertex rows (top, bottom), each with
+                // (segments+1) verts so UV-seam doesn't share verts.
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * 3.14159265358979f;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    // Bottom ring (Y = -h).
+                    addVertex(r * ca, -h, r * sa, ca, 0, sa, u, 0);
+                    // Top ring (Y = +h).
+                    addVertex(r * ca,  h, r * sa, ca, 0, sa, u, 1);
+                }
+                // Side quad indices.
+                for (int sg = 0; sg < segments; ++sg) {
+                    uint32_t a = sg * 2;
+                    uint32_t b = a + 1;
+                    uint32_t c = a + 2;
+                    uint32_t d = a + 3;
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+                // Top cap fan.
+                uint32_t topCenter = static_cast<uint32_t>(wom.vertices.size());
+                addVertex(0, h, 0, 0, 1, 0, 0.5f, 0.5f);
+                uint32_t topRingStart = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * 3.14159265358979f;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    addVertex(r * ca, h, r * sa, 0, 1, 0,
+                               0.5f + 0.5f * ca, 0.5f + 0.5f * sa);
+                }
+                for (int sg = 0; sg < segments; ++sg) {
+                    wom.indices.push_back(topCenter);
+                    wom.indices.push_back(topRingStart + sg);
+                    wom.indices.push_back(topRingStart + sg + 1);
+                }
+                // Bottom cap fan (winding flipped so normal points -Y).
+                uint32_t botCenter = static_cast<uint32_t>(wom.vertices.size());
+                addVertex(0, -h, 0, 0, -1, 0, 0.5f, 0.5f);
+                uint32_t botRingStart = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * 3.14159265358979f;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    addVertex(r * ca, -h, r * sa, 0, -1, 0,
+                               0.5f + 0.5f * ca, 0.5f - 0.5f * sa);
+                }
+                for (int sg = 0; sg < segments; ++sg) {
+                    wom.indices.push_back(botCenter);
+                    wom.indices.push_back(botRingStart + sg + 1);
+                    wom.indices.push_back(botRingStart + sg);
+                }
+            } else if (s == "torus") {
+                // Torus around the Y axis. Major radius (ring center
+                // distance from origin) = size/2, minor radius (tube
+                // thickness) = size/8 — the 4:1 ratio reads as a
+                // ring rather than a fat donut. 32 ring segments × 16
+                // tube segments = ~544 verts / ~1024 tris.
+                const int ringSeg = 32;
+                const int tubeSeg = 16;
+                float R = h;          // major radius
+                float r = h * 0.25f;  // minor radius (h/4)
+                for (int i2 = 0; i2 <= ringSeg; ++i2) {
+                    float u = static_cast<float>(i2) / ringSeg;
+                    float theta = u * 2.0f * 3.14159265358979f;
+                    float ct = std::cos(theta), st = std::sin(theta);
+                    for (int j2 = 0; j2 <= tubeSeg; ++j2) {
+                        float v = static_cast<float>(j2) / tubeSeg;
+                        float phi = v * 2.0f * 3.14159265358979f;
+                        float cp = std::cos(phi), sp = std::sin(phi);
+                        // Position on the surface.
+                        float x = (R + r * cp) * ct;
+                        float y = r * sp;
+                        float z = (R + r * cp) * st;
+                        // Normal: from the tube center outward.
+                        float nx = cp * ct;
+                        float ny = sp;
+                        float nz = cp * st;
+                        addVertex(x, y, z, nx, ny, nz, u, v);
+                    }
+                }
+                int stride = tubeSeg + 1;
+                for (int i2 = 0; i2 < ringSeg; ++i2) {
+                    for (int j2 = 0; j2 < tubeSeg; ++j2) {
+                        uint32_t a = i2 * stride + j2;
+                        uint32_t b = a + 1;
+                        uint32_t c = a + stride;
+                        uint32_t d = c + 1;
+                        wom.indices.push_back(a);
+                        wom.indices.push_back(c);
+                        wom.indices.push_back(b);
+                        wom.indices.push_back(b);
+                        wom.indices.push_back(c);
+                        wom.indices.push_back(d);
+                    }
+                }
+            } else if (s == "cone") {
+                // Cone with apex at +Y. radius=size/2, height=size.
+                // 24 side segments. Side has smooth radial-ish normals
+                // (slanted up by half the slope angle) for a curved
+                // shaded surface; bottom cap has flat -Y normal.
+                const int segments = 24;
+                float r = h;
+                float H = size;
+                // Slant length used for the side normal Y component.
+                // Side normal direction: (cos(a), nyComponent, sin(a))
+                // where the slope is r/H per unit of horizontal travel.
+                // Normalize so the normal has unit length.
+                float sideXZScale = H / std::sqrt(H * H + r * r);
+                float sideY = r / std::sqrt(H * H + r * r);
+                // Side ring (apex repeated per segment so each tri has
+                // its own apex vertex with the correct normal).
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * 3.14159265358979f;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    // Base vertex (Y = 0).
+                    addVertex(r * ca, 0.0f, r * sa,
+                               sideXZScale * ca, sideY, sideXZScale * sa,
+                               u, 1.0f);
+                    // Apex vertex (Y = H), one per ring step so the
+                    // top vertex carries the segment-specific normal.
+                    addVertex(0.0f, H, 0.0f,
+                               sideXZScale * ca, sideY, sideXZScale * sa,
+                               u, 0.0f);
+                }
+                // Side triangle indices.
+                for (int sg = 0; sg < segments; ++sg) {
+                    uint32_t base = sg * 2;
+                    // Two tris per quad band. The apex collapses to a
+                    // point, so really one triangle per segment, but
+                    // emitting both keeps the indexing uniform across
+                    // the cylinder/cone code paths.
+                    uint32_t a = base + 0;     // base k
+                    uint32_t b = base + 1;     // apex k
+                    uint32_t c = base + 2;     // base k+1
+                    uint32_t d = base + 3;     // apex k+1
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    // Second triangle would be (b,c,d) but b == d at
+                    // the apex visually — we still emit it so the
+                    // per-vertex normals on b and d shade the joining
+                    // seam smoothly.
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+                // Bottom cap fan (flat -Y normal).
+                uint32_t botCenter = static_cast<uint32_t>(wom.vertices.size());
+                addVertex(0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.5f, 0.5f);
+                uint32_t botRingStart = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * 3.14159265358979f;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    addVertex(r * ca, 0.0f, r * sa, 0.0f, -1.0f, 0.0f,
+                               0.5f + 0.5f * ca, 0.5f - 0.5f * sa);
+                }
+                for (int sg = 0; sg < segments; ++sg) {
+                    wom.indices.push_back(botCenter);
+                    wom.indices.push_back(botRingStart + sg + 1);
+                    wom.indices.push_back(botRingStart + sg);
+                }
             } else {
                 std::fprintf(stderr,
-                    "gen-mesh: shape must be cube, plane, or sphere (got '%s')\n",
+                    "gen-mesh: shape must be cube, plane, sphere, cylinder, torus, or cone (got '%s')\n",
                     shape.c_str());
                 return 1;
             }
@@ -14131,6 +15897,759 @@ int main(int argc, char* argv[]) {
             std::printf("  bounds   : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
                         wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
                         wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-textured") == 0 && i + 3 < argc) {
+            // One-shot composer: --gen-mesh + --gen-texture wired
+            // together so the resulting WOM's texturePaths[0] points
+            // at the freshly-written PNG sidecar. Output is a model
+            // that renders with the synthesized texture out of the
+            // box — useful for prototyping textured props without
+            // chaining three commands by hand.
+            //
+            // The texture is written next to the mesh as
+            //   <wom-base>.png
+            // and the WOM's texturePaths[0] is set to that filename
+            // (just the leaf — runtime resolves it relative to the
+            // model's own directory).
+            std::string womBase = argv[++i];
+            std::string shape = argv[++i];
+            std::string colorSpec = argv[++i];
+            std::string sizeArg;
+            if (i + 1 < argc && argv[i + 1][0] != '-') sizeArg = argv[++i];
+            // Strip .wom if user passed full filename.
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            std::string self = argv[0];
+            // 1) Mesh.
+            std::string meshCmd = "\"" + self + "\" --gen-mesh \"" + womBase +
+                                   "\" " + shape;
+            if (!sizeArg.empty()) meshCmd += " " + sizeArg;
+            meshCmd += " >/dev/null 2>&1";
+            int rc = std::system(meshCmd.c_str());
+            if (rc != 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-textured: gen-mesh step failed (rc=%d)\n", rc);
+                return 1;
+            }
+            // 2) Texture as a PNG sidecar at the mesh's base path.
+            std::string pngPath = womBase + ".png";
+            std::string texCmd = "\"" + self + "\" --gen-texture \"" + pngPath +
+                                  "\" \"" + colorSpec + "\" 256 256";
+            texCmd += " >/dev/null 2>&1";
+            rc = std::system(texCmd.c_str());
+            if (rc != 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-textured: gen-texture step failed (rc=%d)\n", rc);
+                return 1;
+            }
+            // 3) Load the WOM, set texturePaths[0] to the PNG leaf,
+            //    and re-save so the binding is permanent.
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "gen-mesh-textured: cannot load %s.wom after gen-mesh\n",
+                    womBase.c_str());
+                return 1;
+            }
+            std::string pngLeaf = std::filesystem::path(pngPath).filename().string();
+            if (wom.texturePaths.empty()) {
+                wom.texturePaths.push_back(pngLeaf);
+            } else {
+                wom.texturePaths[0] = pngLeaf;
+            }
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-textured: failed to re-save %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom + %s\n", womBase.c_str(), pngPath.c_str());
+            std::printf("  shape    : %s\n", shape.c_str());
+            std::printf("  color    : %s\n", colorSpec.c_str());
+            std::printf("  vertices : %zu\n", wom.vertices.size());
+            std::printf("  texture  : %s (wired into batch 0)\n", pngLeaf.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-stairs") == 0 && i + 2 < argc) {
+            // Procedural straight staircase along +X. N steps with
+            // configurable rise/run/width. Each step is a closed
+            // box, sharing no vertices with neighbors so per-face
+            // normals are flat (looks correct without smoothing).
+            //
+            // Defaults: 5 steps, stepHeight=0.2, stepDepth=0.3,
+            // width=1.0 — roughly 1m tall × 1.5m long × 1m wide,
+            // a believable single flight.
+            //
+            // Useful for level-design placeholders ("I need a staircase
+            // up to this platform"), test-bench geometry for camera/
+            // movement, and quick prototyping of stepped terrain.
+            std::string womBase = argv[++i];
+            int steps = 5;
+            float stepHeight = 0.2f, stepDepth = 0.3f, width = 1.0f;
+            try { steps = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-mesh-stairs: <steps> must be an integer\n");
+                return 1;
+            }
+            if (steps < 1 || steps > 256) {
+                std::fprintf(stderr,
+                    "gen-mesh-stairs: steps %d out of range (1..256)\n", steps);
+                return 1;
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { stepHeight = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { stepDepth = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { width = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (stepHeight <= 0 || stepDepth <= 0 || width <= 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-stairs: dimensions must be positive\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            auto addV = [&](float x, float y, float z,
+                              float nx, float ny, float nz,
+                              float u, float v) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = glm::vec3(x, y, z);
+                vtx.normal = glm::vec3(nx, ny, nz);
+                vtx.texCoord = glm::vec2(u, v);
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            float halfW = width * 0.5f;
+            // Each step is a box from y=0 to y=(k+1)*stepHeight,
+            // depth-wise from x=k*stepDepth to x=(k+1)*stepDepth,
+            // width-wise from z=-halfW to z=+halfW. Six faces per
+            // step, four verts each = 24 verts / 12 tris per step.
+            for (int k = 0; k < steps; ++k) {
+                float x0 = k * stepDepth;
+                float x1 = (k + 1) * stepDepth;
+                float y0 = 0.0f;
+                float y1 = (k + 1) * stepHeight;
+                float z0 = -halfW;
+                float z1 =  halfW;
+                struct Face { float nx, ny, nz; float verts[4][3]; };
+                Face faces[6] = {
+                    { 0,  1,  0, {{x0,y1,z0},{x1,y1,z0},{x1,y1,z1},{x0,y1,z1}}},  // top  +Y
+                    { 0, -1,  0, {{x0,y0,z0},{x0,y0,z1},{x1,y0,z1},{x1,y0,z0}}},  // bot  -Y
+                    {-1,  0,  0, {{x0,y0,z0},{x0,y1,z0},{x0,y1,z1},{x0,y0,z1}}},  // back -X
+                    { 1,  0,  0, {{x1,y0,z0},{x1,y0,z1},{x1,y1,z1},{x1,y1,z0}}},  // front+X (riser)
+                    { 0,  0, -1, {{x0,y0,z0},{x1,y0,z0},{x1,y1,z0},{x0,y1,z0}}},  // -Z
+                    { 0,  0,  1, {{x0,y0,z1},{x0,y1,z1},{x1,y1,z1},{x1,y0,z1}}},  // +Z
+                };
+                float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+                for (auto& f : faces) {
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    for (int q = 0; q < 4; ++q) {
+                        addV(f.verts[q][0], f.verts[q][1], f.verts[q][2],
+                              f.nx, f.ny, f.nz, uvs[q][0], uvs[q][1]);
+                    }
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 1);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 3);
+                }
+            }
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-stairs: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  steps     : %d\n", steps);
+            std::printf("  stepHt    : %.3f\n", stepHeight);
+            std::printf("  stepDep   : %.3f\n", stepDepth);
+            std::printf("  width     : %.3f\n", width);
+            std::printf("  vertices  : %zu (%d per step × %d)\n",
+                        wom.vertices.size(), 24, steps);
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            std::printf("  span      : %.3fL × %.3fH × %.3fW\n",
+                        steps * stepDepth, steps * stepHeight, width);
+            return 0;
+        } else if (std::strcmp(argv[i], "--add-texture-to-mesh") == 0 && i + 2 < argc) {
+            // Manual companion to --gen-mesh-textured. Binds an
+            // existing PNG to a WOM by appending it to texturePaths
+            // (or reusing the slot if already present) and pointing
+            // the chosen batch at it.
+            //
+            // The PNG path stored in the WOM is just the leaf — the
+            // runtime resolves textures relative to the model's own
+            // directory, so the user is responsible for placing the
+            // PNG next to the WOM.
+            std::string womBase = argv[++i];
+            std::string pngPath = argv[++i];
+            int batchIdx = 0;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { batchIdx = std::stoi(argv[++i]); }
+                catch (...) {
+                    std::fprintf(stderr,
+                        "add-texture-to-mesh: batchIdx must be an integer\n");
+                    return 1;
+                }
+            }
+            // Strip .wom if user passed a full filename.
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            namespace fs = std::filesystem;
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: %s.wom does not exist\n",
+                    womBase.c_str());
+                return 1;
+            }
+            if (!fs::exists(pngPath)) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: png '%s' does not exist\n",
+                    pngPath.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: failed to load %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            if (wom.batches.empty()) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: %s.wom has no batches "
+                    "(run --migrate-wom to upgrade WOM1/WOM2 first)\n",
+                    womBase.c_str());
+                return 1;
+            }
+            if (batchIdx < 0 ||
+                static_cast<size_t>(batchIdx) >= wom.batches.size()) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: batchIdx %d out of range "
+                    "(have %zu batches)\n",
+                    batchIdx, wom.batches.size());
+                return 1;
+            }
+            std::string pngLeaf = fs::path(pngPath).filename().string();
+            // Reuse texture slot if the leaf is already in the table;
+            // otherwise append a new slot at the end.
+            uint32_t texIdx = static_cast<uint32_t>(wom.texturePaths.size());
+            for (size_t k = 0; k < wom.texturePaths.size(); ++k) {
+                if (wom.texturePaths[k] == pngLeaf) {
+                    texIdx = static_cast<uint32_t>(k);
+                    break;
+                }
+            }
+            if (texIdx == wom.texturePaths.size()) {
+                wom.texturePaths.push_back(pngLeaf);
+            }
+            wom.batches[batchIdx].textureIndex = texIdx;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "add-texture-to-mesh: failed to re-save %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            std::printf("Bound %s -> %s.wom batch %d (texture slot %u)\n",
+                        pngLeaf.c_str(), womBase.c_str(),
+                        batchIdx, texIdx);
+            std::printf("  total texture slots : %zu\n", wom.texturePaths.size());
+            // Warn if the PNG isn't sitting next to the WOM — the
+            // runtime resolves leaf paths relative to the WOM dir.
+            std::string womDir = fs::path(womBase).parent_path().string();
+            if (womDir.empty()) womDir = ".";
+            std::string expected = womDir + "/" + pngLeaf;
+            if (!fs::exists(expected)) {
+                std::printf("  NOTE: %s does not exist next to the WOM\n",
+                            expected.c_str());
+                std::printf("        copy or move %s -> %s before shipping\n",
+                            pngPath.c_str(), expected.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--scale-mesh") == 0 && i + 2 < argc) {
+            // Uniformly scale a WOM in place. Multiplies every
+            // vertex position, every bone pivot, and the bounds by
+            // <factor>. Normals are unchanged (uniform scale
+            // preserves direction). Useful for "I imported this OBJ
+            // but it's the wrong size" cleanup.
+            std::string womBase = argv[++i];
+            float factor = 1.0f;
+            try { factor = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "scale-mesh: <factor> must be a number\n");
+                return 1;
+            }
+            if (factor <= 0.0f || !std::isfinite(factor)) {
+                std::fprintf(stderr,
+                    "scale-mesh: factor must be positive and finite (got %g)\n",
+                    factor);
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "scale-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "scale-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            for (auto& v : wom.vertices) v.position *= factor;
+            for (auto& b : wom.bones) b.pivot *= factor;
+            // Animation translations also scale; rotation/scale
+            // tracks are dimensionless.
+            for (auto& a : wom.animations) {
+                for (auto& bone : a.boneKeyframes) {
+                    for (auto& kf : bone) kf.translation *= factor;
+                }
+            }
+            wom.boundMin *= factor;
+            wom.boundMax *= factor;
+            wom.boundRadius *= factor;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "scale-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Scaled %s.wom by %g\n", womBase.c_str(), factor);
+            std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            std::printf("  new radius : %.3f\n", wom.boundRadius);
+            return 0;
+        } else if (std::strcmp(argv[i], "--translate-mesh") == 0 && i + 4 < argc) {
+            // Offset every vertex (and bones / anim translations /
+            // bounds) by (dx, dy, dz). Useful for re-centering a
+            // mesh whose origin was wrong on import, or for shifting
+            // a procedural primitive that isn't centered the way
+            // you want.
+            std::string womBase = argv[++i];
+            float dx = 0, dy = 0, dz = 0;
+            try {
+                dx = std::stof(argv[++i]);
+                dy = std::stof(argv[++i]);
+                dz = std::stof(argv[++i]);
+            } catch (...) {
+                std::fprintf(stderr,
+                    "translate-mesh: dx/dy/dz must be numbers\n");
+                return 1;
+            }
+            if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) {
+                std::fprintf(stderr,
+                    "translate-mesh: offsets must be finite\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "translate-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "translate-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            glm::vec3 d(dx, dy, dz);
+            for (auto& v : wom.vertices) v.position += d;
+            for (auto& b : wom.bones) b.pivot += d;
+            // Bone-relative animation translations don't shift with
+            // the model — only the bone pivots do, since translations
+            // are in bone-local space. Leave anim keyframes alone.
+            wom.boundMin += d;
+            wom.boundMax += d;
+            // Radius is unchanged (translation is rigid, doesn't
+            // change extent).
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "translate-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Translated %s.wom by (%g, %g, %g)\n",
+                        womBase.c_str(), dx, dy, dz);
+            std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--strip-mesh") == 0 && i + 1 < argc) {
+            // Drop bones and/or animations from a WOM in place. Use
+            // case: a model imported with full skeleton + anims that
+            // will only ever be placed as static decoration — there's
+            // no point shipping the bone data, and stripping it can
+            // shrink the file substantially.
+            //
+            // Default (no flags) is a no-op so the user explicitly
+            // opts in to destruction. --bones drops bones (and
+            // therefore animations, since they reference bones).
+            // --anims drops only animations. --all is shorthand for
+            // both.
+            std::string womBase = argv[++i];
+            bool dropBones = false, dropAnims = false;
+            while (i + 1 < argc && argv[i + 1][0] == '-') {
+                std::string flag = argv[++i];
+                if (flag == "--bones") { dropBones = true; }
+                else if (flag == "--anims") { dropAnims = true; }
+                else if (flag == "--all") { dropBones = true; dropAnims = true; }
+                else {
+                    std::fprintf(stderr,
+                        "strip-mesh: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            if (!dropBones && !dropAnims) {
+                std::fprintf(stderr,
+                    "strip-mesh: no --bones / --anims / --all specified — nothing to do\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            namespace fs = std::filesystem;
+            std::string fullPath = womBase + ".wom";
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "strip-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            uint64_t bytesBefore = fs::file_size(fullPath);
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "strip-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            size_t bonesBefore = wom.bones.size();
+            size_t animsBefore = wom.animations.size();
+            if (dropBones) {
+                wom.bones.clear();
+                // Bones implies anims (anims reference bones).
+                wom.animations.clear();
+                // Reset per-vertex skinning to identity-on-bone-0 so
+                // a renderer that expects the field doesn't read
+                // stale indices.
+                for (auto& v : wom.vertices) {
+                    v.boneWeights[0] = 255;
+                    v.boneWeights[1] = 0;
+                    v.boneWeights[2] = 0;
+                    v.boneWeights[3] = 0;
+                    v.boneIndices[0] = 0;
+                    v.boneIndices[1] = 0;
+                    v.boneIndices[2] = 0;
+                    v.boneIndices[3] = 0;
+                }
+            } else if (dropAnims) {
+                wom.animations.clear();
+            }
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "strip-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            uint64_t bytesAfter = fs::file_size(fullPath);
+            std::printf("Stripped %s.wom\n", womBase.c_str());
+            std::printf("  bones      : %zu -> %zu\n", bonesBefore, wom.bones.size());
+            std::printf("  animations : %zu -> %zu\n", animsBefore, wom.animations.size());
+            std::printf("  bytes      : %llu -> %llu (%+lld)\n",
+                        static_cast<unsigned long long>(bytesBefore),
+                        static_cast<unsigned long long>(bytesAfter),
+                        static_cast<long long>(bytesAfter) -
+                          static_cast<long long>(bytesBefore));
+            return 0;
+        } else if (std::strcmp(argv[i], "--rotate-mesh") == 0 && i + 3 < argc) {
+            // Rotate every vertex position and normal around the
+            // chosen axis (x, y, or z) by <degrees>. Bone pivots
+            // also rotate so the skeleton stays in sync. Bounds are
+            // recomputed from rotated positions (axis-aligned bbox
+            // grows during rotation).
+            std::string womBase = argv[++i];
+            std::string axisStr = argv[++i];
+            float degrees = 0.0f;
+            try { degrees = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "rotate-mesh: <degrees> must be a number\n");
+                return 1;
+            }
+            if (!std::isfinite(degrees)) {
+                std::fprintf(stderr,
+                    "rotate-mesh: degrees must be finite\n");
+                return 1;
+            }
+            std::transform(axisStr.begin(), axisStr.end(), axisStr.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            int axis = -1;
+            if (axisStr == "x") axis = 0;
+            else if (axisStr == "y") axis = 1;
+            else if (axisStr == "z") axis = 2;
+            else {
+                std::fprintf(stderr,
+                    "rotate-mesh: axis must be x, y, or z (got '%s')\n",
+                    axisStr.c_str());
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "rotate-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "rotate-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            float rad = degrees * 3.14159265358979f / 180.0f;
+            float cs = std::cos(rad), sn = std::sin(rad);
+            // Rotation around each axis: standard right-hand rule.
+            auto rot = [axis, cs, sn](glm::vec3 v) -> glm::vec3 {
+                if (axis == 0) {
+                    return glm::vec3(v.x,
+                                      cs * v.y - sn * v.z,
+                                      sn * v.y + cs * v.z);
+                }
+                if (axis == 1) {
+                    return glm::vec3( cs * v.x + sn * v.z,
+                                      v.y,
+                                     -sn * v.x + cs * v.z);
+                }
+                return glm::vec3(cs * v.x - sn * v.y,
+                                  sn * v.x + cs * v.y,
+                                  v.z);
+            };
+            for (auto& v : wom.vertices) {
+                v.position = rot(v.position);
+                v.normal = rot(v.normal);
+            }
+            for (auto& b : wom.bones) {
+                b.pivot = rot(b.pivot);
+            }
+            // Recompute bounds from rotated vertices (axis-aligned
+            // bbox can only grow under rotation, so reuse the loop).
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "rotate-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Rotated %s.wom by %g° around %s\n",
+                        womBase.c_str(), degrees, axisStr.c_str());
+            std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--center-mesh") == 0 && i + 1 < argc) {
+            // Translate the mesh so the bounds center lands at the
+            // origin. Convenience for "this mesh's pivot is in some
+            // weird corner — make it center-pivoted." Doesn't change
+            // shape, just shifts.
+            std::string womBase = argv[++i];
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "center-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "center-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            glm::vec3 center = (wom.boundMin + wom.boundMax) * 0.5f;
+            for (auto& v : wom.vertices) v.position -= center;
+            for (auto& b : wom.bones) b.pivot -= center;
+            wom.boundMin -= center;
+            wom.boundMax -= center;
+            // Radius is preserved (pure translation).
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "center-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Centered %s.wom (shifted by %g, %g, %g)\n",
+                        womBase.c_str(), -center.x, -center.y, -center.z);
+            std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--flip-mesh-normals") == 0 && i + 1 < argc) {
+            // Invert every vertex normal. Use case: an OBJ imported
+            // with flipped winding renders inside-out — flipping the
+            // normals makes shading correct without re-winding the
+            // index buffer (which would also need batch-aware care).
+            // Also useful for skybox-like meshes where the "outside"
+            // texture should appear when looking from inside.
+            std::string womBase = argv[++i];
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "flip-mesh-normals: %s.wom does not exist\n",
+                    womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "flip-mesh-normals: failed to load %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            for (auto& v : wom.vertices) v.normal = -v.normal;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "flip-mesh-normals: failed to save %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            std::printf("Flipped normals on %s.wom (%zu vertices)\n",
+                        womBase.c_str(), wom.vertices.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--add-texture-to-zone") == 0 && i + 2 < argc) {
+            // Import an existing PNG into a zone directory. Useful
+            // for the "I have an artist-painted texture, get it into
+            // my project" workflow — complements --gen-texture
+            // (procedural placeholder) and --convert-blp-png (legacy
+            // BLP migration).
+            //
+            // Optional <renameTo> argument lets the user store the
+            // PNG under a project-specific name (e.g., a generic
+            // "stone.png" downloaded from a tileset becomes
+            // "courtyard_floor.png" in the zone).
+            //
+            // Refuses to overwrite an existing destination unless the
+            // source and destination are byte-identical (idempotent
+            // re-runs are safe).
+            std::string zoneDir = argv[++i];
+            std::string srcPng = argv[++i];
+            std::string renameTo;
+            if (i + 1 < argc && argv[i + 1][0] != '-') renameTo = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir) || !fs::is_directory(zoneDir)) {
+                std::fprintf(stderr,
+                    "add-texture-to-zone: %s is not a directory\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            if (!fs::exists(srcPng) || !fs::is_regular_file(srcPng)) {
+                std::fprintf(stderr,
+                    "add-texture-to-zone: %s is not a file\n",
+                    srcPng.c_str());
+                return 1;
+            }
+            // Sanity-check: must end in .png (any case) so users
+            // don't accidentally drop a .blp/.tga and get surprised
+            // when nothing renders.
+            std::string srcExt = fs::path(srcPng).extension().string();
+            std::transform(srcExt.begin(), srcExt.end(), srcExt.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            if (srcExt != ".png") {
+                std::fprintf(stderr,
+                    "add-texture-to-zone: %s is not a .png "
+                    "(use --convert-blp-png for .blp first)\n",
+                    srcPng.c_str());
+                return 1;
+            }
+            std::string destLeaf = renameTo.empty()
+                                   ? fs::path(srcPng).filename().string()
+                                   : renameTo;
+            // If the rename arg lacks an extension, append .png so
+            // common typos ("stone" -> "stone.png") just work.
+            if (fs::path(destLeaf).extension().string().empty()) {
+                destLeaf += ".png";
+            }
+            std::string destPath = zoneDir + "/" + destLeaf;
+            std::error_code ec;
+            if (fs::exists(destPath)) {
+                // Allow re-running if the bytes already match — makes
+                // makefile-driven workflows idempotent.
+                if (fs::file_size(srcPng, ec) == fs::file_size(destPath, ec)) {
+                    std::ifstream a(srcPng, std::ios::binary);
+                    std::ifstream b(destPath, std::ios::binary);
+                    std::stringstream sa, sb;
+                    sa << a.rdbuf(); sb << b.rdbuf();
+                    if (sa.str() == sb.str()) {
+                        std::printf("Already present: %s (no-op)\n",
+                                    destPath.c_str());
+                        return 0;
+                    }
+                }
+                std::fprintf(stderr,
+                    "add-texture-to-zone: %s already exists with different "
+                    "content (delete it first if intentional)\n",
+                    destPath.c_str());
+                return 1;
+            }
+            fs::copy_file(srcPng, destPath, ec);
+            if (ec) {
+                std::fprintf(stderr,
+                    "add-texture-to-zone: copy failed (%s)\n",
+                    ec.message().c_str());
+                return 1;
+            }
+            uint64_t bytes = fs::file_size(destPath, ec);
+            std::printf("Imported %s -> %s\n",
+                        srcPng.c_str(), destPath.c_str());
+            std::printf("  bytes : %llu\n",
+                        static_cast<unsigned long long>(bytes));
+            std::printf("  next  : --add-texture-to-mesh <wom-base> %s\n",
+                        destPath.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
             // Non-destructive companion to --migrate-data-tree. Walks
