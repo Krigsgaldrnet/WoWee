@@ -123,6 +123,11 @@ static std::string fileHex(const std::string& path) {
     }
     return hexFinal(s);
 }
+static std::string hex(const uint8_t* data, size_t len) {
+    State s;
+    update(s, data, len);
+    return hexFinal(s);
+}
 }  // namespace wowee_sha256
 
 static std::vector<std::string> validateWomErrors(
@@ -498,17 +503,45 @@ static void printUsage(const char* argv0) {
     std::printf("  --data <path>          Path to extracted WoW data (manifest.json)\n");
     std::printf("  --adt <map> <x> <y>    Load an ADT tile on startup\n");
     std::printf("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)\n");
+    std::printf("  --convert-m2-batch <srcDir>\n");
+    std::printf("                         Bulk M2→WOM conversion across every .m2 in <srcDir> (per-file pass/fail summary)\n");
     std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
+    std::printf("  --convert-wmo-batch <srcDir>\n");
+    std::printf("                         Bulk WMO→WOB conversion across every .wmo in <srcDir> (skips _NNN group files)\n");
+    std::printf("  --convert-dbc-batch <srcDir>\n");
+    std::printf("                         Bulk DBC→JSON conversion across every .dbc in <srcDir> (sidecars next to source)\n");
+    std::printf("  --migrate-data-tree <srcDir>\n");
+    std::printf("                         Run all four bulk converters (m2/wmo/blp/dbc) end-to-end on an extracted Data tree\n");
+    std::printf("  --info-data-tree <srcDir> [--json]\n");
+    std::printf("                         Per-format migration-progress report (m2 vs wom, wmo vs wob, blp vs png, dbc vs json)\n");
+    std::printf("  --strip-data-tree <srcDir> [--dry-run]\n");
+    std::printf("                         Delete proprietary files (.m2/.wmo/.blp/.dbc) that already have an open sidecar\n");
+    std::printf("  --audit-data-tree <srcDir>\n");
+    std::printf("                         CI gate: exit 1 if any proprietary file lacks an open sidecar (100%% migration check)\n");
+    std::printf("  --bench-migrate-data-tree <srcDir> [--json]\n");
+    std::printf("                         Time each step of --migrate-data-tree (m2/wmo/blp/dbc) and report wall-clock per step\n");
+    std::printf("  --list-data-tree-largest <srcDir> [N]\n");
+    std::printf("                         Top-N largest proprietary files (.m2/.wmo/.blp/.dbc) for migration prioritization\n");
+    std::printf("  --export-data-tree-md <srcDir> [out.md]\n");
+    std::printf("                         Markdown migration-progress report (per-pair table, share %%, recommended next steps)\n");
+    std::printf("  --gen-texture <out.png> <colorHex|pattern> [W H]\n");
+    std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
+    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere> [size]\n");
+    std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
     std::printf("                         Convert a wowee JSON DBC back to binary DBC for private-server compat\n");
     std::printf("  --convert-blp-png <blp-path> [out.png]\n");
     std::printf("                         Convert one BLP texture to PNG sidecar\n");
+    std::printf("  --convert-blp-batch <srcDir>\n");
+    std::printf("                         Bulk BLP→PNG conversion across every .blp in <srcDir> (sidecars next to source)\n");
     std::printf("  --migrate-wom <wom-base> [out-base]\n");
     std::printf("                         Upgrade an older WOM (v1/v2) to WOM3 with a default single-batch entry\n");
     std::printf("  --migrate-zone <zoneDir>\n");
     std::printf("                         Run --migrate-wom in-place on every WOM under <zoneDir>\n");
+    std::printf("  --migrate-project <projectDir>\n");
+    std::printf("                         Run --migrate-zone across every zone in <projectDir>\n");
     std::printf("  --migrate-jsondbc <path> [out.json]\n");
     std::printf("                         Auto-fix a JSON DBC sidecar: add missing format/source, sync recordCount\n");
     std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
@@ -516,6 +549,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Aggregate counts across every zone in <projectDir>\n");
     std::printf("  --info-tilemap <projectDir> [--json]\n");
     std::printf("                         ASCII-render the 64x64 WoW ADT grid showing tile claims by zone\n");
+    std::printf("  --list-project-orphans <projectDir> [--json]\n");
+    std::printf("                         Find .wom/.wob files in zones not referenced by any objects.json or doodad list\n");
+    std::printf("  --remove-project-orphans <projectDir> [--dry-run]\n");
+    std::printf("                         Delete the orphan .wom/.wob files surfaced by --list-project-orphans\n");
     std::printf("  --list-zone-deps <zoneDir> [--json]\n");
     std::printf("                         List external M2/WMO model paths a zone references (objects + WOB doodads)\n");
     std::printf("  --export-zone-deps-md <zoneDir> [out.md]\n");
@@ -524,6 +561,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Top-down PNG of creature + object spawn positions (per-tile-bounded)\n");
     std::printf("  --check-zone-refs <zoneDir> [--json]\n");
     std::printf("                         Verify every referenced model/quest NPC actually exists; exit 1 on missing refs\n");
+    std::printf("  --check-project-refs <projectDir> [--json]\n");
+    std::printf("                         Run --check-zone-refs across every zone in <projectDir>\n");
     std::printf("  --check-zone-content <zoneDir> [--json]\n");
     std::printf("                         Sanity-check creature/object/quest fields for plausible values\n");
     std::printf("  --check-project-content <projectDir> [--json]\n");
@@ -577,10 +616,14 @@ static void printUsage(const char* argv0) {
     std::printf("                         Wipe one or more content files (terrain + manifest preserved)\n");
     std::printf("  --strip-zone <zoneDir> [--dry-run]\n");
     std::printf("                         Remove derived outputs (.glb/.obj/.stl/.html/.dot/.csv/ZONE.md/DEPS.md)\n");
+    std::printf("  --strip-project <projectDir> [--dry-run]\n");
+    std::printf("                         Run --strip-zone across every zone (per-zone counts + aggregate freed bytes)\n");
     std::printf("  --gen-makefile <zoneDir> [out.mk]\n");
     std::printf("                         Generate a Makefile that rebuilds every derived output for a zone\n");
     std::printf("  --gen-project-makefile <projectDir> [out.mk]\n");
     std::printf("                         Generate a top-level Makefile that delegates to each zone's per-zone Makefile\n");
+    std::printf("  --repair-project <projectDir> [--dry-run]\n");
+    std::printf("                         Run --repair-zone across every zone (manifest drift fixes, per-zone summary)\n");
     std::printf("  --repair-zone <zoneDir> [--dry-run]\n");
     std::printf("                         Auto-fix manifest/disk drift (missing tiles in manifest, hasCreatures flag)\n");
     std::printf("  --build-woc <wot-base> Generate a WOC collision mesh from WHM/WOT and exit\n");
@@ -663,12 +706,24 @@ static void printUsage(const char* argv0) {
     std::printf("                         Render a hierarchical tree view of a zone's contents (no --json)\n");
     std::printf("  --info-project-tree <projectDir>\n");
     std::printf("                         Tree view of every zone in a project with quick counts (no --json)\n");
+    std::printf("  --info-project-bytes <projectDir> [--json]\n");
+    std::printf("                         Per-zone byte rollup with proprietary-vs-open category split (size audit)\n");
+    std::printf("  --validate-project-open-only <projectDir>\n");
+    std::printf("                         Exit 1 if any proprietary Blizzard assets (.m2/.wmo/.blp/.dbc) remain — release gate\n");
+    std::printf("  --audit-project <projectDir>\n");
+    std::printf("                         Run validate-project + open-only + check-project-refs together; one PASS/FAIL\n");
     std::printf("  --info-zone-bytes <zoneDir> [--json]\n");
     std::printf("                         Per-file size breakdown grouped by category, sorted largest-first\n");
+    std::printf("  --info-project-extents <projectDir> [--json]\n");
+    std::printf("                         Combined spatial bounding box across every zone (per-zone table + project union)\n");
     std::printf("  --info-zone-extents <zoneDir> [--json]\n");
     std::printf("                         Compute the zone's bounding box (XY tile range, Z height min/max)\n");
+    std::printf("  --info-project-water <projectDir> [--json]\n");
+    std::printf("                         Aggregate water-layer stats across every zone (per-zone breakdown + project totals)\n");
     std::printf("  --info-zone-water <zoneDir> [--json]\n");
     std::printf("                         Aggregate water-layer stats across all tiles (layer count, types, area)\n");
+    std::printf("  --info-project-density <projectDir> [--json]\n");
+    std::printf("                         Per-zone content density rollup (creatures/objects/quests per tile, project totals)\n");
     std::printf("  --info-zone-density <zoneDir> [--json]\n");
     std::printf("                         Per-tile density (creatures/objects/quests per tile + overall avg)\n");
     std::printf("  --export-zone-summary-md <zoneDir> [out.md]\n");
@@ -677,6 +732,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Emit creatures.csv / objects.csv / quests.csv for spreadsheet workflows\n");
     std::printf("  --export-zone-checksum <zoneDir> [out.sha256]\n");
     std::printf("                         Emit a SHA-256 manifest of every source file in a zone (for integrity checks)\n");
+    std::printf("  --export-project-checksum <projectDir> [out.sha256]\n");
+    std::printf("                         Project-wide SHA-256 manifest (paths are zone-relative) + single project fingerprint\n");
+    std::printf("  --validate-project-checksum <projectDir> [in.sha256]\n");
+    std::printf("                         Verify PROJECT_SHA256SUMS in-tool (cross-platform, no sha256sum dependency)\n");
     std::printf("  --export-zone-html <zoneDir> [out.html]\n");
     std::printf("                         Emit a single-file HTML viewer next to the zone .glb (model-viewer based)\n");
     std::printf("  --export-project-html <projectDir> [out.html]\n");
@@ -701,8 +760,16 @@ static void printUsage(const char* argv0) {
     std::printf("                         List M2 animation sequences (id, duration, flags)\n");
     std::printf("  --info-bones <m2-path> [--json]\n");
     std::printf("                         List M2 bones with parent tree, key-bone IDs, pivot offsets\n");
+    std::printf("  --export-bones-dot <wom-base> [out.dot]\n");
+    std::printf("                         Render WOM bone hierarchy as Graphviz DOT (pipe to `dot -Tpng -o bones.png`)\n");
+    std::printf("  --list-project-textures <projectDir> [--json]\n");
+    std::printf("                         Aggregate texture refs across every WOM in a project (deduped, with zone breakdown)\n");
     std::printf("  --list-zone-textures <zoneDir> [--json]\n");
     std::printf("                         Aggregate texture refs across all WOM models in a zone (deduped)\n");
+    std::printf("  --info-zone-models-total <zoneDir> [--json]\n");
+    std::printf("                         Aggregate WOM/WOB stats across a zone (verts, tris, bones, batches, doodads)\n");
+    std::printf("  --info-project-models-total <projectDir> [--json]\n");
+    std::printf("                         Aggregate WOM/WOB stats across an entire project (per-zone breakdown + totals)\n");
     std::printf("  --info-wob <wob-base> [--json]\n");
     std::printf("                         Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path> [--json]\n");
@@ -820,7 +887,9 @@ int main(int argc, char* argv[]) {
     static const char* kArgRequired[] = {
         "--data", "--info", "--info-batches", "--info-textures", "--info-doodads",
         "--info-attachments", "--info-particles", "--info-sequences",
-        "--info-bones", "--list-zone-textures",
+        "--info-bones", "--export-bones-dot", "--list-zone-textures",
+        "--list-project-textures",
+        "--info-zone-models-total", "--info-project-models-total",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--info-extract-tree", "--info-extract-budget",
@@ -839,20 +908,27 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-project",
+        "--validate-project-open-only", "--audit-project",
         "--bench-validate-project", "--bench-bake-project",
+        "--bench-migrate-data-tree", "--list-data-tree-largest",
+        "--export-data-tree-md", "--gen-texture", "--gen-mesh",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
         "--zone-summary", "--info-zone-tree", "--info-project-tree",
-        "--info-zone-bytes", "--info-zone-extents", "--info-zone-water",
-        "--info-zone-density",
+        "--info-zone-bytes", "--info-project-bytes",
+        "--info-zone-extents", "--info-project-extents",
+        "--info-zone-water", "--info-project-water",
+        "--info-zone-density", "--info-project-density",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
-        "--export-project-md", "--export-zone-checksum",
+        "--export-project-md", "--export-zone-checksum", "--export-project-checksum",
+        "--validate-project-checksum",
         "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--for-each-tile", "--zone-stats", "--info-tilemap",
-        "--list-zone-deps", "--check-zone-refs", "--check-zone-content",
-        "--check-project-content",
+        "--list-zone-deps", "--list-project-orphans", "--remove-project-orphans",
+        "--check-zone-refs", "--check-zone-content",
+        "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -860,8 +936,9 @@ int main(int argc, char* argv[]) {
         "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest",
         "--copy-zone", "--rename-zone", "--remove-zone",
-        "--clear-zone-content", "--strip-zone",
-        "--repair-zone", "--gen-makefile", "--gen-project-makefile",
+        "--clear-zone-content", "--strip-zone", "--strip-project",
+        "--repair-zone", "--repair-project",
+        "--gen-makefile", "--gen-project-makefile",
         "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png", "--export-obj", "--import-obj",
         "--export-wob-obj", "--import-wob-obj",
@@ -870,9 +947,14 @@ int main(int argc, char* argv[]) {
         "--export-stl", "--import-stl",
         "--bake-zone-glb", "--bake-zone-stl", "--bake-zone-obj",
         "--bake-project-obj", "--bake-project-stl", "--bake-project-glb",
-        "--convert-m2", "--convert-wmo",
-        "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
-        "--migrate-wom", "--migrate-zone", "--migrate-jsondbc",
+        "--convert-m2", "--convert-m2-batch",
+        "--convert-wmo", "--convert-wmo-batch",
+        "--convert-dbc-json", "--convert-dbc-batch", "--convert-json-dbc",
+        "--convert-blp-png", "--convert-blp-batch",
+        "--migrate-wom", "--migrate-zone", "--migrate-project",
+        "--migrate-data-tree", "--info-data-tree", "--strip-data-tree",
+        "--audit-data-tree",
+        "--migrate-jsondbc",
     };
     for (int i = 1; i < argc; i++) {
         for (const char* opt : kArgRequired) {
@@ -1526,6 +1608,63 @@ int main(int argc, char* argv[]) {
                             b.pivot.x, b.pivot.y, b.pivot.z);
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--export-bones-dot") == 0 && i + 1 < argc) {
+            // Render WOM bone hierarchy as Graphviz DOT. Mirrors
+            // --export-quest-graph for skeleton trees: trying to read
+            // a 50-bone tree from --info-bones output is painful;
+            // pipe this through `dot -Tpng` for the picture.
+            std::string base = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
+                base = base.substr(0, base.size() - 4);
+            if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+                std::fprintf(stderr,
+                    "export-bones-dot: WOM not found: %s.wom\n", base.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = base + ".bones.dot";
+            auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-bones-dot: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            out << "digraph BoneTree {\n";
+            out << "  // Generated by wowee_editor --export-bones-dot\n";
+            out << "  rankdir=TB;\n";
+            out << "  node [shape=box, style=filled, fontname=\"sans-serif\", fontsize=10];\n";
+            // Color: green for keybones (named anchor points), gray for
+            // internal/blend bones. Root bones (parent=-1) get yellow border.
+            for (size_t k = 0; k < wom.bones.size(); ++k) {
+                const auto& b = wom.bones[k];
+                bool isKey = (b.keyBoneId >= 0);
+                std::string fill = isKey ? "lightgreen" : "lightgrey";
+                std::string label = "[" + std::to_string(k) + "]";
+                if (isKey) label += "\\nkey=" + std::to_string(b.keyBoneId);
+                out << "  b" << k << " [label=\"" << label
+                    << "\", fillcolor=" << fill;
+                if (b.parentBone == -1) out << ", penwidth=2, color=goldenrod";
+                out << "];\n";
+            }
+            // Edges: child -> parent (parent is up).
+            int rootCount = 0;
+            for (size_t k = 0; k < wom.bones.size(); ++k) {
+                int16_t p = wom.bones[k].parentBone;
+                if (p < 0 || p >= static_cast<int16_t>(wom.bones.size())) {
+                    rootCount++;
+                    continue;
+                }
+                out << "  b" << p << " -> b" << k << ";\n";
+            }
+            out << "}\n";
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  %zu bones, %d root(s)\n",
+                        wom.bones.size(), rootCount);
+            std::printf("  next: dot -Tpng %s -o bones.png\n", outPath.c_str());
+            return 0;
         } else if (std::strcmp(argv[i], "--list-zone-textures") == 0 && i + 1 < argc) {
             // Aggregate texture references across every WOM model in a
             // zone directory. Companion to --list-zone-deps (which lists
@@ -1584,6 +1723,325 @@ int main(int argc, char* argv[]) {
             for (const auto& [path, count] : texHist) {
                 std::printf("  %4d  %s\n", count, path.c_str());
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-project-textures") == 0 && i + 1 < argc) {
+            // Project-wide companion to --list-zone-textures. Walks every
+            // zone in <projectDir>, collects unique texture refs across
+            // all WOMs, and reports a per-zone WOM/texture count plus
+            // the global deduped texture set with usage counts. Useful
+            // for "how many textures do I need to ship across the whole
+            // project" — texture sharing across zones often makes the
+            // global set much smaller than the per-zone sum.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "list-project-textures: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow {
+                std::string name;
+                int womCount = 0;
+                int uniqueTextures = 0;
+            };
+            std::vector<ZRow> rows;
+            // path -> count of WOMs that ref it (project-wide)
+            std::map<std::string, int> globalHist;
+            int totalWoms = 0;
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                std::unordered_set<std::string> zoneSet;
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wom") continue;
+                    r.womCount++;
+                    std::string base = e.path().string();
+                    if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                    std::unordered_set<std::string> seenInThisWom;
+                    for (const auto& tp : wom.texturePaths) {
+                        if (tp.empty()) continue;
+                        if (seenInThisWom.insert(tp).second) {
+                            globalHist[tp]++;
+                            zoneSet.insert(tp);
+                        }
+                    }
+                }
+                r.uniqueTextures = static_cast<int>(zoneSet.size());
+                totalWoms += r.womCount;
+                rows.push_back(r);
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["totalWoms"] = totalWoms;
+                j["uniqueTextures"] = globalHist.size();
+                nlohmann::json zarr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    zarr.push_back({{"name", r.name},
+                                    {"womCount", r.womCount},
+                                    {"uniqueTextures", r.uniqueTextures}});
+                }
+                j["zones"] = zarr;
+                nlohmann::json tarr = nlohmann::json::array();
+                for (const auto& [p, c] : globalHist) {
+                    tarr.push_back({{"path", p}, {"refCount", c}});
+                }
+                j["textures"] = tarr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project textures: %s\n", projectDir.c_str());
+            std::printf("  zones           : %zu\n", zones.size());
+            std::printf("  WOMs scanned    : %d\n", totalWoms);
+            std::printf("  unique textures : %zu (deduped project-wide)\n",
+                        globalHist.size());
+            std::printf("\n  zone                       WOMs   uniq-tex\n");
+            for (const auto& r : rows) {
+                std::printf("  %-26s  %4d   %7d\n",
+                            r.name.substr(0, 26).c_str(),
+                            r.womCount, r.uniqueTextures);
+            }
+            if (globalHist.empty()) {
+                std::printf("\n  *no texture references*\n");
+                return 0;
+            }
+            std::printf("\n  refs  texture path (project-global)\n");
+            for (const auto& [path, count] : globalHist) {
+                std::printf("  %4d  %s\n", count, path.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-zone-models-total") == 0 && i + 1 < argc) {
+            // Aggregate WOM/WOB stats across every model in a zone.
+            // Useful for capacity planning ('how many bones across all
+            // my creatures?') and perf budgeting ('total triangles
+            // per frame if all loaded?').
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr,
+                    "info-zone-models-total: %s does not exist\n", zoneDir.c_str());
+                return 1;
+            }
+            int womCount = 0, wobCount = 0;
+            uint64_t womVerts = 0, womIndices = 0;
+            uint64_t womBones = 0, womAnims = 0, womBatches = 0;
+            uint64_t wobGroups = 0, wobVerts = 0, wobIndices = 0;
+            uint64_t wobDoodads = 0, wobPortals = 0;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::string base = e.path().string();
+                if (base.size() > ext.size())
+                    base = base.substr(0, base.size() - ext.size());
+                if (ext == ".wom") {
+                    womCount++;
+                    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                    womVerts += wom.vertices.size();
+                    womIndices += wom.indices.size();
+                    womBones += wom.bones.size();
+                    womAnims += wom.animations.size();
+                    womBatches += wom.batches.size();
+                } else if (ext == ".wob") {
+                    wobCount++;
+                    auto wob = wowee::pipeline::WoweeBuildingLoader::load(base);
+                    wobGroups += wob.groups.size();
+                    for (const auto& g : wob.groups) {
+                        wobVerts += g.vertices.size();
+                        wobIndices += g.indices.size();
+                    }
+                    wobDoodads += wob.doodads.size();
+                    wobPortals += wob.portals.size();
+                }
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["wom"] = {{"count", womCount},
+                             {"vertices", womVerts},
+                             {"indices", womIndices},
+                             {"triangles", womIndices / 3},
+                             {"bones", womBones},
+                             {"animations", womAnims},
+                             {"batches", womBatches}};
+                j["wob"] = {{"count", wobCount},
+                             {"groups", wobGroups},
+                             {"vertices", wobVerts},
+                             {"indices", wobIndices},
+                             {"triangles", wobIndices / 3},
+                             {"doodads", wobDoodads},
+                             {"portals", wobPortals}};
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone models total: %s\n", zoneDir.c_str());
+            std::printf("\n  WOM (open M2):\n");
+            std::printf("    files     : %d\n", womCount);
+            std::printf("    vertices  : %llu\n", static_cast<unsigned long long>(womVerts));
+            std::printf("    triangles : %llu\n", static_cast<unsigned long long>(womIndices / 3));
+            std::printf("    bones     : %llu\n", static_cast<unsigned long long>(womBones));
+            std::printf("    anims     : %llu\n", static_cast<unsigned long long>(womAnims));
+            std::printf("    batches   : %llu\n", static_cast<unsigned long long>(womBatches));
+            std::printf("\n  WOB (open WMO):\n");
+            std::printf("    files     : %d\n", wobCount);
+            std::printf("    groups    : %llu\n", static_cast<unsigned long long>(wobGroups));
+            std::printf("    vertices  : %llu\n", static_cast<unsigned long long>(wobVerts));
+            std::printf("    triangles : %llu\n", static_cast<unsigned long long>(wobIndices / 3));
+            std::printf("    doodads   : %llu\n", static_cast<unsigned long long>(wobDoodads));
+            std::printf("    portals   : %llu\n", static_cast<unsigned long long>(wobPortals));
+            std::printf("\n  Combined  :\n");
+            std::printf("    vertices  : %llu\n", static_cast<unsigned long long>(womVerts + wobVerts));
+            std::printf("    triangles : %llu\n", static_cast<unsigned long long>((womIndices + wobIndices) / 3));
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-models-total") == 0 && i + 1 < argc) {
+            // Multi-zone aggregate. Walks every zone in <projectDir>,
+            // sums the same WOM/WOB metrics --info-zone-models-total
+            // emits, and prints a per-zone breakdown table followed
+            // by project-wide totals. Useful for capacity planning
+            // across an entire content project.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-models-total: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow {
+                std::string name;
+                int womCount = 0, wobCount = 0;
+                uint64_t womVerts = 0, womIndices = 0, womBones = 0;
+                uint64_t womAnims = 0, womBatches = 0;
+                uint64_t wobGroups = 0, wobVerts = 0, wobIndices = 0;
+                uint64_t wobDoodads = 0, wobPortals = 0;
+            };
+            std::vector<ZRow> rows;
+            ZRow tot;
+            tot.name = "TOTAL";
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    std::string base = e.path().string();
+                    if (base.size() > ext.size())
+                        base = base.substr(0, base.size() - ext.size());
+                    if (ext == ".wom") {
+                        r.womCount++;
+                        auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                        r.womVerts += wom.vertices.size();
+                        r.womIndices += wom.indices.size();
+                        r.womBones += wom.bones.size();
+                        r.womAnims += wom.animations.size();
+                        r.womBatches += wom.batches.size();
+                    } else if (ext == ".wob") {
+                        r.wobCount++;
+                        auto wob = wowee::pipeline::WoweeBuildingLoader::load(base);
+                        r.wobGroups += wob.groups.size();
+                        for (const auto& g : wob.groups) {
+                            r.wobVerts += g.vertices.size();
+                            r.wobIndices += g.indices.size();
+                        }
+                        r.wobDoodads += wob.doodads.size();
+                        r.wobPortals += wob.portals.size();
+                    }
+                }
+                tot.womCount += r.womCount;
+                tot.wobCount += r.wobCount;
+                tot.womVerts += r.womVerts;
+                tot.womIndices += r.womIndices;
+                tot.womBones += r.womBones;
+                tot.womAnims += r.womAnims;
+                tot.womBatches += r.womBatches;
+                tot.wobGroups += r.wobGroups;
+                tot.wobVerts += r.wobVerts;
+                tot.wobIndices += r.wobIndices;
+                tot.wobDoodads += r.wobDoodads;
+                tot.wobPortals += r.wobPortals;
+                rows.push_back(r);
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zones"] = nlohmann::json::array();
+                auto rowJson = [](const ZRow& r) {
+                    nlohmann::json z;
+                    z["name"] = r.name;
+                    z["wom"] = {{"count", r.womCount},
+                                 {"vertices", r.womVerts},
+                                 {"indices", r.womIndices},
+                                 {"triangles", r.womIndices / 3},
+                                 {"bones", r.womBones},
+                                 {"animations", r.womAnims},
+                                 {"batches", r.womBatches}};
+                    z["wob"] = {{"count", r.wobCount},
+                                 {"groups", r.wobGroups},
+                                 {"vertices", r.wobVerts},
+                                 {"indices", r.wobIndices},
+                                 {"triangles", r.wobIndices / 3},
+                                 {"doodads", r.wobDoodads},
+                                 {"portals", r.wobPortals}};
+                    return z;
+                };
+                for (const auto& r : rows) j["zones"].push_back(rowJson(r));
+                j["total"] = rowJson(tot);
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project models total: %s\n", projectDir.c_str());
+            std::printf("  zones : %zu\n\n", zones.size());
+            std::printf("  zone                  WOMs  WOMtri  bones  WOBs  WOBtri  doodads\n");
+            for (const auto& r : rows) {
+                std::printf("  %-20s %5d %7llu %6llu %5d %7llu %8llu\n",
+                            r.name.substr(0, 20).c_str(),
+                            r.womCount,
+                            static_cast<unsigned long long>(r.womIndices / 3),
+                            static_cast<unsigned long long>(r.womBones),
+                            r.wobCount,
+                            static_cast<unsigned long long>(r.wobIndices / 3),
+                            static_cast<unsigned long long>(r.wobDoodads));
+            }
+            std::printf("  %-20s %5d %7llu %6llu %5d %7llu %8llu\n",
+                        tot.name.c_str(),
+                        tot.womCount,
+                        static_cast<unsigned long long>(tot.womIndices / 3),
+                        static_cast<unsigned long long>(tot.womBones),
+                        tot.wobCount,
+                        static_cast<unsigned long long>(tot.wobIndices / 3),
+                        static_cast<unsigned long long>(tot.wobDoodads));
+            std::printf("\n  Combined verts/tris (WOM+WOB): %llu / %llu\n",
+                        static_cast<unsigned long long>(tot.womVerts + tot.wobVerts),
+                        static_cast<unsigned long long>((tot.womIndices + tot.wobIndices) / 3));
             return 0;
         } else if (std::strcmp(argv[i], "--info-wob") == 0 && i + 1 < argc) {
             std::string base = argv[++i];
@@ -5212,6 +5670,153 @@ int main(int argc, char* argv[]) {
                             totalBytes ? (100.0 * p.first / totalBytes) : 0.0);
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--info-project-bytes") == 0 && i + 1 < argc) {
+            // Project-wide byte audit. Walks every zone in projectDir,
+            // re-uses --info-zone-bytes' categorization, and prints a
+            // per-zone breakdown table plus aggregated category totals.
+            // The headline number is the proprietary-vs-open size split
+            // — surfaces how much disk a project still spends on .m2/
+            // .wmo/.blp/.dbc payloads vs the open WOM/WOB/PNG/JSON
+            // replacements.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-bytes: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            // Same categorizer used by --info-zone-bytes — keep in sync
+            // if categories evolve there.
+            auto categorize = [](const fs::path& p) -> std::string {
+                std::string ext = p.extension().string();
+                std::string name = p.filename().string();
+                if (ext == ".whm" || ext == ".wot" || ext == ".woc") return "terrain";
+                if (ext == ".wom") return "model (open)";
+                if (ext == ".wob") return "building (open)";
+                if (ext == ".m2" || ext == ".skin") return "model (proprietary)";
+                if (ext == ".wmo") return "building (proprietary)";
+                if (ext == ".blp") return "texture (proprietary)";
+                if (ext == ".png") return "texture (open/derived)";
+                if (ext == ".dbc") return "DBC (proprietary)";
+                if (ext == ".json") return "json (source)";
+                if (ext == ".glb" || ext == ".obj" || ext == ".stl") return "3D export (derived)";
+                if (ext == ".html" || ext == ".dot" || ext == ".csv") return "doc (derived)";
+                if (name == "ZONE.md" || name == "DEPS.md") return "doc (derived)";
+                return "other";
+            };
+            // The proprietary-vs-open split is a key quality metric for
+            // the open-format migration push. Anything tagged "(open)"
+            // or "(open/derived)" counts toward open; anything tagged
+            // "(proprietary)" counts toward proprietary; everything
+            // else ("terrain" / "json (source)" / derived docs) is
+            // neutral.
+            auto isOpen = [](const std::string& cat) {
+                return cat.find("(open") != std::string::npos;
+            };
+            auto isProprietary = [](const std::string& cat) {
+                return cat.find("(proprietary)") != std::string::npos;
+            };
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow {
+                std::string name;
+                uint64_t totalBytes = 0;
+                int fileCount = 0;
+                uint64_t openBytes = 0;
+                uint64_t propBytes = 0;
+            };
+            std::vector<ZRow> rows;
+            std::map<std::string, std::pair<uint64_t, int>> globalCat;
+            uint64_t projectBytes = 0;
+            int projectFiles = 0;
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    uint64_t sz = e.file_size(ec);
+                    if (ec) continue;
+                    std::string cat = categorize(e.path());
+                    r.totalBytes += sz;
+                    r.fileCount++;
+                    if (isOpen(cat)) r.openBytes += sz;
+                    else if (isProprietary(cat)) r.propBytes += sz;
+                    globalCat[cat].first += sz;
+                    globalCat[cat].second++;
+                }
+                projectBytes += r.totalBytes;
+                projectFiles += r.fileCount;
+                rows.push_back(r);
+            }
+            uint64_t globalOpen = 0, globalProp = 0;
+            for (const auto& [c, p] : globalCat) {
+                if (isOpen(c)) globalOpen += p.first;
+                else if (isProprietary(c)) globalProp += p.first;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["totalBytes"] = projectBytes;
+                j["fileCount"] = projectFiles;
+                j["openBytes"] = globalOpen;
+                j["proprietaryBytes"] = globalProp;
+                nlohmann::json zarr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    zarr.push_back({{"name", r.name},
+                                    {"totalBytes", r.totalBytes},
+                                    {"fileCount", r.fileCount},
+                                    {"openBytes", r.openBytes},
+                                    {"proprietaryBytes", r.propBytes}});
+                }
+                j["zones"] = zarr;
+                nlohmann::json catObj;
+                for (const auto& [c, p] : globalCat) {
+                    catObj[c] = {{"bytes", p.first}, {"count", p.second}};
+                }
+                j["byCategory"] = catObj;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project bytes: %s\n", projectDir.c_str());
+            std::printf("  total : %llu bytes (%.1f KB) across %d file(s) in %zu zone(s)\n",
+                        static_cast<unsigned long long>(projectBytes),
+                        projectBytes / 1024.0, projectFiles, zones.size());
+            std::printf("\n  zone                   files       bytes   open(B)  prop(B)\n");
+            for (const auto& r : rows) {
+                std::printf("  %-22s %5d  %10llu  %8llu  %7llu\n",
+                            r.name.substr(0, 22).c_str(),
+                            r.fileCount,
+                            static_cast<unsigned long long>(r.totalBytes),
+                            static_cast<unsigned long long>(r.openBytes),
+                            static_cast<unsigned long long>(r.propBytes));
+            }
+            std::printf("\n  Per-category (project-wide):\n");
+            for (const auto& [c, p] : globalCat) {
+                std::printf("  %-26s %4d files  %12llu bytes  (%5.1f%%)\n",
+                            c.c_str(), p.second,
+                            static_cast<unsigned long long>(p.first),
+                            projectBytes ? (100.0 * p.first / projectBytes) : 0.0);
+            }
+            std::printf("\n  Open-vs-proprietary split:\n");
+            std::printf("    open         : %12llu bytes\n",
+                        static_cast<unsigned long long>(globalOpen));
+            std::printf("    proprietary  : %12llu bytes\n",
+                        static_cast<unsigned long long>(globalProp));
+            uint64_t denom = globalOpen + globalProp;
+            if (denom > 0) {
+                std::printf("    open share   : %5.1f%%\n", 100.0 * globalOpen / denom);
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--info-zone-extents") == 0 && i + 1 < argc) {
             // Compute the zone's spatial bounding box. XY from manifest
             // tile coords (each tile is 533.33 yards); Z from height
@@ -5310,6 +5915,144 @@ int main(int argc, char* argv[]) {
                         widthX, widthY, heightZ,
                         widthX * 0.9144f, widthY * 0.9144f, heightZ * 0.9144f);
             return 0;
+        } else if (std::strcmp(argv[i], "--info-project-extents") == 0 && i + 1 < argc) {
+            // Combined spatial bounding box across every zone in
+            // <projectDir>. Per-zone XY tile range + Z height range,
+            // unioned into a project-wide world box. Useful for
+            // understanding total project area, sizing the world map
+            // overview, or sanity-checking that zones don't overlap
+            // (the union should equal the sum of disjoint per-zone
+            // boxes).
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-extents: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            constexpr float kTileSize = 533.33333f;
+            struct ZBox {
+                std::string name;
+                int tileCount = 0;
+                float wMinX = 1e30f, wMaxX = -1e30f;
+                float wMinY = 1e30f, wMaxY = -1e30f;
+                float zMin = 1e30f, zMax = -1e30f;
+            };
+            std::vector<ZBox> rows;
+            float gMinX = 1e30f, gMaxX = -1e30f;
+            float gMinY = 1e30f, gMaxY = -1e30f;
+            float gZMin = 1e30f, gZMax = -1e30f;
+            int totalTiles = 0;
+            for (const auto& zoneDir : zones) {
+                ZBox b;
+                b.name = fs::path(zoneDir).filename().string();
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load(zoneDir + "/zone.json")) {
+                    rows.push_back(b);
+                    continue;
+                }
+                b.tileCount = static_cast<int>(zm.tiles.size());
+                if (zm.tiles.empty()) {
+                    rows.push_back(b);
+                    continue;
+                }
+                int tMinX = 64, tMaxX = -1, tMinY = 64, tMaxY = -1;
+                for (const auto& [tx, ty] : zm.tiles) {
+                    tMinX = std::min(tMinX, tx);
+                    tMaxX = std::max(tMaxX, tx);
+                    tMinY = std::min(tMinY, ty);
+                    tMaxY = std::max(tMaxY, ty);
+                }
+                b.wMinX = (32.0f - tMaxY - 1) * kTileSize;
+                b.wMaxX = (32.0f - tMinY)     * kTileSize;
+                b.wMinY = (32.0f - tMaxX - 1) * kTileSize;
+                b.wMaxY = (32.0f - tMinX)     * kTileSize;
+                for (const auto& [tx, ty] : zm.tiles) {
+                    std::string tileBase = zoneDir + "/" + zm.mapName + "_" +
+                                            std::to_string(tx) + "_" + std::to_string(ty);
+                    if (!wowee::pipeline::WoweeTerrainLoader::exists(tileBase)) continue;
+                    wowee::pipeline::ADTTerrain terrain;
+                    wowee::pipeline::WoweeTerrainLoader::load(tileBase, terrain);
+                    for (const auto& chunk : terrain.chunks) {
+                        if (!chunk.heightMap.isLoaded()) continue;
+                        float baseZ = chunk.position[2];
+                        for (float h : chunk.heightMap.heights) {
+                            if (!std::isfinite(h)) continue;
+                            b.zMin = std::min(b.zMin, baseZ + h);
+                            b.zMax = std::max(b.zMax, baseZ + h);
+                        }
+                    }
+                }
+                if (b.zMin > b.zMax) { b.zMin = 0; b.zMax = 0; }
+                gMinX = std::min(gMinX, b.wMinX);
+                gMaxX = std::max(gMaxX, b.wMaxX);
+                gMinY = std::min(gMinY, b.wMinY);
+                gMaxY = std::max(gMaxY, b.wMaxY);
+                gZMin = std::min(gZMin, b.zMin);
+                gZMax = std::max(gZMax, b.zMax);
+                totalTiles += b.tileCount;
+                rows.push_back(b);
+            }
+            if (totalTiles == 0) {
+                gMinX = gMaxX = gMinY = gMaxY = gZMin = gZMax = 0.0f;
+            }
+            float gWidthX = gMaxX - gMinX;
+            float gWidthY = gMaxY - gMinY;
+            float gHeightZ = gZMax - gZMin;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["totalTiles"] = totalTiles;
+                j["worldBox"] = {{"min", {gMinX, gMinY, gZMin}},
+                                  {"max", {gMaxX, gMaxY, gZMax}}};
+                j["sizeYards"] = {gWidthX, gWidthY, gHeightZ};
+                nlohmann::json zarr = nlohmann::json::array();
+                for (const auto& b : rows) {
+                    zarr.push_back({{"name", b.name},
+                                    {"tileCount", b.tileCount},
+                                    {"worldBox", {{"min", {b.wMinX, b.wMinY, b.zMin}},
+                                                   {"max", {b.wMaxX, b.wMaxY, b.zMax}}}}});
+                }
+                j["zones"] = zarr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project extents: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu\n", zones.size());
+            std::printf("  total tiles  : %d\n", totalTiles);
+            if (totalTiles == 0) {
+                std::printf("  *no tiles in any zone manifest*\n");
+                return 0;
+            }
+            std::printf("  world union  : (%.1f, %.1f, %.1f) - (%.1f, %.1f, %.1f) yards\n",
+                        gMinX, gMinY, gZMin, gMaxX, gMaxY, gZMax);
+            std::printf("  total size   : %.1f x %.1f x %.1f yards (%.0fm x %.0fm x %.1fm)\n",
+                        gWidthX, gWidthY, gHeightZ,
+                        gWidthX * 0.9144f, gWidthY * 0.9144f, gHeightZ * 0.9144f);
+            std::printf("\n  zone                  tiles      worldX (min..max)        worldY (min..max)\n");
+            for (const auto& b : rows) {
+                if (b.tileCount == 0) {
+                    std::printf("  %-20s  %5d  (no tiles)\n",
+                                b.name.substr(0, 20).c_str(), b.tileCount);
+                    continue;
+                }
+                std::printf("  %-20s  %5d  %9.1f .. %9.1f   %9.1f .. %9.1f\n",
+                            b.name.substr(0, 20).c_str(), b.tileCount,
+                            b.wMinX, b.wMaxX, b.wMinY, b.wMaxY);
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--info-zone-water") == 0 && i + 1 < argc) {
             // Aggregate water-layer stats across all tiles in a zone.
             // Useful for confirming a 'lake zone' actually has water,
@@ -5394,6 +6137,133 @@ int main(int argc, char* argv[]) {
                 }
             } else {
                 std::printf("  (no water in this zone)\n");
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-water") == 0 && i + 1 < argc) {
+            // Project-wide water rollup. Walks every zone in projectDir,
+            // sums water chunks/layers/types per zone, then totals
+            // across the project. Useful for "do my coastal zones
+            // actually carry ocean data" sanity checks and for budget
+            // planning when many zones share liquid types.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-water: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            auto typeName = [](uint16_t t) {
+                switch (t) {
+                    case 0: return "water";
+                    case 1: return "ocean";
+                    case 2: return "magma";
+                    case 3: return "slime";
+                }
+                return "?";
+            };
+            struct ZRow {
+                std::string name;
+                int loadedTiles = 0, waterChunks = 0, totalLayers = 0;
+                std::map<uint16_t, int> typeHist;
+            };
+            std::vector<ZRow> rows;
+            int gLoadedTiles = 0, gWaterChunks = 0, gTotalLayers = 0;
+            std::map<uint16_t, int> gTypeHist;
+            float gMinH = 1e30f, gMaxH = -1e30f;
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load(zoneDir + "/zone.json")) {
+                    rows.push_back(r);
+                    continue;
+                }
+                for (const auto& [tx, ty] : zm.tiles) {
+                    std::string tileBase = zoneDir + "/" + zm.mapName + "_" +
+                                            std::to_string(tx) + "_" + std::to_string(ty);
+                    if (!wowee::pipeline::WoweeTerrainLoader::exists(tileBase)) continue;
+                    wowee::pipeline::ADTTerrain terrain;
+                    wowee::pipeline::WoweeTerrainLoader::load(tileBase, terrain);
+                    r.loadedTiles++;
+                    for (const auto& w : terrain.waterData) {
+                        if (!w.hasWater()) continue;
+                        r.waterChunks++;
+                        r.totalLayers += static_cast<int>(w.layers.size());
+                        for (const auto& layer : w.layers) {
+                            r.typeHist[layer.liquidType]++;
+                            gMinH = std::min(gMinH, layer.minHeight);
+                            gMaxH = std::max(gMaxH, layer.maxHeight);
+                        }
+                    }
+                }
+                gLoadedTiles += r.loadedTiles;
+                gWaterChunks += r.waterChunks;
+                gTotalLayers += r.totalLayers;
+                for (const auto& [t, c] : r.typeHist) gTypeHist[t] += c;
+                rows.push_back(r);
+            }
+            if (gWaterChunks == 0) { gMinH = 0; gMaxH = 0; }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["loadedTiles"] = gLoadedTiles;
+                j["waterChunks"] = gWaterChunks;
+                j["totalLayers"] = gTotalLayers;
+                j["heightRange"] = {gMinH, gMaxH};
+                nlohmann::json zarr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    nlohmann::json types = nlohmann::json::array();
+                    for (const auto& [t, c] : r.typeHist) {
+                        types.push_back({{"type", t}, {"name", typeName(t)},
+                                         {"layerCount", c}});
+                    }
+                    zarr.push_back({{"name", r.name},
+                                    {"loadedTiles", r.loadedTiles},
+                                    {"waterChunks", r.waterChunks},
+                                    {"totalLayers", r.totalLayers},
+                                    {"types", types}});
+                }
+                j["zones"] = zarr;
+                nlohmann::json gtypes = nlohmann::json::array();
+                for (const auto& [t, c] : gTypeHist) {
+                    gtypes.push_back({{"type", t}, {"name", typeName(t)},
+                                      {"layerCount", c}});
+                }
+                j["types"] = gtypes;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project water: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu\n", zones.size());
+            std::printf("  loaded tiles : %d\n", gLoadedTiles);
+            std::printf("  water chunks : %d (out of %d possible)\n",
+                        gWaterChunks, gLoadedTiles * 256);
+            std::printf("  total layers : %d\n", gTotalLayers);
+            if (gWaterChunks > 0) {
+                std::printf("  height range : %.2f to %.2f\n", gMinH, gMaxH);
+                std::printf("\n  By liquid type (project-wide):\n");
+                for (const auto& [t, c] : gTypeHist) {
+                    std::printf("    %s (%u): %d layer(s)\n",
+                                typeName(t), t, c);
+                }
+            }
+            std::printf("\n  zone                  tiles  water-chunks  layers\n");
+            for (const auto& r : rows) {
+                std::printf("  %-20s  %5d  %12d  %6d\n",
+                            r.name.substr(0, 20).c_str(),
+                            r.loadedTiles, r.waterChunks, r.totalLayers);
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-zone-density") == 0 && i + 1 < argc) {
@@ -5497,6 +6367,109 @@ int main(int argc, char* argv[]) {
             for (const auto& [coord, b] : tiles) {
                 std::printf("    (%2d, %2d)         %5d    %5d\n",
                             coord.first, coord.second, b.creatures, b.objects);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-density") == 0 && i + 1 < argc) {
+            // Project-wide content density. Sums creatures/objects/
+            // quests across every zone, computes per-tile averages
+            // both per-zone and project-wide. Helps spot zones that
+            // are abnormally sparse vs the project median, and
+            // surfaces the project's overall content footprint.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-density: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow {
+                std::string name;
+                int tileCount = 0;
+                int creatures = 0, objects = 0, quests = 0;
+            };
+            std::vector<ZRow> rows;
+            int gTiles = 0, gCreat = 0, gObj = 0, gQ = 0;
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                wowee::editor::ZoneManifest zm;
+                if (zm.load(zoneDir + "/zone.json")) {
+                    r.tileCount = static_cast<int>(zm.tiles.size());
+                }
+                wowee::editor::NpcSpawner sp;
+                if (sp.loadFromFile(zoneDir + "/creatures.json")) {
+                    r.creatures = static_cast<int>(sp.spawnCount());
+                }
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(zoneDir + "/objects.json")) {
+                    r.objects = static_cast<int>(op.getObjects().size());
+                }
+                wowee::editor::QuestEditor qe;
+                if (qe.loadFromFile(zoneDir + "/quests.json")) {
+                    r.quests = static_cast<int>(qe.questCount());
+                }
+                gTiles += r.tileCount;
+                gCreat += r.creatures;
+                gObj += r.objects;
+                gQ += r.quests;
+                rows.push_back(r);
+            }
+            double gAvgCreat = gTiles > 0 ? double(gCreat) / gTiles : 0.0;
+            double gAvgObj = gTiles > 0 ? double(gObj) / gTiles : 0.0;
+            double gAvgQ = gTiles > 0 ? double(gQ) / gTiles : 0.0;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["totalTiles"] = gTiles;
+                j["totals"] = {{"creatures", gCreat},
+                                {"objects", gObj},
+                                {"quests", gQ}};
+                j["averages"] = {{"creaturesPerTile", gAvgCreat},
+                                  {"objectsPerTile", gAvgObj},
+                                  {"questsPerTile", gAvgQ}};
+                nlohmann::json zarr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    double zCreat = r.tileCount > 0 ? double(r.creatures) / r.tileCount : 0.0;
+                    double zObj = r.tileCount > 0 ? double(r.objects) / r.tileCount : 0.0;
+                    zarr.push_back({{"name", r.name},
+                                    {"tileCount", r.tileCount},
+                                    {"creatures", r.creatures},
+                                    {"objects", r.objects},
+                                    {"quests", r.quests},
+                                    {"creaturesPerTile", zCreat},
+                                    {"objectsPerTile", zObj}});
+                }
+                j["zones"] = zarr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project density: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu\n", zones.size());
+            std::printf("  total tiles  : %d\n", gTiles);
+            std::printf("  totals       : %d creatures, %d objects, %d quests\n",
+                        gCreat, gObj, gQ);
+            std::printf("  per-tile     : %.2f creatures, %.2f objects, %.2f quests\n",
+                        gAvgCreat, gAvgObj, gAvgQ);
+            std::printf("\n  zone                  tiles   creat   obj  quest   creat/tile  obj/tile\n");
+            for (const auto& r : rows) {
+                double zCreat = r.tileCount > 0 ? double(r.creatures) / r.tileCount : 0.0;
+                double zObj = r.tileCount > 0 ? double(r.objects) / r.tileCount : 0.0;
+                std::printf("  %-20s  %5d  %5d  %4d  %5d   %9.2f   %7.2f\n",
+                            r.name.substr(0, 20).c_str(),
+                            r.tileCount, r.creatures, r.objects, r.quests,
+                            zCreat, zObj);
             }
             return 0;
         } else if (std::strcmp(argv[i], "--export-zone-summary-md") == 0 && i + 1 < argc) {
@@ -5846,6 +6819,147 @@ int main(int argc, char* argv[]) {
                         entries.size());
             std::printf("  verify with: sha256sum -c %s\n", outPath.c_str());
             return 0;
+        } else if (std::strcmp(argv[i], "--export-project-checksum") == 0 && i + 1 < argc) {
+            // Project-wide manifest in the same sha256sum format, with
+            // paths kept relative to <projectDir> (so entries look like
+            // "<hex>  <zoneName>/<file>"). Also emits a single SHA-256
+            // fingerprint over the manifest itself — a one-line
+            // identity for the whole project, handy for CI release
+            // gates and reproducibility checks.
+            //
+            //   wowee_editor --export-project-checksum custom_zones
+            //   sha256sum -c custom_zones/PROJECT_SHA256SUMS
+            std::string projectDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "export-project-checksum: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = projectDir + "/PROJECT_SHA256SUMS";
+            // Same derived-output filter as --export-zone-checksum.
+            auto isDerived = [](const fs::path& p) {
+                std::string ext = p.extension().string();
+                std::string name = p.filename().string();
+                if (ext == ".glb" || ext == ".obj" || ext == ".stl" ||
+                    ext == ".html" || ext == ".dot" || ext == ".csv") return true;
+                if (name == "ZONE.md" || name == "DEPS.md" ||
+                    name == "SHA256SUMS" || name == "PROJECT_SHA256SUMS" ||
+                    name == "Makefile") return true;
+                if (ext == ".png") return true;
+                return false;
+            };
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            std::vector<std::pair<std::string, std::string>> entries;
+            for (const auto& zoneDir : zones) {
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (isDerived(e.path())) continue;
+                    std::string hex = wowee_sha256::fileHex(e.path().string());
+                    if (hex.empty()) continue;
+                    std::string rel = fs::relative(e.path(), projectDir, ec).string();
+                    if (ec) rel = e.path().string();
+                    entries.push_back({hex, rel});
+                }
+            }
+            std::sort(entries.begin(), entries.end(),
+                      [](const auto& a, const auto& b) { return a.second < b.second; });
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-project-checksum: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            // Hash the manifest body inline so the project fingerprint
+            // is byte-identical to what `sha256sum PROJECT_SHA256SUMS`
+            // would yield on the written file.
+            std::string body;
+            body.reserve(entries.size() * 80);
+            for (const auto& [hash, path] : entries) {
+                body += hash;
+                body += "  ";
+                body += path;
+                body += "\n";
+            }
+            out << body;
+            out.close();
+            std::string fingerprint = wowee_sha256::hex(
+                reinterpret_cast<const uint8_t*>(body.data()), body.size());
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  zones        : %zu\n", zones.size());
+            std::printf("  files hashed : %zu\n", entries.size());
+            std::printf("  fingerprint  : %s\n", fingerprint.c_str());
+            std::printf("  verify with  : sha256sum -c %s\n", outPath.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--validate-project-checksum") == 0 && i + 1 < argc) {
+            // In-tool verification of the manifest produced by
+            // --export-project-checksum. Equivalent to 'sha256sum -c
+            // PROJECT_SHA256SUMS' but cross-platform — Windows and
+            // CI runners without coreutils don't need an external tool.
+            // Exit 1 if any file is missing or its hash drifted.
+            std::string projectDir = argv[++i];
+            std::string inPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') inPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "validate-project-checksum: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (inPath.empty()) inPath = projectDir + "/PROJECT_SHA256SUMS";
+            std::ifstream in(inPath);
+            if (!in) {
+                std::fprintf(stderr,
+                    "validate-project-checksum: cannot read %s\n", inPath.c_str());
+                return 1;
+            }
+            int ok = 0, missing = 0, mismatched = 0;
+            std::vector<std::string> failures;
+            std::string line;
+            while (std::getline(in, line)) {
+                if (line.empty()) continue;
+                // sha256sum format: 64-char hex, two spaces, path.
+                if (line.size() < 66 || line[64] != ' ' || line[65] != ' ') {
+                    std::fprintf(stderr,
+                        "  malformed line (skipped): %s\n", line.c_str());
+                    continue;
+                }
+                std::string expected = line.substr(0, 64);
+                std::string rel = line.substr(66);
+                std::string full = projectDir + "/" + rel;
+                if (!fs::exists(full)) {
+                    missing++;
+                    failures.push_back(rel + " (missing)");
+                    continue;
+                }
+                std::string actual = wowee_sha256::fileHex(full);
+                if (actual != expected) {
+                    mismatched++;
+                    failures.push_back(rel + " (hash mismatch)");
+                    continue;
+                }
+                ok++;
+            }
+            std::printf("validate-project-checksum: %s\n", inPath.c_str());
+            std::printf("  ok         : %d\n", ok);
+            std::printf("  missing    : %d\n", missing);
+            std::printf("  mismatched : %d\n", mismatched);
+            if (!failures.empty()) {
+                std::printf("\n  Failures:\n");
+                for (const auto& f : failures) std::printf("    - %s\n", f.c_str());
+            }
+            return (missing == 0 && mismatched == 0) ? 0 : 1;
         } else if (std::strcmp(argv[i], "--export-zone-html") == 0 && i + 1 < argc) {
             // Generate a single-file HTML viewer next to the zone .glb.
             // Anyone with a modern browser can open it — no installs, no
@@ -6663,6 +7777,125 @@ int main(int argc, char* argv[]) {
                 return 0;
             }
             std::printf("\n  %d zone(s) failed validation\n", projectFailedZones);
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-project-open-only") == 0 && i + 1 < argc) {
+            // Release gate. Walks every file in <projectDir> and exits
+            // 1 if any proprietary Blizzard asset is present (.m2, .skin,
+            // .wmo, .blp, .dbc). Designed for CI to enforce a
+            // "no-proprietary-assets" release condition once a project
+            // has fully migrated to the open WOM/WOB/PNG/JSON formats.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "validate-project-open-only: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            // Standard set of proprietary extensions. Mirrors the
+            // "(proprietary)" categories used by --info-project-bytes.
+            static const std::set<std::string> propExt = {
+                ".m2", ".skin", ".wmo", ".blp", ".dbc",
+            };
+            std::map<std::string, int> byExt;
+            std::vector<std::string> hits;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(projectDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!propExt.count(ext)) continue;
+                byExt[ext]++;
+                std::string rel = fs::relative(e.path(), projectDir, ec).string();
+                if (ec) rel = e.path().string();
+                hits.push_back(rel);
+            }
+            std::sort(hits.begin(), hits.end());
+            std::printf("validate-project-open-only: %s\n", projectDir.c_str());
+            if (hits.empty()) {
+                std::printf("  PASSED — no proprietary Blizzard assets present\n");
+                return 0;
+            }
+            std::printf("  FAILED — %zu proprietary file(s) remain\n", hits.size());
+            std::printf("\n  Per-extension:\n");
+            for (const auto& [ext, count] : byExt) {
+                std::printf("    %-6s : %d\n", ext.c_str(), count);
+            }
+            std::printf("\n  Files (sorted):\n");
+            // Cap the file list at 50 entries so a wholly unmigrated
+            // project doesn't fill the user's terminal.
+            size_t shown = 0;
+            for (const auto& h : hits) {
+                if (shown >= 50) {
+                    std::printf("    ... and %zu more\n", hits.size() - shown);
+                    break;
+                }
+                std::printf("    - %s\n", h.c_str());
+                shown++;
+            }
+            return 1;
+        } else if (std::strcmp(argv[i], "--audit-project") == 0 && i + 1 < argc) {
+            // Composite CI gate. Re-invokes the binary to run the four
+            // most important per-project checks back-to-back and rolls
+            // their exit codes into a single PASS/FAIL verdict. Emits
+            // a one-line summary for each sub-check plus the final
+            // overall result. Designed to be the only command CI needs
+            // to run before --pack-wcp.
+            //
+            // Sub-checks:
+            //   1. validate-project        (per-format integrity)
+            //   2. validate-project-open-only (no proprietary leaks)
+            //   3. check-project-refs      (every model/NPC ref resolves)
+            //   4. check-project-content   (sane field values)
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "audit-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            // Use the binary's own path so the audit works from any cwd.
+            std::string self = argv[0];
+            // Quote both to survive paths with spaces; redirect each
+            // sub-check's stdout to a separate temp file so the final
+            // verdict isn't drowned in their output.
+            auto runStep = [&](const std::string& flag) -> int {
+                std::string cmd = "\"" + self + "\" " + flag + " \"" + projectDir + "\"";
+                // Suppress stdout so the audit's own report stays
+                // readable; users can rerun the individual sub-check
+                // for full output if needed.
+                cmd += " >/dev/null 2>&1";
+                // std::system returns 0 on success across POSIX and
+                // Windows. Anything else is a failure for our purposes;
+                // we just need PASS/FAIL granularity here.
+                return std::system(cmd.c_str());
+            };
+            struct Step { const char* name; const char* flag; int rc; };
+            std::vector<Step> steps = {
+                {"format validation       ", "--validate-project",          0},
+                {"open-only release gate  ", "--validate-project-open-only", 0},
+                {"reference integrity     ", "--check-project-refs",         0},
+                {"content field sanity    ", "--check-project-content",      0},
+            };
+            int totalFailed = 0;
+            std::printf("audit-project: %s\n\n", projectDir.c_str());
+            for (auto& s : steps) {
+                s.rc = runStep(s.flag);
+                bool pass = (s.rc == 0);
+                std::printf("  [%s] %s  (%s, rc=%d)\n",
+                            pass ? "PASS" : "FAIL",
+                            s.name, s.flag, s.rc);
+                if (!pass) totalFailed++;
+            }
+            std::printf("\n");
+            if (totalFailed == 0) {
+                std::printf("OVERALL: PASS — project is release-ready\n");
+                return 0;
+            }
+            std::printf("OVERALL: FAIL — %d sub-check(s) failed\n", totalFailed);
+            std::printf("  rerun a failing sub-check directly for detailed output\n");
             return 1;
         } else if (std::strcmp(argv[i], "--bench-validate-project") == 0 && i + 1 < argc) {
             // Time --validate-project per zone. Reports avg/min/max
@@ -11997,6 +13230,1233 @@ int main(int argc, char* argv[]) {
                 std::printf("  freed    : %.1f KB\n", bytesFreed / 1024.0);
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--strip-project") == 0 && i + 1 < argc) {
+            // Project-wide wrapper around --strip-zone. Walks every zone
+            // in <projectDir>, removes derived outputs at each zone's
+            // top level, and reports per-zone removed/freed counts plus
+            // an aggregate. Honors --dry-run for safe previews.
+            std::string projectDir = argv[++i];
+            bool dryRun = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--dry-run") == 0) {
+                dryRun = true;
+                i++;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "strip-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            // Same derived-classifier as --strip-zone — keep in sync.
+            auto isDerivedExt = [](const std::string& ext) {
+                return ext == ".glb" || ext == ".obj" || ext == ".stl" ||
+                       ext == ".html" || ext == ".dot" || ext == ".csv";
+            };
+            auto isDerivedFilename = [](const std::string& name) {
+                return name == "ZONE.md" || name == "DEPS.md" ||
+                       name == "quests.dot";
+            };
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow { std::string name; int removed = 0; uint64_t freed = 0; };
+            std::vector<ZRow> rows;
+            int totalRemoved = 0;
+            uint64_t totalFreed = 0;
+            int totalFailed = 0;
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                for (const auto& e : fs::directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    std::string name = e.path().filename().string();
+                    bool kill = false;
+                    if (isDerivedExt(ext)) kill = true;
+                    if (isDerivedFilename(name)) kill = true;
+                    if (ext == ".png") kill = true;
+                    if (!kill) continue;
+                    uint64_t sz = e.file_size(ec);
+                    if (dryRun) {
+                        r.removed++;
+                        r.freed += sz;
+                    } else {
+                        if (fs::remove(e.path(), ec)) {
+                            r.removed++;
+                            r.freed += sz;
+                        } else {
+                            std::fprintf(stderr,
+                                "  WARN: failed to remove %s/%s (%s)\n",
+                                r.name.c_str(), name.c_str(),
+                                ec.message().c_str());
+                            totalFailed++;
+                        }
+                    }
+                }
+                totalRemoved += r.removed;
+                totalFreed += r.freed;
+                rows.push_back(r);
+            }
+            std::printf("strip-project: %s%s\n",
+                        projectDir.c_str(), dryRun ? " (dry-run)" : "");
+            std::printf("  zones    : %zu\n", zones.size());
+            std::printf("\n  zone                       removed       freed\n");
+            for (const auto& r : rows) {
+                std::printf("  %-26s  %5d   %9.1f KB\n",
+                            r.name.substr(0, 26).c_str(),
+                            r.removed, r.freed / 1024.0);
+            }
+            std::printf("\n  totals%s : %d file(s), %.1f KB\n",
+                        dryRun ? " (would-remove)" : "          ",
+                        totalRemoved, totalFreed / 1024.0);
+            if (dryRun) {
+                std::printf("  pass --dry-run off to actually delete\n");
+            }
+            return totalFailed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--convert-m2-batch") == 0 && i + 1 < argc) {
+            // Bulk M2→WOM conversion. Walks <srcDir> recursively for
+            // every .m2 file and re-invokes --convert-m2 per file via
+            // a child process so the existing single-file logic (with
+            // its AssetManager + skin-resolution bookkeeping) is reused
+            // verbatim. Reports per-file pass/fail and an aggregate
+            // summary.
+            //
+            // Designed to migrate an entire creature/world model dump
+            // in one go. Pair with --convert-blp-batch and --convert-
+            // wmo-batch to migrate a complete extracted Data tree.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "convert-m2-batch: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> m2Files;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (ext != ".m2") continue;
+                m2Files.push_back(e.path().string());
+            }
+            std::sort(m2Files.begin(), m2Files.end());
+            std::printf("convert-m2-batch: %s\n", srcDir.c_str());
+            std::printf("  candidates : %zu .m2 file(s)\n", m2Files.size());
+            std::string self = argv[0];
+            int ok = 0, failed = 0;
+            for (const auto& m2 : m2Files) {
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --convert-m2 \"" + m2 + "\"";
+                cmd += " >/dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) {
+                    ok++;
+                    std::printf("  [ok]   %s\n", m2.c_str());
+                } else {
+                    failed++;
+                    std::printf("  [FAIL] %s (rc=%d)\n", m2.c_str(), rc);
+                }
+            }
+            std::printf("\n  summary    : %d ok, %d failed (out of %zu)\n",
+                        ok, failed, m2Files.size());
+            return failed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--convert-wmo-batch") == 0 && i + 1 < argc) {
+            // Bulk WMO→WOB conversion. Same orchestrator pattern as
+            // --convert-m2-batch: walks <srcDir> recursively, runs the
+            // existing single-file --convert-wmo per file.
+            //
+            // Skips group files (e.g. Stormwind_001.wmo) since the
+            // root WMO converter already pulls those in transitively.
+            // A WMO is a "group file" iff its stem ends in _NNN where
+            // NNN is a 3-digit integer.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "convert-wmo-batch: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            auto isGroupFile = [](const std::string& stem) {
+                if (stem.size() < 5) return false;
+                if (stem[stem.size() - 4] != '_') return false;
+                for (int k = 1; k <= 3; ++k) {
+                    if (!std::isdigit(static_cast<unsigned char>(
+                            stem[stem.size() - k]))) return false;
+                }
+                return true;
+            };
+            std::vector<std::string> wmoFiles;
+            int skippedGroups = 0;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (ext != ".wmo") continue;
+                std::string stem = e.path().stem().string();
+                if (isGroupFile(stem)) { skippedGroups++; continue; }
+                wmoFiles.push_back(e.path().string());
+            }
+            std::sort(wmoFiles.begin(), wmoFiles.end());
+            std::printf("convert-wmo-batch: %s\n", srcDir.c_str());
+            std::printf("  candidates  : %zu root .wmo file(s) (skipped %d group file(s))\n",
+                        wmoFiles.size(), skippedGroups);
+            std::string self = argv[0];
+            int ok = 0, failed = 0;
+            for (const auto& wmo : wmoFiles) {
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --convert-wmo \"" + wmo + "\"";
+                cmd += " >/dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) {
+                    ok++;
+                    std::printf("  [ok]   %s\n", wmo.c_str());
+                } else {
+                    failed++;
+                    std::printf("  [FAIL] %s (rc=%d)\n", wmo.c_str(), rc);
+                }
+            }
+            std::printf("\n  summary     : %d ok, %d failed (out of %zu)\n",
+                        ok, failed, wmoFiles.size());
+            return failed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--convert-blp-batch") == 0 && i + 1 < argc) {
+            // Bulk BLP→PNG conversion. Walks <srcDir> recursively for
+            // every .blp file and re-invokes --convert-blp-png per
+            // file via a child process. The single-file converter
+            // writes the .png as a sidecar next to the source by
+            // default, so a batched run mirrors the standard "PNG
+            // sidecar everywhere" layout.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "convert-blp-batch: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> blpFiles;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (ext != ".blp") continue;
+                blpFiles.push_back(e.path().string());
+            }
+            std::sort(blpFiles.begin(), blpFiles.end());
+            std::printf("convert-blp-batch: %s\n", srcDir.c_str());
+            std::printf("  candidates : %zu .blp file(s)\n", blpFiles.size());
+            std::string self = argv[0];
+            int ok = 0, failed = 0;
+            for (const auto& blp : blpFiles) {
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --convert-blp-png \"" + blp + "\"";
+                cmd += " >/dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) {
+                    ok++;
+                    std::printf("  [ok]   %s\n", blp.c_str());
+                } else {
+                    failed++;
+                    std::printf("  [FAIL] %s (rc=%d)\n", blp.c_str(), rc);
+                }
+            }
+            std::printf("\n  summary    : %d ok, %d failed (out of %zu)\n",
+                        ok, failed, blpFiles.size());
+            return failed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--convert-dbc-batch") == 0 && i + 1 < argc) {
+            // Bulk DBC→JSON conversion. Walks <srcDir> recursively for
+            // every .dbc file and re-invokes --convert-dbc-json per
+            // file. Each .json sidecar is written next to the source.
+            // Final commit in the four-format batch-converter set:
+            // m2/wmo/blp/dbc → wom/wob/png/json. Run all four to
+            // migrate an extracted Data tree end-to-end.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "convert-dbc-batch: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> dbcFiles;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (ext != ".dbc") continue;
+                dbcFiles.push_back(e.path().string());
+            }
+            std::sort(dbcFiles.begin(), dbcFiles.end());
+            std::printf("convert-dbc-batch: %s\n", srcDir.c_str());
+            std::printf("  candidates : %zu .dbc file(s)\n", dbcFiles.size());
+            std::string self = argv[0];
+            int ok = 0, failed = 0;
+            for (const auto& dbc : dbcFiles) {
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --convert-dbc-json \"" + dbc + "\"";
+                cmd += " >/dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) {
+                    ok++;
+                    std::printf("  [ok]   %s\n", dbc.c_str());
+                } else {
+                    failed++;
+                    std::printf("  [FAIL] %s (rc=%d)\n", dbc.c_str(), rc);
+                }
+            }
+            std::printf("\n  summary    : %d ok, %d failed (out of %zu)\n",
+                        ok, failed, dbcFiles.size());
+            return failed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--migrate-data-tree") == 0 && i + 1 < argc) {
+            // End-to-end open-format migration. Runs all four bulk
+            // converters (m2/wmo/blp/dbc → wom/wob/png/json) in order
+            // on a single extracted Data tree. Each step's full
+            // output streams through; aggregate exit code is failure
+            // if any sub-converter fails.
+            //
+            // Idempotent: re-running on a partially-converted tree
+            // re-attempts the originals (which still produce the
+            // same sidecar) without removing any prior outputs.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "migrate-data-tree: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            std::string self = argv[0];
+            struct Step { const char* name; const char* flag; int rc; };
+            std::vector<Step> steps = {
+                {"M2  → WOM ", "--convert-m2-batch",   0},
+                {"WMO → WOB ", "--convert-wmo-batch",  0},
+                {"BLP → PNG ", "--convert-blp-batch",  0},
+                {"DBC → JSON", "--convert-dbc-batch",  0},
+            };
+            int totalFailed = 0;
+            std::printf("migrate-data-tree: %s\n", srcDir.c_str());
+            for (auto& s : steps) {
+                std::printf("\n=== %s (%s) ===\n", s.name, s.flag);
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" " + s.flag + " \"" + srcDir + "\"";
+                s.rc = std::system(cmd.c_str());
+                if (s.rc != 0) totalFailed++;
+            }
+            std::printf("\n=== migrate-data-tree summary ===\n");
+            for (const auto& s : steps) {
+                std::printf("  [%s] %s  (rc=%d)\n",
+                            s.rc == 0 ? "PASS" : "FAIL", s.name, s.rc);
+            }
+            if (totalFailed == 0) {
+                std::printf("\n  ALL FOUR PASSED — open-format migration complete\n");
+                return 0;
+            }
+            std::printf("\n  %d step(s) reported failures (re-run individually for detail)\n",
+                        totalFailed);
+            return 1;
+        } else if (std::strcmp(argv[i], "--bench-migrate-data-tree") == 0 && i + 1 < argc) {
+            // Time each --migrate-data-tree step end-to-end. Useful
+            // for capacity planning ("how long will the full extracted
+            // Data tree take?") and regression detection (a recent
+            // change shouldn't make M2 conversion 2x slower).
+            //
+            // Sub-batches are dispatched the same way --migrate-data-
+            // tree dispatches them — so the timings here are exactly
+            // what the user will experience running the migration.
+            std::string srcDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "bench-migrate-data-tree: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            std::string self = argv[0];
+            struct Step {
+                const char* name;
+                const char* flag;
+                double ms = 0;
+                int rc = 0;
+            };
+            std::vector<Step> steps = {
+                {"M2  → WOM ", "--convert-m2-batch",  0, 0},
+                {"WMO → WOB ", "--convert-wmo-batch", 0, 0},
+                {"BLP → PNG ", "--convert-blp-batch", 0, 0},
+                {"DBC → JSON", "--convert-dbc-batch", 0, 0},
+            };
+            double totalMs = 0;
+            for (auto& s : steps) {
+                std::string cmd = "\"" + self + "\" " + s.flag + " \"" + srcDir + "\"";
+                cmd += " >/dev/null 2>&1";
+                auto t0 = std::chrono::steady_clock::now();
+                s.rc = std::system(cmd.c_str());
+                auto t1 = std::chrono::steady_clock::now();
+                s.ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                totalMs += s.ms;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["srcDir"] = srcDir;
+                j["totalMs"] = totalMs;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& s : steps) {
+                    double share = totalMs > 0 ? 100.0 * s.ms / totalMs : 0.0;
+                    arr.push_back({{"name", s.name},
+                                    {"flag", s.flag},
+                                    {"ms", s.ms},
+                                    {"share", share},
+                                    {"rc", s.rc}});
+                }
+                j["steps"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("bench-migrate-data-tree: %s\n", srcDir.c_str());
+            std::printf("  total : %.1f ms (%.2f s)\n", totalMs, totalMs / 1000.0);
+            std::printf("\n  step               wall-clock     share   status\n");
+            for (const auto& s : steps) {
+                double share = totalMs > 0 ? 100.0 * s.ms / totalMs : 0.0;
+                std::printf("  %-15s   %8.1f ms   %5.1f%%   %s (rc=%d)\n",
+                            s.name, s.ms, share,
+                            s.rc == 0 ? "ok" : "FAIL", s.rc);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-data-tree-largest") == 0 && i + 1 < argc) {
+            // Top-N largest proprietary files (.m2/.wmo/.blp/.dbc).
+            // Helps prioritize migration: convert the biggest files
+            // first to free the most disk space sooner. Annotates
+            // each file with whether an open sidecar already exists,
+            // so users can see at a glance which heavy hitters are
+            // already migrated vs still pending.
+            //
+            // Default N = 20. Sized for a terminal page; use --json
+            // (or pass a larger N) for full lists.
+            std::string srcDir = argv[++i];
+            int N = 20;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { N = std::stoi(argv[++i]); } catch (...) {}
+                if (N < 1) N = 20;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "list-data-tree-largest: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            static const std::vector<std::pair<std::string, std::string>>
+                kPairs = {
+                    {".m2",  ".wom"},
+                    {".wmo", ".wob"},
+                    {".blp", ".png"},
+                    {".dbc", ".json"},
+                };
+            // Open sidecar set for the migration-status annotation.
+            std::map<std::string, std::set<std::pair<std::string, std::string>>>
+                openSets;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                for (const auto& [_, openExt] : kPairs) {
+                    if (ext == openExt) {
+                        openSets[openExt].insert(
+                            {e.path().parent_path().string(),
+                             e.path().stem().string()});
+                        break;
+                    }
+                }
+            }
+            struct Entry {
+                std::string path;
+                uint64_t bytes;
+                std::string ext;
+                bool migrated;
+            };
+            std::vector<Entry> entries;
+            uint64_t totalBytes = 0;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                std::string openExt;
+                for (const auto& [propExt, oExt] : kPairs) {
+                    if (ext == propExt) { openExt = oExt; break; }
+                }
+                if (openExt.empty()) continue;
+                uint64_t sz = e.file_size(ec);
+                if (ec) sz = 0;
+                std::pair<std::string, std::string> key{
+                    e.path().parent_path().string(),
+                    e.path().stem().string()};
+                bool migrated = openSets[openExt].count(key) > 0;
+                entries.push_back({e.path().string(), sz, ext, migrated});
+                totalBytes += sz;
+            }
+            std::sort(entries.begin(), entries.end(),
+                      [](const Entry& a, const Entry& b) {
+                          return a.bytes > b.bytes;
+                      });
+            int shown = std::min(static_cast<int>(entries.size()), N);
+            uint64_t shownBytes = 0;
+            for (int k = 0; k < shown; ++k) shownBytes += entries[k].bytes;
+            std::printf("list-data-tree-largest: %s\n", srcDir.c_str());
+            std::printf("  proprietary files : %zu (total %.1f MB)\n",
+                        entries.size(), totalBytes / (1024.0 * 1024.0));
+            std::printf("  showing top       : %d (%.1f MB, %.1f%% of total)\n",
+                        shown, shownBytes / (1024.0 * 1024.0),
+                        totalBytes ? 100.0 * shownBytes / totalBytes : 0.0);
+            if (entries.empty()) {
+                std::printf("\n  (no proprietary files found)\n");
+                return 0;
+            }
+            std::printf("\n  rank   ext     bytes      status   path\n");
+            for (int k = 0; k < shown; ++k) {
+                const auto& e = entries[k];
+                std::printf("  %4d   %-4s  %10llu  %-7s  %s\n",
+                            k + 1, e.ext.c_str(),
+                            static_cast<unsigned long long>(e.bytes),
+                            e.migrated ? "migrate" : "pending",
+                            e.path.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-data-tree-md") == 0 && i + 1 < argc) {
+            // Markdown migration-progress report. Drops cleanly into
+            // PR descriptions, CI artifacts, or status pages on
+            // GitHub Pages. Same numbers as --info-data-tree but
+            // formatted as a Markdown table with a status badge,
+            // bytes summary, and recommended next steps so a reader
+            // can act on the report without consulting the CLI help.
+            std::string srcDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "export-data-tree-md: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = srcDir + "/MIGRATION.md";
+            static const std::vector<std::pair<std::string, std::string>>
+                kPairs = {
+                    {".m2",  ".wom"},
+                    {".wmo", ".wob"},
+                    {".blp", ".png"},
+                    {".dbc", ".json"},
+                };
+            // Same scan as --info-data-tree.
+            std::map<std::string, std::set<std::pair<std::string, std::string>>>
+                byExt;
+            std::map<std::string, uint64_t> bytesByExt;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                byExt[ext].insert({e.path().parent_path().string(),
+                                   e.path().stem().string()});
+                uint64_t sz = e.file_size(ec);
+                if (!ec) bytesByExt[ext] += sz;
+            }
+            struct Row {
+                std::string prop, open;
+                int propCount, sidecarCount, orphanOpenCount;
+                uint64_t propBytes;
+                double share;
+            };
+            std::vector<Row> rows;
+            int totalProp = 0, totalSidecar = 0, totalOrphan = 0;
+            uint64_t totalPropBytes = 0;
+            for (const auto& [propExt, openExt] : kPairs) {
+                Row r{propExt, openExt, 0, 0, 0, 0, 0.0};
+                const auto& propSet = byExt[propExt];
+                const auto& openSet = byExt[openExt];
+                r.propCount = static_cast<int>(propSet.size());
+                for (const auto& key : openSet) {
+                    if (propSet.count(key)) r.sidecarCount++;
+                    else r.orphanOpenCount++;
+                }
+                r.propBytes = bytesByExt[propExt];
+                r.share = r.propCount > 0
+                          ? 100.0 * r.sidecarCount / r.propCount
+                          : 100.0;
+                totalProp += r.propCount;
+                totalSidecar += r.sidecarCount;
+                totalOrphan += r.orphanOpenCount;
+                totalPropBytes += r.propBytes;
+                rows.push_back(r);
+            }
+            double overallShare = totalProp > 0
+                                  ? 100.0 * totalSidecar / totalProp
+                                  : 100.0;
+            const char* badge =
+                overallShare >= 100.0 ? "**100% migrated**" :
+                overallShare >= 75.0  ? "**Mostly migrated**" :
+                overallShare >= 25.0  ? "*Partially migrated*" :
+                                        "*Migration pending*";
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "export-data-tree-md: cannot write %s\n", outPath.c_str());
+                return 1;
+            }
+            out << "# Data Tree Migration Report\n\n";
+            out << "Source: `" << srcDir << "`\n\n";
+            out << "Status: " << badge << " (" << std::fixed;
+            out.precision(1);
+            out << overallShare << "% sidecar coverage)\n\n";
+            out << "## Summary\n\n";
+            out << "- Proprietary files: **" << totalProp << "** ("
+                << std::fixed;
+            out.precision(2);
+            out << (totalPropBytes / (1024.0 * 1024.0)) << " MB)\n";
+            out << "- Open sidecars present: **" << totalSidecar << "**\n";
+            out << "- Orphan open files (no proprietary source): **"
+                << totalOrphan << "**\n\n";
+            out << "## Per-format pairs\n\n";
+            out << "| Pair | Proprietary | Sidecars | Orphan open | Prop bytes | Share |\n";
+            out << "|------|------------:|---------:|------------:|-----------:|------:|\n";
+            for (const auto& r : rows) {
+                out << "| " << r.prop << " → " << r.open << " | "
+                    << r.propCount << " | "
+                    << r.sidecarCount << " | "
+                    << r.orphanOpenCount << " | "
+                    << r.propBytes << " | "
+                    << std::fixed;
+                out.precision(1);
+                out << r.share << "% |\n";
+            }
+            out << "\n## Recommended next steps\n\n";
+            if (overallShare < 100.0) {
+                out << "1. Run `wowee_editor --migrate-data-tree " << srcDir
+                    << "` to fill in the missing sidecars.\n";
+                out << "2. Run `wowee_editor --audit-data-tree " << srcDir
+                    << "` to confirm 100% coverage.\n";
+                out << "3. Run `wowee_editor --strip-data-tree " << srcDir
+                    << "` to delete the proprietary originals.\n";
+            } else {
+                out << "All proprietary files are migrated. Run "
+                    << "`wowee_editor --strip-data-tree " << srcDir
+                    << "` to delete the originals and ship the open-only tree.\n";
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  status      : %s\n", badge);
+            std::printf("  share       : %.1f%%\n", overallShare);
+            std::printf("  proprietary : %d files, %.2f MB\n",
+                        totalProp, totalPropBytes / (1024.0 * 1024.0));
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture") == 0 && i + 2 < argc) {
+            // Synthesize a placeholder PNG texture. Lets users add a
+            // working texture to their project without an external
+            // image editor — useful for prototyping new meshes,
+            // filling out a zone before art is final, or generating
+            // test fixtures.
+            //
+            // <colorHex|pattern>:
+            //   "RRGGBB" or "RGB" hex (case-insensitive) → solid color
+            //   "checker" → 32x32 black/white checkerboard
+            //   "grid"    → black background with white 1-px grid every 16
+            std::string outPath = argv[++i];
+            std::string spec = argv[++i];
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+                std::fprintf(stderr,
+                    "gen-texture: invalid size %dx%d (must be 1..8192)\n", W, H);
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            std::string lower = spec;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            if (lower == "checker") {
+                for (int y = 0; y < H; ++y) {
+                    for (int x = 0; x < W; ++x) {
+                        bool dark = ((x / 32) + (y / 32)) & 1;
+                        uint8_t v = dark ? 16 : 240;
+                        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                        pixels[i2 + 0] = v;
+                        pixels[i2 + 1] = v;
+                        pixels[i2 + 2] = v;
+                    }
+                }
+            } else if (lower == "grid") {
+                for (int y = 0; y < H; ++y) {
+                    for (int x = 0; x < W; ++x) {
+                        bool line = (x % 16 == 0) || (y % 16 == 0);
+                        uint8_t v = line ? 240 : 32;
+                        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                        pixels[i2 + 0] = v;
+                        pixels[i2 + 1] = v;
+                        pixels[i2 + 2] = v;
+                    }
+                }
+            } else {
+                // Hex color. Accept "RGB" (3 chars) or "RRGGBB" (6 chars),
+                // optional leading '#'.
+                std::string hex = lower;
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHex = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                uint8_t r = 0, g = 0, b = 0;
+                if (hex.size() == 6) {
+                    int hi, lo;
+                    if ((hi = fromHex(hex[0])) < 0) goto bad_color;
+                    if ((lo = fromHex(hex[1])) < 0) goto bad_color;
+                    r = static_cast<uint8_t>((hi << 4) | lo);
+                    if ((hi = fromHex(hex[2])) < 0) goto bad_color;
+                    if ((lo = fromHex(hex[3])) < 0) goto bad_color;
+                    g = static_cast<uint8_t>((hi << 4) | lo);
+                    if ((hi = fromHex(hex[4])) < 0) goto bad_color;
+                    if ((lo = fromHex(hex[5])) < 0) goto bad_color;
+                    b = static_cast<uint8_t>((hi << 4) | lo);
+                } else if (hex.size() == 3) {
+                    int v0, v1, v2;
+                    if ((v0 = fromHex(hex[0])) < 0) goto bad_color;
+                    if ((v1 = fromHex(hex[1])) < 0) goto bad_color;
+                    if ((v2 = fromHex(hex[2])) < 0) goto bad_color;
+                    r = static_cast<uint8_t>((v0 << 4) | v0);
+                    g = static_cast<uint8_t>((v1 << 4) | v1);
+                    b = static_cast<uint8_t>((v2 << 4) | v2);
+                } else {
+                    goto bad_color;
+                }
+                for (int y = 0; y < H; ++y) {
+                    for (int x = 0; x < W; ++x) {
+                        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                        pixels[i2 + 0] = r;
+                        pixels[i2 + 1] = g;
+                        pixels[i2 + 2] = b;
+                    }
+                }
+                goto color_ok;
+              bad_color:
+                std::fprintf(stderr,
+                    "gen-texture: '%s' is not a valid hex color or 'checker'/'grid'\n",
+                    spec.c_str());
+                return 1;
+              color_ok: ;
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture: stbi_write_png failed for %s\n", outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  spec      : %s\n", spec.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
+            // Synthesize a procedural primitive WOM. Generates proper
+            // per-face normals, planar UVs, a bounding box, and a
+            // single batch covering all indices so the model renders
+            // immediately in the editor without further processing.
+            //
+            // Shapes:
+            //   cube   — 24 verts / 12 tris, axis-aligned, ±size/2
+            //   plane  — 4 verts / 2 tris, on XY plane (Z=0), ±size/2
+            //   sphere — UV sphere, 16 segments × 12 stacks, radius=size/2
+            std::string womBase = argv[++i];
+            std::string shape = argv[++i];
+            float size = 1.0f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { size = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (size <= 0.0f) {
+                std::fprintf(stderr,
+                    "gen-mesh: size must be positive (got %g)\n", size);
+                return 1;
+            }
+            // Strip .wom if user passed a full filename — saver expects base.
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // Helper to push a vertex with explicit normal + uv.
+            auto addVertex = [&](float x, float y, float z,
+                                  float nx, float ny, float nz,
+                                  float u, float v) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = glm::vec3(x, y, z);
+                vtx.normal = glm::vec3(nx, ny, nz);
+                vtx.texCoord = glm::vec2(u, v);
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            std::string s = shape;
+            std::transform(s.begin(), s.end(), s.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            float h = size * 0.5f;
+            if (s == "cube") {
+                // 6 faces, 4 verts each (so per-face normals are flat).
+                struct Face { float nx, ny, nz; float verts[4][3]; };
+                Face faces[6] = {
+                    { 0,  0,  1, {{-h,-h, h},{ h,-h, h},{ h, h, h},{-h, h, h}}},  // +Z
+                    { 0,  0, -1, {{ h,-h,-h},{-h,-h,-h},{-h, h,-h},{ h, h,-h}}},  // -Z
+                    { 1,  0,  0, {{ h,-h, h},{ h,-h,-h},{ h, h,-h},{ h, h, h}}},  // +X
+                    {-1,  0,  0, {{-h,-h,-h},{-h,-h, h},{-h, h, h},{-h, h,-h}}},  // -X
+                    { 0,  1,  0, {{-h, h, h},{ h, h, h},{ h, h,-h},{-h, h,-h}}},  // +Y
+                    { 0, -1,  0, {{-h,-h,-h},{ h,-h,-h},{ h,-h, h},{-h,-h, h}}},  // -Y
+                };
+                float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+                for (auto& f : faces) {
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    for (int k = 0; k < 4; ++k) {
+                        addVertex(f.verts[k][0], f.verts[k][1], f.verts[k][2],
+                                  f.nx, f.ny, f.nz, uvs[k][0], uvs[k][1]);
+                    }
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 1);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 3);
+                }
+            } else if (s == "plane") {
+                addVertex(-h, -h, 0,  0, 0, 1,  0, 0);
+                addVertex( h, -h, 0,  0, 0, 1,  1, 0);
+                addVertex( h,  h, 0,  0, 0, 1,  1, 1);
+                addVertex(-h,  h, 0,  0, 0, 1,  0, 1);
+                wom.indices = {0, 1, 2, 0, 2, 3};
+            } else if (s == "sphere") {
+                const int segments = 16;
+                const int stacks = 12;
+                float r = h;
+                for (int st = 0; st <= stacks; ++st) {
+                    float v = static_cast<float>(st) / stacks;
+                    float phi = v * 3.14159265358979f;
+                    float sphi = std::sin(phi), cphi = std::cos(phi);
+                    for (int sg = 0; sg <= segments; ++sg) {
+                        float u = static_cast<float>(sg) / segments;
+                        float theta = u * 2.0f * 3.14159265358979f;
+                        float stheta = std::sin(theta), ctheta = std::cos(theta);
+                        float nx = sphi * ctheta;
+                        float ny = sphi * stheta;
+                        float nz = cphi;
+                        addVertex(r * nx, r * ny, r * nz, nx, ny, nz, u, v);
+                    }
+                }
+                int stride = segments + 1;
+                for (int st = 0; st < stacks; ++st) {
+                    for (int sg = 0; sg < segments; ++sg) {
+                        uint32_t a = st * stride + sg;
+                        uint32_t b = a + 1;
+                        uint32_t c = a + stride;
+                        uint32_t d = c + 1;
+                        wom.indices.push_back(a);
+                        wom.indices.push_back(c);
+                        wom.indices.push_back(b);
+                        wom.indices.push_back(b);
+                        wom.indices.push_back(c);
+                        wom.indices.push_back(d);
+                    }
+                }
+            } else {
+                std::fprintf(stderr,
+                    "gen-mesh: shape must be cube, plane, or sphere (got '%s')\n",
+                    shape.c_str());
+                return 1;
+            }
+            // Compute bounds from the vertex positions we just emitted.
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            // Single material batch covering everything — keeps the
+            // model immediately renderable.
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            // Empty texture path slot so batch.textureIndex=0 is a
+            // valid index into texturePaths. The user can later set a
+            // real path or run --gen-texture next to it.
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  shape    : %s\n", s.c_str());
+            std::printf("  size     : %.3f\n", size);
+            std::printf("  vertices : %zu\n", wom.vertices.size());
+            std::printf("  indices  : %zu (%zu tri%s)\n",
+                        wom.indices.size(), wom.indices.size() / 3,
+                        wom.indices.size() / 3 == 1 ? "" : "s");
+            std::printf("  bounds   : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
+            // Non-destructive companion to --migrate-data-tree. Walks
+            // <srcDir> recursively, counts files per format pair
+            // (proprietary vs open replacement), and reports per-pair
+            // counts plus an overall "migration share" — the fraction
+            // of source files that already have an open sidecar
+            // present.
+            //
+            // Designed to drop into CI dashboards: a 100% share
+            // means every proprietary asset has a deterministic open
+            // counterpart on disk and you can drop the originals.
+            std::string srcDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "info-data-tree: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            // Each pair: proprietary extension + open extension. The
+            // open file is considered a "sidecar" when it sits next
+            // to the proprietary file with the same stem.
+            struct Pair {
+                const char* prop;   // ".m2"
+                const char* open;   // ".wom"
+                int propCount = 0;
+                int sidecarCount = 0;     // .wom next to a .m2
+                int orphanOpenCount = 0;  // .wom with no matching .m2
+            };
+            std::vector<Pair> pairs = {
+                {".m2",  ".wom"},
+                {".wmo", ".wob"},
+                {".blp", ".png"},
+                {".dbc", ".json"},
+            };
+            // First pass: collect filenames by extension. Use a set
+            // of (parent, stem) for the sidecar lookup so the test is
+            // O(log n) per file rather than O(n).
+            std::map<std::string, std::set<std::pair<std::string, std::string>>> byExt;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                byExt[ext].insert({e.path().parent_path().string(),
+                                   e.path().stem().string()});
+            }
+            for (auto& p : pairs) {
+                const auto& propSet = byExt[p.prop];
+                const auto& openSet = byExt[p.open];
+                p.propCount = static_cast<int>(propSet.size());
+                for (const auto& key : openSet) {
+                    if (propSet.count(key)) p.sidecarCount++;
+                    else p.orphanOpenCount++;
+                }
+            }
+            int totalProp = 0, totalSidecar = 0, totalOrphanOpen = 0;
+            for (const auto& p : pairs) {
+                totalProp += p.propCount;
+                totalSidecar += p.sidecarCount;
+                totalOrphanOpen += p.orphanOpenCount;
+            }
+            double overallShare = totalProp > 0
+                                  ? 100.0 * totalSidecar / totalProp
+                                  : 100.0;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["srcDir"] = srcDir;
+                j["totalProprietary"] = totalProp;
+                j["totalSidecars"] = totalSidecar;
+                j["totalOrphanOpen"] = totalOrphanOpen;
+                j["migrationShare"] = overallShare;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& p : pairs) {
+                    double share = p.propCount > 0
+                                   ? 100.0 * p.sidecarCount / p.propCount
+                                   : 100.0;
+                    arr.push_back({{"proprietary", p.prop},
+                                    {"open", p.open},
+                                    {"propCount", p.propCount},
+                                    {"sidecarCount", p.sidecarCount},
+                                    {"orphanOpenCount", p.orphanOpenCount},
+                                    {"share", share}});
+                }
+                j["pairs"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("info-data-tree: %s\n", srcDir.c_str());
+            std::printf("  total proprietary : %d\n", totalProp);
+            std::printf("  total sidecars    : %d (open files matched to a proprietary)\n",
+                        totalSidecar);
+            std::printf("  orphan open files : %d (no matching proprietary — already-stripped)\n",
+                        totalOrphanOpen);
+            std::printf("  migration share   : %.1f%% (sidecars / proprietary)\n",
+                        overallShare);
+            std::printf("\n  pair             prop   open-side   orphan   share\n");
+            for (const auto& p : pairs) {
+                double share = p.propCount > 0
+                               ? 100.0 * p.sidecarCount / p.propCount
+                               : 100.0;
+                char label[32];
+                std::snprintf(label, sizeof(label), "%-4s → %-5s", p.prop, p.open);
+                std::printf("  %-14s  %5d   %9d   %6d   %5.1f%%\n",
+                            label, p.propCount, p.sidecarCount,
+                            p.orphanOpenCount, share);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--strip-data-tree") == 0 && i + 1 < argc) {
+            // Destructive cleanup. Walks <srcDir>, finds every
+            // proprietary file (.m2/.wmo/.blp/.dbc) that already has
+            // a matching open sidecar at the same (parent, stem),
+            // and deletes the proprietary file. Sidecar match uses
+            // case-insensitive extension comparison.
+            //
+            // Honors --dry-run for safe previews. Mirrors the
+            // --strip-zone convention (defaults to actually delete).
+            //
+            // Recommended workflow: --info-data-tree to see the
+            // share, --migrate-data-tree to fill in missing sidecars,
+            // --strip-data-tree --dry-run to confirm the kill list,
+            // then --strip-data-tree to apply.
+            std::string srcDir = argv[++i];
+            bool dryRun = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--dry-run") == 0) {
+                dryRun = true; i++;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "strip-data-tree: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            // Build the (parent, stem) set of every open file first.
+            // The proprietary→open ext map serves both as the strip
+            // target list and as the per-pair routing table.
+            static const std::vector<std::pair<std::string, std::string>>
+                kPairs = {
+                    {".m2",  ".wom"},
+                    {".wmo", ".wob"},
+                    {".blp", ".png"},
+                    {".dbc", ".json"},
+                };
+            std::map<std::string, std::set<std::pair<std::string, std::string>>>
+                openSets;  // open ext -> set of (parent, stem)
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                for (const auto& [_, openExt] : kPairs) {
+                    if (ext == openExt) {
+                        openSets[openExt].insert(
+                            {e.path().parent_path().string(),
+                             e.path().stem().string()});
+                        break;
+                    }
+                }
+            }
+            // Walk again, this time deleting (or previewing) each
+            // proprietary file whose key appears in its pair's open
+            // set.
+            int removed = 0, failed = 0;
+            uint64_t freedBytes = 0;
+            std::map<std::string, int> perExtRemoved;
+            for (const auto& [propExt, openExt] : kPairs) {
+                const auto& openSet = openSets[openExt];
+                if (openSet.empty()) continue;
+                for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    std::transform(ext.begin(), ext.end(), ext.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+                    if (ext != propExt) continue;
+                    std::pair<std::string, std::string> key{
+                        e.path().parent_path().string(),
+                        e.path().stem().string()};
+                    if (!openSet.count(key)) continue;  // no sidecar — keep
+                    uint64_t sz = e.file_size(ec);
+                    if (ec) sz = 0;
+                    if (dryRun) {
+                        std::printf("  would remove: %s (%llu bytes)\n",
+                                    e.path().c_str(),
+                                    static_cast<unsigned long long>(sz));
+                        removed++;
+                        perExtRemoved[propExt]++;
+                        freedBytes += sz;
+                    } else {
+                        if (fs::remove(e.path(), ec)) {
+                            std::printf("  removed: %s (%llu bytes)\n",
+                                        e.path().c_str(),
+                                        static_cast<unsigned long long>(sz));
+                            removed++;
+                            perExtRemoved[propExt]++;
+                            freedBytes += sz;
+                        } else {
+                            std::fprintf(stderr,
+                                "  WARN: failed to remove %s (%s)\n",
+                                e.path().c_str(), ec.message().c_str());
+                            failed++;
+                        }
+                    }
+                }
+            }
+            std::printf("\nstrip-data-tree: %s%s\n",
+                        srcDir.c_str(), dryRun ? " (dry-run)" : "");
+            std::printf("  %s : %d file(s)\n",
+                        dryRun ? "would remove" : "removed     ", removed);
+            std::printf("  freed        : %.1f KB\n", freedBytes / 1024.0);
+            if (!perExtRemoved.empty()) {
+                std::printf("\n  Per-extension:\n");
+                for (const auto& [ext, count] : perExtRemoved) {
+                    std::printf("    %-5s : %d\n", ext.c_str(), count);
+                }
+            }
+            if (failed > 0) {
+                std::printf("\n  FAILED       : %d (see stderr)\n", failed);
+            }
+            if (dryRun && removed > 0) {
+                std::printf("\n  re-run without --dry-run to apply\n");
+            }
+            return failed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--audit-data-tree") == 0 && i + 1 < argc) {
+            // Non-destructive CI gate. Walks <srcDir> and exits 1 if
+            // any proprietary file (.m2/.wmo/.blp/.dbc) lacks a
+            // matching open sidecar at the same (parent, stem). The
+            // pre-strip safety check: don't run --strip-data-tree
+            // until this returns exit 0.
+            //
+            // Lists missing sidecars (capped at 50) so the user can
+            // re-run --migrate-data-tree to fill them in.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "audit-data-tree: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            static const std::vector<std::pair<std::string, std::string>>
+                kPairs = {
+                    {".m2",  ".wom"},
+                    {".wmo", ".wob"},
+                    {".blp", ".png"},
+                    {".dbc", ".json"},
+                };
+            // Build (parent, stem) sets per open ext for fast lookup.
+            std::map<std::string, std::set<std::pair<std::string, std::string>>>
+                openSets;
+            std::map<std::string, std::vector<std::string>> propByExt;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                bool isOpen = false;
+                for (const auto& [propExt, openExt] : kPairs) {
+                    if (ext == openExt) {
+                        openSets[openExt].insert(
+                            {e.path().parent_path().string(),
+                             e.path().stem().string()});
+                        isOpen = true;
+                        break;
+                    }
+                }
+                if (isOpen) continue;
+                for (const auto& [propExt, _] : kPairs) {
+                    if (ext == propExt) {
+                        propByExt[propExt].push_back(e.path().string());
+                        break;
+                    }
+                }
+            }
+            // Check each proprietary file for its sidecar.
+            int totalProp = 0, totalMissing = 0;
+            std::vector<std::string> missing;
+            std::map<std::string, int> missingPerExt;
+            for (const auto& [propExt, openExt] : kPairs) {
+                const auto& openSet = openSets[openExt];
+                for (const auto& fullPath : propByExt[propExt]) {
+                    totalProp++;
+                    fs::path p(fullPath);
+                    std::pair<std::string, std::string> key{
+                        p.parent_path().string(), p.stem().string()};
+                    if (openSet.count(key)) continue;
+                    totalMissing++;
+                    missingPerExt[propExt]++;
+                    missing.push_back(fullPath);
+                }
+            }
+            std::sort(missing.begin(), missing.end());
+            std::printf("audit-data-tree: %s\n", srcDir.c_str());
+            std::printf("  proprietary files : %d\n", totalProp);
+            std::printf("  missing sidecars  : %d\n", totalMissing);
+            if (totalMissing == 0) {
+                if (totalProp > 0) {
+                    std::printf("\n  PASSED — every proprietary file has an open sidecar\n");
+                } else {
+                    std::printf("\n  PASSED — no proprietary files present\n");
+                }
+                return 0;
+            }
+            std::printf("\n  FAILED — re-run --migrate-data-tree to fill the gaps\n");
+            std::printf("\n  Per-extension missing:\n");
+            for (const auto& [ext, count] : missingPerExt) {
+                std::printf("    %-5s : %d\n", ext.c_str(), count);
+            }
+            std::printf("\n  Missing sidecars (sorted):\n");
+            size_t shown = 0;
+            for (const auto& m : missing) {
+                if (shown >= 50) {
+                    std::printf("    ... and %zu more\n", missing.size() - shown);
+                    break;
+                }
+                std::printf("    - %s\n", m.c_str());
+                shown++;
+            }
+            return 1;
         } else if (std::strcmp(argv[i], "--repair-zone") == 0 && i + 1 < argc) {
             // Auto-fix the common manifest-vs-disk drift issues that
             // accumulate when a zone is hand-edited or partially copied:
@@ -12108,6 +14568,54 @@ int main(int argc, char* argv[]) {
                 std::printf("  re-run without --dry-run to apply\n");
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--repair-project") == 0 && i + 1 < argc) {
+            // Project-wide wrapper around --repair-zone. Spawns the
+            // binary per-zone so each zone's full repair report
+            // streams through, then aggregates a final tally. Honors
+            // --dry-run for safe previews.
+            std::string projectDir = argv[++i];
+            bool dryRun = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--dry-run") == 0) {
+                dryRun = true; i++;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "repair-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            std::string self = argv[0];
+            int totalFailed = 0;
+            std::printf("repair-project: %s%s\n",
+                        projectDir.c_str(), dryRun ? " (dry-run)" : "");
+            std::printf("  zones : %zu\n", zones.size());
+            for (const auto& zoneDir : zones) {
+                std::printf("\n--- %s ---\n",
+                            fs::path(zoneDir).filename().string().c_str());
+                // Flush so the section marker lands before the spawned
+                // child's stdout — std::system inherits FDs but each
+                // process has its own buffer.
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --repair-zone \"" +
+                                  zoneDir + "\"" + (dryRun ? " --dry-run" : "");
+                int rc = std::system(cmd.c_str());
+                if (rc != 0) totalFailed++;
+            }
+            std::printf("\n--- summary ---\n");
+            std::printf("  zones processed : %zu\n", zones.size());
+            std::printf("  failures        : %d\n", totalFailed);
+            if (dryRun) {
+                std::printf("  re-run without --dry-run to apply changes\n");
+            }
+            return totalFailed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--gen-makefile") == 0 && i + 1 < argc) {
             // Generate a Makefile that rebuilds every derived output for
             // a zone. With this in place, designers can `make` to refresh
@@ -12748,6 +15256,263 @@ int main(int argc, char* argv[]) {
             emit("Direct WMO placements", directWMO);
             emit("WOB doodad M2 refs",    doodadM2);
             return 0;
+        } else if (std::strcmp(argv[i], "--list-project-orphans") == 0 && i + 1 < argc) {
+            // Inverse of --list-zone-deps. Walks every zone in
+            // <projectDir>, collects the set of .wom/.wob files
+            // sitting on disk and the set of paths actually
+            // referenced by objects.json placements + WOB doodad
+            // lists. Files in the first set but not the second are
+            // orphans — candidates for removal before --pack-wcp so
+            // the archive doesn't carry dead weight.
+            //
+            // Comparison is by basename (extension stripped) since
+            // the reference paths sometimes include the extension and
+            // sometimes don't.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "list-project-orphans: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Project-wide reference set. Normalize by stripping
+            // extension and any leading "./".
+            auto normalize = [](std::string p) {
+                while (p.size() >= 2 && p[0] == '.' && p[1] == '/') p.erase(0, 2);
+                std::string ext = fs::path(p).extension().string();
+                if (ext == ".wom" || ext == ".wob" || ext == ".m2" || ext == ".wmo") {
+                    p = p.substr(0, p.size() - ext.size());
+                }
+                return p;
+            };
+            std::set<std::string> referencedBases;  // normalized basenames
+            for (const auto& zoneDir : zones) {
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(zoneDir + "/objects.json")) {
+                    for (const auto& o : op.getObjects()) {
+                        if (o.path.empty()) continue;
+                        // Reference can be relative to zone or just a
+                        // bare model name; record both forms for the
+                        // membership test.
+                        std::string norm = normalize(o.path);
+                        referencedBases.insert(norm);
+                        // Also try the leaf basename so unqualified
+                        // refs match.
+                        referencedBases.insert(fs::path(norm).filename().string());
+                    }
+                }
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wob") continue;
+                    std::string base = e.path().string();
+                    if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                    auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+                    for (const auto& d : bld.doodads) {
+                        if (d.modelPath.empty()) continue;
+                        std::string norm = normalize(d.modelPath);
+                        referencedBases.insert(norm);
+                        referencedBases.insert(fs::path(norm).filename().string());
+                    }
+                }
+            }
+            // Now walk every zone again and flag orphan .wom/.wob files.
+            struct Orphan { std::string zone, path; uint64_t bytes; };
+            std::vector<Orphan> orphans;
+            uint64_t totalOrphanBytes = 0;
+            for (const auto& zoneDir : zones) {
+                std::string zoneName = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    if (ext != ".wom" && ext != ".wob") continue;
+                    std::string rel = fs::relative(e.path(), zoneDir, ec).string();
+                    if (ec) rel = e.path().filename().string();
+                    std::string normRel = rel.substr(0, rel.size() - ext.size());
+                    std::string leaf = e.path().stem().string();
+                    if (referencedBases.count(normRel) ||
+                        referencedBases.count(leaf)) {
+                        continue;  // referenced, not orphan
+                    }
+                    uint64_t sz = e.file_size(ec);
+                    if (ec) sz = 0;
+                    orphans.push_back({zoneName, rel, sz});
+                    totalOrphanBytes += sz;
+                }
+            }
+            std::sort(orphans.begin(), orphans.end(),
+                      [](const Orphan& a, const Orphan& b) {
+                          if (a.zone != b.zone) return a.zone < b.zone;
+                          return a.path < b.path;
+                      });
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["referencedCount"] = referencedBases.size();
+                j["orphanCount"] = orphans.size();
+                j["orphanBytes"] = totalOrphanBytes;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& o : orphans) {
+                    arr.push_back({{"zone", o.zone},
+                                    {"path", o.path},
+                                    {"bytes", o.bytes}});
+                }
+                j["orphans"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project orphans: %s\n", projectDir.c_str());
+            std::printf("  zones scanned    : %zu\n", zones.size());
+            std::printf("  refs collected   : %zu (normalized basenames)\n",
+                        referencedBases.size());
+            std::printf("  orphan .wom/.wob : %zu file(s), %.1f KB\n",
+                        orphans.size(), totalOrphanBytes / 1024.0);
+            if (orphans.empty()) {
+                std::printf("\n  (no orphans — every model file is referenced)\n");
+                return 0;
+            }
+            std::printf("\n  zone                  bytes      path\n");
+            for (const auto& o : orphans) {
+                std::printf("  %-20s  %8llu   %s\n",
+                            o.zone.substr(0, 20).c_str(),
+                            static_cast<unsigned long long>(o.bytes),
+                            o.path.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--remove-project-orphans") == 0 && i + 1 < argc) {
+            // Destructive companion to --list-project-orphans. Reuses
+            // the same reference-collection + orphan-detection logic
+            // and then deletes the resulting files. --dry-run shows
+            // what would be removed without touching anything.
+            std::string projectDir = argv[++i];
+            bool dryRun = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--dry-run") == 0) {
+                dryRun = true; i++;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "remove-project-orphans: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Same normalize + reference collection as --list-project-orphans.
+            // Keep both functions in sync if the matching rules evolve.
+            auto normalize = [](std::string p) {
+                while (p.size() >= 2 && p[0] == '.' && p[1] == '/') p.erase(0, 2);
+                std::string ext = fs::path(p).extension().string();
+                if (ext == ".wom" || ext == ".wob" || ext == ".m2" || ext == ".wmo") {
+                    p = p.substr(0, p.size() - ext.size());
+                }
+                return p;
+            };
+            std::set<std::string> referencedBases;
+            for (const auto& zoneDir : zones) {
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(zoneDir + "/objects.json")) {
+                    for (const auto& o : op.getObjects()) {
+                        if (o.path.empty()) continue;
+                        std::string norm = normalize(o.path);
+                        referencedBases.insert(norm);
+                        referencedBases.insert(fs::path(norm).filename().string());
+                    }
+                }
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wob") continue;
+                    std::string base = e.path().string();
+                    if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                    auto bld = wowee::pipeline::WoweeBuildingLoader::load(base);
+                    for (const auto& d : bld.doodads) {
+                        if (d.modelPath.empty()) continue;
+                        std::string norm = normalize(d.modelPath);
+                        referencedBases.insert(norm);
+                        referencedBases.insert(fs::path(norm).filename().string());
+                    }
+                }
+            }
+            int removed = 0, failed = 0;
+            uint64_t freedBytes = 0;
+            for (const auto& zoneDir : zones) {
+                std::string zoneName = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                std::vector<fs::path> toRemove;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    if (ext != ".wom" && ext != ".wob") continue;
+                    std::string rel = fs::relative(e.path(), zoneDir, ec).string();
+                    if (ec) rel = e.path().filename().string();
+                    std::string normRel = rel.substr(0, rel.size() - ext.size());
+                    std::string leaf = e.path().stem().string();
+                    if (referencedBases.count(normRel) ||
+                        referencedBases.count(leaf)) continue;
+                    toRemove.push_back(e.path());
+                }
+                // Materialize the deletion list before removing so we
+                // don't mutate the directory while iterating.
+                for (const auto& p : toRemove) {
+                    uint64_t sz = fs::file_size(p, ec);
+                    if (ec) sz = 0;
+                    std::string rel = fs::relative(p, zoneDir, ec).string();
+                    if (ec) rel = p.filename().string();
+                    if (dryRun) {
+                        std::printf("  would remove: %s/%s (%llu bytes)\n",
+                                    zoneName.c_str(), rel.c_str(),
+                                    static_cast<unsigned long long>(sz));
+                        removed++;
+                        freedBytes += sz;
+                    } else {
+                        if (fs::remove(p, ec)) {
+                            std::printf("  removed: %s/%s (%llu bytes)\n",
+                                        zoneName.c_str(), rel.c_str(),
+                                        static_cast<unsigned long long>(sz));
+                            removed++;
+                            freedBytes += sz;
+                        } else {
+                            std::fprintf(stderr,
+                                "  WARN: failed to remove %s (%s)\n",
+                                p.c_str(), ec.message().c_str());
+                            failed++;
+                        }
+                    }
+                }
+            }
+            std::printf("\nremove-project-orphans: %s%s\n",
+                        projectDir.c_str(), dryRun ? " (dry-run)" : "");
+            std::printf("  zones    : %zu\n", zones.size());
+            std::printf("  refs     : %zu (normalized basenames)\n",
+                        referencedBases.size());
+            std::printf("  %s : %d file(s)\n",
+                        dryRun ? "would remove" : "removed     ", removed);
+            std::printf("  freed    : %.1f KB\n", freedBytes / 1024.0);
+            if (failed > 0) {
+                std::printf("  FAILED   : %d (see stderr)\n", failed);
+            }
+            if (dryRun && removed > 0) {
+                std::printf("  re-run without --dry-run to apply\n");
+            }
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--export-zone-deps-md") == 0 && i + 1 < argc) {
             // Markdown counterpart to --list-zone-deps. Writes a sortable
             // GitHub-rendered table of every external model the zone
@@ -13371,6 +16136,141 @@ int main(int argc, char* argv[]) {
             }
             std::printf("\n  %d zone(s) have content warnings\n",
                         projectFailedZones);
+            return 1;
+        } else if (std::strcmp(argv[i], "--check-project-refs") == 0 && i + 1 < argc) {
+            // Project-level cross-reference checker. Walks every zone
+            // and runs the same model-path / NPC-id checks as
+            // --check-zone-refs. Aggregates per zone with file-level
+            // breakdown. Exit 1 if any zone has dangling refs.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "check-project-refs: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Same model-resolve logic as --check-zone-refs, applied
+            // per zone with the appropriate root list.
+            auto stripExt = [](const std::string& p, const char* ext) {
+                size_t n = std::strlen(ext);
+                if (p.size() >= n) {
+                    std::string tail = p.substr(p.size() - n);
+                    std::string lower = tail;
+                    for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+                    if (lower == ext) return p.substr(0, p.size() - n);
+                }
+                return p;
+            };
+            struct ZoneRow { std::string name; int objCheck, objMiss, qCheck, qMiss; };
+            std::vector<ZoneRow> rows;
+            int projectFailedZones = 0;
+            for (const auto& zoneDir : zones) {
+                ZoneRow row{fs::path(zoneDir).filename().string(), 0, 0, 0, 0};
+                auto modelExists = [&](const std::string& path, bool isWMO) {
+                    std::string base;
+                    std::vector<std::string> exts;
+                    if (isWMO) {
+                        base = stripExt(path, ".wmo");
+                        exts = {".wob", ".wmo"};
+                    } else {
+                        base = stripExt(path, ".m2");
+                        exts = {".wom", ".m2"};
+                    }
+                    std::vector<std::string> roots = {
+                        "", zoneDir + "/", "output/", "custom_zones/", "Data/"
+                    };
+                    for (const auto& root : roots) {
+                        for (const auto& ext : exts) {
+                            if (fs::exists(root + base + ext)) return true;
+                            std::string lower = base + ext;
+                            for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+                            if (fs::exists(root + lower)) return true;
+                        }
+                    }
+                    return false;
+                };
+                wowee::editor::ObjectPlacer op;
+                if (op.loadFromFile(zoneDir + "/objects.json")) {
+                    for (const auto& o : op.getObjects()) {
+                        row.objCheck++;
+                        bool isWMO = (o.type == wowee::editor::PlaceableType::WMO);
+                        if (!modelExists(o.path, isWMO)) row.objMiss++;
+                    }
+                }
+                wowee::editor::NpcSpawner sp;
+                wowee::editor::QuestEditor qe;
+                bool hasCreatures = sp.loadFromFile(zoneDir + "/creatures.json");
+                std::unordered_set<uint32_t> creatureIds;
+                if (hasCreatures) {
+                    for (const auto& s : sp.getSpawns()) creatureIds.insert(s.id);
+                }
+                if (qe.loadFromFile(zoneDir + "/quests.json") && hasCreatures) {
+                    for (const auto& q : qe.getQuests()) {
+                        row.qCheck++;
+                        bool localGiver = (q.questGiverNpcId != 0 &&
+                                            q.questGiverNpcId < 100000 &&
+                                            creatureIds.count(q.questGiverNpcId) == 0);
+                        bool localTurn  = (q.turnInNpcId != 0 &&
+                                            q.turnInNpcId < 100000 &&
+                                            q.turnInNpcId != q.questGiverNpcId &&
+                                            creatureIds.count(q.turnInNpcId) == 0);
+                        if (localGiver) row.qMiss++;
+                        if (localTurn) row.qMiss++;
+                    }
+                }
+                if (row.objMiss + row.qMiss > 0) projectFailedZones++;
+                rows.push_back(row);
+            }
+            int allPassed = (projectFailedZones == 0);
+            int totalMiss = 0;
+            for (const auto& r : rows) totalMiss += r.objMiss + r.qMiss;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["projectDir"] = projectDir;
+                j["totalZones"] = zones.size();
+                j["failedZones"] = projectFailedZones;
+                j["totalMissing"] = totalMiss;
+                j["passed"] = bool(allPassed);
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"zone", r.name},
+                                    {"objectsChecked", r.objCheck},
+                                    {"objectsMissing", r.objMiss},
+                                    {"questsChecked", r.qCheck},
+                                    {"questsMissing", r.qMiss}});
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return allPassed ? 0 : 1;
+            }
+            std::printf("check-project-refs: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu (%d failed)\n",
+                        zones.size(), projectFailedZones);
+            std::printf("  total missing: %d\n", totalMiss);
+            std::printf("\n  zone                       obj_chk obj_miss  q_chk  q_miss  status\n");
+            for (const auto& r : rows) {
+                int rowMiss = r.objMiss + r.qMiss;
+                std::printf("  %-26s   %5d    %5d  %5d   %5d  %s\n",
+                            r.name.substr(0, 26).c_str(),
+                            r.objCheck, r.objMiss, r.qCheck, r.qMiss,
+                            rowMiss == 0 ? "PASS" : "FAIL");
+            }
+            if (allPassed) {
+                std::printf("\n  ALL ZONES PASSED\n");
+                return 0;
+            }
+            std::printf("\n  %d zone(s) have dangling refs\n", projectFailedZones);
             return 1;
         } else if (std::strcmp(argv[i], "--for-each-zone") == 0 && i + 1 < argc) {
             // Batch runner: enumerates zones in <projectDir> and runs the
@@ -14255,6 +17155,75 @@ int main(int argc, char* argv[]) {
                 std::printf("  FAILED    : %d (see stderr)\n", failed);
             }
             return failed == 0 ? 0 : 1;
+        }
+        if (std::strcmp(argv[i], "--migrate-project") == 0 && i + 1 < argc) {
+            // Project-level wrapper around --migrate-zone. Walks every
+            // zone in <projectDir> and upgrades legacy WOMs in-place.
+            // Idempotent — already-migrated files become no-ops, safe to
+            // run repeatedly.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "migrate-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            int totalScanned = 0, totalUpgraded = 0, totalAlreadyV3 = 0, totalFailed = 0;
+            // Per-zone breakdown for the summary table.
+            struct ZRow { std::string name; int scanned, upgraded, alreadyV3, failed; };
+            std::vector<ZRow> rows;
+            for (const auto& zoneDir : zones) {
+                ZRow r{fs::path(zoneDir).filename().string(), 0, 0, 0, 0};
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wom") continue;
+                    r.scanned++;
+                    std::string base = e.path().string();
+                    if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                    if (!wom.isValid()) { r.failed++; continue; }
+                    if (!wom.batches.empty()) { r.alreadyV3++; continue; }
+                    wowee::pipeline::WoweeModel::Batch b;
+                    b.indexStart = 0;
+                    b.indexCount = static_cast<uint32_t>(wom.indices.size());
+                    b.textureIndex = 0;
+                    b.blendMode = 0;
+                    b.flags = 0;
+                    wom.batches.push_back(b);
+                    if (wowee::pipeline::WoweeModelLoader::save(wom, base)) {
+                        r.upgraded++;
+                    } else {
+                        r.failed++;
+                    }
+                }
+                totalScanned += r.scanned;
+                totalUpgraded += r.upgraded;
+                totalAlreadyV3 += r.alreadyV3;
+                totalFailed += r.failed;
+                rows.push_back(r);
+            }
+            std::printf("migrate-project: %s\n", projectDir.c_str());
+            std::printf("  zones      : %zu\n", zones.size());
+            std::printf("  totals     : %d scanned, %d upgraded, %d already-v3, %d failed\n",
+                        totalScanned, totalUpgraded, totalAlreadyV3, totalFailed);
+            if (!rows.empty()) {
+                std::printf("\n  zone                       scan  upgrade  v3  failed\n");
+                for (const auto& r : rows) {
+                    std::printf("  %-26s  %4d   %5d   %3d  %5d\n",
+                                r.name.substr(0, 26).c_str(),
+                                r.scanned, r.upgraded, r.alreadyV3, r.failed);
+                }
+            }
+            return totalFailed == 0 ? 0 : 1;
         }
         if (std::strcmp(argv[i], "--migrate-jsondbc") == 0 && i + 1 < argc) {
             // Auto-fix common schema problems in JSON DBC sidecars so they

@@ -1576,6 +1576,15 @@ void EditorApp::flyToSelected() {
         have = true;
     }
     if (!have) return;
+    // Reject NaN target — would feed NaN into camera.setPosition (which
+    // now refuses it but the user would get no camera movement and no
+    // error message). Show the toast instead so the user knows the
+    // selection is corrupt.
+    if (!std::isfinite(target.x) || !std::isfinite(target.y) ||
+        !std::isfinite(target.z)) {
+        showToast("Selection has non-finite position; can't fly to it");
+        return;
+    }
 
     // Place camera back-and-up from the target along the current view direction
     // and aim it at the target. Distance scales with camera speed so it works
