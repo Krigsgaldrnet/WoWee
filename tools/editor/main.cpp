@@ -530,6 +530,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
+    std::printf("  --list-items <zoneDir> [--json]\n");
+    std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -933,6 +935,7 @@ int main(int argc, char* argv[]) {
         "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
+        "--list-items",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--clone-object",
@@ -12583,6 +12586,65 @@ int main(int argc, char* argv[]) {
                         name.c_str(), id,
                         qualityNames[quality], itemLevel,
                         path.c_str(), doc["items"].size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-items") == 0 && i + 1 < argc) {
+            // Inspect <zoneDir>/items.json. Pretty-prints id / quality
+            // / item level / display id / name as a table; also
+            // supports --json for machine-readable output.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string path = zoneDir + "/items.json";
+            if (!fs::exists(path)) {
+                std::fprintf(stderr,
+                    "list-items: %s has no items.json\n", zoneDir.c_str());
+                return 1;
+            }
+            nlohmann::json doc;
+            try {
+                std::ifstream in(path);
+                in >> doc;
+            } catch (...) {
+                std::fprintf(stderr,
+                    "list-items: %s is not valid JSON\n", path.c_str());
+                return 1;
+            }
+            if (!doc.contains("items") || !doc["items"].is_array()) {
+                std::fprintf(stderr,
+                    "list-items: %s has no 'items' array\n", path.c_str());
+                return 1;
+            }
+            const auto& items = doc["items"];
+            if (jsonOut) {
+                std::printf("%s\n", items.dump(2).c_str());
+                return 0;
+            }
+            static const char* qualityNames[] = {
+                "poor", "common", "uncommon", "rare", "epic",
+                "legendary", "artifact"
+            };
+            std::printf("Zone items: %s\n", path.c_str());
+            std::printf("  count : %zu\n\n", items.size());
+            if (items.empty()) {
+                std::printf("  *no items*\n");
+                return 0;
+            }
+            std::printf("  idx   id     ilvl   stack   quality      displayId   name\n");
+            for (size_t k = 0; k < items.size(); ++k) {
+                const auto& it = items[k];
+                uint32_t id = it.value("id", 0u);
+                uint32_t quality = it.value("quality", 1u);
+                uint32_t ilvl = it.value("itemLevel", 1u);
+                uint32_t displayId = it.value("displayId", 0u);
+                uint32_t stack = it.value("stackable", 1u);
+                std::string name = it.value("name", std::string());
+                if (quality > 6) quality = 0;
+                std::printf("  %3zu   %5u   %4u   %5u   %-10s   %9u   %s\n",
+                            k, id, ilvl, stack,
+                            qualityNames[quality], displayId, name.c_str());
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--scaffold-zone") == 0 && i + 1 < argc) {
             // Generate a minimal valid empty zone — useful for kickstarting
