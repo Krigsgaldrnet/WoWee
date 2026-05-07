@@ -722,6 +722,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         List M2 bones with parent tree, key-bone IDs, pivot offsets\n");
     std::printf("  --export-bones-dot <wom-base> [out.dot]\n");
     std::printf("                         Render WOM bone hierarchy as Graphviz DOT (pipe to `dot -Tpng -o bones.png`)\n");
+    std::printf("  --list-project-textures <projectDir> [--json]\n");
+    std::printf("                         Aggregate texture refs across every WOM in a project (deduped, with zone breakdown)\n");
     std::printf("  --list-zone-textures <zoneDir> [--json]\n");
     std::printf("                         Aggregate texture refs across all WOM models in a zone (deduped)\n");
     std::printf("  --info-zone-models-total <zoneDir> [--json]\n");
@@ -846,6 +848,7 @@ int main(int argc, char* argv[]) {
         "--data", "--info", "--info-batches", "--info-textures", "--info-doodads",
         "--info-attachments", "--info-particles", "--info-sequences",
         "--info-bones", "--export-bones-dot", "--list-zone-textures",
+        "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
@@ -1669,6 +1672,107 @@ int main(int argc, char* argv[]) {
             }
             std::printf("\n  refs  path\n");
             for (const auto& [path, count] : texHist) {
+                std::printf("  %4d  %s\n", count, path.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-project-textures") == 0 && i + 1 < argc) {
+            // Project-wide companion to --list-zone-textures. Walks every
+            // zone in <projectDir>, collects unique texture refs across
+            // all WOMs, and reports a per-zone WOM/texture count plus
+            // the global deduped texture set with usage counts. Useful
+            // for "how many textures do I need to ship across the whole
+            // project" — texture sharing across zones often makes the
+            // global set much smaller than the per-zone sum.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "list-project-textures: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow {
+                std::string name;
+                int womCount = 0;
+                int uniqueTextures = 0;
+            };
+            std::vector<ZRow> rows;
+            // path -> count of WOMs that ref it (project-wide)
+            std::map<std::string, int> globalHist;
+            int totalWoms = 0;
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                std::unordered_set<std::string> zoneSet;
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wom") continue;
+                    r.womCount++;
+                    std::string base = e.path().string();
+                    if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                    std::unordered_set<std::string> seenInThisWom;
+                    for (const auto& tp : wom.texturePaths) {
+                        if (tp.empty()) continue;
+                        if (seenInThisWom.insert(tp).second) {
+                            globalHist[tp]++;
+                            zoneSet.insert(tp);
+                        }
+                    }
+                }
+                r.uniqueTextures = static_cast<int>(zoneSet.size());
+                totalWoms += r.womCount;
+                rows.push_back(r);
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["totalWoms"] = totalWoms;
+                j["uniqueTextures"] = globalHist.size();
+                nlohmann::json zarr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    zarr.push_back({{"name", r.name},
+                                    {"womCount", r.womCount},
+                                    {"uniqueTextures", r.uniqueTextures}});
+                }
+                j["zones"] = zarr;
+                nlohmann::json tarr = nlohmann::json::array();
+                for (const auto& [p, c] : globalHist) {
+                    tarr.push_back({{"path", p}, {"refCount", c}});
+                }
+                j["textures"] = tarr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project textures: %s\n", projectDir.c_str());
+            std::printf("  zones           : %zu\n", zones.size());
+            std::printf("  WOMs scanned    : %d\n", totalWoms);
+            std::printf("  unique textures : %zu (deduped project-wide)\n",
+                        globalHist.size());
+            std::printf("\n  zone                       WOMs   uniq-tex\n");
+            for (const auto& r : rows) {
+                std::printf("  %-26s  %4d   %7d\n",
+                            r.name.substr(0, 26).c_str(),
+                            r.womCount, r.uniqueTextures);
+            }
+            if (globalHist.empty()) {
+                std::printf("\n  *no texture references*\n");
+                return 0;
+            }
+            std::printf("\n  refs  texture path (project-global)\n");
+            for (const auto& [path, count] : globalHist) {
                 std::printf("  %4d  %s\n", count, path.c_str());
             }
             return 0;
