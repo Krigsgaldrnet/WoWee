@@ -186,6 +186,9 @@ private:
     float waterHeight_ = 100.0f;
     uint16_t waterType_ = 0;
     std::string dataPath_;
+public:
+    const std::string& getDataPath() const { return dataPath_; }
+private:
 
     std::string loadedMap_;
     int loadedTileX_ = -1;
