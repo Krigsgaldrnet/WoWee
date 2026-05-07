@@ -718,6 +718,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Aggregate texture refs across all WOM models in a zone (deduped)\n");
     std::printf("  --info-zone-models-total <zoneDir> [--json]\n");
     std::printf("                         Aggregate WOM/WOB stats across a zone (verts, tris, bones, batches, doodads)\n");
+    std::printf("  --info-project-models-total <projectDir> [--json]\n");
+    std::printf("                         Aggregate WOM/WOB stats across an entire project (per-zone breakdown + totals)\n");
     std::printf("  --info-wob <wob-base> [--json]\n");
     std::printf("                         Print WOB building metadata (groups, portals, doodads) and exit\n");
     std::printf("  --info-woc <woc-path> [--json]\n");
@@ -836,7 +838,7 @@ int main(int argc, char* argv[]) {
         "--data", "--info", "--info-batches", "--info-textures", "--info-doodads",
         "--info-attachments", "--info-particles", "--info-sequences",
         "--info-bones", "--export-bones-dot", "--list-zone-textures",
-        "--info-zone-models-total",
+        "--info-zone-models-total", "--info-project-models-total",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--info-extract-tree", "--info-extract-budget",
@@ -1744,6 +1746,138 @@ int main(int argc, char* argv[]) {
             std::printf("\n  Combined  :\n");
             std::printf("    vertices  : %llu\n", static_cast<unsigned long long>(womVerts + wobVerts));
             std::printf("    triangles : %llu\n", static_cast<unsigned long long>((womIndices + wobIndices) / 3));
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-models-total") == 0 && i + 1 < argc) {
+            // Multi-zone aggregate. Walks every zone in <projectDir>,
+            // sums the same WOM/WOB metrics --info-zone-models-total
+            // emits, and prints a per-zone breakdown table followed
+            // by project-wide totals. Useful for capacity planning
+            // across an entire content project.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-models-total: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow {
+                std::string name;
+                int womCount = 0, wobCount = 0;
+                uint64_t womVerts = 0, womIndices = 0, womBones = 0;
+                uint64_t womAnims = 0, womBatches = 0;
+                uint64_t wobGroups = 0, wobVerts = 0, wobIndices = 0;
+                uint64_t wobDoodads = 0, wobPortals = 0;
+            };
+            std::vector<ZRow> rows;
+            ZRow tot;
+            tot.name = "TOTAL";
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    std::string ext = e.path().extension().string();
+                    std::string base = e.path().string();
+                    if (base.size() > ext.size())
+                        base = base.substr(0, base.size() - ext.size());
+                    if (ext == ".wom") {
+                        r.womCount++;
+                        auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                        r.womVerts += wom.vertices.size();
+                        r.womIndices += wom.indices.size();
+                        r.womBones += wom.bones.size();
+                        r.womAnims += wom.animations.size();
+                        r.womBatches += wom.batches.size();
+                    } else if (ext == ".wob") {
+                        r.wobCount++;
+                        auto wob = wowee::pipeline::WoweeBuildingLoader::load(base);
+                        r.wobGroups += wob.groups.size();
+                        for (const auto& g : wob.groups) {
+                            r.wobVerts += g.vertices.size();
+                            r.wobIndices += g.indices.size();
+                        }
+                        r.wobDoodads += wob.doodads.size();
+                        r.wobPortals += wob.portals.size();
+                    }
+                }
+                tot.womCount += r.womCount;
+                tot.wobCount += r.wobCount;
+                tot.womVerts += r.womVerts;
+                tot.womIndices += r.womIndices;
+                tot.womBones += r.womBones;
+                tot.womAnims += r.womAnims;
+                tot.womBatches += r.womBatches;
+                tot.wobGroups += r.wobGroups;
+                tot.wobVerts += r.wobVerts;
+                tot.wobIndices += r.wobIndices;
+                tot.wobDoodads += r.wobDoodads;
+                tot.wobPortals += r.wobPortals;
+                rows.push_back(r);
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zones"] = nlohmann::json::array();
+                auto rowJson = [](const ZRow& r) {
+                    nlohmann::json z;
+                    z["name"] = r.name;
+                    z["wom"] = {{"count", r.womCount},
+                                 {"vertices", r.womVerts},
+                                 {"indices", r.womIndices},
+                                 {"triangles", r.womIndices / 3},
+                                 {"bones", r.womBones},
+                                 {"animations", r.womAnims},
+                                 {"batches", r.womBatches}};
+                    z["wob"] = {{"count", r.wobCount},
+                                 {"groups", r.wobGroups},
+                                 {"vertices", r.wobVerts},
+                                 {"indices", r.wobIndices},
+                                 {"triangles", r.wobIndices / 3},
+                                 {"doodads", r.wobDoodads},
+                                 {"portals", r.wobPortals}};
+                    return z;
+                };
+                for (const auto& r : rows) j["zones"].push_back(rowJson(r));
+                j["total"] = rowJson(tot);
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project models total: %s\n", projectDir.c_str());
+            std::printf("  zones : %zu\n\n", zones.size());
+            std::printf("  zone                  WOMs  WOMtri  bones  WOBs  WOBtri  doodads\n");
+            for (const auto& r : rows) {
+                std::printf("  %-20s %5d %7llu %6llu %5d %7llu %8llu\n",
+                            r.name.substr(0, 20).c_str(),
+                            r.womCount,
+                            static_cast<unsigned long long>(r.womIndices / 3),
+                            static_cast<unsigned long long>(r.womBones),
+                            r.wobCount,
+                            static_cast<unsigned long long>(r.wobIndices / 3),
+                            static_cast<unsigned long long>(r.wobDoodads));
+            }
+            std::printf("  %-20s %5d %7llu %6llu %5d %7llu %8llu\n",
+                        tot.name.c_str(),
+                        tot.womCount,
+                        static_cast<unsigned long long>(tot.womIndices / 3),
+                        static_cast<unsigned long long>(tot.womBones),
+                        tot.wobCount,
+                        static_cast<unsigned long long>(tot.wobIndices / 3),
+                        static_cast<unsigned long long>(tot.wobDoodads));
+            std::printf("\n  Combined verts/tris (WOM+WOB): %llu / %llu\n",
+                        static_cast<unsigned long long>(tot.womVerts + tot.wobVerts),
+                        static_cast<unsigned long long>((tot.womIndices + tot.wobIndices) / 3));
             return 0;
         } else if (std::strcmp(argv[i], "--info-wob") == 0 && i + 1 < argc) {
             std::string base = argv[++i];
