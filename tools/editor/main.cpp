@@ -674,6 +674,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Tree view of every zone in a project with quick counts (no --json)\n");
     std::printf("  --info-project-bytes <projectDir> [--json]\n");
     std::printf("                         Per-zone byte rollup with proprietary-vs-open category split (size audit)\n");
+    std::printf("  --validate-project-open-only <projectDir>\n");
+    std::printf("                         Exit 1 if any proprietary Blizzard assets (.m2/.wmo/.blp/.dbc) remain — release gate\n");
     std::printf("  --info-zone-bytes <zoneDir> [--json]\n");
     std::printf("                         Per-file size breakdown grouped by category, sorted largest-first\n");
     std::printf("  --info-zone-extents <zoneDir> [--json]\n");
@@ -861,6 +863,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-project",
+        "--validate-project-open-only",
         "--bench-validate-project", "--bench-bake-project",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
@@ -7251,6 +7254,63 @@ int main(int argc, char* argv[]) {
                 return 0;
             }
             std::printf("\n  %d zone(s) failed validation\n", projectFailedZones);
+            return 1;
+        } else if (std::strcmp(argv[i], "--validate-project-open-only") == 0 && i + 1 < argc) {
+            // Release gate. Walks every file in <projectDir> and exits
+            // 1 if any proprietary Blizzard asset is present (.m2, .skin,
+            // .wmo, .blp, .dbc). Designed for CI to enforce a
+            // "no-proprietary-assets" release condition once a project
+            // has fully migrated to the open WOM/WOB/PNG/JSON formats.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "validate-project-open-only: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            // Standard set of proprietary extensions. Mirrors the
+            // "(proprietary)" categories used by --info-project-bytes.
+            static const std::set<std::string> propExt = {
+                ".m2", ".skin", ".wmo", ".blp", ".dbc",
+            };
+            std::map<std::string, int> byExt;
+            std::vector<std::string> hits;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(projectDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!propExt.count(ext)) continue;
+                byExt[ext]++;
+                std::string rel = fs::relative(e.path(), projectDir, ec).string();
+                if (ec) rel = e.path().string();
+                hits.push_back(rel);
+            }
+            std::sort(hits.begin(), hits.end());
+            std::printf("validate-project-open-only: %s\n", projectDir.c_str());
+            if (hits.empty()) {
+                std::printf("  PASSED — no proprietary Blizzard assets present\n");
+                return 0;
+            }
+            std::printf("  FAILED — %zu proprietary file(s) remain\n", hits.size());
+            std::printf("\n  Per-extension:\n");
+            for (const auto& [ext, count] : byExt) {
+                std::printf("    %-6s : %d\n", ext.c_str(), count);
+            }
+            std::printf("\n  Files (sorted):\n");
+            // Cap the file list at 50 entries so a wholly unmigrated
+            // project doesn't fill the user's terminal.
+            size_t shown = 0;
+            for (const auto& h : hits) {
+                if (shown >= 50) {
+                    std::printf("    ... and %zu more\n", hits.size() - shown);
+                    break;
+                }
+                std::printf("    - %s\n", h.c_str());
+                shown++;
+            }
             return 1;
         } else if (std::strcmp(argv[i], "--bench-validate-project") == 0 && i + 1 < argc) {
             // Time --validate-project per zone. Reports avg/min/max
