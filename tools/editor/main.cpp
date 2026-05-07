@@ -575,6 +575,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Generate random items.json entries (seeded; quality cap defaults to epic=4)\n");
     std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
     std::printf("                         End-to-end: scaffold-zone + random-populate-zone + random-populate-items\n");
+    std::printf("  --gen-random-project <count> [--prefix N] [--seed N] [--creatures N] [--objects N] [--items N]\n");
+    std::printf("                         Generate <count> random zones at once (names like Zone1, Zone2...; tile coords step)\n");
     std::printf("  --info-zone-audio <zoneDir> [--json]\n");
     std::printf("                         Print zone audio config (music + ambience tracks, volumes)\n");
     std::printf("  --info-project-audio <projectDir> [--json]\n");
@@ -1041,7 +1043,7 @@ int main(int argc, char* argv[]) {
         "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
-        "--gen-random-zone",
+        "--gen-random-zone", "--gen-random-project",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13534,6 +13536,78 @@ int main(int argc, char* argv[]) {
             std::printf("  objects   : %d\n", objects);
             std::printf("  items     : %d\n", items);
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-random-project") == 0 && i + 1 < argc) {
+            // Project-wide companion: spawn N random zones in one
+            // pass. Names default to "Zone1, Zone2..."; tile
+            // coordinates step from (32, 32) outward in a simple
+            // raster so they don't overlap. Each zone gets a unique
+            // sub-seed so its random content differs.
+            int count = 0;
+            try { count = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-random-project: <count> must be an integer\n");
+                return 1;
+            }
+            if (count < 1 || count > 100) {
+                std::fprintf(stderr,
+                    "gen-random-project: count %d out of range (1..100)\n",
+                    count);
+                return 1;
+            }
+            std::string prefix = "Zone";
+            uint32_t seed = 100;
+            int creatures = 20, objects = 10, items = 25;
+            while (i + 2 < argc && argv[i + 1][0] == '-') {
+                std::string flag = argv[++i];
+                if (flag == "--prefix") prefix = argv[++i];
+                else if (flag == "--seed")
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+                else if (flag == "--creatures")
+                    try { creatures = std::stoi(argv[++i]); } catch (...) {}
+                else if (flag == "--objects")
+                    try { objects = std::stoi(argv[++i]); } catch (...) {}
+                else if (flag == "--items")
+                    try { items = std::stoi(argv[++i]); } catch (...) {}
+                else {
+                    std::fprintf(stderr,
+                        "gen-random-project: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            std::string self = argv[0];
+            int produced = 0, failed = 0;
+            std::printf("gen-random-project: %d zone(s) with prefix '%s'\n",
+                        count, prefix.c_str());
+            for (int n = 0; n < count; ++n) {
+                // Step outward from (32, 32) in a small raster so the
+                // tiles don't coincide. (-1,0,1,...) X (-1,0,1,...).
+                int side = 1;
+                while ((2 * side + 1) * (2 * side + 1) <= n) side++;
+                int idx = n;
+                int dx = idx % (2 * side + 1) - side;
+                int dy = (idx / (2 * side + 1)) - side;
+                int tx = std::max(0, std::min(63, 32 + dx));
+                int ty = std::max(0, std::min(63, 32 + dy));
+                std::string zoneName = prefix + std::to_string(n + 1);
+                std::printf("\n=== %s (tile %d, %d) ===\n",
+                            zoneName.c_str(), tx, ty);
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --gen-random-zone \"" +
+                                   zoneName + "\" " +
+                                   std::to_string(tx) + " " + std::to_string(ty) +
+                                   " --seed " + std::to_string(seed + n) +
+                                   " --creatures " + std::to_string(creatures) +
+                                   " --objects " + std::to_string(objects) +
+                                   " --items " + std::to_string(items);
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) produced++;
+                else failed++;
+            }
+            std::printf("\n--- summary ---\n");
+            std::printf("  produced : %d\n", produced);
+            std::printf("  failed   : %d\n", failed);
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--info-zone-audio") == 0 && i + 1 < argc) {
             // Print the audio configuration stored in zone.json:
             // music track, day/night ambience, volume sliders.
