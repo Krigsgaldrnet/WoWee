@@ -518,6 +518,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         List external M2/WMO model paths a zone references (objects + WOB doodads)\n");
     std::printf("  --export-zone-deps-md <zoneDir> [out.md]\n");
     std::printf("                         Markdown dep table for a zone (with on-disk presence column)\n");
+    std::printf("  --export-zone-spawn-png <zoneDir> [out.png]\n");
+    std::printf("                         Top-down PNG of creature + object spawn positions (per-tile-bounded)\n");
     std::printf("  --check-zone-refs <zoneDir> [--json]\n");
     std::printf("                         Verify every referenced model/quest NPC actually exists; exit 1 on missing refs\n");
     std::printf("  --check-zone-content <zoneDir> [--json]\n");
@@ -841,7 +843,7 @@ int main(int argc, char* argv[]) {
         "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
         "--for-each-zone", "--for-each-tile", "--zone-stats", "--info-tilemap",
         "--list-zone-deps", "--check-zone-refs", "--check-zone-content",
-        "--export-zone-deps-md",
+        "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
@@ -12712,6 +12714,136 @@ int main(int argc, char* argv[]) {
             std::printf("Wrote %s\n", outPath.c_str());
             std::printf("  %zu M2 placements, %zu WMO placements, %zu WOB doodad refs\n",
                         directM2.size(), directWMO.size(), doodadM2.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--export-zone-spawn-png") == 0 && i + 1 < argc) {
+            // Top-down PNG of spawn positions colored by type. Bound by
+            // the zone's tile range so the image is properly framed.
+            // Useful for design review (does the spawn distribution
+            // match the intended encounter design?) and for showing
+            // collaborators 'where are the mobs'.
+            std::string zoneDir = argv[++i];
+            std::string outPath;
+            if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "export-zone-spawn-png: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "export-zone-spawn-png: parse failed\n");
+                return 1;
+            }
+            if (zm.tiles.empty()) {
+                std::fprintf(stderr, "export-zone-spawn-png: zone has no tiles\n");
+                return 1;
+            }
+            if (outPath.empty()) outPath = zoneDir + "/" + zm.mapName + "_spawns.png";
+            // Compute world-space bounds from manifest tiles. Same math
+            // as --info-zone-extents.
+            constexpr float kTileSize = 533.33333f;
+            int tileMinX = 64, tileMaxX = -1;
+            int tileMinY = 64, tileMaxY = -1;
+            for (const auto& [tx, ty] : zm.tiles) {
+                tileMinX = std::min(tileMinX, tx);
+                tileMaxX = std::max(tileMaxX, tx);
+                tileMinY = std::min(tileMinY, ty);
+                tileMaxY = std::max(tileMaxY, ty);
+            }
+            float worldMinX = (32.0f - tileMaxY - 1) * kTileSize;
+            float worldMaxX = (32.0f - tileMinY)     * kTileSize;
+            float worldMinY = (32.0f - tileMaxX - 1) * kTileSize;
+            float worldMaxY = (32.0f - tileMinX)     * kTileSize;
+            // Image dimensions: 256px per tile so detail is visible
+            // without inflating per-pixel cost.
+            int tilesX = tileMaxY - tileMinY + 1;  // tile.y maps to world.x
+            int tilesY = tileMaxX - tileMinX + 1;
+            const int kPxPerTile = 256;
+            int imgW = tilesX * kPxPerTile;
+            int imgH = tilesY * kPxPerTile;
+            // Cap output size — 16-tile-wide projects shouldn't exceed
+            // 4096 wide. Scale down if needed.
+            int maxDim = std::max(imgW, imgH);
+            if (maxDim > 4096) {
+                int divisor = (maxDim + 4095) / 4096;
+                imgW = std::max(64, imgW / divisor);
+                imgH = std::max(64, imgH / divisor);
+            }
+            std::vector<uint8_t> img(imgW * imgH * 3, 32);  // dark grey background
+            // Tile-grid lines so the boundary is visible.
+            for (int t = 1; t < tilesX; ++t) {
+                int x = (t * imgW) / tilesX;
+                if (x >= 0 && x < imgW) {
+                    for (int y = 0; y < imgH; ++y) {
+                        size_t off = (y * imgW + x) * 3;
+                        img[off] = img[off+1] = img[off+2] = 64;
+                    }
+                }
+            }
+            for (int t = 1; t < tilesY; ++t) {
+                int y = (t * imgH) / tilesY;
+                if (y >= 0 && y < imgH) {
+                    for (int x = 0; x < imgW; ++x) {
+                        size_t off = (y * imgW + x) * 3;
+                        img[off] = img[off+1] = img[off+2] = 64;
+                    }
+                }
+            }
+            // Plot spawn points. Map world (X, Y) to image (px, py):
+            //   px = (worldMaxX - X) / (worldMaxX - worldMinX) * imgW
+            //   py = (worldMaxY - Y) / (worldMaxY - worldMinY) * imgH
+            // since +X world is north (up) and +Y world is west (left)
+            // in WoW coords.
+            float wRangeX = worldMaxX - worldMinX;
+            float wRangeY = worldMaxY - worldMinY;
+            auto plotPoint = [&](float wx, float wy, uint8_t r, uint8_t g, uint8_t b) {
+                if (wRangeX <= 0 || wRangeY <= 0) return;
+                int px = static_cast<int>((worldMaxX - wx) / wRangeX * imgW);
+                int py = static_cast<int>((worldMaxY - wy) / wRangeY * imgH);
+                // 3×3 dot.
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        int x = px + dx, y = py + dy;
+                        if (x < 0 || x >= imgW || y < 0 || y >= imgH) continue;
+                        size_t off = (y * imgW + x) * 3;
+                        img[off] = r; img[off+1] = g; img[off+2] = b;
+                    }
+                }
+            };
+            // Creatures = red.
+            wowee::editor::NpcSpawner sp;
+            int creaturesPlotted = 0;
+            if (sp.loadFromFile(zoneDir + "/creatures.json")) {
+                for (const auto& s : sp.getSpawns()) {
+                    plotPoint(s.position.x, s.position.y, 220, 60, 60);
+                    creaturesPlotted++;
+                }
+            }
+            // Objects = green (M2) / blue (WMO).
+            wowee::editor::ObjectPlacer op;
+            int objectsPlotted = 0;
+            if (op.loadFromFile(zoneDir + "/objects.json")) {
+                for (const auto& o : op.getObjects()) {
+                    if (o.type == wowee::editor::PlaceableType::M2) {
+                        plotPoint(o.position.x, o.position.y, 60, 200, 60);
+                    } else {
+                        plotPoint(o.position.x, o.position.y, 60, 120, 220);
+                    }
+                    objectsPlotted++;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), imgW, imgH, 3,
+                                 img.data(), imgW * 3)) {
+                std::fprintf(stderr,
+                    "export-zone-spawn-png: stbi_write_png failed\n");
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  %dx%d px, tile grid %dx%d, %d creatures (red), %d objects (green/blue)\n",
+                        imgW, imgH, tilesX, tilesY, creaturesPlotted, objectsPlotted);
             return 0;
         } else if (std::strcmp(argv[i], "--check-zone-refs") == 0 && i + 1 < argc) {
             // Cross-reference checker: every model path in objects.json
