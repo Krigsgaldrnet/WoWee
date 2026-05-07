@@ -701,6 +701,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Walk extracted asset tree and report open-format coverage and exit\n");
     std::printf("  --info-extract-tree <dir>\n");
     std::printf("                         Hierarchical view of an extracted asset tree grouped by top-level dir + format\n");
+    std::printf("  --info-extract-budget <dir> [--json]\n");
+    std::printf("                         Per-extension byte breakdown of an extract dir (sized largest-first)\n");
     std::printf("  --info-png <path> [--json]\n");
     std::printf("                         Print PNG header (width, height, channels, bit depth) and exit\n");
     std::printf("  --info-blp <path> [--json]\n");
@@ -807,7 +809,8 @@ int main(int argc, char* argv[]) {
         "--info-bones", "--list-zone-textures",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
-        "--info-extract", "--info-extract-tree", "--list-missing-sidecars",
+        "--info-extract", "--info-extract-tree", "--info-extract-budget",
+        "--list-missing-sidecars",
         "--info-png", "--info-jsondbc", "--info-blp", "--info-pack-budget",
         "--info-m2", "--info-wmo", "--info-adt",
         "--info-zone", "--info-wcp", "--list-wcp",
@@ -1911,6 +1914,92 @@ int main(int argc, char* argv[]) {
                                 dCont, eBranch, ext.c_str(),
                                 st.count, st.bytes / 1024.0);
                 }
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-extract-budget") == 0 && i + 1 < argc) {
+            // Per-extension byte breakdown of an extract dir, sorted
+            // largest-first. Companion to --info-pack-budget (which
+            // operates on .wcp archives) — this answers 'where did my
+            // 31 GB extract go?' with a flat sortable table.
+            std::string dataDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(dataDir) || !fs::is_directory(dataDir)) {
+                std::fprintf(stderr,
+                    "info-extract-budget: %s is not a directory\n",
+                    dataDir.c_str());
+                return 1;
+            }
+            std::map<std::string, std::pair<int, uint64_t>> byExt;
+            uint64_t totalBytes = 0;
+            int totalFiles = 0;
+            std::error_code ec;
+            for (const auto& entry : fs::recursive_directory_iterator(dataDir, ec)) {
+                if (!entry.is_regular_file()) continue;
+                std::string ext = entry.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                                [](unsigned char c) { return std::tolower(c); });
+                if (ext.empty()) ext = "(no-ext)";
+                uint64_t sz = entry.file_size(ec);
+                if (ec) continue;
+                byExt[ext].first++;
+                byExt[ext].second += sz;
+                totalBytes += sz;
+                totalFiles++;
+            }
+            std::vector<std::pair<std::string, std::pair<int, uint64_t>>> sorted(
+                byExt.begin(), byExt.end());
+            std::sort(sorted.begin(), sorted.end(),
+                      [](const auto& a, const auto& b) {
+                          return a.second.second > b.second.second;
+                      });
+            if (jsonOut) {
+                nlohmann::json j;
+                j["dir"] = dataDir;
+                j["totalFiles"] = totalFiles;
+                j["totalBytes"] = totalBytes;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& [ext, cb] : sorted) {
+                    arr.push_back({{"ext", ext},
+                                    {"count", cb.first},
+                                    {"bytes", cb.second}});
+                }
+                j["byExtension"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Extract budget: %s\n", dataDir.c_str());
+            std::printf("  total: %d file(s), %.2f MB\n",
+                        totalFiles, totalBytes / (1024.0 * 1024.0));
+            std::printf("\n  ext           count        bytes        MB    share\n");
+            // Cap to top 30 to keep output manageable on huge extracts;
+            // suppressed entries roll into 'other'.
+            const size_t kTopN = 30;
+            uint64_t otherBytes = 0;
+            int otherCount = 0;
+            for (size_t k = 0; k < sorted.size(); ++k) {
+                if (k < kTopN) {
+                    const auto& [ext, cb] = sorted[k];
+                    double pct = totalBytes > 0
+                        ? 100.0 * cb.second / totalBytes : 0.0;
+                    std::printf("  %-12s %6d  %11llu  %8.1f  %5.1f%%\n",
+                                ext.c_str(), cb.first,
+                                static_cast<unsigned long long>(cb.second),
+                                cb.second / (1024.0 * 1024.0), pct);
+                } else {
+                    otherBytes += sorted[k].second.second;
+                    otherCount += sorted[k].second.first;
+                }
+            }
+            if (otherCount > 0) {
+                double pct = totalBytes > 0 ? 100.0 * otherBytes / totalBytes : 0.0;
+                std::printf("  %-12s %6d  %11llu  %8.1f  %5.1f%%  (%zu more extensions)\n",
+                            "(other)", otherCount,
+                            static_cast<unsigned long long>(otherBytes),
+                            otherBytes / (1024.0 * 1024.0), pct,
+                            sorted.size() - kTopN);
             }
             return 0;
         } else if (std::strcmp(argv[i], "--list-missing-sidecars") == 0 && i + 1 < argc) {
