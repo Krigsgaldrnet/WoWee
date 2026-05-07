@@ -556,6 +556,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Invert every vertex normal (use for inside-out meshes or two-sided pre-flip)\n");
     std::printf("  --mirror-mesh <wom-base> <x|y|z>\n");
     std::printf("                         Mirror every vertex + normal across the chosen axis (also flips winding)\n");
+    std::printf("  --merge-meshes <a-base> <b-base> <out-base>\n");
+    std::printf("                         Combine two WOMs into one (vertex/index buffers concatenated, batches preserved)\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -978,6 +980,7 @@ int main(int argc, char* argv[]) {
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--gen-texture-noise", "--rotate-mesh",
         "--center-mesh", "--flip-mesh-normals", "--mirror-mesh",
+        "--merge-meshes",
         "--gen-texture-radial",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
@@ -16927,6 +16930,128 @@ int main(int argc, char* argv[]) {
             std::printf("  new bounds       : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
                         wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
                         wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--merge-meshes") == 0 && i + 3 < argc) {
+            // Combine two WOMs into one. The second mesh's indices
+            // are offset by the first mesh's vertex count, and its
+            // batches are appended with their indexStart shifted by
+            // the first mesh's index count and their textureIndex
+            // shifted by the first mesh's texture-slot count.
+            //
+            // Bones/animations are NOT merged — that requires
+            // skeleton retargeting which is beyond a simple
+            // concatenation. If either input has bones, the merged
+            // output is treated as static (bones cleared, weights
+            // reset to identity-on-bone-0) so renderers don't read
+            // mismatched indices.
+            std::string aBase = argv[++i];
+            std::string bBase = argv[++i];
+            std::string outBase = argv[++i];
+            auto stripExt = [](std::string p) {
+                if (p.size() >= 4 && p.substr(p.size() - 4) == ".wom") {
+                    return p.substr(0, p.size() - 4);
+                }
+                return p;
+            };
+            aBase = stripExt(aBase);
+            bBase = stripExt(bBase);
+            outBase = stripExt(outBase);
+            if (!wowee::pipeline::WoweeModelLoader::exists(aBase)) {
+                std::fprintf(stderr,
+                    "merge-meshes: %s.wom does not exist\n", aBase.c_str());
+                return 1;
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(bBase)) {
+                std::fprintf(stderr,
+                    "merge-meshes: %s.wom does not exist\n", bBase.c_str());
+                return 1;
+            }
+            auto a = wowee::pipeline::WoweeModelLoader::load(aBase);
+            auto b = wowee::pipeline::WoweeModelLoader::load(bBase);
+            if (!a.isValid() || !b.isValid()) {
+                std::fprintf(stderr,
+                    "merge-meshes: failed to load one of the inputs\n");
+                return 1;
+            }
+            wowee::pipeline::WoweeModel out;
+            out.name = std::filesystem::path(outBase).stem().string();
+            out.version = 3;
+            out.vertices = a.vertices;
+            out.vertices.insert(out.vertices.end(),
+                                 b.vertices.begin(), b.vertices.end());
+            out.indices = a.indices;
+            uint32_t indexOffset = static_cast<uint32_t>(a.vertices.size());
+            for (uint32_t idx : b.indices) {
+                out.indices.push_back(idx + indexOffset);
+            }
+            out.texturePaths = a.texturePaths;
+            uint32_t textureOffset = static_cast<uint32_t>(a.texturePaths.size());
+            for (const auto& t : b.texturePaths) {
+                out.texturePaths.push_back(t);
+            }
+            // Promote single-batch / no-batch inputs into proper
+            // batches so the merged output is well-formed v3.
+            auto ensureBatch = [](const wowee::pipeline::WoweeModel& m) {
+                std::vector<wowee::pipeline::WoweeModel::Batch> bs = m.batches;
+                if (bs.empty()) {
+                    wowee::pipeline::WoweeModel::Batch only;
+                    only.indexStart = 0;
+                    only.indexCount = static_cast<uint32_t>(m.indices.size());
+                    only.textureIndex = 0;
+                    only.blendMode = 0;
+                    only.flags = 0;
+                    bs.push_back(only);
+                }
+                return bs;
+            };
+            auto aBatches = ensureBatch(a);
+            auto bBatches = ensureBatch(b);
+            for (const auto& bt : aBatches) out.batches.push_back(bt);
+            uint32_t indexStartOffset = static_cast<uint32_t>(a.indices.size());
+            for (auto bt : bBatches) {
+                bt.indexStart += indexStartOffset;
+                bt.textureIndex += textureOffset;
+                out.batches.push_back(bt);
+            }
+            // Static-only output (see header comment).
+            for (auto& v : out.vertices) {
+                v.boneWeights[0] = 255;
+                v.boneWeights[1] = 0;
+                v.boneWeights[2] = 0;
+                v.boneWeights[3] = 0;
+                v.boneIndices[0] = 0;
+                v.boneIndices[1] = 0;
+                v.boneIndices[2] = 0;
+                v.boneIndices[3] = 0;
+            }
+            // Bounds: union of inputs.
+            out.boundMin = glm::min(a.boundMin, b.boundMin);
+            out.boundMax = glm::max(a.boundMax, b.boundMax);
+            out.boundRadius = glm::length(out.boundMax - out.boundMin) * 0.5f;
+            std::filesystem::path outPath(outBase);
+            std::filesystem::create_directories(outPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(out, outBase)) {
+                std::fprintf(stderr,
+                    "merge-meshes: failed to save %s.wom\n", outBase.c_str());
+                return 1;
+            }
+            std::printf("Merged %s.wom + %s.wom -> %s.wom\n",
+                        aBase.c_str(), bBase.c_str(), outBase.c_str());
+            std::printf("  vertices : %zu = %zu + %zu\n",
+                        out.vertices.size(),
+                        a.vertices.size(), b.vertices.size());
+            std::printf("  indices  : %zu = %zu + %zu\n",
+                        out.indices.size(),
+                        a.indices.size(), b.indices.size());
+            std::printf("  batches  : %zu = %zu + %zu\n",
+                        out.batches.size(),
+                        aBatches.size(), bBatches.size());
+            std::printf("  textures : %zu = %zu + %zu\n",
+                        out.texturePaths.size(),
+                        a.texturePaths.size(), b.texturePaths.size());
+            std::printf("  bounds   : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        out.boundMin.x, out.boundMin.y, out.boundMin.z,
+                        out.boundMax.x, out.boundMax.y, out.boundMax.z);
             return 0;
         } else if (std::strcmp(argv[i], "--add-texture-to-zone") == 0 && i + 2 < argc) {
             // Import an existing PNG into a zone directory. Useful
