@@ -579,6 +579,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Audio config table across every zone (which zones have music/ambience set)\n");
     std::printf("  --snap-zone-to-ground <zoneDir>\n");
     std::printf("                         Re-snap every creature/object in a zone to actual terrain height\n");
+    std::printf("  --audit-zone-spawns <zoneDir> [--threshold yards]\n");
+    std::printf("                         List spawns whose Z is more than <threshold> yards off from the terrain (default 5)\n");
     std::printf("  --snap-project-to-ground <projectDir>\n");
     std::printf("                         Run --snap-zone-to-ground across every zone (per-zone summary + totals)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -1028,7 +1030,7 @@ int main(int argc, char* argv[]) {
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
         "--random-populate-zone", "--random-populate-items",
-        "--info-zone-audio", "--snap-zone-to-ground",
+        "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
         "--info-project-audio", "--snap-project-to-ground",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -13652,6 +13654,116 @@ int main(int argc, char* argv[]) {
             std::printf("  creatures    : %d snapped\n", snappedC);
             std::printf("  objects      : %d snapped\n", snappedO);
             return 0;
+        } else if (std::strcmp(argv[i], "--audit-zone-spawns") == 0 && i + 1 < argc) {
+            // Non-destructive companion to --snap-zone-to-ground.
+            // Loads the zone's terrain, walks every creature + object,
+            // and flags any whose Z is more than <threshold> yards
+            // off from the sampled terrain height. Useful for
+            // surveying placement issues before deciding whether to
+            // run --snap-zone-to-ground (which would silently rewrite
+            // every spawn).
+            std::string zoneDir = argv[++i];
+            float threshold = 5.0f;
+            if (i + 2 < argc && std::strcmp(argv[i + 1], "--threshold") == 0) {
+                try { threshold = std::stof(argv[i + 2]); i += 2; }
+                catch (...) {}
+            }
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "audit-zone-spawns: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "audit-zone-spawns: failed to parse %s\n",
+                    manifestPath.c_str());
+                return 1;
+            }
+            // Same chunk-average sampler as --snap-zone-to-ground.
+            // Returning baseHeight when no chunk hits = "no terrain
+            // data here", so flag those too via the threshold check.
+            struct LoadedTile {
+                wowee::pipeline::ADTTerrain terrain;
+            };
+            std::vector<LoadedTile> tiles;
+            for (const auto& [tx, ty] : zm.tiles) {
+                std::string base = zoneDir + "/" + zm.mapName + "_" +
+                                    std::to_string(tx) + "_" + std::to_string(ty);
+                if (!wowee::pipeline::WoweeTerrainLoader::exists(base)) continue;
+                LoadedTile lt;
+                if (wowee::pipeline::WoweeTerrainLoader::load(base, lt.terrain)) {
+                    tiles.push_back(std::move(lt));
+                }
+            }
+            constexpr float kChunkSize = 33.33333f;
+            auto sampleHeight = [&](float wx, float wy) -> float {
+                for (const auto& lt : tiles) {
+                    for (const auto& chunk : lt.terrain.chunks) {
+                        if (!chunk.heightMap.isLoaded()) continue;
+                        float cx0 = chunk.position[1];
+                        float cy0 = chunk.position[0];
+                        if (wx < cx0 || wx >= cx0 + kChunkSize) continue;
+                        if (wy < cy0 || wy >= cy0 + kChunkSize) continue;
+                        float sum = 0; int n = 0;
+                        for (float h : chunk.heightMap.heights) {
+                            if (std::isfinite(h)) { sum += h; n++; }
+                        }
+                        if (n == 0) return chunk.position[2];
+                        return chunk.position[2] + sum / n;
+                    }
+                }
+                return zm.baseHeight;
+            };
+            struct Issue { std::string kind; std::string name;
+                           float spawnZ, terrainZ; };
+            std::vector<Issue> issues;
+            wowee::editor::NpcSpawner spawner;
+            if (fs::exists(zoneDir + "/creatures.json") &&
+                spawner.loadFromFile(zoneDir + "/creatures.json")) {
+                for (const auto& s : spawner.getSpawns()) {
+                    float th = sampleHeight(s.position.x, s.position.y);
+                    if (std::fabs(s.position.z - th) > threshold) {
+                        issues.push_back({"creature", s.name,
+                                          s.position.z, th});
+                    }
+                }
+            }
+            wowee::editor::ObjectPlacer placer;
+            if (fs::exists(zoneDir + "/objects.json") &&
+                placer.loadFromFile(zoneDir + "/objects.json")) {
+                for (const auto& o : placer.getObjects()) {
+                    float th = sampleHeight(o.position.x, o.position.y);
+                    if (std::fabs(o.position.z - th) > threshold) {
+                        issues.push_back({"object", o.path,
+                                          o.position.z, th});
+                    }
+                }
+            }
+            std::printf("audit-zone-spawns: %s\n", zoneDir.c_str());
+            std::printf("  threshold    : %.1f yards\n", threshold);
+            std::printf("  creatures    : %zu\n", spawner.spawnCount());
+            std::printf("  objects      : %zu\n", placer.getObjects().size());
+            std::printf("  issues       : %zu\n", issues.size());
+            if (issues.empty()) {
+                std::printf("\n  PASSED — every spawn is within %.1f y of the terrain\n",
+                            threshold);
+                return 0;
+            }
+            std::printf("\n  Flagged spawns (delta = spawnZ - terrainZ):\n");
+            std::printf("  kind      delta    spawnZ   terrainZ  name\n");
+            for (const auto& iss : issues) {
+                float delta = iss.spawnZ - iss.terrainZ;
+                std::printf("  %-8s  %+6.1f   %7.1f   %7.1f  %s\n",
+                            iss.kind.c_str(), delta, iss.spawnZ,
+                            iss.terrainZ,
+                            iss.name.substr(0, 40).c_str());
+            }
+            std::printf("\n  Run --snap-zone-to-ground to fix in bulk.\n");
+            return 1;
         } else if (std::strcmp(argv[i], "--snap-project-to-ground") == 0 && i + 1 < argc) {
             // Orchestrator wrapper around --snap-zone-to-ground. Spawns
             // the binary per-zone (only zones with at least one of
