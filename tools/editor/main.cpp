@@ -546,6 +546,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Offset every vertex and bounds by (dx, dy, dz)\n");
     std::printf("  --strip-mesh <wom-base> [--bones] [--anims] [--all]\n");
     std::printf("                         Drop bones / animations from a WOM in place (smaller file, static-only use)\n");
+    std::printf("  --rotate-mesh <wom-base> <x|y|z> <degrees>\n");
+    std::printf("                         Rotate every vertex + normal around the chosen axis by <degrees>\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -962,7 +964,7 @@ int main(int argc, char* argv[]) {
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-texture-gradient",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
-        "--gen-texture-noise",
+        "--gen-texture-noise", "--rotate-mesh",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -16388,6 +16390,98 @@ int main(int argc, char* argv[]) {
                         static_cast<unsigned long long>(bytesAfter),
                         static_cast<long long>(bytesAfter) -
                           static_cast<long long>(bytesBefore));
+            return 0;
+        } else if (std::strcmp(argv[i], "--rotate-mesh") == 0 && i + 3 < argc) {
+            // Rotate every vertex position and normal around the
+            // chosen axis (x, y, or z) by <degrees>. Bone pivots
+            // also rotate so the skeleton stays in sync. Bounds are
+            // recomputed from rotated positions (axis-aligned bbox
+            // grows during rotation).
+            std::string womBase = argv[++i];
+            std::string axisStr = argv[++i];
+            float degrees = 0.0f;
+            try { degrees = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "rotate-mesh: <degrees> must be a number\n");
+                return 1;
+            }
+            if (!std::isfinite(degrees)) {
+                std::fprintf(stderr,
+                    "rotate-mesh: degrees must be finite\n");
+                return 1;
+            }
+            std::transform(axisStr.begin(), axisStr.end(), axisStr.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            int axis = -1;
+            if (axisStr == "x") axis = 0;
+            else if (axisStr == "y") axis = 1;
+            else if (axisStr == "z") axis = 2;
+            else {
+                std::fprintf(stderr,
+                    "rotate-mesh: axis must be x, y, or z (got '%s')\n",
+                    axisStr.c_str());
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "rotate-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "rotate-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            float rad = degrees * 3.14159265358979f / 180.0f;
+            float cs = std::cos(rad), sn = std::sin(rad);
+            // Rotation around each axis: standard right-hand rule.
+            auto rot = [axis, cs, sn](glm::vec3 v) -> glm::vec3 {
+                if (axis == 0) {
+                    return glm::vec3(v.x,
+                                      cs * v.y - sn * v.z,
+                                      sn * v.y + cs * v.z);
+                }
+                if (axis == 1) {
+                    return glm::vec3( cs * v.x + sn * v.z,
+                                      v.y,
+                                     -sn * v.x + cs * v.z);
+                }
+                return glm::vec3(cs * v.x - sn * v.y,
+                                  sn * v.x + cs * v.y,
+                                  v.z);
+            };
+            for (auto& v : wom.vertices) {
+                v.position = rot(v.position);
+                v.normal = rot(v.normal);
+            }
+            for (auto& b : wom.bones) {
+                b.pivot = rot(b.pivot);
+            }
+            // Recompute bounds from rotated vertices (axis-aligned
+            // bbox can only grow under rotation, so reuse the loop).
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "rotate-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Rotated %s.wom by %g° around %s\n",
+                        womBase.c_str(), degrees, axisStr.c_str());
+            std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
             return 0;
         } else if (std::strcmp(argv[i], "--add-texture-to-zone") == 0 && i + 2 < argc) {
             // Import an existing PNG into a zone directory. Useful
