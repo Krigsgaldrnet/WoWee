@@ -708,6 +708,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
     std::printf("  --info-creatures <p> [--json]\n");
     std::printf("                         Print creatures.json summary (counts, behaviors) and exit\n");
+    std::printf("  --info-creatures-by-faction <p> [--json]\n");
+    std::printf("                         Histogram of creature counts grouped by faction id\n");
+    std::printf("  --info-creatures-by-level <p> [--json]\n");
+    std::printf("                         Distribution of creature levels (min/max/avg + per-level counts)\n");
     std::printf("  --info-objects <p> [--json]\n");
     std::printf("                         Print objects.json summary (counts, types, scale range) and exit\n");
     std::printf("  --info-quests <p> [--json]\n");
@@ -790,6 +794,7 @@ int main(int argc, char* argv[]) {
         "--list-quest-objectives", "--list-quest-rewards",
         "--info-creature", "--info-quest", "--info-object",
         "--info-quest-graph-stats",
+        "--info-creatures-by-faction", "--info-creatures-by-level",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-glb", "--info-glb",
@@ -2528,6 +2533,100 @@ int main(int argc, char* argv[]) {
             std::printf("  behavior    : %d stationary, %d wander, %d patrol\n",
                         stationary, wander, patrol);
             std::printf("  unique displayIds: %zu\n", displayIdHist.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-creatures-by-faction") == 0 && i + 1 < argc) {
+            // Faction histogram for combat balance analysis. AzerothCore
+            // factions: 7=human, 14=monster, 16=alliance-friendly, 35=neutral,
+            // etc. A zone with all faction=14 is going to be one giant
+            // free-for-all; a mixed-faction zone needs combat-tuning.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::NpcSpawner sp;
+            if (!sp.loadFromFile(path)) {
+                std::fprintf(stderr,
+                    "info-creatures-by-faction: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            std::map<uint32_t, int> hist;
+            for (const auto& s : sp.getSpawns()) hist[s.faction]++;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["totalCreatures"] = sp.spawnCount();
+                j["uniqueFactions"] = hist.size();
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& [f, c] : hist) {
+                    arr.push_back({{"faction", f}, {"count", c}});
+                }
+                j["factions"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Creatures by faction: %s (%zu total)\n",
+                        path.c_str(), sp.spawnCount());
+            std::printf("  faction    count   share\n");
+            for (const auto& [f, c] : hist) {
+                double pct = sp.spawnCount() > 0 ? 100.0 * c / sp.spawnCount() : 0.0;
+                std::printf("  %7u    %5d   %5.1f%%\n", f, c, pct);
+            }
+            std::printf("  (factions: 7=human, 14=monster, 35=neutral, etc.)\n");
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-creatures-by-level") == 0 && i + 1 < argc) {
+            // Level distribution for difficulty-curve analysis. Min/max/
+            // avg + per-level histogram. A zone with all level-1 spawns
+            // is a starter area; one with all 60s is endgame; spikes in
+            // the middle suggest content-tuning issues.
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::NpcSpawner sp;
+            if (!sp.loadFromFile(path)) {
+                std::fprintf(stderr,
+                    "info-creatures-by-level: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            std::map<uint32_t, int> hist;
+            uint32_t minL = std::numeric_limits<uint32_t>::max();
+            uint32_t maxL = 0;
+            uint64_t sumL = 0;
+            for (const auto& s : sp.getSpawns()) {
+                hist[s.level]++;
+                if (s.level < minL) minL = s.level;
+                if (s.level > maxL) maxL = s.level;
+                sumL += s.level;
+            }
+            double avgL = sp.spawnCount() > 0 ? double(sumL) / sp.spawnCount() : 0.0;
+            if (sp.spawnCount() == 0) minL = 0;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["totalCreatures"] = sp.spawnCount();
+                j["minLevel"] = minL;
+                j["maxLevel"] = maxL;
+                j["avgLevel"] = avgL;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& [l, c] : hist) {
+                    arr.push_back({{"level", l}, {"count", c}});
+                }
+                j["levels"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Creatures by level: %s (%zu total)\n",
+                        path.c_str(), sp.spawnCount());
+            std::printf("  range : %u to %u (avg %.1f)\n", minL, maxL, avgL);
+            std::printf("\n  level   count  bar\n");
+            int maxBarCount = 0;
+            for (const auto& [_, c] : hist) maxBarCount = std::max(maxBarCount, c);
+            for (const auto& [l, c] : hist) {
+                int barLen = maxBarCount > 0 ? (40 * c) / maxBarCount : 0;
+                std::printf("  %5u   %5d  ", l, c);
+                for (int b = 0; b < barLen; ++b) std::printf("█");
+                std::printf("\n");
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--list-creatures") == 0 && i + 1 < argc) {
             // Verbose enumeration of every spawn — needed because
