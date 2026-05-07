@@ -548,6 +548,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Drop bones / animations from a WOM in place (smaller file, static-only use)\n");
     std::printf("  --rotate-mesh <wom-base> <x|y|z> <degrees>\n");
     std::printf("                         Rotate every vertex + normal around the chosen axis by <degrees>\n");
+    std::printf("  --center-mesh <wom-base>\n");
+    std::printf("                         Translate so the bounds center lands at origin (no scale/rotation change)\n");
+    std::printf("  --flip-mesh-normals <wom-base>\n");
+    std::printf("                         Invert every vertex normal (use for inside-out meshes or two-sided pre-flip)\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -965,6 +969,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-stairs", "--gen-texture-gradient",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--gen-texture-noise", "--rotate-mesh",
+        "--center-mesh", "--flip-mesh-normals",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -16482,6 +16487,79 @@ int main(int argc, char* argv[]) {
             std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
                         wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
                         wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--center-mesh") == 0 && i + 1 < argc) {
+            // Translate the mesh so the bounds center lands at the
+            // origin. Convenience for "this mesh's pivot is in some
+            // weird corner — make it center-pivoted." Doesn't change
+            // shape, just shifts.
+            std::string womBase = argv[++i];
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "center-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "center-mesh: failed to load %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            glm::vec3 center = (wom.boundMin + wom.boundMax) * 0.5f;
+            for (auto& v : wom.vertices) v.position -= center;
+            for (auto& b : wom.bones) b.pivot -= center;
+            wom.boundMin -= center;
+            wom.boundMax -= center;
+            // Radius is preserved (pure translation).
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "center-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Centered %s.wom (shifted by %g, %g, %g)\n",
+                        womBase.c_str(), -center.x, -center.y, -center.z);
+            std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--flip-mesh-normals") == 0 && i + 1 < argc) {
+            // Invert every vertex normal. Use case: an OBJ imported
+            // with flipped winding renders inside-out — flipping the
+            // normals makes shading correct without re-winding the
+            // index buffer (which would also need batch-aware care).
+            // Also useful for skybox-like meshes where the "outside"
+            // texture should appear when looking from inside.
+            std::string womBase = argv[++i];
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "flip-mesh-normals: %s.wom does not exist\n",
+                    womBase.c_str());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "flip-mesh-normals: failed to load %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            for (auto& v : wom.vertices) v.normal = -v.normal;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "flip-mesh-normals: failed to save %s.wom\n",
+                    womBase.c_str());
+                return 1;
+            }
+            std::printf("Flipped normals on %s.wom (%zu vertices)\n",
+                        womBase.c_str(), wom.vertices.size());
             return 0;
         } else if (std::strcmp(argv[i], "--add-texture-to-zone") == 0 && i + 2 < argc) {
             // Import an existing PNG into a zone directory. Useful
