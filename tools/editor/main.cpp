@@ -549,6 +549,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
     std::printf("  --gen-mesh-grid <wom-base> <subdivisions> [size]\n");
     std::printf("                         Subdivided flat plane on XY (NxN cells, 2N² triangles); useful for LOD demos\n");
+    std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
+    std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
     std::printf("                         Convert a grayscale PNG into a heightmap mesh (W×H verts, 2(W-1)(H-1) tris)\n");
     std::printf("  --export-mesh-heightmap <wom-base> <out.png> <W> <H>\n");
@@ -1020,6 +1022,7 @@ int main(int argc, char* argv[]) {
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
+        "--displace-mesh",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--gen-texture-noise", "--rotate-mesh",
         "--center-mesh", "--flip-mesh-normals", "--mirror-mesh",
@@ -18096,6 +18099,103 @@ int main(int argc, char* argv[]) {
             std::printf("  size         : %.3f\n", size);
             std::printf("  vertices     : %zu = (N+1)²\n", wom.vertices.size());
             std::printf("  triangles    : %zu = 2N²\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
+            // Displaces each vertex along its current normal by the
+            // heightmap brightness × scale. UVs determine where each
+            // vertex samples the heightmap.
+            //
+            // Pairs naturally with --gen-mesh-grid: gen a flat grid,
+            // then --displace-mesh with a noise PNG to create
+            // procedural terrain. Or use it on a sphere to make a
+            // bumpy planet.
+            std::string womBase = argv[++i];
+            std::string pngPath = argv[++i];
+            float scale = 1.0f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { scale = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (!std::isfinite(scale)) scale = 1.0f;
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            namespace fs = std::filesystem;
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "displace-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            int W, H, comp;
+            uint8_t* data = stbi_load(pngPath.c_str(), &W, &H, &comp, 1);
+            if (!data) {
+                std::fprintf(stderr,
+                    "displace-mesh: cannot read %s (%s)\n",
+                    pngPath.c_str(), stbi_failure_reason());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "displace-mesh: failed to load %s.wom\n", womBase.c_str());
+                stbi_image_free(data);
+                return 1;
+            }
+            float minDelta = 1e30f, maxDelta = -1e30f;
+            for (auto& v : wom.vertices) {
+                // Sample the heightmap with bilinear filtering at
+                // (u, v). Wrap repeating UVs.
+                float u = v.texCoord.x - std::floor(v.texCoord.x);
+                float vv = v.texCoord.y - std::floor(v.texCoord.y);
+                float fx = u * (W - 1);
+                float fy = vv * (H - 1);
+                int x0 = static_cast<int>(fx);
+                int y0 = static_cast<int>(fy);
+                int x1 = std::min(x0 + 1, W - 1);
+                int y1 = std::min(y0 + 1, H - 1);
+                float tx = fx - x0;
+                float ty = fy - y0;
+                auto sample = [&](int x, int y) {
+                    return data[y * W + x] / 255.0f;
+                };
+                float a = sample(x0, y0);
+                float b = sample(x1, y0);
+                float c = sample(x0, y1);
+                float d = sample(x1, y1);
+                float ab = a + (b - a) * tx;
+                float cd = c + (d - c) * tx;
+                float h = ab + (cd - ab) * ty;
+                float delta = h * scale;
+                v.position += v.normal * delta;
+                if (delta < minDelta) minDelta = delta;
+                if (delta > maxDelta) maxDelta = delta;
+            }
+            stbi_image_free(data);
+            // Recompute bounds; normals stay (they're now stale to
+            // the displaced surface but the user can run --smooth-
+            // mesh-normals if they want shading to follow the bumps).
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "displace-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Displaced %s.wom with %s\n",
+                        womBase.c_str(), pngPath.c_str());
+            std::printf("  source PNG : %dx%d\n", W, H);
+            std::printf("  scale      : %g\n", scale);
+            std::printf("  vertices   : %zu touched\n", wom.vertices.size());
+            std::printf("  delta      : %.3f to %.3f\n", minDelta, maxDelta);
+            std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            std::printf("  hint       : run --smooth-mesh-normals so shading follows the bumps\n");
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh-from-heightmap") == 0 && i + 2 < argc) {
             // Convert a grayscale PNG into a heightmap mesh. Each
