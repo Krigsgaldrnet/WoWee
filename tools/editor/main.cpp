@@ -532,6 +532,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
     std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder|torus> <colorHex|pattern> [size]\n");
     std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
+    std::printf("  --gen-mesh-stairs <wom-base> <steps> [stepHeight] [stepDepth] [width]\n");
+    std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
     std::printf("  --add-texture-to-mesh <wom-base> <png-path> [batchIdx]\n");
     std::printf("                         Bind an existing PNG into a WOM's texturePaths and point batchIdx (default 0) at it\n");
     std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
@@ -940,6 +942,7 @@ int main(int argc, char* argv[]) {
         "--bench-migrate-data-tree", "--list-data-tree-largest",
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
+        "--gen-mesh-stairs",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -15324,6 +15327,133 @@ int main(int argc, char* argv[]) {
             std::printf("  color    : %s\n", colorSpec.c_str());
             std::printf("  vertices : %zu\n", wom.vertices.size());
             std::printf("  texture  : %s (wired into batch 0)\n", pngLeaf.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-stairs") == 0 && i + 2 < argc) {
+            // Procedural straight staircase along +X. N steps with
+            // configurable rise/run/width. Each step is a closed
+            // box, sharing no vertices with neighbors so per-face
+            // normals are flat (looks correct without smoothing).
+            //
+            // Defaults: 5 steps, stepHeight=0.2, stepDepth=0.3,
+            // width=1.0 — roughly 1m tall × 1.5m long × 1m wide,
+            // a believable single flight.
+            //
+            // Useful for level-design placeholders ("I need a staircase
+            // up to this platform"), test-bench geometry for camera/
+            // movement, and quick prototyping of stepped terrain.
+            std::string womBase = argv[++i];
+            int steps = 5;
+            float stepHeight = 0.2f, stepDepth = 0.3f, width = 1.0f;
+            try { steps = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-mesh-stairs: <steps> must be an integer\n");
+                return 1;
+            }
+            if (steps < 1 || steps > 256) {
+                std::fprintf(stderr,
+                    "gen-mesh-stairs: steps %d out of range (1..256)\n", steps);
+                return 1;
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { stepHeight = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { stepDepth = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { width = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (stepHeight <= 0 || stepDepth <= 0 || width <= 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-stairs: dimensions must be positive\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            auto addV = [&](float x, float y, float z,
+                              float nx, float ny, float nz,
+                              float u, float v) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = glm::vec3(x, y, z);
+                vtx.normal = glm::vec3(nx, ny, nz);
+                vtx.texCoord = glm::vec2(u, v);
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            float halfW = width * 0.5f;
+            // Each step is a box from y=0 to y=(k+1)*stepHeight,
+            // depth-wise from x=k*stepDepth to x=(k+1)*stepDepth,
+            // width-wise from z=-halfW to z=+halfW. Six faces per
+            // step, four verts each = 24 verts / 12 tris per step.
+            for (int k = 0; k < steps; ++k) {
+                float x0 = k * stepDepth;
+                float x1 = (k + 1) * stepDepth;
+                float y0 = 0.0f;
+                float y1 = (k + 1) * stepHeight;
+                float z0 = -halfW;
+                float z1 =  halfW;
+                struct Face { float nx, ny, nz; float verts[4][3]; };
+                Face faces[6] = {
+                    { 0,  1,  0, {{x0,y1,z0},{x1,y1,z0},{x1,y1,z1},{x0,y1,z1}}},  // top  +Y
+                    { 0, -1,  0, {{x0,y0,z0},{x0,y0,z1},{x1,y0,z1},{x1,y0,z0}}},  // bot  -Y
+                    {-1,  0,  0, {{x0,y0,z0},{x0,y1,z0},{x0,y1,z1},{x0,y0,z1}}},  // back -X
+                    { 1,  0,  0, {{x1,y0,z0},{x1,y0,z1},{x1,y1,z1},{x1,y1,z0}}},  // front+X (riser)
+                    { 0,  0, -1, {{x0,y0,z0},{x1,y0,z0},{x1,y1,z0},{x0,y1,z0}}},  // -Z
+                    { 0,  0,  1, {{x0,y0,z1},{x0,y1,z1},{x1,y1,z1},{x1,y0,z1}}},  // +Z
+                };
+                float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+                for (auto& f : faces) {
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    for (int q = 0; q < 4; ++q) {
+                        addV(f.verts[q][0], f.verts[q][1], f.verts[q][2],
+                              f.nx, f.ny, f.nz, uvs[q][0], uvs[q][1]);
+                    }
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 1);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 3);
+                }
+            }
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-stairs: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  steps     : %d\n", steps);
+            std::printf("  stepHt    : %.3f\n", stepHeight);
+            std::printf("  stepDep   : %.3f\n", stepDepth);
+            std::printf("  width     : %.3f\n", width);
+            std::printf("  vertices  : %zu (%d per step × %d)\n",
+                        wom.vertices.size(), 24, steps);
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            std::printf("  span      : %.3fL × %.3fH × %.3fW\n",
+                        steps * stepDepth, steps * stepHeight, width);
             return 0;
         } else if (std::strcmp(argv[i], "--add-texture-to-mesh") == 0 && i + 2 < argc) {
             // Manual companion to --gen-mesh-textured. Binds an
