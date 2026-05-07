@@ -547,6 +547,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
     std::printf("  --gen-mesh-stairs <wom-base> <steps> [stepHeight] [stepDepth] [width]\n");
     std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
+    std::printf("  --gen-mesh-grid <wom-base> <subdivisions> [size]\n");
+    std::printf("                         Subdivided flat plane on XY (NxN cells, 2N² triangles); useful for LOD demos\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
     std::printf("                         Convert a grayscale PNG into a heightmap mesh (W×H verts, 2(W-1)(H-1) tris)\n");
     std::printf("  --export-mesh-heightmap <wom-base> <out.png> <W> <H>\n");
@@ -1016,7 +1018,7 @@ int main(int argc, char* argv[]) {
         "--bench-migrate-data-tree", "--list-data-tree-largest",
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
-        "--gen-mesh-stairs", "--gen-texture-gradient",
+        "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--gen-texture-noise", "--rotate-mesh",
@@ -18004,6 +18006,96 @@ int main(int argc, char* argv[]) {
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             std::printf("  span      : %.3fL × %.3fH × %.3fW\n",
                         steps * stepDepth, steps * stepHeight, width);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-grid") == 0 && i + 2 < argc) {
+            // Flat plane subdivided into NxN cells. Useful for LOD
+            // demos, deformable surfaces (later --displace passes),
+            // testbench geometry that needs many triangles. Default
+            // size is 1.0 (centered on origin). Hard cap at N=256
+            // so a typo doesn't generate a mesh with 130k+ vertices.
+            std::string womBase = argv[++i];
+            int N = 0;
+            try { N = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-mesh-grid: <subdivisions> must be an integer\n");
+                return 1;
+            }
+            if (N < 1 || N > 256) {
+                std::fprintf(stderr,
+                    "gen-mesh-grid: subdivisions %d out of range (1..256)\n", N);
+                return 1;
+            }
+            float size = 1.0f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { size = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (size <= 0.0f) {
+                std::fprintf(stderr,
+                    "gen-mesh-grid: size must be positive\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // (N+1)x(N+1) vertices on the XY plane centered on origin,
+            // Z=0. Normals all point +Z; UVs are 0..1 across the grid.
+            float halfSize = size * 0.5f;
+            float cellSize = size / N;
+            for (int j = 0; j <= N; ++j) {
+                for (int k = 0; k <= N; ++k) {
+                    wowee::pipeline::WoweeModel::Vertex v;
+                    v.position = glm::vec3(-halfSize + k * cellSize,
+                                            -halfSize + j * cellSize,
+                                            0.0f);
+                    v.normal = glm::vec3(0, 0, 1);
+                    v.texCoord = glm::vec2(static_cast<float>(k) / N,
+                                            static_cast<float>(j) / N);
+                    wom.vertices.push_back(v);
+                }
+            }
+            int stride = N + 1;
+            for (int j = 0; j < N; ++j) {
+                for (int k = 0; k < N; ++k) {
+                    uint32_t a = j * stride + k;
+                    uint32_t b = a + 1;
+                    uint32_t c = a + stride;
+                    uint32_t d = c + 1;
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+            }
+            wom.boundMin = glm::vec3(-halfSize, -halfSize, 0);
+            wom.boundMax = glm::vec3( halfSize,  halfSize, 0);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-grid: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  subdivisions : %d (%dx%d cells)\n", N, N, N);
+            std::printf("  size         : %.3f\n", size);
+            std::printf("  vertices     : %zu = (N+1)²\n", wom.vertices.size());
+            std::printf("  triangles    : %zu = 2N²\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh-from-heightmap") == 0 && i + 2 < argc) {
             // Convert a grayscale PNG into a heightmap mesh. Each
