@@ -29,6 +29,7 @@
 #include <set>
 #include <cctype>
 #include <cstdio>
+#include <chrono>
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include "stb_image_write.h"
@@ -624,6 +625,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Recursively run all per-format validators on every file\n");
     std::printf("  --validate-project <projectDir> [--json]\n");
     std::printf("                         Run --validate-all on every zone in <projectDir>; exit 1 if any zone fails\n");
+    std::printf("  --bench-validate-project <projectDir> [--json]\n");
+    std::printf("                         Time --validate-project per zone; report avg/min/max latency\n");
     std::printf("  --validate-glb <path> [--json]\n");
     std::printf("                         Verify a glTF 2.0 binary's structure (magic, chunks, JSON, accessors)\n");
     std::printf("  --check-glb-bounds <path> [--json]\n");
@@ -811,6 +814,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-project",
+        "--bench-validate-project",
         "--validate-glb", "--info-glb", "--info-glb-tree",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -6342,6 +6346,110 @@ int main(int argc, char* argv[]) {
             }
             std::printf("\n  %d zone(s) failed validation\n", projectFailedZones);
             return 1;
+        } else if (std::strcmp(argv[i], "--bench-validate-project") == 0 && i + 1 < argc) {
+            // Time --validate-project per zone. Reports avg/min/max
+            // latency so users can spot zones that are unusually slow
+            // to validate (huge WHM/WOC pairs, lots of WOM batches).
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "bench-validate-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Per-zone timing pass — same validator walk as
+            // --validate-project but timing each zone separately.
+            struct Timing { std::string name; double ms; int files; };
+            std::vector<Timing> timings;
+            double totalMs = 0;
+            for (const auto& zoneDir : zones) {
+                auto t0 = std::chrono::steady_clock::now();
+                int files = 0;
+                std::error_code ec;
+                for (const auto& entry : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!entry.is_regular_file()) continue;
+                    std::string ext = entry.path().extension().string();
+                    std::string base = entry.path().string();
+                    base = base.substr(0, base.size() - ext.size());
+                    if (ext == ".wom") {
+                        files++;
+                        auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                        (void)validateWomErrors(wom);
+                    } else if (ext == ".wob") {
+                        files++;
+                        auto wob = wowee::pipeline::WoweeBuildingLoader::load(base);
+                        (void)validateWobErrors(wob);
+                    } else if (ext == ".woc") {
+                        files++;
+                        auto woc = wowee::pipeline::WoweeCollisionBuilder::load(entry.path().string());
+                        (void)validateWocErrors(woc);
+                    } else if (ext == ".whm") {
+                        files++;
+                        wowee::pipeline::ADTTerrain terrain;
+                        wowee::pipeline::WoweeTerrainLoader::load(base, terrain);
+                        (void)validateWhmErrors(terrain);
+                    }
+                }
+                auto t1 = std::chrono::steady_clock::now();
+                double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                totalMs += ms;
+                timings.push_back({fs::path(zoneDir).filename().string(), ms, files});
+            }
+            // Compute aggregate stats.
+            double avgMs = !timings.empty() ? totalMs / timings.size() : 0.0;
+            double minMs = 1e30, maxMs = 0;
+            std::string slowestZone;
+            for (const auto& t : timings) {
+                if (t.ms < minMs) minMs = t.ms;
+                if (t.ms > maxMs) { maxMs = t.ms; slowestZone = t.name; }
+            }
+            if (timings.empty()) { minMs = 0; maxMs = 0; }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["projectDir"] = projectDir;
+                j["totalMs"] = totalMs;
+                j["zoneCount"] = timings.size();
+                j["avgMs"] = avgMs;
+                j["minMs"] = minMs;
+                j["maxMs"] = maxMs;
+                j["slowestZone"] = slowestZone;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& t : timings) {
+                    arr.push_back({{"zone", t.name}, {"ms", t.ms},
+                                    {"files", t.files}});
+                }
+                j["perZone"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Bench validate: %s\n", projectDir.c_str());
+            std::printf("  zones    : %zu\n", timings.size());
+            std::printf("  total    : %.2f ms\n", totalMs);
+            std::printf("  per zone : avg=%.2f min=%.2f max=%.2f ms\n",
+                        avgMs, minMs, maxMs);
+            if (!slowestZone.empty()) {
+                std::printf("  slowest  : %s (%.2f ms)\n",
+                            slowestZone.c_str(), maxMs);
+            }
+            std::printf("\n  Per-zone timings:\n");
+            std::printf("    zone                       ms       files  ms/file\n");
+            for (const auto& t : timings) {
+                double mspf = t.files > 0 ? t.ms / t.files : 0.0;
+                std::printf("    %-26s %7.2f  %5d   %6.3f\n",
+                            t.name.substr(0, 26).c_str(), t.ms, t.files, mspf);
+            }
+            return 0;
         } else if ((std::strcmp(argv[i], "--validate-glb") == 0 ||
                     std::strcmp(argv[i], "--info-glb") == 0) && i + 1 < argc) {
             // Shared handler: --validate-glb errors out on broken structure;
