@@ -503,6 +503,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --data <path>          Path to extracted WoW data (manifest.json)\n");
     std::printf("  --adt <map> <x> <y>    Load an ADT tile on startup\n");
     std::printf("  --convert-m2 <path>    Convert M2 model to WOM open format (no GUI)\n");
+    std::printf("  --convert-m2-batch <srcDir>\n");
+    std::printf("                         Bulk M2→WOM conversion across every .m2 in <srcDir> (per-file pass/fail summary)\n");
     std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
@@ -919,7 +921,8 @@ int main(int argc, char* argv[]) {
         "--export-stl", "--import-stl",
         "--bake-zone-glb", "--bake-zone-stl", "--bake-zone-obj",
         "--bake-project-obj", "--bake-project-stl", "--bake-project-glb",
-        "--convert-m2", "--convert-wmo",
+        "--convert-m2", "--convert-m2-batch",
+        "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
         "--migrate-wom", "--migrate-zone", "--migrate-project",
         "--migrate-jsondbc",
@@ -13287,6 +13290,56 @@ int main(int argc, char* argv[]) {
                 std::printf("  pass --dry-run off to actually delete\n");
             }
             return totalFailed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--convert-m2-batch") == 0 && i + 1 < argc) {
+            // Bulk M2→WOM conversion. Walks <srcDir> recursively for
+            // every .m2 file and re-invokes --convert-m2 per file via
+            // a child process so the existing single-file logic (with
+            // its AssetManager + skin-resolution bookkeeping) is reused
+            // verbatim. Reports per-file pass/fail and an aggregate
+            // summary.
+            //
+            // Designed to migrate an entire creature/world model dump
+            // in one go. Pair with --convert-blp-batch and --convert-
+            // wmo-batch to migrate a complete extracted Data tree.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "convert-m2-batch: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> m2Files;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (ext != ".m2") continue;
+                m2Files.push_back(e.path().string());
+            }
+            std::sort(m2Files.begin(), m2Files.end());
+            std::printf("convert-m2-batch: %s\n", srcDir.c_str());
+            std::printf("  candidates : %zu .m2 file(s)\n", m2Files.size());
+            std::string self = argv[0];
+            int ok = 0, failed = 0;
+            for (const auto& m2 : m2Files) {
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --convert-m2 \"" + m2 + "\"";
+                cmd += " >/dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) {
+                    ok++;
+                    std::printf("  [ok]   %s\n", m2.c_str());
+                } else {
+                    failed++;
+                    std::printf("  [FAIL] %s (rc=%d)\n", m2.c_str(), rc);
+                }
+            }
+            std::printf("\n  summary    : %d ok, %d failed (out of %zu)\n",
+                        ok, failed, m2Files.size());
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--repair-zone") == 0 && i + 1 < argc) {
             // Auto-fix the common manifest-vs-disk drift issues that
             // accumulate when a zone is hand-edited or partially copied:
