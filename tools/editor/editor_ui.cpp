@@ -395,6 +395,14 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                     "Same seed → same population (reproducible)");
                 ImGui::EndMenu();
             }
+            if (ImGui::MenuItem("Snap All Spawns to Ground", nullptr, false,
+                                  app.hasTerrainLoaded())) {
+                app.snapAllSpawnsToGround();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Re-snap every creature + object's Z to actual terrain height.\n"
+                    "Run after terrain edits to fix floating/buried spawns.");
             if (ImGui::MenuItem("Clear All Objects/NPCs", nullptr, false, app.hasTerrainLoaded())) {
                 if (app.getObjectPlacer().objectCount() > 0 || app.getNpcSpawner().spawnCount() > 0)
                     app.clearAllObjects();

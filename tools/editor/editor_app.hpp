@@ -102,6 +102,10 @@ public:
     // tile's world bbox. Mirrors the --random-populate-zone CLI
     // command so users can do bulk population from inside the editor.
     void randomPopulateZone(int creatureCount, int objectCount, uint32_t seed);
+    // Re-snap every creature + object Z to actual terrain. In-editor
+    // mirror of the --snap-zone-to-ground CLI; useful after terrain
+    // edits or random population to fix floating/buried spawns.
+    void snapAllSpawnsToGround();
     void centerOnTerrain();
 
     // Multi-tile support

@@ -1792,6 +1792,44 @@ void EditorApp::randomPopulateZone(int creatureCount, int objectCount,
               " creatures + " + std::to_string(placedObjects) + " objects");
 }
 
+void EditorApp::snapAllSpawnsToGround() {
+    if (!terrain_.isLoaded()) {
+        showToast("Load a tile first");
+        return;
+    }
+    auto castDown = [&](const glm::vec3& pos, glm::vec3& hit) {
+        rendering::Ray ray;
+        ray.origin = pos + glm::vec3(0, 0, 500);
+        ray.direction = glm::vec3(0, 0, -1);
+        return terrainEditor_.raycastTerrain(ray, hit);
+    };
+    int snappedC = 0, snappedO = 0;
+    for (auto& s : npcSpawner_.getSpawns()) {
+        glm::vec3 hit;
+        if (castDown(s.position, hit)) {
+            s.position.z = hit.z;
+            snappedC++;
+        }
+        for (auto& wp : s.patrolPath) {
+            if (castDown(wp.position, hit)) wp.position.z = hit.z;
+        }
+    }
+    for (auto& o : objectPlacer_.getObjects()) {
+        glm::vec3 hit;
+        if (castDown(o.position, hit)) {
+            o.position.z = hit.z;
+            snappedO++;
+        }
+    }
+    if (snappedC > 0 || snappedO > 0) {
+        objectsDirty_ = true;
+        autoSavePendingChanges_ = true;
+        viewport_.updateNpcMarkers(npcSpawner_.getSpawns());
+    }
+    showToast("Snapped " + std::to_string(snappedC) + " creature(s) + " +
+              std::to_string(snappedO) + " object(s) to ground");
+}
+
 void EditorApp::clearAllObjects() {
     vkDeviceWaitIdle(window_->getVkContext()->getDevice());
     objectPlacer_.clearAll();
