@@ -571,6 +571,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Duplicate a zone to custom_zones/<slug>/ with renamed slug-prefixed files\n");
     std::printf("  --rename-zone <srcDir> <newName>\n");
     std::printf("                         In-place rename (zone.json + slug-prefixed files + dir); no copy\n");
+    std::printf("  --remove-zone <zoneDir> [--confirm]\n");
+    std::printf("                         Delete a zone directory entirely (requires --confirm to actually delete)\n");
     std::printf("  --clear-zone-content <zoneDir> [--creatures] [--objects] [--quests] [--all]\n");
     std::printf("                         Wipe one or more content files (terrain + manifest preserved)\n");
     std::printf("  --strip-zone <zoneDir> [--dry-run]\n");
@@ -857,7 +859,8 @@ int main(int argc, char* argv[]) {
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest",
-        "--copy-zone", "--rename-zone", "--clear-zone-content", "--strip-zone",
+        "--copy-zone", "--rename-zone", "--remove-zone",
+        "--clear-zone-content", "--strip-zone",
         "--repair-zone", "--gen-makefile", "--gen-project-makefile",
         "--build-woc", "--regen-collision", "--fix-zone",
         "--export-png", "--export-obj", "--import-obj",
@@ -11785,6 +11788,66 @@ int main(int argc, char* argv[]) {
             std::printf("Renamed %s -> %s\n", srcDir.c_str(), finalDir.c_str());
             std::printf("  mapName  : %s -> %s\n", oldSlug.c_str(), newSlug.c_str());
             std::printf("  renamed  : %d slug-prefixed file(s)\n", renamed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--remove-zone") == 0 && i + 1 < argc) {
+            // Delete a zone directory entirely. Requires --confirm to
+            // actually delete (defense against accidental destruction
+            // and against shell glob mishaps). Without --confirm,
+            // just lists what would be deleted.
+            std::string zoneDir = argv[++i];
+            bool confirm = false;
+            if (i + 1 < argc && std::strcmp(argv[i + 1], "--confirm") == 0) {
+                confirm = true; i++;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr,
+                    "remove-zone: %s does not exist\n", zoneDir.c_str());
+                return 1;
+            }
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                // Belt-and-suspenders: refuse to wipe anything that doesn't
+                // look like a zone dir, even with --confirm. Catches typos
+                // like '--remove-zone .' that would nuke the whole project.
+                std::fprintf(stderr,
+                    "remove-zone: %s has no zone.json — refusing to delete (not a zone dir)\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            // Read manifest for the user-facing name.
+            wowee::editor::ZoneManifest zm;
+            std::string zoneName = zoneDir;
+            if (zm.load(zoneDir + "/zone.json")) {
+                zoneName = zm.displayName.empty() ? zm.mapName : zm.displayName;
+            }
+            // Walk for what would be removed (counts + total bytes).
+            int fileCount = 0;
+            uint64_t totalBytes = 0;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                fileCount++;
+                totalBytes += e.file_size(ec);
+            }
+            if (!confirm) {
+                std::printf("remove-zone: %s ('%s')\n",
+                            zoneDir.c_str(), zoneName.c_str());
+                std::printf("  would delete: %d file(s), %.1f KB\n",
+                            fileCount, totalBytes / 1024.0);
+                std::printf("  re-run with --confirm to actually delete\n");
+                return 0;
+            }
+            // Confirmed — wipe it.
+            uintmax_t removed = fs::remove_all(zoneDir, ec);
+            if (ec) {
+                std::fprintf(stderr,
+                    "remove-zone: failed to remove %s (%s)\n",
+                    zoneDir.c_str(), ec.message().c_str());
+                return 1;
+            }
+            std::printf("Removed %s ('%s')\n", zoneDir.c_str(), zoneName.c_str());
+            std::printf("  deleted: %ju filesystem entries, %.1f KB freed\n",
+                        static_cast<uintmax_t>(removed), totalBytes / 1024.0);
             return 0;
         } else if (std::strcmp(argv[i], "--clear-zone-content") == 0 && i + 1 < argc) {
             // Wipe content files (creatures.json / objects.json /
