@@ -506,6 +506,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --convert-m2-batch <srcDir>\n");
     std::printf("                         Bulk M2→WOM conversion across every .m2 in <srcDir> (per-file pass/fail summary)\n");
     std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
+    std::printf("  --convert-wmo-batch <srcDir>\n");
+    std::printf("                         Bulk WMO→WOB conversion across every .wmo in <srcDir> (skips _NNN group files)\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -922,7 +924,7 @@ int main(int argc, char* argv[]) {
         "--bake-zone-glb", "--bake-zone-stl", "--bake-zone-obj",
         "--bake-project-obj", "--bake-project-stl", "--bake-project-glb",
         "--convert-m2", "--convert-m2-batch",
-        "--convert-wmo",
+        "--convert-wmo", "--convert-wmo-batch",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
         "--migrate-wom", "--migrate-zone", "--migrate-project",
         "--migrate-jsondbc",
@@ -13339,6 +13341,67 @@ int main(int argc, char* argv[]) {
             }
             std::printf("\n  summary    : %d ok, %d failed (out of %zu)\n",
                         ok, failed, m2Files.size());
+            return failed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--convert-wmo-batch") == 0 && i + 1 < argc) {
+            // Bulk WMO→WOB conversion. Same orchestrator pattern as
+            // --convert-m2-batch: walks <srcDir> recursively, runs the
+            // existing single-file --convert-wmo per file.
+            //
+            // Skips group files (e.g. Stormwind_001.wmo) since the
+            // root WMO converter already pulls those in transitively.
+            // A WMO is a "group file" iff its stem ends in _NNN where
+            // NNN is a 3-digit integer.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "convert-wmo-batch: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            auto isGroupFile = [](const std::string& stem) {
+                if (stem.size() < 5) return false;
+                if (stem[stem.size() - 4] != '_') return false;
+                for (int k = 1; k <= 3; ++k) {
+                    if (!std::isdigit(static_cast<unsigned char>(
+                            stem[stem.size() - k]))) return false;
+                }
+                return true;
+            };
+            std::vector<std::string> wmoFiles;
+            int skippedGroups = 0;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (ext != ".wmo") continue;
+                std::string stem = e.path().stem().string();
+                if (isGroupFile(stem)) { skippedGroups++; continue; }
+                wmoFiles.push_back(e.path().string());
+            }
+            std::sort(wmoFiles.begin(), wmoFiles.end());
+            std::printf("convert-wmo-batch: %s\n", srcDir.c_str());
+            std::printf("  candidates  : %zu root .wmo file(s) (skipped %d group file(s))\n",
+                        wmoFiles.size(), skippedGroups);
+            std::string self = argv[0];
+            int ok = 0, failed = 0;
+            for (const auto& wmo : wmoFiles) {
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --convert-wmo \"" + wmo + "\"";
+                cmd += " >/dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) {
+                    ok++;
+                    std::printf("  [ok]   %s\n", wmo.c_str());
+                } else {
+                    failed++;
+                    std::printf("  [FAIL] %s (rc=%d)\n", wmo.c_str(), rc);
+                }
+            }
+            std::printf("\n  summary     : %d ok, %d failed (out of %zu)\n",
+                        ok, failed, wmoFiles.size());
             return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--repair-zone") == 0 && i + 1 < argc) {
             // Auto-fix the common manifest-vs-disk drift issues that
