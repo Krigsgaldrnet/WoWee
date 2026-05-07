@@ -731,6 +731,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print objects.json summary (counts, types, scale range) and exit\n");
     std::printf("  --info-quests <p> [--json]\n");
     std::printf("                         Print quests.json summary (counts, rewards, chain errors) and exit\n");
+    std::printf("  --info-quests-by-level <p> [--json]\n");
+    std::printf("                         Distribution of required levels across quests (min/max/avg + bar chart)\n");
+    std::printf("  --info-quests-by-xp <p> [--json]\n");
+    std::printf("                         Distribution of XP rewards (min/max/avg + per-bucket histogram)\n");
     std::printf("  --list-creatures <p> [--json]\n");
     std::printf("                         List every creature with index, name, position, level (for --remove-creature)\n");
     std::printf("  --list-objects <p> [--json]\n");
@@ -813,6 +817,7 @@ int main(int argc, char* argv[]) {
         "--info-quest-graph-stats",
         "--info-creatures-by-faction", "--info-creatures-by-level",
         "--info-objects-by-path", "--info-objects-by-type",
+        "--info-quests-by-level", "--info-quests-by-xp",
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-project",
@@ -2745,6 +2750,133 @@ int main(int argc, char* argv[]) {
                         m2Count, m2Min, m2Max, m2Avg);
             std::printf("  WMO : %d  (scale %.2f-%.2f, avg %.2f)\n",
                         wmoCount, wmoMin, wmoMax, wmoAvg);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-quests-by-level") == 0 && i + 1 < argc) {
+            // Required-level distribution. Catches difficulty-curve
+            // issues where every quest is requiredLevel=1 (player skips
+            // the chain) or every quest is requiredLevel=60 (no early
+            // game), and outliers (a level-30 quest dropped into a
+            // starter zone).
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr,
+                    "info-quests-by-level: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            std::map<uint32_t, int> hist;
+            uint32_t minL = std::numeric_limits<uint32_t>::max();
+            uint32_t maxL = 0;
+            uint64_t sumL = 0;
+            for (const auto& q : qe.getQuests()) {
+                hist[q.requiredLevel]++;
+                if (q.requiredLevel < minL) minL = q.requiredLevel;
+                if (q.requiredLevel > maxL) maxL = q.requiredLevel;
+                sumL += q.requiredLevel;
+            }
+            double avgL = qe.questCount() > 0 ?
+                double(sumL) / qe.questCount() : 0.0;
+            if (qe.questCount() == 0) minL = 0;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["totalQuests"] = qe.questCount();
+                j["minLevel"] = minL;
+                j["maxLevel"] = maxL;
+                j["avgLevel"] = avgL;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& [l, c] : hist) {
+                    arr.push_back({{"level", l}, {"count", c}});
+                }
+                j["levels"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Quests by required level: %s (%zu total)\n",
+                        path.c_str(), qe.questCount());
+            std::printf("  range : %u to %u (avg %.1f)\n", minL, maxL, avgL);
+            std::printf("\n  level   count  bar\n");
+            int maxBarCount = 0;
+            for (const auto& [_, c] : hist) maxBarCount = std::max(maxBarCount, c);
+            for (const auto& [l, c] : hist) {
+                int barLen = maxBarCount > 0 ? (40 * c) / maxBarCount : 0;
+                std::printf("  %5u   %5d  ", l, c);
+                for (int b = 0; b < barLen; ++b) std::printf("█");
+                std::printf("\n");
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-quests-by-xp") == 0 && i + 1 < argc) {
+            // XP reward distribution. Bucket into 100-XP groups so a
+            // 10000-XP quest doesn't make the histogram unreadable.
+            // Catches no-reward quests + cluster analysis (mostly
+            // 100-XP smalls vs mostly 5000-XP boss kills).
+            std::string path = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            wowee::editor::QuestEditor qe;
+            if (!qe.loadFromFile(path)) {
+                std::fprintf(stderr,
+                    "info-quests-by-xp: failed to load %s\n", path.c_str());
+                return 1;
+            }
+            uint32_t minXp = std::numeric_limits<uint32_t>::max();
+            uint32_t maxXp = 0;
+            uint64_t sumXp = 0;
+            int zeroXp = 0;
+            // Bucket size grows with max — keeps the histogram readable
+            // for both starter zones (10-100 XP) and endgame (5000+).
+            std::map<uint32_t, int> buckets;
+            for (const auto& q : qe.getQuests()) {
+                if (q.reward.xp < minXp) minXp = q.reward.xp;
+                if (q.reward.xp > maxXp) maxXp = q.reward.xp;
+                sumXp += q.reward.xp;
+                if (q.reward.xp == 0) zeroXp++;
+            }
+            uint32_t bucketSize = 100;
+            if (maxXp > 1000) bucketSize = 250;
+            if (maxXp > 5000) bucketSize = 500;
+            if (maxXp > 20000) bucketSize = 1000;
+            for (const auto& q : qe.getQuests()) {
+                buckets[(q.reward.xp / bucketSize) * bucketSize]++;
+            }
+            double avgXp = qe.questCount() > 0 ?
+                double(sumXp) / qe.questCount() : 0.0;
+            if (qe.questCount() == 0) minXp = 0;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["file"] = path;
+                j["totalQuests"] = qe.questCount();
+                j["minXp"] = minXp;
+                j["maxXp"] = maxXp;
+                j["avgXp"] = avgXp;
+                j["zeroXpQuests"] = zeroXp;
+                j["bucketSize"] = bucketSize;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& [b, c] : buckets) {
+                    arr.push_back({{"bucket", b}, {"count", c}});
+                }
+                j["buckets"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Quests by XP reward: %s (%zu total)\n",
+                        path.c_str(), qe.questCount());
+            std::printf("  range : %u to %u (avg %.0f, %d with 0 XP)\n",
+                        minXp, maxXp, avgXp, zeroXp);
+            std::printf("\n  bucket (≥XP)   count  bar\n");
+            int maxBarCount = 0;
+            for (const auto& [_, c] : buckets) maxBarCount = std::max(maxBarCount, c);
+            for (const auto& [b, c] : buckets) {
+                int barLen = maxBarCount > 0 ? (40 * c) / maxBarCount : 0;
+                std::printf("  %12u   %5d  ", b, c);
+                for (int x = 0; x < barLen; ++x) std::printf("█");
+                std::printf("\n");
+            }
+            std::printf("  (bucket size: %u XP)\n", bucketSize);
             return 0;
         } else if (std::strcmp(argv[i], "--list-creatures") == 0 && i + 1 < argc) {
             // Verbose enumeration of every spawn — needed because
