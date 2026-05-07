@@ -575,6 +575,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Generate random items.json entries (seeded; quality cap defaults to epic=4)\n");
     std::printf("  --info-zone-audio <zoneDir> [--json]\n");
     std::printf("                         Print zone audio config (music + ambience tracks, volumes)\n");
+    std::printf("  --info-project-audio <projectDir> [--json]\n");
+    std::printf("                         Audio config table across every zone (which zones have music/ambience set)\n");
     std::printf("  --snap-zone-to-ground <zoneDir>\n");
     std::printf("                         Re-snap every creature/object in a zone to actual terrain height\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
@@ -1025,6 +1027,7 @@ int main(int argc, char* argv[]) {
         "--add-creature", "--add-object", "--add-quest", "--add-item",
         "--random-populate-zone", "--random-populate-items",
         "--info-zone-audio", "--snap-zone-to-ground",
+        "--info-project-audio",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13457,6 +13460,94 @@ int main(int argc, char* argv[]) {
                         zm.ambienceNight.empty() ? "(none)" : zm.ambienceNight.c_str());
             std::printf("  music vol     : %.2f\n", zm.musicVolume);
             std::printf("  ambience vol  : %.2f\n", zm.ambienceVolume);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-audio") == 0 && i + 1 < argc) {
+            // Project-wide audio rollup. Walks every zone in
+            // <projectDir>, reads the audio fields out of zone.json,
+            // emits a table showing which zones have music/ambience
+            // configured. Useful for spotting zones still missing
+            // audio assignment before a release pass.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-audio: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct Row {
+                std::string name;
+                std::string music;
+                std::string ambDay;
+                std::string ambNight;
+                float musicVol, ambVol;
+            };
+            std::vector<Row> rows;
+            int withMusic = 0, withAmbience = 0;
+            for (const auto& zoneDir : zones) {
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load(zoneDir + "/zone.json")) continue;
+                Row r;
+                r.name = fs::path(zoneDir).filename().string();
+                r.music = zm.musicTrack;
+                r.ambDay = zm.ambienceDay;
+                r.ambNight = zm.ambienceNight;
+                r.musicVol = zm.musicVolume;
+                r.ambVol = zm.ambienceVolume;
+                if (!r.music.empty()) withMusic++;
+                if (!r.ambDay.empty() || !r.ambNight.empty()) withAmbience++;
+                rows.push_back(r);
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["withMusic"] = withMusic;
+                j["withAmbience"] = withAmbience;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"name", r.name},
+                                    {"music", r.music},
+                                    {"ambienceDay", r.ambDay},
+                                    {"ambienceNight", r.ambNight},
+                                    {"musicVolume", r.musicVol},
+                                    {"ambienceVolume", r.ambVol}});
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project audio: %s\n", projectDir.c_str());
+            std::printf("  zones         : %zu\n", zones.size());
+            std::printf("  with music    : %d\n", withMusic);
+            std::printf("  with ambience : %d\n", withAmbience);
+            std::printf("\n  zone                    music?  ambience?  m-vol  a-vol\n");
+            auto label = [](const std::string& s) {
+                if (s.empty()) return "(none)";
+                auto sl = s.rfind('\\');
+                if (sl == std::string::npos) sl = s.rfind('/');
+                return sl == std::string::npos ? s.c_str()
+                                                : s.c_str() + sl + 1;
+            };
+            for (const auto& r : rows) {
+                std::string ambLabel = !r.ambDay.empty() ? r.ambDay :
+                                        !r.ambNight.empty() ? r.ambNight : "";
+                std::printf("  %-22s  %-6s  %-9s  %5.2f  %5.2f\n",
+                            r.name.substr(0, 22).c_str(),
+                            r.music.empty() ? "no" : "yes",
+                            ambLabel.empty() ? "no" : "yes",
+                            r.musicVol, r.ambVol);
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--snap-zone-to-ground") == 0 && i + 1 < argc) {
             // Walk every creature + object in a zone and snap their Z
