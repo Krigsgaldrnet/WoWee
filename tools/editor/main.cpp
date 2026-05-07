@@ -538,6 +538,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Duplicate the item at index, assign next free id (and optional name override)\n");
     std::printf("  --validate-items <zoneDir>\n");
     std::printf("                         Schema check on items.json: duplicate ids, quality range, required fields\n");
+    std::printf("  --info-project-items <projectDir> [--json]\n");
+    std::printf("                         Aggregate item counts and quality histogram across every zone in a project\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -944,7 +946,7 @@ int main(int argc, char* argv[]) {
         "--list-items",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
-        "--clone-item", "--validate-items",
+        "--clone-item", "--validate-items", "--info-project-items",
         "--clone-object",
         "--remove-creature", "--remove-object", "--remove-quest", "--remove-item",
         "--copy-zone", "--rename-zone", "--remove-zone",
@@ -12884,6 +12886,100 @@ int main(int argc, char* argv[]) {
                 std::printf("    - %s\n", e.c_str());
             }
             return 1;
+        } else if (std::strcmp(argv[i], "--info-project-items") == 0 && i + 1 < argc) {
+            // Project-wide rollup of items.json across zones. Reports
+            // per-zone item counts plus project-wide totals and a
+            // quality histogram. Useful for "do my zones have enough
+            // loot variety?" capacity checks.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-items: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            static const char* qualityNames[] = {
+                "poor", "common", "uncommon", "rare", "epic",
+                "legendary", "artifact"
+            };
+            struct ZRow {
+                std::string name;
+                int count = 0;
+                int qHist[7] = {};
+            };
+            std::vector<ZRow> rows;
+            int totalItems = 0;
+            int globalQHist[7] = {};
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                std::string path = zoneDir + "/items.json";
+                if (fs::exists(path)) {
+                    nlohmann::json doc;
+                    try {
+                        std::ifstream in(path);
+                        in >> doc;
+                    } catch (...) {}
+                    if (doc.contains("items") && doc["items"].is_array()) {
+                        r.count = static_cast<int>(doc["items"].size());
+                        for (const auto& it : doc["items"]) {
+                            uint32_t q = it.value("quality", 1u);
+                            if (q > 6) q = 0;
+                            r.qHist[q]++;
+                            globalQHist[q]++;
+                        }
+                    }
+                }
+                totalItems += r.count;
+                rows.push_back(r);
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["totalItems"] = totalItems;
+                nlohmann::json qual;
+                for (int q = 0; q <= 6; ++q) qual[qualityNames[q]] = globalQHist[q];
+                j["quality"] = qual;
+                nlohmann::json zarr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    nlohmann::json zq;
+                    for (int q = 0; q <= 6; ++q) zq[qualityNames[q]] = r.qHist[q];
+                    zarr.push_back({{"name", r.name},
+                                    {"count", r.count},
+                                    {"quality", zq}});
+                }
+                j["zones"] = zarr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project items: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu\n", zones.size());
+            std::printf("  total items  : %d\n\n", totalItems);
+            std::printf("  Quality histogram (project-wide):\n");
+            for (int q = 0; q <= 6; ++q) {
+                if (globalQHist[q] == 0) continue;
+                std::printf("    %-10s : %d\n", qualityNames[q], globalQHist[q]);
+            }
+            std::printf("\n  zone                  items   poor common uncommon rare epic legend art\n");
+            for (const auto& r : rows) {
+                std::printf("  %-20s  %5d  %5d  %6d  %8d  %4d  %4d  %6d  %3d\n",
+                            r.name.substr(0, 20).c_str(), r.count,
+                            r.qHist[0], r.qHist[1], r.qHist[2],
+                            r.qHist[3], r.qHist[4], r.qHist[5], r.qHist[6]);
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--scaffold-zone") == 0 && i + 1 < argc) {
             // Generate a minimal valid empty zone — useful for kickstarting
             // a new authoring session without needing to launch the GUI.
