@@ -508,6 +508,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --convert-wmo <path>   Convert WMO building to WOB open format (no GUI)\n");
     std::printf("  --convert-wmo-batch <srcDir>\n");
     std::printf("                         Bulk WMO→WOB conversion across every .wmo in <srcDir> (skips _NNN group files)\n");
+    std::printf("  --convert-dbc-batch <srcDir>\n");
+    std::printf("                         Bulk DBC→JSON conversion across every .dbc in <srcDir> (sidecars next to source)\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -927,7 +929,7 @@ int main(int argc, char* argv[]) {
         "--bake-project-obj", "--bake-project-stl", "--bake-project-glb",
         "--convert-m2", "--convert-m2-batch",
         "--convert-wmo", "--convert-wmo-batch",
-        "--convert-dbc-json", "--convert-json-dbc",
+        "--convert-dbc-json", "--convert-dbc-batch", "--convert-json-dbc",
         "--convert-blp-png", "--convert-blp-batch",
         "--migrate-wom", "--migrate-zone", "--migrate-project",
         "--migrate-jsondbc",
@@ -13451,6 +13453,52 @@ int main(int argc, char* argv[]) {
             }
             std::printf("\n  summary    : %d ok, %d failed (out of %zu)\n",
                         ok, failed, blpFiles.size());
+            return failed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--convert-dbc-batch") == 0 && i + 1 < argc) {
+            // Bulk DBC→JSON conversion. Walks <srcDir> recursively for
+            // every .dbc file and re-invokes --convert-dbc-json per
+            // file. Each .json sidecar is written next to the source.
+            // Final commit in the four-format batch-converter set:
+            // m2/wmo/blp/dbc → wom/wob/png/json. Run all four to
+            // migrate an extracted Data tree end-to-end.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "convert-dbc-batch: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> dbcFiles;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (ext != ".dbc") continue;
+                dbcFiles.push_back(e.path().string());
+            }
+            std::sort(dbcFiles.begin(), dbcFiles.end());
+            std::printf("convert-dbc-batch: %s\n", srcDir.c_str());
+            std::printf("  candidates : %zu .dbc file(s)\n", dbcFiles.size());
+            std::string self = argv[0];
+            int ok = 0, failed = 0;
+            for (const auto& dbc : dbcFiles) {
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --convert-dbc-json \"" + dbc + "\"";
+                cmd += " >/dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) {
+                    ok++;
+                    std::printf("  [ok]   %s\n", dbc.c_str());
+                } else {
+                    failed++;
+                    std::printf("  [FAIL] %s (rc=%d)\n", dbc.c_str(), rc);
+                }
+            }
+            std::printf("\n  summary    : %d ok, %d failed (out of %zu)\n",
+                        ok, failed, dbcFiles.size());
             return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--repair-zone") == 0 && i + 1 < argc) {
             // Auto-fix the common manifest-vs-disk drift issues that
