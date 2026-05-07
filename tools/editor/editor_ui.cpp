@@ -1961,6 +1961,13 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             int bIdx = static_cast<int>(tmpl.behavior);
             if (ImGui::Combo("Behavior", &bIdx, behaviors, 4))
                 tmpl.behavior = static_cast<CreatureBehavior>(bIdx);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Runtime AI mode (not editor preview).\n"
+                    "Stationary: stay put.\n"
+                    "Patrol: walk waypoints (W to add at cursor on selected NPC).\n"
+                    "Wander: random walk within radius — common default.\n"
+                    "Scripted: handled by server-side script.");
 
             if (tmpl.behavior == CreatureBehavior::Wander)
                 ImGui::SliderFloat("Wander Dist", &tmpl.wanderRadius, 1.0f, 100.0f);
