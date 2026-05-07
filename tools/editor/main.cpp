@@ -571,6 +571,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --random-populate-zone <zoneDir> [--seed N] [--creatures N] [--objects N]\n");
     std::printf("                         Add random creatures/objects to a zone (seeded for reproducibility)\n");
+    std::printf("  --random-populate-items <zoneDir> [--seed N] [--count N] [--max-quality Q]\n");
+    std::printf("                         Generate random items.json entries (seeded; quality cap defaults to epic=4)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
     std::printf("  --export-zone-items-md <zoneDir> [out.md]\n");
@@ -1017,7 +1019,7 @@ int main(int argc, char* argv[]) {
         "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
-        "--random-populate-zone",
+        "--random-populate-zone", "--random-populate-items",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -13290,6 +13292,122 @@ int main(int argc, char* argv[]) {
                         placedCreatures, spawner.spawnCount());
             std::printf("  objects    : %d added (%zu total)\n",
                         placedObjects, placer.getObjects().size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--random-populate-items") == 0 && i + 1 < argc) {
+            // Seeded random items.json populator. Pulls a base name
+            // and a noun from inline word lists, picks a quality up
+            // to maxQuality, randomizes itemLevel and stack size
+            // around plausible defaults. Useful for playtest loot
+            // tables that need bulk content without hand-typing each
+            // entry.
+            //
+            // Flags: --seed N (default 7), --count N (default 30),
+            //        --max-quality Q (default 4 = epic; 0..6 valid).
+            std::string zoneDir = argv[++i];
+            uint32_t seed = 7;
+            int count = 30;
+            int maxQuality = 4;
+            while (i + 2 < argc && argv[i + 1][0] == '-') {
+                std::string flag = argv[++i];
+                if (flag == "--seed") {
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                    catch (...) {}
+                } else if (flag == "--count") {
+                    try { count = std::stoi(argv[++i]); } catch (...) {}
+                } else if (flag == "--max-quality") {
+                    try { maxQuality = std::stoi(argv[++i]); } catch (...) {}
+                } else {
+                    std::fprintf(stderr,
+                        "random-populate-items: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            if (maxQuality < 0 || maxQuality > 6) maxQuality = 4;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "random-populate-items: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            uint32_t rng = seed ? seed : 1u;
+            auto next01 = [&]() {
+                rng = rng * 1664525u + 1013904223u;
+                return (rng >> 8) / float(1 << 24);
+            };
+            auto rangeI = [&](int a, int b) {
+                return a + static_cast<int>(next01() * (b - a + 1));
+            };
+            // Inline name lexicon. {prefix, noun} → "Glowing Sword".
+            // Quality ramps prefix selection; rare+ items get fancier
+            // adjectives.
+            static const std::vector<const char*> kPrefixes[5] = {
+                {"Worn", "Tattered", "Cracked", "Dented", "Faded"},      // poor
+                {"Common", "Plain", "Basic", "Simple", "Standard"},      // common
+                {"Sharp", "Sturdy", "Polished", "Reinforced", "Fine"},   // uncommon
+                {"Glowing", "Runed", "Enchanted", "Storm", "Mystic"},    // rare
+                {"Ancient", "Eternal", "Heroic", "Vengeful", "Soul"},    // epic
+            };
+            static const std::vector<const char*> kNouns = {
+                "Sword", "Mace", "Axe", "Dagger", "Staff",
+                "Bow", "Helm", "Cuirass", "Greaves", "Gauntlets",
+                "Ring", "Amulet", "Cloak", "Belt", "Boots",
+                "Potion", "Scroll", "Tome", "Wand", "Shield",
+            };
+            // Open the items doc.
+            std::string ipath = zoneDir + "/items.json";
+            nlohmann::json doc = nlohmann::json::object({{"items",
+                                  nlohmann::json::array()}});
+            if (fs::exists(ipath)) {
+                std::ifstream in(ipath);
+                try { in >> doc; } catch (...) {}
+                if (!doc.contains("items") || !doc["items"].is_array()) {
+                    doc["items"] = nlohmann::json::array();
+                }
+            }
+            std::set<uint32_t> used;
+            for (const auto& it : doc["items"]) {
+                if (it.contains("id") && it["id"].is_number_unsigned())
+                    used.insert(it["id"].get<uint32_t>());
+            }
+            int added = 0;
+            for (int n = 0; n < count; ++n) {
+                int q = std::min(maxQuality, rangeI(0, maxQuality));
+                int qBucket = std::min(q, 4);
+                const auto& prefixes = kPrefixes[qBucket];
+                std::string name = prefixes[rangeI(0,
+                    static_cast<int>(prefixes.size()) - 1)];
+                name += " ";
+                name += kNouns[rangeI(0, static_cast<int>(kNouns.size()) - 1)];
+                uint32_t id = 1;
+                while (used.count(id)) ++id;
+                used.insert(id);
+                int ilvl = std::max(1,
+                    rangeI(1, 5) + q * 12 + rangeI(-3, 3));
+                doc["items"].push_back({
+                    {"id", id},
+                    {"name", name},
+                    {"quality", q},
+                    {"displayId", rangeI(1000, 9999)},
+                    {"itemLevel", ilvl},
+                    {"stackable", q == 0 || q == 1 ? rangeI(1, 20) : 1},
+                });
+                added++;
+            }
+            std::ofstream out(ipath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "random-populate-items: failed to write %s\n",
+                    ipath.c_str());
+                return 1;
+            }
+            out << doc.dump(2);
+            out.close();
+            std::printf("random-populate-items: %s\n", ipath.c_str());
+            std::printf("  seed         : %u\n", seed);
+            std::printf("  added        : %d\n", added);
+            std::printf("  total items  : %zu\n", doc["items"].size());
+            std::printf("  max quality  : %d\n", maxQuality);
             return 0;
         } else if (std::strcmp(argv[i], "--list-items") == 0 && i + 1 < argc) {
             // Inspect <zoneDir>/items.json. Pretty-prints id / quality
