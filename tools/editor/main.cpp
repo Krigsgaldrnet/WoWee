@@ -786,6 +786,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Aggregate texture refs across all WOM models in a zone (deduped)\n");
     std::printf("  --info-zone-models-total <zoneDir> [--json]\n");
     std::printf("                         Aggregate WOM/WOB stats across a zone (verts, tris, bones, batches, doodads)\n");
+    std::printf("  --list-zone-meshes <zoneDir> [--json]\n");
+    std::printf("                         Per-mesh listing of every .wom in a zone (verts, tris, bones, textures, bytes)\n");
     std::printf("  --info-project-models-total <projectDir> [--json]\n");
     std::printf("                         Aggregate WOM/WOB stats across an entire project (per-zone breakdown + totals)\n");
     std::printf("  --info-wob <wob-base> [--json]\n");
@@ -908,6 +910,7 @@ int main(int argc, char* argv[]) {
         "--info-bones", "--export-bones-dot", "--list-zone-textures",
         "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
+        "--list-zone-meshes",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
         "--info-extract", "--info-extract-tree", "--info-extract-budget",
@@ -1931,6 +1934,106 @@ int main(int argc, char* argv[]) {
             std::printf("\n  Combined  :\n");
             std::printf("    vertices  : %llu\n", static_cast<unsigned long long>(womVerts + wobVerts));
             std::printf("    triangles : %llu\n", static_cast<unsigned long long>((womIndices + wobIndices) / 3));
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-zone-meshes") == 0 && i + 1 < argc) {
+            // Per-mesh breakdown of every .wom file in <zoneDir>.
+            // Complements --info-zone-models-total (aggregate)
+            // by surfacing individual mesh metrics — useful for
+            // spotting outliers ("which mesh is using 80% of my
+            // triangle budget?") and for content audits.
+            //
+            // Sorted by triangle count descending so the heaviest
+            // meshes float to the top of the table.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr,
+                    "list-zone-meshes: %s does not exist\n", zoneDir.c_str());
+                return 1;
+            }
+            struct Row {
+                std::string path;
+                size_t verts;
+                size_t tris;
+                size_t bones;
+                size_t batches;
+                size_t textures;
+                uint64_t bytes;
+                uint32_t version;
+            };
+            std::vector<Row> rows;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                if (e.path().extension() != ".wom") continue;
+                std::string base = e.path().string();
+                if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                Row r;
+                r.path = fs::relative(e.path(), zoneDir, ec).string();
+                if (ec) r.path = e.path().filename().string();
+                r.verts = wom.vertices.size();
+                r.tris = wom.indices.size() / 3;
+                r.bones = wom.bones.size();
+                r.batches = wom.batches.size();
+                r.textures = wom.texturePaths.size();
+                r.bytes = e.file_size(ec);
+                if (ec) r.bytes = 0;
+                r.version = wom.version;
+                rows.push_back(r);
+            }
+            std::sort(rows.begin(), rows.end(),
+                      [](const Row& a, const Row& b) { return a.tris > b.tris; });
+            uint64_t totVerts = 0, totTris = 0, totBones = 0, totBytes = 0;
+            for (const auto& r : rows) {
+                totVerts += r.verts; totTris += r.tris;
+                totBones += r.bones; totBytes += r.bytes;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["meshCount"] = rows.size();
+                j["totals"] = {{"vertices", totVerts},
+                                {"triangles", totTris},
+                                {"bones", totBones},
+                                {"bytes", totBytes}};
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"path", r.path},
+                                    {"version", r.version},
+                                    {"vertices", r.verts},
+                                    {"triangles", r.tris},
+                                    {"bones", r.bones},
+                                    {"batches", r.batches},
+                                    {"textures", r.textures},
+                                    {"bytes", r.bytes}});
+                }
+                j["meshes"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone meshes: %s\n", zoneDir.c_str());
+            std::printf("  meshes : %zu\n", rows.size());
+            std::printf("  totals : %llu verts, %llu tris, %llu bones, %.1f KB\n",
+                        static_cast<unsigned long long>(totVerts),
+                        static_cast<unsigned long long>(totTris),
+                        static_cast<unsigned long long>(totBones),
+                        totBytes / 1024.0);
+            if (rows.empty()) {
+                std::printf("\n  *no .wom files in this zone*\n");
+                return 0;
+            }
+            std::printf("\n  v   verts    tris   bones  batch  tex    bytes  path\n");
+            for (const auto& r : rows) {
+                std::printf("  v%u %6zu  %6zu  %5zu  %5zu  %3zu  %7llu  %s\n",
+                            r.version, r.verts, r.tris, r.bones,
+                            r.batches, r.textures,
+                            static_cast<unsigned long long>(r.bytes),
+                            r.path.c_str());
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--info-project-models-total") == 0 && i + 1 < argc) {
             // Multi-zone aggregate. Walks every zone in <projectDir>,
