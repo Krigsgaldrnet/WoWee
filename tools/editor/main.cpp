@@ -672,6 +672,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Render a hierarchical tree view of a zone's contents (no --json)\n");
     std::printf("  --info-project-tree <projectDir>\n");
     std::printf("                         Tree view of every zone in a project with quick counts (no --json)\n");
+    std::printf("  --info-project-bytes <projectDir> [--json]\n");
+    std::printf("                         Per-zone byte rollup with proprietary-vs-open category split (size audit)\n");
     std::printf("  --info-zone-bytes <zoneDir> [--json]\n");
     std::printf("                         Per-file size breakdown grouped by category, sorted largest-first\n");
     std::printf("  --info-zone-extents <zoneDir> [--json]\n");
@@ -864,7 +866,8 @@ int main(int argc, char* argv[]) {
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
         "--zone-summary", "--info-zone-tree", "--info-project-tree",
-        "--info-zone-bytes", "--info-zone-extents", "--info-zone-water",
+        "--info-zone-bytes", "--info-project-bytes",
+        "--info-zone-extents", "--info-zone-water",
         "--info-zone-density",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
@@ -5507,6 +5510,153 @@ int main(int argc, char* argv[]) {
                             c.c_str(), p.second,
                             static_cast<unsigned long long>(p.first),
                             totalBytes ? (100.0 * p.first / totalBytes) : 0.0);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-bytes") == 0 && i + 1 < argc) {
+            // Project-wide byte audit. Walks every zone in projectDir,
+            // re-uses --info-zone-bytes' categorization, and prints a
+            // per-zone breakdown table plus aggregated category totals.
+            // The headline number is the proprietary-vs-open size split
+            // — surfaces how much disk a project still spends on .m2/
+            // .wmo/.blp/.dbc payloads vs the open WOM/WOB/PNG/JSON
+            // replacements.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-bytes: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            // Same categorizer used by --info-zone-bytes — keep in sync
+            // if categories evolve there.
+            auto categorize = [](const fs::path& p) -> std::string {
+                std::string ext = p.extension().string();
+                std::string name = p.filename().string();
+                if (ext == ".whm" || ext == ".wot" || ext == ".woc") return "terrain";
+                if (ext == ".wom") return "model (open)";
+                if (ext == ".wob") return "building (open)";
+                if (ext == ".m2" || ext == ".skin") return "model (proprietary)";
+                if (ext == ".wmo") return "building (proprietary)";
+                if (ext == ".blp") return "texture (proprietary)";
+                if (ext == ".png") return "texture (open/derived)";
+                if (ext == ".dbc") return "DBC (proprietary)";
+                if (ext == ".json") return "json (source)";
+                if (ext == ".glb" || ext == ".obj" || ext == ".stl") return "3D export (derived)";
+                if (ext == ".html" || ext == ".dot" || ext == ".csv") return "doc (derived)";
+                if (name == "ZONE.md" || name == "DEPS.md") return "doc (derived)";
+                return "other";
+            };
+            // The proprietary-vs-open split is a key quality metric for
+            // the open-format migration push. Anything tagged "(open)"
+            // or "(open/derived)" counts toward open; anything tagged
+            // "(proprietary)" counts toward proprietary; everything
+            // else ("terrain" / "json (source)" / derived docs) is
+            // neutral.
+            auto isOpen = [](const std::string& cat) {
+                return cat.find("(open") != std::string::npos;
+            };
+            auto isProprietary = [](const std::string& cat) {
+                return cat.find("(proprietary)") != std::string::npos;
+            };
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow {
+                std::string name;
+                uint64_t totalBytes = 0;
+                int fileCount = 0;
+                uint64_t openBytes = 0;
+                uint64_t propBytes = 0;
+            };
+            std::vector<ZRow> rows;
+            std::map<std::string, std::pair<uint64_t, int>> globalCat;
+            uint64_t projectBytes = 0;
+            int projectFiles = 0;
+            for (const auto& zoneDir : zones) {
+                ZRow r;
+                r.name = fs::path(zoneDir).filename().string();
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    uint64_t sz = e.file_size(ec);
+                    if (ec) continue;
+                    std::string cat = categorize(e.path());
+                    r.totalBytes += sz;
+                    r.fileCount++;
+                    if (isOpen(cat)) r.openBytes += sz;
+                    else if (isProprietary(cat)) r.propBytes += sz;
+                    globalCat[cat].first += sz;
+                    globalCat[cat].second++;
+                }
+                projectBytes += r.totalBytes;
+                projectFiles += r.fileCount;
+                rows.push_back(r);
+            }
+            uint64_t globalOpen = 0, globalProp = 0;
+            for (const auto& [c, p] : globalCat) {
+                if (isOpen(c)) globalOpen += p.first;
+                else if (isProprietary(c)) globalProp += p.first;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["totalBytes"] = projectBytes;
+                j["fileCount"] = projectFiles;
+                j["openBytes"] = globalOpen;
+                j["proprietaryBytes"] = globalProp;
+                nlohmann::json zarr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    zarr.push_back({{"name", r.name},
+                                    {"totalBytes", r.totalBytes},
+                                    {"fileCount", r.fileCount},
+                                    {"openBytes", r.openBytes},
+                                    {"proprietaryBytes", r.propBytes}});
+                }
+                j["zones"] = zarr;
+                nlohmann::json catObj;
+                for (const auto& [c, p] : globalCat) {
+                    catObj[c] = {{"bytes", p.first}, {"count", p.second}};
+                }
+                j["byCategory"] = catObj;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project bytes: %s\n", projectDir.c_str());
+            std::printf("  total : %llu bytes (%.1f KB) across %d file(s) in %zu zone(s)\n",
+                        static_cast<unsigned long long>(projectBytes),
+                        projectBytes / 1024.0, projectFiles, zones.size());
+            std::printf("\n  zone                   files       bytes   open(B)  prop(B)\n");
+            for (const auto& r : rows) {
+                std::printf("  %-22s %5d  %10llu  %8llu  %7llu\n",
+                            r.name.substr(0, 22).c_str(),
+                            r.fileCount,
+                            static_cast<unsigned long long>(r.totalBytes),
+                            static_cast<unsigned long long>(r.openBytes),
+                            static_cast<unsigned long long>(r.propBytes));
+            }
+            std::printf("\n  Per-category (project-wide):\n");
+            for (const auto& [c, p] : globalCat) {
+                std::printf("  %-26s %4d files  %12llu bytes  (%5.1f%%)\n",
+                            c.c_str(), p.second,
+                            static_cast<unsigned long long>(p.first),
+                            projectBytes ? (100.0 * p.first / projectBytes) : 0.0);
+            }
+            std::printf("\n  Open-vs-proprietary split:\n");
+            std::printf("    open         : %12llu bytes\n",
+                        static_cast<unsigned long long>(globalOpen));
+            std::printf("    proprietary  : %12llu bytes\n",
+                        static_cast<unsigned long long>(globalProp));
+            uint64_t denom = globalOpen + globalProp;
+            if (denom > 0) {
+                std::printf("    open share   : %5.1f%%\n", 100.0 * globalOpen / denom);
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-zone-extents") == 0 && i + 1 < argc) {
