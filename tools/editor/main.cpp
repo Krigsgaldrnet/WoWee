@@ -509,6 +509,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Upgrade an older WOM (v1/v2) to WOM3 with a default single-batch entry\n");
     std::printf("  --migrate-zone <zoneDir>\n");
     std::printf("                         Run --migrate-wom in-place on every WOM under <zoneDir>\n");
+    std::printf("  --migrate-project <projectDir>\n");
+    std::printf("                         Run --migrate-zone across every zone in <projectDir>\n");
     std::printf("  --migrate-jsondbc <path> [out.json]\n");
     std::printf("                         Auto-fix a JSON DBC sidecar: add missing format/source, sync recordCount\n");
     std::printf("  --list-zones [--json]  List discovered custom zones and exit\n");
@@ -879,7 +881,8 @@ int main(int argc, char* argv[]) {
         "--bake-project-obj", "--bake-project-stl", "--bake-project-glb",
         "--convert-m2", "--convert-wmo",
         "--convert-dbc-json", "--convert-json-dbc", "--convert-blp-png",
-        "--migrate-wom", "--migrate-zone", "--migrate-jsondbc",
+        "--migrate-wom", "--migrate-zone", "--migrate-project",
+        "--migrate-jsondbc",
     };
     for (int i = 1; i < argc; i++) {
         for (const char* opt : kArgRequired) {
@@ -14540,6 +14543,75 @@ int main(int argc, char* argv[]) {
                 std::printf("  FAILED    : %d (see stderr)\n", failed);
             }
             return failed == 0 ? 0 : 1;
+        }
+        if (std::strcmp(argv[i], "--migrate-project") == 0 && i + 1 < argc) {
+            // Project-level wrapper around --migrate-zone. Walks every
+            // zone in <projectDir> and upgrades legacy WOMs in-place.
+            // Idempotent — already-migrated files become no-ops, safe to
+            // run repeatedly.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "migrate-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            int totalScanned = 0, totalUpgraded = 0, totalAlreadyV3 = 0, totalFailed = 0;
+            // Per-zone breakdown for the summary table.
+            struct ZRow { std::string name; int scanned, upgraded, alreadyV3, failed; };
+            std::vector<ZRow> rows;
+            for (const auto& zoneDir : zones) {
+                ZRow r{fs::path(zoneDir).filename().string(), 0, 0, 0, 0};
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wom") continue;
+                    r.scanned++;
+                    std::string base = e.path().string();
+                    if (base.size() >= 4) base = base.substr(0, base.size() - 4);
+                    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                    if (!wom.isValid()) { r.failed++; continue; }
+                    if (!wom.batches.empty()) { r.alreadyV3++; continue; }
+                    wowee::pipeline::WoweeModel::Batch b;
+                    b.indexStart = 0;
+                    b.indexCount = static_cast<uint32_t>(wom.indices.size());
+                    b.textureIndex = 0;
+                    b.blendMode = 0;
+                    b.flags = 0;
+                    wom.batches.push_back(b);
+                    if (wowee::pipeline::WoweeModelLoader::save(wom, base)) {
+                        r.upgraded++;
+                    } else {
+                        r.failed++;
+                    }
+                }
+                totalScanned += r.scanned;
+                totalUpgraded += r.upgraded;
+                totalAlreadyV3 += r.alreadyV3;
+                totalFailed += r.failed;
+                rows.push_back(r);
+            }
+            std::printf("migrate-project: %s\n", projectDir.c_str());
+            std::printf("  zones      : %zu\n", zones.size());
+            std::printf("  totals     : %d scanned, %d upgraded, %d already-v3, %d failed\n",
+                        totalScanned, totalUpgraded, totalAlreadyV3, totalFailed);
+            if (!rows.empty()) {
+                std::printf("\n  zone                       scan  upgrade  v3  failed\n");
+                for (const auto& r : rows) {
+                    std::printf("  %-26s  %4d   %5d   %3d  %5d\n",
+                                r.name.substr(0, 26).c_str(),
+                                r.scanned, r.upgraded, r.alreadyV3, r.failed);
+                }
+            }
+            return totalFailed == 0 ? 0 : 1;
         }
         if (std::strcmp(argv[i], "--migrate-jsondbc") == 0 && i + 1 < argc) {
             // Auto-fix common schema problems in JSON DBC sidecars so they
