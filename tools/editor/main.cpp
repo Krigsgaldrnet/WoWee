@@ -510,6 +510,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Bulk WMO→WOB conversion across every .wmo in <srcDir> (skips _NNN group files)\n");
     std::printf("  --convert-dbc-batch <srcDir>\n");
     std::printf("                         Bulk DBC→JSON conversion across every .dbc in <srcDir> (sidecars next to source)\n");
+    std::printf("  --migrate-data-tree <srcDir>\n");
+    std::printf("                         Run all four bulk converters (m2/wmo/blp/dbc) end-to-end on an extracted Data tree\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -932,6 +934,7 @@ int main(int argc, char* argv[]) {
         "--convert-dbc-json", "--convert-dbc-batch", "--convert-json-dbc",
         "--convert-blp-png", "--convert-blp-batch",
         "--migrate-wom", "--migrate-zone", "--migrate-project",
+        "--migrate-data-tree",
         "--migrate-jsondbc",
     };
     for (int i = 1; i < argc; i++) {
@@ -13500,6 +13503,53 @@ int main(int argc, char* argv[]) {
             std::printf("\n  summary    : %d ok, %d failed (out of %zu)\n",
                         ok, failed, dbcFiles.size());
             return failed == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--migrate-data-tree") == 0 && i + 1 < argc) {
+            // End-to-end open-format migration. Runs all four bulk
+            // converters (m2/wmo/blp/dbc → wom/wob/png/json) in order
+            // on a single extracted Data tree. Each step's full
+            // output streams through; aggregate exit code is failure
+            // if any sub-converter fails.
+            //
+            // Idempotent: re-running on a partially-converted tree
+            // re-attempts the originals (which still produce the
+            // same sidecar) without removing any prior outputs.
+            std::string srcDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "migrate-data-tree: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            std::string self = argv[0];
+            struct Step { const char* name; const char* flag; int rc; };
+            std::vector<Step> steps = {
+                {"M2  → WOM ", "--convert-m2-batch",   0},
+                {"WMO → WOB ", "--convert-wmo-batch",  0},
+                {"BLP → PNG ", "--convert-blp-batch",  0},
+                {"DBC → JSON", "--convert-dbc-batch",  0},
+            };
+            int totalFailed = 0;
+            std::printf("migrate-data-tree: %s\n", srcDir.c_str());
+            for (auto& s : steps) {
+                std::printf("\n=== %s (%s) ===\n", s.name, s.flag);
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" " + s.flag + " \"" + srcDir + "\"";
+                s.rc = std::system(cmd.c_str());
+                if (s.rc != 0) totalFailed++;
+            }
+            std::printf("\n=== migrate-data-tree summary ===\n");
+            for (const auto& s : steps) {
+                std::printf("  [%s] %s  (rc=%d)\n",
+                            s.rc == 0 ? "PASS" : "FAIL", s.name, s.rc);
+            }
+            if (totalFailed == 0) {
+                std::printf("\n  ALL FOUR PASSED — open-format migration complete\n");
+                return 0;
+            }
+            std::printf("\n  %d step(s) reported failures (re-run individually for detail)\n",
+                        totalFailed);
+            return 1;
         } else if (std::strcmp(argv[i], "--repair-zone") == 0 && i + 1 < argc) {
             // Auto-fix the common manifest-vs-disk drift issues that
             // accumulate when a zone is hand-edited or partially copied:
