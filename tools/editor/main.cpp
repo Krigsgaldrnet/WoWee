@@ -650,6 +650,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Per-file size breakdown grouped by category, sorted largest-first\n");
     std::printf("  --info-zone-extents <zoneDir> [--json]\n");
     std::printf("                         Compute the zone's bounding box (XY tile range, Z height min/max)\n");
+    std::printf("  --info-zone-water <zoneDir> [--json]\n");
+    std::printf("                         Aggregate water-layer stats across all tiles (layer count, types, area)\n");
     std::printf("  --export-zone-summary-md <zoneDir> [out.md]\n");
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
     std::printf("  --export-zone-csv <zoneDir> [outDir]\n");
@@ -804,7 +806,7 @@ int main(int argc, char* argv[]) {
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
         "--zone-summary", "--info-zone-tree", "--info-project-tree",
-        "--info-zone-bytes", "--info-zone-extents",
+        "--info-zone-bytes", "--info-zone-extents", "--info-zone-water",
         "--export-zone-summary-md", "--export-quest-graph",
         "--export-zone-csv", "--export-zone-html", "--export-project-html",
         "--export-project-md", "--export-zone-checksum",
@@ -4812,6 +4814,92 @@ int main(int argc, char* argv[]) {
             std::printf("  size         : %.1f x %.1f x %.1f yards (%.0fm x %.0fm x %.1fm)\n",
                         widthX, widthY, heightZ,
                         widthX * 0.9144f, widthY * 0.9144f, heightZ * 0.9144f);
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-zone-water") == 0 && i + 1 < argc) {
+            // Aggregate water-layer stats across all tiles in a zone.
+            // Useful for confirming a 'lake zone' actually has water,
+            // or for budget planning ('how many MH2O cells does my
+            // archipelago zone carry?'). Liquid types: 0=water,
+            // 1=ocean, 2=magma, 3=slime.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "info-zone-water: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr, "info-zone-water: parse failed\n");
+                return 1;
+            }
+            int waterChunks = 0, totalLayers = 0;
+            std::map<uint16_t, int> typeHist;  // liquidType -> chunk count
+            float minH = 1e30f, maxH = -1e30f;
+            int loadedTiles = 0;
+            for (const auto& [tx, ty] : zm.tiles) {
+                std::string tileBase = zoneDir + "/" + zm.mapName + "_" +
+                                        std::to_string(tx) + "_" + std::to_string(ty);
+                if (!wowee::pipeline::WoweeTerrainLoader::exists(tileBase)) continue;
+                wowee::pipeline::ADTTerrain terrain;
+                wowee::pipeline::WoweeTerrainLoader::load(tileBase, terrain);
+                loadedTiles++;
+                for (size_t c = 0; c < terrain.waterData.size(); ++c) {
+                    const auto& w = terrain.waterData[c];
+                    if (!w.hasWater()) continue;
+                    waterChunks++;
+                    totalLayers += static_cast<int>(w.layers.size());
+                    for (const auto& layer : w.layers) {
+                        typeHist[layer.liquidType]++;
+                        minH = std::min(minH, layer.minHeight);
+                        maxH = std::max(maxH, layer.maxHeight);
+                    }
+                }
+            }
+            if (waterChunks == 0) { minH = 0; maxH = 0; }
+            auto typeName = [](uint16_t t) {
+                switch (t) {
+                    case 0: return "water";
+                    case 1: return "ocean";
+                    case 2: return "magma";
+                    case 3: return "slime";
+                }
+                return "?";
+            };
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["loadedTiles"] = loadedTiles;
+                j["waterChunks"] = waterChunks;
+                j["totalLayers"] = totalLayers;
+                j["heightRange"] = {minH, maxH};
+                nlohmann::json types = nlohmann::json::array();
+                for (const auto& [t, c] : typeHist) {
+                    types.push_back({{"type", t}, {"name", typeName(t)}, {"layerCount", c}});
+                }
+                j["types"] = types;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone water: %s\n", zoneDir.c_str());
+            std::printf("  loaded tiles : %d\n", loadedTiles);
+            std::printf("  water chunks : %d (out of %d possible)\n",
+                        waterChunks, loadedTiles * 256);
+            std::printf("  total layers : %d\n", totalLayers);
+            if (waterChunks > 0) {
+                std::printf("  height range : %.2f to %.2f\n", minH, maxH);
+                std::printf("\n  By liquid type:\n");
+                for (const auto& [t, c] : typeHist) {
+                    std::printf("    %s (%u): %d layer(s)\n",
+                                typeName(t), t, c);
+                }
+            } else {
+                std::printf("  (no water in this zone)\n");
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--export-zone-summary-md") == 0 && i + 1 < argc) {
             // Render a Markdown documentation page for a zone. Useful for
