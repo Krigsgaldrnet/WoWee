@@ -629,6 +629,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Run --validate-all on every zone in <projectDir>; exit 1 if any zone fails\n");
     std::printf("  --bench-validate-project <projectDir> [--json]\n");
     std::printf("                         Time --validate-project per zone; report avg/min/max latency\n");
+    std::printf("  --bench-bake-project <projectDir> [--json]\n");
+    std::printf("                         Time WHM/WOT load per zone (proxy for bake cost); report timings\n");
     std::printf("  --validate-glb <path> [--json]\n");
     std::printf("                         Verify a glTF 2.0 binary's structure (magic, chunks, JSON, accessors)\n");
     std::printf("  --check-glb-bounds <path> [--json]\n");
@@ -826,7 +828,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-project",
-        "--bench-validate-project",
+        "--bench-validate-project", "--bench-bake-project",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -6673,6 +6675,104 @@ int main(int argc, char* argv[]) {
                 double mspf = t.files > 0 ? t.ms / t.files : 0.0;
                 std::printf("    %-26s %7.2f  %5d   %6.3f\n",
                             t.name.substr(0, 26).c_str(), t.ms, t.files, mspf);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--bench-bake-project") == 0 && i + 1 < argc) {
+            // Time WHM/WOT load (the dominant cost in --bake-zone-glb/obj/
+            // stl) per zone. The actual write side adds ~constant cost
+            // proportional to vertex count, so load time is a strong
+            // proxy. Useful for tracking 'has my latest geometry change
+            // made baking 3× slower?' across releases.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "bench-bake-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct Timing {
+                std::string name;
+                int tiles;
+                double loadMs;
+                int chunks;
+            };
+            std::vector<Timing> timings;
+            double totalMs = 0;
+            for (const auto& zoneDir : zones) {
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load(zoneDir + "/zone.json")) continue;
+                Timing t{fs::path(zoneDir).filename().string(), 0, 0.0, 0};
+                auto t0 = std::chrono::steady_clock::now();
+                for (const auto& [tx, ty] : zm.tiles) {
+                    std::string base = zoneDir + "/" + zm.mapName + "_" +
+                                        std::to_string(tx) + "_" + std::to_string(ty);
+                    if (!wowee::pipeline::WoweeTerrainLoader::exists(base)) continue;
+                    wowee::pipeline::ADTTerrain terrain;
+                    wowee::pipeline::WoweeTerrainLoader::load(base, terrain);
+                    t.tiles++;
+                    for (const auto& chunk : terrain.chunks) {
+                        if (chunk.heightMap.isLoaded()) t.chunks++;
+                    }
+                }
+                auto t1 = std::chrono::steady_clock::now();
+                t.loadMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                totalMs += t.loadMs;
+                timings.push_back(t);
+            }
+            double avgMs = !timings.empty() ? totalMs / timings.size() : 0.0;
+            double minMs = 1e30, maxMs = 0;
+            std::string slowest;
+            for (const auto& t : timings) {
+                if (t.loadMs < minMs) minMs = t.loadMs;
+                if (t.loadMs > maxMs) { maxMs = t.loadMs; slowest = t.name; }
+            }
+            if (timings.empty()) { minMs = 0; maxMs = 0; }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["projectDir"] = projectDir;
+                j["totalMs"] = totalMs;
+                j["zoneCount"] = timings.size();
+                j["avgMs"] = avgMs;
+                j["minMs"] = minMs;
+                j["maxMs"] = maxMs;
+                j["slowestZone"] = slowest;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& t : timings) {
+                    arr.push_back({{"zone", t.name},
+                                    {"loadMs", t.loadMs},
+                                    {"tiles", t.tiles},
+                                    {"chunks", t.chunks}});
+                }
+                j["perZone"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Bench bake (load-only): %s\n", projectDir.c_str());
+            std::printf("  zones    : %zu\n", timings.size());
+            std::printf("  total    : %.2f ms (terrain load)\n", totalMs);
+            std::printf("  per zone : avg=%.2f min=%.2f max=%.2f ms\n",
+                        avgMs, minMs, maxMs);
+            if (!slowest.empty()) {
+                std::printf("  slowest  : %s (%.2f ms)\n", slowest.c_str(), maxMs);
+            }
+            std::printf("\n  Per-zone:\n");
+            std::printf("    zone                       ms     tiles  chunks  ms/tile\n");
+            for (const auto& t : timings) {
+                double mspt = t.tiles > 0 ? t.loadMs / t.tiles : 0.0;
+                std::printf("    %-26s %7.2f  %5d   %5d   %6.2f\n",
+                            t.name.substr(0, 26).c_str(),
+                            t.loadMs, t.tiles, t.chunks, mspt);
             }
             return 0;
         } else if ((std::strcmp(argv[i], "--validate-glb") == 0 ||
