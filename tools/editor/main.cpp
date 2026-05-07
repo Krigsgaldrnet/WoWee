@@ -512,6 +512,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Bulk DBC→JSON conversion across every .dbc in <srcDir> (sidecars next to source)\n");
     std::printf("  --migrate-data-tree <srcDir>\n");
     std::printf("                         Run all four bulk converters (m2/wmo/blp/dbc) end-to-end on an extracted Data tree\n");
+    std::printf("  --info-data-tree <srcDir> [--json]\n");
+    std::printf("                         Per-format migration-progress report (m2 vs wom, wmo vs wob, blp vs png, dbc vs json)\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -934,7 +936,7 @@ int main(int argc, char* argv[]) {
         "--convert-dbc-json", "--convert-dbc-batch", "--convert-json-dbc",
         "--convert-blp-png", "--convert-blp-batch",
         "--migrate-wom", "--migrate-zone", "--migrate-project",
-        "--migrate-data-tree",
+        "--migrate-data-tree", "--info-data-tree",
         "--migrate-jsondbc",
     };
     for (int i = 1; i < argc; i++) {
@@ -13550,6 +13552,118 @@ int main(int argc, char* argv[]) {
             std::printf("\n  %d step(s) reported failures (re-run individually for detail)\n",
                         totalFailed);
             return 1;
+        } else if (std::strcmp(argv[i], "--info-data-tree") == 0 && i + 1 < argc) {
+            // Non-destructive companion to --migrate-data-tree. Walks
+            // <srcDir> recursively, counts files per format pair
+            // (proprietary vs open replacement), and reports per-pair
+            // counts plus an overall "migration share" — the fraction
+            // of source files that already have an open sidecar
+            // present.
+            //
+            // Designed to drop into CI dashboards: a 100% share
+            // means every proprietary asset has a deterministic open
+            // counterpart on disk and you can drop the originals.
+            std::string srcDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(srcDir) || !fs::is_directory(srcDir)) {
+                std::fprintf(stderr,
+                    "info-data-tree: %s is not a directory\n",
+                    srcDir.c_str());
+                return 1;
+            }
+            // Each pair: proprietary extension + open extension. The
+            // open file is considered a "sidecar" when it sits next
+            // to the proprietary file with the same stem.
+            struct Pair {
+                const char* prop;   // ".m2"
+                const char* open;   // ".wom"
+                int propCount = 0;
+                int sidecarCount = 0;     // .wom next to a .m2
+                int orphanOpenCount = 0;  // .wom with no matching .m2
+            };
+            std::vector<Pair> pairs = {
+                {".m2",  ".wom"},
+                {".wmo", ".wob"},
+                {".blp", ".png"},
+                {".dbc", ".json"},
+            };
+            // First pass: collect filenames by extension. Use a set
+            // of (parent, stem) for the sidecar lookup so the test is
+            // O(log n) per file rather than O(n).
+            std::map<std::string, std::set<std::pair<std::string, std::string>>> byExt;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(srcDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                std::string ext = e.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                byExt[ext].insert({e.path().parent_path().string(),
+                                   e.path().stem().string()});
+            }
+            for (auto& p : pairs) {
+                const auto& propSet = byExt[p.prop];
+                const auto& openSet = byExt[p.open];
+                p.propCount = static_cast<int>(propSet.size());
+                for (const auto& key : openSet) {
+                    if (propSet.count(key)) p.sidecarCount++;
+                    else p.orphanOpenCount++;
+                }
+            }
+            int totalProp = 0, totalSidecar = 0, totalOrphanOpen = 0;
+            for (const auto& p : pairs) {
+                totalProp += p.propCount;
+                totalSidecar += p.sidecarCount;
+                totalOrphanOpen += p.orphanOpenCount;
+            }
+            double overallShare = totalProp > 0
+                                  ? 100.0 * totalSidecar / totalProp
+                                  : 100.0;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["srcDir"] = srcDir;
+                j["totalProprietary"] = totalProp;
+                j["totalSidecars"] = totalSidecar;
+                j["totalOrphanOpen"] = totalOrphanOpen;
+                j["migrationShare"] = overallShare;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& p : pairs) {
+                    double share = p.propCount > 0
+                                   ? 100.0 * p.sidecarCount / p.propCount
+                                   : 100.0;
+                    arr.push_back({{"proprietary", p.prop},
+                                    {"open", p.open},
+                                    {"propCount", p.propCount},
+                                    {"sidecarCount", p.sidecarCount},
+                                    {"orphanOpenCount", p.orphanOpenCount},
+                                    {"share", share}});
+                }
+                j["pairs"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("info-data-tree: %s\n", srcDir.c_str());
+            std::printf("  total proprietary : %d\n", totalProp);
+            std::printf("  total sidecars    : %d (open files matched to a proprietary)\n",
+                        totalSidecar);
+            std::printf("  orphan open files : %d (no matching proprietary — already-stripped)\n",
+                        totalOrphanOpen);
+            std::printf("  migration share   : %.1f%% (sidecars / proprietary)\n",
+                        overallShare);
+            std::printf("\n  pair             prop   open-side   orphan   share\n");
+            for (const auto& p : pairs) {
+                double share = p.propCount > 0
+                               ? 100.0 * p.sidecarCount / p.propCount
+                               : 100.0;
+                char label[32];
+                std::snprintf(label, sizeof(label), "%-4s → %-5s", p.prop, p.open);
+                std::printf("  %-14s  %5d   %9d   %6d   %5.1f%%\n",
+                            label, p.propCount, p.sidecarCount,
+                            p.orphanOpenCount, share);
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--repair-zone") == 0 && i + 1 < argc) {
             // Auto-fix the common manifest-vs-disk drift issues that
             // accumulate when a zone is hand-edited or partially copied:
