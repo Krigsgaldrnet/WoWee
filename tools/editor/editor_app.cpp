@@ -351,6 +351,10 @@ void EditorApp::processEvents() {
                         objectPlacer_.clearSelection();
                         npcSpawner_.clearSelection();
                         ui_.clearPath();
+                        if (pendingCrater_.active) {
+                            pendingCrater_.active = false;
+                            showToast("Crater placement cancelled");
+                        }
                     }
                 }
                 if (sc == SDL_SCANCODE_DELETE) {
@@ -442,7 +446,11 @@ void EditorApp::processEvents() {
                     }
                 }
             }
-            if (!io.WantCaptureKeyboard)
+            // Use WantTextInput (true only while typing into a text widget)
+            // instead of WantCaptureKeyboard (true whenever any ImGui panel
+            // has focus). Otherwise hovering over a panel silently disables
+            // the WASD/QE flycam, which was the practical user complaint.
+            if (!io.WantTextInput)
                 camera_.processKeyEvent(event.key);
         }
 
@@ -527,6 +535,31 @@ void EditorApp::processEvents() {
                     giz.endDrag();
                     giz.setMode(TransformMode::None);
                 } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+                    // Pending crater placement: take precedence over the
+                    // mode-based click handling below so the next click
+                    // anywhere on terrain spawns the crater instead of
+                    // doing whatever the current mode does.
+                    if (pendingCrater_.active) {
+                        auto ext = window_->getVkContext()->getSwapchainExtent();
+                        rendering::Ray ray = camera_.getCamera().screenToWorldRay(
+                            static_cast<float>(event.button.x),
+                            static_cast<float>(event.button.y),
+                            static_cast<float>(ext.width),
+                            static_cast<float>(ext.height));
+                        glm::vec3 hitPos;
+                        if (terrainEditor_.raycastTerrain(ray, hitPos)) {
+                            terrainEditor_.createCrater(hitPos,
+                                                          pendingCrater_.radius,
+                                                          pendingCrater_.depth,
+                                                          pendingCrater_.rim);
+                            showToast("Crater placed");
+                            pendingCrater_.active = false;
+                        }
+                        // If the click missed terrain, leave the mode armed
+                        // so the user can try again without re-pressing the
+                        // button.
+                        continue;
+                    }
                     // Path point capture (river/road tool)
                     // Alt+click eyedropper in paint mode
                     if (mode_ == EditorMode::Paint && (SDL_GetModState() & KMOD_ALT)) {
@@ -1044,6 +1077,7 @@ void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tile
         return;
     }
     if (!std::isfinite(baseHeight)) baseHeight = 0.0f;
+    activeBiome_ = biome;
     terrain_ = TerrainEditor::createBlankTerrain(tileX, tileY, baseHeight, biome);
     // Clear all previous state
     clearAllObjects();
@@ -1632,17 +1666,22 @@ void EditorApp::generateCompleteZone() {
     for (int i = 0; i < 256; i++) allChunks.push_back(i);
     terrainEditor_.recalcNormals(allChunks);
 
-    // Step 4: Auto-paint by height
+    // Step 4: Auto-paint by height — use the active biome's textures so
+    // subsequent generations honor the user's biome choice. Was previously
+    // hardcoded to Tanaris/Elwynn/Barrens regardless of biome, which made
+    // every "Create + Generate" run look the same.
+    const auto& bt = getBiomeTextures(activeBiome_);
     std::vector<TexturePainter::HeightBand> bands = {
-        {90.0f, "Tileset\\Tanaris\\TanarisSandBase01.blp"},
-        {110.0f, "Tileset\\Elwynn\\ElwynnGrassBase.blp"},
-        {140.0f, "Tileset\\Barrens\\BarrensRock01.blp"},
-        {99999.0f, "Tileset\\Expansion02\\Dragonblight\\DragonblightFreshSmoothSnowA.blp"}
+        {90.0f,    bt.secondary},  // low (sand-like layer)
+        {110.0f,   bt.base},       // mid (primary ground)
+        {140.0f,   bt.accent},     // high (rocks/roots)
+        {99999.0f, bt.detail},     // peak (overlay)
     };
     texturePainter_.autoPaintByHeight(bands);
 
-    // Step 5: Slope paint (rock on cliffs)
-    texturePainter_.autoPaintBySlope(0.4f, "Tileset\\Desolace\\DesolaceRock01.blp");
+    // Step 5: Slope paint (rock on cliffs) — use the biome's accent so it
+    // blends with the rest of the palette.
+    texturePainter_.autoPaintBySlope(0.4f, bt.accent);
 
     // Step 6: Add detail roughness
     terrainEditor_.addDetailNoise(1.5f, 0.08f, 77);
@@ -1661,6 +1700,96 @@ void EditorApp::generateCompleteZone() {
     viewport_.loadTerrain(mesh, terrain_.textures, loadedTileX_, loadedTileY_);
 
     showToast("Zone generated!");
+}
+
+void EditorApp::randomPopulateZone(int creatureCount, int objectCount,
+                                      uint32_t seed) {
+    if (!terrain_.isLoaded() || loadedTileX_ < 0 || loadedTileY_ < 0) {
+        showToast("Load a tile first");
+        return;
+    }
+    // Loaded tile world bbox. Each tile is 533.33y; WoW grid centers
+    // tile (32, 32) at origin (+X = -wowY tile, +Y = -wowX tile).
+    constexpr float kTileSize = 533.33333f;
+    float wMinX = (32.0f - loadedTileY_ - 1) * kTileSize;
+    float wMaxX = (32.0f - loadedTileY_)     * kTileSize;
+    float wMinY = (32.0f - loadedTileX_ - 1) * kTileSize;
+    float wMaxY = (32.0f - loadedTileX_)     * kTileSize;
+    float baseZ = terrain_.chunks[0].position[2];
+
+    uint32_t rng = seed ? seed : 1u;
+    auto next01 = [&]() {
+        rng = rng * 1664525u + 1013904223u;
+        return (rng >> 8) / float(1 << 24);
+    };
+    auto rangeF = [&](float a, float b) { return a + next01() * (b - a); };
+    auto rangeI = [&](int a, int b) {
+        return a + static_cast<int>(next01() * (b - a + 1));
+    };
+    static const std::vector<std::pair<const char*, uint32_t>> kRandomCreatures = {
+        {"Wolf", 5}, {"Boar", 4}, {"Bear", 7}, {"Spider", 3},
+        {"Bandit", 6}, {"Kobold", 4}, {"Murloc", 5}, {"Skeleton", 5},
+        {"Wisp", 3}, {"Goblin", 5}, {"Stag", 4}, {"Crab", 3},
+    };
+    static const std::vector<const char*> kRandomObjects = {
+        "World/Generic/Tree01.wmo",
+        "World/Generic/Boulder.wmo",
+        "World/Generic/Bush.wmo",
+        "World/Generic/Stump.wmo",
+        "World/Generic/Mushroom.wmo",
+    };
+    // Ground-snap helper: cast a downward ray from far above the (x,y)
+    // position to find the actual terrain height. Without this, spawns
+    // sit at baseZ which can be metres below or above the carved
+    // terrain after generation.
+    auto groundZ = [&](float x, float y) -> float {
+        rendering::Ray ray;
+        ray.origin = glm::vec3(x, y, baseZ + 500.0f);
+        ray.direction = glm::vec3(0, 0, -1);
+        glm::vec3 hit;
+        if (terrainEditor_.raycastTerrain(ray, hit)) return hit.z;
+        return baseZ;  // fall back to base if the ray misses
+    };
+    int placedCreatures = 0, placedObjects = 0;
+    for (int n = 0; n < creatureCount; ++n) {
+        const auto& [name, baseLvl] = kRandomCreatures[
+            rangeI(0, static_cast<int>(kRandomCreatures.size()) - 1)];
+        CreatureSpawn s;
+        s.name = name;
+        s.position.x = rangeF(wMinX, wMaxX);
+        s.position.y = rangeF(wMinY, wMaxY);
+        s.position.z = groundZ(s.position.x, s.position.y);
+        int lvl = std::max(1, static_cast<int>(baseLvl) + rangeI(-1, 2));
+        s.level = static_cast<uint32_t>(lvl);
+        s.health = 50 + s.level * 10;
+        s.orientation = rangeF(0.0f, 360.0f);
+        npcSpawner_.placeCreature(s);
+        placedCreatures++;
+    }
+    auto& objs = objectPlacer_.getObjects();
+    uint32_t maxUid = 0;
+    for (const auto& o : objs) maxUid = std::max(maxUid, o.uniqueId);
+    for (int n = 0; n < objectCount; ++n) {
+        PlacedObject o;
+        o.path = kRandomObjects[
+            rangeI(0, static_cast<int>(kRandomObjects.size()) - 1)];
+        o.type = PlaceableType::WMO;
+        o.position.x = rangeF(wMinX, wMaxX);
+        o.position.y = rangeF(wMinY, wMaxY);
+        o.position.z = groundZ(o.position.x, o.position.y);
+        o.rotation = glm::vec3(0.0f, rangeF(0.0f, 6.28f), 0.0f);
+        o.scale = rangeF(0.8f, 1.4f);
+        o.uniqueId = ++maxUid;
+        o.nameId = 0;
+        o.selected = false;
+        objs.push_back(o);
+        placedObjects++;
+    }
+    objectsDirty_ = true;
+    autoSavePendingChanges_ = true;
+    viewport_.updateNpcMarkers(npcSpawner_.getSpawns());
+    showToast("Populated: " + std::to_string(placedCreatures) +
+              " creatures + " + std::to_string(placedObjects) + " objects");
 }
 
 void EditorApp::clearAllObjects() {

@@ -43,8 +43,11 @@ struct CreatureSpawn {
     // Templates can be scaled higher per-NPC if needed.
     float scale = 1.0f;
 
-    // Behavior
-    CreatureBehavior behavior = CreatureBehavior::Stationary;
+    // Behavior. Default is Wander with a small radius so newly-placed
+    // creatures actually move at runtime — Stationary was the old
+    // default and was a frequent "my NPCs don't patrol" complaint.
+    // Editor preview doesn't run AI; this kicks in once the zone ships.
+    CreatureBehavior behavior = CreatureBehavior::Wander;
     float wanderRadius = 10.0f;
     float aggroRadius = 20.0f;
     float leashRadius = 40.0f;

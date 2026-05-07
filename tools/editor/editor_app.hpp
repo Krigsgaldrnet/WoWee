@@ -3,6 +3,7 @@
 #include "editor_camera.hpp"
 #include "editor_viewport.hpp"
 #include "editor_ui.hpp"
+#include "terrain_biomes.hpp"
 #include "terrain_editor.hpp"
 #include "texture_painter.hpp"
 #include "object_placer.hpp"
@@ -97,6 +98,10 @@ public:
     int batchConvertAssets(const std::string& dataDir);
     void clearAllObjects();
     void generateCompleteZone();
+    // Drop N random creatures + M random objects within the loaded
+    // tile's world bbox. Mirrors the --random-populate-zone CLI
+    // command so users can do bulk population from inside the editor.
+    void randomPopulateZone(int creatureCount, int objectCount, uint32_t seed);
     void centerOnTerrain();
 
     // Multi-tile support
@@ -185,6 +190,27 @@ private:
     std::string loadedMap_;
     int loadedTileX_ = -1;
     int loadedTileY_ = -1;
+
+    // Last biome the user selected via createNewTerrain. generateCompleteZone()
+    // reads this so subsequent generations honor the active biome instead of
+    // reapplying the same hardcoded heightband textures every time.
+    Biome activeBiome_ = Biome::Grassland;
+
+    // "Click on terrain to place crater" mode. The Crater button arms this
+    // with the user's chosen radius/depth/rim; the next left-click on
+    // terrain consumes it and creates the crater at the actual click
+    // position. Solves the UX problem where pressing the button used a
+    // stale brush position because the cursor was on the button itself.
+public:
+    struct PendingCrater {
+        bool active = false;
+        float radius = 30.0f;
+        float depth = 10.0f;
+        float rim = 3.0f;
+    };
+    PendingCrater& pendingCrater() { return pendingCrater_; }
+private:
+    PendingCrater pendingCrater_;
 };
 
 } // namespace editor

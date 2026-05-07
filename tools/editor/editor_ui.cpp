@@ -83,17 +83,34 @@ void EditorUI::render(EditorApp& app) {
         auto& cam = app.getEditorCamera().getCamera();
         auto vp2 = ImGui::GetMainViewport();
         glm::mat4 viewProj = cam.getProjectionMatrix() * cam.getViewMatrix();
-        for (const auto& npc : app.getNpcSpawner().getSpawns()) {
+        bool selectedOnly = app.getViewport().getNpcNameplatesSelectedOnly();
+        int selIdx = app.getNpcSpawner().getSelectedIndex();
+        const auto& spawns = app.getNpcSpawner().getSpawns();
+        for (size_t i = 0; i < spawns.size(); ++i) {
+            const auto& npc = spawns[i];
+            // Toggle: when selectedOnly is on, skip every NPC except the
+            // selected one. Was previously always-on, which got noisy on
+            // populated zones.
+            if (selectedOnly && static_cast<int>(i) != selIdx) continue;
+            // Z offset: was 35 yards (way too high; nameplates floated in
+            // the sky). Drop to ~3.5 yards which sits just above an
+            // average creature's head and reads as attached.
             glm::vec4 clip = viewProj * glm::vec4(npc.position.x, npc.position.y,
-                                                    npc.position.z + 35.0f, 1.0f);
+                                                    npc.position.z + 3.5f, 1.0f);
             if (clip.w <= 0.01f) continue;
             glm::vec3 ndc = glm::vec3(clip) / clip.w;
             float sx = (ndc.x * 0.5f + 0.5f) * vp2->Size.x;
             float sy = (ndc.y * 0.5f + 0.5f) * vp2->Size.y;
             if (sx < 0 || sx > vp2->Size.x || sy < 0 || sy > vp2->Size.y) continue;
 
+            // Center the text on the projected position by measuring the
+            // actual string width — the previous fixed -30 X offset
+            // misaligned every name that wasn't ~6 chars long.
+            ImVec2 textSz = ImGui::CalcTextSize(npc.name.c_str());
             ImVec4 col = npc.hostile ? ImVec4(1, 0.3f, 0.3f, 0.9f) : ImVec4(0.3f, 1, 0.3f, 0.9f);
-            ImGui::GetForegroundDrawList()->AddText(ImVec2(sx - 30, sy - 10), ImGui::ColorConvertFloat4ToU32(col),
+            ImGui::GetForegroundDrawList()->AddText(
+                ImVec2(sx - textSz.x * 0.5f, sy - textSz.y - 2),
+                ImGui::ColorConvertFloat4ToU32(col),
                 npc.name.c_str());
         }
     }
@@ -135,14 +152,23 @@ void EditorUI::processActions(EditorApp& app) {
 }
 
 void EditorUI::setPathPoint(const glm::vec3& pos) {
+    // Hard cap so a runaway click handler doesn't grow the polyline
+    // unboundedly. 64 segments is more than enough for a tile-sized
+    // river or road.
+    constexpr size_t kMaxPathPoints = 64;
+    if (pathPoints_.size() >= kMaxPathPoints) return;
     if (pathCapture_ == PathCapture::WaitingStart) {
-        pathStart_ = pos;
-        pathStartSet_ = true;
+        pathPoints_.clear();
+        pathPoints_.push_back(pos);
         pathCapture_ = PathCapture::WaitingEnd;
     } else if (pathCapture_ == PathCapture::WaitingEnd) {
-        pathEnd_ = pos;
-        pathEndSet_ = true;
-        pathCapture_ = PathCapture::None;
+        pathPoints_.push_back(pos);
+        // After the second point we stay in capture mode but switch to
+        // WaitingMore so the user can either click "Apply" with the
+        // 2-segment polyline or keep adding waypoints.
+        pathCapture_ = PathCapture::WaitingMore;
+    } else if (pathCapture_ == PathCapture::WaitingMore) {
+        pathPoints_.push_back(pos);
     }
 }
 
@@ -353,6 +379,22 @@ void EditorUI::renderMenuBar(EditorApp& app) {
             }
             if (ImGui::MenuItem("Generate Complete Zone", nullptr, false, app.hasTerrainLoaded()))
                 app.generateCompleteZone();
+            if (ImGui::BeginMenu("Random Populate", app.hasTerrainLoaded())) {
+                static int rpCreatures = 20;
+                static int rpObjects = 10;
+                static int rpSeed = 42;
+                ImGui::SliderInt("Creatures##rp", &rpCreatures, 0, 200);
+                ImGui::SliderInt("Objects##rp", &rpObjects, 0, 200);
+                ImGui::InputInt("Seed##rp", &rpSeed);
+                if (rpSeed < 0) rpSeed = 0;
+                if (ImGui::Button("Populate##rp", ImVec2(-1, 0))) {
+                    app.randomPopulateZone(rpCreatures, rpObjects,
+                                            static_cast<uint32_t>(rpSeed));
+                }
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                    "Same seed → same population (reproducible)");
+                ImGui::EndMenu();
+            }
             if (ImGui::MenuItem("Clear All Objects/NPCs", nullptr, false, app.hasTerrainLoaded())) {
                 if (app.getObjectPlacer().objectCount() > 0 || app.getNpcSpawner().spawnCount() > 0)
                     app.clearAllObjects();
@@ -1006,11 +1048,43 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Width##path", &pathWidth_, 2.0f, 50.0f);
             if (pathMode_ == 0) ImGui::SliderFloat("Depth##path", &pathDepth_, 1.0f, 30.0f);
 
-            if (pathCapture_ == PathCapture::None && !pathStartSet_) {
+            // "Painting roads to/from models" — append the position of
+            // the currently-selected object or NPC as a path waypoint.
+            // Common workflow: place inn + town hall, select inn → click
+            // append, select town hall → click append, click Apply Path.
+            // The path then runs between them as a road.
+            const auto* selObj = app.getObjectPlacer().getSelected();
+            const auto* selNpc = app.getNpcSpawner().getSelected();
+            const char* srcLabel = selObj ? "object" :
+                                    selNpc ? "NPC" : nullptr;
+            glm::vec3 srcPos(0);
+            if (selObj) srcPos = selObj->position;
+            else if (selNpc) srcPos = selNpc->position;
+            if (srcLabel) {
+                std::string btn = std::string("Append selected ") + srcLabel +
+                                   " as path point";
+                if (ImGui::Button(btn.c_str(), ImVec2(-1, 0))) {
+                    // setPathPoint only acts when capture is in one of
+                    // its waiting states. If we're idle, kick to
+                    // WaitingStart for the first append; subsequent
+                    // appends progress through Waiting* automatically.
+                    if (pathCapture_ == PathCapture::None) {
+                        pathCapture_ = pathPoints_.empty()
+                                       ? PathCapture::WaitingStart
+                                       : PathCapture::WaitingMore;
+                    }
+                    setPathPoint(srcPos);
+                    app.showToast("Path point added at selected " +
+                                   std::string(srcLabel));
+                }
+            } else {
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                    "Select an object or NPC to append its position as a path point.");
+            }
+
+            if (pathCapture_ == PathCapture::None && pathPoints_.empty()) {
                 if (ImGui::Button("Click Start Point", ImVec2(-1, 0))) {
                     pathCapture_ = PathCapture::WaitingStart;
-                    pathStartSet_ = false;
-                    pathEndSet_ = false;
                     app.showToast("Click terrain to set start point");
                 }
             } else if (pathCapture_ == PathCapture::WaitingStart) {
@@ -1019,33 +1093,54 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
                     pathCapture_ = PathCapture::None;
                 }
             } else if (pathCapture_ == PathCapture::WaitingEnd) {
-                ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1), "Start set at (%.0f, %.0f) — click for END",
-                                   pathStart_.x, pathStart_.y);
+                ImGui::TextColored(ImVec4(0.3f, 1, 0.3f, 1),
+                                    "Start at (%.0f, %.0f) — click for next point",
+                                    pathPoints_[0].x, pathPoints_[0].y);
                 if (ImGui::SmallButton("Cancel##path")) {
                     clearPath();
                 }
-            } else if (pathStartSet_ && pathEndSet_) {
+            } else if (pathCapture_ == PathCapture::WaitingMore || isPathReady()) {
+                // Multi-point: show running count and let the user keep
+                // clicking to add waypoints, or hit Apply with the current
+                // polyline. The Apply branch iterates each segment.
                 ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1),
-                    "Start: (%.0f,%.0f) End: (%.0f,%.0f)", pathStart_.x, pathStart_.y, pathEnd_.x, pathEnd_.y);
+                                    "%zu point(s) captured — click for more, or Apply",
+                                    pathPoints_.size());
                 if (ImGui::Button("Apply Path", ImVec2(-1, 0))) {
-                    if (pathMode_ == 0) {
-                        app.getTerrainEditor().carveRiver(pathStart_, pathEnd_, pathWidth_, pathDepth_);
-                        app.getTexturePainter().paintAlongPath(pathStart_, pathEnd_, pathWidth_ * 1.5f,
-                            "Tileset\\Ashenvale\\AshenvaleSand.blp");
-                        app.showToast("River carved + banks textured");
-                    } else {
-                        app.getTerrainEditor().flattenRoad(pathStart_, pathEnd_, pathWidth_);
-                        app.getTexturePainter().paintAlongPath(pathStart_, pathEnd_, pathWidth_,
-                            "Tileset\\Elwynn\\ElwynnCobblestoneBase.blp");
-                        app.showToast("Road flattened + textured");
+                    int segCount = 0;
+                    for (size_t k = 0; k + 1 < pathPoints_.size(); ++k) {
+                        const glm::vec3& a = pathPoints_[k];
+                        const glm::vec3& b = pathPoints_[k + 1];
+                        if (pathMode_ == 0) {
+                            app.getTerrainEditor().carveRiver(a, b, pathWidth_, pathDepth_);
+                            app.getTexturePainter().paintAlongPath(a, b,
+                                pathWidth_ * 1.5f,
+                                "Tileset\\Ashenvale\\AshenvaleSand.blp");
+                            app.getTerrainEditor().fillWaterAlongPath(a, b,
+                                pathWidth_, 0);
+                        } else {
+                            app.getTerrainEditor().flattenRoad(a, b, pathWidth_);
+                            app.getTexturePainter().paintAlongPath(a, b,
+                                pathWidth_,
+                                "Tileset\\Elwynn\\ElwynnCobblestoneBase.blp");
+                        }
+                        segCount++;
                     }
+                    if (pathMode_ == 0)
+                        app.showToast("River applied across " +
+                                       std::to_string(segCount) + " segment(s)");
+                    else
+                        app.showToast("Road applied across " +
+                                       std::to_string(segCount) + " segment(s)");
                     clearPath();
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Reset##path")) clearPath();
-            } else if (pathStartSet_) {
-                if (ImGui::Button("Click End Point", ImVec2(-1, 0)))
-                    pathCapture_ = PathCapture::WaitingEnd;
+            } else if (!pathPoints_.empty()) {
+                // Captured at least one point but the user dismissed the
+                // capture mode without setting more — let them resume.
+                if (ImGui::Button("Click Next Point", ImVec2(-1, 0)))
+                    pathCapture_ = PathCapture::WaitingMore;
             }
         }
 
@@ -1236,10 +1331,25 @@ void EditorUI::renderBrushPanel(EditorApp& app) {
             ImGui::SliderFloat("Radius##crater", &craterRadius, 5.0f, 100.0f);
             ImGui::SliderFloat("Depth##crater", &craterDepth, 2.0f, 50.0f);
             ImGui::SliderFloat("Rim Height##crater", &craterRim, 0.0f, 15.0f);
-            auto& brush5 = app.getTerrainEditor().brush();
-            if (ImGui::Button("Create Crater at Cursor", ImVec2(-1, 0)) ) {
-                app.getTerrainEditor().createCrater(brush5.getPosition(), craterRadius, craterDepth, craterRim);
-                app.showToast("Crater created");
+            // Click-to-place: arm pendingCrater so the next left-click on
+            // terrain spawns the crater there, not at the (stale) brush
+            // position that was last set before the cursor moved onto the
+            // button.
+            auto& pc = app.pendingCrater();
+            if (pc.active) {
+                ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1),
+                    "ARMED — click on terrain to place");
+                if (ImGui::Button("Cancel##crater", ImVec2(-1, 0))) {
+                    pc.active = false;
+                }
+            } else {
+                if (ImGui::Button("Click on terrain to place crater", ImVec2(-1, 0))) {
+                    pc.active = true;
+                    pc.radius = craterRadius;
+                    pc.depth = craterDepth;
+                    pc.rim = craterRim;
+                    app.showToast("Click on terrain to place crater (Esc to cancel)");
+                }
             }
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "Bowl with raised rim. Fill with water for a lake.");
         }
@@ -1803,6 +1913,9 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
         bool showMarkers = app.getViewport().getShowNpcMarkers();
         if (ImGui::Checkbox("Show Position Markers", &showMarkers))
             app.getViewport().setShowNpcMarkers(showMarkers);
+        bool selOnly = app.getViewport().getNpcNameplatesSelectedOnly();
+        if (ImGui::Checkbox("Nameplate on selected only", &selOnly))
+            app.getViewport().setNpcNameplatesSelectedOnly(selOnly);
         ImGui::Separator();
 
         // ---- Creature Browser ----
@@ -1926,6 +2039,13 @@ void EditorUI::renderNpcPanel(EditorApp& app) {
             int bIdx = static_cast<int>(tmpl.behavior);
             if (ImGui::Combo("Behavior", &bIdx, behaviors, 4))
                 tmpl.behavior = static_cast<CreatureBehavior>(bIdx);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Runtime AI mode (not editor preview).\n"
+                    "Stationary: stay put.\n"
+                    "Patrol: walk waypoints (W to add at cursor on selected NPC).\n"
+                    "Wander: random walk within radius — common default.\n"
+                    "Scripted: handled by server-side script.");
 
             if (tmpl.behavior == CreatureBehavior::Wander)
                 ImGui::SliderFloat("Wander Dist", &tmpl.wanderRadius, 1.0f, 100.0f);
