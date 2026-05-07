@@ -747,7 +747,7 @@ static void printUsage(const char* argv0) {
     std::printf("  --export-zone-summary-md <zoneDir> [out.md]\n");
     std::printf("                         Render a markdown documentation page for a zone (manifest + content)\n");
     std::printf("  --export-zone-csv <zoneDir> [outDir]\n");
-    std::printf("                         Emit creatures.csv / objects.csv / quests.csv for spreadsheet workflows\n");
+    std::printf("                         Emit creatures.csv / objects.csv / quests.csv / items.csv for spreadsheet workflows\n");
     std::printf("  --export-zone-checksum <zoneDir> [out.sha256]\n");
     std::printf("                         Emit a SHA-256 manifest of every source file in a zone (for integrity checks)\n");
     std::printf("  --export-project-checksum <projectDir> [out.sha256]\n");
@@ -6773,9 +6773,39 @@ int main(int argc, char* argv[]) {
                 std::printf("  wrote %s (%zu rows)\n", out.c_str(), qe.questCount());
                 filesWritten++;
             }
+            // Items — read items.json inline since the items pipeline
+            // doesn't have a dedicated editor class yet.
+            std::string itemsPath = zoneDir + "/items.json";
+            if (fs::exists(itemsPath)) {
+                nlohmann::json doc;
+                try {
+                    std::ifstream in(itemsPath);
+                    in >> doc;
+                } catch (...) {}
+                if (doc.contains("items") && doc["items"].is_array()) {
+                    std::string out = outDir + "/items.csv";
+                    std::ofstream f(out);
+                    if (f) {
+                        f << "index,id,name,quality,itemLevel,displayId,stackable\n";
+                        const auto& arr = doc["items"];
+                        for (size_t k = 0; k < arr.size(); ++k) {
+                            const auto& it = arr[k];
+                            f << k << ","
+                              << it.value("id", 0u) << ","
+                              << csvEsc(it.value("name", std::string())) << ","
+                              << it.value("quality", 1u) << ","
+                              << it.value("itemLevel", 1u) << ","
+                              << it.value("displayId", 0u) << ","
+                              << it.value("stackable", 1u) << "\n";
+                        }
+                        std::printf("  wrote %s (%zu rows)\n", out.c_str(), arr.size());
+                        filesWritten++;
+                    }
+                }
+            }
             if (filesWritten == 0) {
                 std::fprintf(stderr,
-                    "export-zone-csv: zone has no creatures/objects/quests to emit\n");
+                    "export-zone-csv: zone has no creatures/objects/quests/items to emit\n");
                 return 1;
             }
             std::printf("Exported %d CSV file(s) to %s\n", filesWritten, outDir.c_str());
