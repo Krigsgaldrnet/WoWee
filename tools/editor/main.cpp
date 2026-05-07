@@ -528,6 +528,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
     std::printf("  --gen-texture-gradient <out.png> <fromHex> <toHex> [vertical|horizontal] [W H]\n");
     std::printf("                         Synthesize a linear gradient PNG (default vertical, 256x256)\n");
+    std::printf("  --gen-texture-noise <out.png> [seed] [W H]\n");
+    std::printf("                         Synthesize a smooth value-noise PNG (deterministic from seed; default 256x256)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone> [size]\n");
@@ -960,6 +962,7 @@ int main(int argc, char* argv[]) {
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-texture-gradient",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
+        "--gen-texture-noise",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -15475,6 +15478,89 @@ int main(int argc, char* argv[]) {
                         fromHex.c_str(), r0, g0, b0);
             std::printf("  to         : %s (rgb %u,%u,%u)\n",
                         toHex.c_str(), r1, g1, b1);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-noise") == 0 && i + 1 < argc) {
+            // Smooth value-noise PNG. Useful for terrain detail
+            // overlays, dirt/grass blends, magic-fog backdrops —
+            // anywhere a "natural-looking" pseudo-random texture
+            // beats a flat color or grid.
+            //
+            // Algorithm: bilinearly-interpolated 16×16 random lattice
+            // sampled per pixel. Cheaper than perlin and produces a
+            // similar visual signal at this resolution.
+            //
+            // Deterministic from the integer seed so CI runs and
+            // re-runs are reproducible. Output is grayscale
+            // (R==G==B per pixel) so users can tint it externally.
+            std::string outPath = argv[++i];
+            uint32_t seed = 1;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+                std::fprintf(stderr,
+                    "gen-texture-noise: invalid size %dx%d (1..8192)\n",
+                    W, H);
+                return 1;
+            }
+            // Tiny LCG (numerical recipes constants) so noise is
+            // dependency-free and bit-for-bit identical across
+            // platforms.
+            const int latticeSize = 17;  // 16 cells × bilinear corners
+            std::vector<float> lattice(latticeSize * latticeSize);
+            uint32_t state = seed ? seed : 1u;
+            auto next = [&]() -> float {
+                state = state * 1664525u + 1013904223u;
+                return (state >> 8) / float(1 << 24);
+            };
+            for (auto& v : lattice) v = next();
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                float fy = static_cast<float>(y) / H * (latticeSize - 1);
+                int yi = static_cast<int>(fy);
+                if (yi >= latticeSize - 1) yi = latticeSize - 2;
+                float fty = fy - yi;
+                // Smoothstep so cell boundaries don't show as bands.
+                float ty = fty * fty * (3.0f - 2.0f * fty);
+                for (int x = 0; x < W; ++x) {
+                    float fx = static_cast<float>(x) / W * (latticeSize - 1);
+                    int xi = static_cast<int>(fx);
+                    if (xi >= latticeSize - 1) xi = latticeSize - 2;
+                    float ftx = fx - xi;
+                    float tx = ftx * ftx * (3.0f - 2.0f * ftx);
+                    float a = lattice[yi * latticeSize + xi];
+                    float b = lattice[yi * latticeSize + xi + 1];
+                    float c = lattice[(yi + 1) * latticeSize + xi];
+                    float d = lattice[(yi + 1) * latticeSize + xi + 1];
+                    float ab = a + (b - a) * tx;
+                    float cd = c + (d - c) * tx;
+                    float v = ab + (cd - ab) * ty;
+                    uint8_t g = static_cast<uint8_t>(v * 255.0f + 0.5f);
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = g;
+                    pixels[i2 + 1] = g;
+                    pixels[i2 + 2] = g;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-noise: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size  : %dx%d\n", W, H);
+            std::printf("  seed  : %u\n", seed);
+            std::printf("  type  : smooth value noise (16x16 bilinear lattice)\n");
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
