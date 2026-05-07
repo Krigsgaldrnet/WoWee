@@ -528,6 +528,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a placeholder texture (solid hex color or 'checker'/'grid'); default 256x256\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere> [size]\n");
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
+    std::printf("  --add-item <zoneDir> <name> [id] [quality] [displayId] [itemLevel]\n");
+    std::printf("                         Append one item entry to <zoneDir>/items.json (auto-creates the file)\n");
     std::printf("  --convert-dbc-json <dbc-path> [out.json]\n");
     std::printf("                         Convert one DBC file to wowee JSON sidecar format\n");
     std::printf("  --convert-json-dbc <json-path> [out.dbc]\n");
@@ -930,7 +932,7 @@ int main(int argc, char* argv[]) {
         "--check-zone-refs", "--check-zone-content",
         "--check-project-content", "--check-project-refs",
         "--export-zone-deps-md", "--export-zone-spawn-png",
-        "--add-creature", "--add-object", "--add-quest",
+        "--add-creature", "--add-object", "--add-quest", "--add-item",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
         "--remove-quest-objective", "--clone-quest", "--clone-creature",
         "--clone-object",
@@ -12475,6 +12477,112 @@ int main(int argc, char* argv[]) {
             }
             std::printf("Added creature '%s' to %s (now %zu total)\n",
                         name.c_str(), path.c_str(), spawner.spawnCount());
+            return 0;
+        } else if (std::strcmp(argv[i], "--add-item") == 0 && i + 2 < argc) {
+            // Append one item entry to <zoneDir>/items.json. Inline
+            // JSON without a dedicated editor class — items.json is
+            // a simple {"items": [...]} array of records, and the
+            // schema is small enough that we don't need NpcSpawner-
+            // style infrastructure yet.
+            //
+            // Schema per item:
+            //   id (uint32) — Item.dbc primary key (auto-increments
+            //                 from 1 if omitted)
+            //   name (string)
+            //   quality (uint8) — 0..6 (poor..artifact, default 1)
+            //   displayId (uint32) — ItemDisplayInfo index (default 0)
+            //   itemLevel (uint32) — default 1
+            //   stackable (uint32) — max stack size (default 1)
+            std::string zoneDir = argv[++i];
+            std::string name = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir)) {
+                std::fprintf(stderr,
+                    "add-item: zone '%s' does not exist\n", zoneDir.c_str());
+                return 1;
+            }
+            uint32_t id = 0, displayId = 0, itemLevel = 1;
+            uint32_t quality = 1;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { id = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { quality = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+                if (quality > 6) quality = 1;
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { displayId = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { itemLevel = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+            }
+            std::string path = zoneDir + "/items.json";
+            nlohmann::json doc = nlohmann::json::object({{"items",
+                                                          nlohmann::json::array()}});
+            if (fs::exists(path)) {
+                std::ifstream in(path);
+                try { in >> doc; } catch (...) {
+                    std::fprintf(stderr,
+                        "add-item: %s exists but is not valid JSON\n",
+                        path.c_str());
+                    return 1;
+                }
+                if (!doc.contains("items") || !doc["items"].is_array()) {
+                    doc["items"] = nlohmann::json::array();
+                }
+            }
+            // Auto-assign id if user passed 0 / nothing — pick the
+            // smallest unused positive integer so the items.json
+            // numbering stays contiguous.
+            if (id == 0) {
+                std::set<uint32_t> used;
+                for (const auto& it : doc["items"]) {
+                    if (it.contains("id") && it["id"].is_number_unsigned()) {
+                        used.insert(it["id"].get<uint32_t>());
+                    }
+                }
+                id = 1;
+                while (used.count(id)) ++id;
+            }
+            // Reject duplicate id so the user notices a collision.
+            for (const auto& it : doc["items"]) {
+                if (it.contains("id") && it["id"].is_number_unsigned() &&
+                    it["id"].get<uint32_t>() == id) {
+                    std::fprintf(stderr,
+                        "add-item: id %u already in use in %s\n",
+                        id, path.c_str());
+                    return 1;
+                }
+            }
+            nlohmann::json item = {
+                {"id", id},
+                {"name", name},
+                {"quality", quality},
+                {"displayId", displayId},
+                {"itemLevel", itemLevel},
+                {"stackable", 1},
+            };
+            doc["items"].push_back(item);
+            std::ofstream out(path);
+            if (!out) {
+                std::fprintf(stderr,
+                    "add-item: failed to write %s\n", path.c_str());
+                return 1;
+            }
+            out << doc.dump(2);
+            out.close();
+            static const char* qualityNames[] = {
+                "poor", "common", "uncommon", "rare", "epic",
+                "legendary", "artifact"
+            };
+            std::printf("Added item '%s' (id=%u, quality=%s, ilvl=%u) to %s (now %zu total)\n",
+                        name.c_str(), id,
+                        qualityNames[quality], itemLevel,
+                        path.c_str(), doc["items"].size());
             return 0;
         } else if (std::strcmp(argv[i], "--scaffold-zone") == 0 && i + 1 < argc) {
             // Generate a minimal valid empty zone — useful for kickstarting
