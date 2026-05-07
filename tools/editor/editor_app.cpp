@@ -1044,6 +1044,7 @@ void EditorApp::createNewTerrain(const std::string& mapName, int tileX, int tile
         return;
     }
     if (!std::isfinite(baseHeight)) baseHeight = 0.0f;
+    activeBiome_ = biome;
     terrain_ = TerrainEditor::createBlankTerrain(tileX, tileY, baseHeight, biome);
     // Clear all previous state
     clearAllObjects();
@@ -1632,17 +1633,22 @@ void EditorApp::generateCompleteZone() {
     for (int i = 0; i < 256; i++) allChunks.push_back(i);
     terrainEditor_.recalcNormals(allChunks);
 
-    // Step 4: Auto-paint by height
+    // Step 4: Auto-paint by height — use the active biome's textures so
+    // subsequent generations honor the user's biome choice. Was previously
+    // hardcoded to Tanaris/Elwynn/Barrens regardless of biome, which made
+    // every "Create + Generate" run look the same.
+    const auto& bt = getBiomeTextures(activeBiome_);
     std::vector<TexturePainter::HeightBand> bands = {
-        {90.0f, "Tileset\\Tanaris\\TanarisSandBase01.blp"},
-        {110.0f, "Tileset\\Elwynn\\ElwynnGrassBase.blp"},
-        {140.0f, "Tileset\\Barrens\\BarrensRock01.blp"},
-        {99999.0f, "Tileset\\Expansion02\\Dragonblight\\DragonblightFreshSmoothSnowA.blp"}
+        {90.0f,    bt.secondary},  // low (sand-like layer)
+        {110.0f,   bt.base},       // mid (primary ground)
+        {140.0f,   bt.accent},     // high (rocks/roots)
+        {99999.0f, bt.detail},     // peak (overlay)
     };
     texturePainter_.autoPaintByHeight(bands);
 
-    // Step 5: Slope paint (rock on cliffs)
-    texturePainter_.autoPaintBySlope(0.4f, "Tileset\\Desolace\\DesolaceRock01.blp");
+    // Step 5: Slope paint (rock on cliffs) — use the biome's accent so it
+    // blends with the rest of the palette.
+    texturePainter_.autoPaintBySlope(0.4f, bt.accent);
 
     // Step 6: Add detail roughness
     terrainEditor_.addDetailNoise(1.5f, 0.08f, 77);

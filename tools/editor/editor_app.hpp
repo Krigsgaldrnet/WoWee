@@ -3,6 +3,7 @@
 #include "editor_camera.hpp"
 #include "editor_viewport.hpp"
 #include "editor_ui.hpp"
+#include "terrain_biomes.hpp"
 #include "terrain_editor.hpp"
 #include "texture_painter.hpp"
 #include "object_placer.hpp"
@@ -185,6 +186,11 @@ private:
     std::string loadedMap_;
     int loadedTileX_ = -1;
     int loadedTileY_ = -1;
+
+    // Last biome the user selected via createNewTerrain. generateCompleteZone()
+    // reads this so subsequent generations honor the active biome instead of
+    // reapplying the same hardcoded heightband textures every time.
+    Biome activeBiome_ = Biome::Grassland;
 };
 
 } // namespace editor
