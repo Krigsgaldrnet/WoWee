@@ -599,6 +599,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Humanoid placeholder: pedestal block + tall body cylinder + head sphere\n");
     std::printf("  --gen-mesh-altar <wom-base> [topRadius] [topHeight] [steps] [stepStride]\n");
     std::printf("                         Round altar: stacked stepped discs descending from a flat top (default 3 steps)\n");
+    std::printf("  --gen-mesh-portal <wom-base> [width] [height] [postThickness] [lintelHeight]\n");
+    std::printf("                         Doorway frame: two side posts + top lintel (default 2.5w × 4h)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1131,7 +1133,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
         "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
         "--gen-mesh-tower", "--gen-mesh-house", "--gen-mesh-fountain",
-        "--gen-mesh-statue", "--gen-mesh-altar",
+        "--gen-mesh-statue", "--gen-mesh-altar", "--gen-mesh-portal",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -23967,6 +23969,116 @@ int main(int argc, char* argv[]) {
             std::printf("  total H  : %.3f\n", maxY);
             std::printf("  vertices : %zu\n", wom.vertices.size());
             std::printf("  triangles: %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-portal") == 0 && i + 1 < argc) {
+            // Doorway portal: two vertical post boxes plus a
+            // horizontal lintel box across the top. Posts run along
+            // the Z axis (so width spans Z), opening faces +X. The
+            // gap between the posts is the actual doorway. Useful
+            // for entrances, gates, magical portals, ruins.
+            //
+            // The 24th procedural mesh primitive.
+            std::string womBase = argv[++i];
+            float width = 2.5f;          // outer-to-outer along Z
+            float height = 4.0f;         // total Y
+            float postThick = 0.4f;      // post width in X and Z
+            float lintelH = 0.5f;        // top lintel height (Y)
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { width = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { height = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { postThick = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { lintelH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (width <= 0 || height <= 0 || postThick <= 0 ||
+                lintelH < 0 || postThick * 2 >= width ||
+                lintelH > height) {
+                std::fprintf(stderr,
+                    "gen-mesh-portal: posts must fit inside width; lintel <= height\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // Box helper — same pattern as other multi-box meshes.
+            auto addBox = [&](float cx, float cy, float cz,
+                              float hx, float hy, float hz) {
+                struct Face { glm::vec3 n, du, dv; };
+                Face faces[6] = {
+                    {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+                    {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+                    {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+                    {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+                    {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+                    {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+                };
+                glm::vec3 c(cx, cy, cz);
+                glm::vec3 ext(hx, hy, hz);
+                for (const Face& f : faces) {
+                    glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+                    glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+                    glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    auto push = [&](glm::vec3 p, float u, float v) {
+                        wowee::pipeline::WoweeModel::Vertex vtx;
+                        vtx.position = p;
+                        vtx.normal = f.n;
+                        vtx.texCoord = {u, v};
+                        wom.vertices.push_back(vtx);
+                    };
+                    push(center - du - dv, 0, 0);
+                    push(center + du - dv, 1, 0);
+                    push(center + du + dv, 1, 1);
+                    push(center - du + dv, 0, 1);
+                    wom.indices.insert(wom.indices.end(),
+                        {base, base + 1, base + 2, base, base + 2, base + 3});
+                }
+            };
+            // Two posts at z = ±(width/2 - postThick/2). Each
+            // post extends from y=0 to y=height-lintelH so it
+            // tucks under the lintel.
+            float postY = (height - lintelH) * 0.5f;
+            float postHy = (height - lintelH) * 0.5f;
+            float postZ = (width - postThick) * 0.5f;
+            float postHt = postThick * 0.5f;
+            addBox(0, postY,  postZ, postHt, postHy, postHt);
+            addBox(0, postY, -postZ, postHt, postHy, postHt);
+            // Lintel: spans full width across the top, same X
+            // thickness as posts.
+            if (lintelH > 0.0f) {
+                float lintelY = height - lintelH * 0.5f;
+                addBox(0, lintelY, 0,
+                       postHt, lintelH * 0.5f, width * 0.5f);
+            }
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            wom.boundMin = glm::vec3(-postHt, 0,      -width * 0.5f);
+            wom.boundMax = glm::vec3( postHt, height,  width * 0.5f);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-portal: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  width      : %.3f\n", width);
+            std::printf("  height     : %.3f\n", height);
+            std::printf("  post thick : %.3f\n", postThick);
+            std::printf("  lintel H   : %.3f%s\n", lintelH,
+                        lintelH > 0 ? "" : " (no lintel)");
+            std::printf("  vertices   : %zu\n", wom.vertices.size());
+            std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
