@@ -549,6 +549,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Wood grain pattern with vertical streaks + knots (default spacing 12px, seed 1)\n");
     std::printf("  --gen-texture-grass <out.png> <baseHex> <bladeHex> [density] [seed] [W H]\n");
     std::printf("                         Tiling grass texture with random blade highlights (default density=0.15, seed=1)\n");
+    std::printf("  --gen-texture-fabric <out.png> <warpHex> <weftHex> [threadPx] [W H]\n");
+    std::printf("                         Woven fabric pattern with alternating warp/weft threads (default thread=4px)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -1100,7 +1102,7 @@ int main(int argc, char* argv[]) {
         "--merge-meshes",
         "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
         "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
-        "--gen-texture-wood", "--gen-texture-grass",
+        "--gen-texture-wood", "--gen-texture-grass", "--gen-texture-fabric",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -19594,6 +19596,120 @@ int main(int argc, char* argv[]) {
             std::printf("  density   : %.3f\n", density);
             std::printf("  blades    : %d\n", strokeCount);
             std::printf("  seed      : %u\n", seed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-fabric") == 0 && i + 3 < argc) {
+            // Woven fabric pattern. We model an over/under weave: each
+            // "cell" of size threadPx × threadPx is alternately a warp
+            // (vertical) thread or a weft (horizontal) thread. Within
+            // a thread, brightness shades from edge to center so the
+            // weave reads as 3D yarn rather than flat checkerboard.
+            std::string outPath = argv[++i];
+            std::string warpHex = argv[++i];
+            std::string weftHex = argv[++i];
+            int threadPx = 4;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { threadPx = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                threadPx < 2 || threadPx > 256) {
+                std::fprintf(stderr,
+                    "gen-texture-fabric: invalid dims (W/H 1..8192, threadPx 2..256)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t wr, wg, wb, fr, fg, fb;
+            if (!parseHex(warpHex, wr, wg, wb)) {
+                std::fprintf(stderr,
+                    "gen-texture-fabric: '%s' is not a valid hex color\n",
+                    warpHex.c_str());
+                return 1;
+            }
+            if (!parseHex(weftHex, fr, fg, fb)) {
+                std::fprintf(stderr,
+                    "gen-texture-fabric: '%s' is not a valid hex color\n",
+                    weftHex.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                int cy = y / threadPx;
+                int yInCell = y % threadPx;
+                for (int x = 0; x < W; ++x) {
+                    int cx = x / threadPx;
+                    int xInCell = x % threadPx;
+                    // Plain weave: alternate warp/weft per cell on
+                    // a checkerboard. Warp threads run vertically
+                    // (so we shade across xInCell), weft threads
+                    // run horizontally (shade across yInCell).
+                    bool isWarp = ((cx + cy) & 1) == 0;
+                    int across = isWarp ? xInCell : yInCell;
+                    float t = static_cast<float>(across) / (threadPx - 1);
+                    // Center is brighter, edges darker — gives the
+                    // illusion of a rounded yarn cross-section.
+                    float shade = 1.0f - 0.4f * std::abs(t - 0.5f) * 2.0f;
+                    uint8_t r = isWarp ? static_cast<uint8_t>(wr * shade)
+                                       : static_cast<uint8_t>(fr * shade);
+                    uint8_t g = isWarp ? static_cast<uint8_t>(wg * shade)
+                                       : static_cast<uint8_t>(fg * shade);
+                    uint8_t b = isWarp ? static_cast<uint8_t>(wb * shade)
+                                       : static_cast<uint8_t>(fb * shade);
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = r;
+                    pixels[i2 + 1] = g;
+                    pixels[i2 + 2] = b;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-fabric: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size       : %dx%d\n", W, H);
+            std::printf("  warp/weft  : %s / %s\n",
+                        warpHex.c_str(), weftHex.c_str());
+            std::printf("  thread px  : %d\n", threadPx);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
