@@ -609,6 +609,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Generate random items.json entries (seeded; quality cap defaults to epic=4)\n");
     std::printf("  --gen-zone-texture-pack <zoneDir> [--seed N]\n");
     std::printf("                         Drop a starter texture pack (grass/dirt/stone/brick/wood/water) into <zoneDir>/textures/\n");
+    std::printf("  --gen-zone-mesh-pack <zoneDir> [--seed N]\n");
+    std::printf("                         Drop a starter WOM mesh pack (rock/tree/fence) into <zoneDir>/meshes/\n");
     std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
     std::printf("                         End-to-end: scaffold-zone + random-populate-zone + random-populate-items\n");
     std::printf("  --gen-random-project <count> [--prefix N] [--seed N] [--creatures N] [--objects N] [--items N]\n");
@@ -1102,7 +1104,7 @@ int main(int argc, char* argv[]) {
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
-        "--info-spawn",
+        "--gen-zone-mesh-pack", "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -13928,6 +13930,78 @@ int main(int argc, char* argv[]) {
             }
             std::printf("gen-zone-texture-pack: wrote %d of %zu textures to %s\n",
                         written, jobs.size(), texDir.string().c_str());
+            return written == static_cast<int>(jobs.size()) ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--gen-zone-mesh-pack") == 0 && i + 1 < argc) {
+            // Companion to --gen-zone-texture-pack: drops a starter
+            // WOM mesh pack into <zoneDir>/meshes/. Bootstraps the
+            // mesh side of the open-format pipeline so a fresh zone
+            // has placeholders for outdoor decoration without any
+            // proprietary M2 imports. Each rock variant uses a
+            // different seed so they read as distinct boulders.
+            std::string zoneDir = argv[++i];
+            uint32_t seed = 1;
+            for (int k = i + 1; k < argc; ++k) {
+                std::string flag = argv[k];
+                if (flag == "--seed" && k + 1 < argc) {
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++k])); } catch (...) {}
+                    i = k;
+                } else if (flag.rfind("--", 0) == 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-mesh-pack: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            std::filesystem::path zp(zoneDir);
+            if (!std::filesystem::exists(zp / "zone.json")) {
+                std::fprintf(stderr,
+                    "gen-zone-mesh-pack: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            std::filesystem::path meshDir = zp / "meshes";
+            std::error_code ec;
+            std::filesystem::create_directories(meshDir, ec);
+            if (ec) {
+                std::fprintf(stderr,
+                    "gen-zone-mesh-pack: cannot create %s: %s\n",
+                    meshDir.string().c_str(), ec.message().c_str());
+                return 1;
+            }
+            std::string self = (argc > 0) ? argv[0] : "wowee_editor";
+            struct MeshJob {
+                std::string flag;
+                std::string outBase;  // no .wom extension
+                std::vector<std::string> args;
+            };
+            std::string s0 = std::to_string(seed);
+            std::string s1 = std::to_string(seed + 17);
+            std::string s2 = std::to_string(seed + 41);
+            std::vector<MeshJob> jobs = {
+                // 3 rock variants with distinct seeds for variety
+                {"--gen-mesh-rock",  "rock_small",  {"0.6", "0.30", "2", s0}},
+                {"--gen-mesh-rock",  "rock_medium", {"1.2", "0.25", "2", s1}},
+                {"--gen-mesh-rock",  "rock_large",  {"2.4", "0.35", "3", s2}},
+                // Tree placeholder, fence segment for boundaries
+                {"--gen-mesh-tree",  "tree",        {"0.15", "3.0", "1.0"}},
+                {"--gen-mesh-fence", "fence",       {"5", "1.2", "1.4", "0.06"}},
+            };
+            int written = 0;
+            for (const auto& job : jobs) {
+                std::filesystem::path out = meshDir / job.outBase;
+                std::string cmd = "\"" + self + "\" " + job.flag + " \"" + out.string() + "\"";
+                for (const auto& a : job.args) cmd += " " + a;
+                cmd += " > /dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc != 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-mesh-pack: %s failed (rc=%d)\n",
+                        job.flag.c_str(), rc);
+                } else {
+                    ++written;
+                }
+            }
+            std::printf("gen-zone-mesh-pack: wrote %d of %zu meshes to %s\n",
+                        written, jobs.size(), meshDir.string().c_str());
             return written == static_cast<int>(jobs.size()) ? 0 : 1;
         } else if (std::strcmp(argv[i], "--gen-random-project") == 0 && i + 1 < argc) {
             // Project-wide companion: spawn N random zones in one
