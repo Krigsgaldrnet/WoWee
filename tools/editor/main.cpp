@@ -617,6 +617,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Run both texture-pack + mesh-pack in one pass — full open-format bootstrap\n");
     std::printf("  --gen-audio-tone <out.wav> <freqHz> <durationSec> [sampleRate] [waveform]\n");
     std::printf("                         Synthesize a procedural WAV (PCM-16 mono). Waveform: sine|square|triangle|saw\n");
+    std::printf("  --gen-audio-noise <out.wav> <durationSec> [sampleRate] [color] [seed] [amplitude]\n");
+    std::printf("                         Synthesize procedural noise WAV. Color: white|pink|brown (default white, amp 0.5)\n");
     std::printf("  --gen-zone-audio-pack <zoneDir>\n");
     std::printf("                         Drop a starter WAV pack (drone/chime/click/alert) into <zoneDir>/audio/\n");
     std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
@@ -1118,7 +1120,7 @@ int main(int argc, char* argv[]) {
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
         "--gen-zone-mesh-pack", "--gen-zone-starter-pack", "--gen-audio-tone",
-        "--gen-zone-audio-pack", "--info-spawn",
+        "--gen-audio-noise", "--gen-zone-audio-pack", "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -14409,6 +14411,142 @@ int main(int argc, char* argv[]) {
             std::printf("  duration   : %.3f sec\n", duration);
             std::printf("  sampleRate : %d Hz\n", sampleRate);
             std::printf("  waveform   : %s\n", waveform.c_str());
+            std::printf("  samples    : %u\n", totalSamples);
+            std::printf("  bytes      : %u (44-byte header + data)\n",
+                        riffSize + 8);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-audio-noise") == 0 && i + 2 < argc) {
+            // Procedural noise WAV. Three "colors" in audio engineering:
+            //   white  — equal energy per Hz (uniform random samples)
+            //   pink   — equal energy per octave (1/f spectrum) via
+            //            Voss-McCartney 7-band cascade. Sounds like
+            //            rain or wind.
+            //   brown  — 1/f² spectrum via random walk (integrated
+            //            white noise). Sounds like distant surf or
+            //            rumbling weather.
+            // All written as PCM-16 mono via the same RIFF header
+            // logic as --gen-audio-tone.
+            std::string outPath = argv[++i];
+            float duration = 0.0f;
+            try { duration = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-audio-noise: <durationSec> must be a number\n");
+                return 1;
+            }
+            int sampleRate = 22050;
+            std::string color = "white";
+            uint32_t seed = 1;
+            float amp = 0.5f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { sampleRate = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                color = argv[++i];
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { amp = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (duration <= 0 || duration > 600 ||
+                sampleRate < 8000 || sampleRate > 192000 ||
+                amp <= 0 || amp > 1.0f) {
+                std::fprintf(stderr,
+                    "gen-audio-noise: duration 0..600s, sampleRate 8000..192000, amp 0..1\n");
+                return 1;
+            }
+            uint32_t totalSamples = static_cast<uint32_t>(duration * sampleRate);
+            std::vector<int16_t> samples(totalSamples, 0);
+            uint32_t state = seed ? seed : 1u;
+            auto next01 = [&state]() -> float {
+                state = state * 1664525u + 1013904223u;
+                return (state >> 8) * (1.0f / 16777216.0f);
+            };
+            auto nextSigned = [&]() -> float { return next01() * 2.0f - 1.0f; };
+            // Same envelope logic as gen-audio-tone — 5ms attack/release
+            // so noise doesn't pop at start/stop.
+            int envSamples = std::min<uint32_t>(totalSamples / 4,
+                                static_cast<uint32_t>(sampleRate * 0.005f));
+            // Voss-McCartney pink noise state: 7 random rows
+            // updated at progressively halved rates.
+            float pinkRows[7] = {0};
+            float pinkSum = 0.0f;
+            int pinkIdx = 0;
+            float brownState = 0.0f;
+            for (uint32_t s = 0; s < totalSamples; ++s) {
+                float v = 0.0f;
+                if (color == "white") {
+                    v = nextSigned();
+                } else if (color == "pink") {
+                    pinkIdx++;
+                    int rowsToUpdate = 0;
+                    int idx = pinkIdx;
+                    while ((idx & 1) == 0 && rowsToUpdate < 7) {
+                        idx >>= 1;
+                        rowsToUpdate++;
+                    }
+                    pinkSum -= pinkRows[rowsToUpdate];
+                    pinkRows[rowsToUpdate] = nextSigned();
+                    pinkSum += pinkRows[rowsToUpdate];
+                    v = pinkSum / 7.0f;
+                } else if (color == "brown") {
+                    brownState = std::clamp(brownState + nextSigned() * 0.1f, -1.0f, 1.0f);
+                    v = brownState * 3.0f;  // amplify since walk stays small
+                } else {
+                    std::fprintf(stderr,
+                        "gen-audio-noise: unknown color '%s' (white|pink|brown)\n",
+                        color.c_str());
+                    return 1;
+                }
+                float env = 1.0f;
+                if (envSamples > 0) {
+                    if (static_cast<int>(s) < envSamples) {
+                        env = static_cast<float>(s) / envSamples;
+                    } else if (static_cast<int>(totalSamples - s) < envSamples) {
+                        env = static_cast<float>(totalSamples - s) / envSamples;
+                    }
+                }
+                v *= env * amp;
+                samples[s] = static_cast<int16_t>(std::clamp(v, -1.0f, 1.0f) * 32767.0f);
+            }
+            FILE* f = std::fopen(outPath.c_str(), "wb");
+            if (!f) {
+                std::fprintf(stderr,
+                    "gen-audio-noise: cannot open %s for write\n", outPath.c_str());
+                return 1;
+            }
+            uint32_t dataBytes = totalSamples * 2;
+            uint32_t riffSize = 36 + dataBytes;
+            uint16_t numChannels = 1;
+            uint16_t bitsPerSample = 16;
+            uint16_t blockAlign = numChannels * bitsPerSample / 8;
+            uint32_t byteRate = sampleRate * blockAlign;
+            auto wU32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+            auto wU16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+            std::fwrite("RIFF", 1, 4, f);
+            wU32(riffSize);
+            std::fwrite("WAVE", 1, 4, f);
+            std::fwrite("fmt ", 1, 4, f);
+            wU32(16);
+            wU16(1);
+            wU16(numChannels);
+            wU32(static_cast<uint32_t>(sampleRate));
+            wU32(byteRate);
+            wU16(blockAlign);
+            wU16(bitsPerSample);
+            std::fwrite("data", 1, 4, f);
+            wU32(dataBytes);
+            std::fwrite(samples.data(), 2, totalSamples, f);
+            std::fclose(f);
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  format     : WAV PCM-16 mono\n");
+            std::printf("  duration   : %.3f sec\n", duration);
+            std::printf("  sampleRate : %d Hz\n", sampleRate);
+            std::printf("  color      : %s noise\n", color.c_str());
+            std::printf("  amplitude  : %.2f\n", amp);
+            std::printf("  seed       : %u\n", seed);
             std::printf("  samples    : %u\n", totalSamples);
             std::printf("  bytes      : %u (44-byte header + data)\n",
                         riffSize + 8);
