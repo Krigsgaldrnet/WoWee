@@ -237,8 +237,12 @@ std::vector<TerrainVertex> TerrainMeshGenerator::generateVertices(const MapChunk
         }
 
         // Texture coordinates: world-aligned so patterns don't reset per chunk.
-        // Keep one texture repeat per chunk (matches prior scale).
-        constexpr float texScale = 1.0f / CHUNK_SIZE;
+        // Tile each texture 4× per chunk (one repeat every ~8 yards) so the
+        // texture's own pattern noise breaks up the chunk grid rather than
+        // syncing with it. At 1 repeat/chunk the per-chunk alpha differences
+        // read as obvious 33-yard squares; at 4× the pattern is small enough
+        // that the eye no longer locks onto the chunk boundary.
+        constexpr float texScale = 4.0f / CHUNK_SIZE;
         vertex.texCoord[0] = -vertex.position[1] * texScale;
         vertex.texCoord[1] = -vertex.position[0] * texScale;
 

@@ -50,11 +50,14 @@ float sampleShadowPCF(sampler2DShadow smap, vec3 coords) {
 }
 
 float sampleAlpha(sampler2D tex, vec2 uv) {
-    // Smooth 5-tap box near chunk edges to hide alpha-map seams;
+    // Smooth 9-tap box near chunk edges to hide alpha-map seams;
     // blends gradually to avoid a visible ring at the transition.
+    // Wider feather (8 texels) makes per-chunk alpha differences
+    // bleed across the boundary so the chunk grid stops reading
+    // as a hard step.
     vec2 edge = min(uv, 1.0 - uv);
     float border = min(edge.x, edge.y);
-    float blurWeight = 1.0 - smoothstep(0.5 / 64.0, 3.0 / 64.0, border);
+    float blurWeight = 1.0 - smoothstep(1.0 / 64.0, 8.0 / 64.0, border);
     float center = texture(tex, uv).r;
     if (blurWeight < 0.001) return center;
     vec2 texel = vec2(1.0 / 64.0);
@@ -63,7 +66,11 @@ float sampleAlpha(sampler2D tex, vec2 uv) {
     avg += texture(tex, uv + vec2( texel.x, 0.0)).r;
     avg += texture(tex, uv + vec2(0.0, -texel.y)).r;
     avg += texture(tex, uv + vec2(0.0,  texel.y)).r;
-    avg *= 0.2;
+    avg += texture(tex, uv + vec2(-texel.x, -texel.y)).r;
+    avg += texture(tex, uv + vec2( texel.x, -texel.y)).r;
+    avg += texture(tex, uv + vec2(-texel.x,  texel.y)).r;
+    avg += texture(tex, uv + vec2( texel.x,  texel.y)).r;
+    avg *= 1.0 / 9.0;
     return mix(center, avg, blurWeight);
 }
 
