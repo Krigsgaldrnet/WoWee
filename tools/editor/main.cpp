@@ -595,6 +595,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Round basin + center spout column (default 1.5/0.5 basin, 0.2/1.5 spout)\n");
     std::printf("  --gen-mesh-statue <wom-base> [pedestalSize] [bodyHeight] [headRadius]\n");
     std::printf("                         Humanoid placeholder: pedestal block + tall body cylinder + head sphere\n");
+    std::printf("  --gen-mesh-altar <wom-base> [topRadius] [topHeight] [steps] [stepStride]\n");
+    std::printf("                         Round altar: stacked stepped discs descending from a flat top (default 3 steps)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1125,7 +1127,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
         "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
         "--gen-mesh-tower", "--gen-mesh-house", "--gen-mesh-fountain",
-        "--gen-mesh-statue",
+        "--gen-mesh-statue", "--gen-mesh-altar",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -23602,6 +23604,130 @@ int main(int argc, char* argv[]) {
             std::printf("  total H   : %.3f\n", maxY);
             std::printf("  vertices  : %zu\n", wom.vertices.size());
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-altar") == 0 && i + 1 < argc) {
+            // Round altar: stack of N stepped cylindrical discs,
+            // each one wider and shorter than the next so the
+            // silhouette descends like a wedding cake. Top disc is
+            // the altar surface (where offerings would go); base
+            // discs widen out to anchor the structure visually.
+            //
+            // The 23rd procedural mesh primitive — pairs naturally
+            // with --gen-texture-marble for a temple aesthetic.
+            std::string womBase = argv[++i];
+            float topR = 0.7f;        // top altar disc radius
+            float topH = 0.3f;        // top altar disc height
+            int steps = 3;            // base steps below the top
+            float stepStride = 0.3f;  // each step grows R by this much, shrinks H
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { topR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { topH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { steps = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { stepStride = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (topR <= 0 || topH <= 0 || steps < 0 || steps > 16 ||
+                stepStride <= 0 || stepStride > 5.0f) {
+                std::fprintf(stderr,
+                    "gen-mesh-altar: topR/topH > 0, steps 0..16, stride 0..5\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            const int segs = 24;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Build a cylindrical disc from y0 to y1 at radius r.
+            // Side ring + top cap (faces +Y). Bottom of each disc
+            // is hidden by the next disc below, so we skip a bottom
+            // cap on all discs except the last (saves ~24 tris/disc).
+            auto disc = [&](float r, float y0, float y1, bool capBottom) {
+                uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segs; ++sg) {
+                    float u = static_cast<float>(sg) / segs;
+                    float ang = u * 2.0f * pi;
+                    glm::vec3 p(r * std::cos(ang), y0, r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, n, {u, 0});
+                }
+                uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segs; ++sg) {
+                    float u = static_cast<float>(sg) / segs;
+                    float ang = u * 2.0f * pi;
+                    glm::vec3 p(r * std::cos(ang), y1, r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, n, {u, 1});
+                }
+                for (int sg = 0; sg < segs; ++sg) {
+                    wom.indices.insert(wom.indices.end(), {
+                        bot + sg, top + sg, bot + sg + 1,
+                        bot + sg + 1, top + sg, top + sg + 1
+                    });
+                }
+                // Top cap fan (faces +Y).
+                uint32_t tc = addV({0, y1, 0}, {0, 1, 0}, {0.5f, 0.5f});
+                for (int sg = 0; sg < segs; ++sg) {
+                    wom.indices.insert(wom.indices.end(),
+                        {tc, top + sg, top + sg + 1});
+                }
+                if (capBottom) {
+                    uint32_t bc = addV({0, y0, 0}, {0, -1, 0}, {0.5f, 0.5f});
+                    for (int sg = 0; sg < segs; ++sg) {
+                        wom.indices.insert(wom.indices.end(),
+                            {bc, bot + sg + 1, bot + sg});
+                    }
+                }
+            };
+            // Build bottom-up so y0 starts at floor and tops stack.
+            // Step k (k=0 is bottom-most) has radius = topR + (steps-k)*stride
+            // and height = topH * (1 - 0.2 * k). Y position accumulates.
+            float curY = 0.0f;
+            for (int k = steps - 1; k >= 0; --k) {  // bottom step first
+                float r = topR + (k + 1) * stepStride;
+                float h = topH * (1.0f - 0.2f * k);
+                if (h < topH * 0.4f) h = topH * 0.4f;
+                bool isBottom = (k == steps - 1);
+                disc(r, curY, curY + h, isBottom);
+                curY += h;
+            }
+            // Top disc (the actual altar surface)
+            disc(topR, curY, curY + topH, steps == 0);
+            float maxY = curY + topH;
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            float maxR = topR + steps * stepStride;
+            wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
+            wom.boundMax = glm::vec3( maxR, maxY,  maxR);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-altar: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  top      : R=%.3f H=%.3f\n", topR, topH);
+            std::printf("  steps    : %d (stride %.3f)\n", steps, stepStride);
+            std::printf("  base R   : %.3f\n", maxR);
+            std::printf("  total H  : %.3f\n", maxY);
+            std::printf("  vertices : %zu\n", wom.vertices.size());
+            std::printf("  triangles: %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
