@@ -551,6 +551,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Subdivided flat plane on XY (NxN cells, 2N² triangles); useful for LOD demos\n");
     std::printf("  --gen-mesh-disc <wom-base> [radius] [segments]\n");
     std::printf("                         Flat circular disc on XY centered at origin (default radius 1.0, 32 segments)\n");
+    std::printf("  --gen-mesh-tube <wom-base> [outerRadius] [innerRadius] [height] [segments]\n");
+    std::printf("                         Hollow cylinder/pipe along Y axis (default 1.0/0.7/2.0, 24 segments)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
@@ -1027,6 +1029,7 @@ int main(int argc, char* argv[]) {
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
+        "--gen-mesh-tube",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -18324,6 +18327,181 @@ int main(int argc, char* argv[]) {
             std::printf("  segments  : %d\n", segments);
             std::printf("  vertices  : %zu (1 center + %d ring)\n",
                         wom.vertices.size(), segments + 1);
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-tube") == 0 && i + 1 < argc) {
+            // Hollow cylinder along Y axis. Outer + inner walls + top
+            // and bottom annular caps. Useful for railings, fence
+            // posts, pipes, hollow logs, ring towers — anywhere a
+            // solid cylinder would feel wrong because you should be
+            // able to see through the middle.
+            std::string womBase = argv[++i];
+            float outerR = 1.0f;
+            float innerR = 0.7f;
+            float height = 2.0f;
+            int segments = 24;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { outerR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { innerR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { height = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { segments = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (outerR <= 0 || innerR <= 0 || innerR >= outerR ||
+                height <= 0 || segments < 3 || segments > 1024) {
+                std::fprintf(stderr,
+                    "gen-mesh-tube: 0 < innerR < outerR, height > 0, segments 3..1024\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            float h = height * 0.5f;
+            auto addV = [&](float x, float y, float z,
+                              float nx, float ny, float nz,
+                              float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = glm::vec3(x, y, z);
+                vtx.normal = glm::vec3(nx, ny, nz);
+                vtx.texCoord = glm::vec2(u, v);
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Outer wall: 2 rows × (segments+1) verts, normals point
+            // radially outward.
+            uint32_t outerStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(outerR * ca, -h, outerR * sa, ca, 0, sa, u, 0);
+                addV(outerR * ca,  h, outerR * sa, ca, 0, sa, u, 1);
+            }
+            for (int sg = 0; sg < segments; ++sg) {
+                uint32_t a = outerStart + sg * 2;
+                uint32_t b = a + 1, c = a + 2, d = a + 3;
+                wom.indices.push_back(a);
+                wom.indices.push_back(c);
+                wom.indices.push_back(b);
+                wom.indices.push_back(b);
+                wom.indices.push_back(c);
+                wom.indices.push_back(d);
+            }
+            // Inner wall: normals point radially inward, winding
+            // reversed so the inside-facing surfaces face the viewer
+            // when looking through the tube.
+            uint32_t innerStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(innerR * ca, -h, innerR * sa, -ca, 0, -sa, u, 0);
+                addV(innerR * ca,  h, innerR * sa, -ca, 0, -sa, u, 1);
+            }
+            for (int sg = 0; sg < segments; ++sg) {
+                uint32_t a = innerStart + sg * 2;
+                uint32_t b = a + 1, c = a + 2, d = a + 3;
+                wom.indices.push_back(a);
+                wom.indices.push_back(b);
+                wom.indices.push_back(c);
+                wom.indices.push_back(b);
+                wom.indices.push_back(d);
+                wom.indices.push_back(c);
+            }
+            // Top annular cap: ring at +Y. Inner + outer ring of verts,
+            // quads stitched between them, normal +Y.
+            uint32_t topInner = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(innerR * ca, h, innerR * sa, 0, 1, 0,
+                       0.5f + 0.5f * (innerR / outerR) * ca,
+                       0.5f + 0.5f * (innerR / outerR) * sa);
+            }
+            uint32_t topOuter = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(outerR * ca, h, outerR * sa, 0, 1, 0,
+                       0.5f + 0.5f * ca, 0.5f + 0.5f * sa);
+            }
+            for (int sg = 0; sg < segments; ++sg) {
+                uint32_t a = topInner + sg;
+                uint32_t b = topInner + sg + 1;
+                uint32_t c = topOuter + sg;
+                uint32_t d = topOuter + sg + 1;
+                wom.indices.push_back(a);
+                wom.indices.push_back(c);
+                wom.indices.push_back(b);
+                wom.indices.push_back(b);
+                wom.indices.push_back(c);
+                wom.indices.push_back(d);
+            }
+            // Bottom annular cap, normal -Y, winding reversed.
+            uint32_t botInner = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(innerR * ca, -h, innerR * sa, 0, -1, 0,
+                       0.5f + 0.5f * (innerR / outerR) * ca,
+                       0.5f - 0.5f * (innerR / outerR) * sa);
+            }
+            uint32_t botOuter = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(outerR * ca, -h, outerR * sa, 0, -1, 0,
+                       0.5f + 0.5f * ca, 0.5f - 0.5f * sa);
+            }
+            for (int sg = 0; sg < segments; ++sg) {
+                uint32_t a = botInner + sg;
+                uint32_t b = botInner + sg + 1;
+                uint32_t c = botOuter + sg;
+                uint32_t d = botOuter + sg + 1;
+                wom.indices.push_back(a);
+                wom.indices.push_back(b);
+                wom.indices.push_back(c);
+                wom.indices.push_back(b);
+                wom.indices.push_back(d);
+                wom.indices.push_back(c);
+            }
+            wom.boundMin = glm::vec3(-outerR, -h, -outerR);
+            wom.boundMax = glm::vec3( outerR,  h,  outerR);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-tube: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  outer R   : %.3f\n", outerR);
+            std::printf("  inner R   : %.3f\n", innerR);
+            std::printf("  height    : %.3f\n", height);
+            std::printf("  segments  : %d\n", segments);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
