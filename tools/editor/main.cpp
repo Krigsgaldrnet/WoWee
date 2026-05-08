@@ -611,6 +611,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Drop a starter texture pack (grass/dirt/stone/brick/wood/water) into <zoneDir>/textures/\n");
     std::printf("  --gen-zone-mesh-pack <zoneDir> [--seed N]\n");
     std::printf("                         Drop a starter WOM mesh pack (rock/tree/fence) into <zoneDir>/meshes/\n");
+    std::printf("  --gen-zone-starter-pack <zoneDir> [--seed N]\n");
+    std::printf("                         Run both texture-pack + mesh-pack in one pass — full open-format bootstrap\n");
     std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
     std::printf("                         End-to-end: scaffold-zone + random-populate-zone + random-populate-items\n");
     std::printf("  --gen-random-project <count> [--prefix N] [--seed N] [--creatures N] [--objects N] [--items N]\n");
@@ -1104,7 +1106,7 @@ int main(int argc, char* argv[]) {
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
-        "--gen-zone-mesh-pack", "--info-spawn",
+        "--gen-zone-mesh-pack", "--gen-zone-starter-pack", "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -14003,6 +14005,58 @@ int main(int argc, char* argv[]) {
             std::printf("gen-zone-mesh-pack: wrote %d of %zu meshes to %s\n",
                         written, jobs.size(), meshDir.string().c_str());
             return written == static_cast<int>(jobs.size()) ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--gen-zone-starter-pack") == 0 && i + 1 < argc) {
+            // Convenience entry point: run --gen-zone-texture-pack
+            // and --gen-zone-mesh-pack in sequence so a fresh zone
+            // gets a full open-format asset bootstrap from a single
+            // command. The seed propagates to both children so a
+            // user can reliably reproduce the same starter pack.
+            std::string zoneDir = argv[++i];
+            uint32_t seed = 1;
+            for (int k = i + 1; k < argc; ++k) {
+                std::string flag = argv[k];
+                if (flag == "--seed" && k + 1 < argc) {
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++k])); } catch (...) {}
+                    i = k;
+                } else if (flag.rfind("--", 0) == 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-starter-pack: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            if (!std::filesystem::exists(std::filesystem::path(zoneDir) / "zone.json")) {
+                std::fprintf(stderr,
+                    "gen-zone-starter-pack: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            std::string self = (argc > 0) ? argv[0] : "wowee_editor";
+            std::string seedStr = std::to_string(seed);
+            std::printf("gen-zone-starter-pack: %s (seed %u)\n",
+                        zoneDir.c_str(), seed);
+            std::printf("  step 1/2: textures\n");
+            std::string cmd1 = "\"" + self + "\" --gen-zone-texture-pack \"" +
+                               zoneDir + "\" --seed " + seedStr;
+            int rc1 = std::system(cmd1.c_str());
+            if (rc1 != 0) {
+                std::fprintf(stderr,
+                    "gen-zone-starter-pack: texture step failed (rc=%d)\n", rc1);
+                return 1;
+            }
+            std::printf("  step 2/2: meshes\n");
+            std::string cmd2 = "\"" + self + "\" --gen-zone-mesh-pack \"" +
+                               zoneDir + "\" --seed " + seedStr;
+            int rc2 = std::system(cmd2.c_str());
+            if (rc2 != 0) {
+                std::fprintf(stderr,
+                    "gen-zone-starter-pack: mesh step failed (rc=%d)\n", rc2);
+                return 1;
+            }
+            std::printf("\ngen-zone-starter-pack: complete\n");
+            std::printf("  zone dir : %s\n", zoneDir.c_str());
+            std::printf("  textures : 6 PNGs in textures/\n");
+            std::printf("  meshes   : 5 WOMs in meshes/\n");
+            return 0;
         } else if (std::strcmp(argv[i], "--gen-random-project") == 0 && i + 1 < argc) {
             // Project-wide companion: spawn N random zones in one
             // pass. Names default to "Zone1, Zone2..."; tile
