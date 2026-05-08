@@ -621,6 +621,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Drop a starter WOM mesh pack (rock/tree/fence) into <zoneDir>/meshes/\n");
     std::printf("  --gen-zone-starter-pack <zoneDir> [--seed N]\n");
     std::printf("                         Run both texture-pack + mesh-pack in one pass — full open-format bootstrap\n");
+    std::printf("  --gen-project-starter-pack <projectDir> [--seed N]\n");
+    std::printf("                         Run starter-pack + audio-pack across every zone — full project-scope bootstrap\n");
     std::printf("  --validate-zone-pack <zoneDir> [--json]\n");
     std::printf("                         Audit a zone's open-format asset pack: textures/meshes/audio counts + WOM validity\n");
     std::printf("  --validate-project-packs <projectDir>\n");
@@ -1137,7 +1139,8 @@ int main(int argc, char* argv[]) {
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
-        "--gen-zone-mesh-pack", "--gen-zone-starter-pack", "--gen-audio-tone",
+        "--gen-zone-mesh-pack", "--gen-zone-starter-pack",
+        "--gen-project-starter-pack", "--gen-audio-tone",
         "--gen-audio-noise", "--gen-audio-sweep", "--gen-zone-audio-pack",
         "--validate-zone-pack", "--validate-project-packs", "--info-spawn",
         "--diff-zone-spawns",
@@ -14535,6 +14538,75 @@ int main(int argc, char* argv[]) {
             std::printf("  textures : 6 PNGs in textures/\n");
             std::printf("  meshes   : 5 WOMs in meshes/\n");
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-project-starter-pack") == 0 && i + 1 < argc) {
+            // Project-wide bootstrap. For every zone in <projectDir>,
+            // run --gen-zone-starter-pack (textures + meshes) and
+            // --gen-zone-audio-pack (audio). Each zone gets a unique
+            // sub-seed offset from the base seed so per-zone content
+            // looks distinct (e.g. rocks differ, wood grain differs).
+            //
+            // Pairs with --validate-project-packs as the inverse —
+            // bootstrap, then audit, then ship.
+            std::string projectDir = argv[++i];
+            uint32_t seed = 1;
+            for (int k = i + 1; k < argc; ++k) {
+                std::string flag = argv[k];
+                if (flag == "--seed" && k + 1 < argc) {
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++k])); } catch (...) {}
+                    i = k;
+                } else if (flag.rfind("--", 0) == 0) {
+                    std::fprintf(stderr,
+                        "gen-project-starter-pack: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "gen-project-starter-pack: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::fprintf(stderr,
+                    "gen-project-starter-pack: %s contains no zones\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::string self = (argc > 0) ? argv[0] : "wowee_editor";
+            std::printf("gen-project-starter-pack: %s (base seed %u)\n",
+                        projectDir.c_str(), seed);
+            std::printf("  zones: %zu\n\n", zones.size());
+            int passed = 0, failed = 0;
+            for (size_t z = 0; z < zones.size(); ++z) {
+                std::string zoneSeed = std::to_string(seed + z * 17);
+                std::string name = fs::path(zones[z]).filename().string();
+                std::printf("  [%zu/%zu] %s (seed %s)\n",
+                            z + 1, zones.size(), name.c_str(), zoneSeed.c_str());
+                std::string c1 = "\"" + self + "\" --gen-zone-starter-pack \"" +
+                                 zones[z] + "\" --seed " + zoneSeed +
+                                 " > /dev/null 2>&1";
+                int rc1 = std::system(c1.c_str());
+                std::string c2 = "\"" + self + "\" --gen-zone-audio-pack \"" +
+                                 zones[z] + "\" > /dev/null 2>&1";
+                int rc2 = std::system(c2.c_str());
+                if (rc1 == 0 && rc2 == 0) {
+                    ++passed;
+                    std::printf("           OK  textures + meshes + audio\n");
+                } else {
+                    ++failed;
+                    std::printf("           FAIL  starter rc=%d, audio rc=%d\n", rc1, rc2);
+                }
+            }
+            std::printf("\n  Total: %d passed, %d failed\n", passed, failed);
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--gen-audio-tone") == 0 && i + 3 < argc) {
             // Synthesize a procedural mono PCM-16 WAV. Opens a new
             // file family in the open-format ecosystem (alongside
