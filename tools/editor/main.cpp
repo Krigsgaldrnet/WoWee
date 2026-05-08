@@ -913,6 +913,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
     std::printf("  --info-zone-overview <zoneDir> [--json]\n");
     std::printf("                         One-line compact zone summary (tiles, biome, counts, audio status)\n");
+    std::printf("  --info-project-overview <projectDir> [--json]\n");
+    std::printf("                         One-line summary per zone in a project (single-page health check)\n");
     std::printf("  --info-creatures <p> [--json]\n");
     std::printf("                         Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-creatures-by-faction <p> [--json]\n");
@@ -1016,7 +1018,8 @@ int main(int argc, char* argv[]) {
         "--info-png", "--info-jsondbc", "--info-blp", "--info-pack-budget",
         "--info-pack-tree",
         "--info-m2", "--info-wmo", "--info-adt",
-        "--info-zone", "--info-zone-overview", "--info-wcp", "--list-wcp",
+        "--info-zone", "--info-zone-overview", "--info-project-overview",
+        "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
         "--list-quest-objectives", "--list-quest-rewards",
         "--info-creature", "--info-quest", "--info-object",
@@ -3717,6 +3720,106 @@ int main(int argc, char* argv[]) {
                         zm.biome.empty() ? "?" : zm.biome.c_str(),
                         zm.tiles.size(), creatures, objects, quests, items,
                         hasAudio ? " +audio" : "");
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-overview") == 0 && i + 1 < argc) {
+            // Project-wide overview table: one row per zone with the
+            // same compact stats as --info-zone-overview. Single-page
+            // health check for "what's in this project."
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-overview: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            auto countArray = [](const std::string& path,
+                                  const std::string& key) {
+                if (!fs::exists(path)) return size_t{0};
+                try {
+                    nlohmann::json doc;
+                    std::ifstream in(path);
+                    in >> doc;
+                    if (doc.is_array()) return doc.size();
+                    if (doc.contains(key) && doc[key].is_array())
+                        return doc[key].size();
+                } catch (...) {}
+                return size_t{0};
+            };
+            struct Row {
+                std::string name, biome;
+                size_t tiles, creatures, objects, quests, items;
+                bool hasAudio;
+            };
+            std::vector<Row> rows;
+            size_t totC = 0, totO = 0, totQ = 0, totI = 0, totT = 0;
+            int audioCount = 0;
+            for (const auto& zoneDir : zones) {
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load(zoneDir + "/zone.json")) continue;
+                Row r;
+                r.name = fs::path(zoneDir).filename().string();
+                r.biome = zm.biome;
+                r.tiles = zm.tiles.size();
+                r.creatures = countArray(zoneDir + "/creatures.json", "creatures");
+                r.objects = countArray(zoneDir + "/objects.json", "objects");
+                r.quests = countArray(zoneDir + "/quests.json", "quests");
+                r.items = countArray(zoneDir + "/items.json", "items");
+                r.hasAudio = !zm.musicTrack.empty() ||
+                              !zm.ambienceDay.empty() ||
+                              !zm.ambienceNight.empty();
+                if (r.hasAudio) audioCount++;
+                totT += r.tiles;
+                totC += r.creatures;
+                totO += r.objects;
+                totQ += r.quests;
+                totI += r.items;
+                rows.push_back(r);
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["totals"] = {{"tiles", totT}, {"creatures", totC},
+                                {"objects", totO}, {"quests", totQ},
+                                {"items", totI}, {"withAudio", audioCount}};
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"name", r.name},
+                                    {"biome", r.biome},
+                                    {"tiles", r.tiles},
+                                    {"creatures", r.creatures},
+                                    {"objects", r.objects},
+                                    {"quests", r.quests},
+                                    {"items", r.items},
+                                    {"hasAudio", r.hasAudio}});
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project overview: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu\n", zones.size());
+            std::printf("  totals       : %zut, %zuc, %zuo, %zuq, %zui (%d with audio)\n",
+                        totT, totC, totO, totQ, totI, audioCount);
+            std::printf("\n  zone                  biome      tiles  creat  obj  quest  items  audio\n");
+            for (const auto& r : rows) {
+                std::printf("  %-20s  %-10s %5zu  %5zu  %3zu  %5zu  %5zu  %s\n",
+                            r.name.substr(0, 20).c_str(),
+                            r.biome.empty() ? "?" : r.biome.substr(0, 10).c_str(),
+                            r.tiles, r.creatures, r.objects, r.quests, r.items,
+                            r.hasAudio ? "yes" : "no");
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--info-creatures") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
