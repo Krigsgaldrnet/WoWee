@@ -531,6 +531,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a linear gradient PNG (default vertical, 256x256)\n");
     std::printf("  --gen-texture-noise <out.png> [seed] [W H]\n");
     std::printf("                         Synthesize a smooth value-noise PNG (deterministic from seed; default 256x256)\n");
+    std::printf("  --gen-texture-noise-color <out.png> <colorAHex> <colorBHex> [seed] [W H]\n");
+    std::printf("                         Same noise pattern but blended between two colors instead of grayscale\n");
     std::printf("  --gen-texture-radial <out.png> <centerHex> <edgeHex> [W H]\n");
     std::printf("                         Synthesize a radial gradient PNG (center→edge, smooth distance-based blend)\n");
     std::printf("  --gen-texture-stripes <out.png> <colorAHex> <colorBHex> [stripePx] [diagonal|horizontal|vertical] [W H]\n");
@@ -539,6 +541,14 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a polka-dot pattern (default radius 8, spacing 32, 256x256)\n");
     std::printf("  --gen-texture-rings <out.png> <colorAHex> <colorBHex> [ringPx] [W H]\n");
     std::printf("                         Synthesize concentric ring pattern (target/seal style; default 16px rings, 256x256)\n");
+    std::printf("  --gen-texture-checker <out.png> <colorAHex> <colorBHex> [cellPx] [W H]\n");
+    std::printf("                         Synthesize checkerboard with custom colors (gen-texture's checker is BW only)\n");
+    std::printf("  --gen-texture-brick <out.png> <brickHex> <mortarHex> [brickW] [brickH] [mortarPx] [W H]\n");
+    std::printf("                         Brick wall pattern with offset rows + mortar lines (default 64×24, 4px mortar)\n");
+    std::printf("  --gen-texture-wood <out.png> <lightHex> <darkHex> [grainSpacing] [seed] [W H]\n");
+    std::printf("                         Wood grain pattern with vertical streaks + knots (default spacing 12px, seed 1)\n");
+    std::printf("  --gen-texture-grass <out.png> <baseHex> <bladeHex> [density] [seed] [W H]\n");
+    std::printf("                         Tiling grass texture with random blade highlights (default density=0.15, seed=1)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -555,6 +565,16 @@ static void printUsage(const char* argv0) {
     std::printf("                         Hollow cylinder/pipe along Y axis (default 1.0/0.7/2.0, 24 segments)\n");
     std::printf("  --gen-mesh-capsule <wom-base> [radius] [cylHeight] [segments] [stacks]\n");
     std::printf("                         Capsule along Y axis: cylinder body with hemispherical caps (default 0.5/1.0/16/8)\n");
+    std::printf("  --gen-mesh-arch <wom-base> [openingWidth] [openingHeight] [thickness] [depth] [segments]\n");
+    std::printf("                         Doorway arch: two columns + semicircular top (default 1.0/1.5/0.2/0.3, 12 segs)\n");
+    std::printf("  --gen-mesh-pyramid <wom-base> [sides] [baseRadius] [height]\n");
+    std::printf("                         N-sided polygonal pyramid with apex at +Y (default 4 sides, 1.0/1.0)\n");
+    std::printf("  --gen-mesh-fence <wom-base> [posts] [postSpacing] [postHeight] [railThick]\n");
+    std::printf("                         Repeating fence: N posts along +X with two horizontal rails between\n");
+    std::printf("  --gen-mesh-tree <wom-base> [trunkRadius] [trunkHeight] [foliageRadius]\n");
+    std::printf("  --gen-mesh-rock <wom-base> [radius] [roughness] [subdiv] [seed]\n");
+    std::printf("                         Procedural boulder via subdivided octahedron + smooth noise displacement\n");
+    std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
@@ -587,6 +607,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Add random creatures/objects to a zone (seeded for reproducibility)\n");
     std::printf("  --random-populate-items <zoneDir> [--seed N] [--count N] [--max-quality Q]\n");
     std::printf("                         Generate random items.json entries (seeded; quality cap defaults to epic=4)\n");
+    std::printf("  --gen-zone-texture-pack <zoneDir> [--seed N]\n");
+    std::printf("                         Drop a starter texture pack (grass/dirt/stone/brick/wood/water) into <zoneDir>/textures/\n");
+    std::printf("  --gen-zone-mesh-pack <zoneDir> [--seed N]\n");
+    std::printf("                         Drop a starter WOM mesh pack (rock/tree/fence) into <zoneDir>/meshes/\n");
     std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
     std::printf("                         End-to-end: scaffold-zone + random-populate-zone + random-populate-items\n");
     std::printf("  --gen-random-project <count> [--prefix N] [--seed N] [--creatures N] [--objects N] [--items N]\n");
@@ -601,6 +625,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         List spawns whose Z is more than <threshold> yards off from the terrain (default 5)\n");
     std::printf("  --list-zone-spawns <zoneDir> [--json]\n");
     std::printf("                         Combined creature+object listing for a zone (kind, name, position, key fields)\n");
+    std::printf("  --diff-zone-spawns <aZoneDir> <bZoneDir>\n");
+    std::printf("                         Compare two zones' creature+object lists (added/removed/moved)\n");
     std::printf("  --info-spawn <zoneDir> <creature|object> <index> [--json]\n");
     std::printf("                         Detailed view of a single creature/object spawn by index\n");
     std::printf("  --list-project-spawns <projectDir> [--json]\n");
@@ -817,6 +843,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Exit 1 if any proprietary Blizzard assets (.m2/.wmo/.blp/.dbc) remain — release gate\n");
     std::printf("  --audit-project <projectDir>\n");
     std::printf("                         Run validate-project + open-only + check-project-refs together; one PASS/FAIL\n");
+    std::printf("  --bench-audit-project <projectDir>\n");
+    std::printf("                         Time each --audit-project sub-step; shows where the slow ones are\n");
     std::printf("  --info-zone-bytes <zoneDir> [--json]\n");
     std::printf("                         Per-file size breakdown grouped by category, sorted largest-first\n");
     std::printf("  --info-project-extents <projectDir> [--json]\n");
@@ -1032,23 +1060,26 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-project",
-        "--validate-project-open-only", "--audit-project",
+        "--validate-project-open-only", "--audit-project", "--bench-audit-project",
         "--bench-validate-project", "--bench-bake-project",
         "--bench-migrate-data-tree", "--list-data-tree-largest",
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
-        "--gen-mesh-tube", "--gen-mesh-capsule",
+        "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
+        "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
+        "--gen-mesh-rock",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
-        "--gen-texture-noise", "--rotate-mesh",
+        "--gen-texture-noise", "--gen-texture-noise-color", "--rotate-mesh",
         "--center-mesh", "--flip-mesh-normals", "--mirror-mesh",
         "--smooth-mesh-normals",
         "--merge-meshes",
         "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
-        "--gen-texture-rings",
+        "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
+        "--gen-texture-wood", "--gen-texture-grass",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -1072,7 +1103,9 @@ int main(int argc, char* argv[]) {
         "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
-        "--gen-random-zone", "--gen-random-project", "--info-spawn",
+        "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
+        "--gen-zone-mesh-pack", "--info-spawn",
+        "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -8670,11 +8703,14 @@ int main(int argc, char* argv[]) {
             // overall result. Designed to be the only command CI needs
             // to run before --pack-wcp.
             //
-            // Sub-checks:
+            // Sub-checks (ordered cheapest→most expensive so a fast
+            // failure surfaces before the slow ones run):
             //   1. validate-project        (per-format integrity)
             //   2. validate-project-open-only (no proprietary leaks)
-            //   3. check-project-refs      (every model/NPC ref resolves)
-            //   4. check-project-content   (sane field values)
+            //   3. validate-project-items  (items.json schema)
+            //   4. check-project-refs      (every model/NPC ref resolves)
+            //   5. check-project-content   (sane field values)
+            //   6. audit-project-spawns    (spawn Z near terrain)
             std::string projectDir = argv[++i];
             namespace fs = std::filesystem;
             if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
@@ -8701,10 +8737,12 @@ int main(int argc, char* argv[]) {
             };
             struct Step { const char* name; const char* flag; int rc; };
             std::vector<Step> steps = {
-                {"format validation       ", "--validate-project",          0},
-                {"open-only release gate  ", "--validate-project-open-only", 0},
-                {"reference integrity     ", "--check-project-refs",         0},
-                {"content field sanity    ", "--check-project-content",      0},
+                {"format validation       ", "--validate-project",            0},
+                {"open-only release gate  ", "--validate-project-open-only",  0},
+                {"items schema            ", "--validate-project-items",      0},
+                {"reference integrity     ", "--check-project-refs",          0},
+                {"content field sanity    ", "--check-project-content",       0},
+                {"spawn placement         ", "--audit-project-spawns",        0},
             };
             int totalFailed = 0;
             std::printf("audit-project: %s\n\n", projectDir.c_str());
@@ -8724,6 +8762,49 @@ int main(int argc, char* argv[]) {
             std::printf("OVERALL: FAIL — %d sub-check(s) failed\n", totalFailed);
             std::printf("  rerun a failing sub-check directly for detailed output\n");
             return 1;
+        } else if (std::strcmp(argv[i], "--bench-audit-project") == 0 && i + 1 < argc) {
+            // Time each --audit-project sub-step end-to-end so users
+            // can see where the slow checks are. Useful for tuning a
+            // CI pipeline: drop the slowest check from a fast-feedback
+            // pre-commit hook, run the full audit on push.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "bench-audit-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::string self = argv[0];
+            struct Step { const char* name; const char* flag; double ms; int rc; };
+            std::vector<Step> steps = {
+                {"format validation       ", "--validate-project",            0, 0},
+                {"open-only release gate  ", "--validate-project-open-only",  0, 0},
+                {"items schema            ", "--validate-project-items",      0, 0},
+                {"reference integrity     ", "--check-project-refs",          0, 0},
+                {"content field sanity    ", "--check-project-content",       0, 0},
+                {"spawn placement         ", "--audit-project-spawns",        0, 0},
+            };
+            double totalMs = 0;
+            for (auto& s : steps) {
+                std::string cmd = "\"" + self + "\" " + s.flag + " \"" +
+                                   projectDir + "\" >/dev/null 2>&1";
+                auto t0 = std::chrono::steady_clock::now();
+                s.rc = std::system(cmd.c_str());
+                auto t1 = std::chrono::steady_clock::now();
+                s.ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                totalMs += s.ms;
+            }
+            std::printf("bench-audit-project: %s\n", projectDir.c_str());
+            std::printf("  total : %.1f ms (%.2f s)\n", totalMs, totalMs / 1000.0);
+            std::printf("\n  step                       wall-clock    share   status\n");
+            for (const auto& s : steps) {
+                double share = totalMs > 0 ? 100.0 * s.ms / totalMs : 0.0;
+                std::printf("  %s   %9.1f ms   %5.1f%%   %s (rc=%d)\n",
+                            s.name, s.ms, share,
+                            s.rc == 0 ? "ok" : "FAIL", s.rc);
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--bench-validate-project") == 0 && i + 1 < argc) {
             // Time --validate-project per zone. Reports avg/min/max
             // latency so users can spot zones that are unusually slow
@@ -13780,6 +13861,148 @@ int main(int argc, char* argv[]) {
             std::printf("  objects   : %d\n", objects);
             std::printf("  items     : %d\n", items);
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-zone-texture-pack") == 0 && i + 1 < argc) {
+            // Drop a starter PNG texture pack into <zoneDir>/textures/
+            // by fanning out to the procedural --gen-texture-* commands.
+            // Saves the user from sourcing proprietary art when bringing
+            // up a new zone — six themed textures (grass, dirt, stone,
+            // brick, wood, water) cover most outdoor & dungeon needs.
+            std::string zoneDir = argv[++i];
+            uint32_t seed = 1;
+            for (int k = i + 1; k < argc; ++k) {
+                std::string flag = argv[k];
+                if (flag == "--seed" && k + 1 < argc) {
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++k])); } catch (...) {}
+                    i = k;
+                } else if (flag.rfind("--", 0) == 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-texture-pack: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            std::filesystem::path zp(zoneDir);
+            if (!std::filesystem::exists(zp / "zone.json")) {
+                std::fprintf(stderr,
+                    "gen-zone-texture-pack: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            std::filesystem::path texDir = zp / "textures";
+            std::error_code ec;
+            std::filesystem::create_directories(texDir, ec);
+            if (ec) {
+                std::fprintf(stderr,
+                    "gen-zone-texture-pack: cannot create %s: %s\n",
+                    texDir.string().c_str(), ec.message().c_str());
+                return 1;
+            }
+            std::string self = (argc > 0) ? argv[0] : "wowee_editor";
+            // Each row: {flag, fileName, args...}. Using std::string so
+            // we can interpolate the per-pack seed without sprintf
+            // gymnastics; subprocess invocation handles quoting.
+            struct Cmd {
+                std::string flag;
+                std::string outName;
+                std::vector<std::string> args;
+            };
+            std::vector<Cmd> jobs = {
+                {"--gen-texture-noise",   "grass.png",  {"4A7C2E", "5C9B3A", "256", "256"}},
+                {"--gen-texture-noise",   "dirt.png",   {"6B4A2A", "8B5E3A", "256", "256"}},
+                {"--gen-texture-checker", "stone.png",  {"7A7A7A", "5A5A5A", "32", "256", "256"}},
+                {"--gen-texture-brick",   "brick.png",  {"8B4513", "D3D3D3", "64", "24", "4", "256", "256"}},
+                {"--gen-texture-wood",    "wood.png",   {"8B5A2B", "4A3216", "12", std::to_string(seed), "256", "256"}},
+                {"--gen-texture-radial",  "water.png",  {"3A6FA0", "1E4A78", "256", "256"}},
+            };
+            int written = 0;
+            for (const auto& job : jobs) {
+                std::filesystem::path out = texDir / job.outName;
+                std::string cmd = "\"" + self + "\" " + job.flag + " \"" + out.string() + "\"";
+                for (const auto& a : job.args) cmd += " " + a;
+                cmd += " > /dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc != 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-texture-pack: %s failed (rc=%d)\n",
+                        job.flag.c_str(), rc);
+                } else {
+                    ++written;
+                }
+            }
+            std::printf("gen-zone-texture-pack: wrote %d of %zu textures to %s\n",
+                        written, jobs.size(), texDir.string().c_str());
+            return written == static_cast<int>(jobs.size()) ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--gen-zone-mesh-pack") == 0 && i + 1 < argc) {
+            // Companion to --gen-zone-texture-pack: drops a starter
+            // WOM mesh pack into <zoneDir>/meshes/. Bootstraps the
+            // mesh side of the open-format pipeline so a fresh zone
+            // has placeholders for outdoor decoration without any
+            // proprietary M2 imports. Each rock variant uses a
+            // different seed so they read as distinct boulders.
+            std::string zoneDir = argv[++i];
+            uint32_t seed = 1;
+            for (int k = i + 1; k < argc; ++k) {
+                std::string flag = argv[k];
+                if (flag == "--seed" && k + 1 < argc) {
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++k])); } catch (...) {}
+                    i = k;
+                } else if (flag.rfind("--", 0) == 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-mesh-pack: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            std::filesystem::path zp(zoneDir);
+            if (!std::filesystem::exists(zp / "zone.json")) {
+                std::fprintf(stderr,
+                    "gen-zone-mesh-pack: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            std::filesystem::path meshDir = zp / "meshes";
+            std::error_code ec;
+            std::filesystem::create_directories(meshDir, ec);
+            if (ec) {
+                std::fprintf(stderr,
+                    "gen-zone-mesh-pack: cannot create %s: %s\n",
+                    meshDir.string().c_str(), ec.message().c_str());
+                return 1;
+            }
+            std::string self = (argc > 0) ? argv[0] : "wowee_editor";
+            struct MeshJob {
+                std::string flag;
+                std::string outBase;  // no .wom extension
+                std::vector<std::string> args;
+            };
+            std::string s0 = std::to_string(seed);
+            std::string s1 = std::to_string(seed + 17);
+            std::string s2 = std::to_string(seed + 41);
+            std::vector<MeshJob> jobs = {
+                // 3 rock variants with distinct seeds for variety
+                {"--gen-mesh-rock",  "rock_small",  {"0.6", "0.30", "2", s0}},
+                {"--gen-mesh-rock",  "rock_medium", {"1.2", "0.25", "2", s1}},
+                {"--gen-mesh-rock",  "rock_large",  {"2.4", "0.35", "3", s2}},
+                // Tree placeholder, fence segment for boundaries
+                {"--gen-mesh-tree",  "tree",        {"0.15", "3.0", "1.0"}},
+                {"--gen-mesh-fence", "fence",       {"5", "1.2", "1.4", "0.06"}},
+            };
+            int written = 0;
+            for (const auto& job : jobs) {
+                std::filesystem::path out = meshDir / job.outBase;
+                std::string cmd = "\"" + self + "\" " + job.flag + " \"" + out.string() + "\"";
+                for (const auto& a : job.args) cmd += " " + a;
+                cmd += " > /dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc != 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-mesh-pack: %s failed (rc=%d)\n",
+                        job.flag.c_str(), rc);
+                } else {
+                    ++written;
+                }
+            }
+            std::printf("gen-zone-mesh-pack: wrote %d of %zu meshes to %s\n",
+                        written, jobs.size(), meshDir.string().c_str());
+            return written == static_cast<int>(jobs.size()) ? 0 : 1;
         } else if (std::strcmp(argv[i], "--gen-random-project") == 0 && i + 1 < argc) {
             // Project-wide companion: spawn N random zones in one
             // pass. Names default to "Zone1, Zone2..."; tile
@@ -14271,6 +14494,113 @@ int main(int argc, char* argv[]) {
                 }
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--diff-zone-spawns") == 0 && i + 2 < argc) {
+            // Compare two zones' creatures + objects. Matches by
+            // (kind, name) — paired entries with mismatched positions
+            // are reported as "moved" with the delta. Entries that
+            // exist in only one zone are added/removed.
+            //
+            // Useful for "what did the new branch change vs main"
+            // before merging, or for confirming a copy-zone-items
+            // produced what was expected.
+            std::string aDir = argv[++i];
+            std::string bDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(aDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "diff-zone-spawns: %s has no zone.json\n", aDir.c_str());
+                return 1;
+            }
+            if (!fs::exists(bDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "diff-zone-spawns: %s has no zone.json\n", bDir.c_str());
+                return 1;
+            }
+            // Multiset key: kind/name. Position comes along so we can
+            // report "moved" deltas when a name appears in both with
+            // different XYZ.
+            struct Entry { std::string kind, name; glm::vec3 pos; };
+            auto load = [&](const std::string& dir) {
+                std::vector<Entry> out;
+                wowee::editor::NpcSpawner spawner;
+                if (spawner.loadFromFile(dir + "/creatures.json")) {
+                    for (const auto& s : spawner.getSpawns()) {
+                        out.push_back({"creature", s.name, s.position});
+                    }
+                }
+                wowee::editor::ObjectPlacer placer;
+                if (placer.loadFromFile(dir + "/objects.json")) {
+                    for (const auto& o : placer.getObjects()) {
+                        out.push_back({"object", o.path, o.position});
+                    }
+                }
+                return out;
+            };
+            auto av = load(aDir);
+            auto bv = load(bDir);
+            // Sort each side for stable key matching.
+            auto cmp = [](const Entry& x, const Entry& y) {
+                if (x.kind != y.kind) return x.kind < y.kind;
+                return x.name < y.name;
+            };
+            std::sort(av.begin(), av.end(), cmp);
+            std::sort(bv.begin(), bv.end(), cmp);
+            int added = 0, removed = 0, moved = 0, same = 0;
+            std::vector<std::string> diffs;
+            // Two-pointer walk: equal keys → check position; A-only →
+            // removed; B-only → added.
+            size_t i_a = 0, i_b = 0;
+            while (i_a < av.size() || i_b < bv.size()) {
+                if (i_a < av.size() && i_b < bv.size() &&
+                    av[i_a].kind == bv[i_b].kind &&
+                    av[i_a].name == bv[i_b].name) {
+                    glm::vec3 d = bv[i_b].pos - av[i_a].pos;
+                    float dlen = glm::length(d);
+                    if (dlen > 0.5f) {
+                        char buf[256];
+                        std::snprintf(buf, sizeof(buf),
+                            "  moved   %-9s %-30s by (%+.1f, %+.1f, %+.1f)",
+                            av[i_a].kind.c_str(),
+                            av[i_a].name.substr(0, 30).c_str(),
+                            d.x, d.y, d.z);
+                        diffs.push_back(buf);
+                        moved++;
+                    } else {
+                        same++;
+                    }
+                    i_a++; i_b++;
+                } else if (i_b == bv.size() ||
+                           (i_a < av.size() && cmp(av[i_a], bv[i_b]))) {
+                    char buf[256];
+                    std::snprintf(buf, sizeof(buf),
+                        "  removed %-9s %s",
+                        av[i_a].kind.c_str(),
+                        av[i_a].name.substr(0, 60).c_str());
+                    diffs.push_back(buf);
+                    removed++;
+                    i_a++;
+                } else {
+                    char buf[256];
+                    std::snprintf(buf, sizeof(buf),
+                        "  added   %-9s %s",
+                        bv[i_b].kind.c_str(),
+                        bv[i_b].name.substr(0, 60).c_str());
+                    diffs.push_back(buf);
+                    added++;
+                    i_b++;
+                }
+            }
+            std::printf("diff-zone-spawns: %s -> %s\n",
+                        aDir.c_str(), bDir.c_str());
+            std::printf("  added   : %d\n", added);
+            std::printf("  removed : %d\n", removed);
+            std::printf("  moved   : %d (>0.5y)\n", moved);
+            std::printf("  same    : %d\n", same);
+            if (!diffs.empty()) {
+                std::printf("\n");
+                for (const auto& d : diffs) std::printf("%s\n", d.c_str());
+            }
+            return (added + removed + moved) == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--info-spawn") == 0 && i + 3 < argc) {
             // Detailed view of one creature or object by index. The
             // list-zone-spawns table only shows headline fields; this
@@ -17374,6 +17704,130 @@ int main(int argc, char* argv[]) {
             std::printf("  seed  : %u\n", seed);
             std::printf("  type  : smooth value noise (16x16 bilinear lattice)\n");
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-noise-color") == 0 && i + 3 < argc) {
+            // Two-color noise blend: same value-noise function as
+            // --gen-texture-noise but interpolated between two RGB
+            // endpoints rather than emitted as grayscale. Useful
+            // for terrain detail (grass+dirt mottle), magic fog,
+            // marble veining, or any "natural variation" pass that
+            // shouldn't be desaturated.
+            std::string outPath = argv[++i];
+            std::string aHex = argv[++i];
+            std::string bHex = argv[++i];
+            uint32_t seed = 1;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); }
+                catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+                std::fprintf(stderr,
+                    "gen-texture-noise-color: invalid size %dx%d\n", W, H);
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t ra, ga, ba, rb, gb, bb;
+            if (!parseHex(aHex, ra, ga, ba)) {
+                std::fprintf(stderr,
+                    "gen-texture-noise-color: '%s' is not a valid hex color\n",
+                    aHex.c_str());
+                return 1;
+            }
+            if (!parseHex(bHex, rb, gb, bb)) {
+                std::fprintf(stderr,
+                    "gen-texture-noise-color: '%s' is not a valid hex color\n",
+                    bHex.c_str());
+                return 1;
+            }
+            // Same noise pipeline as --gen-texture-noise.
+            const int latticeSize = 17;
+            std::vector<float> lattice(latticeSize * latticeSize);
+            uint32_t state = seed ? seed : 1u;
+            auto next = [&]() -> float {
+                state = state * 1664525u + 1013904223u;
+                return (state >> 8) / float(1 << 24);
+            };
+            for (auto& v : lattice) v = next();
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                float fy = static_cast<float>(y) / H * (latticeSize - 1);
+                int yi = static_cast<int>(fy);
+                if (yi >= latticeSize - 1) yi = latticeSize - 2;
+                float fty = fy - yi;
+                float ty = fty * fty * (3.0f - 2.0f * fty);
+                for (int x = 0; x < W; ++x) {
+                    float fx = static_cast<float>(x) / W * (latticeSize - 1);
+                    int xi = static_cast<int>(fx);
+                    if (xi >= latticeSize - 1) xi = latticeSize - 2;
+                    float ftx = fx - xi;
+                    float tx = ftx * ftx * (3.0f - 2.0f * ftx);
+                    float a = lattice[yi * latticeSize + xi];
+                    float b = lattice[yi * latticeSize + xi + 1];
+                    float c = lattice[(yi + 1) * latticeSize + xi];
+                    float d = lattice[(yi + 1) * latticeSize + xi + 1];
+                    float ab = a + (b - a) * tx;
+                    float cd = c + (d - c) * tx;
+                    float v = ab + (cd - ab) * ty;
+                    auto lerp = [](uint8_t lo, uint8_t hi, float t) {
+                        return static_cast<uint8_t>(lo + (hi - lo) * t + 0.5f);
+                    };
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = lerp(ra, rb, v);
+                    pixels[i2 + 1] = lerp(ga, gb, v);
+                    pixels[i2 + 2] = lerp(ba, bb, v);
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-noise-color: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size  : %dx%d\n", W, H);
+            std::printf("  seed  : %u\n", seed);
+            std::printf("  from  : %s\n", aHex.c_str());
+            std::printf("  to    : %s\n", bHex.c_str());
+            return 0;
         } else if (std::strcmp(argv[i], "--gen-texture-radial") == 0 && i + 3 < argc) {
             // Radial gradient: centerHex at the image center fading
             // smoothly to edgeHex at the corner. Useful for spell
@@ -17793,6 +18247,493 @@ int main(int argc, char* argv[]) {
             std::printf("  size      : %dx%d\n", W, H);
             std::printf("  ring px   : %d\n", ringPx);
             std::printf("  colors    : %s + %s\n", aHex.c_str(), bHex.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-checker") == 0 && i + 3 < argc) {
+            // Two-color checkerboard with custom colors. The
+            // existing --gen-texture's "checker" pattern is fixed
+            // black/white at 32px; this is the configurable variant
+            // for game boards, kitchen floors, hazard markers in
+            // colors other than monochrome.
+            std::string outPath = argv[++i];
+            std::string aHex = argv[++i];
+            std::string bHex = argv[++i];
+            int cellPx = 32;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { cellPx = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                cellPx < 1 || cellPx > 4096) {
+                std::fprintf(stderr,
+                    "gen-texture-checker: invalid dims (W/H 1..8192, cellPx 1..4096)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t ra, ga, ba, rb, gb, bb;
+            if (!parseHex(aHex, ra, ga, ba)) {
+                std::fprintf(stderr,
+                    "gen-texture-checker: '%s' is not a valid hex color\n",
+                    aHex.c_str());
+                return 1;
+            }
+            if (!parseHex(bHex, rb, gb, bb)) {
+                std::fprintf(stderr,
+                    "gen-texture-checker: '%s' is not a valid hex color\n",
+                    bHex.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    bool isA = ((x / cellPx) + (y / cellPx)) % 2 == 0;
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = isA ? ra : rb;
+                    pixels[i2 + 1] = isA ? ga : gb;
+                    pixels[i2 + 2] = isA ? ba : bb;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-checker: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size     : %dx%d\n", W, H);
+            std::printf("  cell px  : %d\n", cellPx);
+            std::printf("  colors   : %s + %s\n", aHex.c_str(), bHex.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-brick") == 0 && i + 3 < argc) {
+            // Brick wall pattern: rectangular bricks with offset rows
+            // (each row shifted by half a brick width) and mortar
+            // lines between. Useful for walls, chimneys, paths,
+            // medieval-zone props.
+            std::string outPath = argv[++i];
+            std::string brickHex = argv[++i];
+            std::string mortarHex = argv[++i];
+            int brickW = 64, brickH = 24, mortarPx = 4;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { brickW = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { brickH = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { mortarPx = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                brickW < 4 || brickW > 4096 ||
+                brickH < 4 || brickH > 4096 ||
+                mortarPx < 0 || mortarPx > brickH / 2) {
+                std::fprintf(stderr,
+                    "gen-texture-brick: invalid dims (W/H 1..8192, brick 4..4096, mortar < brickH/2)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t br, bg, bb_, mr, mg, mb;
+            if (!parseHex(brickHex, br, bg, bb_)) {
+                std::fprintf(stderr,
+                    "gen-texture-brick: '%s' is not a valid hex color\n",
+                    brickHex.c_str());
+                return 1;
+            }
+            if (!parseHex(mortarHex, mr, mg, mb)) {
+                std::fprintf(stderr,
+                    "gen-texture-brick: '%s' is not a valid hex color\n",
+                    mortarHex.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            int rowH = brickH;  // total row height (brick + mortar)
+            int halfBrick = brickW / 2;
+            for (int y = 0; y < H; ++y) {
+                int row = y / rowH;
+                int yInRow = y % rowH;
+                bool inMortarH = (yInRow < mortarPx);
+                int xOffset = (row & 1) ? halfBrick : 0;
+                for (int x = 0; x < W; ++x) {
+                    int xS = (x + xOffset) % brickW;
+                    bool inMortarV = (xS < mortarPx);
+                    bool isMortar = inMortarH || inMortarV;
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = isMortar ? mr : br;
+                    pixels[i2 + 1] = isMortar ? mg : bg;
+                    pixels[i2 + 2] = isMortar ? mb : bb_;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-brick: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  brick     : %d × %d px (%s)\n",
+                        brickW, brickH, brickHex.c_str());
+            std::printf("  mortar    : %d px (%s)\n",
+                        mortarPx, mortarHex.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-wood") == 0 && i + 3 < argc) {
+            // Wood grain pattern: vertical streaks of varying width
+            // alternating between light and dark hues, plus a few
+            // pseudo-random "knots" (small dark dots). Suitable for
+            // doors, planks, fences, crates.
+            std::string outPath = argv[++i];
+            std::string lightHex = argv[++i];
+            std::string darkHex = argv[++i];
+            int spacing = 12;     // average grain spacing in px
+            uint32_t seed = 1;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { spacing = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                spacing < 2 || spacing > 256) {
+                std::fprintf(stderr,
+                    "gen-texture-wood: invalid dims (W/H 1..8192, spacing 2..256)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t lr, lg, lb, dr, dg, db;
+            if (!parseHex(lightHex, lr, lg, lb)) {
+                std::fprintf(stderr,
+                    "gen-texture-wood: '%s' is not a valid hex color\n",
+                    lightHex.c_str());
+                return 1;
+            }
+            if (!parseHex(darkHex, dr, dg, db)) {
+                std::fprintf(stderr,
+                    "gen-texture-wood: '%s' is not a valid hex color\n",
+                    darkHex.c_str());
+                return 1;
+            }
+            // Tiny LCG so output is reproducible from `seed` alone
+            // without pulling in <random>.
+            uint32_t state = seed ? seed : 1u;
+            auto next01 = [&state]() -> float {
+                state = state * 1664525u + 1013904223u;
+                return (state >> 8) * (1.0f / 16777216.0f);
+            };
+            // Pre-compute per-column "darkness" weight by accumulating
+            // grain bands of varying width across the image. A band's
+            // weight bleeds into a few neighbors so transitions feel
+            // soft rather than blocky.
+            std::vector<float> colWeight(W, 0.0f);
+            int x = 0;
+            while (x < W) {
+                int width = spacing + static_cast<int>(next01() * spacing);
+                float weight = next01();  // 0..1
+                int feather = std::max(1, width / 6);
+                for (int dx = -feather; dx < width + feather; ++dx) {
+                    int cx = x + dx;
+                    if (cx < 0 || cx >= W) continue;
+                    float t = 1.0f;
+                    if (dx < 0) t = 1.0f + dx / static_cast<float>(feather);
+                    else if (dx >= width) t = 1.0f - (dx - width) / static_cast<float>(feather);
+                    colWeight[cx] = std::max(colWeight[cx], weight * t);
+                }
+                x += width;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                // Slight Y-axis warp so streaks aren't perfectly straight
+                float yWave = std::sin(y * 0.025f) * 1.5f;
+                for (int xi = 0; xi < W; ++xi) {
+                    int sx = xi + static_cast<int>(yWave);
+                    if (sx < 0) sx = 0;
+                    if (sx >= W) sx = W - 1;
+                    float w = colWeight[sx];
+                    uint8_t r = static_cast<uint8_t>(lr * (1 - w) + dr * w);
+                    uint8_t g = static_cast<uint8_t>(lg * (1 - w) + dg * w);
+                    uint8_t b = static_cast<uint8_t>(lb * (1 - w) + db * w);
+                    size_t i2 = (static_cast<size_t>(y) * W + xi) * 3;
+                    pixels[i2 + 0] = r;
+                    pixels[i2 + 1] = g;
+                    pixels[i2 + 2] = b;
+                }
+            }
+            // Sprinkle a handful of round "knots" using the same LCG.
+            int knotCount = std::max(1, (W * H) / 32768);
+            for (int k = 0; k < knotCount; ++k) {
+                int kx = static_cast<int>(next01() * W);
+                int ky = static_cast<int>(next01() * H);
+                int radius = 3 + static_cast<int>(next01() * 4);
+                for (int dy = -radius; dy <= radius; ++dy) {
+                    for (int dx = -radius; dx <= radius; ++dx) {
+                        int px = kx + dx, py = ky + dy;
+                        if (px < 0 || py < 0 || px >= W || py >= H) continue;
+                        float d = std::sqrt(static_cast<float>(dx * dx + dy * dy));
+                        if (d > radius) continue;
+                        float t = 1.0f - d / radius;
+                        size_t i2 = (static_cast<size_t>(py) * W + px) * 3;
+                        pixels[i2 + 0] = static_cast<uint8_t>(pixels[i2 + 0] * (1 - t) + dr * t);
+                        pixels[i2 + 1] = static_cast<uint8_t>(pixels[i2 + 1] * (1 - t) + dg * t);
+                        pixels[i2 + 2] = static_cast<uint8_t>(pixels[i2 + 2] * (1 - t) + db * t);
+                    }
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-wood: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  light/dark: %s / %s\n",
+                        lightHex.c_str(), darkHex.c_str());
+            std::printf("  spacing   : %d px\n", spacing);
+            std::printf("  knots     : %d\n", knotCount);
+            std::printf("  seed      : %u\n", seed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-grass") == 0 && i + 3 < argc) {
+            // Tiling grass texture. Starts from a slightly perturbed
+            // base color (per-pixel jitter so the field doesn't read
+            // as flat), then sprinkles short blade highlights using
+            // the brighter blade color. Density controls roughly
+            // what fraction of pixels get touched by a blade.
+            std::string outPath = argv[++i];
+            std::string baseHex = argv[++i];
+            std::string bladeHex = argv[++i];
+            float density = 0.15f;
+            uint32_t seed = 1;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { density = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                density < 0.0f || density > 1.0f) {
+                std::fprintf(stderr,
+                    "gen-texture-grass: invalid dims (W/H 1..8192, density 0..1)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t br, bg, bb_, gr, gg, gb;
+            if (!parseHex(baseHex, br, bg, bb_)) {
+                std::fprintf(stderr,
+                    "gen-texture-grass: '%s' is not a valid hex color\n",
+                    baseHex.c_str());
+                return 1;
+            }
+            if (!parseHex(bladeHex, gr, gg, gb)) {
+                std::fprintf(stderr,
+                    "gen-texture-grass: '%s' is not a valid hex color\n",
+                    bladeHex.c_str());
+                return 1;
+            }
+            uint32_t state = seed ? seed : 1u;
+            auto next01 = [&state]() -> float {
+                state = state * 1664525u + 1013904223u;
+                return (state >> 8) * (1.0f / 16777216.0f);
+            };
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            // Base layer: per-pixel jitter ±10 around the base color.
+            for (int y = 0; y < H; ++y) {
+                for (int xi = 0; xi < W; ++xi) {
+                    float j = (next01() - 0.5f) * 20.0f;
+                    int r = std::clamp(static_cast<int>(br) + static_cast<int>(j), 0, 255);
+                    int g = std::clamp(static_cast<int>(bg) + static_cast<int>(j), 0, 255);
+                    int b = std::clamp(static_cast<int>(bb_) + static_cast<int>(j), 0, 255);
+                    size_t i2 = (static_cast<size_t>(y) * W + xi) * 3;
+                    pixels[i2 + 0] = static_cast<uint8_t>(r);
+                    pixels[i2 + 1] = static_cast<uint8_t>(g);
+                    pixels[i2 + 2] = static_cast<uint8_t>(b);
+                }
+            }
+            // Blades: short vertical strokes at random positions.
+            // Stroke length 2-5px, alpha-blended toward bladeHex.
+            int strokeCount = static_cast<int>(W * H * density * 0.05f);
+            for (int s = 0; s < strokeCount; ++s) {
+                int sx = static_cast<int>(next01() * W);
+                int sy = static_cast<int>(next01() * H);
+                int slen = 2 + static_cast<int>(next01() * 4);
+                float t = 0.4f + next01() * 0.4f;  // blade strength
+                for (int dy = 0; dy < slen; ++dy) {
+                    int py = (sy + dy) % H;  // wrap so texture tiles
+                    int px = sx;
+                    size_t i2 = (static_cast<size_t>(py) * W + px) * 3;
+                    pixels[i2 + 0] = static_cast<uint8_t>(pixels[i2 + 0] * (1 - t) + gr * t);
+                    pixels[i2 + 1] = static_cast<uint8_t>(pixels[i2 + 1] * (1 - t) + gg * t);
+                    pixels[i2 + 2] = static_cast<uint8_t>(pixels[i2 + 2] * (1 - t) + gb * t);
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-grass: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  base/blade: %s / %s\n",
+                        baseHex.c_str(), bladeHex.c_str());
+            std::printf("  density   : %.3f\n", density);
+            std::printf("  blades    : %d\n", strokeCount);
+            std::printf("  seed      : %u\n", seed);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
@@ -18884,6 +19825,684 @@ int main(int argc, char* argv[]) {
             std::printf("  stacks     : %d (per hemisphere)\n", stacks);
             std::printf("  vertices   : %zu\n", wom.vertices.size());
             std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-arch") == 0 && i + 1 < argc) {
+            // Doorway/portal arch: two rectangular columns connected
+            // by a semicircular top band. Total width = openingWidth +
+            // 2*thickness; total height = openingHeight + thickness +
+            // archRadius (where archRadius = openingWidth/2). Depth
+            // is the Y-axis thickness (extruded slab).
+            //
+            // Two box columns + curved arch band on top. Useful for
+            // doorways, portal frames, gates. Aligned so the inside
+            // of the opening is centered on the Y axis.
+            std::string womBase = argv[++i];
+            float openingW = 1.0f, openingH = 1.5f;
+            float thickness = 0.2f;  // column thickness (X)
+            float depth = 0.3f;       // Y extrusion
+            int segments = 12;        // arch curve segments
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { openingW = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { openingH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { thickness = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { depth = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { segments = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (openingW <= 0 || openingH <= 0 ||
+                thickness <= 0 || depth <= 0 ||
+                segments < 2 || segments > 256) {
+                std::fprintf(stderr,
+                    "gen-mesh-arch: dimensions must be positive, segments 2..256\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // Helper to push a vertex.
+            auto addV = [&](float x, float y, float z,
+                              float nx, float ny, float nz,
+                              float u, float v) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = glm::vec3(x, y, z);
+                vtx.normal = glm::vec3(nx, ny, nz);
+                vtx.texCoord = glm::vec2(u, v);
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Helper to emit an axis-aligned box from min to max.
+            auto addBox = [&](glm::vec3 lo, glm::vec3 hi) {
+                struct Face { float nx, ny, nz; float verts[4][3]; };
+                Face faces[6] = {
+                    { 0,  0,  1, {{lo.x,lo.y,hi.z},{hi.x,lo.y,hi.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}}},
+                    { 0,  0, -1, {{hi.x,lo.y,lo.z},{lo.x,lo.y,lo.z},{lo.x,hi.y,lo.z},{hi.x,hi.y,lo.z}}},
+                    { 1,  0,  0, {{hi.x,lo.y,hi.z},{hi.x,lo.y,lo.z},{hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z}}},
+                    {-1,  0,  0, {{lo.x,lo.y,lo.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,hi.z},{lo.x,hi.y,lo.z}}},
+                    { 0,  1,  0, {{lo.x,hi.y,hi.z},{hi.x,hi.y,hi.z},{hi.x,hi.y,lo.z},{lo.x,hi.y,lo.z}}},
+                    { 0, -1,  0, {{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},{hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z}}},
+                };
+                float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+                for (auto& f : faces) {
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    for (int k = 0; k < 4; ++k) {
+                        addV(f.verts[k][0], f.verts[k][1], f.verts[k][2],
+                              f.nx, f.ny, f.nz, uvs[k][0], uvs[k][1]);
+                    }
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 1);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 3);
+                }
+            };
+            float halfOW = openingW * 0.5f;
+            float halfD = depth * 0.5f;
+            // Left column.
+            addBox(glm::vec3(-halfOW - thickness, -halfD, 0),
+                    glm::vec3(-halfOW, halfD, openingH));
+            // Right column.
+            addBox(glm::vec3(halfOW, -halfD, 0),
+                    glm::vec3(halfOW + thickness, halfD, openingH));
+            // Arch top band: curve from (-halfOW, openingH) through
+            // (0, openingH+halfOW) to (halfOW, openingH). Radius =
+            // halfOW. Outer surface follows the curve, inner surface
+            // is the underside. Built from <segments> bands of 4
+            // verts each (front + back faces handled per band).
+            float archCenterZ = openingH;
+            float archR = halfOW;
+            float pi = 3.14159265358979f;
+            for (int sg = 0; sg < segments; ++sg) {
+                float t0 = static_cast<float>(sg) / segments;
+                float t1 = static_cast<float>(sg + 1) / segments;
+                float a0 = pi - t0 * pi;  // start at 180°, sweep to 0°
+                float a1 = pi - t1 * pi;
+                float c0 = std::cos(a0), s0 = std::sin(a0);
+                float c1 = std::cos(a1), s1 = std::sin(a1);
+                // Outer ring point at angle a.
+                glm::vec3 outer0(archR * c0, 0, archCenterZ + archR * s0);
+                glm::vec3 outer1(archR * c1, 0, archCenterZ + archR * s1);
+                // Inner ring (offset down to be a thin band — we're
+                // making just a bridge across the top, no thickness
+                // for now to keep vertex count tractable). The arch
+                // band is a flat strip from the outer curve down to
+                // the column tops at the SAME XZ — use the column
+                // tops at the band ends. For simplicity, treat the
+                // band as a thin shell along the curve.
+                glm::vec3 outer0b = outer0 + glm::vec3(0, depth, 0);
+                glm::vec3 outer1b = outer1 + glm::vec3(0, depth, 0);
+                // Top face of band (pointing radially outward from
+                // arch center).
+                glm::vec3 n((c0 + c1) * 0.5f, 0, (s0 + s1) * 0.5f);
+                n = glm::normalize(n);
+                uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                addV(outer0.x, outer0.y - halfD, outer0.z, n.x, 0, n.z, 0, 0);
+                addV(outer1.x, outer1.y - halfD, outer1.z, n.x, 0, n.z, 1, 0);
+                addV(outer1.x, outer1.y + halfD, outer1.z, n.x, 0, n.z, 1, 1);
+                addV(outer0.x, outer0.y + halfD, outer0.z, n.x, 0, n.z, 0, 1);
+                wom.indices.push_back(base + 0);
+                wom.indices.push_back(base + 1);
+                wom.indices.push_back(base + 2);
+                wom.indices.push_back(base + 0);
+                wom.indices.push_back(base + 2);
+                wom.indices.push_back(base + 3);
+            }
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-arch: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  opening    : %.3f W × %.3f H\n", openingW, openingH);
+            std::printf("  thickness  : %.3f (column), depth %.3f (Y)\n", thickness, depth);
+            std::printf("  segments   : %d (arch curve)\n", segments);
+            std::printf("  vertices   : %zu\n", wom.vertices.size());
+            std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+            std::printf("  bounds     : (%.2f, %.2f, %.2f) - (%.2f, %.2f, %.2f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-pyramid") == 0 && i + 1 < argc) {
+            // N-sided polygonal pyramid with apex at +Y. 4 sides
+            // gives a square pyramid; 3 gives a tetrahedron-like
+            // shape; 8+ approaches a cone.
+            //
+            // Different from --gen-mesh cone: cone has smooth
+            // round sides with per-vertex radial-ish normals;
+            // pyramid has flat per-face normals on N triangular
+            // sides + a flat polygonal base.
+            std::string womBase = argv[++i];
+            int sides = 4;
+            float baseR = 1.0f;
+            float height = 1.0f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { sides = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { baseR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { height = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (sides < 3 || sides > 256 || baseR <= 0 || height <= 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-pyramid: sides 3..256, baseR > 0, height > 0\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p;
+                vtx.normal = n;
+                vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Build base ring vertices (one per side).
+            std::vector<glm::vec3> basePts;
+            for (int k = 0; k < sides; ++k) {
+                float a = static_cast<float>(k) / sides * 2.0f * pi;
+                basePts.push_back(glm::vec3(baseR * std::cos(a), 0,
+                                              baseR * std::sin(a)));
+            }
+            glm::vec3 apex(0, height, 0);
+            // Side faces: per-face flat normals (cross of two edges).
+            for (int k = 0; k < sides; ++k) {
+                glm::vec3 a = basePts[k];
+                glm::vec3 b = basePts[(k + 1) % sides];
+                glm::vec3 e1 = b - a;
+                glm::vec3 e2 = apex - a;
+                glm::vec3 n = glm::normalize(glm::cross(e1, e2));
+                float u0 = static_cast<float>(k) / sides;
+                float u1 = static_cast<float>(k + 1) / sides;
+                uint32_t i0 = addV(a, n, glm::vec2(u0, 1));
+                uint32_t i1 = addV(b, n, glm::vec2(u1, 1));
+                uint32_t i2 = addV(apex, n, glm::vec2(0.5f * (u0 + u1), 0));
+                wom.indices.push_back(i0);
+                wom.indices.push_back(i1);
+                wom.indices.push_back(i2);
+            }
+            // Base: fan from a center vertex (normal -Y).
+            uint32_t baseCenter = addV(glm::vec3(0, 0, 0),
+                                         glm::vec3(0, -1, 0),
+                                         glm::vec2(0.5f, 0.5f));
+            uint32_t baseRingStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int k = 0; k < sides; ++k) {
+                float a = static_cast<float>(k) / sides * 2.0f * pi;
+                addV(basePts[k], glm::vec3(0, -1, 0),
+                       glm::vec2(0.5f + 0.5f * std::cos(a),
+                                  0.5f - 0.5f * std::sin(a)));
+            }
+            for (int k = 0; k < sides; ++k) {
+                wom.indices.push_back(baseCenter);
+                wom.indices.push_back(baseRingStart + (k + 1) % sides);
+                wom.indices.push_back(baseRingStart + k);
+            }
+            wom.boundMin = glm::vec3(-baseR, 0, -baseR);
+            wom.boundMax = glm::vec3( baseR, height, baseR);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-pyramid: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  sides     : %d\n", sides);
+            std::printf("  base R    : %.3f\n", baseR);
+            std::printf("  height    : %.3f\n", height);
+            std::printf("  vertices  : %zu (%d side tris × 3 + 1 base center + %d base ring)\n",
+                        wom.vertices.size(), sides, sides);
+            std::printf("  triangles : %zu (%d sides + %d base)\n",
+                        wom.indices.size() / 3, sides, sides);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-fence") == 0 && i + 1 < argc) {
+            // Repeating fence: N square posts along +X spaced
+            // <postSpacing> apart, with two horizontal rails (top
+            // and bottom) connecting consecutive posts. Posts span
+            // from Y=0 up to Y=postHeight; each post is a small box
+            // of width = railThick × 2.
+            //
+            // Useful for fences around plots, pen boundaries,
+            // walkway dividers, garden beds.
+            std::string womBase = argv[++i];
+            int posts = 5;
+            float spacing = 1.0f;
+            float postH = 1.0f;
+            float rt = 0.05f;  // rail/post thickness
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { posts = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { spacing = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { postH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { rt = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (posts < 2 || posts > 256 ||
+                spacing <= 0 || postH <= 0 || rt <= 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-fence: posts 2..256, spacing/height/thick > 0\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p;
+                vtx.normal = n;
+                vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            auto addBox = [&](glm::vec3 lo, glm::vec3 hi) {
+                struct Face { float nx, ny, nz; float verts[4][3]; };
+                Face faces[6] = {
+                    { 0,  1,  0, {{lo.x,hi.y,hi.z},{hi.x,hi.y,hi.z},{hi.x,hi.y,lo.z},{lo.x,hi.y,lo.z}}},
+                    { 0, -1,  0, {{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},{hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z}}},
+                    { 0,  0,  1, {{lo.x,lo.y,hi.z},{hi.x,lo.y,hi.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}}},
+                    { 0,  0, -1, {{hi.x,lo.y,lo.z},{lo.x,lo.y,lo.z},{lo.x,hi.y,lo.z},{hi.x,hi.y,lo.z}}},
+                    { 1,  0,  0, {{hi.x,lo.y,hi.z},{hi.x,lo.y,lo.z},{hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z}}},
+                    {-1,  0,  0, {{lo.x,lo.y,lo.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,hi.z},{lo.x,hi.y,lo.z}}},
+                };
+                float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+                for (auto& f : faces) {
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    for (int k = 0; k < 4; ++k) {
+                        addV(glm::vec3(f.verts[k][0], f.verts[k][1], f.verts[k][2]),
+                              glm::vec3(f.nx, f.ny, f.nz),
+                              glm::vec2(uvs[k][0], uvs[k][1]));
+                    }
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 1);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 3);
+                }
+            };
+            float postHalfW = rt;
+            // Posts along +X starting at X=0.
+            for (int k = 0; k < posts; ++k) {
+                float cx = k * spacing;
+                addBox(glm::vec3(cx - postHalfW, -postHalfW, 0),
+                        glm::vec3(cx + postHalfW,  postHalfW, postH));
+            }
+            // Rails between consecutive posts. Two rails per gap:
+            // top (~80% up) and bottom (~30% up).
+            float topRailZ = postH * 0.8f;
+            float botRailZ = postH * 0.3f;
+            float railHalfH = rt * 0.5f;  // rail is thinner than posts
+            for (int k = 0; k + 1 < posts; ++k) {
+                float xL = k * spacing + postHalfW;
+                float xR = (k + 1) * spacing - postHalfW;
+                if (xR <= xL) continue;  // posts touching
+                addBox(glm::vec3(xL, -railHalfH, topRailZ - railHalfH),
+                        glm::vec3(xR,  railHalfH, topRailZ + railHalfH));
+                addBox(glm::vec3(xL, -railHalfH, botRailZ - railHalfH),
+                        glm::vec3(xR,  railHalfH, botRailZ + railHalfH));
+            }
+            // Bounds.
+            wom.boundMin = glm::vec3(-postHalfW, -postHalfW, 0);
+            wom.boundMax = glm::vec3((posts - 1) * spacing + postHalfW,
+                                       postHalfW, postH);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-fence: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  posts     : %d\n", posts);
+            std::printf("  spacing   : %.3f\n", spacing);
+            std::printf("  height    : %.3f\n", postH);
+            std::printf("  thickness : %.3f\n", rt);
+            std::printf("  span X    : %.3f\n", (posts - 1) * spacing);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-tree") == 0 && i + 1 < argc) {
+            // Procedural tree: cylinder trunk + UV-sphere foliage.
+            // Trunk goes from Y=0 up to Y=trunkHeight; foliage sphere
+            // centered at trunk-top + foliageRadius/2 so the trunk
+            // pokes up into the bottom of the canopy.
+            //
+            // Useful for ambient zone decoration, distant tree
+            // placeholders, magic-grove props. The 15th procedural
+            // primitive — pairs naturally with --add-texture-to-mesh
+            // for trunk-bark and leaf textures (or just one texture
+            // since this is a single-batch mesh).
+            std::string womBase = argv[++i];
+            float trunkR = 0.1f;
+            float trunkH = 2.0f;
+            float foliR = 0.7f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { trunkR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { trunkH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { foliR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (trunkR <= 0 || trunkH <= 0 || foliR <= 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-tree: trunkR / trunkH / foliR must be positive\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p;
+                vtx.normal = n;
+                vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Trunk cylinder: 12 segments, side ring + top + bottom.
+            const int trunkSegs = 12;
+            uint32_t trunkSideStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= trunkSegs; ++sg) {
+                float u = static_cast<float>(sg) / trunkSegs;
+                float ang = u * 2.0f * pi;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(glm::vec3(trunkR * ca, 0, trunkR * sa),
+                       glm::vec3(ca, 0, sa),
+                       glm::vec2(u, 0));
+                addV(glm::vec3(trunkR * ca, trunkH, trunkR * sa),
+                       glm::vec3(ca, 0, sa),
+                       glm::vec2(u, 1));
+            }
+            for (int sg = 0; sg < trunkSegs; ++sg) {
+                uint32_t a = trunkSideStart + sg * 2;
+                uint32_t b = a + 1, c = a + 2, d = a + 3;
+                wom.indices.push_back(a);
+                wom.indices.push_back(c);
+                wom.indices.push_back(b);
+                wom.indices.push_back(b);
+                wom.indices.push_back(c);
+                wom.indices.push_back(d);
+            }
+            // Foliage UV sphere: 12 segments × 8 stacks. Center at
+            // (0, trunkH + foliR * 0.7, 0) so the trunk pokes into
+            // the bottom of the canopy.
+            const int fSegs = 12;
+            const int fStacks = 8;
+            float foliCY = trunkH + foliR * 0.7f;
+            uint32_t foliStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int st = 0; st <= fStacks; ++st) {
+                float v = static_cast<float>(st) / fStacks;
+                float phi = v * pi;
+                float sphi = std::sin(phi), cphi = std::cos(phi);
+                for (int sg = 0; sg <= fSegs; ++sg) {
+                    float u = static_cast<float>(sg) / fSegs;
+                    float theta = u * 2.0f * pi;
+                    float ctheta = std::cos(theta), stheta = std::sin(theta);
+                    float nx = sphi * ctheta;
+                    float ny = cphi;
+                    float nz = sphi * stheta;
+                    addV(glm::vec3(foliR * nx, foliCY + foliR * ny, foliR * nz),
+                           glm::vec3(nx, ny, nz),
+                           glm::vec2(u, v));
+                }
+            }
+            int fStride = fSegs + 1;
+            for (int st = 0; st < fStacks; ++st) {
+                for (int sg = 0; sg < fSegs; ++sg) {
+                    uint32_t a = foliStart + st * fStride + sg;
+                    uint32_t b = a + 1;
+                    uint32_t c = a + fStride;
+                    uint32_t d = c + 1;
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+            }
+            wom.boundMin = glm::vec3(-foliR, 0, -foliR);
+            wom.boundMax = glm::vec3( foliR, foliCY + foliR, foliR);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-tree: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  trunk R   : %.3f\n", trunkR);
+            std::printf("  trunk H   : %.3f\n", trunkH);
+            std::printf("  foliage R : %.3f\n", foliR);
+            std::printf("  total H   : %.3f\n", foliCY + foliR);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-rock") == 0 && i + 1 < argc) {
+            // Procedural boulder. Starts as an octahedron, subdivides
+            // each face N times to get a rounded base, then displaces
+            // each vertex along its outward direction by a smooth
+            // sin/cos noise term controlled by `seed` and `roughness`.
+            // Result is a unique-shaped rock per seed — perfect for
+            // scattering across a zone via random-populate-zone.
+            //
+            // The 16th procedural primitive in the WOM library.
+            std::string womBase = argv[++i];
+            float radius = 1.0f;
+            float roughness = 0.25f;  // 0..1, fraction of radius
+            int subdiv = 2;           // 0=8 tris, 1=32, 2=128, 3=512
+            uint32_t seed = 1;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { radius = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { roughness = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { subdiv = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (radius <= 0 || roughness < 0 || roughness > 1 ||
+                subdiv < 0 || subdiv > 4) {
+                std::fprintf(stderr,
+                    "gen-mesh-rock: radius>0, roughness 0..1, subdiv 0..4\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            // Build sphere via octahedron subdivision. Vertices are
+            // accumulated in unit-length form first, then displaced.
+            std::vector<glm::vec3> sv;  // sphere verts (unit)
+            std::vector<glm::uvec3> st; // sphere tris (vertex indices)
+            sv = {
+                { 1, 0, 0}, {-1, 0, 0},
+                { 0, 1, 0}, { 0,-1, 0},
+                { 0, 0, 1}, { 0, 0,-1},
+            };
+            st = {
+                {0, 2, 4}, {2, 1, 4}, {1, 3, 4}, {3, 0, 4},
+                {2, 0, 5}, {1, 2, 5}, {3, 1, 5}, {0, 3, 5},
+            };
+            // Edge-midpoint cache so shared edges don't duplicate verts.
+            for (int s = 0; s < subdiv; ++s) {
+                std::map<std::pair<uint32_t,uint32_t>, uint32_t> midCache;
+                auto midpoint = [&](uint32_t a, uint32_t b) -> uint32_t {
+                    auto key = std::make_pair(std::min(a,b), std::max(a,b));
+                    auto it = midCache.find(key);
+                    if (it != midCache.end()) return it->second;
+                    glm::vec3 m = glm::normalize((sv[a] + sv[b]) * 0.5f);
+                    uint32_t idx = static_cast<uint32_t>(sv.size());
+                    sv.push_back(m);
+                    midCache[key] = idx;
+                    return idx;
+                };
+                std::vector<glm::uvec3> next;
+                next.reserve(st.size() * 4);
+                for (auto& tri : st) {
+                    uint32_t a = tri.x, b = tri.y, c = tri.z;
+                    uint32_t ab = midpoint(a, b);
+                    uint32_t bc = midpoint(b, c);
+                    uint32_t ca = midpoint(c, a);
+                    next.push_back({a,  ab, ca});
+                    next.push_back({b,  bc, ab});
+                    next.push_back({c,  ca, bc});
+                    next.push_back({ab, bc, ca});
+                }
+                st.swap(next);
+            }
+            // Smooth pseudo-noise displacement. Three orthogonal sin
+            // products give a coherent bumpy surface; phase shift uses
+            // the seed so each value yields a distinct silhouette.
+            float sf = static_cast<float>(seed);
+            auto displace = [&](glm::vec3 p) -> float {
+                float n = std::sin(p.x * 3.1f + sf * 0.91f) *
+                          std::sin(p.y * 4.7f + sf * 1.37f) *
+                          std::sin(p.z * 5.3f + sf * 0.43f);
+                float n2 = std::sin(p.x * 7.1f + sf * 0.11f) *
+                           std::sin(p.y * 8.3f + sf * 2.13f) *
+                           std::sin(p.z * 9.7f + sf * 1.91f);
+                return 1.0f + roughness * (0.7f * n + 0.3f * n2);
+            };
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            std::vector<glm::vec3> finalPos(sv.size());
+            for (size_t v = 0; v < sv.size(); ++v) {
+                finalPos[v] = sv[v] * (radius * displace(sv[v]));
+            }
+            // Per-vertex normals from triangle face normals (averaged).
+            std::vector<glm::vec3> normals(sv.size(), glm::vec3(0));
+            for (auto& tri : st) {
+                glm::vec3 a = finalPos[tri.x];
+                glm::vec3 b = finalPos[tri.y];
+                glm::vec3 c = finalPos[tri.z];
+                glm::vec3 fn = glm::normalize(glm::cross(b - a, c - a));
+                normals[tri.x] += fn;
+                normals[tri.y] += fn;
+                normals[tri.z] += fn;
+            }
+            for (auto& n : normals) n = glm::length(n) > 1e-6f
+                ? glm::normalize(n) : glm::vec3(0, 1, 0);
+            for (size_t v = 0; v < sv.size(); ++v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = finalPos[v];
+                vtx.normal = normals[v];
+                // Spherical UV unwrap. Visible seam at u=0/1 is
+                // acceptable for rocks — usually hidden by terrain.
+                glm::vec3 d = glm::normalize(sv[v]);
+                vtx.texCoord = {
+                    0.5f + std::atan2(d.z, d.x) / (2.0f * 3.14159265f),
+                    0.5f - std::asin(d.y) / 3.14159265f,
+                };
+                wom.vertices.push_back(vtx);
+            }
+            for (auto& tri : st) {
+                wom.indices.push_back(tri.x);
+                wom.indices.push_back(tri.y);
+                wom.indices.push_back(tri.z);
+            }
+            float bound = radius * (1.0f + roughness);
+            wom.boundMin = glm::vec3(-bound);
+            wom.boundMax = glm::vec3( bound);
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-rock: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  radius    : %.3f\n", radius);
+            std::printf("  roughness : %.3f\n", roughness);
+            std::printf("  subdiv    : %d\n", subdiv);
+            std::printf("  seed      : %u\n", seed);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
