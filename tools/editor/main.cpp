@@ -570,6 +570,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --gen-mesh-fence <wom-base> [posts] [postSpacing] [postHeight] [railThick]\n");
     std::printf("                         Repeating fence: N posts along +X with two horizontal rails between\n");
     std::printf("  --gen-mesh-tree <wom-base> [trunkRadius] [trunkHeight] [foliageRadius]\n");
+    std::printf("  --gen-mesh-rock <wom-base> [radius] [roughness] [subdiv] [seed]\n");
+    std::printf("                         Procedural boulder via subdivided octahedron + smooth noise displacement\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1062,6 +1064,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
         "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
         "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
+        "--gen-mesh-rock",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -20147,6 +20150,154 @@ int main(int argc, char* argv[]) {
             std::printf("  trunk H   : %.3f\n", trunkH);
             std::printf("  foliage R : %.3f\n", foliR);
             std::printf("  total H   : %.3f\n", foliCY + foliR);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-rock") == 0 && i + 1 < argc) {
+            // Procedural boulder. Starts as an octahedron, subdivides
+            // each face N times to get a rounded base, then displaces
+            // each vertex along its outward direction by a smooth
+            // sin/cos noise term controlled by `seed` and `roughness`.
+            // Result is a unique-shaped rock per seed — perfect for
+            // scattering across a zone via random-populate-zone.
+            //
+            // The 16th procedural primitive in the WOM library.
+            std::string womBase = argv[++i];
+            float radius = 1.0f;
+            float roughness = 0.25f;  // 0..1, fraction of radius
+            int subdiv = 2;           // 0=8 tris, 1=32, 2=128, 3=512
+            uint32_t seed = 1;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { radius = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { roughness = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { subdiv = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (radius <= 0 || roughness < 0 || roughness > 1 ||
+                subdiv < 0 || subdiv > 4) {
+                std::fprintf(stderr,
+                    "gen-mesh-rock: radius>0, roughness 0..1, subdiv 0..4\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            // Build sphere via octahedron subdivision. Vertices are
+            // accumulated in unit-length form first, then displaced.
+            std::vector<glm::vec3> sv;  // sphere verts (unit)
+            std::vector<glm::uvec3> st; // sphere tris (vertex indices)
+            sv = {
+                { 1, 0, 0}, {-1, 0, 0},
+                { 0, 1, 0}, { 0,-1, 0},
+                { 0, 0, 1}, { 0, 0,-1},
+            };
+            st = {
+                {0, 2, 4}, {2, 1, 4}, {1, 3, 4}, {3, 0, 4},
+                {2, 0, 5}, {1, 2, 5}, {3, 1, 5}, {0, 3, 5},
+            };
+            // Edge-midpoint cache so shared edges don't duplicate verts.
+            for (int s = 0; s < subdiv; ++s) {
+                std::map<std::pair<uint32_t,uint32_t>, uint32_t> midCache;
+                auto midpoint = [&](uint32_t a, uint32_t b) -> uint32_t {
+                    auto key = std::make_pair(std::min(a,b), std::max(a,b));
+                    auto it = midCache.find(key);
+                    if (it != midCache.end()) return it->second;
+                    glm::vec3 m = glm::normalize((sv[a] + sv[b]) * 0.5f);
+                    uint32_t idx = static_cast<uint32_t>(sv.size());
+                    sv.push_back(m);
+                    midCache[key] = idx;
+                    return idx;
+                };
+                std::vector<glm::uvec3> next;
+                next.reserve(st.size() * 4);
+                for (auto& tri : st) {
+                    uint32_t a = tri.x, b = tri.y, c = tri.z;
+                    uint32_t ab = midpoint(a, b);
+                    uint32_t bc = midpoint(b, c);
+                    uint32_t ca = midpoint(c, a);
+                    next.push_back({a,  ab, ca});
+                    next.push_back({b,  bc, ab});
+                    next.push_back({c,  ca, bc});
+                    next.push_back({ab, bc, ca});
+                }
+                st.swap(next);
+            }
+            // Smooth pseudo-noise displacement. Three orthogonal sin
+            // products give a coherent bumpy surface; phase shift uses
+            // the seed so each value yields a distinct silhouette.
+            float sf = static_cast<float>(seed);
+            auto displace = [&](glm::vec3 p) -> float {
+                float n = std::sin(p.x * 3.1f + sf * 0.91f) *
+                          std::sin(p.y * 4.7f + sf * 1.37f) *
+                          std::sin(p.z * 5.3f + sf * 0.43f);
+                float n2 = std::sin(p.x * 7.1f + sf * 0.11f) *
+                           std::sin(p.y * 8.3f + sf * 2.13f) *
+                           std::sin(p.z * 9.7f + sf * 1.91f);
+                return 1.0f + roughness * (0.7f * n + 0.3f * n2);
+            };
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            std::vector<glm::vec3> finalPos(sv.size());
+            for (size_t v = 0; v < sv.size(); ++v) {
+                finalPos[v] = sv[v] * (radius * displace(sv[v]));
+            }
+            // Per-vertex normals from triangle face normals (averaged).
+            std::vector<glm::vec3> normals(sv.size(), glm::vec3(0));
+            for (auto& tri : st) {
+                glm::vec3 a = finalPos[tri.x];
+                glm::vec3 b = finalPos[tri.y];
+                glm::vec3 c = finalPos[tri.z];
+                glm::vec3 fn = glm::normalize(glm::cross(b - a, c - a));
+                normals[tri.x] += fn;
+                normals[tri.y] += fn;
+                normals[tri.z] += fn;
+            }
+            for (auto& n : normals) n = glm::length(n) > 1e-6f
+                ? glm::normalize(n) : glm::vec3(0, 1, 0);
+            for (size_t v = 0; v < sv.size(); ++v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = finalPos[v];
+                vtx.normal = normals[v];
+                // Spherical UV unwrap. Visible seam at u=0/1 is
+                // acceptable for rocks — usually hidden by terrain.
+                glm::vec3 d = glm::normalize(sv[v]);
+                vtx.texCoord = {
+                    0.5f + std::atan2(d.z, d.x) / (2.0f * 3.14159265f),
+                    0.5f - std::asin(d.y) / 3.14159265f,
+                };
+                wom.vertices.push_back(vtx);
+            }
+            for (auto& tri : st) {
+                wom.indices.push_back(tri.x);
+                wom.indices.push_back(tri.y);
+                wom.indices.push_back(tri.z);
+            }
+            float bound = radius * (1.0f + roughness);
+            wom.boundMin = glm::vec3(-bound);
+            wom.boundMax = glm::vec3( bound);
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-rock: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  radius    : %.3f\n", radius);
+            std::printf("  roughness : %.3f\n", roughness);
+            std::printf("  subdiv    : %d\n", subdiv);
+            std::printf("  seed      : %u\n", seed);
             std::printf("  vertices  : %zu\n", wom.vertices.size());
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
