@@ -975,6 +975,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
     std::printf("  --info-cli-stats [--json]\n");
     std::printf("                         Meta-stats on the CLI surface (command count by category prefix)\n");
+    std::printf("  --info-cli-categories\n");
+    std::printf("                         Group every --flag by verb prefix (gen/info/list/...) for discovery\n");
     std::printf("  --info-cli-help <pattern>\n");
     std::printf("                         Substring-search the help text and print matching command lines\n");
     std::printf("  --validate-cli-help [--json]\n");
@@ -21888,6 +21890,65 @@ int main(int argc, char* argv[]) {
                       });
             for (const auto& [verb, count] : sorted) {
                 std::printf("    --%-12s %4d\n", verb.c_str(), count);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-cli-categories") == 0) {
+            // Discovery view of every CLI flag grouped by verb prefix.
+            // Where --info-cli-stats just counts per category, this
+            // lists every command in each category — handy for "I
+            // know I want to gen something but what shapes/textures
+            // are available?"
+            FILE* old = stdout;
+            FILE* tmp = std::tmpfile();
+            if (!tmp) {
+                std::fprintf(stderr, "info-cli-categories: tmpfile failed\n");
+                return 1;
+            }
+            stdout = tmp;
+            printUsage(argv[0]);
+            stdout = old;
+            std::fseek(tmp, 0, SEEK_SET);
+            std::set<std::string> commands;
+            char line[512];
+            while (std::fgets(line, sizeof(line), tmp)) {
+                const char* p = line;
+                while (*p == ' ' || *p == '\t') ++p;
+                if (p[0] != '-' || p[1] != '-') continue;
+                std::string flag;
+                while (*p && (std::isalnum(static_cast<unsigned char>(*p)) ||
+                              *p == '-' || *p == '_')) { flag += *p++; }
+                if (flag.size() > 2) commands.insert(flag);
+            }
+            std::fclose(tmp);
+            commands.insert("--help");
+            commands.insert("--version");
+            std::map<std::string, std::vector<std::string>> byCategory;
+            for (const auto& c : commands) {
+                size_t verbStart = 2;
+                size_t verbEnd = c.find('-', verbStart);
+                std::string verb = (verbEnd == std::string::npos)
+                    ? c.substr(verbStart)
+                    : c.substr(verbStart, verbEnd - verbStart);
+                byCategory[verb].push_back(c);
+            }
+            std::printf("CLI commands by category (%zu total):\n\n",
+                        commands.size());
+            // Sort categories by count descending, commands within
+            // each alphabetically.
+            std::vector<std::pair<std::string, std::vector<std::string>>> sorted(
+                byCategory.begin(), byCategory.end());
+            std::sort(sorted.begin(), sorted.end(),
+                      [](const auto& a, const auto& b) {
+                          if (a.second.size() != b.second.size())
+                              return a.second.size() > b.second.size();
+                          return a.first < b.first;
+                      });
+            for (const auto& [verb, cmds] : sorted) {
+                std::printf("--%s (%zu):\n", verb.c_str(), cmds.size());
+                for (const auto& c : cmds) {
+                    std::printf("  %s\n", c.c_str());
+                }
+                std::printf("\n");
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-cli-help") == 0 && i + 1 < argc) {
