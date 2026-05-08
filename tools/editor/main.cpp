@@ -574,6 +574,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --gen-mesh-tree <wom-base> [trunkRadius] [trunkHeight] [foliageRadius]\n");
     std::printf("  --gen-mesh-rock <wom-base> [radius] [roughness] [subdiv] [seed]\n");
     std::printf("                         Procedural boulder via subdivided octahedron + smooth noise displacement\n");
+    std::printf("  --gen-mesh-pillar <wom-base> [radius] [height] [flutes] [capScale]\n");
+    std::printf("                         Fluted classical column with concave flutes + flared cap/base (default 12 flutes)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1075,7 +1077,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
         "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
         "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
-        "--gen-mesh-rock",
+        "--gen-mesh-rock", "--gen-mesh-pillar",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -20774,6 +20776,146 @@ int main(int argc, char* argv[]) {
             std::printf("  roughness : %.3f\n", roughness);
             std::printf("  subdiv    : %d\n", subdiv);
             std::printf("  seed      : %u\n", seed);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-pillar") == 0 && i + 1 < argc) {
+            // Procedural classical column. Central shaft is a
+            // cylinder with N concave flutes (radius modulated by
+            // cos²(theta*flutes/2)), capped above and below by
+            // wider disc caps that act as a simple capital and
+            // base. The 17th procedural mesh primitive — useful
+            // for ruins, temples, dungeons, plaza decoration.
+            std::string womBase = argv[++i];
+            float radius = 0.4f;
+            float height = 4.0f;
+            int flutes = 12;
+            float capScale = 1.25f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { radius = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { height = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { flutes = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { capScale = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (radius <= 0 || height <= 0 ||
+                flutes < 4 || flutes > 64 ||
+                capScale < 1.0f || capScale > 4.0f) {
+                std::fprintf(stderr,
+                    "gen-mesh-pillar: radius>0, height>0, flutes 4..64, capScale 1..4\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            const float pi = 3.14159265358979f;
+            // We use 8 segments per flute so the cosine-modulated
+            // groove resolves smoothly. Vertical: 2 rings (top/bot
+            // of shaft) + cap/base discs.
+            const int radSegs = flutes * 8;
+            const float fluteDepth = radius * 0.12f;
+            float capR = radius * capScale;
+            float capThick = radius * 0.25f;
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Shaft side ring at given y. radius modulated by flute count.
+            auto buildShaftRing = [&](float y) -> uint32_t {
+                uint32_t start = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= radSegs; ++sg) {
+                    float u = static_cast<float>(sg) / radSegs;
+                    float ang = u * 2.0f * pi;
+                    float c = std::cos(ang * flutes * 0.5f);
+                    float r = radius - fluteDepth * (c * c);
+                    glm::vec3 p(r * std::cos(ang), y, r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, glm::normalize(n), glm::vec2(u, y / height));
+                }
+                return start;
+            };
+            // Cap/base disc ring (constant radius capR) at given y.
+            auto buildCapRing = [&](float y, float r) -> uint32_t {
+                uint32_t start = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= radSegs; ++sg) {
+                    float u = static_cast<float>(sg) / radSegs;
+                    float ang = u * 2.0f * pi;
+                    glm::vec3 p(r * std::cos(ang), y, r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, glm::normalize(n), glm::vec2(u, y / height));
+                }
+                return start;
+            };
+            // Layout (Y goes up):
+            //   capThick: base disc bottom
+            //   capThick: base disc top
+            //   ...shaft from capThick to height-capThick...
+            //   height-capThick: cap disc bottom
+            //   height: cap disc top
+            float shaftY0 = capThick;
+            float shaftY1 = height - capThick;
+            uint32_t baseBot = buildCapRing(0.0f, capR);
+            uint32_t baseTop = buildCapRing(shaftY0, capR);
+            uint32_t shaftBot = buildShaftRing(shaftY0);
+            uint32_t shaftTop = buildShaftRing(shaftY1);
+            uint32_t capBot = buildCapRing(shaftY1, capR);
+            uint32_t capTop = buildCapRing(height, capR);
+            // Quad connector helper.
+            auto connect = [&](uint32_t a0, uint32_t a1) {
+                for (int sg = 0; sg < radSegs; ++sg) {
+                    uint32_t i00 = a0 + sg;
+                    uint32_t i01 = a0 + sg + 1;
+                    uint32_t i10 = a1 + sg;
+                    uint32_t i11 = a1 + sg + 1;
+                    wom.indices.insert(wom.indices.end(),
+                                       { i00, i10, i01, i01, i10, i11 });
+                }
+            };
+            connect(baseBot, baseTop);   // base side
+            connect(shaftBot, shaftTop); // shaft
+            connect(capBot, capTop);     // cap side
+            // Bottom cap (downward fan), top cap (upward fan).
+            uint32_t bottomCenter = addV({0, 0, 0}, {0, -1, 0}, {0.5f, 0.5f});
+            uint32_t topCenter = addV({0, height, 0}, {0, 1, 0}, {0.5f, 0.5f});
+            for (int sg = 0; sg < radSegs; ++sg) {
+                wom.indices.insert(wom.indices.end(),
+                    { bottomCenter, baseBot + sg + 1, baseBot + sg });
+                wom.indices.insert(wom.indices.end(),
+                    { topCenter, capTop + sg, capTop + sg + 1 });
+            }
+            // Annular surfaces where caps meet shaft (top of base disc
+            // out to shaft, etc.). Just connect the two rings — they
+            // sit at the same Y so this looks like a flat ring.
+            connect(baseTop, shaftBot);
+            connect(shaftTop, capBot);
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            wom.boundMin = glm::vec3(-capR, 0,      -capR);
+            wom.boundMax = glm::vec3( capR, height,  capR);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-pillar: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  radius    : %.3f\n", radius);
+            std::printf("  height    : %.3f\n", height);
+            std::printf("  flutes    : %d\n", flutes);
+            std::printf("  cap scale : %.2fx (capR=%.3f)\n", capScale, capR);
             std::printf("  vertices  : %zu\n", wom.vertices.size());
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
