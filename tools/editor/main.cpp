@@ -558,6 +558,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Marble pattern with sinusoidal veining (default seed 1, sharpness 8)\n");
     std::printf("  --gen-texture-metal <out.png> <baseHex> [seed] [orientation] [W H]\n");
     std::printf("                         Brushed metal: directional anisotropic noise (orientation: horizontal|vertical)\n");
+    std::printf("  --gen-texture-leather <out.png> <baseHex> [seed] [grainSize] [W H]\n");
+    std::printf("                         Leather grain: irregular pebbled bumps via cellular noise (default grain=4px)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -1140,6 +1142,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
         "--gen-texture-wood", "--gen-texture-grass", "--gen-texture-fabric",
         "--gen-texture-cobble", "--gen-texture-marble", "--gen-texture-metal",
+        "--gen-texture-leather",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -21039,6 +21042,142 @@ int main(int argc, char* argv[]) {
             std::printf("  base color  : %s\n", baseHex.c_str());
             std::printf("  orientation : %s\n", orientation.c_str());
             std::printf("  seed        : %u\n", seed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-leather") == 0 && i + 2 < argc) {
+            // Leather grain pattern. Cellular Worley noise where
+            // each "pebble" cell darkens at its boundaries with
+            // its neighbors — the look of fine-grain leather.
+            // Each cell also gets per-cell tint variation so the
+            // surface doesn't read as uniform.
+            std::string outPath = argv[++i];
+            std::string baseHex = argv[++i];
+            uint32_t seed = 1;
+            int grainSize = 4;  // average pebble cell size in px
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { grainSize = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                grainSize < 2 || grainSize > 64) {
+                std::fprintf(stderr,
+                    "gen-texture-leather: invalid dims (W/H 1..8192, grainSize 2..64)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t lr, lg, lb;
+            if (!parseHex(baseHex, lr, lg, lb)) {
+                std::fprintf(stderr,
+                    "gen-texture-leather: '%s' is not a valid hex color\n",
+                    baseHex.c_str());
+                return 1;
+            }
+            // Per-cell hash (same idea as cobble, but smaller cells).
+            auto hash01 = [seed](int cx, int cy, int comp) -> float {
+                uint32_t h = static_cast<uint32_t>(cx) * 374761393u +
+                             static_cast<uint32_t>(cy) * 668265263u +
+                             seed * 2147483647u +
+                             static_cast<uint32_t>(comp) * 16777619u;
+                h = (h ^ (h >> 13)) * 1274126177u;
+                h = h ^ (h >> 16);
+                return (h >> 8) * (1.0f / 16777216.0f);
+            };
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                int cy0 = y / grainSize;
+                for (int x = 0; x < W; ++x) {
+                    int cx0 = x / grainSize;
+                    float bestD = 1e9f, second = 1e9f;
+                    int bestCx = 0, bestCy = 0;
+                    for (int dy = -1; dy <= 1; ++dy) {
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            int cx = cx0 + dx;
+                            int cy = cy0 + dy;
+                            float jx = (hash01(cx, cy, 0) - 0.5f) * 0.6f;
+                            float jy = (hash01(cx, cy, 1) - 0.5f) * 0.6f;
+                            float ccx = (cx + 0.5f + jx) * grainSize;
+                            float ccy = (cy + 0.5f + jy) * grainSize;
+                            float dxp = x - ccx, dyp = y - ccy;
+                            float d = std::sqrt(dxp * dxp + dyp * dyp);
+                            if (d < bestD) {
+                                second = bestD;
+                                bestD = d;
+                                bestCx = cx;
+                                bestCy = cy;
+                            } else if (d < second) {
+                                second = d;
+                            }
+                        }
+                    }
+                    // Boundary darkness: closer to the cell border
+                    // = darker. Scaled by grainSize for resolution
+                    // independence.
+                    float boundary = (second - bestD) / grainSize;
+                    float boundaryShade = std::clamp(boundary * 1.5f, 0.4f, 1.0f);
+                    // Per-cell tint: ±15% lightness.
+                    float tint = 0.85f + 0.30f * hash01(bestCx, bestCy, 2);
+                    float shade = boundaryShade * tint;
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = static_cast<uint8_t>(
+                        std::clamp(lr * shade, 0.0f, 255.0f));
+                    pixels[i2 + 1] = static_cast<uint8_t>(
+                        std::clamp(lg * shade, 0.0f, 255.0f));
+                    pixels[i2 + 2] = static_cast<uint8_t>(
+                        std::clamp(lb * shade, 0.0f, 255.0f));
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-leather: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size       : %dx%d\n", W, H);
+            std::printf("  base color : %s\n", baseHex.c_str());
+            std::printf("  grain size : %d px\n", grainSize);
+            std::printf("  seed       : %u\n", seed);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
