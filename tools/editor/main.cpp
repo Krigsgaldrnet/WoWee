@@ -582,6 +582,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Plank bridge with two side rails (default 6 planks across, rails on)\n");
     std::printf("  --gen-mesh-tower <wom-base> [radius] [height] [battlements] [battlementH]\n");
     std::printf("                         Round castle tower with crenellated battlements (default 8 teeth, 0.5m tall)\n");
+    std::printf("  --gen-mesh-house <wom-base> [width] [depth] [height] [roofHeight]\n");
+    std::printf("                         Simple house: cube body + pyramid roof (default 4×4×3 with 2m roof)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1103,7 +1105,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
         "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
         "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
-        "--gen-mesh-tower",
+        "--gen-mesh-tower", "--gen-mesh-house",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -22278,6 +22280,121 @@ int main(int argc, char* argv[]) {
                         battlements, battlementH);
             std::printf("  vertices    : %zu\n", wom.vertices.size());
             std::printf("  triangles   : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-house") == 0 && i + 1 < argc) {
+            // Simple procedural house: cube body + pyramid roof
+            // meeting at a central apex above the body's roofline.
+            // The pyramid sits flush on the body so the eaves
+            // line up with the wall edges. No door cutout — that
+            // can be added later via mesh boolean ops or texture.
+            //
+            // The 20th procedural mesh primitive.
+            std::string womBase = argv[++i];
+            float width = 4.0f;       // along X
+            float depth = 4.0f;       // along Z
+            float height = 3.0f;      // wall height (Y)
+            float roofH = 2.0f;       // pyramid above walls
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { width = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { depth = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { height = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { roofH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (width <= 0 || depth <= 0 || height <= 0 ||
+                roofH < 0 || roofH > 20.0f) {
+                std::fprintf(stderr,
+                    "gen-mesh-house: width/depth/height>0, roof 0..20\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            float hx = width * 0.5f;
+            float hz = depth * 0.5f;
+            // 4 walls — each a quad with an outward-facing normal so
+            // the house reads as solid even with backface culling on.
+            struct Wall {
+                glm::vec3 a, b, c, d;  // CCW from outside
+                glm::vec3 n;
+            };
+            Wall walls[4] = {
+                {{ hx, 0,  hz}, {-hx, 0,  hz}, {-hx, height,  hz}, { hx, height,  hz}, { 0, 0,  1}}, // +Z
+                {{-hx, 0, -hz}, { hx, 0, -hz}, { hx, height, -hz}, {-hx, height, -hz}, { 0, 0, -1}}, // -Z
+                {{ hx, 0, -hz}, { hx, 0,  hz}, { hx, height,  hz}, { hx, height, -hz}, { 1, 0,  0}}, // +X
+                {{-hx, 0,  hz}, {-hx, 0, -hz}, {-hx, height, -hz}, {-hx, height,  hz}, {-1, 0,  0}}, // -X
+            };
+            for (const Wall& w : walls) {
+                uint32_t a = addV(w.a, w.n, {0, 0});
+                uint32_t b = addV(w.b, w.n, {1, 0});
+                uint32_t c = addV(w.c, w.n, {1, 1});
+                uint32_t d = addV(w.d, w.n, {0, 1});
+                wom.indices.insert(wom.indices.end(), {a, b, c, a, c, d});
+            }
+            // Floor (single quad, normal-down so it shows from below;
+            // texturable as a foundation slab).
+            {
+                uint32_t a = addV({-hx, 0, -hz}, {0, -1, 0}, {0, 0});
+                uint32_t b = addV({ hx, 0, -hz}, {0, -1, 0}, {1, 0});
+                uint32_t c = addV({ hx, 0,  hz}, {0, -1, 0}, {1, 1});
+                uint32_t d = addV({-hx, 0,  hz}, {0, -1, 0}, {0, 1});
+                wom.indices.insert(wom.indices.end(), {a, c, b, a, d, c});
+            }
+            // Roof: 4 triangles meeting at central apex.
+            float apexY = height + roofH;
+            glm::vec3 apex(0, apexY, 0);
+            // Eave corners (Y = wall height) — each triangle shares
+            // two adjacent corners + the apex. Per-face normal is
+            // computed once so flat shading works.
+            glm::vec3 eaves[4] = {
+                {-hx, height,  hz},
+                { hx, height,  hz},
+                { hx, height, -hz},
+                {-hx, height, -hz},
+            };
+            for (int s = 0; s < 4; ++s) {
+                glm::vec3 e0 = eaves[s];
+                glm::vec3 e1 = eaves[(s + 1) % 4];
+                glm::vec3 fn = glm::normalize(glm::cross(e1 - e0, apex - e0));
+                uint32_t a = addV(e0, fn, {0, 0});
+                uint32_t b = addV(e1, fn, {1, 0});
+                uint32_t c = addV(apex, fn, {0.5f, 1});
+                wom.indices.insert(wom.indices.end(), {a, b, c});
+            }
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            wom.boundMin = glm::vec3(-hx, 0, -hz);
+            wom.boundMax = glm::vec3( hx, apexY,  hz);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-house: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  width      : %.3f\n", width);
+            std::printf("  depth      : %.3f\n", depth);
+            std::printf("  wall H     : %.3f\n", height);
+            std::printf("  roof H     : %.3f (apex %.3f)\n", roofH, apexY);
+            std::printf("  vertices   : %zu\n", wom.vertices.size());
+            std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
