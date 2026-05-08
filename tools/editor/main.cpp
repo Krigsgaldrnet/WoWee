@@ -547,6 +547,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Brick wall pattern with offset rows + mortar lines (default 64×24, 4px mortar)\n");
     std::printf("  --gen-texture-wood <out.png> <lightHex> <darkHex> [grainSpacing] [seed] [W H]\n");
     std::printf("                         Wood grain pattern with vertical streaks + knots (default spacing 12px, seed 1)\n");
+    std::printf("  --gen-texture-grass <out.png> <baseHex> <bladeHex> [density] [seed] [W H]\n");
+    std::printf("                         Tiling grass texture with random blade highlights (default density=0.15, seed=1)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -1075,7 +1077,7 @@ int main(int argc, char* argv[]) {
         "--merge-meshes",
         "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
         "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
-        "--gen-texture-wood",
+        "--gen-texture-wood", "--gen-texture-grass",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -18530,6 +18532,133 @@ int main(int argc, char* argv[]) {
                         lightHex.c_str(), darkHex.c_str());
             std::printf("  spacing   : %d px\n", spacing);
             std::printf("  knots     : %d\n", knotCount);
+            std::printf("  seed      : %u\n", seed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-grass") == 0 && i + 3 < argc) {
+            // Tiling grass texture. Starts from a slightly perturbed
+            // base color (per-pixel jitter so the field doesn't read
+            // as flat), then sprinkles short blade highlights using
+            // the brighter blade color. Density controls roughly
+            // what fraction of pixels get touched by a blade.
+            std::string outPath = argv[++i];
+            std::string baseHex = argv[++i];
+            std::string bladeHex = argv[++i];
+            float density = 0.15f;
+            uint32_t seed = 1;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { density = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                density < 0.0f || density > 1.0f) {
+                std::fprintf(stderr,
+                    "gen-texture-grass: invalid dims (W/H 1..8192, density 0..1)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t br, bg, bb_, gr, gg, gb;
+            if (!parseHex(baseHex, br, bg, bb_)) {
+                std::fprintf(stderr,
+                    "gen-texture-grass: '%s' is not a valid hex color\n",
+                    baseHex.c_str());
+                return 1;
+            }
+            if (!parseHex(bladeHex, gr, gg, gb)) {
+                std::fprintf(stderr,
+                    "gen-texture-grass: '%s' is not a valid hex color\n",
+                    bladeHex.c_str());
+                return 1;
+            }
+            uint32_t state = seed ? seed : 1u;
+            auto next01 = [&state]() -> float {
+                state = state * 1664525u + 1013904223u;
+                return (state >> 8) * (1.0f / 16777216.0f);
+            };
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            // Base layer: per-pixel jitter ±10 around the base color.
+            for (int y = 0; y < H; ++y) {
+                for (int xi = 0; xi < W; ++xi) {
+                    float j = (next01() - 0.5f) * 20.0f;
+                    int r = std::clamp(static_cast<int>(br) + static_cast<int>(j), 0, 255);
+                    int g = std::clamp(static_cast<int>(bg) + static_cast<int>(j), 0, 255);
+                    int b = std::clamp(static_cast<int>(bb_) + static_cast<int>(j), 0, 255);
+                    size_t i2 = (static_cast<size_t>(y) * W + xi) * 3;
+                    pixels[i2 + 0] = static_cast<uint8_t>(r);
+                    pixels[i2 + 1] = static_cast<uint8_t>(g);
+                    pixels[i2 + 2] = static_cast<uint8_t>(b);
+                }
+            }
+            // Blades: short vertical strokes at random positions.
+            // Stroke length 2-5px, alpha-blended toward bladeHex.
+            int strokeCount = static_cast<int>(W * H * density * 0.05f);
+            for (int s = 0; s < strokeCount; ++s) {
+                int sx = static_cast<int>(next01() * W);
+                int sy = static_cast<int>(next01() * H);
+                int slen = 2 + static_cast<int>(next01() * 4);
+                float t = 0.4f + next01() * 0.4f;  // blade strength
+                for (int dy = 0; dy < slen; ++dy) {
+                    int py = (sy + dy) % H;  // wrap so texture tiles
+                    int px = sx;
+                    size_t i2 = (static_cast<size_t>(py) * W + px) * 3;
+                    pixels[i2 + 0] = static_cast<uint8_t>(pixels[i2 + 0] * (1 - t) + gr * t);
+                    pixels[i2 + 1] = static_cast<uint8_t>(pixels[i2 + 1] * (1 - t) + gg * t);
+                    pixels[i2 + 2] = static_cast<uint8_t>(pixels[i2 + 2] * (1 - t) + gb * t);
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-grass: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  base/blade: %s / %s\n",
+                        baseHex.c_str(), bladeHex.c_str());
+            std::printf("  density   : %.3f\n", density);
+            std::printf("  blades    : %d\n", strokeCount);
             std::printf("  seed      : %u\n", seed);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
