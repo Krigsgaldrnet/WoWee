@@ -543,6 +543,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize concentric ring pattern (target/seal style; default 16px rings, 256x256)\n");
     std::printf("  --gen-texture-checker <out.png> <colorAHex> <colorBHex> [cellPx] [W H]\n");
     std::printf("                         Synthesize checkerboard with custom colors (gen-texture's checker is BW only)\n");
+    std::printf("  --gen-texture-brick <out.png> <brickHex> <mortarHex> [brickW] [brickH] [mortarPx] [W H]\n");
+    std::printf("                         Brick wall pattern with offset rows + mortar lines (default 64×24, 4px mortar)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -1065,7 +1067,7 @@ int main(int argc, char* argv[]) {
         "--smooth-mesh-normals",
         "--merge-meshes",
         "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
-        "--gen-texture-rings", "--gen-texture-checker",
+        "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -18184,6 +18186,117 @@ int main(int argc, char* argv[]) {
             std::printf("  size     : %dx%d\n", W, H);
             std::printf("  cell px  : %d\n", cellPx);
             std::printf("  colors   : %s + %s\n", aHex.c_str(), bHex.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-brick") == 0 && i + 3 < argc) {
+            // Brick wall pattern: rectangular bricks with offset rows
+            // (each row shifted by half a brick width) and mortar
+            // lines between. Useful for walls, chimneys, paths,
+            // medieval-zone props.
+            std::string outPath = argv[++i];
+            std::string brickHex = argv[++i];
+            std::string mortarHex = argv[++i];
+            int brickW = 64, brickH = 24, mortarPx = 4;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { brickW = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { brickH = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { mortarPx = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                brickW < 4 || brickW > 4096 ||
+                brickH < 4 || brickH > 4096 ||
+                mortarPx < 0 || mortarPx > brickH / 2) {
+                std::fprintf(stderr,
+                    "gen-texture-brick: invalid dims (W/H 1..8192, brick 4..4096, mortar < brickH/2)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t br, bg, bb_, mr, mg, mb;
+            if (!parseHex(brickHex, br, bg, bb_)) {
+                std::fprintf(stderr,
+                    "gen-texture-brick: '%s' is not a valid hex color\n",
+                    brickHex.c_str());
+                return 1;
+            }
+            if (!parseHex(mortarHex, mr, mg, mb)) {
+                std::fprintf(stderr,
+                    "gen-texture-brick: '%s' is not a valid hex color\n",
+                    mortarHex.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            int rowH = brickH;  // total row height (brick + mortar)
+            int halfBrick = brickW / 2;
+            for (int y = 0; y < H; ++y) {
+                int row = y / rowH;
+                int yInRow = y % rowH;
+                bool inMortarH = (yInRow < mortarPx);
+                int xOffset = (row & 1) ? halfBrick : 0;
+                for (int x = 0; x < W; ++x) {
+                    int xS = (x + xOffset) % brickW;
+                    bool inMortarV = (xS < mortarPx);
+                    bool isMortar = inMortarH || inMortarV;
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = isMortar ? mr : br;
+                    pixels[i2 + 1] = isMortar ? mg : bg;
+                    pixels[i2 + 2] = isMortar ? mb : bb_;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-brick: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  brick     : %d × %d px (%s)\n",
+                        brickW, brickH, brickHex.c_str());
+            std::printf("  mortar    : %d px (%s)\n",
+                        mortarPx, mortarHex.c_str());
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
