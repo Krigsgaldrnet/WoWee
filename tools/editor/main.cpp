@@ -629,6 +629,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a procedural WAV (PCM-16 mono). Waveform: sine|square|triangle|saw\n");
     std::printf("  --gen-audio-noise <out.wav> <durationSec> [sampleRate] [color] [seed] [amplitude]\n");
     std::printf("                         Synthesize procedural noise WAV. Color: white|pink|brown (default white, amp 0.5)\n");
+    std::printf("  --gen-audio-sweep <out.wav> <startHz> <endHz> <durationSec> [sampleRate] [shape]\n");
+    std::printf("                         Synthesize frequency sweep (chirp) WAV. Shape: linear|exp (default linear)\n");
     std::printf("  --gen-zone-audio-pack <zoneDir>\n");
     std::printf("                         Drop a starter WAV pack (drone/chime/click/alert) into <zoneDir>/audio/\n");
     std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
@@ -1136,8 +1138,8 @@ int main(int argc, char* argv[]) {
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
         "--gen-zone-mesh-pack", "--gen-zone-starter-pack", "--gen-audio-tone",
-        "--gen-audio-noise", "--gen-zone-audio-pack", "--validate-zone-pack",
-        "--validate-project-packs", "--info-spawn",
+        "--gen-audio-noise", "--gen-audio-sweep", "--gen-zone-audio-pack",
+        "--validate-zone-pack", "--validate-project-packs", "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -14784,6 +14786,133 @@ int main(int argc, char* argv[]) {
             std::printf("  color      : %s noise\n", color.c_str());
             std::printf("  amplitude  : %.2f\n", amp);
             std::printf("  seed       : %u\n", seed);
+            std::printf("  samples    : %u\n", totalSamples);
+            std::printf("  bytes      : %u (44-byte header + data)\n",
+                        riffSize + 8);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-audio-sweep") == 0 && i + 4 < argc) {
+            // Frequency sweep (chirp) WAV. Sine wave whose frequency
+            // glides from startHz to endHz across the duration.
+            //
+            //   linear: f(t) = f0 + (f1-f0) * (t/T)
+            //           Phase integrates to f0*t + (f1-f0)*t²/(2T)
+            //   exp:    f(t) = f0 * (f1/f0)^(t/T)
+            //           Phase integrates to f0*T/ln(r) * (r^(t/T)-1)
+            //           where r = f1/f0
+            //
+            // Useful for sweep tones (sci-fi door whoosh, alert
+            // ramps, sliding pitches in alarm/horn cues), and a
+            // standard signal-engineering test signal.
+            std::string outPath = argv[++i];
+            float f0 = 0.0f, f1 = 0.0f, duration = 0.0f;
+            try { f0 = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: <startHz> must be a number\n");
+                return 1;
+            }
+            try { f1 = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: <endHz> must be a number\n");
+                return 1;
+            }
+            try { duration = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: <durationSec> must be a number\n");
+                return 1;
+            }
+            int sampleRate = 44100;
+            std::string shape = "linear";
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { sampleRate = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                shape = argv[++i];
+            }
+            if (f0 <= 0 || f0 > 24000 || f1 <= 0 || f1 > 24000 ||
+                duration <= 0 || duration > 600 ||
+                sampleRate < 8000 || sampleRate > 192000) {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: freqs 0..24000Hz, duration 0..600s, sampleRate 8000..192000\n");
+                return 1;
+            }
+            if (shape != "linear" && shape != "exp") {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: unknown shape '%s' (linear|exp)\n",
+                    shape.c_str());
+                return 1;
+            }
+            uint32_t totalSamples = static_cast<uint32_t>(duration * sampleRate);
+            const float twoPi = 2.0f * 3.14159265358979f;
+            std::vector<int16_t> samples(totalSamples, 0);
+            int envSamples = std::min<uint32_t>(totalSamples / 4,
+                                static_cast<uint32_t>(sampleRate * 0.005f));
+            // Pre-compute exp constants. ln(f1/f0) / T appears
+            // inside the integrated-phase formula.
+            float r = f1 / f0;
+            float lnR = std::log(r);
+            for (uint32_t s = 0; s < totalSamples; ++s) {
+                float t = static_cast<float>(s) / sampleRate;
+                float phase;
+                if (shape == "linear") {
+                    phase = f0 * t + 0.5f * (f1 - f0) * t * t / duration;
+                } else {
+                    if (std::abs(lnR) < 1e-6f) {
+                        phase = f0 * t;
+                    } else {
+                        phase = f0 * duration / lnR *
+                                (std::exp(lnR * t / duration) - 1.0f);
+                    }
+                }
+                float v = std::sin(twoPi * phase);
+                float env = 1.0f;
+                if (envSamples > 0) {
+                    if (static_cast<int>(s) < envSamples) {
+                        env = static_cast<float>(s) / envSamples;
+                    } else if (static_cast<int>(totalSamples - s) < envSamples) {
+                        env = static_cast<float>(totalSamples - s) / envSamples;
+                    }
+                }
+                v *= env * 0.5f;
+                samples[s] = static_cast<int16_t>(std::clamp(v, -1.0f, 1.0f) * 32767.0f);
+            }
+            FILE* f = std::fopen(outPath.c_str(), "wb");
+            if (!f) {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: cannot open %s for write\n", outPath.c_str());
+                return 1;
+            }
+            uint32_t dataBytes = totalSamples * 2;
+            uint32_t riffSize = 36 + dataBytes;
+            uint16_t numChannels = 1;
+            uint16_t bitsPerSample = 16;
+            uint16_t blockAlign = numChannels * bitsPerSample / 8;
+            uint32_t byteRate = sampleRate * blockAlign;
+            auto wU32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+            auto wU16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+            std::fwrite("RIFF", 1, 4, f);
+            wU32(riffSize);
+            std::fwrite("WAVE", 1, 4, f);
+            std::fwrite("fmt ", 1, 4, f);
+            wU32(16);
+            wU16(1);
+            wU16(numChannels);
+            wU32(static_cast<uint32_t>(sampleRate));
+            wU32(byteRate);
+            wU16(blockAlign);
+            wU16(bitsPerSample);
+            std::fwrite("data", 1, 4, f);
+            wU32(dataBytes);
+            std::fwrite(samples.data(), 2, totalSamples, f);
+            std::fclose(f);
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  format     : WAV PCM-16 mono\n");
+            std::printf("  freq       : %.2f -> %.2f Hz (%s)\n",
+                        f0, f1, shape.c_str());
+            std::printf("  duration   : %.3f sec\n", duration);
+            std::printf("  sampleRate : %d Hz\n", sampleRate);
             std::printf("  samples    : %u\n", totalSamples);
             std::printf("  bytes      : %u (44-byte header + data)\n",
                         riffSize + 8);
