@@ -555,6 +555,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Hollow cylinder/pipe along Y axis (default 1.0/0.7/2.0, 24 segments)\n");
     std::printf("  --gen-mesh-capsule <wom-base> [radius] [cylHeight] [segments] [stacks]\n");
     std::printf("                         Capsule along Y axis: cylinder body with hemispherical caps (default 0.5/1.0/16/8)\n");
+    std::printf("  --gen-mesh-arch <wom-base> [openingWidth] [openingHeight] [thickness] [depth] [segments]\n");
+    std::printf("                         Doorway arch: two columns + semicircular top (default 1.0/1.5/0.2/0.3, 12 segs)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
@@ -1038,7 +1040,7 @@ int main(int argc, char* argv[]) {
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
-        "--gen-mesh-tube", "--gen-mesh-capsule",
+        "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -18884,6 +18886,170 @@ int main(int argc, char* argv[]) {
             std::printf("  stacks     : %d (per hemisphere)\n", stacks);
             std::printf("  vertices   : %zu\n", wom.vertices.size());
             std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-arch") == 0 && i + 1 < argc) {
+            // Doorway/portal arch: two rectangular columns connected
+            // by a semicircular top band. Total width = openingWidth +
+            // 2*thickness; total height = openingHeight + thickness +
+            // archRadius (where archRadius = openingWidth/2). Depth
+            // is the Y-axis thickness (extruded slab).
+            //
+            // Two box columns + curved arch band on top. Useful for
+            // doorways, portal frames, gates. Aligned so the inside
+            // of the opening is centered on the Y axis.
+            std::string womBase = argv[++i];
+            float openingW = 1.0f, openingH = 1.5f;
+            float thickness = 0.2f;  // column thickness (X)
+            float depth = 0.3f;       // Y extrusion
+            int segments = 12;        // arch curve segments
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { openingW = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { openingH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { thickness = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { depth = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { segments = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (openingW <= 0 || openingH <= 0 ||
+                thickness <= 0 || depth <= 0 ||
+                segments < 2 || segments > 256) {
+                std::fprintf(stderr,
+                    "gen-mesh-arch: dimensions must be positive, segments 2..256\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // Helper to push a vertex.
+            auto addV = [&](float x, float y, float z,
+                              float nx, float ny, float nz,
+                              float u, float v) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = glm::vec3(x, y, z);
+                vtx.normal = glm::vec3(nx, ny, nz);
+                vtx.texCoord = glm::vec2(u, v);
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Helper to emit an axis-aligned box from min to max.
+            auto addBox = [&](glm::vec3 lo, glm::vec3 hi) {
+                struct Face { float nx, ny, nz; float verts[4][3]; };
+                Face faces[6] = {
+                    { 0,  0,  1, {{lo.x,lo.y,hi.z},{hi.x,lo.y,hi.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}}},
+                    { 0,  0, -1, {{hi.x,lo.y,lo.z},{lo.x,lo.y,lo.z},{lo.x,hi.y,lo.z},{hi.x,hi.y,lo.z}}},
+                    { 1,  0,  0, {{hi.x,lo.y,hi.z},{hi.x,lo.y,lo.z},{hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z}}},
+                    {-1,  0,  0, {{lo.x,lo.y,lo.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,hi.z},{lo.x,hi.y,lo.z}}},
+                    { 0,  1,  0, {{lo.x,hi.y,hi.z},{hi.x,hi.y,hi.z},{hi.x,hi.y,lo.z},{lo.x,hi.y,lo.z}}},
+                    { 0, -1,  0, {{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},{hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z}}},
+                };
+                float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+                for (auto& f : faces) {
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    for (int k = 0; k < 4; ++k) {
+                        addV(f.verts[k][0], f.verts[k][1], f.verts[k][2],
+                              f.nx, f.ny, f.nz, uvs[k][0], uvs[k][1]);
+                    }
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 1);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 3);
+                }
+            };
+            float halfOW = openingW * 0.5f;
+            float halfD = depth * 0.5f;
+            // Left column.
+            addBox(glm::vec3(-halfOW - thickness, -halfD, 0),
+                    glm::vec3(-halfOW, halfD, openingH));
+            // Right column.
+            addBox(glm::vec3(halfOW, -halfD, 0),
+                    glm::vec3(halfOW + thickness, halfD, openingH));
+            // Arch top band: curve from (-halfOW, openingH) through
+            // (0, openingH+halfOW) to (halfOW, openingH). Radius =
+            // halfOW. Outer surface follows the curve, inner surface
+            // is the underside. Built from <segments> bands of 4
+            // verts each (front + back faces handled per band).
+            float archCenterZ = openingH;
+            float archR = halfOW;
+            float pi = 3.14159265358979f;
+            for (int sg = 0; sg < segments; ++sg) {
+                float t0 = static_cast<float>(sg) / segments;
+                float t1 = static_cast<float>(sg + 1) / segments;
+                float a0 = pi - t0 * pi;  // start at 180°, sweep to 0°
+                float a1 = pi - t1 * pi;
+                float c0 = std::cos(a0), s0 = std::sin(a0);
+                float c1 = std::cos(a1), s1 = std::sin(a1);
+                // Outer ring point at angle a.
+                glm::vec3 outer0(archR * c0, 0, archCenterZ + archR * s0);
+                glm::vec3 outer1(archR * c1, 0, archCenterZ + archR * s1);
+                // Inner ring (offset down to be a thin band — we're
+                // making just a bridge across the top, no thickness
+                // for now to keep vertex count tractable). The arch
+                // band is a flat strip from the outer curve down to
+                // the column tops at the SAME XZ — use the column
+                // tops at the band ends. For simplicity, treat the
+                // band as a thin shell along the curve.
+                glm::vec3 outer0b = outer0 + glm::vec3(0, depth, 0);
+                glm::vec3 outer1b = outer1 + glm::vec3(0, depth, 0);
+                // Top face of band (pointing radially outward from
+                // arch center).
+                glm::vec3 n((c0 + c1) * 0.5f, 0, (s0 + s1) * 0.5f);
+                n = glm::normalize(n);
+                uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                addV(outer0.x, outer0.y - halfD, outer0.z, n.x, 0, n.z, 0, 0);
+                addV(outer1.x, outer1.y - halfD, outer1.z, n.x, 0, n.z, 1, 0);
+                addV(outer1.x, outer1.y + halfD, outer1.z, n.x, 0, n.z, 1, 1);
+                addV(outer0.x, outer0.y + halfD, outer0.z, n.x, 0, n.z, 0, 1);
+                wom.indices.push_back(base + 0);
+                wom.indices.push_back(base + 1);
+                wom.indices.push_back(base + 2);
+                wom.indices.push_back(base + 0);
+                wom.indices.push_back(base + 2);
+                wom.indices.push_back(base + 3);
+            }
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-arch: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  opening    : %.3f W × %.3f H\n", openingW, openingH);
+            std::printf("  thickness  : %.3f (column), depth %.3f (Y)\n", thickness, depth);
+            std::printf("  segments   : %d (arch curve)\n", segments);
+            std::printf("  vertices   : %zu\n", wom.vertices.size());
+            std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+            std::printf("  bounds     : (%.2f, %.2f, %.2f) - (%.2f, %.2f, %.2f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
