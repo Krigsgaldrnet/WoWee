@@ -551,6 +551,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Tiling grass texture with random blade highlights (default density=0.15, seed=1)\n");
     std::printf("  --gen-texture-fabric <out.png> <warpHex> <weftHex> [threadPx] [W H]\n");
     std::printf("                         Woven fabric pattern with alternating warp/weft threads (default thread=4px)\n");
+    std::printf("  --gen-texture-cobble <out.png> <stoneHex> <mortarHex> [stonePx] [seed] [W H]\n");
+    std::printf("                         Cobblestone street pattern: irregular packed stones (default stone=24px, seed 1)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -1117,6 +1119,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
         "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
         "--gen-texture-wood", "--gen-texture-grass", "--gen-texture-fabric",
+        "--gen-texture-cobble",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -20087,6 +20090,167 @@ int main(int argc, char* argv[]) {
             std::printf("  warp/weft  : %s / %s\n",
                         warpHex.c_str(), weftHex.c_str());
             std::printf("  thread px  : %d\n", threadPx);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-cobble") == 0 && i + 3 < argc) {
+            // Cobblestone street pattern. Each pixel finds its
+            // nearest "stone center" in a perturbed grid (Worley-
+            // style cellular noise) and uses the distance to that
+            // center to draw the stone face vs. mortar gaps. Stones
+            // get small per-stone tint variation so the surface
+            // doesn't read as flat.
+            std::string outPath = argv[++i];
+            std::string stoneHex = argv[++i];
+            std::string mortarHex = argv[++i];
+            int stonePx = 24;
+            uint32_t seed = 1;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { stonePx = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                stonePx < 8 || stonePx > 512) {
+                std::fprintf(stderr,
+                    "gen-texture-cobble: invalid dims (W/H 1..8192, stonePx 8..512)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t sr, sg, sb, mr, mg, mb;
+            if (!parseHex(stoneHex, sr, sg, sb)) {
+                std::fprintf(stderr,
+                    "gen-texture-cobble: '%s' is not a valid hex color\n",
+                    stoneHex.c_str());
+                return 1;
+            }
+            if (!parseHex(mortarHex, mr, mg, mb)) {
+                std::fprintf(stderr,
+                    "gen-texture-cobble: '%s' is not a valid hex color\n",
+                    mortarHex.c_str());
+                return 1;
+            }
+            // Seeded hash → stone center jitter + per-stone tint.
+            // Hash takes (cellX, cellY, seed) and returns 4 floats
+            // in [0,1): two for offset, two for tint variation.
+            auto hash01 = [seed](int cx, int cy, int comp) -> float {
+                uint32_t h = static_cast<uint32_t>(cx) * 374761393u +
+                             static_cast<uint32_t>(cy) * 668265263u +
+                             seed * 2147483647u +
+                             static_cast<uint32_t>(comp) * 16777619u;
+                h = (h ^ (h >> 13)) * 1274126177u;
+                h = h ^ (h >> 16);
+                return (h >> 8) * (1.0f / 16777216.0f);
+            };
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            // For each pixel, find min distance among 9 neighboring
+            // jittered cell centers (3x3 around current cell). The
+            // closest center owns the pixel; second-closest sets
+            // mortar boundary distance.
+            for (int y = 0; y < H; ++y) {
+                int cy0 = y / stonePx;
+                for (int x = 0; x < W; ++x) {
+                    int cx0 = x / stonePx;
+                    float bestD = 1e9f, second = 1e9f;
+                    int bestCx = 0, bestCy = 0;
+                    for (int dy = -1; dy <= 1; ++dy) {
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            int cx = cx0 + dx;
+                            int cy = cy0 + dy;
+                            float jx = (hash01(cx, cy, 0) - 0.5f) * 0.7f;
+                            float jy = (hash01(cx, cy, 1) - 0.5f) * 0.7f;
+                            float ccx = (cx + 0.5f + jx) * stonePx;
+                            float ccy = (cy + 0.5f + jy) * stonePx;
+                            float dxp = x - ccx, dyp = y - ccy;
+                            float d = std::sqrt(dxp * dxp + dyp * dyp);
+                            if (d < bestD) {
+                                second = bestD;
+                                bestD = d;
+                                bestCx = cx;
+                                bestCy = cy;
+                            } else if (d < second) {
+                                second = d;
+                            }
+                        }
+                    }
+                    // Pixels close to the boundary (small gap between
+                    // closest and second-closest) become mortar.
+                    float boundary = second - bestD;
+                    float mortarThresh = stonePx * 0.10f;
+                    if (boundary < mortarThresh) {
+                        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                        pixels[i2 + 0] = mr;
+                        pixels[i2 + 1] = mg;
+                        pixels[i2 + 2] = mb;
+                    } else {
+                        // Per-stone tint: ±15% on each channel.
+                        float tint = 0.85f + 0.30f * hash01(bestCx, bestCy, 2);
+                        // Subtle radial darkening toward edges so
+                        // the stone face reads as 3D rounded.
+                        float edgeFalloff = std::min(1.0f,
+                            (boundary - mortarThresh) / (stonePx * 0.4f));
+                        float shade = (0.7f + 0.3f * edgeFalloff) * tint;
+                        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                        pixels[i2 + 0] = static_cast<uint8_t>(
+                            std::clamp(sr * shade, 0.0f, 255.0f));
+                        pixels[i2 + 1] = static_cast<uint8_t>(
+                            std::clamp(sg * shade, 0.0f, 255.0f));
+                        pixels[i2 + 2] = static_cast<uint8_t>(
+                            std::clamp(sb * shade, 0.0f, 255.0f));
+                    }
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-cobble: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size         : %dx%d\n", W, H);
+            std::printf("  stone/mortar : %s / %s\n",
+                        stoneHex.c_str(), mortarHex.c_str());
+            std::printf("  stone px     : %d\n", stonePx);
+            std::printf("  seed         : %u\n", seed);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
