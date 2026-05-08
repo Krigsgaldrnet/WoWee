@@ -917,6 +917,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Render WOM bone hierarchy as Graphviz DOT (pipe to `dot -Tpng -o bones.png`)\n");
     std::printf("  --list-project-meshes <projectDir> [--json]\n");
     std::printf("                         Project-wide WOM inventory across every zone (vert/tri totals + per-zone breakdown)\n");
+    std::printf("  --list-project-audio <projectDir> [--json]\n");
+    std::printf("                         Project-wide WAV inventory across every zone (duration/bytes per zone + grand total)\n");
     std::printf("  --list-project-textures <projectDir> [--json]\n");
     std::printf("                         Aggregate texture refs across every WOM in a project (deduped, with zone breakdown)\n");
     std::printf("  --list-zone-meshes <zoneDir> [--json]\n");
@@ -1064,7 +1066,8 @@ int main(int argc, char* argv[]) {
         "--info-attachments", "--info-particles", "--info-sequences",
         "--info-bones", "--export-bones-dot",
         "--list-zone-meshes", "--list-zone-audio", "--list-zone-textures",
-        "--list-project-meshes", "--list-project-textures",
+        "--list-project-meshes", "--list-project-audio",
+        "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
         "--list-zone-meshes", "--list-project-meshes", "--info-mesh",
         "--info-mesh-storage-budget",
@@ -2260,6 +2263,123 @@ int main(int argc, char* argv[]) {
                             r.meshCount,
                             static_cast<unsigned long long>(r.bytes),
                             r.verts, r.tris, r.name.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-project-audio") == 0 && i + 1 < argc) {
+            // Project-wide companion to --list-zone-audio. Walks
+            // every zone in <projectDir> and reports per-zone WAV
+            // count + total bytes/duration, plus a project grand
+            // total. Uses the same RIFF/WAVE header parse as
+            // list-zone-audio. Completes the project-scope
+            // inventory trio (meshes, textures, audio).
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "list-project-audio: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow {
+                std::string name;
+                int wavCount = 0;
+                uint64_t bytes = 0;
+                float duration = 0.0f;
+            };
+            std::vector<ZRow> rows;
+            std::error_code ec;
+            for (const auto& z : zones) {
+                ZRow r;
+                r.name = fs::path(z).filename().string();
+                fs::path audDir = fs::path(z) / "audio";
+                if (fs::exists(audDir)) {
+                    for (const auto& e : fs::recursive_directory_iterator(audDir, ec)) {
+                        if (!e.is_regular_file()) continue;
+                        if (e.path().extension() != ".wav") continue;
+                        r.wavCount++;
+                        r.bytes += e.file_size();
+                        FILE* f = std::fopen(e.path().c_str(), "rb");
+                        if (f) {
+                            char hdr[44];
+                            if (std::fread(hdr, 1, 44, f) == 44 &&
+                                std::memcmp(hdr, "RIFF", 4) == 0 &&
+                                std::memcmp(hdr + 8, "WAVE", 4) == 0) {
+                                uint16_t channels = 0, bps = 0;
+                                uint32_t rate = 0, dataBytes = 0;
+                                std::memcpy(&channels, hdr + 22, 2);
+                                std::memcpy(&rate, hdr + 24, 4);
+                                std::memcpy(&bps, hdr + 34, 2);
+                                std::memcpy(&dataBytes, hdr + 40, 4);
+                                if (rate > 0 && channels > 0 && bps > 0) {
+                                    uint32_t bytesPerSample =
+                                        static_cast<uint32_t>(channels) * (bps / 8);
+                                    if (bytesPerSample > 0) {
+                                        r.duration += static_cast<float>(dataBytes) /
+                                                      (rate * bytesPerSample);
+                                    }
+                                }
+                            }
+                            std::fclose(f);
+                        }
+                    }
+                }
+                rows.push_back(std::move(r));
+            }
+            int totalWavs = 0;
+            uint64_t totalBytes = 0;
+            float totalDuration = 0.0f;
+            for (const auto& r : rows) {
+                totalWavs += r.wavCount;
+                totalBytes += r.bytes;
+                totalDuration += r.duration;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = rows.size();
+                j["totalWavs"] = totalWavs;
+                j["totalBytes"] = totalBytes;
+                j["totalDuration"] = totalDuration;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({
+                        {"zone", r.name},
+                        {"wavs", r.wavCount},
+                        {"bytes", r.bytes},
+                        {"duration", r.duration},
+                    });
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project audio: %s\n", projectDir.c_str());
+            std::printf("  zones          : %zu\n", rows.size());
+            std::printf("  total wavs     : %d\n", totalWavs);
+            std::printf("  total bytes    : %llu\n",
+                        static_cast<unsigned long long>(totalBytes));
+            std::printf("  total duration : %.2f sec\n", totalDuration);
+            if (rows.empty()) {
+                std::printf("  *no zones found*\n");
+                return 0;
+            }
+            std::printf("\n  %5s %8s %8s  %s\n",
+                        "wavs", "bytes", "sec", "zone");
+            for (const auto& r : rows) {
+                std::printf("  %5d %8llu %8.2f  %s\n",
+                            r.wavCount,
+                            static_cast<unsigned long long>(r.bytes),
+                            r.duration, r.name.c_str());
             }
             return 0;
         } else if (std::strcmp(argv[i], "--list-project-textures") == 0 && i + 1 < argc) {
