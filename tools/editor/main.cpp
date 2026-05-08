@@ -545,6 +545,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize checkerboard with custom colors (gen-texture's checker is BW only)\n");
     std::printf("  --gen-texture-brick <out.png> <brickHex> <mortarHex> [brickW] [brickH] [mortarPx] [W H]\n");
     std::printf("                         Brick wall pattern with offset rows + mortar lines (default 64×24, 4px mortar)\n");
+    std::printf("  --gen-texture-wood <out.png> <lightHex> <darkHex> [grainSpacing] [seed] [W H]\n");
+    std::printf("                         Wood grain pattern with vertical streaks + knots (default spacing 12px, seed 1)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -1068,6 +1070,7 @@ int main(int argc, char* argv[]) {
         "--merge-meshes",
         "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
         "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
+        "--gen-texture-wood",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -18297,6 +18300,161 @@ int main(int argc, char* argv[]) {
                         brickW, brickH, brickHex.c_str());
             std::printf("  mortar    : %d px (%s)\n",
                         mortarPx, mortarHex.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-wood") == 0 && i + 3 < argc) {
+            // Wood grain pattern: vertical streaks of varying width
+            // alternating between light and dark hues, plus a few
+            // pseudo-random "knots" (small dark dots). Suitable for
+            // doors, planks, fences, crates.
+            std::string outPath = argv[++i];
+            std::string lightHex = argv[++i];
+            std::string darkHex = argv[++i];
+            int spacing = 12;     // average grain spacing in px
+            uint32_t seed = 1;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { spacing = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                spacing < 2 || spacing > 256) {
+                std::fprintf(stderr,
+                    "gen-texture-wood: invalid dims (W/H 1..8192, spacing 2..256)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t lr, lg, lb, dr, dg, db;
+            if (!parseHex(lightHex, lr, lg, lb)) {
+                std::fprintf(stderr,
+                    "gen-texture-wood: '%s' is not a valid hex color\n",
+                    lightHex.c_str());
+                return 1;
+            }
+            if (!parseHex(darkHex, dr, dg, db)) {
+                std::fprintf(stderr,
+                    "gen-texture-wood: '%s' is not a valid hex color\n",
+                    darkHex.c_str());
+                return 1;
+            }
+            // Tiny LCG so output is reproducible from `seed` alone
+            // without pulling in <random>.
+            uint32_t state = seed ? seed : 1u;
+            auto next01 = [&state]() -> float {
+                state = state * 1664525u + 1013904223u;
+                return (state >> 8) * (1.0f / 16777216.0f);
+            };
+            // Pre-compute per-column "darkness" weight by accumulating
+            // grain bands of varying width across the image. A band's
+            // weight bleeds into a few neighbors so transitions feel
+            // soft rather than blocky.
+            std::vector<float> colWeight(W, 0.0f);
+            int x = 0;
+            while (x < W) {
+                int width = spacing + static_cast<int>(next01() * spacing);
+                float weight = next01();  // 0..1
+                int feather = std::max(1, width / 6);
+                for (int dx = -feather; dx < width + feather; ++dx) {
+                    int cx = x + dx;
+                    if (cx < 0 || cx >= W) continue;
+                    float t = 1.0f;
+                    if (dx < 0) t = 1.0f + dx / static_cast<float>(feather);
+                    else if (dx >= width) t = 1.0f - (dx - width) / static_cast<float>(feather);
+                    colWeight[cx] = std::max(colWeight[cx], weight * t);
+                }
+                x += width;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                // Slight Y-axis warp so streaks aren't perfectly straight
+                float yWave = std::sin(y * 0.025f) * 1.5f;
+                for (int xi = 0; xi < W; ++xi) {
+                    int sx = xi + static_cast<int>(yWave);
+                    if (sx < 0) sx = 0;
+                    if (sx >= W) sx = W - 1;
+                    float w = colWeight[sx];
+                    uint8_t r = static_cast<uint8_t>(lr * (1 - w) + dr * w);
+                    uint8_t g = static_cast<uint8_t>(lg * (1 - w) + dg * w);
+                    uint8_t b = static_cast<uint8_t>(lb * (1 - w) + db * w);
+                    size_t i2 = (static_cast<size_t>(y) * W + xi) * 3;
+                    pixels[i2 + 0] = r;
+                    pixels[i2 + 1] = g;
+                    pixels[i2 + 2] = b;
+                }
+            }
+            // Sprinkle a handful of round "knots" using the same LCG.
+            int knotCount = std::max(1, (W * H) / 32768);
+            for (int k = 0; k < knotCount; ++k) {
+                int kx = static_cast<int>(next01() * W);
+                int ky = static_cast<int>(next01() * H);
+                int radius = 3 + static_cast<int>(next01() * 4);
+                for (int dy = -radius; dy <= radius; ++dy) {
+                    for (int dx = -radius; dx <= radius; ++dx) {
+                        int px = kx + dx, py = ky + dy;
+                        if (px < 0 || py < 0 || px >= W || py >= H) continue;
+                        float d = std::sqrt(static_cast<float>(dx * dx + dy * dy));
+                        if (d > radius) continue;
+                        float t = 1.0f - d / radius;
+                        size_t i2 = (static_cast<size_t>(py) * W + px) * 3;
+                        pixels[i2 + 0] = static_cast<uint8_t>(pixels[i2 + 0] * (1 - t) + dr * t);
+                        pixels[i2 + 1] = static_cast<uint8_t>(pixels[i2 + 1] * (1 - t) + dg * t);
+                        pixels[i2 + 2] = static_cast<uint8_t>(pixels[i2 + 2] * (1 - t) + db * t);
+                    }
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-wood: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  light/dark: %s / %s\n",
+                        lightHex.c_str(), darkHex.c_str());
+            std::printf("  spacing   : %d px\n", spacing);
+            std::printf("  knots     : %d\n", knotCount);
+            std::printf("  seed      : %u\n", seed);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
