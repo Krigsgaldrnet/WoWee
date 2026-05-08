@@ -642,6 +642,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Run starter-pack + audio-pack across every zone — full project-scope bootstrap\n");
     std::printf("  --info-zone-summary <zoneDir> [--json]\n");
     std::printf("                         One-glance health digest for a zone: pack counts/bytes + audit pass/fail\n");
+    std::printf("  --info-zone-deps <zoneDir> [--json]\n");
+    std::printf("                         Find textures referenced by WOMs but missing from <zoneDir>/textures/ (broken-ref audit)\n");
     std::printf("  --info-project-summary <projectDir> [--json]\n");
     std::printf("                         One-glance status table per zone in a project (BOOTSTRAPPED/PARTIAL/EMPTY)\n");
     std::printf("  --gen-zone-readme <zoneDir> [--out <path>]\n");
@@ -1170,7 +1172,7 @@ int main(int argc, char* argv[]) {
         "--gen-zone-mesh-pack", "--gen-zone-starter-pack",
         "--gen-project-starter-pack", "--gen-audio-tone",
         "--gen-audio-noise", "--gen-audio-sweep", "--gen-zone-audio-pack",
-        "--info-zone-summary", "--info-project-summary",
+        "--info-zone-summary", "--info-project-summary", "--info-zone-deps",
         "--gen-zone-readme", "--gen-project-readme",
         "--validate-zone-pack", "--validate-project-packs", "--info-spawn",
         "--diff-zone-spawns",
@@ -15161,6 +15163,104 @@ int main(int argc, char* argv[]) {
                         totalAssets,
                         static_cast<unsigned long long>(totalBytes));
             return 0;
+        } else if (std::strcmp(argv[i], "--info-zone-deps") == 0 && i + 1 < argc) {
+            // Broken-reference audit: walk every WOM in the zone,
+            // collect its texturePaths, normalize them, and check
+            // whether each path exists relative to the zone dir.
+            // Reports any reference that does NOT resolve to a real
+            // file. Catches "WOM was added but its texture wasn't
+            // copied into textures/" mistakes before runtime.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "info-zone-deps: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            // For each WOM, list (wom path, texture path, exists?).
+            // A texture path resolves if any of the candidate paths
+            // resolves: as-is, relative to zone dir, relative to
+            // zone/textures/, or with the basename matched in
+            // textures/.
+            struct DepRef {
+                std::string womPath;
+                std::string texPath;
+                bool exists;
+            };
+            std::vector<DepRef> refs;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                if (e.path().extension() != ".wom") continue;
+                std::string womRel = fs::relative(e.path(), zoneDir).string();
+                std::string base = e.path().string();
+                base = base.substr(0, base.size() - 4);
+                auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                for (const auto& tp : wom.texturePaths) {
+                    if (tp.empty()) continue;
+                    bool found = false;
+                    fs::path candidates[4] = {
+                        fs::path(tp),
+                        fs::path(zoneDir) / tp,
+                        fs::path(zoneDir) / "textures" / fs::path(tp).filename(),
+                        e.path().parent_path() / fs::path(tp).filename(),
+                    };
+                    for (const auto& c : candidates) {
+                        if (fs::exists(c, ec) && fs::is_regular_file(c, ec)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    refs.push_back({womRel, tp, found});
+                }
+            }
+            std::sort(refs.begin(), refs.end(),
+                      [](const DepRef& a, const DepRef& b) {
+                          if (a.exists != b.exists) return !a.exists;
+                          if (a.womPath != b.womPath) return a.womPath < b.womPath;
+                          return a.texPath < b.texPath;
+                      });
+            int total = static_cast<int>(refs.size());
+            int missing = 0;
+            for (const auto& r : refs) if (!r.exists) ++missing;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["totalRefs"] = total;
+                j["missingRefs"] = missing;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : refs) {
+                    arr.push_back({
+                        {"wom", r.womPath},
+                        {"texture", r.texPath},
+                        {"exists", r.exists},
+                    });
+                }
+                j["refs"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return missing == 0 ? 0 : 1;
+            }
+            std::printf("Zone deps: %s\n", zoneDir.c_str());
+            std::printf("  total refs   : %d\n", total);
+            std::printf("  missing refs : %d\n", missing);
+            if (refs.empty()) {
+                std::printf("  *no texture references in any WOM*\n");
+                return 0;
+            }
+            std::printf("\n  exists  WOM                                 texture\n");
+            for (const auto& r : refs) {
+                std::printf("  %-6s  %-35s  %s\n",
+                            r.exists ? "yes" : "NO",
+                            r.womPath.c_str(),
+                            r.texPath.c_str());
+            }
+            std::printf("\n  %s\n", missing == 0
+                ? "PASS — all texture references resolve"
+                : "FAIL — missing references above");
+            return missing == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--info-project-summary") == 0 && i + 1 < argc) {
             // Project-wide companion to --info-zone-summary. Walks
             // every zone in <projectDir> and reports a per-zone
