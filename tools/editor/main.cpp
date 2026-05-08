@@ -899,6 +899,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Render WOM bone hierarchy as Graphviz DOT (pipe to `dot -Tpng -o bones.png`)\n");
     std::printf("  --list-project-textures <projectDir> [--json]\n");
     std::printf("                         Aggregate texture refs across every WOM in a project (deduped, with zone breakdown)\n");
+    std::printf("  --list-zone-meshes <zoneDir> [--json]\n");
+    std::printf("                         List every WOM in <zoneDir> with vert/tri/bone/anim/batch counts and file size\n");
     std::printf("  --list-zone-textures <zoneDir> [--json]\n");
     std::printf("                         Aggregate texture refs across all WOM models in a zone (deduped)\n");
     std::printf("  --info-zone-models-total <zoneDir> [--json]\n");
@@ -1038,7 +1040,8 @@ int main(int argc, char* argv[]) {
     static const char* kArgRequired[] = {
         "--data", "--info", "--info-batches", "--info-textures", "--info-doodads",
         "--info-attachments", "--info-particles", "--info-sequences",
-        "--info-bones", "--export-bones-dot", "--list-zone-textures",
+        "--info-bones", "--export-bones-dot",
+        "--list-zone-meshes", "--list-zone-textures",
         "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
         "--list-zone-meshes", "--list-project-meshes", "--info-mesh",
@@ -1846,6 +1849,100 @@ int main(int argc, char* argv[]) {
             std::printf("  %zu bones, %d root(s)\n",
                         wom.bones.size(), rootCount);
             std::printf("  next: dot -Tpng %s -o bones.png\n", outPath.c_str());
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-zone-meshes") == 0 && i + 1 < argc) {
+            // Inventory every WOM in a zone with quick stats: file
+            // size, vert/tri/bone/anim/batch counts. Companion to
+            // --list-zone-textures (which counts inbound texture
+            // refs); this answers "which meshes ship with this
+            // zone and how heavy is each."
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "list-zone-meshes: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            struct Row {
+                std::string path;
+                uint64_t bytes = 0;
+                size_t verts = 0, tris = 0;
+                size_t bones = 0, anims = 0, batches = 0, textures = 0;
+            };
+            std::vector<Row> rows;
+            std::error_code ec;
+            for (const auto& e : fs::recursive_directory_iterator(zoneDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                if (e.path().extension() != ".wom") continue;
+                Row r;
+                r.path = fs::relative(e.path(), zoneDir).string();
+                r.bytes = static_cast<uint64_t>(e.file_size());
+                std::string base = e.path().string();
+                base = base.substr(0, base.size() - 4);
+                auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                r.verts = wom.vertices.size();
+                r.tris = wom.indices.size() / 3;
+                r.bones = wom.bones.size();
+                r.anims = wom.animations.size();
+                r.batches = wom.batches.size();
+                r.textures = wom.texturePaths.size();
+                rows.push_back(std::move(r));
+            }
+            std::sort(rows.begin(), rows.end(),
+                      [](const Row& a, const Row& b) { return a.path < b.path; });
+            uint64_t totalBytes = 0;
+            size_t totalVerts = 0, totalTris = 0;
+            for (const auto& r : rows) {
+                totalBytes += r.bytes;
+                totalVerts += r.verts;
+                totalTris += r.tris;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["meshCount"] = rows.size();
+                j["totalBytes"] = totalBytes;
+                j["totalVerts"] = totalVerts;
+                j["totalTris"] = totalTris;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({
+                        {"path", r.path},
+                        {"bytes", r.bytes},
+                        {"verts", r.verts},
+                        {"tris", r.tris},
+                        {"bones", r.bones},
+                        {"anims", r.anims},
+                        {"batches", r.batches},
+                        {"textures", r.textures},
+                    });
+                }
+                j["meshes"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone meshes: %s\n", zoneDir.c_str());
+            std::printf("  meshes      : %zu\n", rows.size());
+            std::printf("  total bytes : %llu\n",
+                        static_cast<unsigned long long>(totalBytes));
+            std::printf("  total verts : %zu\n", totalVerts);
+            std::printf("  total tris  : %zu\n", totalTris);
+            if (rows.empty()) {
+                std::printf("  *no .wom files found*\n");
+                return 0;
+            }
+            std::printf("\n  %8s %7s %7s %4s %4s %4s %4s  %s\n",
+                        "bytes", "verts", "tris", "bone", "anim", "batc", "tex", "path");
+            for (const auto& r : rows) {
+                std::printf("  %8llu %7zu %7zu %4zu %4zu %4zu %4zu  %s\n",
+                            static_cast<unsigned long long>(r.bytes),
+                            r.verts, r.tris,
+                            r.bones, r.anims, r.batches, r.textures,
+                            r.path.c_str());
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--list-zone-textures") == 0 && i + 1 < argc) {
             // Aggregate texture references across every WOM model in a
