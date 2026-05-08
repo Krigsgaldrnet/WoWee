@@ -621,6 +621,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Run both texture-pack + mesh-pack in one pass — full open-format bootstrap\n");
     std::printf("  --validate-zone-pack <zoneDir> [--json]\n");
     std::printf("                         Audit a zone's open-format asset pack: textures/meshes/audio counts + WOM validity\n");
+    std::printf("  --validate-project-packs <projectDir>\n");
+    std::printf("                         Run validate-zone-pack across every zone in a project; exits 1 if any fails\n");
     std::printf("  --gen-audio-tone <out.wav> <freqHz> <durationSec> [sampleRate] [waveform]\n");
     std::printf("                         Synthesize a procedural WAV (PCM-16 mono). Waveform: sine|square|triangle|saw\n");
     std::printf("  --gen-audio-noise <out.wav> <durationSec> [sampleRate] [color] [seed] [amplitude]\n");
@@ -1129,7 +1131,7 @@ int main(int argc, char* argv[]) {
         "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
         "--gen-zone-mesh-pack", "--gen-zone-starter-pack", "--gen-audio-tone",
         "--gen-audio-noise", "--gen-zone-audio-pack", "--validate-zone-pack",
-        "--info-spawn",
+        "--validate-project-packs", "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -14865,6 +14867,54 @@ int main(int argc, char* argv[]) {
             std::printf("\n  %s\n", pass ? "PASS — pack is healthy"
                                           : "FAIL — see invalid paths above");
             return pass ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--validate-project-packs") == 0 && i + 1 < argc) {
+            // Run --validate-zone-pack across every zone in a project
+            // and aggregate the result. Reports a single PASS/FAIL
+            // line per zone plus a summary; exits non-zero if any
+            // zone fails. Designed for CI use as a gate before
+            // shipping a project.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "validate-project-packs: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::fprintf(stderr,
+                    "validate-project-packs: %s contains no zones\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::string self = (argc > 0) ? argv[0] : "wowee_editor";
+            int passed = 0, failed = 0;
+            std::printf("Project pack audit: %s\n", projectDir.c_str());
+            std::printf("  zones: %zu\n\n", zones.size());
+            for (const auto& z : zones) {
+                std::string cmd = "\"" + self + "\" --validate-zone-pack \"" +
+                                  z + "\" > /dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                std::string name = fs::path(z).filename().string();
+                if (rc == 0) {
+                    ++passed;
+                    std::printf("  PASS  %s\n", name.c_str());
+                } else {
+                    ++failed;
+                    std::printf("  FAIL  %s\n", name.c_str());
+                }
+            }
+            std::printf("\n  Total: %d passed, %d failed\n", passed, failed);
+            std::printf("  %s\n",
+                        failed == 0 ? "PROJECT PASS" : "PROJECT FAIL");
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--gen-random-project") == 0 && i + 1 < argc) {
             // Project-wide companion: spawn N random zones in one
             // pass. Names default to "Zone1, Zone2..."; tile
