@@ -565,6 +565,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         N-sided polygonal pyramid with apex at +Y (default 4 sides, 1.0/1.0)\n");
     std::printf("  --gen-mesh-fence <wom-base> [posts] [postSpacing] [postHeight] [railThick]\n");
     std::printf("                         Repeating fence: N posts along +X with two horizontal rails between\n");
+    std::printf("  --gen-mesh-tree <wom-base> [trunkRadius] [trunkHeight] [foliageRadius]\n");
+    std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
@@ -1053,7 +1055,7 @@ int main(int argc, char* argv[]) {
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
         "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
-        "--gen-mesh-pyramid", "--gen-mesh-fence",
+        "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -19668,6 +19670,139 @@ int main(int argc, char* argv[]) {
             std::printf("  height    : %.3f\n", postH);
             std::printf("  thickness : %.3f\n", rt);
             std::printf("  span X    : %.3f\n", (posts - 1) * spacing);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-tree") == 0 && i + 1 < argc) {
+            // Procedural tree: cylinder trunk + UV-sphere foliage.
+            // Trunk goes from Y=0 up to Y=trunkHeight; foliage sphere
+            // centered at trunk-top + foliageRadius/2 so the trunk
+            // pokes up into the bottom of the canopy.
+            //
+            // Useful for ambient zone decoration, distant tree
+            // placeholders, magic-grove props. The 15th procedural
+            // primitive — pairs naturally with --add-texture-to-mesh
+            // for trunk-bark and leaf textures (or just one texture
+            // since this is a single-batch mesh).
+            std::string womBase = argv[++i];
+            float trunkR = 0.1f;
+            float trunkH = 2.0f;
+            float foliR = 0.7f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { trunkR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { trunkH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { foliR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (trunkR <= 0 || trunkH <= 0 || foliR <= 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-tree: trunkR / trunkH / foliR must be positive\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p;
+                vtx.normal = n;
+                vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Trunk cylinder: 12 segments, side ring + top + bottom.
+            const int trunkSegs = 12;
+            uint32_t trunkSideStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= trunkSegs; ++sg) {
+                float u = static_cast<float>(sg) / trunkSegs;
+                float ang = u * 2.0f * pi;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(glm::vec3(trunkR * ca, 0, trunkR * sa),
+                       glm::vec3(ca, 0, sa),
+                       glm::vec2(u, 0));
+                addV(glm::vec3(trunkR * ca, trunkH, trunkR * sa),
+                       glm::vec3(ca, 0, sa),
+                       glm::vec2(u, 1));
+            }
+            for (int sg = 0; sg < trunkSegs; ++sg) {
+                uint32_t a = trunkSideStart + sg * 2;
+                uint32_t b = a + 1, c = a + 2, d = a + 3;
+                wom.indices.push_back(a);
+                wom.indices.push_back(c);
+                wom.indices.push_back(b);
+                wom.indices.push_back(b);
+                wom.indices.push_back(c);
+                wom.indices.push_back(d);
+            }
+            // Foliage UV sphere: 12 segments × 8 stacks. Center at
+            // (0, trunkH + foliR * 0.7, 0) so the trunk pokes into
+            // the bottom of the canopy.
+            const int fSegs = 12;
+            const int fStacks = 8;
+            float foliCY = trunkH + foliR * 0.7f;
+            uint32_t foliStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int st = 0; st <= fStacks; ++st) {
+                float v = static_cast<float>(st) / fStacks;
+                float phi = v * pi;
+                float sphi = std::sin(phi), cphi = std::cos(phi);
+                for (int sg = 0; sg <= fSegs; ++sg) {
+                    float u = static_cast<float>(sg) / fSegs;
+                    float theta = u * 2.0f * pi;
+                    float ctheta = std::cos(theta), stheta = std::sin(theta);
+                    float nx = sphi * ctheta;
+                    float ny = cphi;
+                    float nz = sphi * stheta;
+                    addV(glm::vec3(foliR * nx, foliCY + foliR * ny, foliR * nz),
+                           glm::vec3(nx, ny, nz),
+                           glm::vec2(u, v));
+                }
+            }
+            int fStride = fSegs + 1;
+            for (int st = 0; st < fStacks; ++st) {
+                for (int sg = 0; sg < fSegs; ++sg) {
+                    uint32_t a = foliStart + st * fStride + sg;
+                    uint32_t b = a + 1;
+                    uint32_t c = a + fStride;
+                    uint32_t d = c + 1;
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+            }
+            wom.boundMin = glm::vec3(-foliR, 0, -foliR);
+            wom.boundMax = glm::vec3( foliR, foliCY + foliR, foliR);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-tree: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  trunk R   : %.3f\n", trunkR);
+            std::printf("  trunk H   : %.3f\n", trunkH);
+            std::printf("  foliage R : %.3f\n", foliR);
+            std::printf("  total H   : %.3f\n", foliCY + foliR);
             std::printf("  vertices  : %zu\n", wom.vertices.size());
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
