@@ -601,6 +601,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Round altar: stacked stepped discs descending from a flat top (default 3 steps)\n");
     std::printf("  --gen-mesh-portal <wom-base> [width] [height] [postThickness] [lintelHeight]\n");
     std::printf("                         Doorway frame: two side posts + top lintel (default 2.5w × 4h)\n");
+    std::printf("  --gen-mesh-archway <wom-base> [width] [pillarHeight] [thickness] [archSegs]\n");
+    std::printf("                         Semicircular arched doorway: two pillars + curved keystone vault (default 12 segs)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1136,6 +1138,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
         "--gen-mesh-tower", "--gen-mesh-house", "--gen-mesh-fountain",
         "--gen-mesh-statue", "--gen-mesh-altar", "--gen-mesh-portal",
+        "--gen-mesh-archway",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -24130,6 +24133,187 @@ int main(int argc, char* argv[]) {
             std::printf("  post thick : %.3f\n", postThick);
             std::printf("  lintel H   : %.3f%s\n", lintelH,
                         lintelH > 0 ? "" : " (no lintel)");
+            std::printf("  vertices   : %zu\n", wom.vertices.size());
+            std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-archway") == 0 && i + 1 < argc) {
+            // Semicircular arched doorway. Two cylindrical pillars
+            // hold up a curved keystone vault: the vault is a series
+            // of N angular wedge segments tracing a half-circle from
+            // pillar-top to pillar-top. The opening is the empty
+            // semicircular space below.
+            //
+            // The 25th procedural mesh primitive — the "fancier"
+            // sibling of --gen-mesh-portal which uses a flat lintel.
+            std::string womBase = argv[++i];
+            float width = 3.0f;        // outer-to-outer pillar centers along Z
+            float pillarH = 3.0f;      // pillar height (Y)
+            float thickness = 0.4f;    // pillar radius and arch radial thickness
+            int archSegs = 12;         // segments around the half-circle
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { width = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { pillarH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { thickness = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { archSegs = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (width <= 0 || pillarH <= 0 || thickness <= 0 ||
+                archSegs < 4 || archSegs > 64 ||
+                thickness * 4 >= width) {
+                std::fprintf(stderr,
+                    "gen-mesh-archway: thickness×4 < width, archSegs 4..64\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            const int pillarSegs = 16;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Cylindrical pillar at given (cx, cz), from y=0 to y=pillarH.
+            auto pillar = [&](float cx, float cz) {
+                float r = thickness;
+                uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= pillarSegs; ++sg) {
+                    float u = static_cast<float>(sg) / pillarSegs;
+                    float ang = u * 2.0f * pi;
+                    glm::vec3 p(cx + r * std::cos(ang), 0,
+                                cz + r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, n, {u, 0});
+                }
+                uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= pillarSegs; ++sg) {
+                    float u = static_cast<float>(sg) / pillarSegs;
+                    float ang = u * 2.0f * pi;
+                    glm::vec3 p(cx + r * std::cos(ang), pillarH,
+                                cz + r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, n, {u, 1});
+                }
+                for (int sg = 0; sg < pillarSegs; ++sg) {
+                    wom.indices.insert(wom.indices.end(), {
+                        bot + sg, top + sg, bot + sg + 1,
+                        bot + sg + 1, top + sg, top + sg + 1
+                    });
+                }
+                // Caps
+                uint32_t bc = addV({cx, 0, cz}, {0, -1, 0}, {0.5f, 0.5f});
+                uint32_t tc = addV({cx, pillarH, cz}, {0, 1, 0}, {0.5f, 0.5f});
+                for (int sg = 0; sg < pillarSegs; ++sg) {
+                    wom.indices.insert(wom.indices.end(),
+                        {bc, bot + sg + 1, bot + sg});
+                    wom.indices.insert(wom.indices.end(),
+                        {tc, top + sg, top + sg + 1});
+                }
+            };
+            float pillarZ = (width - 2 * thickness) * 0.5f;
+            pillar(0,  pillarZ);
+            pillar(0, -pillarZ);
+            // Arch vault: trace half-circle from (z = +pillarZ, y = pillarH)
+            // up over to (z = -pillarZ, y = pillarH). Center of arch:
+            // (z = 0, y = pillarH). Arch radius = pillarZ.
+            // Inner arch (radius pillarZ - thickness*0.5) and outer
+            // (radius pillarZ + thickness*0.5) — the vault sits between.
+            float archCY = pillarH;
+            float arcInner = pillarZ - thickness * 0.5f;
+            float arcOuter = pillarZ + thickness * 0.5f;
+            // Each segment: 4 verts (inner-near, outer-near, inner-far,
+            // outer-far) extruded along X by thickness so the vault
+            // has front and back faces.
+            float archX = thickness * 0.5f;  // half-depth in X
+            // Build vertex rings for inner and outer surfaces at
+            // each segment boundary, then connect.
+            // Top half-circle goes from theta=0 to theta=pi.
+            std::vector<glm::vec3> innerRing;
+            std::vector<glm::vec3> outerRing;
+            for (int s = 0; s <= archSegs; ++s) {
+                float t = static_cast<float>(s) / archSegs;
+                float theta = t * pi;  // 0..pi
+                float zi = arcInner * std::cos(theta);
+                float yi = arcInner * std::sin(theta);
+                float zo = arcOuter * std::cos(theta);
+                float yo = arcOuter * std::sin(theta);
+                innerRing.push_back({0, archCY + yi, zi});
+                outerRing.push_back({0, archCY + yo, zo});
+            }
+            // For each segment, add 8 vertices (4 corners × front/back face)
+            // and stitch them into 6 quads = 12 tris each.
+            for (int s = 0; s < archSegs; ++s) {
+                glm::vec3 i0 = innerRing[s];
+                glm::vec3 i1 = innerRing[s + 1];
+                glm::vec3 o0 = outerRing[s];
+                glm::vec3 o1 = outerRing[s + 1];
+                // Estimate outward (radial) normal as midpoint of o0+o1
+                // direction from center.
+                glm::vec3 outDir = glm::normalize(glm::vec3(0,
+                    (i0.y + i1.y + o0.y + o1.y) * 0.25f - archCY,
+                    (i0.z + i1.z + o0.z + o1.z) * 0.25f));
+                glm::vec3 frontN(1, 0, 0);
+                glm::vec3 backN(-1, 0, 0);
+                auto V = [&](glm::vec3 p, glm::vec3 n) {
+                    return addV(p, n, {0, 0});
+                };
+                // Outer surface (top of arch): faces outward radially
+                uint32_t a = V({-archX, o0.y, o0.z}, outDir);
+                uint32_t b = V({ archX, o0.y, o0.z}, outDir);
+                uint32_t c = V({ archX, o1.y, o1.z}, outDir);
+                uint32_t d = V({-archX, o1.y, o1.z}, outDir);
+                wom.indices.insert(wom.indices.end(), {a, b, c, a, c, d});
+                // Inner surface (underside of arch): faces inward
+                uint32_t e = V({-archX, i0.y, i0.z}, -outDir);
+                uint32_t f = V({ archX, i0.y, i0.z}, -outDir);
+                uint32_t g = V({ archX, i1.y, i1.z}, -outDir);
+                uint32_t h = V({-archX, i1.y, i1.z}, -outDir);
+                wom.indices.insert(wom.indices.end(), {e, g, f, e, h, g});
+                // Front face (+X) of this wedge
+                uint32_t fi0 = V({ archX, i0.y, i0.z}, frontN);
+                uint32_t fo0 = V({ archX, o0.y, o0.z}, frontN);
+                uint32_t fo1 = V({ archX, o1.y, o1.z}, frontN);
+                uint32_t fi1 = V({ archX, i1.y, i1.z}, frontN);
+                wom.indices.insert(wom.indices.end(),
+                    {fi0, fo0, fo1, fi0, fo1, fi1});
+                // Back face (-X)
+                uint32_t bi0 = V({-archX, i0.y, i0.z}, backN);
+                uint32_t bo0 = V({-archX, o0.y, o0.z}, backN);
+                uint32_t bo1 = V({-archX, o1.y, o1.z}, backN);
+                uint32_t bi1 = V({-archX, i1.y, i1.z}, backN);
+                wom.indices.insert(wom.indices.end(),
+                    {bi0, bo1, bo0, bi0, bi1, bo1});
+            }
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            float maxY = pillarH + arcOuter;
+            wom.boundMin = glm::vec3(-thickness, 0,    -width * 0.5f);
+            wom.boundMax = glm::vec3( thickness, maxY,  width * 0.5f);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-archway: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  width      : %.3f\n", width);
+            std::printf("  pillar H   : %.3f\n", pillarH);
+            std::printf("  thickness  : %.3f\n", thickness);
+            std::printf("  arch segs  : %d (radius %.3f)\n", archSegs, arcOuter);
+            std::printf("  apex Y     : %.3f\n", maxY);
             std::printf("  vertices   : %zu\n", wom.vertices.size());
             std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
             return 0;
