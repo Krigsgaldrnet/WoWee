@@ -595,6 +595,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         List spawns whose Z is more than <threshold> yards off from the terrain (default 5)\n");
     std::printf("  --list-zone-spawns <zoneDir> [--json]\n");
     std::printf("                         Combined creature+object listing for a zone (kind, name, position, key fields)\n");
+    std::printf("  --info-spawn <zoneDir> <creature|object> <index> [--json]\n");
+    std::printf("                         Detailed view of a single creature/object spawn by index\n");
     std::printf("  --list-project-spawns <projectDir> [--json]\n");
     std::printf("                         Combined creature+object listing across every zone (zone column added)\n");
     std::printf("  --audit-project-spawns <projectDir> [--threshold yards]\n");
@@ -1053,7 +1055,7 @@ int main(int argc, char* argv[]) {
         "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
-        "--gen-random-zone", "--gen-random-project",
+        "--gen-random-zone", "--gen-random-project", "--info-spawn",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -14037,6 +14039,148 @@ int main(int argc, char* argv[]) {
                 }
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--info-spawn") == 0 && i + 3 < argc) {
+            // Detailed view of one creature or object by index. The
+            // list-zone-spawns table only shows headline fields; this
+            // dumps every field including AI behavior, faction,
+            // patrol path waypoints, etc.
+            std::string zoneDir = argv[++i];
+            std::string kind = argv[++i];
+            int idx = -1;
+            try { idx = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "info-spawn: <index> must be an integer\n");
+                return 1;
+            }
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::transform(kind.begin(), kind.end(), kind.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            if (kind == "creature") {
+                wowee::editor::NpcSpawner spawner;
+                if (!spawner.loadFromFile(zoneDir + "/creatures.json")) {
+                    std::fprintf(stderr,
+                        "info-spawn: %s has no creatures.json\n",
+                        zoneDir.c_str());
+                    return 1;
+                }
+                const auto& spawns = spawner.getSpawns();
+                if (idx < 0 || static_cast<size_t>(idx) >= spawns.size()) {
+                    std::fprintf(stderr,
+                        "info-spawn: index %d out of range (have %zu)\n",
+                        idx, spawns.size());
+                    return 1;
+                }
+                const auto& s = spawns[idx];
+                static const char* behaviors[] = {
+                    "Stationary", "Patrol", "Wander", "Scripted"
+                };
+                int bIdx = static_cast<int>(s.behavior);
+                if (bIdx < 0 || bIdx > 3) bIdx = 0;
+                if (jsonOut) {
+                    nlohmann::json j;
+                    j["zone"] = zoneDir;
+                    j["kind"] = "creature";
+                    j["index"] = idx;
+                    j["id"] = s.id;
+                    j["name"] = s.name;
+                    j["modelPath"] = s.modelPath;
+                    j["displayId"] = s.displayId;
+                    j["position"] = {s.position.x, s.position.y, s.position.z};
+                    j["orientation"] = s.orientation;
+                    j["level"] = s.level;
+                    j["health"] = s.health;
+                    j["mana"] = s.mana;
+                    j["faction"] = s.faction;
+                    j["scale"] = s.scale;
+                    j["behavior"] = behaviors[bIdx];
+                    j["wanderRadius"] = s.wanderRadius;
+                    j["aggroRadius"] = s.aggroRadius;
+                    j["leashRadius"] = s.leashRadius;
+                    j["respawnTimeMs"] = s.respawnTimeMs;
+                    j["hostile"] = s.hostile;
+                    j["questgiver"] = s.questgiver;
+                    j["vendor"] = s.vendor;
+                    j["trainer"] = s.trainer;
+                    j["patrolPathSize"] = s.patrolPath.size();
+                    std::printf("%s\n", j.dump(2).c_str());
+                    return 0;
+                }
+                std::printf("Creature spawn %d in %s\n", idx, zoneDir.c_str());
+                std::printf("  id            : %u\n", s.id);
+                std::printf("  name          : %s\n", s.name.c_str());
+                std::printf("  modelPath     : %s\n",
+                            s.modelPath.empty() ? "(template)" : s.modelPath.c_str());
+                std::printf("  displayId     : %u\n", s.displayId);
+                std::printf("  position      : (%.2f, %.2f, %.2f)\n",
+                            s.position.x, s.position.y, s.position.z);
+                std::printf("  orientation   : %.1f°\n", s.orientation);
+                std::printf("  level         : %u\n", s.level);
+                std::printf("  health/mana   : %u / %u\n", s.health, s.mana);
+                std::printf("  faction       : %u\n", s.faction);
+                std::printf("  scale         : %.2f\n", s.scale);
+                std::printf("  behavior      : %s\n", behaviors[bIdx]);
+                std::printf("  wander/aggro  : %.1f / %.1f y\n",
+                            s.wanderRadius, s.aggroRadius);
+                std::printf("  leash         : %.1f y\n", s.leashRadius);
+                std::printf("  respawn       : %.0f s\n", s.respawnTimeMs / 1000.0f);
+                std::printf("  flags         : %s%s%s%s\n",
+                            s.hostile ? "hostile " : "",
+                            s.questgiver ? "questgiver " : "",
+                            s.vendor ? "vendor " : "",
+                            s.trainer ? "trainer " : "");
+                std::printf("  patrol path   : %zu waypoint(s)\n",
+                            s.patrolPath.size());
+                return 0;
+            } else if (kind == "object") {
+                wowee::editor::ObjectPlacer placer;
+                if (!placer.loadFromFile(zoneDir + "/objects.json")) {
+                    std::fprintf(stderr,
+                        "info-spawn: %s has no objects.json\n",
+                        zoneDir.c_str());
+                    return 1;
+                }
+                const auto& objs = placer.getObjects();
+                if (idx < 0 || static_cast<size_t>(idx) >= objs.size()) {
+                    std::fprintf(stderr,
+                        "info-spawn: index %d out of range (have %zu)\n",
+                        idx, objs.size());
+                    return 1;
+                }
+                const auto& o = objs[idx];
+                if (jsonOut) {
+                    nlohmann::json j;
+                    j["zone"] = zoneDir;
+                    j["kind"] = "object";
+                    j["index"] = idx;
+                    j["uniqueId"] = o.uniqueId;
+                    j["path"] = o.path;
+                    j["type"] = o.type == wowee::editor::PlaceableType::M2 ? "m2" : "wmo";
+                    j["position"] = {o.position.x, o.position.y, o.position.z};
+                    j["rotation"] = {o.rotation.x, o.rotation.y, o.rotation.z};
+                    j["scale"] = o.scale;
+                    std::printf("%s\n", j.dump(2).c_str());
+                    return 0;
+                }
+                std::printf("Object spawn %d in %s\n", idx, zoneDir.c_str());
+                std::printf("  uniqueId  : %u\n", o.uniqueId);
+                std::printf("  path      : %s\n", o.path.c_str());
+                std::printf("  type      : %s\n",
+                            o.type == wowee::editor::PlaceableType::M2 ? "m2" : "wmo");
+                std::printf("  position  : (%.2f, %.2f, %.2f)\n",
+                            o.position.x, o.position.y, o.position.z);
+                std::printf("  rotation  : (%.2f, %.2f, %.2f) rad\n",
+                            o.rotation.x, o.rotation.y, o.rotation.z);
+                std::printf("  scale     : %.2f\n", o.scale);
+                return 0;
+            }
+            std::fprintf(stderr,
+                "info-spawn: kind must be 'creature' or 'object' (got '%s')\n",
+                kind.c_str());
+            return 1;
         } else if (std::strcmp(argv[i], "--list-project-spawns") == 0 && i + 1 < argc) {
             // Project-wide companion to --list-zone-spawns. Combines
             // creatures + objects across every zone into one big
