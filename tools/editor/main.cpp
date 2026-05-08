@@ -553,6 +553,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Woven fabric pattern with alternating warp/weft threads (default thread=4px)\n");
     std::printf("  --gen-texture-cobble <out.png> <stoneHex> <mortarHex> [stonePx] [seed] [W H]\n");
     std::printf("                         Cobblestone street pattern: irregular packed stones (default stone=24px, seed 1)\n");
+    std::printf("  --gen-texture-marble <out.png> <baseHex> <veinHex> [seed] [veinSharpness] [W H]\n");
+    std::printf("                         Marble pattern with sinusoidal veining (default seed 1, sharpness 8)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -1125,7 +1127,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
         "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
         "--gen-texture-wood", "--gen-texture-grass", "--gen-texture-fabric",
-        "--gen-texture-cobble",
+        "--gen-texture-cobble", "--gen-texture-marble",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -20459,6 +20461,135 @@ int main(int argc, char* argv[]) {
                         stoneHex.c_str(), mortarHex.c_str());
             std::printf("  stone px     : %d\n", stonePx);
             std::printf("  seed         : %u\n", seed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-marble") == 0 && i + 2 < argc) {
+            // Marble pattern via warped sinusoidal veining. The
+            // canonical "marble shader": take a sine wave, warp its
+            // input by smooth multi-octave noise, raise the absolute
+            // value to a high power so the bright vein bands stay
+            // narrow. Result: irregular bright veins on a base color
+            // that tile with octave-driven low-freq variation.
+            std::string outPath = argv[++i];
+            std::string baseHex = argv[++i];
+            std::string veinHex = argv[++i];
+            uint32_t seed = 1;
+            float sharpness = 8.0f;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { sharpness = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                sharpness < 1.0f || sharpness > 64.0f) {
+                std::fprintf(stderr,
+                    "gen-texture-marble: invalid dims (W/H 1..8192, sharpness 1..64)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t br, bg, bb_, vr, vg, vb;
+            if (!parseHex(baseHex, br, bg, bb_)) {
+                std::fprintf(stderr,
+                    "gen-texture-marble: '%s' is not a valid hex color\n",
+                    baseHex.c_str());
+                return 1;
+            }
+            if (!parseHex(veinHex, vr, vg, vb)) {
+                std::fprintf(stderr,
+                    "gen-texture-marble: '%s' is not a valid hex color\n",
+                    veinHex.c_str());
+                return 1;
+            }
+            // Cheap multi-octave noise: 4 sin/cos products at
+            // doubling frequencies, seeded phase per octave. Smooth
+            // and tiles imperfectly but for marble we want some
+            // irregularity anyway.
+            float seedF = static_cast<float>(seed);
+            auto warpNoise = [&](float x, float y) -> float {
+                float n = 0.0f;
+                float freq = 0.02f;
+                float amp = 1.0f;
+                float total = 0.0f;
+                for (int o = 0; o < 4; ++o) {
+                    n += amp * std::sin(x * freq + seedF * (1.0f + o)) *
+                                std::cos(y * freq + seedF * (0.6f + o));
+                    total += amp;
+                    freq *= 2.0f;
+                    amp *= 0.5f;
+                }
+                return n / total;  // -1..1
+            };
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    // Warped sine: vein density is sin(turbulent x).
+                    // High exponent on |sin| concentrates brightness
+                    // into thin bands.
+                    float warp = warpNoise(static_cast<float>(x),
+                                           static_cast<float>(y));
+                    float v = std::sin((x + warp * 80.0f) * 0.07f);
+                    float vein = std::pow(std::abs(v), sharpness);
+                    uint8_t r = static_cast<uint8_t>(br * (1 - vein) + vr * vein);
+                    uint8_t g = static_cast<uint8_t>(bg * (1 - vein) + vg * vein);
+                    uint8_t b = static_cast<uint8_t>(bb_ * (1 - vein) + vb * vein);
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = r;
+                    pixels[i2 + 1] = g;
+                    pixels[i2 + 2] = b;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-marble: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  base/vein : %s / %s\n",
+                        baseHex.c_str(), veinHex.c_str());
+            std::printf("  sharpness : %.1f\n", sharpness);
+            std::printf("  seed      : %u\n", seed);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
