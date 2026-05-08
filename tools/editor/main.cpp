@@ -8674,11 +8674,14 @@ int main(int argc, char* argv[]) {
             // overall result. Designed to be the only command CI needs
             // to run before --pack-wcp.
             //
-            // Sub-checks:
+            // Sub-checks (ordered cheapest→most expensive so a fast
+            // failure surfaces before the slow ones run):
             //   1. validate-project        (per-format integrity)
             //   2. validate-project-open-only (no proprietary leaks)
-            //   3. check-project-refs      (every model/NPC ref resolves)
-            //   4. check-project-content   (sane field values)
+            //   3. validate-project-items  (items.json schema)
+            //   4. check-project-refs      (every model/NPC ref resolves)
+            //   5. check-project-content   (sane field values)
+            //   6. audit-project-spawns    (spawn Z near terrain)
             std::string projectDir = argv[++i];
             namespace fs = std::filesystem;
             if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
@@ -8705,10 +8708,12 @@ int main(int argc, char* argv[]) {
             };
             struct Step { const char* name; const char* flag; int rc; };
             std::vector<Step> steps = {
-                {"format validation       ", "--validate-project",          0},
-                {"open-only release gate  ", "--validate-project-open-only", 0},
-                {"reference integrity     ", "--check-project-refs",         0},
-                {"content field sanity    ", "--check-project-content",      0},
+                {"format validation       ", "--validate-project",            0},
+                {"open-only release gate  ", "--validate-project-open-only",  0},
+                {"items schema            ", "--validate-project-items",      0},
+                {"reference integrity     ", "--check-project-refs",          0},
+                {"content field sanity    ", "--check-project-content",       0},
+                {"spawn placement         ", "--audit-project-spawns",        0},
             };
             int totalFailed = 0;
             std::printf("audit-project: %s\n\n", projectDir.c_str());
