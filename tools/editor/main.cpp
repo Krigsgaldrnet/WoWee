@@ -559,6 +559,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Capsule along Y axis: cylinder body with hemispherical caps (default 0.5/1.0/16/8)\n");
     std::printf("  --gen-mesh-arch <wom-base> [openingWidth] [openingHeight] [thickness] [depth] [segments]\n");
     std::printf("                         Doorway arch: two columns + semicircular top (default 1.0/1.5/0.2/0.3, 12 segs)\n");
+    std::printf("  --gen-mesh-pyramid <wom-base> [sides] [baseRadius] [height]\n");
+    std::printf("                         N-sided polygonal pyramid with apex at +Y (default 4 sides, 1.0/1.0)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
@@ -1043,6 +1045,7 @@ int main(int argc, char* argv[]) {
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
         "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
+        "--gen-mesh-pyramid",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -19151,6 +19154,116 @@ int main(int argc, char* argv[]) {
             std::printf("  bounds     : (%.2f, %.2f, %.2f) - (%.2f, %.2f, %.2f)\n",
                         wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
                         wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-pyramid") == 0 && i + 1 < argc) {
+            // N-sided polygonal pyramid with apex at +Y. 4 sides
+            // gives a square pyramid; 3 gives a tetrahedron-like
+            // shape; 8+ approaches a cone.
+            //
+            // Different from --gen-mesh cone: cone has smooth
+            // round sides with per-vertex radial-ish normals;
+            // pyramid has flat per-face normals on N triangular
+            // sides + a flat polygonal base.
+            std::string womBase = argv[++i];
+            int sides = 4;
+            float baseR = 1.0f;
+            float height = 1.0f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { sides = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { baseR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { height = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (sides < 3 || sides > 256 || baseR <= 0 || height <= 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-pyramid: sides 3..256, baseR > 0, height > 0\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p;
+                vtx.normal = n;
+                vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Build base ring vertices (one per side).
+            std::vector<glm::vec3> basePts;
+            for (int k = 0; k < sides; ++k) {
+                float a = static_cast<float>(k) / sides * 2.0f * pi;
+                basePts.push_back(glm::vec3(baseR * std::cos(a), 0,
+                                              baseR * std::sin(a)));
+            }
+            glm::vec3 apex(0, height, 0);
+            // Side faces: per-face flat normals (cross of two edges).
+            for (int k = 0; k < sides; ++k) {
+                glm::vec3 a = basePts[k];
+                glm::vec3 b = basePts[(k + 1) % sides];
+                glm::vec3 e1 = b - a;
+                glm::vec3 e2 = apex - a;
+                glm::vec3 n = glm::normalize(glm::cross(e1, e2));
+                float u0 = static_cast<float>(k) / sides;
+                float u1 = static_cast<float>(k + 1) / sides;
+                uint32_t i0 = addV(a, n, glm::vec2(u0, 1));
+                uint32_t i1 = addV(b, n, glm::vec2(u1, 1));
+                uint32_t i2 = addV(apex, n, glm::vec2(0.5f * (u0 + u1), 0));
+                wom.indices.push_back(i0);
+                wom.indices.push_back(i1);
+                wom.indices.push_back(i2);
+            }
+            // Base: fan from a center vertex (normal -Y).
+            uint32_t baseCenter = addV(glm::vec3(0, 0, 0),
+                                         glm::vec3(0, -1, 0),
+                                         glm::vec2(0.5f, 0.5f));
+            uint32_t baseRingStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int k = 0; k < sides; ++k) {
+                float a = static_cast<float>(k) / sides * 2.0f * pi;
+                addV(basePts[k], glm::vec3(0, -1, 0),
+                       glm::vec2(0.5f + 0.5f * std::cos(a),
+                                  0.5f - 0.5f * std::sin(a)));
+            }
+            for (int k = 0; k < sides; ++k) {
+                wom.indices.push_back(baseCenter);
+                wom.indices.push_back(baseRingStart + (k + 1) % sides);
+                wom.indices.push_back(baseRingStart + k);
+            }
+            wom.boundMin = glm::vec3(-baseR, 0, -baseR);
+            wom.boundMax = glm::vec3( baseR, height, baseR);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-pyramid: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  sides     : %d\n", sides);
+            std::printf("  base R    : %.3f\n", baseR);
+            std::printf("  height    : %.3f\n", height);
+            std::printf("  vertices  : %zu (%d side tris × 3 + 1 base center + %d base ring)\n",
+                        wom.vertices.size(), sides, sides);
+            std::printf("  triangles : %zu (%d sides + %d base)\n",
+                        wom.indices.size() / 3, sides, sides);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
