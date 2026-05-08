@@ -627,6 +627,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Run both texture-pack + mesh-pack in one pass — full open-format bootstrap\n");
     std::printf("  --gen-project-starter-pack <projectDir> [--seed N]\n");
     std::printf("                         Run starter-pack + audio-pack across every zone — full project-scope bootstrap\n");
+    std::printf("  --info-zone-summary <zoneDir> [--json]\n");
+    std::printf("                         One-glance health digest for a zone: pack counts/bytes + audit pass/fail\n");
     std::printf("  --validate-zone-pack <zoneDir> [--json]\n");
     std::printf("                         Audit a zone's open-format asset pack: textures/meshes/audio counts + WOM validity\n");
     std::printf("  --validate-project-packs <projectDir>\n");
@@ -1147,7 +1149,8 @@ int main(int argc, char* argv[]) {
         "--gen-zone-mesh-pack", "--gen-zone-starter-pack",
         "--gen-project-starter-pack", "--gen-audio-tone",
         "--gen-audio-noise", "--gen-audio-sweep", "--gen-zone-audio-pack",
-        "--validate-zone-pack", "--validate-project-packs", "--info-spawn",
+        "--info-zone-summary", "--validate-zone-pack",
+        "--validate-project-packs", "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -15055,6 +15058,87 @@ int main(int argc, char* argv[]) {
             std::printf("gen-zone-audio-pack: wrote %d of %zu sounds to %s\n",
                         written, jobs.size(), audioDir.string().c_str());
             return written == static_cast<int>(jobs.size()) ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--info-zone-summary") == 0 && i + 1 < argc) {
+            // One-glance health digest for a zone. Combines the per-
+            // category counts/bytes from the inventory commands with
+            // a quick pass/fail signal from validate-zone-pack. Lets
+            // a user see at a glance whether a zone is bootstrapped,
+            // empty, or partially populated.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "info-zone-summary: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            // Load zone.json for the friendly map name.
+            std::string mapName = "?";
+            try {
+                std::ifstream zf(zoneDir + "/zone.json");
+                if (zf) {
+                    nlohmann::json zj;
+                    zf >> zj;
+                    if (zj.contains("mapName") && zj["mapName"].is_string()) {
+                        mapName = zj["mapName"].get<std::string>();
+                    }
+                }
+            } catch (...) { /* tolerated — leave as ? */ }
+            // Per-category quick scan: count + bytes only.
+            auto scan = [&](const std::string& sub, const std::string& ext)
+                -> std::pair<int, uint64_t> {
+                int n = 0;
+                uint64_t b = 0;
+                fs::path p = fs::path(zoneDir) / sub;
+                if (!fs::exists(p)) return {0, 0};
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(p, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ext) continue;
+                    n++;
+                    b += e.file_size();
+                }
+                return {n, b};
+            };
+            auto [texN, texB] = scan("textures", ".png");
+            auto [mshN, mshB] = scan("meshes", ".wom");
+            auto [audN, audB] = scan("audio", ".wav");
+            // Pack health: bootstrap pass if we have all three
+            // categories with at least 1 file each. "Partial" if
+            // some but not all. "Empty" if none.
+            std::string status;
+            if (texN > 0 && mshN > 0 && audN > 0) status = "BOOTSTRAPPED";
+            else if (texN + mshN + audN > 0) status = "PARTIAL";
+            else status = "EMPTY";
+            uint64_t totalBytes = texB + mshB + audB;
+            int totalAssets = texN + mshN + audN;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["mapName"] = mapName;
+                j["status"] = status;
+                j["totalAssets"] = totalAssets;
+                j["totalBytes"] = totalBytes;
+                j["textures"] = {{"count", texN}, {"bytes", texB}};
+                j["meshes"]   = {{"count", mshN}, {"bytes", mshB}};
+                j["audio"]    = {{"count", audN}, {"bytes", audB}};
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone: %s (%s)\n", mapName.c_str(), zoneDir.c_str());
+            std::printf("  status   : %s\n", status.c_str());
+            std::printf("  textures : %d (%llu bytes)\n",
+                        texN, static_cast<unsigned long long>(texB));
+            std::printf("  meshes   : %d (%llu bytes)\n",
+                        mshN, static_cast<unsigned long long>(mshB));
+            std::printf("  audio    : %d (%llu bytes)\n",
+                        audN, static_cast<unsigned long long>(audB));
+            std::printf("  TOTAL    : %d assets, %llu bytes\n",
+                        totalAssets,
+                        static_cast<unsigned long long>(totalBytes));
+            return 0;
         } else if (std::strcmp(argv[i], "--validate-zone-pack") == 0 && i + 1 < argc) {
             // Audit a zone's open-format asset pack. Reports counts
             // and total bytes per category (textures/, meshes/,
