@@ -549,6 +549,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
     std::printf("  --gen-mesh-grid <wom-base> <subdivisions> [size]\n");
     std::printf("                         Subdivided flat plane on XY (NxN cells, 2N² triangles); useful for LOD demos\n");
+    std::printf("  --gen-mesh-disc <wom-base> [radius] [segments]\n");
+    std::printf("                         Flat circular disc on XY centered at origin (default radius 1.0, 32 segments)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
@@ -1022,7 +1024,8 @@ int main(int argc, char* argv[]) {
         "--bench-migrate-data-tree", "--list-data-tree-largest",
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
-        "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-texture-gradient",
+        "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
+        "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
@@ -18243,6 +18246,83 @@ int main(int argc, char* argv[]) {
             std::printf("  size         : %.3f\n", size);
             std::printf("  vertices     : %zu = (N+1)²\n", wom.vertices.size());
             std::printf("  triangles    : %zu = 2N²\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-disc") == 0 && i + 1 < argc) {
+            // Flat circular disc on XY centered at origin. Center
+            // vertex + ring of <segments> verts, indexed as a fan.
+            // Useful for magic circles, coin meshes, lily pads, top
+            // caps for cylinders the user wants without making a
+            // full cylinder.
+            std::string womBase = argv[++i];
+            float radius = 1.0f;
+            int segments = 32;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { radius = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { segments = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (radius <= 0.0f || segments < 3 || segments > 1024) {
+                std::fprintf(stderr,
+                    "gen-mesh-disc: radius must be positive, segments 3..1024\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // Center vertex.
+            {
+                wowee::pipeline::WoweeModel::Vertex v;
+                v.position = glm::vec3(0, 0, 0);
+                v.normal = glm::vec3(0, 0, 1);
+                v.texCoord = glm::vec2(0.5f, 0.5f);
+                wom.vertices.push_back(v);
+            }
+            // Ring vertices (one extra at end so UV-seam isn't shared).
+            for (int k = 0; k <= segments; ++k) {
+                float t = static_cast<float>(k) / segments;
+                float ang = t * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                wowee::pipeline::WoweeModel::Vertex v;
+                v.position = glm::vec3(radius * ca, radius * sa, 0);
+                v.normal = glm::vec3(0, 0, 1);
+                v.texCoord = glm::vec2(0.5f + 0.5f * ca, 0.5f + 0.5f * sa);
+                wom.vertices.push_back(v);
+            }
+            // Fan indices.
+            for (int k = 0; k < segments; ++k) {
+                wom.indices.push_back(0);
+                wom.indices.push_back(1 + k);
+                wom.indices.push_back(2 + k);
+            }
+            wom.boundMin = glm::vec3(-radius, -radius, 0);
+            wom.boundMax = glm::vec3( radius,  radius, 0);
+            wom.boundRadius = radius;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-disc: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  radius    : %.3f\n", radius);
+            std::printf("  segments  : %d\n", segments);
+            std::printf("  vertices  : %zu (1 center + %d ring)\n",
+                        wom.vertices.size(), segments + 1);
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
