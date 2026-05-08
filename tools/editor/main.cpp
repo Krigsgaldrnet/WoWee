@@ -907,6 +907,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Aggregate texture refs across every WOM in a project (deduped, with zone breakdown)\n");
     std::printf("  --list-zone-meshes <zoneDir> [--json]\n");
     std::printf("                         List every WOM in <zoneDir> with vert/tri/bone/anim/batch counts and file size\n");
+    std::printf("  --list-zone-audio <zoneDir> [--json]\n");
+    std::printf("                         List every WAV under <zoneDir>/audio/ with format/duration/sample-rate/size\n");
     std::printf("  --list-zone-textures <zoneDir> [--json]\n");
     std::printf("                         Aggregate texture refs across all WOM models in a zone (deduped)\n");
     std::printf("  --info-zone-models-total <zoneDir> [--json]\n");
@@ -1047,7 +1049,7 @@ int main(int argc, char* argv[]) {
         "--data", "--info", "--info-batches", "--info-textures", "--info-doodads",
         "--info-attachments", "--info-particles", "--info-sequences",
         "--info-bones", "--export-bones-dot",
-        "--list-zone-meshes", "--list-zone-textures",
+        "--list-zone-meshes", "--list-zone-audio", "--list-zone-textures",
         "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
         "--list-zone-meshes", "--list-project-meshes", "--info-mesh",
@@ -1949,6 +1951,137 @@ int main(int argc, char* argv[]) {
                             r.verts, r.tris,
                             r.bones, r.anims, r.batches, r.textures,
                             r.path.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-zone-audio") == 0 && i + 1 < argc) {
+            // Inventory every WAV under <zoneDir>/audio/ with quick
+            // stats parsed straight from the RIFF/WAVE header:
+            // sample rate, channel count, bits per sample, duration.
+            // Companion to --list-zone-meshes / --list-zone-textures
+            // — completes the per-zone asset accounting trio.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "list-zone-audio: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            struct Row {
+                std::string path;
+                uint64_t bytes = 0;
+                uint32_t sampleRate = 0;
+                uint16_t channels = 0;
+                uint16_t bitsPerSample = 0;
+                float duration = 0.0f;
+                bool valid = false;
+            };
+            std::vector<Row> rows;
+            std::error_code ec;
+            // Limit the search to <zoneDir>/audio/ (matches the
+            // gen-zone-audio-pack output convention) so we don't
+            // walk the entire zone tree looking for stray WAVs.
+            fs::path audioDir = fs::path(zoneDir) / "audio";
+            if (!fs::exists(audioDir)) {
+                std::printf("Zone audio: %s\n", zoneDir.c_str());
+                std::printf("  *no audio/ subdirectory*\n");
+                return 0;
+            }
+            for (const auto& e : fs::recursive_directory_iterator(audioDir, ec)) {
+                if (!e.is_regular_file()) continue;
+                if (e.path().extension() != ".wav") continue;
+                Row r;
+                r.path = fs::relative(e.path(), zoneDir).string();
+                r.bytes = static_cast<uint64_t>(e.file_size());
+                FILE* f = std::fopen(e.path().c_str(), "rb");
+                if (f) {
+                    // RIFF header: 12 bytes (RIFF + size + WAVE).
+                    // fmt chunk follows: "fmt " + 16 + format(2) +
+                    // channels(2) + sampleRate(4) + byteRate(4) +
+                    // blockAlign(2) + bitsPerSample(2). We only
+                    // peek the 4-byte fields we care about.
+                    char hdr[44];
+                    if (std::fread(hdr, 1, 44, f) == 44 &&
+                        std::memcmp(hdr, "RIFF", 4) == 0 &&
+                        std::memcmp(hdr + 8, "WAVE", 4) == 0 &&
+                        std::memcmp(hdr + 12, "fmt ", 4) == 0) {
+                        std::memcpy(&r.channels, hdr + 22, 2);
+                        std::memcpy(&r.sampleRate, hdr + 24, 4);
+                        std::memcpy(&r.bitsPerSample, hdr + 34, 2);
+                        uint32_t dataBytes = 0;
+                        std::memcpy(&dataBytes, hdr + 40, 4);
+                        if (r.sampleRate > 0 && r.channels > 0 && r.bitsPerSample > 0) {
+                            uint32_t bytesPerSample =
+                                static_cast<uint32_t>(r.channels) *
+                                (r.bitsPerSample / 8);
+                            if (bytesPerSample > 0) {
+                                r.duration =
+                                    static_cast<float>(dataBytes) /
+                                    (r.sampleRate * bytesPerSample);
+                            }
+                            r.valid = true;
+                        }
+                    }
+                    std::fclose(f);
+                }
+                rows.push_back(std::move(r));
+            }
+            std::sort(rows.begin(), rows.end(),
+                      [](const Row& a, const Row& b) { return a.path < b.path; });
+            uint64_t totalBytes = 0;
+            float totalDuration = 0.0f;
+            for (const auto& r : rows) {
+                totalBytes += r.bytes;
+                totalDuration += r.duration;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["wavCount"] = rows.size();
+                j["totalBytes"] = totalBytes;
+                j["totalDuration"] = totalDuration;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({
+                        {"path", r.path},
+                        {"bytes", r.bytes},
+                        {"sampleRate", r.sampleRate},
+                        {"channels", r.channels},
+                        {"bitsPerSample", r.bitsPerSample},
+                        {"duration", r.duration},
+                        {"valid", r.valid},
+                    });
+                }
+                j["audio"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone audio: %s\n", zoneDir.c_str());
+            std::printf("  WAVs           : %zu\n", rows.size());
+            std::printf("  total bytes    : %llu\n",
+                        static_cast<unsigned long long>(totalBytes));
+            std::printf("  total duration : %.2f sec\n", totalDuration);
+            if (rows.empty()) {
+                std::printf("  *no .wav files found in audio/*\n");
+                return 0;
+            }
+            std::printf("\n  %8s %6s %4s %4s %7s  %s\n",
+                        "bytes", "rate", "ch", "bit", "sec", "path");
+            for (const auto& r : rows) {
+                if (r.valid) {
+                    std::printf("  %8llu %6u %4u %4u %7.2f  %s\n",
+                                static_cast<unsigned long long>(r.bytes),
+                                r.sampleRate,
+                                static_cast<unsigned>(r.channels),
+                                static_cast<unsigned>(r.bitsPerSample),
+                                r.duration, r.path.c_str());
+                } else {
+                    std::printf("  %8llu  ?      ?    ?       ?  %s (invalid header)\n",
+                                static_cast<unsigned long long>(r.bytes),
+                                r.path.c_str());
+                }
             }
             return 0;
         } else if (std::strcmp(argv[i], "--list-zone-textures") == 0 && i + 1 < argc) {
