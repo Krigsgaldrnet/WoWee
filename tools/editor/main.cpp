@@ -915,6 +915,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         One-line compact zone summary (tiles, biome, counts, audio status)\n");
     std::printf("  --info-project-overview <projectDir> [--json]\n");
     std::printf("                         One-line summary per zone in a project (single-page health check)\n");
+    std::printf("  --copy-project <fromDir> <toDir>\n");
+    std::printf("                         Recursively copy a project tree (every zone subdir + manifests)\n");
     std::printf("  --info-creatures <p> [--json]\n");
     std::printf("                         Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-creatures-by-faction <p> [--json]\n");
@@ -1019,7 +1021,7 @@ int main(int argc, char* argv[]) {
         "--info-pack-tree",
         "--info-m2", "--info-wmo", "--info-adt",
         "--info-zone", "--info-zone-overview", "--info-project-overview",
-        "--info-wcp", "--list-wcp",
+        "--copy-project", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
         "--list-quest-objectives", "--list-quest-rewards",
         "--info-creature", "--info-quest", "--info-object",
@@ -3820,6 +3822,53 @@ int main(int argc, char* argv[]) {
                             r.tiles, r.creatures, r.objects, r.quests, r.items,
                             r.hasAudio ? "yes" : "no");
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--copy-project") == 0 && i + 2 < argc) {
+            // Recursively copy an entire project tree. Refuses to
+            // overwrite an existing destination so a typo doesn't
+            // silently merge into the wrong project.
+            std::string fromDir = argv[++i];
+            std::string toDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(fromDir) || !fs::is_directory(fromDir)) {
+                std::fprintf(stderr,
+                    "copy-project: %s is not a directory\n", fromDir.c_str());
+                return 1;
+            }
+            if (fs::exists(toDir)) {
+                std::fprintf(stderr,
+                    "copy-project: destination %s already exists "
+                    "(delete it first if intentional)\n", toDir.c_str());
+                return 1;
+            }
+            std::error_code ec;
+            fs::copy(fromDir, toDir,
+                      fs::copy_options::recursive | fs::copy_options::copy_symlinks,
+                      ec);
+            if (ec) {
+                std::fprintf(stderr,
+                    "copy-project: copy failed (%s)\n", ec.message().c_str());
+                return 1;
+            }
+            // Count what was copied for the report.
+            int zoneCount = 0, fileCount = 0;
+            uint64_t totalBytes = 0;
+            for (const auto& entry : fs::directory_iterator(toDir, ec)) {
+                if (entry.is_directory() &&
+                    fs::exists(entry.path() / "zone.json")) zoneCount++;
+            }
+            for (const auto& e : fs::recursive_directory_iterator(toDir, ec)) {
+                if (e.is_regular_file()) {
+                    fileCount++;
+                    totalBytes += e.file_size(ec);
+                }
+            }
+            std::printf("Copied %s -> %s\n", fromDir.c_str(), toDir.c_str());
+            std::printf("  zones        : %d\n", zoneCount);
+            std::printf("  files        : %d\n", fileCount);
+            std::printf("  total bytes  : %llu (%.1f MB)\n",
+                        static_cast<unsigned long long>(totalBytes),
+                        totalBytes / (1024.0 * 1024.0));
             return 0;
         } else if (std::strcmp(argv[i], "--info-creatures") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
