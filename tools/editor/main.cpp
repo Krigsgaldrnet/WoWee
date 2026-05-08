@@ -553,6 +553,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Flat circular disc on XY centered at origin (default radius 1.0, 32 segments)\n");
     std::printf("  --gen-mesh-tube <wom-base> [outerRadius] [innerRadius] [height] [segments]\n");
     std::printf("                         Hollow cylinder/pipe along Y axis (default 1.0/0.7/2.0, 24 segments)\n");
+    std::printf("  --gen-mesh-capsule <wom-base> [radius] [cylHeight] [segments] [stacks]\n");
+    std::printf("                         Capsule along Y axis: cylinder body with hemispherical caps (default 0.5/1.0/16/8)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
@@ -1029,7 +1031,7 @@ int main(int argc, char* argv[]) {
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
-        "--gen-mesh-tube",
+        "--gen-mesh-tube", "--gen-mesh-capsule",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -18503,6 +18505,163 @@ int main(int argc, char* argv[]) {
             std::printf("  segments  : %d\n", segments);
             std::printf("  vertices  : %zu\n", wom.vertices.size());
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-capsule") == 0 && i + 1 < argc) {
+            // Capsule along the Y axis: cylindrical body of length
+            // cylHeight bookended by two hemispheres of radius. Total
+            // height is cylHeight + 2*radius. Useful for character
+            // collision shells, pill-shaped buttons, hot-dog props,
+            // and physics-friendly placeholders.
+            std::string womBase = argv[++i];
+            float radius = 0.5f;
+            float cylHeight = 1.0f;
+            int segments = 16;
+            int stacks = 8;  // per hemisphere
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { radius = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { cylHeight = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { segments = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { stacks = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (radius <= 0 || cylHeight < 0 ||
+                segments < 3 || segments > 1024 ||
+                stacks < 1 || stacks > 256) {
+                std::fprintf(stderr,
+                    "gen-mesh-capsule: radius > 0, cylHeight >= 0, segments 3..1024, stacks 1..256\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            float halfBody = cylHeight * 0.5f;
+            float totalH = cylHeight + 2.0f * radius;
+            auto addV = [&](float x, float y, float z,
+                              float nx, float ny, float nz,
+                              float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = glm::vec3(x, y, z);
+                vtx.normal = glm::vec3(nx, ny, nz);
+                vtx.texCoord = glm::vec2(u, v);
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Top hemisphere: stacks rings from north pole down to
+            // body top. Vertex layout per ring: (segments+1) verts.
+            const float pi = 3.14159265358979f;
+            int totalVPerRing = segments + 1;
+            // Top hemisphere rings: stacks+1 rings (ring 0 is the
+            // pole). v texcoord goes 0..0.25 across the cap.
+            for (int st = 0; st <= stacks; ++st) {
+                float t = static_cast<float>(st) / stacks;
+                float phi = t * (pi * 0.5f);  // 0 at pole, π/2 at body
+                float sphi = std::sin(phi), cphi = std::cos(phi);
+                float ringR = radius * sphi;
+                float ringY = halfBody + radius * cphi;
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * pi;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    addV(ringR * ca, ringY, ringR * sa,
+                          sphi * ca, cphi, sphi * sa,
+                          u, t * 0.25f);
+                }
+            }
+            // Body: 2 rings (top and bottom of cylinder), normal
+            // radial (no Y component). UV goes 0.25..0.75.
+            int bodyTopRingStart = static_cast<int>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * pi;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(radius * ca, halfBody, radius * sa, ca, 0, sa, u, 0.25f);
+            }
+            int bodyBotRingStart = static_cast<int>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * pi;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(radius * ca, -halfBody, radius * sa, ca, 0, sa, u, 0.75f);
+            }
+            // Bottom hemisphere: mirror of top.
+            int botHemiStart = static_cast<int>(wom.vertices.size());
+            for (int st = 0; st <= stacks; ++st) {
+                float t = static_cast<float>(st) / stacks;
+                float phi = t * (pi * 0.5f);
+                float sphi = std::sin(phi), cphi = std::cos(phi);
+                float ringR = radius * cphi;
+                float ringY = -halfBody - radius * sphi;
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * pi;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    addV(ringR * ca, ringY, ringR * sa,
+                          cphi * ca, -sphi, cphi * sa,
+                          u, 0.75f + t * 0.25f);
+                }
+            }
+            // Index the rings: top hemi (stacks rings → stacks-1
+            // bands), body (1 band), bottom hemi (stacks bands).
+            auto stitch = [&](int topRingStart, int botRingStart) {
+                for (int sg = 0; sg < segments; ++sg) {
+                    uint32_t a = topRingStart + sg;
+                    uint32_t b = a + 1;
+                    uint32_t c = botRingStart + sg;
+                    uint32_t d = c + 1;
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+            };
+            // Top hemisphere bands.
+            for (int st = 0; st < stacks; ++st) {
+                stitch(st * totalVPerRing, (st + 1) * totalVPerRing);
+            }
+            // Body band: between bodyTopRingStart and bodyBotRingStart.
+            stitch(bodyTopRingStart, bodyBotRingStart);
+            // Bottom hemisphere bands.
+            for (int st = 0; st < stacks; ++st) {
+                stitch(botHemiStart + st * totalVPerRing,
+                        botHemiStart + (st + 1) * totalVPerRing);
+            }
+            wom.boundMin = glm::vec3(-radius, -totalH * 0.5f, -radius);
+            wom.boundMax = glm::vec3( radius,  totalH * 0.5f,  radius);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-capsule: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  radius     : %.3f\n", radius);
+            std::printf("  cylHeight  : %.3f\n", cylHeight);
+            std::printf("  total H    : %.3f\n", totalH);
+            std::printf("  segments   : %d\n", segments);
+            std::printf("  stacks     : %d (per hemisphere)\n", stacks);
+            std::printf("  vertices   : %zu\n", wom.vertices.size());
+            std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
