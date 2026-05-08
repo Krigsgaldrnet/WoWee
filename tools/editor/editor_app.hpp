@@ -207,6 +207,9 @@ private:
     // reads this so subsequent generations honor the active biome instead of
     // reapplying the same hardcoded heightband textures every time.
     Biome activeBiome_ = Biome::Grassland;
+public:
+    Biome getActiveBiome() const { return activeBiome_; }
+private:
 
     // "Click on terrain to place crater" mode. The Crater button arms this
     // with the user's chosen radius/depth/rim; the next left-click on

@@ -3119,8 +3119,9 @@ void EditorUI::renderStatusBar(EditorApp& app) {
         if (app.hasTerrainLoaded()) {
             bool dirty = app.getTerrainEditor().hasUnsavedChanges() ||
                          app.hasUnsavedNonTerrainChanges();
-            ImGui::Text("[%s] %s [%d,%d]%s", m, app.getLoadedMap().c_str(),
+            ImGui::Text("[%s] %s [%d,%d] %s%s", m, app.getLoadedMap().c_str(),
                         app.getLoadedTileX(), app.getLoadedTileY(),
+                        getBiomeName(app.getActiveBiome()),
                         dirty ? " *" : "");
             ImGui::SameLine(vp->Size.x * 0.35f);
             ImGui::Text("Obj:%zu NPC:%zu Q:%zu",
