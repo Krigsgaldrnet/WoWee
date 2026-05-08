@@ -631,6 +631,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Run starter-pack + audio-pack across every zone — full project-scope bootstrap\n");
     std::printf("  --info-zone-summary <zoneDir> [--json]\n");
     std::printf("                         One-glance health digest for a zone: pack counts/bytes + audit pass/fail\n");
+    std::printf("  --info-project-summary <projectDir> [--json]\n");
+    std::printf("                         One-glance status table per zone in a project (BOOTSTRAPPED/PARTIAL/EMPTY)\n");
     std::printf("  --validate-zone-pack <zoneDir> [--json]\n");
     std::printf("                         Audit a zone's open-format asset pack: textures/meshes/audio counts + WOM validity\n");
     std::printf("  --validate-project-packs <projectDir>\n");
@@ -1151,8 +1153,8 @@ int main(int argc, char* argv[]) {
         "--gen-zone-mesh-pack", "--gen-zone-starter-pack",
         "--gen-project-starter-pack", "--gen-audio-tone",
         "--gen-audio-noise", "--gen-audio-sweep", "--gen-zone-audio-pack",
-        "--info-zone-summary", "--validate-zone-pack",
-        "--validate-project-packs", "--info-spawn",
+        "--info-zone-summary", "--info-project-summary",
+        "--validate-zone-pack", "--validate-project-packs", "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -15140,6 +15142,126 @@ int main(int argc, char* argv[]) {
             std::printf("  TOTAL    : %d assets, %llu bytes\n",
                         totalAssets,
                         static_cast<unsigned long long>(totalBytes));
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-summary") == 0 && i + 1 < argc) {
+            // Project-wide companion to --info-zone-summary. Walks
+            // every zone in <projectDir> and reports a per-zone
+            // status row + per-category counts, plus a project
+            // total at the bottom. Status: BOOTSTRAPPED (all 3
+            // categories non-empty), PARTIAL (some), EMPTY (none).
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-summary: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Same per-category scan logic as info-zone-summary —
+            // duplicated rather than abstracted because the two
+            // commands are read in different contexts and a shared
+            // helper would entrench an internal API for one caller.
+            auto scan = [](const std::string& base, const std::string& sub,
+                           const std::string& ext) -> std::pair<int, uint64_t> {
+                int n = 0;
+                uint64_t b = 0;
+                fs::path p = fs::path(base) / sub;
+                if (!fs::exists(p)) return {0, 0};
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(p, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ext) continue;
+                    n++;
+                    b += e.file_size();
+                }
+                return {n, b};
+            };
+            struct ZRow {
+                std::string name;
+                std::string status;
+                int texN = 0, mshN = 0, audN = 0;
+                uint64_t bytes = 0;
+            };
+            std::vector<ZRow> rows;
+            int bootstrapped = 0, partial = 0, empty = 0;
+            uint64_t totalBytes = 0;
+            int totalAssets = 0;
+            for (const auto& z : zones) {
+                ZRow r;
+                r.name = fs::path(z).filename().string();
+                auto [tn, tb] = scan(z, "textures", ".png");
+                auto [mn, mb] = scan(z, "meshes", ".wom");
+                auto [an, ab] = scan(z, "audio", ".wav");
+                r.texN = tn; r.mshN = mn; r.audN = an;
+                r.bytes = tb + mb + ab;
+                if (tn > 0 && mn > 0 && an > 0) {
+                    r.status = "BOOTSTRAPPED";
+                    ++bootstrapped;
+                } else if (tn + mn + an > 0) {
+                    r.status = "PARTIAL";
+                    ++partial;
+                } else {
+                    r.status = "EMPTY";
+                    ++empty;
+                }
+                totalBytes += r.bytes;
+                totalAssets += tn + mn + an;
+                rows.push_back(std::move(r));
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = rows.size();
+                j["bootstrapped"] = bootstrapped;
+                j["partial"] = partial;
+                j["empty"] = empty;
+                j["totalAssets"] = totalAssets;
+                j["totalBytes"] = totalBytes;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({
+                        {"zone", r.name},
+                        {"status", r.status},
+                        {"textures", r.texN},
+                        {"meshes", r.mshN},
+                        {"audio", r.audN},
+                        {"bytes", r.bytes},
+                    });
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu\n", rows.size());
+            std::printf("  bootstrapped : %d\n", bootstrapped);
+            std::printf("  partial      : %d\n", partial);
+            std::printf("  empty        : %d\n", empty);
+            std::printf("  total assets : %d\n", totalAssets);
+            std::printf("  total bytes  : %llu\n",
+                        static_cast<unsigned long long>(totalBytes));
+            if (rows.empty()) {
+                std::printf("  *no zones found*\n");
+                return 0;
+            }
+            std::printf("\n  %-14s %4s %4s %4s %10s  %s\n",
+                        "status", "tex", "msh", "aud", "bytes", "zone");
+            for (const auto& r : rows) {
+                std::printf("  %-14s %4d %4d %4d %10llu  %s\n",
+                            r.status.c_str(), r.texN, r.mshN, r.audN,
+                            static_cast<unsigned long long>(r.bytes),
+                            r.name.c_str());
+            }
             return 0;
         } else if (std::strcmp(argv[i], "--validate-zone-pack") == 0 && i + 1 < argc) {
             // Audit a zone's open-format asset pack. Reports counts
