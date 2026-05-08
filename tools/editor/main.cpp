@@ -535,14 +535,28 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a radial gradient PNG (center→edge, smooth distance-based blend)\n");
     std::printf("  --gen-texture-stripes <out.png> <colorAHex> <colorBHex> [stripePx] [diagonal|horizontal|vertical] [W H]\n");
     std::printf("                         Synthesize a two-color stripe pattern (default 16px diagonal, 256x256)\n");
+    std::printf("  --gen-texture-dots <out.png> <bgHex> <dotHex> [dotRadius] [spacing] [W H]\n");
+    std::printf("                         Synthesize a polka-dot pattern (default radius 8, spacing 32, 256x256)\n");
+    std::printf("  --gen-texture-rings <out.png> <colorAHex> <colorBHex> [ringPx] [W H]\n");
+    std::printf("                         Synthesize concentric ring pattern (target/seal style; default 16px rings, 256x256)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
-    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone> [size]\n");
+    std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
     std::printf("                         Synthesize a procedural WOM primitive with proper normals, UVs, and bounds\n");
-    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder|torus|cone> <colorHex|pattern> [size]\n");
+    std::printf("  --gen-mesh-textured <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> <colorHex|pattern> [size]\n");
     std::printf("                         Compose a procedural mesh + matching PNG texture wired into the WOM's batch\n");
     std::printf("  --gen-mesh-stairs <wom-base> <steps> [stepHeight] [stepDepth] [width]\n");
     std::printf("                         Procedural straight staircase along +X with N steps (default 5 / 0.2 / 0.3 / 1.0)\n");
+    std::printf("  --gen-mesh-grid <wom-base> <subdivisions> [size]\n");
+    std::printf("                         Subdivided flat plane on XY (NxN cells, 2N² triangles); useful for LOD demos\n");
+    std::printf("  --gen-mesh-disc <wom-base> [radius] [segments]\n");
+    std::printf("                         Flat circular disc on XY centered at origin (default radius 1.0, 32 segments)\n");
+    std::printf("  --gen-mesh-tube <wom-base> [outerRadius] [innerRadius] [height] [segments]\n");
+    std::printf("                         Hollow cylinder/pipe along Y axis (default 1.0/0.7/2.0, 24 segments)\n");
+    std::printf("  --gen-mesh-capsule <wom-base> [radius] [cylHeight] [segments] [stacks]\n");
+    std::printf("                         Capsule along Y axis: cylinder body with hemispherical caps (default 0.5/1.0/16/8)\n");
+    std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
+    std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
     std::printf("                         Convert a grayscale PNG into a heightmap mesh (W×H verts, 2(W-1)(H-1) tris)\n");
     std::printf("  --export-mesh-heightmap <wom-base> <out.png> <W> <H>\n");
@@ -573,8 +587,28 @@ static void printUsage(const char* argv0) {
     std::printf("                         Add random creatures/objects to a zone (seeded for reproducibility)\n");
     std::printf("  --random-populate-items <zoneDir> [--seed N] [--count N] [--max-quality Q]\n");
     std::printf("                         Generate random items.json entries (seeded; quality cap defaults to epic=4)\n");
+    std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
+    std::printf("                         End-to-end: scaffold-zone + random-populate-zone + random-populate-items\n");
+    std::printf("  --gen-random-project <count> [--prefix N] [--seed N] [--creatures N] [--objects N] [--items N]\n");
+    std::printf("                         Generate <count> random zones at once (names like Zone1, Zone2...; tile coords step)\n");
     std::printf("  --info-zone-audio <zoneDir> [--json]\n");
     std::printf("                         Print zone audio config (music + ambience tracks, volumes)\n");
+    std::printf("  --info-project-audio <projectDir> [--json]\n");
+    std::printf("                         Audio config table across every zone (which zones have music/ambience set)\n");
+    std::printf("  --snap-zone-to-ground <zoneDir>\n");
+    std::printf("                         Re-snap every creature/object in a zone to actual terrain height\n");
+    std::printf("  --audit-zone-spawns <zoneDir> [--threshold yards]\n");
+    std::printf("                         List spawns whose Z is more than <threshold> yards off from the terrain (default 5)\n");
+    std::printf("  --list-zone-spawns <zoneDir> [--json]\n");
+    std::printf("                         Combined creature+object listing for a zone (kind, name, position, key fields)\n");
+    std::printf("  --info-spawn <zoneDir> <creature|object> <index> [--json]\n");
+    std::printf("                         Detailed view of a single creature/object spawn by index\n");
+    std::printf("  --list-project-spawns <projectDir> [--json]\n");
+    std::printf("                         Combined creature+object listing across every zone (zone column added)\n");
+    std::printf("  --audit-project-spawns <projectDir> [--threshold yards]\n");
+    std::printf("                         Run --audit-zone-spawns across every zone (per-zone summary + total)\n");
+    std::printf("  --snap-project-to-ground <projectDir>\n");
+    std::printf("                         Run --snap-zone-to-ground across every zone (per-zone summary + totals)\n");
     std::printf("  --list-items <zoneDir> [--json]\n");
     std::printf("                         Print every item in <zoneDir>/items.json with quality colors and key fields\n");
     std::printf("  --export-zone-items-md <zoneDir> [out.md]\n");
@@ -877,6 +911,12 @@ static void printUsage(const char* argv0) {
     std::printf("                         List proprietary files lacking open-format sidecars (one per line)\n");
     std::printf("  --info-zone <dir|json> [--json]\n");
     std::printf("                         Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
+    std::printf("  --info-zone-overview <zoneDir> [--json]\n");
+    std::printf("                         One-line compact zone summary (tiles, biome, counts, audio status)\n");
+    std::printf("  --info-project-overview <projectDir> [--json]\n");
+    std::printf("                         One-line summary per zone in a project (single-page health check)\n");
+    std::printf("  --copy-project <fromDir> <toDir>\n");
+    std::printf("                         Recursively copy a project tree (every zone subdir + manifests)\n");
     std::printf("  --info-creatures <p> [--json]\n");
     std::printf("                         Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-creatures-by-faction <p> [--json]\n");
@@ -945,6 +985,8 @@ static void printUsage(const char* argv0) {
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
     std::printf("  --info-cli-stats [--json]\n");
     std::printf("                         Meta-stats on the CLI surface (command count by category prefix)\n");
+    std::printf("  --info-cli-categories\n");
+    std::printf("                         Group every --flag by verb prefix (gen/info/list/...) for discovery\n");
     std::printf("  --info-cli-help <pattern>\n");
     std::printf("                         Substring-search the help text and print matching command lines\n");
     std::printf("  --validate-cli-help [--json]\n");
@@ -978,7 +1020,8 @@ int main(int argc, char* argv[]) {
         "--info-png", "--info-jsondbc", "--info-blp", "--info-pack-budget",
         "--info-pack-tree",
         "--info-m2", "--info-wmo", "--info-adt",
-        "--info-zone", "--info-wcp", "--list-wcp",
+        "--info-zone", "--info-zone-overview", "--info-project-overview",
+        "--copy-project", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
         "--list-quest-objectives", "--list-quest-rewards",
         "--info-creature", "--info-quest", "--info-object",
@@ -994,14 +1037,18 @@ int main(int argc, char* argv[]) {
         "--bench-migrate-data-tree", "--list-data-tree-largest",
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
         "--add-texture-to-mesh", "--add-texture-to-zone",
-        "--gen-mesh-stairs", "--gen-texture-gradient",
+        "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
+        "--gen-mesh-tube", "--gen-mesh-capsule",
+        "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
+        "--displace-mesh",
         "--scale-mesh", "--translate-mesh", "--strip-mesh",
         "--gen-texture-noise", "--rotate-mesh",
         "--center-mesh", "--flip-mesh-normals", "--mirror-mesh",
         "--smooth-mesh-normals",
         "--merge-meshes",
-        "--gen-texture-radial", "--gen-texture-stripes",
+        "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
+        "--gen-texture-rings",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -1022,7 +1069,10 @@ int main(int argc, char* argv[]) {
         "--export-zone-deps-md", "--export-zone-spawn-png",
         "--add-creature", "--add-object", "--add-quest", "--add-item",
         "--random-populate-zone", "--random-populate-items",
-        "--info-zone-audio",
+        "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
+        "--info-project-audio", "--snap-project-to-ground",
+        "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
+        "--gen-random-zone", "--gen-random-project", "--info-spawn",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -3604,6 +3654,221 @@ int main(int argc, char* argv[]) {
                 if (!manifest.ambienceNight.empty())
                     std::printf("    night amb : %s\n", manifest.ambienceNight.c_str());
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-zone-overview") == 0 && i + 1 < argc) {
+            // One-line compact zone summary. Where --info-zone dumps
+            // every manifest field, this gives a tweet-length status:
+            // tile count, biome, content counts, audio status. Easy
+            // to grep through `--for-each-zone` output to spot
+            // outliers.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "info-zone-overview: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "info-zone-overview: failed to parse %s\n",
+                    manifestPath.c_str());
+                return 1;
+            }
+            // Cheap content counts via direct JSON parse — avoids
+            // standing up the full editor classes for an overview.
+            auto countArray = [&](const std::string& fname,
+                                    const std::string& key) {
+                std::string p = zoneDir + "/" + fname;
+                if (!fs::exists(p)) return size_t{0};
+                try {
+                    nlohmann::json doc;
+                    std::ifstream in(p);
+                    in >> doc;
+                    if (doc.is_array()) return doc.size();
+                    if (doc.contains(key) && doc[key].is_array())
+                        return doc[key].size();
+                } catch (...) {}
+                return size_t{0};
+            };
+            size_t creatures = countArray("creatures.json", "creatures");
+            size_t objects = countArray("objects.json", "objects");
+            size_t quests = countArray("quests.json", "quests");
+            size_t items = countArray("items.json", "items");
+            bool hasAudio = !zm.musicTrack.empty() ||
+                             !zm.ambienceDay.empty() ||
+                             !zm.ambienceNight.empty();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = fs::path(zoneDir).filename().string();
+                j["mapName"] = zm.mapName;
+                j["biome"] = zm.biome;
+                j["tileCount"] = zm.tiles.size();
+                j["counts"] = {{"creatures", creatures},
+                                {"objects", objects},
+                                {"quests", quests},
+                                {"items", items}};
+                j["hasAudio"] = hasAudio;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("%s [%s] %zut/%zuc/%zuo/%zuq/%zui%s\n",
+                        fs::path(zoneDir).filename().string().c_str(),
+                        zm.biome.empty() ? "?" : zm.biome.c_str(),
+                        zm.tiles.size(), creatures, objects, quests, items,
+                        hasAudio ? " +audio" : "");
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-overview") == 0 && i + 1 < argc) {
+            // Project-wide overview table: one row per zone with the
+            // same compact stats as --info-zone-overview. Single-page
+            // health check for "what's in this project."
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-overview: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            auto countArray = [](const std::string& path,
+                                  const std::string& key) {
+                if (!fs::exists(path)) return size_t{0};
+                try {
+                    nlohmann::json doc;
+                    std::ifstream in(path);
+                    in >> doc;
+                    if (doc.is_array()) return doc.size();
+                    if (doc.contains(key) && doc[key].is_array())
+                        return doc[key].size();
+                } catch (...) {}
+                return size_t{0};
+            };
+            struct Row {
+                std::string name, biome;
+                size_t tiles, creatures, objects, quests, items;
+                bool hasAudio;
+            };
+            std::vector<Row> rows;
+            size_t totC = 0, totO = 0, totQ = 0, totI = 0, totT = 0;
+            int audioCount = 0;
+            for (const auto& zoneDir : zones) {
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load(zoneDir + "/zone.json")) continue;
+                Row r;
+                r.name = fs::path(zoneDir).filename().string();
+                r.biome = zm.biome;
+                r.tiles = zm.tiles.size();
+                r.creatures = countArray(zoneDir + "/creatures.json", "creatures");
+                r.objects = countArray(zoneDir + "/objects.json", "objects");
+                r.quests = countArray(zoneDir + "/quests.json", "quests");
+                r.items = countArray(zoneDir + "/items.json", "items");
+                r.hasAudio = !zm.musicTrack.empty() ||
+                              !zm.ambienceDay.empty() ||
+                              !zm.ambienceNight.empty();
+                if (r.hasAudio) audioCount++;
+                totT += r.tiles;
+                totC += r.creatures;
+                totO += r.objects;
+                totQ += r.quests;
+                totI += r.items;
+                rows.push_back(r);
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["totals"] = {{"tiles", totT}, {"creatures", totC},
+                                {"objects", totO}, {"quests", totQ},
+                                {"items", totI}, {"withAudio", audioCount}};
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"name", r.name},
+                                    {"biome", r.biome},
+                                    {"tiles", r.tiles},
+                                    {"creatures", r.creatures},
+                                    {"objects", r.objects},
+                                    {"quests", r.quests},
+                                    {"items", r.items},
+                                    {"hasAudio", r.hasAudio}});
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project overview: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu\n", zones.size());
+            std::printf("  totals       : %zut, %zuc, %zuo, %zuq, %zui (%d with audio)\n",
+                        totT, totC, totO, totQ, totI, audioCount);
+            std::printf("\n  zone                  biome      tiles  creat  obj  quest  items  audio\n");
+            for (const auto& r : rows) {
+                std::printf("  %-20s  %-10s %5zu  %5zu  %3zu  %5zu  %5zu  %s\n",
+                            r.name.substr(0, 20).c_str(),
+                            r.biome.empty() ? "?" : r.biome.substr(0, 10).c_str(),
+                            r.tiles, r.creatures, r.objects, r.quests, r.items,
+                            r.hasAudio ? "yes" : "no");
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--copy-project") == 0 && i + 2 < argc) {
+            // Recursively copy an entire project tree. Refuses to
+            // overwrite an existing destination so a typo doesn't
+            // silently merge into the wrong project.
+            std::string fromDir = argv[++i];
+            std::string toDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(fromDir) || !fs::is_directory(fromDir)) {
+                std::fprintf(stderr,
+                    "copy-project: %s is not a directory\n", fromDir.c_str());
+                return 1;
+            }
+            if (fs::exists(toDir)) {
+                std::fprintf(stderr,
+                    "copy-project: destination %s already exists "
+                    "(delete it first if intentional)\n", toDir.c_str());
+                return 1;
+            }
+            std::error_code ec;
+            fs::copy(fromDir, toDir,
+                      fs::copy_options::recursive | fs::copy_options::copy_symlinks,
+                      ec);
+            if (ec) {
+                std::fprintf(stderr,
+                    "copy-project: copy failed (%s)\n", ec.message().c_str());
+                return 1;
+            }
+            // Count what was copied for the report.
+            int zoneCount = 0, fileCount = 0;
+            uint64_t totalBytes = 0;
+            for (const auto& entry : fs::directory_iterator(toDir, ec)) {
+                if (entry.is_directory() &&
+                    fs::exists(entry.path() / "zone.json")) zoneCount++;
+            }
+            for (const auto& e : fs::recursive_directory_iterator(toDir, ec)) {
+                if (e.is_regular_file()) {
+                    fileCount++;
+                    totalBytes += e.file_size(ec);
+                }
+            }
+            std::printf("Copied %s -> %s\n", fromDir.c_str(), toDir.c_str());
+            std::printf("  zones        : %d\n", zoneCount);
+            std::printf("  files        : %d\n", fileCount);
+            std::printf("  total bytes  : %llu (%.1f MB)\n",
+                        static_cast<unsigned long long>(totalBytes),
+                        totalBytes / (1024.0 * 1024.0));
             return 0;
         } else if (std::strcmp(argv[i], "--info-creatures") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
@@ -13412,6 +13677,181 @@ int main(int argc, char* argv[]) {
             std::printf("  total items  : %zu\n", doc["items"].size());
             std::printf("  max quality  : %d\n", maxQuality);
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-random-zone") == 0 && i + 1 < argc) {
+            // End-to-end random zone generator. Composes scaffold-zone
+            // + random-populate-zone + random-populate-items in one
+            // invocation. Useful for "I just want a complete test
+            // zone, don't make me chain three commands."
+            //
+            // Args:
+            //   <name>                   required (becomes the slug)
+            //   [tx ty]                  optional (default 32 32)
+            //   --seed N                 default 42
+            //   --creatures N            default 20
+            //   --objects N              default 10
+            //   --items N                default 25
+            //
+            // Honors --random-populate-zone's hard caps + the existing
+            // scaffold-zone validation. Sub-commands' output streams
+            // through.
+            std::string name = argv[++i];
+            int tx = 32, ty = 32;
+            uint32_t seed = 42;
+            int creatures = 20, objects = 10, items = 25;
+            // Optional positional tx/ty (must be before any --flags).
+            if (i + 2 < argc && argv[i + 1][0] != '-' && argv[i + 2][0] != '-') {
+                try { tx = std::stoi(argv[++i]); ty = std::stoi(argv[++i]); }
+                catch (...) {}
+            }
+            while (i + 2 < argc && argv[i + 1][0] == '-') {
+                std::string flag = argv[++i];
+                if (flag == "--seed")
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+                else if (flag == "--creatures")
+                    try { creatures = std::stoi(argv[++i]); } catch (...) {}
+                else if (flag == "--objects")
+                    try { objects = std::stoi(argv[++i]); } catch (...) {}
+                else if (flag == "--items")
+                    try { items = std::stoi(argv[++i]); } catch (...) {}
+                else {
+                    std::fprintf(stderr,
+                        "gen-random-zone: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            // Slug-clean the name to match scaffold-zone's expectations.
+            std::string slug;
+            for (char c : name) {
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') || c == '_' || c == '-') {
+                    slug += c;
+                } else if (c == ' ') {
+                    slug += '_';
+                }
+            }
+            if (slug.empty()) {
+                std::fprintf(stderr,
+                    "gen-random-zone: name '%s' has no valid characters\n",
+                    name.c_str());
+                return 1;
+            }
+            std::string self = argv[0];
+            namespace fs = std::filesystem;
+            std::string zoneDir = "custom_zones/" + slug;
+            std::printf("gen-random-zone: %s (tile %d, %d)\n",
+                        slug.c_str(), tx, ty);
+            std::fflush(stdout);
+            // 1. Scaffold.
+            std::string scaffoldCmd = "\"" + self + "\" --scaffold-zone \"" +
+                                       slug + "\" " + std::to_string(tx) + " " +
+                                       std::to_string(ty);
+            int rc = std::system(scaffoldCmd.c_str());
+            if (rc != 0) {
+                std::fprintf(stderr,
+                    "gen-random-zone: scaffold step failed (rc=%d)\n", rc);
+                return 1;
+            }
+            // 2. Random populate.
+            std::fflush(stdout);
+            std::string popCmd = "\"" + self + "\" --random-populate-zone \"" +
+                                  zoneDir + "\" --seed " + std::to_string(seed) +
+                                  " --creatures " + std::to_string(creatures) +
+                                  " --objects " + std::to_string(objects);
+            rc = std::system(popCmd.c_str());
+            if (rc != 0) {
+                std::fprintf(stderr,
+                    "gen-random-zone: populate step failed (rc=%d)\n", rc);
+                return 1;
+            }
+            // 3. Random items.
+            std::fflush(stdout);
+            std::string itemsCmd = "\"" + self + "\" --random-populate-items \"" +
+                                    zoneDir + "\" --seed " + std::to_string(seed + 1) +
+                                    " --count " + std::to_string(items);
+            rc = std::system(itemsCmd.c_str());
+            if (rc != 0) {
+                std::fprintf(stderr,
+                    "gen-random-zone: items step failed (rc=%d)\n", rc);
+                return 1;
+            }
+            std::printf("\ngen-random-zone: complete\n");
+            std::printf("  zone dir  : %s\n", zoneDir.c_str());
+            std::printf("  creatures : %d\n", creatures);
+            std::printf("  objects   : %d\n", objects);
+            std::printf("  items     : %d\n", items);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-random-project") == 0 && i + 1 < argc) {
+            // Project-wide companion: spawn N random zones in one
+            // pass. Names default to "Zone1, Zone2..."; tile
+            // coordinates step from (32, 32) outward in a simple
+            // raster so they don't overlap. Each zone gets a unique
+            // sub-seed so its random content differs.
+            int count = 0;
+            try { count = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-random-project: <count> must be an integer\n");
+                return 1;
+            }
+            if (count < 1 || count > 100) {
+                std::fprintf(stderr,
+                    "gen-random-project: count %d out of range (1..100)\n",
+                    count);
+                return 1;
+            }
+            std::string prefix = "Zone";
+            uint32_t seed = 100;
+            int creatures = 20, objects = 10, items = 25;
+            while (i + 2 < argc && argv[i + 1][0] == '-') {
+                std::string flag = argv[++i];
+                if (flag == "--prefix") prefix = argv[++i];
+                else if (flag == "--seed")
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+                else if (flag == "--creatures")
+                    try { creatures = std::stoi(argv[++i]); } catch (...) {}
+                else if (flag == "--objects")
+                    try { objects = std::stoi(argv[++i]); } catch (...) {}
+                else if (flag == "--items")
+                    try { items = std::stoi(argv[++i]); } catch (...) {}
+                else {
+                    std::fprintf(stderr,
+                        "gen-random-project: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            std::string self = argv[0];
+            int produced = 0, failed = 0;
+            std::printf("gen-random-project: %d zone(s) with prefix '%s'\n",
+                        count, prefix.c_str());
+            for (int n = 0; n < count; ++n) {
+                // Step outward from (32, 32) in a small raster so the
+                // tiles don't coincide. (-1,0,1,...) X (-1,0,1,...).
+                int side = 1;
+                while ((2 * side + 1) * (2 * side + 1) <= n) side++;
+                int idx = n;
+                int dx = idx % (2 * side + 1) - side;
+                int dy = (idx / (2 * side + 1)) - side;
+                int tx = std::max(0, std::min(63, 32 + dx));
+                int ty = std::max(0, std::min(63, 32 + dy));
+                std::string zoneName = prefix + std::to_string(n + 1);
+                std::printf("\n=== %s (tile %d, %d) ===\n",
+                            zoneName.c_str(), tx, ty);
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --gen-random-zone \"" +
+                                   zoneName + "\" " +
+                                   std::to_string(tx) + " " + std::to_string(ty) +
+                                   " --seed " + std::to_string(seed + n) +
+                                   " --creatures " + std::to_string(creatures) +
+                                   " --objects " + std::to_string(objects) +
+                                   " --items " + std::to_string(items);
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) produced++;
+                else failed++;
+            }
+            std::printf("\n--- summary ---\n");
+            std::printf("  produced : %d\n", produced);
+            std::printf("  failed   : %d\n", failed);
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--info-zone-audio") == 0 && i + 1 < argc) {
             // Print the audio configuration stored in zone.json:
             // music track, day/night ambience, volume sliders.
@@ -13456,6 +13896,732 @@ int main(int argc, char* argv[]) {
             std::printf("  music vol     : %.2f\n", zm.musicVolume);
             std::printf("  ambience vol  : %.2f\n", zm.ambienceVolume);
             return 0;
+        } else if (std::strcmp(argv[i], "--info-project-audio") == 0 && i + 1 < argc) {
+            // Project-wide audio rollup. Walks every zone in
+            // <projectDir>, reads the audio fields out of zone.json,
+            // emits a table showing which zones have music/ambience
+            // configured. Useful for spotting zones still missing
+            // audio assignment before a release pass.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-audio: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct Row {
+                std::string name;
+                std::string music;
+                std::string ambDay;
+                std::string ambNight;
+                float musicVol, ambVol;
+            };
+            std::vector<Row> rows;
+            int withMusic = 0, withAmbience = 0;
+            for (const auto& zoneDir : zones) {
+                wowee::editor::ZoneManifest zm;
+                if (!zm.load(zoneDir + "/zone.json")) continue;
+                Row r;
+                r.name = fs::path(zoneDir).filename().string();
+                r.music = zm.musicTrack;
+                r.ambDay = zm.ambienceDay;
+                r.ambNight = zm.ambienceNight;
+                r.musicVol = zm.musicVolume;
+                r.ambVol = zm.ambienceVolume;
+                if (!r.music.empty()) withMusic++;
+                if (!r.ambDay.empty() || !r.ambNight.empty()) withAmbience++;
+                rows.push_back(r);
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["withMusic"] = withMusic;
+                j["withAmbience"] = withAmbience;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"name", r.name},
+                                    {"music", r.music},
+                                    {"ambienceDay", r.ambDay},
+                                    {"ambienceNight", r.ambNight},
+                                    {"musicVolume", r.musicVol},
+                                    {"ambienceVolume", r.ambVol}});
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project audio: %s\n", projectDir.c_str());
+            std::printf("  zones         : %zu\n", zones.size());
+            std::printf("  with music    : %d\n", withMusic);
+            std::printf("  with ambience : %d\n", withAmbience);
+            std::printf("\n  zone                    music?  ambience?  m-vol  a-vol\n");
+            auto label = [](const std::string& s) {
+                if (s.empty()) return "(none)";
+                auto sl = s.rfind('\\');
+                if (sl == std::string::npos) sl = s.rfind('/');
+                return sl == std::string::npos ? s.c_str()
+                                                : s.c_str() + sl + 1;
+            };
+            for (const auto& r : rows) {
+                std::string ambLabel = !r.ambDay.empty() ? r.ambDay :
+                                        !r.ambNight.empty() ? r.ambNight : "";
+                std::printf("  %-22s  %-6s  %-9s  %5.2f  %5.2f\n",
+                            r.name.substr(0, 22).c_str(),
+                            r.music.empty() ? "no" : "yes",
+                            ambLabel.empty() ? "no" : "yes",
+                            r.musicVol, r.ambVol);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--snap-zone-to-ground") == 0 && i + 1 < argc) {
+            // Walk every creature + object in a zone and snap their Z
+            // to the actual terrain height. Useful after terrain edits
+            // or after --random-populate-zone if the spawn baseZ
+            // doesn't match the carved terrain.
+            //
+            // Height lookup walks the loaded WHM tiles and finds the
+            // chunk containing each spawn's (x, y), then uses the
+            // chunk's average heightmap height + base.
+            std::string zoneDir = argv[++i];
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "snap-zone-to-ground: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "snap-zone-to-ground: failed to parse %s\n",
+                    manifestPath.c_str());
+                return 1;
+            }
+            // Load all tiles into a flat map keyed by (tx, ty).
+            struct LoadedTile {
+                wowee::pipeline::ADTTerrain terrain;
+                int tx, ty;
+            };
+            std::vector<LoadedTile> tiles;
+            for (const auto& [tx, ty] : zm.tiles) {
+                std::string base = zoneDir + "/" + zm.mapName + "_" +
+                                    std::to_string(tx) + "_" + std::to_string(ty);
+                if (!wowee::pipeline::WoweeTerrainLoader::exists(base)) continue;
+                LoadedTile lt;
+                lt.tx = tx; lt.ty = ty;
+                if (wowee::pipeline::WoweeTerrainLoader::load(base, lt.terrain)) {
+                    tiles.push_back(std::move(lt));
+                }
+            }
+            if (tiles.empty()) {
+                std::fprintf(stderr,
+                    "snap-zone-to-ground: no .whm tiles loaded\n");
+                return 1;
+            }
+            // Compute terrain height at world (x, y) by finding the
+            // chunk that contains it and averaging its heightmap. Each
+            // chunk is 33.33y across; chunk position[1]=wowX origin,
+            // [0]=wowY origin.
+            constexpr float kChunkSize = 33.33333f;
+            auto sampleHeight = [&](float wx, float wy) -> float {
+                for (const auto& lt : tiles) {
+                    for (const auto& chunk : lt.terrain.chunks) {
+                        if (!chunk.heightMap.isLoaded()) continue;
+                        float cx0 = chunk.position[1];
+                        float cy0 = chunk.position[0];
+                        if (wx < cx0 || wx >= cx0 + kChunkSize) continue;
+                        if (wy < cy0 || wy >= cy0 + kChunkSize) continue;
+                        // Use average heightmap height to dodge the
+                        // need for full bilinear sampling. Good enough
+                        // for spawn placement; finer interpolation is
+                        // a future optimization.
+                        float sum = 0; int n = 0;
+                        for (float h : chunk.heightMap.heights) {
+                            if (std::isfinite(h)) { sum += h; n++; }
+                        }
+                        if (n == 0) return chunk.position[2];
+                        return chunk.position[2] + sum / n;
+                    }
+                }
+                return zm.baseHeight;  // outside any loaded chunk
+            };
+            int snappedC = 0, snappedO = 0;
+            // Creatures.
+            wowee::editor::NpcSpawner spawner;
+            std::string cpath = zoneDir + "/creatures.json";
+            if (fs::exists(cpath) && spawner.loadFromFile(cpath)) {
+                auto& spawns = spawner.getSpawns();
+                for (auto& s : spawns) {
+                    s.position.z = sampleHeight(s.position.x, s.position.y);
+                    snappedC++;
+                }
+                if (snappedC > 0) spawner.saveToFile(cpath);
+            }
+            // Objects.
+            wowee::editor::ObjectPlacer placer;
+            std::string opath = zoneDir + "/objects.json";
+            if (fs::exists(opath) && placer.loadFromFile(opath)) {
+                auto& objs = placer.getObjects();
+                for (auto& o : objs) {
+                    o.position.z = sampleHeight(o.position.x, o.position.y);
+                    snappedO++;
+                }
+                if (snappedO > 0) placer.saveToFile(opath);
+            }
+            std::printf("snap-zone-to-ground: %s\n", zoneDir.c_str());
+            std::printf("  tiles loaded : %zu\n", tiles.size());
+            std::printf("  creatures    : %d snapped\n", snappedC);
+            std::printf("  objects      : %d snapped\n", snappedO);
+            return 0;
+        } else if (std::strcmp(argv[i], "--audit-zone-spawns") == 0 && i + 1 < argc) {
+            // Non-destructive companion to --snap-zone-to-ground.
+            // Loads the zone's terrain, walks every creature + object,
+            // and flags any whose Z is more than <threshold> yards
+            // off from the sampled terrain height. Useful for
+            // surveying placement issues before deciding whether to
+            // run --snap-zone-to-ground (which would silently rewrite
+            // every spawn).
+            std::string zoneDir = argv[++i];
+            float threshold = 5.0f;
+            if (i + 2 < argc && std::strcmp(argv[i + 1], "--threshold") == 0) {
+                try { threshold = std::stof(argv[i + 2]); i += 2; }
+                catch (...) {}
+            }
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "audit-zone-spawns: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "audit-zone-spawns: failed to parse %s\n",
+                    manifestPath.c_str());
+                return 1;
+            }
+            // Same chunk-average sampler as --snap-zone-to-ground.
+            // Returning baseHeight when no chunk hits = "no terrain
+            // data here", so flag those too via the threshold check.
+            struct LoadedTile {
+                wowee::pipeline::ADTTerrain terrain;
+            };
+            std::vector<LoadedTile> tiles;
+            for (const auto& [tx, ty] : zm.tiles) {
+                std::string base = zoneDir + "/" + zm.mapName + "_" +
+                                    std::to_string(tx) + "_" + std::to_string(ty);
+                if (!wowee::pipeline::WoweeTerrainLoader::exists(base)) continue;
+                LoadedTile lt;
+                if (wowee::pipeline::WoweeTerrainLoader::load(base, lt.terrain)) {
+                    tiles.push_back(std::move(lt));
+                }
+            }
+            constexpr float kChunkSize = 33.33333f;
+            auto sampleHeight = [&](float wx, float wy) -> float {
+                for (const auto& lt : tiles) {
+                    for (const auto& chunk : lt.terrain.chunks) {
+                        if (!chunk.heightMap.isLoaded()) continue;
+                        float cx0 = chunk.position[1];
+                        float cy0 = chunk.position[0];
+                        if (wx < cx0 || wx >= cx0 + kChunkSize) continue;
+                        if (wy < cy0 || wy >= cy0 + kChunkSize) continue;
+                        float sum = 0; int n = 0;
+                        for (float h : chunk.heightMap.heights) {
+                            if (std::isfinite(h)) { sum += h; n++; }
+                        }
+                        if (n == 0) return chunk.position[2];
+                        return chunk.position[2] + sum / n;
+                    }
+                }
+                return zm.baseHeight;
+            };
+            struct Issue { std::string kind; std::string name;
+                           float spawnZ, terrainZ; };
+            std::vector<Issue> issues;
+            wowee::editor::NpcSpawner spawner;
+            if (fs::exists(zoneDir + "/creatures.json") &&
+                spawner.loadFromFile(zoneDir + "/creatures.json")) {
+                for (const auto& s : spawner.getSpawns()) {
+                    float th = sampleHeight(s.position.x, s.position.y);
+                    if (std::fabs(s.position.z - th) > threshold) {
+                        issues.push_back({"creature", s.name,
+                                          s.position.z, th});
+                    }
+                }
+            }
+            wowee::editor::ObjectPlacer placer;
+            if (fs::exists(zoneDir + "/objects.json") &&
+                placer.loadFromFile(zoneDir + "/objects.json")) {
+                for (const auto& o : placer.getObjects()) {
+                    float th = sampleHeight(o.position.x, o.position.y);
+                    if (std::fabs(o.position.z - th) > threshold) {
+                        issues.push_back({"object", o.path,
+                                          o.position.z, th});
+                    }
+                }
+            }
+            std::printf("audit-zone-spawns: %s\n", zoneDir.c_str());
+            std::printf("  threshold    : %.1f yards\n", threshold);
+            std::printf("  creatures    : %zu\n", spawner.spawnCount());
+            std::printf("  objects      : %zu\n", placer.getObjects().size());
+            std::printf("  issues       : %zu\n", issues.size());
+            if (issues.empty()) {
+                std::printf("\n  PASSED — every spawn is within %.1f y of the terrain\n",
+                            threshold);
+                return 0;
+            }
+            std::printf("\n  Flagged spawns (delta = spawnZ - terrainZ):\n");
+            std::printf("  kind      delta    spawnZ   terrainZ  name\n");
+            for (const auto& iss : issues) {
+                float delta = iss.spawnZ - iss.terrainZ;
+                std::printf("  %-8s  %+6.1f   %7.1f   %7.1f  %s\n",
+                            iss.kind.c_str(), delta, iss.spawnZ,
+                            iss.terrainZ,
+                            iss.name.substr(0, 40).c_str());
+            }
+            std::printf("\n  Run --snap-zone-to-ground to fix in bulk.\n");
+            return 1;
+        } else if (std::strcmp(argv[i], "--list-zone-spawns") == 0 && i + 1 < argc) {
+            // Combined creature + object listing. Useful for a quick
+            // "what's in this zone" survey without running both
+            // --info-creatures and --info-objects separately.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "list-zone-spawns: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::NpcSpawner spawner;
+            wowee::editor::ObjectPlacer placer;
+            spawner.loadFromFile(zoneDir + "/creatures.json");
+            placer.loadFromFile(zoneDir + "/objects.json");
+            const auto& spawns = spawner.getSpawns();
+            const auto& objs = placer.getObjects();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["creatureCount"] = spawns.size();
+                j["objectCount"] = objs.size();
+                nlohmann::json carr = nlohmann::json::array();
+                for (const auto& s : spawns) {
+                    carr.push_back({{"name", s.name},
+                                     {"level", s.level},
+                                     {"x", s.position.x},
+                                     {"y", s.position.y},
+                                     {"z", s.position.z},
+                                     {"hostile", s.hostile}});
+                }
+                j["creatures"] = carr;
+                nlohmann::json oarr = nlohmann::json::array();
+                for (const auto& o : objs) {
+                    oarr.push_back({{"path", o.path},
+                                     {"type", o.type == wowee::editor::PlaceableType::M2 ? "m2" : "wmo"},
+                                     {"x", o.position.x},
+                                     {"y", o.position.y},
+                                     {"z", o.position.z},
+                                     {"scale", o.scale}});
+                }
+                j["objects"] = oarr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone spawns: %s\n", zoneDir.c_str());
+            std::printf("  creatures : %zu\n", spawns.size());
+            std::printf("  objects   : %zu\n", objs.size());
+            if (!spawns.empty()) {
+                std::printf("\n  Creatures:\n");
+                std::printf("    idx  lvl  hostile  x         y         z         name\n");
+                for (size_t k = 0; k < spawns.size(); ++k) {
+                    const auto& s = spawns[k];
+                    std::printf("    %3zu  %3u  %-7s  %8.1f  %8.1f  %8.1f  %s\n",
+                                k, s.level, s.hostile ? "yes" : "no",
+                                s.position.x, s.position.y, s.position.z,
+                                s.name.c_str());
+                }
+            }
+            if (!objs.empty()) {
+                std::printf("\n  Objects:\n");
+                std::printf("    idx  type  scale  x         y         z         path\n");
+                for (size_t k = 0; k < objs.size(); ++k) {
+                    const auto& o = objs[k];
+                    std::printf("    %3zu  %-4s  %5.2f  %8.1f  %8.1f  %8.1f  %s\n",
+                                k,
+                                o.type == wowee::editor::PlaceableType::M2 ? "m2" : "wmo",
+                                o.scale,
+                                o.position.x, o.position.y, o.position.z,
+                                o.path.c_str());
+                }
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-spawn") == 0 && i + 3 < argc) {
+            // Detailed view of one creature or object by index. The
+            // list-zone-spawns table only shows headline fields; this
+            // dumps every field including AI behavior, faction,
+            // patrol path waypoints, etc.
+            std::string zoneDir = argv[++i];
+            std::string kind = argv[++i];
+            int idx = -1;
+            try { idx = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "info-spawn: <index> must be an integer\n");
+                return 1;
+            }
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::transform(kind.begin(), kind.end(), kind.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            if (kind == "creature") {
+                wowee::editor::NpcSpawner spawner;
+                if (!spawner.loadFromFile(zoneDir + "/creatures.json")) {
+                    std::fprintf(stderr,
+                        "info-spawn: %s has no creatures.json\n",
+                        zoneDir.c_str());
+                    return 1;
+                }
+                const auto& spawns = spawner.getSpawns();
+                if (idx < 0 || static_cast<size_t>(idx) >= spawns.size()) {
+                    std::fprintf(stderr,
+                        "info-spawn: index %d out of range (have %zu)\n",
+                        idx, spawns.size());
+                    return 1;
+                }
+                const auto& s = spawns[idx];
+                static const char* behaviors[] = {
+                    "Stationary", "Patrol", "Wander", "Scripted"
+                };
+                int bIdx = static_cast<int>(s.behavior);
+                if (bIdx < 0 || bIdx > 3) bIdx = 0;
+                if (jsonOut) {
+                    nlohmann::json j;
+                    j["zone"] = zoneDir;
+                    j["kind"] = "creature";
+                    j["index"] = idx;
+                    j["id"] = s.id;
+                    j["name"] = s.name;
+                    j["modelPath"] = s.modelPath;
+                    j["displayId"] = s.displayId;
+                    j["position"] = {s.position.x, s.position.y, s.position.z};
+                    j["orientation"] = s.orientation;
+                    j["level"] = s.level;
+                    j["health"] = s.health;
+                    j["mana"] = s.mana;
+                    j["faction"] = s.faction;
+                    j["scale"] = s.scale;
+                    j["behavior"] = behaviors[bIdx];
+                    j["wanderRadius"] = s.wanderRadius;
+                    j["aggroRadius"] = s.aggroRadius;
+                    j["leashRadius"] = s.leashRadius;
+                    j["respawnTimeMs"] = s.respawnTimeMs;
+                    j["hostile"] = s.hostile;
+                    j["questgiver"] = s.questgiver;
+                    j["vendor"] = s.vendor;
+                    j["trainer"] = s.trainer;
+                    j["patrolPathSize"] = s.patrolPath.size();
+                    std::printf("%s\n", j.dump(2).c_str());
+                    return 0;
+                }
+                std::printf("Creature spawn %d in %s\n", idx, zoneDir.c_str());
+                std::printf("  id            : %u\n", s.id);
+                std::printf("  name          : %s\n", s.name.c_str());
+                std::printf("  modelPath     : %s\n",
+                            s.modelPath.empty() ? "(template)" : s.modelPath.c_str());
+                std::printf("  displayId     : %u\n", s.displayId);
+                std::printf("  position      : (%.2f, %.2f, %.2f)\n",
+                            s.position.x, s.position.y, s.position.z);
+                std::printf("  orientation   : %.1f°\n", s.orientation);
+                std::printf("  level         : %u\n", s.level);
+                std::printf("  health/mana   : %u / %u\n", s.health, s.mana);
+                std::printf("  faction       : %u\n", s.faction);
+                std::printf("  scale         : %.2f\n", s.scale);
+                std::printf("  behavior      : %s\n", behaviors[bIdx]);
+                std::printf("  wander/aggro  : %.1f / %.1f y\n",
+                            s.wanderRadius, s.aggroRadius);
+                std::printf("  leash         : %.1f y\n", s.leashRadius);
+                std::printf("  respawn       : %.0f s\n", s.respawnTimeMs / 1000.0f);
+                std::printf("  flags         : %s%s%s%s\n",
+                            s.hostile ? "hostile " : "",
+                            s.questgiver ? "questgiver " : "",
+                            s.vendor ? "vendor " : "",
+                            s.trainer ? "trainer " : "");
+                std::printf("  patrol path   : %zu waypoint(s)\n",
+                            s.patrolPath.size());
+                return 0;
+            } else if (kind == "object") {
+                wowee::editor::ObjectPlacer placer;
+                if (!placer.loadFromFile(zoneDir + "/objects.json")) {
+                    std::fprintf(stderr,
+                        "info-spawn: %s has no objects.json\n",
+                        zoneDir.c_str());
+                    return 1;
+                }
+                const auto& objs = placer.getObjects();
+                if (idx < 0 || static_cast<size_t>(idx) >= objs.size()) {
+                    std::fprintf(stderr,
+                        "info-spawn: index %d out of range (have %zu)\n",
+                        idx, objs.size());
+                    return 1;
+                }
+                const auto& o = objs[idx];
+                if (jsonOut) {
+                    nlohmann::json j;
+                    j["zone"] = zoneDir;
+                    j["kind"] = "object";
+                    j["index"] = idx;
+                    j["uniqueId"] = o.uniqueId;
+                    j["path"] = o.path;
+                    j["type"] = o.type == wowee::editor::PlaceableType::M2 ? "m2" : "wmo";
+                    j["position"] = {o.position.x, o.position.y, o.position.z};
+                    j["rotation"] = {o.rotation.x, o.rotation.y, o.rotation.z};
+                    j["scale"] = o.scale;
+                    std::printf("%s\n", j.dump(2).c_str());
+                    return 0;
+                }
+                std::printf("Object spawn %d in %s\n", idx, zoneDir.c_str());
+                std::printf("  uniqueId  : %u\n", o.uniqueId);
+                std::printf("  path      : %s\n", o.path.c_str());
+                std::printf("  type      : %s\n",
+                            o.type == wowee::editor::PlaceableType::M2 ? "m2" : "wmo");
+                std::printf("  position  : (%.2f, %.2f, %.2f)\n",
+                            o.position.x, o.position.y, o.position.z);
+                std::printf("  rotation  : (%.2f, %.2f, %.2f) rad\n",
+                            o.rotation.x, o.rotation.y, o.rotation.z);
+                std::printf("  scale     : %.2f\n", o.scale);
+                return 0;
+            }
+            std::fprintf(stderr,
+                "info-spawn: kind must be 'creature' or 'object' (got '%s')\n",
+                kind.c_str());
+            return 1;
+        } else if (std::strcmp(argv[i], "--list-project-spawns") == 0 && i + 1 < argc) {
+            // Project-wide companion to --list-zone-spawns. Combines
+            // creatures + objects across every zone into one big
+            // listing keyed by (zone, kind, name). Useful for project-
+            // wide review and for piping into spreadsheets via --json.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "list-project-spawns: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            int totalCreat = 0, totalObj = 0;
+            struct Row {
+                std::string zone, kind, name;
+                float x, y, z;
+                std::string extra;
+            };
+            std::vector<Row> rows;
+            for (const auto& zoneDir : zones) {
+                std::string zname = fs::path(zoneDir).filename().string();
+                wowee::editor::NpcSpawner spawner;
+                if (spawner.loadFromFile(zoneDir + "/creatures.json")) {
+                    for (const auto& s : spawner.getSpawns()) {
+                        Row r;
+                        r.zone = zname;
+                        r.kind = "creature";
+                        r.name = s.name;
+                        r.x = s.position.x; r.y = s.position.y;
+                        r.z = s.position.z;
+                        r.extra = "lvl " + std::to_string(s.level);
+                        rows.push_back(r);
+                        totalCreat++;
+                    }
+                }
+                wowee::editor::ObjectPlacer placer;
+                if (placer.loadFromFile(zoneDir + "/objects.json")) {
+                    for (const auto& o : placer.getObjects()) {
+                        Row r;
+                        r.zone = zname;
+                        r.kind = "object";
+                        r.name = o.path;
+                        r.x = o.position.x; r.y = o.position.y;
+                        r.z = o.position.z;
+                        char buf[32];
+                        std::snprintf(buf, sizeof(buf), "scale %.2f", o.scale);
+                        r.extra = buf;
+                        rows.push_back(r);
+                        totalObj++;
+                    }
+                }
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = zones.size();
+                j["creatureCount"] = totalCreat;
+                j["objectCount"] = totalObj;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({{"zone", r.zone},
+                                    {"kind", r.kind},
+                                    {"name", r.name},
+                                    {"x", r.x}, {"y", r.y}, {"z", r.z},
+                                    {"extra", r.extra}});
+                }
+                j["spawns"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project spawns: %s\n", projectDir.c_str());
+            std::printf("  zones      : %zu\n", zones.size());
+            std::printf("  creatures  : %d\n", totalCreat);
+            std::printf("  objects    : %d\n", totalObj);
+            if (rows.empty()) {
+                std::printf("\n  *no spawns in any zone*\n");
+                return 0;
+            }
+            std::printf("\n  zone                  kind      x         y         z         info       name\n");
+            for (const auto& r : rows) {
+                std::printf("  %-20s  %-8s  %8.1f  %8.1f  %8.1f  %-10s %s\n",
+                            r.zone.substr(0, 20).c_str(),
+                            r.kind.c_str(),
+                            r.x, r.y, r.z,
+                            r.extra.c_str(),
+                            r.name.substr(0, 60).c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--audit-project-spawns") == 0 && i + 1 < argc) {
+            // Project-wide wrapper around --audit-zone-spawns. Spawns
+            // the binary per-zone (only those with creatures.json or
+            // objects.json), aggregates how many issues each zone has,
+            // and exits 1 if any zone reports problems. CI-friendly
+            // pre-release placement check.
+            std::string projectDir = argv[++i];
+            std::string thresholdArg;
+            if (i + 2 < argc && std::strcmp(argv[i + 1], "--threshold") == 0) {
+                thresholdArg = argv[i + 2];
+                i += 2;
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "audit-project-spawns: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                bool hasContent = fs::exists(entry.path() / "creatures.json") ||
+                                   fs::exists(entry.path() / "objects.json");
+                if (!hasContent) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::printf("audit-project-spawns: %s\n", projectDir.c_str());
+                std::printf("  no zones with creatures.json or objects.json\n");
+                return 0;
+            }
+            std::string self = argv[0];
+            int passed = 0, failed = 0;
+            std::printf("audit-project-spawns: %s\n", projectDir.c_str());
+            std::printf("  zones to audit : %zu\n", zones.size());
+            if (!thresholdArg.empty()) {
+                std::printf("  threshold      : %s yards\n", thresholdArg.c_str());
+            }
+            std::printf("\n");
+            for (const auto& zoneDir : zones) {
+                std::printf("--- %s ---\n",
+                            fs::path(zoneDir).filename().string().c_str());
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --audit-zone-spawns \"" +
+                                   zoneDir + "\"";
+                if (!thresholdArg.empty()) {
+                    cmd += " --threshold " + thresholdArg;
+                }
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) passed++;
+                else failed++;
+            }
+            std::printf("\n--- summary ---\n");
+            std::printf("  passed : %d\n", passed);
+            std::printf("  failed : %d\n", failed);
+            if (failed == 0) {
+                std::printf("\n  ALL ZONES PASSED\n");
+                return 0;
+            }
+            std::printf("\n  Run --snap-project-to-ground to fix in bulk.\n");
+            return 1;
+        } else if (std::strcmp(argv[i], "--snap-project-to-ground") == 0 && i + 1 < argc) {
+            // Orchestrator wrapper around --snap-zone-to-ground. Spawns
+            // the binary per-zone (only zones with at least one of
+            // creatures.json or objects.json since pure-terrain zones
+            // have nothing to snap), aggregates a final summary.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "snap-project-to-ground: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                bool hasContent = fs::exists(entry.path() / "creatures.json") ||
+                                   fs::exists(entry.path() / "objects.json");
+                if (!hasContent) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::printf("snap-project-to-ground: %s\n", projectDir.c_str());
+                std::printf("  no zones with creatures.json or objects.json\n");
+                return 0;
+            }
+            std::string self = argv[0];
+            int passed = 0, failed = 0;
+            std::printf("snap-project-to-ground: %s\n", projectDir.c_str());
+            std::printf("  zones to snap : %zu\n\n", zones.size());
+            for (const auto& zoneDir : zones) {
+                std::printf("--- %s ---\n",
+                            fs::path(zoneDir).filename().string().c_str());
+                std::fflush(stdout);
+                std::string cmd = "\"" + self + "\" --snap-zone-to-ground \"" +
+                                   zoneDir + "\"";
+                int rc = std::system(cmd.c_str());
+                if (rc == 0) passed++;
+                else failed++;
+            }
+            std::printf("\n--- summary ---\n");
+            std::printf("  zones snapped : %d\n", passed);
+            std::printf("  failed        : %d\n", failed);
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--list-items") == 0 && i + 1 < argc) {
             // Inspect <zoneDir>/items.json. Pretty-prints id / quality
             // / item level / display id / name as a table; also
@@ -16426,6 +17592,208 @@ int main(int argc, char* argv[]) {
             std::printf("  stripe    : %d px\n", stripePx);
             std::printf("  colors    : %s + %s\n", aHex.c_str(), bHex.c_str());
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-dots") == 0 && i + 3 < argc) {
+            // Polka-dot pattern: solid background with circular dots
+            // on a regular grid. Useful for fabric/clothing textures,
+            // game-board patterns, or quick decorative tiling.
+            std::string outPath = argv[++i];
+            std::string bgHex = argv[++i];
+            std::string dotHex = argv[++i];
+            int radius = 8, spacing = 32;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { radius = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { spacing = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                radius < 1 || radius > 1024 ||
+                spacing < 2 || spacing > 4096) {
+                std::fprintf(stderr,
+                    "gen-texture-dots: invalid dims (W/H 1..8192, radius 1..1024, spacing 2..4096)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t br, bg, bb, dr, dg, db;
+            if (!parseHex(bgHex, br, bg, bb)) {
+                std::fprintf(stderr,
+                    "gen-texture-dots: '%s' is not a valid hex color\n",
+                    bgHex.c_str());
+                return 1;
+            }
+            if (!parseHex(dotHex, dr, dg, db)) {
+                std::fprintf(stderr,
+                    "gen-texture-dots: '%s' is not a valid hex color\n",
+                    dotHex.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            float r2 = static_cast<float>(radius) * radius;
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    // Distance to the nearest grid point.
+                    int gx = (x + spacing / 2) / spacing * spacing;
+                    int gy = (y + spacing / 2) / spacing * spacing;
+                    float dx = static_cast<float>(x - gx);
+                    float dy = static_cast<float>(y - gy);
+                    bool inDot = (dx * dx + dy * dy) < r2;
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = inDot ? dr : br;
+                    pixels[i2 + 1] = inDot ? dg : bg;
+                    pixels[i2 + 2] = inDot ? db : bb;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-dots: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  bg        : %s\n", bgHex.c_str());
+            std::printf("  dot       : %s\n", dotHex.c_str());
+            std::printf("  radius    : %d px\n", radius);
+            std::printf("  spacing   : %d px\n", spacing);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-rings") == 0 && i + 3 < argc) {
+            // Concentric rings centered on the image. Useful for
+            // archery targets, magic seal floors, dartboards, hypnosis
+            // visuals — anywhere a "circular alternation" reads as
+            // intentional design.
+            std::string outPath = argv[++i];
+            std::string aHex = argv[++i];
+            std::string bHex = argv[++i];
+            int ringPx = 16;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { ringPx = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                ringPx < 1 || ringPx > 4096) {
+                std::fprintf(stderr,
+                    "gen-texture-rings: invalid dims (W/H 1..8192, ringPx 1..4096)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t ra, ga, ba, rb, gb, bb;
+            if (!parseHex(aHex, ra, ga, ba)) {
+                std::fprintf(stderr,
+                    "gen-texture-rings: '%s' is not a valid hex color\n",
+                    aHex.c_str());
+                return 1;
+            }
+            if (!parseHex(bHex, rb, gb, bb)) {
+                std::fprintf(stderr,
+                    "gen-texture-rings: '%s' is not a valid hex color\n",
+                    bHex.c_str());
+                return 1;
+            }
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            float cx = (W - 1) * 0.5f;
+            float cy = (H - 1) * 0.5f;
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    float dx = x - cx;
+                    float dy = y - cy;
+                    float d = std::sqrt(dx * dx + dy * dy);
+                    bool isA = (static_cast<int>(d / ringPx) & 1) == 0;
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = isA ? ra : rb;
+                    pixels[i2 + 1] = isA ? ga : gb;
+                    pixels[i2 + 2] = isA ? ba : bb;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-rings: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  ring px   : %d\n", ringPx);
+            std::printf("  colors    : %s + %s\n", aHex.c_str(), bHex.c_str());
+            return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
             // per-face normals, planar UVs, a bounding box, and a
@@ -16710,9 +18078,72 @@ int main(int argc, char* argv[]) {
                     wom.indices.push_back(botRingStart + sg + 1);
                     wom.indices.push_back(botRingStart + sg);
                 }
+            } else if (s == "ramp") {
+                // Right-triangular prism: a wedge that climbs along
+                // +X. Footprint is size×size on XY (centered on origin
+                // in X, Y from 0 to size); rises from Z=0 at -X to
+                // Z=size at +X. Useful for ramps onto platforms,
+                // simple roof slopes, cliff faces.
+                //
+                // 6 verts × 5 faces = 18 verts so per-face normals
+                // stay flat: top slope, bottom, back-tall, +Y side,
+                // -Y side. Front-short (X = -size/2) is open since
+                // the ramp meets ground there at zero height.
+                // Actually we still emit 5 faces — the "front" edge
+                // is just where slope and ground meet, no separate
+                // face needed.
+                float xMin = -h, xMax = h;
+                float yMin = 0,  yMax = size;
+                float zMin = 0,  zMax = size;
+                // Faces: top slope (normal = normalize(-1,0,1) since
+                // the slope rises with +X going up, normal points
+                // up-and-back).
+                float slopeLen = std::sqrt(size * size + size * size);
+                float nSlopeX = -size / slopeLen;
+                float nSlopeZ =  size / slopeLen;
+                struct Face { float nx, ny, nz; float verts[4][3]; };
+                Face faces[5] = {
+                    // Top sloped quad: from (xMin, yMin, zMin) up to
+                    // (xMax, yMin/yMax, zMax)
+                    { nSlopeX, 0, nSlopeZ,
+                       {{xMin, yMin, zMin},{xMin, yMax, zMin},
+                        {xMax, yMax, zMax},{xMax, yMin, zMax}}},
+                    // Bottom (-Z normal)
+                    { 0, 0, -1,
+                       {{xMin, yMin, zMin},{xMax, yMin, zMin},
+                        {xMax, yMax, zMin},{xMin, yMax, zMin}}},
+                    // Back-tall vertical wall (+X)
+                    { 1, 0, 0,
+                       {{xMax, yMin, zMin},{xMax, yMin, zMax},
+                        {xMax, yMax, zMax},{xMax, yMax, zMin}}},
+                    // -Y side triangle (degenerate quad — last 2 verts
+                    // collapse to a point — but indexing uniformly is
+                    // simpler than a special tri path)
+                    { 0, -1, 0,
+                       {{xMin, yMin, zMin},{xMax, yMin, zMin},
+                        {xMax, yMin, zMax},{xMax, yMin, zMax}}},
+                    // +Y side triangle (same shape mirrored)
+                    { 0, 1, 0,
+                       {{xMin, yMax, zMin},{xMax, yMax, zMax},
+                        {xMax, yMax, zMin},{xMax, yMax, zMin}}},
+                };
+                float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+                for (auto& f : faces) {
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    for (int k = 0; k < 4; ++k) {
+                        addVertex(f.verts[k][0], f.verts[k][1], f.verts[k][2],
+                                   f.nx, f.ny, f.nz, uvs[k][0], uvs[k][1]);
+                    }
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 1);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 3);
+                }
             } else {
                 std::fprintf(stderr,
-                    "gen-mesh: shape must be cube, plane, sphere, cylinder, torus, or cone (got '%s')\n",
+                    "gen-mesh: shape must be cube, plane, sphere, cylinder, torus, cone, or ramp (got '%s')\n",
                     shape.c_str());
                 return 1;
             }
@@ -16954,6 +18385,602 @@ int main(int argc, char* argv[]) {
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             std::printf("  span      : %.3fL × %.3fH × %.3fW\n",
                         steps * stepDepth, steps * stepHeight, width);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-grid") == 0 && i + 2 < argc) {
+            // Flat plane subdivided into NxN cells. Useful for LOD
+            // demos, deformable surfaces (later --displace passes),
+            // testbench geometry that needs many triangles. Default
+            // size is 1.0 (centered on origin). Hard cap at N=256
+            // so a typo doesn't generate a mesh with 130k+ vertices.
+            std::string womBase = argv[++i];
+            int N = 0;
+            try { N = std::stoi(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-mesh-grid: <subdivisions> must be an integer\n");
+                return 1;
+            }
+            if (N < 1 || N > 256) {
+                std::fprintf(stderr,
+                    "gen-mesh-grid: subdivisions %d out of range (1..256)\n", N);
+                return 1;
+            }
+            float size = 1.0f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { size = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (size <= 0.0f) {
+                std::fprintf(stderr,
+                    "gen-mesh-grid: size must be positive\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // (N+1)x(N+1) vertices on the XY plane centered on origin,
+            // Z=0. Normals all point +Z; UVs are 0..1 across the grid.
+            float halfSize = size * 0.5f;
+            float cellSize = size / N;
+            for (int j = 0; j <= N; ++j) {
+                for (int k = 0; k <= N; ++k) {
+                    wowee::pipeline::WoweeModel::Vertex v;
+                    v.position = glm::vec3(-halfSize + k * cellSize,
+                                            -halfSize + j * cellSize,
+                                            0.0f);
+                    v.normal = glm::vec3(0, 0, 1);
+                    v.texCoord = glm::vec2(static_cast<float>(k) / N,
+                                            static_cast<float>(j) / N);
+                    wom.vertices.push_back(v);
+                }
+            }
+            int stride = N + 1;
+            for (int j = 0; j < N; ++j) {
+                for (int k = 0; k < N; ++k) {
+                    uint32_t a = j * stride + k;
+                    uint32_t b = a + 1;
+                    uint32_t c = a + stride;
+                    uint32_t d = c + 1;
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+            }
+            wom.boundMin = glm::vec3(-halfSize, -halfSize, 0);
+            wom.boundMax = glm::vec3( halfSize,  halfSize, 0);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-grid: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  subdivisions : %d (%dx%d cells)\n", N, N, N);
+            std::printf("  size         : %.3f\n", size);
+            std::printf("  vertices     : %zu = (N+1)²\n", wom.vertices.size());
+            std::printf("  triangles    : %zu = 2N²\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-disc") == 0 && i + 1 < argc) {
+            // Flat circular disc on XY centered at origin. Center
+            // vertex + ring of <segments> verts, indexed as a fan.
+            // Useful for magic circles, coin meshes, lily pads, top
+            // caps for cylinders the user wants without making a
+            // full cylinder.
+            std::string womBase = argv[++i];
+            float radius = 1.0f;
+            int segments = 32;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { radius = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { segments = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (radius <= 0.0f || segments < 3 || segments > 1024) {
+                std::fprintf(stderr,
+                    "gen-mesh-disc: radius must be positive, segments 3..1024\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // Center vertex.
+            {
+                wowee::pipeline::WoweeModel::Vertex v;
+                v.position = glm::vec3(0, 0, 0);
+                v.normal = glm::vec3(0, 0, 1);
+                v.texCoord = glm::vec2(0.5f, 0.5f);
+                wom.vertices.push_back(v);
+            }
+            // Ring vertices (one extra at end so UV-seam isn't shared).
+            for (int k = 0; k <= segments; ++k) {
+                float t = static_cast<float>(k) / segments;
+                float ang = t * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                wowee::pipeline::WoweeModel::Vertex v;
+                v.position = glm::vec3(radius * ca, radius * sa, 0);
+                v.normal = glm::vec3(0, 0, 1);
+                v.texCoord = glm::vec2(0.5f + 0.5f * ca, 0.5f + 0.5f * sa);
+                wom.vertices.push_back(v);
+            }
+            // Fan indices.
+            for (int k = 0; k < segments; ++k) {
+                wom.indices.push_back(0);
+                wom.indices.push_back(1 + k);
+                wom.indices.push_back(2 + k);
+            }
+            wom.boundMin = glm::vec3(-radius, -radius, 0);
+            wom.boundMax = glm::vec3( radius,  radius, 0);
+            wom.boundRadius = radius;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-disc: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  radius    : %.3f\n", radius);
+            std::printf("  segments  : %d\n", segments);
+            std::printf("  vertices  : %zu (1 center + %d ring)\n",
+                        wom.vertices.size(), segments + 1);
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-tube") == 0 && i + 1 < argc) {
+            // Hollow cylinder along Y axis. Outer + inner walls + top
+            // and bottom annular caps. Useful for railings, fence
+            // posts, pipes, hollow logs, ring towers — anywhere a
+            // solid cylinder would feel wrong because you should be
+            // able to see through the middle.
+            std::string womBase = argv[++i];
+            float outerR = 1.0f;
+            float innerR = 0.7f;
+            float height = 2.0f;
+            int segments = 24;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { outerR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { innerR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { height = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { segments = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (outerR <= 0 || innerR <= 0 || innerR >= outerR ||
+                height <= 0 || segments < 3 || segments > 1024) {
+                std::fprintf(stderr,
+                    "gen-mesh-tube: 0 < innerR < outerR, height > 0, segments 3..1024\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            float h = height * 0.5f;
+            auto addV = [&](float x, float y, float z,
+                              float nx, float ny, float nz,
+                              float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = glm::vec3(x, y, z);
+                vtx.normal = glm::vec3(nx, ny, nz);
+                vtx.texCoord = glm::vec2(u, v);
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Outer wall: 2 rows × (segments+1) verts, normals point
+            // radially outward.
+            uint32_t outerStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(outerR * ca, -h, outerR * sa, ca, 0, sa, u, 0);
+                addV(outerR * ca,  h, outerR * sa, ca, 0, sa, u, 1);
+            }
+            for (int sg = 0; sg < segments; ++sg) {
+                uint32_t a = outerStart + sg * 2;
+                uint32_t b = a + 1, c = a + 2, d = a + 3;
+                wom.indices.push_back(a);
+                wom.indices.push_back(c);
+                wom.indices.push_back(b);
+                wom.indices.push_back(b);
+                wom.indices.push_back(c);
+                wom.indices.push_back(d);
+            }
+            // Inner wall: normals point radially inward, winding
+            // reversed so the inside-facing surfaces face the viewer
+            // when looking through the tube.
+            uint32_t innerStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(innerR * ca, -h, innerR * sa, -ca, 0, -sa, u, 0);
+                addV(innerR * ca,  h, innerR * sa, -ca, 0, -sa, u, 1);
+            }
+            for (int sg = 0; sg < segments; ++sg) {
+                uint32_t a = innerStart + sg * 2;
+                uint32_t b = a + 1, c = a + 2, d = a + 3;
+                wom.indices.push_back(a);
+                wom.indices.push_back(b);
+                wom.indices.push_back(c);
+                wom.indices.push_back(b);
+                wom.indices.push_back(d);
+                wom.indices.push_back(c);
+            }
+            // Top annular cap: ring at +Y. Inner + outer ring of verts,
+            // quads stitched between them, normal +Y.
+            uint32_t topInner = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(innerR * ca, h, innerR * sa, 0, 1, 0,
+                       0.5f + 0.5f * (innerR / outerR) * ca,
+                       0.5f + 0.5f * (innerR / outerR) * sa);
+            }
+            uint32_t topOuter = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(outerR * ca, h, outerR * sa, 0, 1, 0,
+                       0.5f + 0.5f * ca, 0.5f + 0.5f * sa);
+            }
+            for (int sg = 0; sg < segments; ++sg) {
+                uint32_t a = topInner + sg;
+                uint32_t b = topInner + sg + 1;
+                uint32_t c = topOuter + sg;
+                uint32_t d = topOuter + sg + 1;
+                wom.indices.push_back(a);
+                wom.indices.push_back(c);
+                wom.indices.push_back(b);
+                wom.indices.push_back(b);
+                wom.indices.push_back(c);
+                wom.indices.push_back(d);
+            }
+            // Bottom annular cap, normal -Y, winding reversed.
+            uint32_t botInner = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(innerR * ca, -h, innerR * sa, 0, -1, 0,
+                       0.5f + 0.5f * (innerR / outerR) * ca,
+                       0.5f - 0.5f * (innerR / outerR) * sa);
+            }
+            uint32_t botOuter = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * 3.14159265358979f;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(outerR * ca, -h, outerR * sa, 0, -1, 0,
+                       0.5f + 0.5f * ca, 0.5f - 0.5f * sa);
+            }
+            for (int sg = 0; sg < segments; ++sg) {
+                uint32_t a = botInner + sg;
+                uint32_t b = botInner + sg + 1;
+                uint32_t c = botOuter + sg;
+                uint32_t d = botOuter + sg + 1;
+                wom.indices.push_back(a);
+                wom.indices.push_back(b);
+                wom.indices.push_back(c);
+                wom.indices.push_back(b);
+                wom.indices.push_back(d);
+                wom.indices.push_back(c);
+            }
+            wom.boundMin = glm::vec3(-outerR, -h, -outerR);
+            wom.boundMax = glm::vec3( outerR,  h,  outerR);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-tube: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  outer R   : %.3f\n", outerR);
+            std::printf("  inner R   : %.3f\n", innerR);
+            std::printf("  height    : %.3f\n", height);
+            std::printf("  segments  : %d\n", segments);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-capsule") == 0 && i + 1 < argc) {
+            // Capsule along the Y axis: cylindrical body of length
+            // cylHeight bookended by two hemispheres of radius. Total
+            // height is cylHeight + 2*radius. Useful for character
+            // collision shells, pill-shaped buttons, hot-dog props,
+            // and physics-friendly placeholders.
+            std::string womBase = argv[++i];
+            float radius = 0.5f;
+            float cylHeight = 1.0f;
+            int segments = 16;
+            int stacks = 8;  // per hemisphere
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { radius = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { cylHeight = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { segments = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { stacks = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (radius <= 0 || cylHeight < 0 ||
+                segments < 3 || segments > 1024 ||
+                stacks < 1 || stacks > 256) {
+                std::fprintf(stderr,
+                    "gen-mesh-capsule: radius > 0, cylHeight >= 0, segments 3..1024, stacks 1..256\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            float halfBody = cylHeight * 0.5f;
+            float totalH = cylHeight + 2.0f * radius;
+            auto addV = [&](float x, float y, float z,
+                              float nx, float ny, float nz,
+                              float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = glm::vec3(x, y, z);
+                vtx.normal = glm::vec3(nx, ny, nz);
+                vtx.texCoord = glm::vec2(u, v);
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Top hemisphere: stacks rings from north pole down to
+            // body top. Vertex layout per ring: (segments+1) verts.
+            const float pi = 3.14159265358979f;
+            int totalVPerRing = segments + 1;
+            // Top hemisphere rings: stacks+1 rings (ring 0 is the
+            // pole). v texcoord goes 0..0.25 across the cap.
+            for (int st = 0; st <= stacks; ++st) {
+                float t = static_cast<float>(st) / stacks;
+                float phi = t * (pi * 0.5f);  // 0 at pole, π/2 at body
+                float sphi = std::sin(phi), cphi = std::cos(phi);
+                float ringR = radius * sphi;
+                float ringY = halfBody + radius * cphi;
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * pi;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    addV(ringR * ca, ringY, ringR * sa,
+                          sphi * ca, cphi, sphi * sa,
+                          u, t * 0.25f);
+                }
+            }
+            // Body: 2 rings (top and bottom of cylinder), normal
+            // radial (no Y component). UV goes 0.25..0.75.
+            int bodyTopRingStart = static_cast<int>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * pi;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(radius * ca, halfBody, radius * sa, ca, 0, sa, u, 0.25f);
+            }
+            int bodyBotRingStart = static_cast<int>(wom.vertices.size());
+            for (int sg = 0; sg <= segments; ++sg) {
+                float u = static_cast<float>(sg) / segments;
+                float ang = u * 2.0f * pi;
+                float ca = std::cos(ang), sa = std::sin(ang);
+                addV(radius * ca, -halfBody, radius * sa, ca, 0, sa, u, 0.75f);
+            }
+            // Bottom hemisphere: mirror of top.
+            int botHemiStart = static_cast<int>(wom.vertices.size());
+            for (int st = 0; st <= stacks; ++st) {
+                float t = static_cast<float>(st) / stacks;
+                float phi = t * (pi * 0.5f);
+                float sphi = std::sin(phi), cphi = std::cos(phi);
+                float ringR = radius * cphi;
+                float ringY = -halfBody - radius * sphi;
+                for (int sg = 0; sg <= segments; ++sg) {
+                    float u = static_cast<float>(sg) / segments;
+                    float ang = u * 2.0f * pi;
+                    float ca = std::cos(ang), sa = std::sin(ang);
+                    addV(ringR * ca, ringY, ringR * sa,
+                          cphi * ca, -sphi, cphi * sa,
+                          u, 0.75f + t * 0.25f);
+                }
+            }
+            // Index the rings: top hemi (stacks rings → stacks-1
+            // bands), body (1 band), bottom hemi (stacks bands).
+            auto stitch = [&](int topRingStart, int botRingStart) {
+                for (int sg = 0; sg < segments; ++sg) {
+                    uint32_t a = topRingStart + sg;
+                    uint32_t b = a + 1;
+                    uint32_t c = botRingStart + sg;
+                    uint32_t d = c + 1;
+                    wom.indices.push_back(a);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(b);
+                    wom.indices.push_back(c);
+                    wom.indices.push_back(d);
+                }
+            };
+            // Top hemisphere bands.
+            for (int st = 0; st < stacks; ++st) {
+                stitch(st * totalVPerRing, (st + 1) * totalVPerRing);
+            }
+            // Body band: between bodyTopRingStart and bodyBotRingStart.
+            stitch(bodyTopRingStart, bodyBotRingStart);
+            // Bottom hemisphere bands.
+            for (int st = 0; st < stacks; ++st) {
+                stitch(botHemiStart + st * totalVPerRing,
+                        botHemiStart + (st + 1) * totalVPerRing);
+            }
+            wom.boundMin = glm::vec3(-radius, -totalH * 0.5f, -radius);
+            wom.boundMax = glm::vec3( radius,  totalH * 0.5f,  radius);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-capsule: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  radius     : %.3f\n", radius);
+            std::printf("  cylHeight  : %.3f\n", cylHeight);
+            std::printf("  total H    : %.3f\n", totalH);
+            std::printf("  segments   : %d\n", segments);
+            std::printf("  stacks     : %d (per hemisphere)\n", stacks);
+            std::printf("  vertices   : %zu\n", wom.vertices.size());
+            std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
+            // Displaces each vertex along its current normal by the
+            // heightmap brightness × scale. UVs determine where each
+            // vertex samples the heightmap.
+            //
+            // Pairs naturally with --gen-mesh-grid: gen a flat grid,
+            // then --displace-mesh with a noise PNG to create
+            // procedural terrain. Or use it on a sphere to make a
+            // bumpy planet.
+            std::string womBase = argv[++i];
+            std::string pngPath = argv[++i];
+            float scale = 1.0f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { scale = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (!std::isfinite(scale)) scale = 1.0f;
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            namespace fs = std::filesystem;
+            if (!wowee::pipeline::WoweeModelLoader::exists(womBase)) {
+                std::fprintf(stderr,
+                    "displace-mesh: %s.wom does not exist\n", womBase.c_str());
+                return 1;
+            }
+            int W, H, comp;
+            uint8_t* data = stbi_load(pngPath.c_str(), &W, &H, &comp, 1);
+            if (!data) {
+                std::fprintf(stderr,
+                    "displace-mesh: cannot read %s (%s)\n",
+                    pngPath.c_str(), stbi_failure_reason());
+                return 1;
+            }
+            auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+            if (!wom.isValid()) {
+                std::fprintf(stderr,
+                    "displace-mesh: failed to load %s.wom\n", womBase.c_str());
+                stbi_image_free(data);
+                return 1;
+            }
+            float minDelta = 1e30f, maxDelta = -1e30f;
+            for (auto& v : wom.vertices) {
+                // Sample the heightmap with bilinear filtering at
+                // (u, v). Wrap repeating UVs.
+                float u = v.texCoord.x - std::floor(v.texCoord.x);
+                float vv = v.texCoord.y - std::floor(v.texCoord.y);
+                float fx = u * (W - 1);
+                float fy = vv * (H - 1);
+                int x0 = static_cast<int>(fx);
+                int y0 = static_cast<int>(fy);
+                int x1 = std::min(x0 + 1, W - 1);
+                int y1 = std::min(y0 + 1, H - 1);
+                float tx = fx - x0;
+                float ty = fy - y0;
+                auto sample = [&](int x, int y) {
+                    return data[y * W + x] / 255.0f;
+                };
+                float a = sample(x0, y0);
+                float b = sample(x1, y0);
+                float c = sample(x0, y1);
+                float d = sample(x1, y1);
+                float ab = a + (b - a) * tx;
+                float cd = c + (d - c) * tx;
+                float h = ab + (cd - ab) * ty;
+                float delta = h * scale;
+                v.position += v.normal * delta;
+                if (delta < minDelta) minDelta = delta;
+                if (delta > maxDelta) maxDelta = delta;
+            }
+            stbi_image_free(data);
+            // Recompute bounds; normals stay (they're now stale to
+            // the displaced surface but the user can run --smooth-
+            // mesh-normals if they want shading to follow the bumps).
+            wom.boundMin = glm::vec3(1e30f);
+            wom.boundMax = glm::vec3(-1e30f);
+            for (const auto& v : wom.vertices) {
+                wom.boundMin = glm::min(wom.boundMin, v.position);
+                wom.boundMax = glm::max(wom.boundMax, v.position);
+            }
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "displace-mesh: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Displaced %s.wom with %s\n",
+                        womBase.c_str(), pngPath.c_str());
+            std::printf("  source PNG : %dx%d\n", W, H);
+            std::printf("  scale      : %g\n", scale);
+            std::printf("  vertices   : %zu touched\n", wom.vertices.size());
+            std::printf("  delta      : %.3f to %.3f\n", minDelta, maxDelta);
+            std::printf("  new bounds : (%.3f, %.3f, %.3f) - (%.3f, %.3f, %.3f)\n",
+                        wom.boundMin.x, wom.boundMin.y, wom.boundMin.z,
+                        wom.boundMax.x, wom.boundMax.y, wom.boundMax.z);
+            std::printf("  hint       : run --smooth-mesh-normals so shading follows the bumps\n");
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh-from-heightmap") == 0 && i + 2 < argc) {
             // Convert a grayscale PNG into a heightmap mesh. Each
@@ -20422,6 +22449,65 @@ int main(int argc, char* argv[]) {
                       });
             for (const auto& [verb, count] : sorted) {
                 std::printf("    --%-12s %4d\n", verb.c_str(), count);
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-cli-categories") == 0) {
+            // Discovery view of every CLI flag grouped by verb prefix.
+            // Where --info-cli-stats just counts per category, this
+            // lists every command in each category — handy for "I
+            // know I want to gen something but what shapes/textures
+            // are available?"
+            FILE* old = stdout;
+            FILE* tmp = std::tmpfile();
+            if (!tmp) {
+                std::fprintf(stderr, "info-cli-categories: tmpfile failed\n");
+                return 1;
+            }
+            stdout = tmp;
+            printUsage(argv[0]);
+            stdout = old;
+            std::fseek(tmp, 0, SEEK_SET);
+            std::set<std::string> commands;
+            char line[512];
+            while (std::fgets(line, sizeof(line), tmp)) {
+                const char* p = line;
+                while (*p == ' ' || *p == '\t') ++p;
+                if (p[0] != '-' || p[1] != '-') continue;
+                std::string flag;
+                while (*p && (std::isalnum(static_cast<unsigned char>(*p)) ||
+                              *p == '-' || *p == '_')) { flag += *p++; }
+                if (flag.size() > 2) commands.insert(flag);
+            }
+            std::fclose(tmp);
+            commands.insert("--help");
+            commands.insert("--version");
+            std::map<std::string, std::vector<std::string>> byCategory;
+            for (const auto& c : commands) {
+                size_t verbStart = 2;
+                size_t verbEnd = c.find('-', verbStart);
+                std::string verb = (verbEnd == std::string::npos)
+                    ? c.substr(verbStart)
+                    : c.substr(verbStart, verbEnd - verbStart);
+                byCategory[verb].push_back(c);
+            }
+            std::printf("CLI commands by category (%zu total):\n\n",
+                        commands.size());
+            // Sort categories by count descending, commands within
+            // each alphabetically.
+            std::vector<std::pair<std::string, std::vector<std::string>>> sorted(
+                byCategory.begin(), byCategory.end());
+            std::sort(sorted.begin(), sorted.end(),
+                      [](const auto& a, const auto& b) {
+                          if (a.second.size() != b.second.size())
+                              return a.second.size() > b.second.size();
+                          return a.first < b.first;
+                      });
+            for (const auto& [verb, cmds] : sorted) {
+                std::printf("--%s (%zu):\n", verb.c_str(), cmds.size());
+                for (const auto& c : cmds) {
+                    std::printf("  %s\n", c.c_str());
+                }
+                std::printf("\n");
             }
             return 0;
         } else if (std::strcmp(argv[i], "--info-cli-help") == 0 && i + 1 < argc) {

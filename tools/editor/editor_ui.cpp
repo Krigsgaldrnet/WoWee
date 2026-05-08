@@ -395,6 +395,27 @@ void EditorUI::renderMenuBar(EditorApp& app) {
                     "Same seed → same population (reproducible)");
                 ImGui::EndMenu();
             }
+            if (ImGui::MenuItem("Snap All Spawns to Ground", nullptr, false,
+                                  app.hasTerrainLoaded())) {
+                app.snapAllSpawnsToGround();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Re-snap every creature + object's Z to actual terrain height.\n"
+                    "Run after terrain edits to fix floating/buried spawns.");
+            if (ImGui::MenuItem("Audit Spawns Against Terrain", nullptr, false,
+                                  app.hasTerrainLoaded())) {
+                int issues = app.auditSpawnsAgainstTerrain(5.0f);
+                if (issues == 0)
+                    app.showToast("Audit clean — every spawn within 5y of terrain");
+                else
+                    app.showToast(std::to_string(issues) +
+                                   " spawn(s) more than 5y off terrain — try Snap All");
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Count spawns whose Z is more than 5y off terrain.\n"
+                    "Surfaces placement bugs without modifying anything.");
             if (ImGui::MenuItem("Clear All Objects/NPCs", nullptr, false, app.hasTerrainLoaded())) {
                 if (app.getObjectPlacer().objectCount() > 0 || app.getNpcSpawner().spawnCount() > 0)
                     app.clearAllObjects();
@@ -2932,6 +2953,113 @@ void EditorUI::renderPropertiesPanel(EditorApp& app) {
             std::strncpy(ambDayBuf, manifest.ambienceDay.c_str(), sizeof(ambDayBuf) - 1);
             std::strncpy(ambNightBuf, manifest.ambienceNight.c_str(), sizeof(ambNightBuf) - 1);
 
+            // Lazy-loaded scan of available music files. Walks
+            // <data>/Sound/Music recursively and grabs any .mp3/.wav/
+            // .ogg. Cached after first build; "Refresh" rebuilds the
+            // list. The dropdown then offers each scanned file as a
+            // selectable preset alongside the manual text input below.
+            static std::vector<std::string> musicScan;
+            static std::vector<std::string> ambienceScan;
+            static bool scanned = false;
+            auto rescan = [&]() {
+                musicScan.clear();
+                ambienceScan.clear();
+                namespace fs = std::filesystem;
+                std::string dp = app.getDataPath();
+                if (dp.empty()) dp = "Data";
+                std::string musicRoot = dp + "/Sound/Music";
+                std::string ambRoot   = dp + "/Sound/Ambience";
+                auto walk = [](const std::string& root,
+                                std::vector<std::string>& out) {
+                    std::error_code ec;
+                    if (!fs::exists(root)) return;
+                    for (const auto& e : fs::recursive_directory_iterator(root, ec)) {
+                        if (!e.is_regular_file()) continue;
+                        std::string ext = e.path().extension().string();
+                        std::transform(ext.begin(), ext.end(), ext.begin(),
+                                       [](unsigned char c) { return std::tolower(c); });
+                        if (ext == ".mp3" || ext == ".wav" || ext == ".ogg") {
+                            out.push_back(e.path().string());
+                        }
+                    }
+                    std::sort(out.begin(), out.end());
+                };
+                walk(musicRoot, musicScan);
+                walk(ambRoot, ambienceScan);
+                scanned = true;
+            };
+            if (!scanned) rescan();
+            if (ImGui::SmallButton("Refresh##audioScan")) rescan();
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1),
+                "%zu music / %zu ambience files",
+                musicScan.size(), ambienceScan.size());
+            // Music dropdown.
+            if (ImGui::BeginCombo("Music File##audio",
+                                    manifest.musicTrack.empty()
+                                    ? "(none)"
+                                    : manifest.musicTrack.c_str())) {
+                if (ImGui::Selectable("(none)", manifest.musicTrack.empty())) {
+                    manifest.musicTrack.clear();
+                    musicBuf[0] = 0;
+                }
+                for (const auto& p : musicScan) {
+                    bool sel = (p == manifest.musicTrack);
+                    if (ImGui::Selectable(p.c_str(), sel)) {
+                        manifest.musicTrack = p;
+                        std::strncpy(musicBuf, p.c_str(), sizeof(musicBuf) - 1);
+                        musicBuf[sizeof(musicBuf) - 1] = 0;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            // "Play preview" via OS default audio player. Avoids
+            // pulling SDL_mixer into the editor binary just for the
+            // preview workflow — the user already has a working audio
+            // player and this hands the file off to it. macOS uses
+            // 'open', most Linux desktops use 'xdg-open', Windows
+            // uses 'start ""'.
+            auto playFile = [](const std::string& path) {
+                if (path.empty()) return;
+#if defined(__APPLE__)
+                std::string cmd = "open \"" + path + "\" >/dev/null 2>&1 &";
+#elif defined(_WIN32)
+                std::string cmd = "start \"\" \"" + path + "\"";
+#else
+                std::string cmd = "xdg-open \"" + path + "\" >/dev/null 2>&1 &";
+#endif
+                std::system(cmd.c_str());
+            };
+            if (!manifest.musicTrack.empty()) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Play##music")) playFile(manifest.musicTrack);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Open in OS default audio player");
+            }
+            // Day-ambience dropdown.
+            if (ImGui::BeginCombo("Ambience File##audio",
+                                    manifest.ambienceDay.empty()
+                                    ? "(none)"
+                                    : manifest.ambienceDay.c_str())) {
+                if (ImGui::Selectable("(none)", manifest.ambienceDay.empty())) {
+                    manifest.ambienceDay.clear();
+                    ambDayBuf[0] = 0;
+                }
+                for (const auto& p : ambienceScan) {
+                    bool sel = (p == manifest.ambienceDay);
+                    if (ImGui::Selectable(p.c_str(), sel)) {
+                        manifest.ambienceDay = p;
+                        std::strncpy(ambDayBuf, p.c_str(), sizeof(ambDayBuf) - 1);
+                        ambDayBuf[sizeof(ambDayBuf) - 1] = 0;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (!manifest.ambienceDay.empty()) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Play##ambDay")) playFile(manifest.ambienceDay);
+            }
+
             if (ImGui::InputText("Music##audio", musicBuf, sizeof(musicBuf)))
                 manifest.musicTrack = musicBuf;
             if (ImGui::InputText("Ambience (Day)##audio", ambDayBuf, sizeof(ambDayBuf)))
@@ -2991,8 +3119,9 @@ void EditorUI::renderStatusBar(EditorApp& app) {
         if (app.hasTerrainLoaded()) {
             bool dirty = app.getTerrainEditor().hasUnsavedChanges() ||
                          app.hasUnsavedNonTerrainChanges();
-            ImGui::Text("[%s] %s [%d,%d]%s", m, app.getLoadedMap().c_str(),
+            ImGui::Text("[%s] %s [%d,%d] %s%s", m, app.getLoadedMap().c_str(),
                         app.getLoadedTileX(), app.getLoadedTileY(),
+                        getBiomeName(app.getActiveBiome()),
                         dirty ? " *" : "");
             ImGui::SameLine(vp->Size.x * 0.35f);
             ImGui::Text("Obj:%zu NPC:%zu Q:%zu",

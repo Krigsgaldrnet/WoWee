@@ -102,6 +102,15 @@ public:
     // tile's world bbox. Mirrors the --random-populate-zone CLI
     // command so users can do bulk population from inside the editor.
     void randomPopulateZone(int creatureCount, int objectCount, uint32_t seed);
+    // Re-snap every creature + object Z to actual terrain. In-editor
+    // mirror of the --snap-zone-to-ground CLI; useful after terrain
+    // edits or random population to fix floating/buried spawns.
+    void snapAllSpawnsToGround();
+    // Count spawns whose Z is more than `threshold` yards off from
+    // the terrain. Returns the issue count; 0 means clean. Used by
+    // the in-editor "Audit Spawns" menu to surface placement bugs
+    // without dropping to CLI.
+    int auditSpawnsAgainstTerrain(float threshold = 5.0f) const;
     void centerOnTerrain();
 
     // Multi-tile support
@@ -186,6 +195,9 @@ private:
     float waterHeight_ = 100.0f;
     uint16_t waterType_ = 0;
     std::string dataPath_;
+public:
+    const std::string& getDataPath() const { return dataPath_; }
+private:
 
     std::string loadedMap_;
     int loadedTileX_ = -1;
@@ -195,6 +207,9 @@ private:
     // reads this so subsequent generations honor the active biome instead of
     // reapplying the same hardcoded heightband textures every time.
     Biome activeBiome_ = Biome::Grassland;
+public:
+    Biome getActiveBiome() const { return activeBiome_; }
+private:
 
     // "Click on terrain to place crater" mode. The Crater button arms this
     // with the user's chosen radius/depth/rim; the next left-click on
