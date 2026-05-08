@@ -563,6 +563,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Doorway arch: two columns + semicircular top (default 1.0/1.5/0.2/0.3, 12 segs)\n");
     std::printf("  --gen-mesh-pyramid <wom-base> [sides] [baseRadius] [height]\n");
     std::printf("                         N-sided polygonal pyramid with apex at +Y (default 4 sides, 1.0/1.0)\n");
+    std::printf("  --gen-mesh-fence <wom-base> [posts] [postSpacing] [postHeight] [railThick]\n");
+    std::printf("                         Repeating fence: N posts along +X with two horizontal rails between\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
     std::printf("  --gen-mesh-from-heightmap <wom-base> <heightmap.png> [scaleXZ] [scaleY]\n");
@@ -1051,7 +1053,7 @@ int main(int argc, char* argv[]) {
         "--add-texture-to-mesh", "--add-texture-to-zone",
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
         "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
-        "--gen-mesh-pyramid",
+        "--gen-mesh-pyramid", "--gen-mesh-fence",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -19545,6 +19547,129 @@ int main(int argc, char* argv[]) {
                         wom.vertices.size(), sides, sides);
             std::printf("  triangles : %zu (%d sides + %d base)\n",
                         wom.indices.size() / 3, sides, sides);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-fence") == 0 && i + 1 < argc) {
+            // Repeating fence: N square posts along +X spaced
+            // <postSpacing> apart, with two horizontal rails (top
+            // and bottom) connecting consecutive posts. Posts span
+            // from Y=0 up to Y=postHeight; each post is a small box
+            // of width = railThick × 2.
+            //
+            // Useful for fences around plots, pen boundaries,
+            // walkway dividers, garden beds.
+            std::string womBase = argv[++i];
+            int posts = 5;
+            float spacing = 1.0f;
+            float postH = 1.0f;
+            float rt = 0.05f;  // rail/post thickness
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { posts = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { spacing = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { postH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { rt = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (posts < 2 || posts > 256 ||
+                spacing <= 0 || postH <= 0 || rt <= 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-fence: posts 2..256, spacing/height/thick > 0\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p;
+                vtx.normal = n;
+                vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            auto addBox = [&](glm::vec3 lo, glm::vec3 hi) {
+                struct Face { float nx, ny, nz; float verts[4][3]; };
+                Face faces[6] = {
+                    { 0,  1,  0, {{lo.x,hi.y,hi.z},{hi.x,hi.y,hi.z},{hi.x,hi.y,lo.z},{lo.x,hi.y,lo.z}}},
+                    { 0, -1,  0, {{lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},{hi.x,lo.y,hi.z},{lo.x,lo.y,hi.z}}},
+                    { 0,  0,  1, {{lo.x,lo.y,hi.z},{hi.x,lo.y,hi.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}}},
+                    { 0,  0, -1, {{hi.x,lo.y,lo.z},{lo.x,lo.y,lo.z},{lo.x,hi.y,lo.z},{hi.x,hi.y,lo.z}}},
+                    { 1,  0,  0, {{hi.x,lo.y,hi.z},{hi.x,lo.y,lo.z},{hi.x,hi.y,lo.z},{hi.x,hi.y,hi.z}}},
+                    {-1,  0,  0, {{lo.x,lo.y,lo.z},{lo.x,lo.y,hi.z},{lo.x,hi.y,hi.z},{lo.x,hi.y,lo.z}}},
+                };
+                float uvs[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+                for (auto& f : faces) {
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    for (int k = 0; k < 4; ++k) {
+                        addV(glm::vec3(f.verts[k][0], f.verts[k][1], f.verts[k][2]),
+                              glm::vec3(f.nx, f.ny, f.nz),
+                              glm::vec2(uvs[k][0], uvs[k][1]));
+                    }
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 1);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 0);
+                    wom.indices.push_back(base + 2);
+                    wom.indices.push_back(base + 3);
+                }
+            };
+            float postHalfW = rt;
+            // Posts along +X starting at X=0.
+            for (int k = 0; k < posts; ++k) {
+                float cx = k * spacing;
+                addBox(glm::vec3(cx - postHalfW, -postHalfW, 0),
+                        glm::vec3(cx + postHalfW,  postHalfW, postH));
+            }
+            // Rails between consecutive posts. Two rails per gap:
+            // top (~80% up) and bottom (~30% up).
+            float topRailZ = postH * 0.8f;
+            float botRailZ = postH * 0.3f;
+            float railHalfH = rt * 0.5f;  // rail is thinner than posts
+            for (int k = 0; k + 1 < posts; ++k) {
+                float xL = k * spacing + postHalfW;
+                float xR = (k + 1) * spacing - postHalfW;
+                if (xR <= xL) continue;  // posts touching
+                addBox(glm::vec3(xL, -railHalfH, topRailZ - railHalfH),
+                        glm::vec3(xR,  railHalfH, topRailZ + railHalfH));
+                addBox(glm::vec3(xL, -railHalfH, botRailZ - railHalfH),
+                        glm::vec3(xR,  railHalfH, botRailZ + railHalfH));
+            }
+            // Bounds.
+            wom.boundMin = glm::vec3(-postHalfW, -postHalfW, 0);
+            wom.boundMax = glm::vec3((posts - 1) * spacing + postHalfW,
+                                       postHalfW, postH);
+            wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
+            wowee::pipeline::WoweeModel::Batch b;
+            b.indexStart = 0;
+            b.indexCount = static_cast<uint32_t>(wom.indices.size());
+            b.textureIndex = 0;
+            b.blendMode = 0;
+            b.flags = 0;
+            wom.batches.push_back(b);
+            wom.texturePaths.push_back("");
+            std::filesystem::path womPath(womBase);
+            std::filesystem::create_directories(womPath.parent_path());
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-fence: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  posts     : %d\n", posts);
+            std::printf("  spacing   : %.3f\n", spacing);
+            std::printf("  height    : %.3f\n", postH);
+            std::printf("  thickness : %.3f\n", rt);
+            std::printf("  span X    : %.3f\n", (posts - 1) * spacing);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
