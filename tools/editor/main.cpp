@@ -586,6 +586,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Round castle tower with crenellated battlements (default 8 teeth, 0.5m tall)\n");
     std::printf("  --gen-mesh-house <wom-base> [width] [depth] [height] [roofHeight]\n");
     std::printf("                         Simple house: cube body + pyramid roof (default 4×4×3 with 2m roof)\n");
+    std::printf("  --gen-mesh-fountain <wom-base> [basinRadius] [basinHeight] [spoutRadius] [spoutHeight]\n");
+    std::printf("                         Round basin + center spout column (default 1.5/0.5 basin, 0.2/1.5 spout)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1109,7 +1111,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
         "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
         "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
-        "--gen-mesh-tower", "--gen-mesh-house",
+        "--gen-mesh-tower", "--gen-mesh-house", "--gen-mesh-fountain",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -22644,6 +22646,115 @@ int main(int argc, char* argv[]) {
             std::printf("  roof H     : %.3f (apex %.3f)\n", roofH, apexY);
             std::printf("  vertices   : %zu\n", wom.vertices.size());
             std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-fountain") == 0 && i + 1 < argc) {
+            // Procedural fountain: low cylindrical basin with a
+            // narrower spout column rising from its center. Solid
+            // basin (not hollow) for simplicity — readable as a
+            // fountain because of the spout silhouette. Useful for
+            // town squares, plazas, garden centerpieces.
+            //
+            // The 21st procedural mesh primitive.
+            std::string womBase = argv[++i];
+            float basinR = 1.5f;
+            float basinH = 0.5f;
+            float spoutR = 0.2f;
+            float spoutH = 1.5f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { basinR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { basinH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { spoutR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { spoutH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (basinR <= 0 || basinH <= 0 || spoutR <= 0 || spoutH <= 0 ||
+                spoutR >= basinR) {
+                std::fprintf(stderr,
+                    "gen-mesh-fountain: all dims > 0; spoutR must be < basinR\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            const int segs = 24;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Cylinder helper: build side ring + caps from y0 to y1
+            // at given radius. Returns when done; indices appended
+            // directly. Side ring is 2× (segs+1) verts at y0 then y1.
+            auto cylinder = [&](float r, float y0, float y1) {
+                uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segs; ++sg) {
+                    float u = static_cast<float>(sg) / segs;
+                    float ang = u * 2.0f * pi;
+                    glm::vec3 p(r * std::cos(ang), y0, r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, n, glm::vec2(u, 0));
+                }
+                uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segs; ++sg) {
+                    float u = static_cast<float>(sg) / segs;
+                    float ang = u * 2.0f * pi;
+                    glm::vec3 p(r * std::cos(ang), y1, r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, n, glm::vec2(u, 1));
+                }
+                for (int sg = 0; sg < segs; ++sg) {
+                    wom.indices.insert(wom.indices.end(), {
+                        bot + sg, top + sg, bot + sg + 1,
+                        bot + sg + 1, top + sg, top + sg + 1
+                    });
+                }
+                // Top cap (faces +Y)
+                uint32_t topC = addV({0, y1, 0}, {0, 1, 0}, {0.5f, 0.5f});
+                for (int sg = 0; sg < segs; ++sg) {
+                    wom.indices.insert(wom.indices.end(),
+                        {topC, top + sg, top + sg + 1});
+                }
+                // Bottom cap (faces -Y)
+                uint32_t botC = addV({0, y0, 0}, {0, -1, 0}, {0.5f, 0.5f});
+                for (int sg = 0; sg < segs; ++sg) {
+                    wom.indices.insert(wom.indices.end(),
+                        {botC, bot + sg + 1, bot + sg});
+                }
+            };
+            // Basin: cylinder from y=0 to y=basinH at basinR.
+            cylinder(basinR, 0.0f, basinH);
+            // Spout: cylinder from y=basinH to y=basinH+spoutH at spoutR.
+            cylinder(spoutR, basinH, basinH + spoutH);
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            float maxY = basinH + spoutH;
+            wom.boundMin = glm::vec3(-basinR, 0,    -basinR);
+            wom.boundMax = glm::vec3( basinR, maxY,  basinR);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-fountain: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  basin    : R=%.3f H=%.3f\n", basinR, basinH);
+            std::printf("  spout    : R=%.3f H=%.3f\n", spoutR, spoutH);
+            std::printf("  total H  : %.3f\n", maxY);
+            std::printf("  vertices : %zu\n", wom.vertices.size());
+            std::printf("  triangles: %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
