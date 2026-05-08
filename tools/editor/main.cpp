@@ -827,6 +827,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Exit 1 if any proprietary Blizzard assets (.m2/.wmo/.blp/.dbc) remain — release gate\n");
     std::printf("  --audit-project <projectDir>\n");
     std::printf("                         Run validate-project + open-only + check-project-refs together; one PASS/FAIL\n");
+    std::printf("  --bench-audit-project <projectDir>\n");
+    std::printf("                         Time each --audit-project sub-step; shows where the slow ones are\n");
     std::printf("  --info-zone-bytes <zoneDir> [--json]\n");
     std::printf("                         Per-file size breakdown grouped by category, sorted largest-first\n");
     std::printf("  --info-project-extents <projectDir> [--json]\n");
@@ -1042,7 +1044,7 @@ int main(int argc, char* argv[]) {
         "--unpack-wcp", "--pack-wcp",
         "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
         "--validate-whm", "--validate-all", "--validate-project",
-        "--validate-project-open-only", "--audit-project",
+        "--validate-project-open-only", "--audit-project", "--bench-audit-project",
         "--bench-validate-project", "--bench-bake-project",
         "--bench-migrate-data-tree", "--list-data-tree-largest",
         "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
@@ -8741,6 +8743,49 @@ int main(int argc, char* argv[]) {
             std::printf("OVERALL: FAIL — %d sub-check(s) failed\n", totalFailed);
             std::printf("  rerun a failing sub-check directly for detailed output\n");
             return 1;
+        } else if (std::strcmp(argv[i], "--bench-audit-project") == 0 && i + 1 < argc) {
+            // Time each --audit-project sub-step end-to-end so users
+            // can see where the slow checks are. Useful for tuning a
+            // CI pipeline: drop the slowest check from a fast-feedback
+            // pre-commit hook, run the full audit on push.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "bench-audit-project: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::string self = argv[0];
+            struct Step { const char* name; const char* flag; double ms; int rc; };
+            std::vector<Step> steps = {
+                {"format validation       ", "--validate-project",            0, 0},
+                {"open-only release gate  ", "--validate-project-open-only",  0, 0},
+                {"items schema            ", "--validate-project-items",      0, 0},
+                {"reference integrity     ", "--check-project-refs",          0, 0},
+                {"content field sanity    ", "--check-project-content",       0, 0},
+                {"spawn placement         ", "--audit-project-spawns",        0, 0},
+            };
+            double totalMs = 0;
+            for (auto& s : steps) {
+                std::string cmd = "\"" + self + "\" " + s.flag + " \"" +
+                                   projectDir + "\" >/dev/null 2>&1";
+                auto t0 = std::chrono::steady_clock::now();
+                s.rc = std::system(cmd.c_str());
+                auto t1 = std::chrono::steady_clock::now();
+                s.ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                totalMs += s.ms;
+            }
+            std::printf("bench-audit-project: %s\n", projectDir.c_str());
+            std::printf("  total : %.1f ms (%.2f s)\n", totalMs, totalMs / 1000.0);
+            std::printf("\n  step                       wall-clock    share   status\n");
+            for (const auto& s : steps) {
+                double share = totalMs > 0 ? 100.0 * s.ms / totalMs : 0.0;
+                std::printf("  %s   %9.1f ms   %5.1f%%   %s (rc=%d)\n",
+                            s.name, s.ms, share,
+                            s.rc == 0 ? "ok" : "FAIL", s.rc);
+            }
+            return 0;
         } else if (std::strcmp(argv[i], "--bench-validate-project") == 0 && i + 1 < argc) {
             // Time --validate-project per zone. Reports avg/min/max
             // latency so users can spot zones that are unusually slow
