@@ -580,6 +580,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Fluted classical column with concave flutes + flared cap/base (default 12 flutes)\n");
     std::printf("  --gen-mesh-bridge <wom-base> [length] [width] [planks] [railHeight]\n");
     std::printf("                         Plank bridge with two side rails (default 6 planks across, rails on)\n");
+    std::printf("  --gen-mesh-tower <wom-base> [radius] [height] [battlements] [battlementH]\n");
+    std::printf("                         Round castle tower with crenellated battlements (default 8 teeth, 0.5m tall)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1094,6 +1096,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
         "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
         "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
+        "--gen-mesh-tower",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -21803,6 +21806,157 @@ int main(int argc, char* argv[]) {
                         railHeight > 0 ? "" : " (no rails)");
             std::printf("  vertices  : %zu\n", wom.vertices.size());
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-tower") == 0 && i + 1 < argc) {
+            // Procedural castle tower. Solid cylindrical shaft with
+            // crenellated battlements ringing the top: alternating
+            // raised "merlons" and gaps. Each merlon is a thin
+            // angular wedge sitting on the top rim. Useful for
+            // keeps, watchtowers, perimeter walls.
+            //
+            // The 19th procedural mesh primitive.
+            std::string womBase = argv[++i];
+            float radius = 1.5f;
+            float height = 8.0f;
+            int battlements = 8;     // merlons around the rim
+            float battlementH = 0.5f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { radius = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { height = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { battlements = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { battlementH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (radius <= 0 || height <= 0 ||
+                battlements < 4 || battlements > 64 ||
+                battlementH < 0 || battlementH > 4.0f) {
+                std::fprintf(stderr,
+                    "gen-mesh-tower: radius>0, height>0, battlements 4..64, bH 0..4\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            const int radSegs = std::max(24, battlements * 4);
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Cylinder shaft: side ring at y=0 and y=height.
+            uint32_t botRing = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= radSegs; ++sg) {
+                float u = static_cast<float>(sg) / radSegs;
+                float ang = u * 2.0f * pi;
+                glm::vec3 p(radius * std::cos(ang), 0, radius * std::sin(ang));
+                glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                addV(p, n, glm::vec2(u, 0));
+            }
+            uint32_t topRing = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= radSegs; ++sg) {
+                float u = static_cast<float>(sg) / radSegs;
+                float ang = u * 2.0f * pi;
+                glm::vec3 p(radius * std::cos(ang), height, radius * std::sin(ang));
+                glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                addV(p, n, glm::vec2(u, 1));
+            }
+            for (int sg = 0; sg < radSegs; ++sg) {
+                wom.indices.insert(wom.indices.end(), {
+                    botRing + sg, topRing + sg, botRing + sg + 1,
+                    botRing + sg + 1, topRing + sg, topRing + sg + 1
+                });
+            }
+            // Top cap (fan toward upward-facing center).
+            uint32_t topCenter = addV({0, height, 0}, {0, 1, 0}, {0.5f, 0.5f});
+            for (int sg = 0; sg < radSegs; ++sg) {
+                wom.indices.insert(wom.indices.end(),
+                    { topCenter, topRing + sg, topRing + sg + 1 });
+            }
+            // Bottom cap (fan toward downward-facing center).
+            uint32_t botCenter = addV({0, 0, 0}, {0, -1, 0}, {0.5f, 0.5f});
+            for (int sg = 0; sg < radSegs; ++sg) {
+                wom.indices.insert(wom.indices.end(),
+                    { botCenter, botRing + sg + 1, botRing + sg });
+            }
+            // Battlements: thin curved blocks around the top rim,
+            // half the slots filled (alternating merlon/gap).
+            // Each merlon is approximated by an extruded arc segment
+            // at the wall radius extending outward slightly.
+            if (battlementH > 0.0f) {
+                int merlonSpan = radSegs / battlements;
+                int merlonHalf = std::max(1, merlonSpan / 2);
+                float outerR = radius * 1.05f;
+                float innerR = radius * 0.95f;
+                for (int b = 0; b < battlements; ++b) {
+                    int startSeg = b * merlonSpan;
+                    // Build 8-vert box-like segment between angles
+                    // covering merlonHalf slots (so half the rim is
+                    // filled, forming the merlon/gap pattern).
+                    float ang0 = 2.0f * pi * static_cast<float>(startSeg) / radSegs;
+                    float ang1 = 2.0f * pi * static_cast<float>(startSeg + merlonHalf) / radSegs;
+                    glm::vec3 outer0(outerR * std::cos(ang0), 0, outerR * std::sin(ang0));
+                    glm::vec3 outer1(outerR * std::cos(ang1), 0, outerR * std::sin(ang1));
+                    glm::vec3 inner0(innerR * std::cos(ang0), 0, innerR * std::sin(ang0));
+                    glm::vec3 inner1(innerR * std::cos(ang1), 0, innerR * std::sin(ang1));
+                    glm::vec3 yLow(0, height, 0);
+                    glm::vec3 yHigh(0, height + battlementH, 0);
+                    glm::vec3 norm = glm::normalize(
+                        outer0 + outer1 - inner0 - inner1);
+                    auto V = [&](glm::vec3 p, glm::vec3 n) {
+                        return addV(p, n, {0, 0});
+                    };
+                    // 8 verts: 4 corners × 2 heights
+                    uint32_t bbl = V(outer0 + yLow,  norm);   // bot outer left
+                    uint32_t bbr = V(outer1 + yLow,  norm);
+                    uint32_t btl = V(outer0 + yHigh, norm);   // top outer left
+                    uint32_t btr = V(outer1 + yHigh, norm);
+                    uint32_t ibl = V(inner0 + yLow,  -norm);  // bot inner left
+                    uint32_t ibr = V(inner1 + yLow,  -norm);
+                    uint32_t itl = V(inner0 + yHigh, -norm);  // top inner left
+                    uint32_t itr = V(inner1 + yHigh, -norm);
+                    // outer face
+                    wom.indices.insert(wom.indices.end(), {bbl, btl, bbr, bbr, btl, btr});
+                    // inner face
+                    wom.indices.insert(wom.indices.end(), {ibr, itr, ibl, ibl, itr, itl});
+                    // top face
+                    wom.indices.insert(wom.indices.end(), {btl, itl, btr, btr, itl, itr});
+                    // left and right end caps
+                    wom.indices.insert(wom.indices.end(), {bbl, ibl, btl, btl, ibl, itl});
+                    wom.indices.insert(wom.indices.end(), {bbr, btr, ibr, ibr, btr, itr});
+                }
+            }
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            float maxY = height + battlementH;
+            float maxR = radius * 1.05f;
+            wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
+            wom.boundMax = glm::vec3( maxR, maxY,  maxR);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-tower: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  radius      : %.3f\n", radius);
+            std::printf("  height      : %.3f\n", height);
+            std::printf("  battlements : %d (%.3fm tall)\n",
+                        battlements, battlementH);
+            std::printf("  vertices    : %zu\n", wom.vertices.size());
+            std::printf("  triangles   : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
