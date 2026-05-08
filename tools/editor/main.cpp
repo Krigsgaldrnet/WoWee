@@ -941,7 +941,7 @@ static void printUsage(const char* argv0) {
     std::printf("                         Single-mesh detail: bounds, version, batches, bones, textures, attachments in one view\n");
     std::printf("  --info-mesh-storage-budget <wom-base> [--json]\n");
     std::printf("                         Estimated bytes-per-category breakdown for a single WOM (vertices/indices/bones/...)\n");
-    std::printf("  --list-project-meshes <projectDir> [--json]\n");
+    std::printf("  --list-project-meshes-detail <projectDir> [--json]\n");
     std::printf("                         Per-mesh listing across every zone in a project (sorted by triangle count)\n");
     std::printf("  --info-project-models-total <projectDir> [--json]\n");
     std::printf("                         Aggregate WOM/WOB stats across an entire project (per-zone breakdown + totals)\n");
@@ -1075,7 +1075,7 @@ int main(int argc, char* argv[]) {
         "--list-project-meshes", "--list-project-audio",
         "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
-        "--list-zone-meshes", "--list-project-meshes", "--info-mesh",
+        "--list-zone-meshes", "--list-project-meshes-detail", "--info-mesh",
         "--info-mesh-storage-budget",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
@@ -2676,16 +2676,17 @@ int main(int argc, char* argv[]) {
                             r.path.c_str());
             }
             return 0;
-        } else if (std::strcmp(argv[i], "--list-project-meshes") == 0 && i + 1 < argc) {
-            // Project-wide companion to --list-zone-meshes. Walks
-            // every zone in <projectDir>, collects every .wom across
-            // all zones, sorts by triangle count descending, and
-            // reports a global per-mesh table with the originating
-            // zone in the first column.
+        } else if (std::strcmp(argv[i], "--list-project-meshes-detail") == 0 && i + 1 < argc) {
+            // Per-mesh sorted listing across an entire project.
+            // Walks every zone in <projectDir>, collects every .wom,
+            // sorts by triangle count descending, and reports a
+            // global per-mesh table with the originating zone in
+            // the first column.
             //
             // Useful for project-wide outlier detection ("which mesh
             // anywhere in the project is the heaviest?") and for
-            // mesh-sharing audits.
+            // mesh-sharing audits. Companion to --list-project-meshes
+            // (which gives the per-zone aggregate view).
             std::string projectDir = argv[++i];
             bool jsonOut = (i + 1 < argc &&
                             std::strcmp(argv[i + 1], "--json") == 0);
@@ -2693,7 +2694,7 @@ int main(int argc, char* argv[]) {
             namespace fs = std::filesystem;
             if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
                 std::fprintf(stderr,
-                    "list-project-meshes: %s is not a directory\n",
+                    "list-project-meshes-detail: %s is not a directory\n",
                     projectDir.c_str());
                 return 1;
             }
