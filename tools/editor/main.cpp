@@ -603,6 +603,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Add random creatures/objects to a zone (seeded for reproducibility)\n");
     std::printf("  --random-populate-items <zoneDir> [--seed N] [--count N] [--max-quality Q]\n");
     std::printf("                         Generate random items.json entries (seeded; quality cap defaults to epic=4)\n");
+    std::printf("  --gen-zone-texture-pack <zoneDir> [--seed N]\n");
+    std::printf("                         Drop a starter texture pack (grass/dirt/stone/brick/wood/water) into <zoneDir>/textures/\n");
     std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
     std::printf("                         End-to-end: scaffold-zone + random-populate-zone + random-populate-items\n");
     std::printf("  --gen-random-project <count> [--prefix N] [--seed N] [--creatures N] [--objects N] [--items N]\n");
@@ -1094,7 +1096,8 @@ int main(int argc, char* argv[]) {
         "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
-        "--gen-random-zone", "--gen-random-project", "--info-spawn",
+        "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
+        "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -13851,6 +13854,76 @@ int main(int argc, char* argv[]) {
             std::printf("  objects   : %d\n", objects);
             std::printf("  items     : %d\n", items);
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-zone-texture-pack") == 0 && i + 1 < argc) {
+            // Drop a starter PNG texture pack into <zoneDir>/textures/
+            // by fanning out to the procedural --gen-texture-* commands.
+            // Saves the user from sourcing proprietary art when bringing
+            // up a new zone — six themed textures (grass, dirt, stone,
+            // brick, wood, water) cover most outdoor & dungeon needs.
+            std::string zoneDir = argv[++i];
+            uint32_t seed = 1;
+            for (int k = i + 1; k < argc; ++k) {
+                std::string flag = argv[k];
+                if (flag == "--seed" && k + 1 < argc) {
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++k])); } catch (...) {}
+                    i = k;
+                } else if (flag.rfind("--", 0) == 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-texture-pack: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            std::filesystem::path zp(zoneDir);
+            if (!std::filesystem::exists(zp / "zone.json")) {
+                std::fprintf(stderr,
+                    "gen-zone-texture-pack: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            std::filesystem::path texDir = zp / "textures";
+            std::error_code ec;
+            std::filesystem::create_directories(texDir, ec);
+            if (ec) {
+                std::fprintf(stderr,
+                    "gen-zone-texture-pack: cannot create %s: %s\n",
+                    texDir.string().c_str(), ec.message().c_str());
+                return 1;
+            }
+            std::string self = (argc > 0) ? argv[0] : "wowee_editor";
+            // Each row: {flag, fileName, args...}. Using std::string so
+            // we can interpolate the per-pack seed without sprintf
+            // gymnastics; subprocess invocation handles quoting.
+            struct Cmd {
+                std::string flag;
+                std::string outName;
+                std::vector<std::string> args;
+            };
+            std::vector<Cmd> jobs = {
+                {"--gen-texture-noise",   "grass.png",  {"4A7C2E", "5C9B3A", "256", "256"}},
+                {"--gen-texture-noise",   "dirt.png",   {"6B4A2A", "8B5E3A", "256", "256"}},
+                {"--gen-texture-checker", "stone.png",  {"7A7A7A", "5A5A5A", "32", "256", "256"}},
+                {"--gen-texture-brick",   "brick.png",  {"8B4513", "D3D3D3", "64", "24", "4", "256", "256"}},
+                {"--gen-texture-wood",    "wood.png",   {"8B5A2B", "4A3216", "12", std::to_string(seed), "256", "256"}},
+                {"--gen-texture-radial",  "water.png",  {"3A6FA0", "1E4A78", "256", "256"}},
+            };
+            int written = 0;
+            for (const auto& job : jobs) {
+                std::filesystem::path out = texDir / job.outName;
+                std::string cmd = "\"" + self + "\" " + job.flag + " \"" + out.string() + "\"";
+                for (const auto& a : job.args) cmd += " " + a;
+                cmd += " > /dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc != 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-texture-pack: %s failed (rc=%d)\n",
+                        job.flag.c_str(), rc);
+                } else {
+                    ++written;
+                }
+            }
+            std::printf("gen-zone-texture-pack: wrote %d of %zu textures to %s\n",
+                        written, jobs.size(), texDir.string().c_str());
+            return written == static_cast<int>(jobs.size()) ? 0 : 1;
         } else if (std::strcmp(argv[i], "--gen-random-project") == 0 && i + 1 < argc) {
             // Project-wide companion: spawn N random zones in one
             // pass. Names default to "Zone1, Zone2..."; tile
