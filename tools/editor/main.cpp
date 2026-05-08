@@ -640,6 +640,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         One-glance status table per zone in a project (BOOTSTRAPPED/PARTIAL/EMPTY)\n");
     std::printf("  --gen-zone-readme <zoneDir> [--out <path>]\n");
     std::printf("                         Auto-generate README.md from zone.json + asset inventory (writes README.md by default)\n");
+    std::printf("  --gen-project-readme <projectDir> [--out <path>]\n");
+    std::printf("                         Auto-generate PROJECT.md with per-zone status + asset count rollup\n");
     std::printf("  --validate-zone-pack <zoneDir> [--json]\n");
     std::printf("                         Audit a zone's open-format asset pack: textures/meshes/audio counts + WOM validity\n");
     std::printf("  --validate-project-packs <projectDir>\n");
@@ -1162,7 +1164,7 @@ int main(int argc, char* argv[]) {
         "--gen-project-starter-pack", "--gen-audio-tone",
         "--gen-audio-noise", "--gen-audio-sweep", "--gen-zone-audio-pack",
         "--info-zone-summary", "--info-project-summary",
-        "--gen-zone-readme",
+        "--gen-zone-readme", "--gen-project-readme",
         "--validate-zone-pack", "--validate-project-packs", "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
@@ -15445,6 +15447,127 @@ int main(int argc, char* argv[]) {
             std::printf("  textures : %zu\n", texList.size());
             std::printf("  meshes   : %zu\n", meshList.size());
             std::printf("  audio    : %zu\n", audList.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-project-readme") == 0 && i + 1 < argc) {
+            // Auto-generate PROJECT.md for a project. Walks every
+            // zone, classifies each (BOOTSTRAPPED/PARTIAL/EMPTY),
+            // and writes a Markdown table with per-zone counts and
+            // a project-level rollup. Pairs with --gen-zone-readme
+            // (same scope, but per-zone) — running both gives
+            // self-documenting content at every level.
+            std::string projectDir = argv[++i];
+            std::string outPath;
+            for (int k = i + 1; k < argc; ++k) {
+                std::string flag = argv[k];
+                if (flag == "--out" && k + 1 < argc) {
+                    outPath = argv[++k];
+                    i = k;
+                } else if (flag.rfind("--", 0) == 0) {
+                    std::fprintf(stderr,
+                        "gen-project-readme: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "gen-project-readme: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = projectDir + "/PROJECT.md";
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Same scan logic as info-project-summary
+            auto scan = [](const std::string& base, const std::string& sub,
+                           const std::string& ext) -> std::pair<int, uint64_t> {
+                int n = 0;
+                uint64_t b = 0;
+                fs::path p = fs::path(base) / sub;
+                if (!fs::exists(p)) return {0, 0};
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(p, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ext) continue;
+                    n++;
+                    b += e.file_size();
+                }
+                return {n, b};
+            };
+            struct ZRow {
+                std::string name, status, biome;
+                int texN, mshN, audN;
+                uint64_t bytes;
+            };
+            std::vector<ZRow> rows;
+            int totalAssets = 0;
+            uint64_t totalBytes = 0;
+            for (const auto& z : zones) {
+                ZRow r;
+                r.name = fs::path(z).filename().string();
+                r.biome = "?";
+                try {
+                    std::ifstream zf(z + "/zone.json");
+                    if (zf) {
+                        nlohmann::json zj;
+                        zf >> zj;
+                        if (zj.contains("biome") && zj["biome"].is_string())
+                            r.biome = zj["biome"].get<std::string>();
+                    }
+                } catch (...) {}
+                auto [tn, tb] = scan(z, "textures", ".png");
+                auto [mn, mb] = scan(z, "meshes", ".wom");
+                auto [an, ab] = scan(z, "audio", ".wav");
+                r.texN = tn; r.mshN = mn; r.audN = an;
+                r.bytes = tb + mb + ab;
+                if (tn > 0 && mn > 0 && an > 0)      r.status = "BOOTSTRAPPED";
+                else if (tn + mn + an > 0)           r.status = "PARTIAL";
+                else                                  r.status = "EMPTY";
+                totalAssets += tn + mn + an;
+                totalBytes += r.bytes;
+                rows.push_back(std::move(r));
+            }
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "gen-project-readme: cannot open %s for write\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::string projName = fs::path(projectDir).filename().string();
+            if (projName.empty()) projName = "Project";
+            out << "# " << projName << "\n\n";
+            out << "Auto-generated project manifest. Re-run "
+                << "`--gen-project-readme " << projectDir
+                << "` after content changes.\n\n";
+            out << "- **Path**: `" << projectDir << "`\n";
+            out << "- **Zones**: " << rows.size() << "\n";
+            out << "- **Total assets**: " << totalAssets << "\n";
+            out << "- **Total bytes**: " << totalBytes << "\n\n";
+            out << "## Zones\n\n";
+            if (rows.empty()) {
+                out << "_None._\n";
+            } else {
+                out << "| Zone | Status | Biome | Textures | Meshes | Audio | Bytes |\n";
+                out << "|------|--------|-------|----------|--------|-------|-------|\n";
+                for (const auto& r : rows) {
+                    out << "| `" << r.name << "` | " << r.status
+                        << " | " << r.biome
+                        << " | " << r.texN << " | " << r.mshN
+                        << " | " << r.audN << " | " << r.bytes << " |\n";
+                }
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  zones        : %zu\n", rows.size());
+            std::printf("  total assets : %d\n", totalAssets);
+            std::printf("  total bytes  : %llu\n",
+                        static_cast<unsigned long long>(totalBytes));
             return 0;
         } else if (std::strcmp(argv[i], "--validate-zone-pack") == 0 && i + 1 < argc) {
             // Audit a zone's open-format asset pack. Reports counts
