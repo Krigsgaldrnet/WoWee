@@ -607,6 +607,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         List spawns whose Z is more than <threshold> yards off from the terrain (default 5)\n");
     std::printf("  --list-zone-spawns <zoneDir> [--json]\n");
     std::printf("                         Combined creature+object listing for a zone (kind, name, position, key fields)\n");
+    std::printf("  --diff-zone-spawns <aZoneDir> <bZoneDir>\n");
+    std::printf("                         Compare two zones' creature+object lists (added/removed/moved)\n");
     std::printf("  --info-spawn <zoneDir> <creature|object> <index> [--json]\n");
     std::printf("                         Detailed view of a single creature/object spawn by index\n");
     std::printf("  --list-project-spawns <projectDir> [--json]\n");
@@ -1080,6 +1082,7 @@ int main(int argc, char* argv[]) {
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone", "--gen-random-project", "--info-spawn",
+        "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
         "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
@@ -14283,6 +14286,113 @@ int main(int argc, char* argv[]) {
                 }
             }
             return 0;
+        } else if (std::strcmp(argv[i], "--diff-zone-spawns") == 0 && i + 2 < argc) {
+            // Compare two zones' creatures + objects. Matches by
+            // (kind, name) — paired entries with mismatched positions
+            // are reported as "moved" with the delta. Entries that
+            // exist in only one zone are added/removed.
+            //
+            // Useful for "what did the new branch change vs main"
+            // before merging, or for confirming a copy-zone-items
+            // produced what was expected.
+            std::string aDir = argv[++i];
+            std::string bDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(aDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "diff-zone-spawns: %s has no zone.json\n", aDir.c_str());
+                return 1;
+            }
+            if (!fs::exists(bDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "diff-zone-spawns: %s has no zone.json\n", bDir.c_str());
+                return 1;
+            }
+            // Multiset key: kind/name. Position comes along so we can
+            // report "moved" deltas when a name appears in both with
+            // different XYZ.
+            struct Entry { std::string kind, name; glm::vec3 pos; };
+            auto load = [&](const std::string& dir) {
+                std::vector<Entry> out;
+                wowee::editor::NpcSpawner spawner;
+                if (spawner.loadFromFile(dir + "/creatures.json")) {
+                    for (const auto& s : spawner.getSpawns()) {
+                        out.push_back({"creature", s.name, s.position});
+                    }
+                }
+                wowee::editor::ObjectPlacer placer;
+                if (placer.loadFromFile(dir + "/objects.json")) {
+                    for (const auto& o : placer.getObjects()) {
+                        out.push_back({"object", o.path, o.position});
+                    }
+                }
+                return out;
+            };
+            auto av = load(aDir);
+            auto bv = load(bDir);
+            // Sort each side for stable key matching.
+            auto cmp = [](const Entry& x, const Entry& y) {
+                if (x.kind != y.kind) return x.kind < y.kind;
+                return x.name < y.name;
+            };
+            std::sort(av.begin(), av.end(), cmp);
+            std::sort(bv.begin(), bv.end(), cmp);
+            int added = 0, removed = 0, moved = 0, same = 0;
+            std::vector<std::string> diffs;
+            // Two-pointer walk: equal keys → check position; A-only →
+            // removed; B-only → added.
+            size_t i_a = 0, i_b = 0;
+            while (i_a < av.size() || i_b < bv.size()) {
+                if (i_a < av.size() && i_b < bv.size() &&
+                    av[i_a].kind == bv[i_b].kind &&
+                    av[i_a].name == bv[i_b].name) {
+                    glm::vec3 d = bv[i_b].pos - av[i_a].pos;
+                    float dlen = glm::length(d);
+                    if (dlen > 0.5f) {
+                        char buf[256];
+                        std::snprintf(buf, sizeof(buf),
+                            "  moved   %-9s %-30s by (%+.1f, %+.1f, %+.1f)",
+                            av[i_a].kind.c_str(),
+                            av[i_a].name.substr(0, 30).c_str(),
+                            d.x, d.y, d.z);
+                        diffs.push_back(buf);
+                        moved++;
+                    } else {
+                        same++;
+                    }
+                    i_a++; i_b++;
+                } else if (i_b == bv.size() ||
+                           (i_a < av.size() && cmp(av[i_a], bv[i_b]))) {
+                    char buf[256];
+                    std::snprintf(buf, sizeof(buf),
+                        "  removed %-9s %s",
+                        av[i_a].kind.c_str(),
+                        av[i_a].name.substr(0, 60).c_str());
+                    diffs.push_back(buf);
+                    removed++;
+                    i_a++;
+                } else {
+                    char buf[256];
+                    std::snprintf(buf, sizeof(buf),
+                        "  added   %-9s %s",
+                        bv[i_b].kind.c_str(),
+                        bv[i_b].name.substr(0, 60).c_str());
+                    diffs.push_back(buf);
+                    added++;
+                    i_b++;
+                }
+            }
+            std::printf("diff-zone-spawns: %s -> %s\n",
+                        aDir.c_str(), bDir.c_str());
+            std::printf("  added   : %d\n", added);
+            std::printf("  removed : %d\n", removed);
+            std::printf("  moved   : %d (>0.5y)\n", moved);
+            std::printf("  same    : %d\n", same);
+            if (!diffs.empty()) {
+                std::printf("\n");
+                for (const auto& d : diffs) std::printf("%s\n", d.c_str());
+            }
+            return (added + removed + moved) == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--info-spawn") == 0 && i + 3 < argc) {
             // Detailed view of one creature or object by index. The
             // list-zone-spawns table only shows headline fields; this
