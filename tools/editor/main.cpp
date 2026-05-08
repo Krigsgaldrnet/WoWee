@@ -591,6 +591,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Simple house: cube body + pyramid roof (default 4×4×3 with 2m roof)\n");
     std::printf("  --gen-mesh-fountain <wom-base> [basinRadius] [basinHeight] [spoutRadius] [spoutHeight]\n");
     std::printf("                         Round basin + center spout column (default 1.5/0.5 basin, 0.2/1.5 spout)\n");
+    std::printf("  --gen-mesh-statue <wom-base> [pedestalSize] [bodyHeight] [headRadius]\n");
+    std::printf("                         Humanoid placeholder: pedestal block + tall body cylinder + head sphere\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1119,6 +1121,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
         "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
         "--gen-mesh-tower", "--gen-mesh-house", "--gen-mesh-fountain",
+        "--gen-mesh-statue",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -23186,6 +23189,153 @@ int main(int argc, char* argv[]) {
             std::printf("  total H  : %.3f\n", maxY);
             std::printf("  vertices : %zu\n", wom.vertices.size());
             std::printf("  triangles: %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-statue") == 0 && i + 1 < argc) {
+            // Humanoid placeholder: square pedestal block + tall
+            // narrow body cylinder + head sphere. The silhouette
+            // reads as a statue without needing limbs. Useful for
+            // monuments, hero statues, plaza centerpieces, religious
+            // shrines.
+            //
+            // The 22nd procedural mesh primitive.
+            std::string womBase = argv[++i];
+            float pedSize = 1.0f;     // pedestal width and depth
+            float bodyH = 2.5f;       // body cylinder height
+            float headR = 0.4f;       // head sphere radius
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { pedSize = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { bodyH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { headR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (pedSize <= 0 || bodyH <= 0 || headR <= 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-statue: all dims must be positive\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Pedestal: low square block (24 unique verts).
+            float pedH = pedSize * 0.4f;
+            float hp = pedSize * 0.5f;
+            {
+                struct Face { glm::vec3 n, du, dv; };
+                Face faces[6] = {
+                    {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+                    {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+                    {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+                    {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+                    {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+                    {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+                };
+                glm::vec3 c(0, pedH * 0.5f, 0);
+                glm::vec3 ext(hp, pedH * 0.5f, hp);
+                for (const Face& f : faces) {
+                    glm::vec3 center = c + glm::vec3(f.n.x*ext.x, f.n.y*ext.y, f.n.z*ext.z);
+                    glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+                    glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    addV(center - du - dv, f.n, {0, 0});
+                    addV(center + du - dv, f.n, {1, 0});
+                    addV(center + du + dv, f.n, {1, 1});
+                    addV(center - du + dv, f.n, {0, 1});
+                    wom.indices.insert(wom.indices.end(),
+                        {base, base + 1, base + 2, base, base + 2, base + 3});
+                }
+            }
+            // Body cylinder from y=pedH to y=pedH+bodyH at radius pedSize*0.2
+            float bodyR = pedSize * 0.2f;
+            float bodyY0 = pedH;
+            float bodyY1 = pedH + bodyH;
+            const int segs = 16;
+            uint32_t bodyBot = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segs; ++sg) {
+                float u = static_cast<float>(sg) / segs;
+                float ang = u * 2.0f * pi;
+                glm::vec3 p(bodyR * std::cos(ang), bodyY0, bodyR * std::sin(ang));
+                glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                addV(p, n, {u, 0});
+            }
+            uint32_t bodyTop = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segs; ++sg) {
+                float u = static_cast<float>(sg) / segs;
+                float ang = u * 2.0f * pi;
+                glm::vec3 p(bodyR * std::cos(ang), bodyY1, bodyR * std::sin(ang));
+                glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                addV(p, n, {u, 1});
+            }
+            for (int sg = 0; sg < segs; ++sg) {
+                wom.indices.insert(wom.indices.end(), {
+                    bodyBot + sg, bodyTop + sg, bodyBot + sg + 1,
+                    bodyBot + sg + 1, bodyTop + sg, bodyTop + sg + 1
+                });
+            }
+            // Head sphere centered above body. UV-sphere with 16
+            // longitude × 12 latitude segments.
+            float headY = bodyY1 + headR;
+            const int headLon = 16;
+            const int headLat = 12;
+            uint32_t headStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int la = 0; la <= headLat; ++la) {
+                float v = static_cast<float>(la) / headLat;
+                float phi = v * pi;  // 0..pi
+                float sphi = std::sin(phi), cphi = std::cos(phi);
+                for (int lo = 0; lo <= headLon; ++lo) {
+                    float u = static_cast<float>(lo) / headLon;
+                    float theta = u * 2.0f * pi;
+                    glm::vec3 dir(sphi * std::cos(theta),
+                                  cphi,
+                                  sphi * std::sin(theta));
+                    glm::vec3 p = glm::vec3(0, headY, 0) + dir * headR;
+                    addV(p, dir, {u, v});
+                }
+            }
+            int rowSize = headLon + 1;
+            for (int la = 0; la < headLat; ++la) {
+                for (int lo = 0; lo < headLon; ++lo) {
+                    uint32_t i00 = headStart + la * rowSize + lo;
+                    uint32_t i01 = headStart + la * rowSize + lo + 1;
+                    uint32_t i10 = headStart + (la + 1) * rowSize + lo;
+                    uint32_t i11 = headStart + (la + 1) * rowSize + lo + 1;
+                    wom.indices.insert(wom.indices.end(),
+                        {i00, i10, i01, i01, i10, i11});
+                }
+            }
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            float maxY = headY + headR;
+            wom.boundMin = glm::vec3(-hp, 0,    -hp);
+            wom.boundMax = glm::vec3( hp, maxY,  hp);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-statue: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  pedestal  : %.3f × %.3f × %.3f\n", pedSize, pedH, pedSize);
+            std::printf("  body      : R=%.3f H=%.3f\n", bodyR, bodyH);
+            std::printf("  head      : R=%.3f\n", headR);
+            std::printf("  total H   : %.3f\n", maxY);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
