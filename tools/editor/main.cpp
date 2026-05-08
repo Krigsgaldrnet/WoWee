@@ -909,6 +909,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         List M2 bones with parent tree, key-bone IDs, pivot offsets\n");
     std::printf("  --export-bones-dot <wom-base> [out.dot]\n");
     std::printf("                         Render WOM bone hierarchy as Graphviz DOT (pipe to `dot -Tpng -o bones.png`)\n");
+    std::printf("  --list-project-meshes <projectDir> [--json]\n");
+    std::printf("                         Project-wide WOM inventory across every zone (vert/tri totals + per-zone breakdown)\n");
     std::printf("  --list-project-textures <projectDir> [--json]\n");
     std::printf("                         Aggregate texture refs across every WOM in a project (deduped, with zone breakdown)\n");
     std::printf("  --list-zone-meshes <zoneDir> [--json]\n");
@@ -1056,7 +1058,7 @@ int main(int argc, char* argv[]) {
         "--info-attachments", "--info-particles", "--info-sequences",
         "--info-bones", "--export-bones-dot",
         "--list-zone-meshes", "--list-zone-audio", "--list-zone-textures",
-        "--list-project-textures",
+        "--list-project-meshes", "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
         "--list-zone-meshes", "--list-project-meshes", "--info-mesh",
         "--info-mesh-storage-budget",
@@ -2148,6 +2150,109 @@ int main(int argc, char* argv[]) {
             std::printf("\n  refs  path\n");
             for (const auto& [path, count] : texHist) {
                 std::printf("  %4d  %s\n", count, path.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--list-project-meshes") == 0 && i + 1 < argc) {
+            // Project-wide companion to --list-zone-meshes. Walks
+            // every zone in <projectDir> and reports a per-zone
+            // WOM count + total bytes/verts/tris row, plus a project
+            // grand total. Useful for "how heavy is the whole project
+            // mesh-wise" budgeting before packaging.
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "list-project-meshes: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            struct ZRow {
+                std::string name;
+                int meshCount = 0;
+                uint64_t bytes = 0;
+                size_t verts = 0;
+                size_t tris = 0;
+            };
+            std::vector<ZRow> rows;
+            std::error_code ec;
+            for (const auto& z : zones) {
+                ZRow r;
+                r.name = fs::path(z).filename().string();
+                fs::path meshDir = fs::path(z) / "meshes";
+                if (fs::exists(meshDir)) {
+                    for (const auto& e : fs::recursive_directory_iterator(meshDir, ec)) {
+                        if (!e.is_regular_file()) continue;
+                        if (e.path().extension() != ".wom") continue;
+                        r.meshCount++;
+                        r.bytes += e.file_size();
+                        std::string base = e.path().string();
+                        base = base.substr(0, base.size() - 4);
+                        auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                        r.verts += wom.vertices.size();
+                        r.tris += wom.indices.size() / 3;
+                    }
+                }
+                rows.push_back(std::move(r));
+            }
+            int totalMeshes = 0;
+            uint64_t totalBytes = 0;
+            size_t totalVerts = 0, totalTris = 0;
+            for (const auto& r : rows) {
+                totalMeshes += r.meshCount;
+                totalBytes += r.bytes;
+                totalVerts += r.verts;
+                totalTris += r.tris;
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = rows.size();
+                j["totalMeshes"] = totalMeshes;
+                j["totalBytes"] = totalBytes;
+                j["totalVerts"] = totalVerts;
+                j["totalTris"] = totalTris;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({
+                        {"zone", r.name},
+                        {"meshes", r.meshCount},
+                        {"bytes", r.bytes},
+                        {"verts", r.verts},
+                        {"tris", r.tris},
+                    });
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project meshes: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu\n", rows.size());
+            std::printf("  total meshes : %d\n", totalMeshes);
+            std::printf("  total bytes  : %llu\n",
+                        static_cast<unsigned long long>(totalBytes));
+            std::printf("  total verts  : %zu\n", totalVerts);
+            std::printf("  total tris   : %zu\n", totalTris);
+            if (rows.empty()) {
+                std::printf("  *no zones found*\n");
+                return 0;
+            }
+            std::printf("\n  %5s %8s %8s %8s  %s\n",
+                        "wom", "bytes", "verts", "tris", "zone");
+            for (const auto& r : rows) {
+                std::printf("  %5d %8llu %8zu %8zu  %s\n",
+                            r.meshCount,
+                            static_cast<unsigned long long>(r.bytes),
+                            r.verts, r.tris, r.name.c_str());
             }
             return 0;
         } else if (std::strcmp(argv[i], "--list-project-textures") == 0 && i + 1 < argc) {
