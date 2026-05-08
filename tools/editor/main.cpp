@@ -646,6 +646,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         One-glance health digest for a zone: pack counts/bytes + audit pass/fail\n");
     std::printf("  --info-zone-deps <zoneDir> [--json]\n");
     std::printf("                         Find textures referenced by WOMs but missing from <zoneDir>/textures/ (broken-ref audit)\n");
+    std::printf("  --info-project-deps <projectDir>\n");
+    std::printf("                         Run --info-zone-deps across every zone; reports per-zone PASS/FAIL + grand total\n");
     std::printf("  --info-project-summary <projectDir> [--json]\n");
     std::printf("                         One-glance status table per zone in a project (BOOTSTRAPPED/PARTIAL/EMPTY)\n");
     std::printf("  --gen-zone-readme <zoneDir> [--out <path>]\n");
@@ -1174,7 +1176,8 @@ int main(int argc, char* argv[]) {
         "--gen-zone-mesh-pack", "--gen-zone-starter-pack",
         "--gen-project-starter-pack", "--gen-audio-tone",
         "--gen-audio-noise", "--gen-audio-sweep", "--gen-zone-audio-pack",
-        "--info-zone-summary", "--info-project-summary", "--info-zone-deps",
+        "--info-zone-summary", "--info-project-summary",
+        "--info-zone-deps", "--info-project-deps",
         "--gen-zone-readme", "--gen-project-readme",
         "--validate-zone-pack", "--validate-project-packs", "--info-spawn",
         "--diff-zone-spawns",
@@ -15263,6 +15266,56 @@ int main(int argc, char* argv[]) {
                 ? "PASS — all texture references resolve"
                 : "FAIL — missing references above");
             return missing == 0 ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--info-project-deps") == 0 && i + 1 < argc) {
+            // Run --info-zone-deps across every zone in a project
+            // and roll up per-zone PASS/FAIL plus a project total.
+            // Designed as a CI gate: exits non-zero if any zone has
+            // a broken texture reference. Lighter than re-implementing
+            // the dep walk here — defers to the per-zone command via
+            // subprocess so the resolution logic stays consistent.
+            std::string projectDir = argv[++i];
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-deps: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::fprintf(stderr,
+                    "info-project-deps: %s contains no zones\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::string self = (argc > 0) ? argv[0] : "wowee_editor";
+            int passed = 0, failed = 0;
+            std::printf("Project deps: %s\n", projectDir.c_str());
+            std::printf("  zones: %zu\n\n", zones.size());
+            for (const auto& z : zones) {
+                std::string cmd = "\"" + self + "\" --info-zone-deps \"" +
+                                  z + "\" > /dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                std::string name = fs::path(z).filename().string();
+                if (rc == 0) {
+                    ++passed;
+                    std::printf("  PASS  %s\n", name.c_str());
+                } else {
+                    ++failed;
+                    std::printf("  FAIL  %s\n", name.c_str());
+                }
+            }
+            std::printf("\n  Total: %d passed, %d failed\n", passed, failed);
+            std::printf("  %s\n",
+                        failed == 0 ? "PROJECT PASS"
+                                    : "PROJECT FAIL — re-run --info-zone-deps on FAILing zones for detail");
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--info-project-summary") == 0 && i + 1 < argc) {
             // Project-wide companion to --info-zone-summary. Walks
             // every zone in <projectDir> and reports a per-zone
