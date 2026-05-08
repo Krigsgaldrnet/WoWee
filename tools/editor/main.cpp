@@ -617,6 +617,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Drop a starter WOM mesh pack (rock/tree/fence) into <zoneDir>/meshes/\n");
     std::printf("  --gen-zone-starter-pack <zoneDir> [--seed N]\n");
     std::printf("                         Run both texture-pack + mesh-pack in one pass — full open-format bootstrap\n");
+    std::printf("  --validate-zone-pack <zoneDir> [--json]\n");
+    std::printf("                         Audit a zone's open-format asset pack: textures/meshes/audio counts + WOM validity\n");
     std::printf("  --gen-audio-tone <out.wav> <freqHz> <durationSec> [sampleRate] [waveform]\n");
     std::printf("                         Synthesize a procedural WAV (PCM-16 mono). Waveform: sine|square|triangle|saw\n");
     std::printf("  --gen-audio-noise <out.wav> <durationSec> [sampleRate] [color] [seed] [amplitude]\n");
@@ -1122,7 +1124,8 @@ int main(int argc, char* argv[]) {
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
         "--gen-zone-mesh-pack", "--gen-zone-starter-pack", "--gen-audio-tone",
-        "--gen-audio-noise", "--gen-zone-audio-pack", "--info-spawn",
+        "--gen-audio-noise", "--gen-zone-audio-pack", "--validate-zone-pack",
+        "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -14613,6 +14616,148 @@ int main(int argc, char* argv[]) {
             std::printf("gen-zone-audio-pack: wrote %d of %zu sounds to %s\n",
                         written, jobs.size(), audioDir.string().c_str());
             return written == static_cast<int>(jobs.size()) ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--validate-zone-pack") == 0 && i + 1 < argc) {
+            // Audit a zone's open-format asset pack. Reports counts
+            // and total bytes per category (textures/, meshes/,
+            // audio/) plus any malformed WOMs or invalid WAVs.
+            // Exit code 1 if any check fails — useful in CI to
+            // gate that gen-zone-starter-pack output is healthy.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "validate-zone-pack: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            struct CatStats {
+                int count = 0;
+                uint64_t bytes = 0;
+                int invalid = 0;
+                std::vector<std::string> invalidPaths;
+            };
+            CatStats tex, mesh, audio;
+            std::error_code ec;
+            // Textures: PNGs under textures/
+            fs::path texDir = fs::path(zoneDir) / "textures";
+            if (fs::exists(texDir)) {
+                for (const auto& e : fs::recursive_directory_iterator(texDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".png") continue;
+                    tex.count++;
+                    tex.bytes += e.file_size();
+                    // Quick PNG signature check (8 bytes)
+                    FILE* f = std::fopen(e.path().c_str(), "rb");
+                    if (f) {
+                        unsigned char sig[8];
+                        bool ok = (std::fread(sig, 1, 8, f) == 8 &&
+                                   sig[0] == 0x89 && sig[1] == 'P' &&
+                                   sig[2] == 'N' && sig[3] == 'G');
+                        std::fclose(f);
+                        if (!ok) {
+                            tex.invalid++;
+                            tex.invalidPaths.push_back(
+                                fs::relative(e.path(), zoneDir).string());
+                        }
+                    }
+                }
+            }
+            // Meshes: WOMs under meshes/ — load & sanity check
+            fs::path meshDir = fs::path(zoneDir) / "meshes";
+            if (fs::exists(meshDir)) {
+                for (const auto& e : fs::recursive_directory_iterator(meshDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wom") continue;
+                    mesh.count++;
+                    mesh.bytes += e.file_size();
+                    std::string base = e.path().string();
+                    base = base.substr(0, base.size() - 4);
+                    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                    if (wom.vertices.empty() || wom.indices.empty() ||
+                        wom.batches.empty()) {
+                        mesh.invalid++;
+                        mesh.invalidPaths.push_back(
+                            fs::relative(e.path(), zoneDir).string());
+                    }
+                }
+            }
+            // Audio: WAVs under audio/ — RIFF header check
+            fs::path audDir = fs::path(zoneDir) / "audio";
+            if (fs::exists(audDir)) {
+                for (const auto& e : fs::recursive_directory_iterator(audDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wav") continue;
+                    audio.count++;
+                    audio.bytes += e.file_size();
+                    FILE* f = std::fopen(e.path().c_str(), "rb");
+                    if (f) {
+                        char hdr[12];
+                        bool ok = (std::fread(hdr, 1, 12, f) == 12 &&
+                                   std::memcmp(hdr, "RIFF", 4) == 0 &&
+                                   std::memcmp(hdr + 8, "WAVE", 4) == 0);
+                        std::fclose(f);
+                        if (!ok) {
+                            audio.invalid++;
+                            audio.invalidPaths.push_back(
+                                fs::relative(e.path(), zoneDir).string());
+                        }
+                    }
+                }
+            }
+            int totalCount = tex.count + mesh.count + audio.count;
+            int totalInvalid = tex.invalid + mesh.invalid + audio.invalid;
+            uint64_t totalBytes = tex.bytes + mesh.bytes + audio.bytes;
+            bool pass = (totalInvalid == 0 && totalCount > 0);
+            if (jsonOut) {
+                auto catJ = [](const CatStats& c) {
+                    return nlohmann::json{
+                        {"count", c.count},
+                        {"bytes", c.bytes},
+                        {"invalid", c.invalid},
+                        {"invalidPaths", c.invalidPaths},
+                    };
+                };
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["pass"] = pass;
+                j["totalCount"] = totalCount;
+                j["totalBytes"] = totalBytes;
+                j["totalInvalid"] = totalInvalid;
+                j["textures"] = catJ(tex);
+                j["meshes"] = catJ(mesh);
+                j["audio"] = catJ(audio);
+                std::printf("%s\n", j.dump(2).c_str());
+                return pass ? 0 : 1;
+            }
+            std::printf("Zone pack audit: %s\n", zoneDir.c_str());
+            std::printf("\n  category   count    bytes  invalid\n");
+            std::printf("  textures   %5d  %7llu  %7d\n",
+                        tex.count,
+                        static_cast<unsigned long long>(tex.bytes),
+                        tex.invalid);
+            std::printf("  meshes     %5d  %7llu  %7d\n",
+                        mesh.count,
+                        static_cast<unsigned long long>(mesh.bytes),
+                        mesh.invalid);
+            std::printf("  audio      %5d  %7llu  %7d\n",
+                        audio.count,
+                        static_cast<unsigned long long>(audio.bytes),
+                        audio.invalid);
+            std::printf("  ----------------------------------\n");
+            std::printf("  TOTAL      %5d  %7llu  %7d\n",
+                        totalCount,
+                        static_cast<unsigned long long>(totalBytes),
+                        totalInvalid);
+            for (const auto* cat : { &tex, &mesh, &audio }) {
+                for (const auto& p : cat->invalidPaths) {
+                    std::printf("  INVALID    %s\n", p.c_str());
+                }
+            }
+            std::printf("\n  %s\n", pass ? "PASS — pack is healthy"
+                                          : "FAIL — see invalid paths above");
+            return pass ? 0 : 1;
         } else if (std::strcmp(argv[i], "--gen-random-project") == 0 && i + 1 < argc) {
             // Project-wide companion: spawn N random zones in one
             // pass. Names default to "Zone1, Zone2..."; tile
