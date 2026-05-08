@@ -576,6 +576,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Procedural boulder via subdivided octahedron + smooth noise displacement\n");
     std::printf("  --gen-mesh-pillar <wom-base> [radius] [height] [flutes] [capScale]\n");
     std::printf("                         Fluted classical column with concave flutes + flared cap/base (default 12 flutes)\n");
+    std::printf("  --gen-mesh-bridge <wom-base> [length] [width] [planks] [railHeight]\n");
+    std::printf("                         Plank bridge with two side rails (default 6 planks across, rails on)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1083,7 +1085,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
         "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
         "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
-        "--gen-mesh-rock", "--gen-mesh-pillar",
+        "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -21249,6 +21251,140 @@ int main(int argc, char* argv[]) {
             std::printf("  height    : %.3f\n", height);
             std::printf("  flutes    : %d\n", flutes);
             std::printf("  cap scale : %.2fx (capR=%.3f)\n", capScale, capR);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-bridge") == 0 && i + 1 < argc) {
+            // Procedural plank bridge. Deck is N axis-aligned planks
+            // running across the bridge's width with small gaps
+            // between, plus two side rails (top + bottom rails on
+            // posts). Bridge length runs along +X, width is on Z.
+            // The 18th procedural mesh primitive — useful for
+            // river crossings, dungeon catwalks, scenic overlooks.
+            std::string womBase = argv[++i];
+            float length = 6.0f;     // along X
+            float width = 2.0f;      // along Z
+            int planks = 6;          // plank count across the length
+            float railHeight = 1.0f; // rail height above deck (0 = no rails)
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { length = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { width = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { planks = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { railHeight = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (length <= 0 || width <= 0 ||
+                planks < 1 || planks > 64 ||
+                railHeight < 0 || railHeight > 4.0f) {
+                std::fprintf(stderr,
+                    "gen-mesh-bridge: length>0, width>0, planks 1..64, rail 0..4\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // Box helper — builds 24-vert / 12-tri box centered on
+            // (cx, cy, cz) with half-extents (hx, hy, hz). Each face
+            // gets unique vertices so flat-shading works. Indices are
+            // pushed into wom.indices directly.
+            auto addBox = [&](float cx, float cy, float cz,
+                              float hx, float hy, float hz) {
+                glm::vec3 c(cx, cy, cz);
+                struct Face {
+                    glm::vec3 n;
+                    glm::vec3 du, dv;  // unit-length axes spanning the face
+                };
+                Face faces[6] = {
+                    {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},   // top    (+Y)
+                    {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},   // bottom (-Y)
+                    {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},   // right  (+X)
+                    {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},   // left   (-X)
+                    {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},   // front  (+Z)
+                    {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},   // back   (-Z)
+                };
+                glm::vec3 ext(hx, hy, hz);
+                for (const Face& f : faces) {
+                    glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+                    glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+                    glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    auto push = [&](glm::vec3 p, float u, float v) {
+                        wowee::pipeline::WoweeModel::Vertex vtx;
+                        vtx.position = p;
+                        vtx.normal = f.n;
+                        vtx.texCoord = {u, v};
+                        wom.vertices.push_back(vtx);
+                    };
+                    push(center - du - dv, 0, 0);
+                    push(center + du - dv, 1, 0);
+                    push(center + du + dv, 1, 1);
+                    push(center - du + dv, 0, 1);
+                    wom.indices.insert(wom.indices.end(),
+                        { base, base + 1, base + 2, base, base + 2, base + 3 });
+                }
+            };
+            // Deck: planks along X, gap = 5% of plank pitch.
+            float plankThickness = 0.08f;
+            float plankPitch = length / planks;
+            float plankWidth = plankPitch * 0.95f;
+            for (int p = 0; p < planks; ++p) {
+                float cx = -length * 0.5f + plankPitch * (p + 0.5f);
+                addBox(cx, plankThickness * 0.5f, 0,
+                       plankWidth * 0.5f, plankThickness * 0.5f, width * 0.5f);
+            }
+            // Rails: 2 sides × (top rail + 3 posts) when railHeight > 0
+            if (railHeight > 0.0f) {
+                float postR = 0.06f;
+                float topRailR = 0.08f;
+                int postCount = 3;
+                float rzOffset = width * 0.5f - postR;
+                for (int side = 0; side < 2; ++side) {
+                    float zSign = (side == 0) ? 1.0f : -1.0f;
+                    float z = zSign * rzOffset;
+                    // Top rail: long thin box spanning length
+                    addBox(0, plankThickness + railHeight, z,
+                           length * 0.5f, topRailR, topRailR);
+                    // Posts evenly spaced
+                    for (int p = 0; p < postCount; ++p) {
+                        float t = (postCount > 1)
+                            ? static_cast<float>(p) / (postCount - 1)
+                            : 0.5f;
+                        float cx = -length * 0.5f + length * t;
+                        if (p == 0) cx += postR;
+                        if (p == postCount - 1) cx -= postR;
+                        addBox(cx, plankThickness + railHeight * 0.5f, z,
+                               postR, railHeight * 0.5f, postR);
+                    }
+                }
+            }
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            float maxY = plankThickness + railHeight;
+            wom.boundMin = glm::vec3(-length * 0.5f, 0,        -width * 0.5f);
+            wom.boundMax = glm::vec3( length * 0.5f, maxY,      width * 0.5f);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-bridge: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  length    : %.3f\n", length);
+            std::printf("  width     : %.3f\n", width);
+            std::printf("  planks    : %d\n", planks);
+            std::printf("  rail H    : %.3f%s\n", railHeight,
+                        railHeight > 0 ? "" : " (no rails)");
             std::printf("  vertices  : %zu\n", wom.vertices.size());
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
