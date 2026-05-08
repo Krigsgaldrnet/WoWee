@@ -9,6 +9,7 @@
 #include "terrain_biomes.hpp"
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
@@ -551,6 +552,10 @@ static void printUsage(const char* argv0) {
     std::printf("                         Tiling grass texture with random blade highlights (default density=0.15, seed=1)\n");
     std::printf("  --gen-texture-fabric <out.png> <warpHex> <weftHex> [threadPx] [W H]\n");
     std::printf("                         Woven fabric pattern with alternating warp/weft threads (default thread=4px)\n");
+    std::printf("  --gen-texture-cobble <out.png> <stoneHex> <mortarHex> [stonePx] [seed] [W H]\n");
+    std::printf("                         Cobblestone street pattern: irregular packed stones (default stone=24px, seed 1)\n");
+    std::printf("  --gen-texture-marble <out.png> <baseHex> <veinHex> [seed] [veinSharpness] [W H]\n");
+    std::printf("                         Marble pattern with sinusoidal veining (default seed 1, sharpness 8)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -582,6 +587,12 @@ static void printUsage(const char* argv0) {
     std::printf("                         Plank bridge with two side rails (default 6 planks across, rails on)\n");
     std::printf("  --gen-mesh-tower <wom-base> [radius] [height] [battlements] [battlementH]\n");
     std::printf("                         Round castle tower with crenellated battlements (default 8 teeth, 0.5m tall)\n");
+    std::printf("  --gen-mesh-house <wom-base> [width] [depth] [height] [roofHeight]\n");
+    std::printf("                         Simple house: cube body + pyramid roof (default 4×4×3 with 2m roof)\n");
+    std::printf("  --gen-mesh-fountain <wom-base> [basinRadius] [basinHeight] [spoutRadius] [spoutHeight]\n");
+    std::printf("                         Round basin + center spout column (default 1.5/0.5 basin, 0.2/1.5 spout)\n");
+    std::printf("  --gen-mesh-statue <wom-base> [pedestalSize] [bodyHeight] [headRadius]\n");
+    std::printf("                         Humanoid placeholder: pedestal block + tall body cylinder + head sphere\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -621,6 +632,16 @@ static void printUsage(const char* argv0) {
     std::printf("                         Drop a starter WOM mesh pack (rock/tree/fence) into <zoneDir>/meshes/\n");
     std::printf("  --gen-zone-starter-pack <zoneDir> [--seed N]\n");
     std::printf("                         Run both texture-pack + mesh-pack in one pass — full open-format bootstrap\n");
+    std::printf("  --gen-project-starter-pack <projectDir> [--seed N]\n");
+    std::printf("                         Run starter-pack + audio-pack across every zone — full project-scope bootstrap\n");
+    std::printf("  --info-zone-summary <zoneDir> [--json]\n");
+    std::printf("                         One-glance health digest for a zone: pack counts/bytes + audit pass/fail\n");
+    std::printf("  --info-project-summary <projectDir> [--json]\n");
+    std::printf("                         One-glance status table per zone in a project (BOOTSTRAPPED/PARTIAL/EMPTY)\n");
+    std::printf("  --gen-zone-readme <zoneDir> [--out <path>]\n");
+    std::printf("                         Auto-generate README.md from zone.json + asset inventory (writes README.md by default)\n");
+    std::printf("  --gen-project-readme <projectDir> [--out <path>]\n");
+    std::printf("                         Auto-generate PROJECT.md with per-zone status + asset count rollup\n");
     std::printf("  --validate-zone-pack <zoneDir> [--json]\n");
     std::printf("                         Audit a zone's open-format asset pack: textures/meshes/audio counts + WOM validity\n");
     std::printf("  --validate-project-packs <projectDir>\n");
@@ -629,6 +650,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Synthesize a procedural WAV (PCM-16 mono). Waveform: sine|square|triangle|saw\n");
     std::printf("  --gen-audio-noise <out.wav> <durationSec> [sampleRate] [color] [seed] [amplitude]\n");
     std::printf("                         Synthesize procedural noise WAV. Color: white|pink|brown (default white, amp 0.5)\n");
+    std::printf("  --gen-audio-sweep <out.wav> <startHz> <endHz> <durationSec> [sampleRate] [shape]\n");
+    std::printf("                         Synthesize frequency sweep (chirp) WAV. Shape: linear|exp (default linear)\n");
     std::printf("  --gen-zone-audio-pack <zoneDir>\n");
     std::printf("                         Drop a starter WAV pack (drone/chime/click/alert) into <zoneDir>/audio/\n");
     std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
@@ -935,7 +958,7 @@ static void printUsage(const char* argv0) {
     std::printf("                         Single-mesh detail: bounds, version, batches, bones, textures, attachments in one view\n");
     std::printf("  --info-mesh-storage-budget <wom-base> [--json]\n");
     std::printf("                         Estimated bytes-per-category breakdown for a single WOM (vertices/indices/bones/...)\n");
-    std::printf("  --list-project-meshes <projectDir> [--json]\n");
+    std::printf("  --list-project-meshes-detail <projectDir> [--json]\n");
     std::printf("                         Per-mesh listing across every zone in a project (sorted by triangle count)\n");
     std::printf("  --info-project-models-total <projectDir> [--json]\n");
     std::printf("                         Aggregate WOM/WOB stats across an entire project (per-zone breakdown + totals)\n");
@@ -1069,7 +1092,7 @@ int main(int argc, char* argv[]) {
         "--list-project-meshes", "--list-project-audio",
         "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
-        "--list-zone-meshes", "--list-project-meshes", "--info-mesh",
+        "--list-zone-meshes", "--list-project-meshes-detail", "--info-mesh",
         "--info-mesh-storage-budget",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
@@ -1099,7 +1122,8 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
         "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
         "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
-        "--gen-mesh-tower",
+        "--gen-mesh-tower", "--gen-mesh-house", "--gen-mesh-fountain",
+        "--gen-mesh-statue",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -1111,6 +1135,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
         "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
         "--gen-texture-wood", "--gen-texture-grass", "--gen-texture-fabric",
+        "--gen-texture-cobble", "--gen-texture-marble",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -1135,9 +1160,12 @@ int main(int argc, char* argv[]) {
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
-        "--gen-zone-mesh-pack", "--gen-zone-starter-pack", "--gen-audio-tone",
-        "--gen-audio-noise", "--gen-zone-audio-pack", "--validate-zone-pack",
-        "--validate-project-packs", "--info-spawn",
+        "--gen-zone-mesh-pack", "--gen-zone-starter-pack",
+        "--gen-project-starter-pack", "--gen-audio-tone",
+        "--gen-audio-noise", "--gen-audio-sweep", "--gen-zone-audio-pack",
+        "--info-zone-summary", "--info-project-summary",
+        "--gen-zone-readme", "--gen-project-readme",
+        "--validate-zone-pack", "--validate-project-packs", "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -2669,16 +2697,17 @@ int main(int argc, char* argv[]) {
                             r.path.c_str());
             }
             return 0;
-        } else if (std::strcmp(argv[i], "--list-project-meshes") == 0 && i + 1 < argc) {
-            // Project-wide companion to --list-zone-meshes. Walks
-            // every zone in <projectDir>, collects every .wom across
-            // all zones, sorts by triangle count descending, and
-            // reports a global per-mesh table with the originating
-            // zone in the first column.
+        } else if (std::strcmp(argv[i], "--list-project-meshes-detail") == 0 && i + 1 < argc) {
+            // Per-mesh sorted listing across an entire project.
+            // Walks every zone in <projectDir>, collects every .wom,
+            // sorts by triangle count descending, and reports a
+            // global per-mesh table with the originating zone in
+            // the first column.
             //
             // Useful for project-wide outlier detection ("which mesh
             // anywhere in the project is the heaviest?") and for
-            // mesh-sharing audits.
+            // mesh-sharing audits. Companion to --list-project-meshes
+            // (which gives the per-zone aggregate view).
             std::string projectDir = argv[++i];
             bool jsonOut = (i + 1 < argc &&
                             std::strcmp(argv[i + 1], "--json") == 0);
@@ -2686,7 +2715,7 @@ int main(int argc, char* argv[]) {
             namespace fs = std::filesystem;
             if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
                 std::fprintf(stderr,
-                    "list-project-meshes: %s is not a directory\n",
+                    "list-project-meshes-detail: %s is not a directory\n",
                     projectDir.c_str());
                 return 1;
             }
@@ -14533,6 +14562,75 @@ int main(int argc, char* argv[]) {
             std::printf("  textures : 6 PNGs in textures/\n");
             std::printf("  meshes   : 5 WOMs in meshes/\n");
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-project-starter-pack") == 0 && i + 1 < argc) {
+            // Project-wide bootstrap. For every zone in <projectDir>,
+            // run --gen-zone-starter-pack (textures + meshes) and
+            // --gen-zone-audio-pack (audio). Each zone gets a unique
+            // sub-seed offset from the base seed so per-zone content
+            // looks distinct (e.g. rocks differ, wood grain differs).
+            //
+            // Pairs with --validate-project-packs as the inverse —
+            // bootstrap, then audit, then ship.
+            std::string projectDir = argv[++i];
+            uint32_t seed = 1;
+            for (int k = i + 1; k < argc; ++k) {
+                std::string flag = argv[k];
+                if (flag == "--seed" && k + 1 < argc) {
+                    try { seed = static_cast<uint32_t>(std::stoul(argv[++k])); } catch (...) {}
+                    i = k;
+                } else if (flag.rfind("--", 0) == 0) {
+                    std::fprintf(stderr,
+                        "gen-project-starter-pack: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "gen-project-starter-pack: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            if (zones.empty()) {
+                std::fprintf(stderr,
+                    "gen-project-starter-pack: %s contains no zones\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::string self = (argc > 0) ? argv[0] : "wowee_editor";
+            std::printf("gen-project-starter-pack: %s (base seed %u)\n",
+                        projectDir.c_str(), seed);
+            std::printf("  zones: %zu\n\n", zones.size());
+            int passed = 0, failed = 0;
+            for (size_t z = 0; z < zones.size(); ++z) {
+                std::string zoneSeed = std::to_string(seed + z * 17);
+                std::string name = fs::path(zones[z]).filename().string();
+                std::printf("  [%zu/%zu] %s (seed %s)\n",
+                            z + 1, zones.size(), name.c_str(), zoneSeed.c_str());
+                std::string c1 = "\"" + self + "\" --gen-zone-starter-pack \"" +
+                                 zones[z] + "\" --seed " + zoneSeed +
+                                 " > /dev/null 2>&1";
+                int rc1 = std::system(c1.c_str());
+                std::string c2 = "\"" + self + "\" --gen-zone-audio-pack \"" +
+                                 zones[z] + "\" > /dev/null 2>&1";
+                int rc2 = std::system(c2.c_str());
+                if (rc1 == 0 && rc2 == 0) {
+                    ++passed;
+                    std::printf("           OK  textures + meshes + audio\n");
+                } else {
+                    ++failed;
+                    std::printf("           FAIL  starter rc=%d, audio rc=%d\n", rc1, rc2);
+                }
+            }
+            std::printf("\n  Total: %d passed, %d failed\n", passed, failed);
+            return failed == 0 ? 0 : 1;
         } else if (std::strcmp(argv[i], "--gen-audio-tone") == 0 && i + 3 < argc) {
             // Synthesize a procedural mono PCM-16 WAV. Opens a new
             // file family in the open-format ecosystem (alongside
@@ -14788,6 +14886,133 @@ int main(int argc, char* argv[]) {
             std::printf("  bytes      : %u (44-byte header + data)\n",
                         riffSize + 8);
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-audio-sweep") == 0 && i + 4 < argc) {
+            // Frequency sweep (chirp) WAV. Sine wave whose frequency
+            // glides from startHz to endHz across the duration.
+            //
+            //   linear: f(t) = f0 + (f1-f0) * (t/T)
+            //           Phase integrates to f0*t + (f1-f0)*t²/(2T)
+            //   exp:    f(t) = f0 * (f1/f0)^(t/T)
+            //           Phase integrates to f0*T/ln(r) * (r^(t/T)-1)
+            //           where r = f1/f0
+            //
+            // Useful for sweep tones (sci-fi door whoosh, alert
+            // ramps, sliding pitches in alarm/horn cues), and a
+            // standard signal-engineering test signal.
+            std::string outPath = argv[++i];
+            float f0 = 0.0f, f1 = 0.0f, duration = 0.0f;
+            try { f0 = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: <startHz> must be a number\n");
+                return 1;
+            }
+            try { f1 = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: <endHz> must be a number\n");
+                return 1;
+            }
+            try { duration = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: <durationSec> must be a number\n");
+                return 1;
+            }
+            int sampleRate = 44100;
+            std::string shape = "linear";
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { sampleRate = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                shape = argv[++i];
+            }
+            if (f0 <= 0 || f0 > 24000 || f1 <= 0 || f1 > 24000 ||
+                duration <= 0 || duration > 600 ||
+                sampleRate < 8000 || sampleRate > 192000) {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: freqs 0..24000Hz, duration 0..600s, sampleRate 8000..192000\n");
+                return 1;
+            }
+            if (shape != "linear" && shape != "exp") {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: unknown shape '%s' (linear|exp)\n",
+                    shape.c_str());
+                return 1;
+            }
+            uint32_t totalSamples = static_cast<uint32_t>(duration * sampleRate);
+            const float twoPi = 2.0f * 3.14159265358979f;
+            std::vector<int16_t> samples(totalSamples, 0);
+            int envSamples = std::min<uint32_t>(totalSamples / 4,
+                                static_cast<uint32_t>(sampleRate * 0.005f));
+            // Pre-compute exp constants. ln(f1/f0) / T appears
+            // inside the integrated-phase formula.
+            float r = f1 / f0;
+            float lnR = std::log(r);
+            for (uint32_t s = 0; s < totalSamples; ++s) {
+                float t = static_cast<float>(s) / sampleRate;
+                float phase;
+                if (shape == "linear") {
+                    phase = f0 * t + 0.5f * (f1 - f0) * t * t / duration;
+                } else {
+                    if (std::abs(lnR) < 1e-6f) {
+                        phase = f0 * t;
+                    } else {
+                        phase = f0 * duration / lnR *
+                                (std::exp(lnR * t / duration) - 1.0f);
+                    }
+                }
+                float v = std::sin(twoPi * phase);
+                float env = 1.0f;
+                if (envSamples > 0) {
+                    if (static_cast<int>(s) < envSamples) {
+                        env = static_cast<float>(s) / envSamples;
+                    } else if (static_cast<int>(totalSamples - s) < envSamples) {
+                        env = static_cast<float>(totalSamples - s) / envSamples;
+                    }
+                }
+                v *= env * 0.5f;
+                samples[s] = static_cast<int16_t>(std::clamp(v, -1.0f, 1.0f) * 32767.0f);
+            }
+            FILE* f = std::fopen(outPath.c_str(), "wb");
+            if (!f) {
+                std::fprintf(stderr,
+                    "gen-audio-sweep: cannot open %s for write\n", outPath.c_str());
+                return 1;
+            }
+            uint32_t dataBytes = totalSamples * 2;
+            uint32_t riffSize = 36 + dataBytes;
+            uint16_t numChannels = 1;
+            uint16_t bitsPerSample = 16;
+            uint16_t blockAlign = numChannels * bitsPerSample / 8;
+            uint32_t byteRate = sampleRate * blockAlign;
+            auto wU32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+            auto wU16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+            std::fwrite("RIFF", 1, 4, f);
+            wU32(riffSize);
+            std::fwrite("WAVE", 1, 4, f);
+            std::fwrite("fmt ", 1, 4, f);
+            wU32(16);
+            wU16(1);
+            wU16(numChannels);
+            wU32(static_cast<uint32_t>(sampleRate));
+            wU32(byteRate);
+            wU16(blockAlign);
+            wU16(bitsPerSample);
+            std::fwrite("data", 1, 4, f);
+            wU32(dataBytes);
+            std::fwrite(samples.data(), 2, totalSamples, f);
+            std::fclose(f);
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  format     : WAV PCM-16 mono\n");
+            std::printf("  freq       : %.2f -> %.2f Hz (%s)\n",
+                        f0, f1, shape.c_str());
+            std::printf("  duration   : %.3f sec\n", duration);
+            std::printf("  sampleRate : %d Hz\n", sampleRate);
+            std::printf("  samples    : %u\n", totalSamples);
+            std::printf("  bytes      : %u (44-byte header + data)\n",
+                        riffSize + 8);
+            return 0;
         } else if (std::strcmp(argv[i], "--gen-zone-audio-pack") == 0 && i + 1 < argc) {
             // Drop a 6-WAV starter audio pack into <zoneDir>/audio/.
             // Two ambient drones (low + fifth above), a melodic
@@ -14848,6 +15073,502 @@ int main(int argc, char* argv[]) {
             std::printf("gen-zone-audio-pack: wrote %d of %zu sounds to %s\n",
                         written, jobs.size(), audioDir.string().c_str());
             return written == static_cast<int>(jobs.size()) ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--info-zone-summary") == 0 && i + 1 < argc) {
+            // One-glance health digest for a zone. Combines the per-
+            // category counts/bytes from the inventory commands with
+            // a quick pass/fail signal from validate-zone-pack. Lets
+            // a user see at a glance whether a zone is bootstrapped,
+            // empty, or partially populated.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "info-zone-summary: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            // Load zone.json for the friendly map name.
+            std::string mapName = "?";
+            try {
+                std::ifstream zf(zoneDir + "/zone.json");
+                if (zf) {
+                    nlohmann::json zj;
+                    zf >> zj;
+                    if (zj.contains("mapName") && zj["mapName"].is_string()) {
+                        mapName = zj["mapName"].get<std::string>();
+                    }
+                }
+            } catch (...) { /* tolerated — leave as ? */ }
+            // Per-category quick scan: count + bytes only.
+            auto scan = [&](const std::string& sub, const std::string& ext)
+                -> std::pair<int, uint64_t> {
+                int n = 0;
+                uint64_t b = 0;
+                fs::path p = fs::path(zoneDir) / sub;
+                if (!fs::exists(p)) return {0, 0};
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(p, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ext) continue;
+                    n++;
+                    b += e.file_size();
+                }
+                return {n, b};
+            };
+            auto [texN, texB] = scan("textures", ".png");
+            auto [mshN, mshB] = scan("meshes", ".wom");
+            auto [audN, audB] = scan("audio", ".wav");
+            // Pack health: bootstrap pass if we have all three
+            // categories with at least 1 file each. "Partial" if
+            // some but not all. "Empty" if none.
+            std::string status;
+            if (texN > 0 && mshN > 0 && audN > 0) status = "BOOTSTRAPPED";
+            else if (texN + mshN + audN > 0) status = "PARTIAL";
+            else status = "EMPTY";
+            uint64_t totalBytes = texB + mshB + audB;
+            int totalAssets = texN + mshN + audN;
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = zoneDir;
+                j["mapName"] = mapName;
+                j["status"] = status;
+                j["totalAssets"] = totalAssets;
+                j["totalBytes"] = totalBytes;
+                j["textures"] = {{"count", texN}, {"bytes", texB}};
+                j["meshes"]   = {{"count", mshN}, {"bytes", mshB}};
+                j["audio"]    = {{"count", audN}, {"bytes", audB}};
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Zone: %s (%s)\n", mapName.c_str(), zoneDir.c_str());
+            std::printf("  status   : %s\n", status.c_str());
+            std::printf("  textures : %d (%llu bytes)\n",
+                        texN, static_cast<unsigned long long>(texB));
+            std::printf("  meshes   : %d (%llu bytes)\n",
+                        mshN, static_cast<unsigned long long>(mshB));
+            std::printf("  audio    : %d (%llu bytes)\n",
+                        audN, static_cast<unsigned long long>(audB));
+            std::printf("  TOTAL    : %d assets, %llu bytes\n",
+                        totalAssets,
+                        static_cast<unsigned long long>(totalBytes));
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-project-summary") == 0 && i + 1 < argc) {
+            // Project-wide companion to --info-zone-summary. Walks
+            // every zone in <projectDir> and reports a per-zone
+            // status row + per-category counts, plus a project
+            // total at the bottom. Status: BOOTSTRAPPED (all 3
+            // categories non-empty), PARTIAL (some), EMPTY (none).
+            std::string projectDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "info-project-summary: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Same per-category scan logic as info-zone-summary —
+            // duplicated rather than abstracted because the two
+            // commands are read in different contexts and a shared
+            // helper would entrench an internal API for one caller.
+            auto scan = [](const std::string& base, const std::string& sub,
+                           const std::string& ext) -> std::pair<int, uint64_t> {
+                int n = 0;
+                uint64_t b = 0;
+                fs::path p = fs::path(base) / sub;
+                if (!fs::exists(p)) return {0, 0};
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(p, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ext) continue;
+                    n++;
+                    b += e.file_size();
+                }
+                return {n, b};
+            };
+            struct ZRow {
+                std::string name;
+                std::string status;
+                int texN = 0, mshN = 0, audN = 0;
+                uint64_t bytes = 0;
+            };
+            std::vector<ZRow> rows;
+            int bootstrapped = 0, partial = 0, empty = 0;
+            uint64_t totalBytes = 0;
+            int totalAssets = 0;
+            for (const auto& z : zones) {
+                ZRow r;
+                r.name = fs::path(z).filename().string();
+                auto [tn, tb] = scan(z, "textures", ".png");
+                auto [mn, mb] = scan(z, "meshes", ".wom");
+                auto [an, ab] = scan(z, "audio", ".wav");
+                r.texN = tn; r.mshN = mn; r.audN = an;
+                r.bytes = tb + mb + ab;
+                if (tn > 0 && mn > 0 && an > 0) {
+                    r.status = "BOOTSTRAPPED";
+                    ++bootstrapped;
+                } else if (tn + mn + an > 0) {
+                    r.status = "PARTIAL";
+                    ++partial;
+                } else {
+                    r.status = "EMPTY";
+                    ++empty;
+                }
+                totalBytes += r.bytes;
+                totalAssets += tn + mn + an;
+                rows.push_back(std::move(r));
+            }
+            if (jsonOut) {
+                nlohmann::json j;
+                j["project"] = projectDir;
+                j["zoneCount"] = rows.size();
+                j["bootstrapped"] = bootstrapped;
+                j["partial"] = partial;
+                j["empty"] = empty;
+                j["totalAssets"] = totalAssets;
+                j["totalBytes"] = totalBytes;
+                nlohmann::json arr = nlohmann::json::array();
+                for (const auto& r : rows) {
+                    arr.push_back({
+                        {"zone", r.name},
+                        {"status", r.status},
+                        {"textures", r.texN},
+                        {"meshes", r.mshN},
+                        {"audio", r.audN},
+                        {"bytes", r.bytes},
+                    });
+                }
+                j["zones"] = arr;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("Project: %s\n", projectDir.c_str());
+            std::printf("  zones        : %zu\n", rows.size());
+            std::printf("  bootstrapped : %d\n", bootstrapped);
+            std::printf("  partial      : %d\n", partial);
+            std::printf("  empty        : %d\n", empty);
+            std::printf("  total assets : %d\n", totalAssets);
+            std::printf("  total bytes  : %llu\n",
+                        static_cast<unsigned long long>(totalBytes));
+            if (rows.empty()) {
+                std::printf("  *no zones found*\n");
+                return 0;
+            }
+            std::printf("\n  %-14s %4s %4s %4s %10s  %s\n",
+                        "status", "tex", "msh", "aud", "bytes", "zone");
+            for (const auto& r : rows) {
+                std::printf("  %-14s %4d %4d %4d %10llu  %s\n",
+                            r.status.c_str(), r.texN, r.mshN, r.audN,
+                            static_cast<unsigned long long>(r.bytes),
+                            r.name.c_str());
+            }
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-zone-readme") == 0 && i + 1 < argc) {
+            // Auto-generate README.md for a zone. Writes a Markdown
+            // doc summarizing zone.json metadata and itemizing every
+            // texture, mesh, and audio asset (with vert/tri counts
+            // for meshes and duration for WAVs). Saves repeating the
+            // README maintenance every time content changes.
+            std::string zoneDir = argv[++i];
+            std::string outPath;
+            for (int k = i + 1; k < argc; ++k) {
+                std::string flag = argv[k];
+                if (flag == "--out" && k + 1 < argc) {
+                    outPath = argv[++k];
+                    i = k;
+                } else if (flag.rfind("--", 0) == 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-readme: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(zoneDir + "/zone.json")) {
+                std::fprintf(stderr,
+                    "gen-zone-readme: %s has no zone.json\n", zoneDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = zoneDir + "/README.md";
+            std::string mapName = fs::path(zoneDir).filename().string();
+            std::string biome = "?";
+            try {
+                std::ifstream zf(zoneDir + "/zone.json");
+                if (zf) {
+                    nlohmann::json zj;
+                    zf >> zj;
+                    if (zj.contains("mapName") && zj["mapName"].is_string())
+                        mapName = zj["mapName"].get<std::string>();
+                    if (zj.contains("biome") && zj["biome"].is_string())
+                        biome = zj["biome"].get<std::string>();
+                }
+            } catch (...) {}
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "gen-zone-readme: cannot open %s for write\n",
+                    outPath.c_str());
+                return 1;
+            }
+            out << "# " << mapName << "\n\n";
+            out << "Auto-generated zone manifest. Re-run `--gen-zone-readme "
+                << zoneDir << "` after content changes.\n\n";
+            out << "- **Biome**: " << biome << "\n";
+            out << "- **Zone path**: `" << zoneDir << "`\n\n";
+            // Textures
+            std::vector<std::pair<std::string, uint64_t>> texList;
+            fs::path texDir = fs::path(zoneDir) / "textures";
+            std::error_code ec;
+            if (fs::exists(texDir)) {
+                for (const auto& e : fs::recursive_directory_iterator(texDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".png") continue;
+                    texList.push_back({fs::relative(e.path(), zoneDir).string(),
+                                       e.file_size()});
+                }
+            }
+            std::sort(texList.begin(), texList.end());
+            out << "## Textures (" << texList.size() << ")\n\n";
+            if (texList.empty()) {
+                out << "_None._\n\n";
+            } else {
+                out << "| File | Bytes |\n|------|-------|\n";
+                for (const auto& [path, bytes] : texList) {
+                    out << "| `" << path << "` | " << bytes << " |\n";
+                }
+                out << "\n";
+            }
+            // Meshes
+            struct MeshRow {
+                std::string path;
+                uint64_t bytes; size_t verts, tris, bones, batches;
+            };
+            std::vector<MeshRow> meshList;
+            fs::path meshDir = fs::path(zoneDir) / "meshes";
+            if (fs::exists(meshDir)) {
+                for (const auto& e : fs::recursive_directory_iterator(meshDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wom") continue;
+                    std::string base = e.path().string();
+                    base = base.substr(0, base.size() - 4);
+                    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+                    meshList.push_back({
+                        fs::relative(e.path(), zoneDir).string(),
+                        e.file_size(),
+                        wom.vertices.size(),
+                        wom.indices.size() / 3,
+                        wom.bones.size(),
+                        wom.batches.size(),
+                    });
+                }
+            }
+            std::sort(meshList.begin(), meshList.end(),
+                      [](const MeshRow& a, const MeshRow& b) { return a.path < b.path; });
+            out << "## Meshes (" << meshList.size() << ")\n\n";
+            if (meshList.empty()) {
+                out << "_None._\n\n";
+            } else {
+                out << "| File | Verts | Tris | Bones | Batches | Bytes |\n";
+                out << "|------|-------|------|-------|---------|-------|\n";
+                for (const auto& r : meshList) {
+                    out << "| `" << r.path << "` | " << r.verts << " | "
+                        << r.tris << " | " << r.bones << " | "
+                        << r.batches << " | " << r.bytes << " |\n";
+                }
+                out << "\n";
+            }
+            // Audio
+            struct AudRow {
+                std::string path;
+                uint64_t bytes;
+                uint32_t sampleRate;
+                float duration;
+            };
+            std::vector<AudRow> audList;
+            fs::path audDir = fs::path(zoneDir) / "audio";
+            if (fs::exists(audDir)) {
+                for (const auto& e : fs::recursive_directory_iterator(audDir, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ".wav") continue;
+                    AudRow r{fs::relative(e.path(), zoneDir).string(),
+                             e.file_size(), 0, 0.0f};
+                    FILE* f = std::fopen(e.path().c_str(), "rb");
+                    if (f) {
+                        char hdr[44];
+                        if (std::fread(hdr, 1, 44, f) == 44 &&
+                            std::memcmp(hdr, "RIFF", 4) == 0 &&
+                            std::memcmp(hdr + 8, "WAVE", 4) == 0) {
+                            uint16_t channels = 0, bps = 0;
+                            uint32_t dataBytes = 0;
+                            std::memcpy(&channels, hdr + 22, 2);
+                            std::memcpy(&r.sampleRate, hdr + 24, 4);
+                            std::memcpy(&bps, hdr + 34, 2);
+                            std::memcpy(&dataBytes, hdr + 40, 4);
+                            if (r.sampleRate > 0 && channels > 0 && bps > 0) {
+                                uint32_t bytesPerSample = channels * (bps / 8);
+                                if (bytesPerSample > 0) {
+                                    r.duration = static_cast<float>(dataBytes) /
+                                                 (r.sampleRate * bytesPerSample);
+                                }
+                            }
+                        }
+                        std::fclose(f);
+                    }
+                    audList.push_back(std::move(r));
+                }
+            }
+            std::sort(audList.begin(), audList.end(),
+                      [](const AudRow& a, const AudRow& b) { return a.path < b.path; });
+            out << "## Audio (" << audList.size() << ")\n\n";
+            if (audList.empty()) {
+                out << "_None._\n\n";
+            } else {
+                out << "| File | Sample rate | Duration (s) | Bytes |\n";
+                out << "|------|-------------|--------------|-------|\n";
+                for (const auto& r : audList) {
+                    out << "| `" << r.path << "` | " << r.sampleRate
+                        << " Hz | " << std::fixed << std::setprecision(2)
+                        << r.duration << " | " << r.bytes << " |\n";
+                }
+                out << "\n";
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  textures : %zu\n", texList.size());
+            std::printf("  meshes   : %zu\n", meshList.size());
+            std::printf("  audio    : %zu\n", audList.size());
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-project-readme") == 0 && i + 1 < argc) {
+            // Auto-generate PROJECT.md for a project. Walks every
+            // zone, classifies each (BOOTSTRAPPED/PARTIAL/EMPTY),
+            // and writes a Markdown table with per-zone counts and
+            // a project-level rollup. Pairs with --gen-zone-readme
+            // (same scope, but per-zone) — running both gives
+            // self-documenting content at every level.
+            std::string projectDir = argv[++i];
+            std::string outPath;
+            for (int k = i + 1; k < argc; ++k) {
+                std::string flag = argv[k];
+                if (flag == "--out" && k + 1 < argc) {
+                    outPath = argv[++k];
+                    i = k;
+                } else if (flag.rfind("--", 0) == 0) {
+                    std::fprintf(stderr,
+                        "gen-project-readme: unknown flag '%s'\n", flag.c_str());
+                    return 1;
+                }
+            }
+            namespace fs = std::filesystem;
+            if (!fs::exists(projectDir) || !fs::is_directory(projectDir)) {
+                std::fprintf(stderr,
+                    "gen-project-readme: %s is not a directory\n",
+                    projectDir.c_str());
+                return 1;
+            }
+            if (outPath.empty()) outPath = projectDir + "/PROJECT.md";
+            std::vector<std::string> zones;
+            for (const auto& entry : fs::directory_iterator(projectDir)) {
+                if (!entry.is_directory()) continue;
+                if (!fs::exists(entry.path() / "zone.json")) continue;
+                zones.push_back(entry.path().string());
+            }
+            std::sort(zones.begin(), zones.end());
+            // Same scan logic as info-project-summary
+            auto scan = [](const std::string& base, const std::string& sub,
+                           const std::string& ext) -> std::pair<int, uint64_t> {
+                int n = 0;
+                uint64_t b = 0;
+                fs::path p = fs::path(base) / sub;
+                if (!fs::exists(p)) return {0, 0};
+                std::error_code ec;
+                for (const auto& e : fs::recursive_directory_iterator(p, ec)) {
+                    if (!e.is_regular_file()) continue;
+                    if (e.path().extension() != ext) continue;
+                    n++;
+                    b += e.file_size();
+                }
+                return {n, b};
+            };
+            struct ZRow {
+                std::string name, status, biome;
+                int texN, mshN, audN;
+                uint64_t bytes;
+            };
+            std::vector<ZRow> rows;
+            int totalAssets = 0;
+            uint64_t totalBytes = 0;
+            for (const auto& z : zones) {
+                ZRow r;
+                r.name = fs::path(z).filename().string();
+                r.biome = "?";
+                try {
+                    std::ifstream zf(z + "/zone.json");
+                    if (zf) {
+                        nlohmann::json zj;
+                        zf >> zj;
+                        if (zj.contains("biome") && zj["biome"].is_string())
+                            r.biome = zj["biome"].get<std::string>();
+                    }
+                } catch (...) {}
+                auto [tn, tb] = scan(z, "textures", ".png");
+                auto [mn, mb] = scan(z, "meshes", ".wom");
+                auto [an, ab] = scan(z, "audio", ".wav");
+                r.texN = tn; r.mshN = mn; r.audN = an;
+                r.bytes = tb + mb + ab;
+                if (tn > 0 && mn > 0 && an > 0)      r.status = "BOOTSTRAPPED";
+                else if (tn + mn + an > 0)           r.status = "PARTIAL";
+                else                                  r.status = "EMPTY";
+                totalAssets += tn + mn + an;
+                totalBytes += r.bytes;
+                rows.push_back(std::move(r));
+            }
+            std::ofstream out(outPath);
+            if (!out) {
+                std::fprintf(stderr,
+                    "gen-project-readme: cannot open %s for write\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::string projName = fs::path(projectDir).filename().string();
+            if (projName.empty()) projName = "Project";
+            out << "# " << projName << "\n\n";
+            out << "Auto-generated project manifest. Re-run "
+                << "`--gen-project-readme " << projectDir
+                << "` after content changes.\n\n";
+            out << "- **Path**: `" << projectDir << "`\n";
+            out << "- **Zones**: " << rows.size() << "\n";
+            out << "- **Total assets**: " << totalAssets << "\n";
+            out << "- **Total bytes**: " << totalBytes << "\n\n";
+            out << "## Zones\n\n";
+            if (rows.empty()) {
+                out << "_None._\n";
+            } else {
+                out << "| Zone | Status | Biome | Textures | Meshes | Audio | Bytes |\n";
+                out << "|------|--------|-------|----------|--------|-------|-------|\n";
+                for (const auto& r : rows) {
+                    out << "| `" << r.name << "` | " << r.status
+                        << " | " << r.biome
+                        << " | " << r.texN << " | " << r.mshN
+                        << " | " << r.audN << " | " << r.bytes << " |\n";
+                }
+            }
+            out.close();
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  zones        : %zu\n", rows.size());
+            std::printf("  total assets : %d\n", totalAssets);
+            std::printf("  total bytes  : %llu\n",
+                        static_cast<unsigned long long>(totalBytes));
+            return 0;
         } else if (std::strcmp(argv[i], "--validate-zone-pack") == 0 && i + 1 < argc) {
             // Audit a zone's open-format asset pack. Reports counts
             // and total bytes per category (textures/, meshes/,
@@ -19884,6 +20605,296 @@ int main(int argc, char* argv[]) {
                         warpHex.c_str(), weftHex.c_str());
             std::printf("  thread px  : %d\n", threadPx);
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-cobble") == 0 && i + 3 < argc) {
+            // Cobblestone street pattern. Each pixel finds its
+            // nearest "stone center" in a perturbed grid (Worley-
+            // style cellular noise) and uses the distance to that
+            // center to draw the stone face vs. mortar gaps. Stones
+            // get small per-stone tint variation so the surface
+            // doesn't read as flat.
+            std::string outPath = argv[++i];
+            std::string stoneHex = argv[++i];
+            std::string mortarHex = argv[++i];
+            int stonePx = 24;
+            uint32_t seed = 1;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { stonePx = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                stonePx < 8 || stonePx > 512) {
+                std::fprintf(stderr,
+                    "gen-texture-cobble: invalid dims (W/H 1..8192, stonePx 8..512)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t sr, sg, sb, mr, mg, mb;
+            if (!parseHex(stoneHex, sr, sg, sb)) {
+                std::fprintf(stderr,
+                    "gen-texture-cobble: '%s' is not a valid hex color\n",
+                    stoneHex.c_str());
+                return 1;
+            }
+            if (!parseHex(mortarHex, mr, mg, mb)) {
+                std::fprintf(stderr,
+                    "gen-texture-cobble: '%s' is not a valid hex color\n",
+                    mortarHex.c_str());
+                return 1;
+            }
+            // Seeded hash → stone center jitter + per-stone tint.
+            // Hash takes (cellX, cellY, seed) and returns 4 floats
+            // in [0,1): two for offset, two for tint variation.
+            auto hash01 = [seed](int cx, int cy, int comp) -> float {
+                uint32_t h = static_cast<uint32_t>(cx) * 374761393u +
+                             static_cast<uint32_t>(cy) * 668265263u +
+                             seed * 2147483647u +
+                             static_cast<uint32_t>(comp) * 16777619u;
+                h = (h ^ (h >> 13)) * 1274126177u;
+                h = h ^ (h >> 16);
+                return (h >> 8) * (1.0f / 16777216.0f);
+            };
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            // For each pixel, find min distance among 9 neighboring
+            // jittered cell centers (3x3 around current cell). The
+            // closest center owns the pixel; second-closest sets
+            // mortar boundary distance.
+            for (int y = 0; y < H; ++y) {
+                int cy0 = y / stonePx;
+                for (int x = 0; x < W; ++x) {
+                    int cx0 = x / stonePx;
+                    float bestD = 1e9f, second = 1e9f;
+                    int bestCx = 0, bestCy = 0;
+                    for (int dy = -1; dy <= 1; ++dy) {
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            int cx = cx0 + dx;
+                            int cy = cy0 + dy;
+                            float jx = (hash01(cx, cy, 0) - 0.5f) * 0.7f;
+                            float jy = (hash01(cx, cy, 1) - 0.5f) * 0.7f;
+                            float ccx = (cx + 0.5f + jx) * stonePx;
+                            float ccy = (cy + 0.5f + jy) * stonePx;
+                            float dxp = x - ccx, dyp = y - ccy;
+                            float d = std::sqrt(dxp * dxp + dyp * dyp);
+                            if (d < bestD) {
+                                second = bestD;
+                                bestD = d;
+                                bestCx = cx;
+                                bestCy = cy;
+                            } else if (d < second) {
+                                second = d;
+                            }
+                        }
+                    }
+                    // Pixels close to the boundary (small gap between
+                    // closest and second-closest) become mortar.
+                    float boundary = second - bestD;
+                    float mortarThresh = stonePx * 0.10f;
+                    if (boundary < mortarThresh) {
+                        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                        pixels[i2 + 0] = mr;
+                        pixels[i2 + 1] = mg;
+                        pixels[i2 + 2] = mb;
+                    } else {
+                        // Per-stone tint: ±15% on each channel.
+                        float tint = 0.85f + 0.30f * hash01(bestCx, bestCy, 2);
+                        // Subtle radial darkening toward edges so
+                        // the stone face reads as 3D rounded.
+                        float edgeFalloff = std::min(1.0f,
+                            (boundary - mortarThresh) / (stonePx * 0.4f));
+                        float shade = (0.7f + 0.3f * edgeFalloff) * tint;
+                        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                        pixels[i2 + 0] = static_cast<uint8_t>(
+                            std::clamp(sr * shade, 0.0f, 255.0f));
+                        pixels[i2 + 1] = static_cast<uint8_t>(
+                            std::clamp(sg * shade, 0.0f, 255.0f));
+                        pixels[i2 + 2] = static_cast<uint8_t>(
+                            std::clamp(sb * shade, 0.0f, 255.0f));
+                    }
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-cobble: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size         : %dx%d\n", W, H);
+            std::printf("  stone/mortar : %s / %s\n",
+                        stoneHex.c_str(), mortarHex.c_str());
+            std::printf("  stone px     : %d\n", stonePx);
+            std::printf("  seed         : %u\n", seed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-marble") == 0 && i + 2 < argc) {
+            // Marble pattern via warped sinusoidal veining. The
+            // canonical "marble shader": take a sine wave, warp its
+            // input by smooth multi-octave noise, raise the absolute
+            // value to a high power so the bright vein bands stay
+            // narrow. Result: irregular bright veins on a base color
+            // that tile with octave-driven low-freq variation.
+            std::string outPath = argv[++i];
+            std::string baseHex = argv[++i];
+            std::string veinHex = argv[++i];
+            uint32_t seed = 1;
+            float sharpness = 8.0f;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { sharpness = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                sharpness < 1.0f || sharpness > 64.0f) {
+                std::fprintf(stderr,
+                    "gen-texture-marble: invalid dims (W/H 1..8192, sharpness 1..64)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t br, bg, bb_, vr, vg, vb;
+            if (!parseHex(baseHex, br, bg, bb_)) {
+                std::fprintf(stderr,
+                    "gen-texture-marble: '%s' is not a valid hex color\n",
+                    baseHex.c_str());
+                return 1;
+            }
+            if (!parseHex(veinHex, vr, vg, vb)) {
+                std::fprintf(stderr,
+                    "gen-texture-marble: '%s' is not a valid hex color\n",
+                    veinHex.c_str());
+                return 1;
+            }
+            // Cheap multi-octave noise: 4 sin/cos products at
+            // doubling frequencies, seeded phase per octave. Smooth
+            // and tiles imperfectly but for marble we want some
+            // irregularity anyway.
+            float seedF = static_cast<float>(seed);
+            auto warpNoise = [&](float x, float y) -> float {
+                float n = 0.0f;
+                float freq = 0.02f;
+                float amp = 1.0f;
+                float total = 0.0f;
+                for (int o = 0; o < 4; ++o) {
+                    n += amp * std::sin(x * freq + seedF * (1.0f + o)) *
+                                std::cos(y * freq + seedF * (0.6f + o));
+                    total += amp;
+                    freq *= 2.0f;
+                    amp *= 0.5f;
+                }
+                return n / total;  // -1..1
+            };
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    // Warped sine: vein density is sin(turbulent x).
+                    // High exponent on |sin| concentrates brightness
+                    // into thin bands.
+                    float warp = warpNoise(static_cast<float>(x),
+                                           static_cast<float>(y));
+                    float v = std::sin((x + warp * 80.0f) * 0.07f);
+                    float vein = std::pow(std::abs(v), sharpness);
+                    uint8_t r = static_cast<uint8_t>(br * (1 - vein) + vr * vein);
+                    uint8_t g = static_cast<uint8_t>(bg * (1 - vein) + vg * vein);
+                    uint8_t b = static_cast<uint8_t>(bb_ * (1 - vein) + vb * vein);
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = r;
+                    pixels[i2 + 1] = g;
+                    pixels[i2 + 2] = b;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-marble: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size      : %dx%d\n", W, H);
+            std::printf("  base/vein : %s / %s\n",
+                        baseHex.c_str(), veinHex.c_str());
+            std::printf("  sharpness : %.1f\n", sharpness);
+            std::printf("  seed      : %u\n", seed);
+            return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
             // per-face normals, planar UVs, a bounding box, and a
@@ -22077,6 +23088,377 @@ int main(int argc, char* argv[]) {
                         battlements, battlementH);
             std::printf("  vertices    : %zu\n", wom.vertices.size());
             std::printf("  triangles   : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-house") == 0 && i + 1 < argc) {
+            // Simple procedural house: cube body + pyramid roof
+            // meeting at a central apex above the body's roofline.
+            // The pyramid sits flush on the body so the eaves
+            // line up with the wall edges. No door cutout — that
+            // can be added later via mesh boolean ops or texture.
+            //
+            // The 20th procedural mesh primitive.
+            std::string womBase = argv[++i];
+            float width = 4.0f;       // along X
+            float depth = 4.0f;       // along Z
+            float height = 3.0f;      // wall height (Y)
+            float roofH = 2.0f;       // pyramid above walls
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { width = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { depth = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { height = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { roofH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (width <= 0 || depth <= 0 || height <= 0 ||
+                roofH < 0 || roofH > 20.0f) {
+                std::fprintf(stderr,
+                    "gen-mesh-house: width/depth/height>0, roof 0..20\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            float hx = width * 0.5f;
+            float hz = depth * 0.5f;
+            // 4 walls — each a quad with an outward-facing normal so
+            // the house reads as solid even with backface culling on.
+            struct Wall {
+                glm::vec3 a, b, c, d;  // CCW from outside
+                glm::vec3 n;
+            };
+            Wall walls[4] = {
+                {{ hx, 0,  hz}, {-hx, 0,  hz}, {-hx, height,  hz}, { hx, height,  hz}, { 0, 0,  1}}, // +Z
+                {{-hx, 0, -hz}, { hx, 0, -hz}, { hx, height, -hz}, {-hx, height, -hz}, { 0, 0, -1}}, // -Z
+                {{ hx, 0, -hz}, { hx, 0,  hz}, { hx, height,  hz}, { hx, height, -hz}, { 1, 0,  0}}, // +X
+                {{-hx, 0,  hz}, {-hx, 0, -hz}, {-hx, height, -hz}, {-hx, height,  hz}, {-1, 0,  0}}, // -X
+            };
+            for (const Wall& w : walls) {
+                uint32_t a = addV(w.a, w.n, {0, 0});
+                uint32_t b = addV(w.b, w.n, {1, 0});
+                uint32_t c = addV(w.c, w.n, {1, 1});
+                uint32_t d = addV(w.d, w.n, {0, 1});
+                wom.indices.insert(wom.indices.end(), {a, b, c, a, c, d});
+            }
+            // Floor (single quad, normal-down so it shows from below;
+            // texturable as a foundation slab).
+            {
+                uint32_t a = addV({-hx, 0, -hz}, {0, -1, 0}, {0, 0});
+                uint32_t b = addV({ hx, 0, -hz}, {0, -1, 0}, {1, 0});
+                uint32_t c = addV({ hx, 0,  hz}, {0, -1, 0}, {1, 1});
+                uint32_t d = addV({-hx, 0,  hz}, {0, -1, 0}, {0, 1});
+                wom.indices.insert(wom.indices.end(), {a, c, b, a, d, c});
+            }
+            // Roof: 4 triangles meeting at central apex.
+            float apexY = height + roofH;
+            glm::vec3 apex(0, apexY, 0);
+            // Eave corners (Y = wall height) — each triangle shares
+            // two adjacent corners + the apex. Per-face normal is
+            // computed once so flat shading works.
+            glm::vec3 eaves[4] = {
+                {-hx, height,  hz},
+                { hx, height,  hz},
+                { hx, height, -hz},
+                {-hx, height, -hz},
+            };
+            for (int s = 0; s < 4; ++s) {
+                glm::vec3 e0 = eaves[s];
+                glm::vec3 e1 = eaves[(s + 1) % 4];
+                glm::vec3 fn = glm::normalize(glm::cross(e1 - e0, apex - e0));
+                uint32_t a = addV(e0, fn, {0, 0});
+                uint32_t b = addV(e1, fn, {1, 0});
+                uint32_t c = addV(apex, fn, {0.5f, 1});
+                wom.indices.insert(wom.indices.end(), {a, b, c});
+            }
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            wom.boundMin = glm::vec3(-hx, 0, -hz);
+            wom.boundMax = glm::vec3( hx, apexY,  hz);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-house: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  width      : %.3f\n", width);
+            std::printf("  depth      : %.3f\n", depth);
+            std::printf("  wall H     : %.3f\n", height);
+            std::printf("  roof H     : %.3f (apex %.3f)\n", roofH, apexY);
+            std::printf("  vertices   : %zu\n", wom.vertices.size());
+            std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-fountain") == 0 && i + 1 < argc) {
+            // Procedural fountain: low cylindrical basin with a
+            // narrower spout column rising from its center. Solid
+            // basin (not hollow) for simplicity — readable as a
+            // fountain because of the spout silhouette. Useful for
+            // town squares, plazas, garden centerpieces.
+            //
+            // The 21st procedural mesh primitive.
+            std::string womBase = argv[++i];
+            float basinR = 1.5f;
+            float basinH = 0.5f;
+            float spoutR = 0.2f;
+            float spoutH = 1.5f;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { basinR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { basinH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { spoutR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { spoutH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (basinR <= 0 || basinH <= 0 || spoutR <= 0 || spoutH <= 0 ||
+                spoutR >= basinR) {
+                std::fprintf(stderr,
+                    "gen-mesh-fountain: all dims > 0; spoutR must be < basinR\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            const int segs = 24;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Cylinder helper: build side ring + caps from y0 to y1
+            // at given radius. Returns when done; indices appended
+            // directly. Side ring is 2× (segs+1) verts at y0 then y1.
+            auto cylinder = [&](float r, float y0, float y1) {
+                uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segs; ++sg) {
+                    float u = static_cast<float>(sg) / segs;
+                    float ang = u * 2.0f * pi;
+                    glm::vec3 p(r * std::cos(ang), y0, r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, n, glm::vec2(u, 0));
+                }
+                uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+                for (int sg = 0; sg <= segs; ++sg) {
+                    float u = static_cast<float>(sg) / segs;
+                    float ang = u * 2.0f * pi;
+                    glm::vec3 p(r * std::cos(ang), y1, r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, n, glm::vec2(u, 1));
+                }
+                for (int sg = 0; sg < segs; ++sg) {
+                    wom.indices.insert(wom.indices.end(), {
+                        bot + sg, top + sg, bot + sg + 1,
+                        bot + sg + 1, top + sg, top + sg + 1
+                    });
+                }
+                // Top cap (faces +Y)
+                uint32_t topC = addV({0, y1, 0}, {0, 1, 0}, {0.5f, 0.5f});
+                for (int sg = 0; sg < segs; ++sg) {
+                    wom.indices.insert(wom.indices.end(),
+                        {topC, top + sg, top + sg + 1});
+                }
+                // Bottom cap (faces -Y)
+                uint32_t botC = addV({0, y0, 0}, {0, -1, 0}, {0.5f, 0.5f});
+                for (int sg = 0; sg < segs; ++sg) {
+                    wom.indices.insert(wom.indices.end(),
+                        {botC, bot + sg + 1, bot + sg});
+                }
+            };
+            // Basin: cylinder from y=0 to y=basinH at basinR.
+            cylinder(basinR, 0.0f, basinH);
+            // Spout: cylinder from y=basinH to y=basinH+spoutH at spoutR.
+            cylinder(spoutR, basinH, basinH + spoutH);
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            float maxY = basinH + spoutH;
+            wom.boundMin = glm::vec3(-basinR, 0,    -basinR);
+            wom.boundMax = glm::vec3( basinR, maxY,  basinR);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-fountain: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  basin    : R=%.3f H=%.3f\n", basinR, basinH);
+            std::printf("  spout    : R=%.3f H=%.3f\n", spoutR, spoutH);
+            std::printf("  total H  : %.3f\n", maxY);
+            std::printf("  vertices : %zu\n", wom.vertices.size());
+            std::printf("  triangles: %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-statue") == 0 && i + 1 < argc) {
+            // Humanoid placeholder: square pedestal block + tall
+            // narrow body cylinder + head sphere. The silhouette
+            // reads as a statue without needing limbs. Useful for
+            // monuments, hero statues, plaza centerpieces, religious
+            // shrines.
+            //
+            // The 22nd procedural mesh primitive.
+            std::string womBase = argv[++i];
+            float pedSize = 1.0f;     // pedestal width and depth
+            float bodyH = 2.5f;       // body cylinder height
+            float headR = 0.4f;       // head sphere radius
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { pedSize = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { bodyH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { headR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (pedSize <= 0 || bodyH <= 0 || headR <= 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-statue: all dims must be positive\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Pedestal: low square block (24 unique verts).
+            float pedH = pedSize * 0.4f;
+            float hp = pedSize * 0.5f;
+            {
+                struct Face { glm::vec3 n, du, dv; };
+                Face faces[6] = {
+                    {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+                    {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+                    {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+                    {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+                    {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+                    {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+                };
+                glm::vec3 c(0, pedH * 0.5f, 0);
+                glm::vec3 ext(hp, pedH * 0.5f, hp);
+                for (const Face& f : faces) {
+                    glm::vec3 center = c + glm::vec3(f.n.x*ext.x, f.n.y*ext.y, f.n.z*ext.z);
+                    glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+                    glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    addV(center - du - dv, f.n, {0, 0});
+                    addV(center + du - dv, f.n, {1, 0});
+                    addV(center + du + dv, f.n, {1, 1});
+                    addV(center - du + dv, f.n, {0, 1});
+                    wom.indices.insert(wom.indices.end(),
+                        {base, base + 1, base + 2, base, base + 2, base + 3});
+                }
+            }
+            // Body cylinder from y=pedH to y=pedH+bodyH at radius pedSize*0.2
+            float bodyR = pedSize * 0.2f;
+            float bodyY0 = pedH;
+            float bodyY1 = pedH + bodyH;
+            const int segs = 16;
+            uint32_t bodyBot = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segs; ++sg) {
+                float u = static_cast<float>(sg) / segs;
+                float ang = u * 2.0f * pi;
+                glm::vec3 p(bodyR * std::cos(ang), bodyY0, bodyR * std::sin(ang));
+                glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                addV(p, n, {u, 0});
+            }
+            uint32_t bodyTop = static_cast<uint32_t>(wom.vertices.size());
+            for (int sg = 0; sg <= segs; ++sg) {
+                float u = static_cast<float>(sg) / segs;
+                float ang = u * 2.0f * pi;
+                glm::vec3 p(bodyR * std::cos(ang), bodyY1, bodyR * std::sin(ang));
+                glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                addV(p, n, {u, 1});
+            }
+            for (int sg = 0; sg < segs; ++sg) {
+                wom.indices.insert(wom.indices.end(), {
+                    bodyBot + sg, bodyTop + sg, bodyBot + sg + 1,
+                    bodyBot + sg + 1, bodyTop + sg, bodyTop + sg + 1
+                });
+            }
+            // Head sphere centered above body. UV-sphere with 16
+            // longitude × 12 latitude segments.
+            float headY = bodyY1 + headR;
+            const int headLon = 16;
+            const int headLat = 12;
+            uint32_t headStart = static_cast<uint32_t>(wom.vertices.size());
+            for (int la = 0; la <= headLat; ++la) {
+                float v = static_cast<float>(la) / headLat;
+                float phi = v * pi;  // 0..pi
+                float sphi = std::sin(phi), cphi = std::cos(phi);
+                for (int lo = 0; lo <= headLon; ++lo) {
+                    float u = static_cast<float>(lo) / headLon;
+                    float theta = u * 2.0f * pi;
+                    glm::vec3 dir(sphi * std::cos(theta),
+                                  cphi,
+                                  sphi * std::sin(theta));
+                    glm::vec3 p = glm::vec3(0, headY, 0) + dir * headR;
+                    addV(p, dir, {u, v});
+                }
+            }
+            int rowSize = headLon + 1;
+            for (int la = 0; la < headLat; ++la) {
+                for (int lo = 0; lo < headLon; ++lo) {
+                    uint32_t i00 = headStart + la * rowSize + lo;
+                    uint32_t i01 = headStart + la * rowSize + lo + 1;
+                    uint32_t i10 = headStart + (la + 1) * rowSize + lo;
+                    uint32_t i11 = headStart + (la + 1) * rowSize + lo + 1;
+                    wom.indices.insert(wom.indices.end(),
+                        {i00, i10, i01, i01, i10, i11});
+                }
+            }
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            float maxY = headY + headR;
+            wom.boundMin = glm::vec3(-hp, 0,    -hp);
+            wom.boundMax = glm::vec3( hp, maxY,  hp);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-statue: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  pedestal  : %.3f × %.3f × %.3f\n", pedSize, pedH, pedSize);
+            std::printf("  body      : R=%.3f H=%.3f\n", bodyR, bodyH);
+            std::printf("  head      : R=%.3f\n", headR);
+            std::printf("  total H   : %.3f\n", maxY);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
