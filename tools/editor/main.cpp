@@ -911,6 +911,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         List proprietary files lacking open-format sidecars (one per line)\n");
     std::printf("  --info-zone <dir|json> [--json]\n");
     std::printf("                         Print zone.json fields (manifest, tiles, audio, flags) and exit\n");
+    std::printf("  --info-zone-overview <zoneDir> [--json]\n");
+    std::printf("                         One-line compact zone summary (tiles, biome, counts, audio status)\n");
     std::printf("  --info-creatures <p> [--json]\n");
     std::printf("                         Print creatures.json summary (counts, behaviors) and exit\n");
     std::printf("  --info-creatures-by-faction <p> [--json]\n");
@@ -1014,7 +1016,7 @@ int main(int argc, char* argv[]) {
         "--info-png", "--info-jsondbc", "--info-blp", "--info-pack-budget",
         "--info-pack-tree",
         "--info-m2", "--info-wmo", "--info-adt",
-        "--info-zone", "--info-wcp", "--list-wcp",
+        "--info-zone", "--info-zone-overview", "--info-wcp", "--list-wcp",
         "--list-creatures", "--list-objects", "--list-quests",
         "--list-quest-objectives", "--list-quest-rewards",
         "--info-creature", "--info-quest", "--info-object",
@@ -3647,6 +3649,74 @@ int main(int argc, char* argv[]) {
                 if (!manifest.ambienceNight.empty())
                     std::printf("    night amb : %s\n", manifest.ambienceNight.c_str());
             }
+            return 0;
+        } else if (std::strcmp(argv[i], "--info-zone-overview") == 0 && i + 1 < argc) {
+            // One-line compact zone summary. Where --info-zone dumps
+            // every manifest field, this gives a tweet-length status:
+            // tile count, biome, content counts, audio status. Easy
+            // to grep through `--for-each-zone` output to spot
+            // outliers.
+            std::string zoneDir = argv[++i];
+            bool jsonOut = (i + 1 < argc &&
+                            std::strcmp(argv[i + 1], "--json") == 0);
+            if (jsonOut) i++;
+            namespace fs = std::filesystem;
+            std::string manifestPath = zoneDir + "/zone.json";
+            if (!fs::exists(manifestPath)) {
+                std::fprintf(stderr,
+                    "info-zone-overview: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            wowee::editor::ZoneManifest zm;
+            if (!zm.load(manifestPath)) {
+                std::fprintf(stderr,
+                    "info-zone-overview: failed to parse %s\n",
+                    manifestPath.c_str());
+                return 1;
+            }
+            // Cheap content counts via direct JSON parse — avoids
+            // standing up the full editor classes for an overview.
+            auto countArray = [&](const std::string& fname,
+                                    const std::string& key) {
+                std::string p = zoneDir + "/" + fname;
+                if (!fs::exists(p)) return size_t{0};
+                try {
+                    nlohmann::json doc;
+                    std::ifstream in(p);
+                    in >> doc;
+                    if (doc.is_array()) return doc.size();
+                    if (doc.contains(key) && doc[key].is_array())
+                        return doc[key].size();
+                } catch (...) {}
+                return size_t{0};
+            };
+            size_t creatures = countArray("creatures.json", "creatures");
+            size_t objects = countArray("objects.json", "objects");
+            size_t quests = countArray("quests.json", "quests");
+            size_t items = countArray("items.json", "items");
+            bool hasAudio = !zm.musicTrack.empty() ||
+                             !zm.ambienceDay.empty() ||
+                             !zm.ambienceNight.empty();
+            if (jsonOut) {
+                nlohmann::json j;
+                j["zone"] = fs::path(zoneDir).filename().string();
+                j["mapName"] = zm.mapName;
+                j["biome"] = zm.biome;
+                j["tileCount"] = zm.tiles.size();
+                j["counts"] = {{"creatures", creatures},
+                                {"objects", objects},
+                                {"quests", quests},
+                                {"items", items}};
+                j["hasAudio"] = hasAudio;
+                std::printf("%s\n", j.dump(2).c_str());
+                return 0;
+            }
+            std::printf("%s [%s] %zut/%zuc/%zuo/%zuq/%zui%s\n",
+                        fs::path(zoneDir).filename().string().c_str(),
+                        zm.biome.empty() ? "?" : zm.biome.c_str(),
+                        zm.tiles.size(), creatures, objects, quests, items,
+                        hasAudio ? " +audio" : "");
             return 0;
         } else if (std::strcmp(argv[i], "--info-creatures") == 0 && i + 1 < argc) {
             std::string path = argv[++i];
