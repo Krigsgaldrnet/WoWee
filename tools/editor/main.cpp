@@ -613,6 +613,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Drop a starter WOM mesh pack (rock/tree/fence) into <zoneDir>/meshes/\n");
     std::printf("  --gen-zone-starter-pack <zoneDir> [--seed N]\n");
     std::printf("                         Run both texture-pack + mesh-pack in one pass — full open-format bootstrap\n");
+    std::printf("  --gen-audio-tone <out.wav> <freqHz> <durationSec> [sampleRate] [waveform]\n");
+    std::printf("                         Synthesize a procedural WAV (PCM-16 mono). Waveform: sine|square|triangle|saw\n");
     std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
     std::printf("                         End-to-end: scaffold-zone + random-populate-zone + random-populate-items\n");
     std::printf("  --gen-random-project <count> [--prefix N] [--seed N] [--creatures N] [--objects N] [--items N]\n");
@@ -1109,7 +1111,8 @@ int main(int argc, char* argv[]) {
         "--info-project-audio", "--snap-project-to-ground",
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
-        "--gen-zone-mesh-pack", "--gen-zone-starter-pack", "--info-spawn",
+        "--gen-zone-mesh-pack", "--gen-zone-starter-pack", "--gen-audio-tone",
+        "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -14153,6 +14156,125 @@ int main(int argc, char* argv[]) {
             std::printf("  zone dir : %s\n", zoneDir.c_str());
             std::printf("  textures : 6 PNGs in textures/\n");
             std::printf("  meshes   : 5 WOMs in meshes/\n");
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-audio-tone") == 0 && i + 3 < argc) {
+            // Synthesize a procedural mono PCM-16 WAV. Opens a new
+            // file family in the open-format ecosystem (alongside
+            // WOM/WOB/PNG/JSON) — proprietary MP3 placeholders can
+            // be replaced with hand-synthesized WAVs that have no
+            // patent or licensing baggage.
+            //
+            // RIFF header is hand-rolled: 44 bytes, no library deps.
+            std::string outPath = argv[++i];
+            float freq = 0.0f;
+            float duration = 0.0f;
+            try { freq = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-audio-tone: <freqHz> must be a number\n");
+                return 1;
+            }
+            try { duration = std::stof(argv[++i]); }
+            catch (...) {
+                std::fprintf(stderr,
+                    "gen-audio-tone: <durationSec> must be a number\n");
+                return 1;
+            }
+            int sampleRate = 44100;
+            std::string waveform = "sine";
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { sampleRate = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                waveform = argv[++i];
+            }
+            if (freq <= 0 || freq > 24000 ||
+                duration <= 0 || duration > 600 ||
+                sampleRate < 8000 || sampleRate > 192000) {
+                std::fprintf(stderr,
+                    "gen-audio-tone: freq 0..24000Hz, duration 0..600s, sampleRate 8000..192000\n");
+                return 1;
+            }
+            uint32_t totalSamples = static_cast<uint32_t>(duration * sampleRate);
+            const float pi = 3.14159265358979f;
+            const float twoPi = 2.0f * pi;
+            std::vector<int16_t> samples(totalSamples, 0);
+            // Apply a 5ms attack + 5ms release envelope so the tone
+            // doesn't click on start/stop. Speakers really hate
+            // discontinuities at the buffer edges.
+            int envSamples = std::min<uint32_t>(totalSamples / 4,
+                                static_cast<uint32_t>(sampleRate * 0.005f));
+            for (uint32_t s = 0; s < totalSamples; ++s) {
+                float t = static_cast<float>(s) / sampleRate;
+                float phase = std::fmod(t * freq, 1.0f);
+                float v = 0.0f;
+                if (waveform == "sine") {
+                    v = std::sin(twoPi * t * freq);
+                } else if (waveform == "square") {
+                    v = (phase < 0.5f) ? 1.0f : -1.0f;
+                } else if (waveform == "triangle") {
+                    v = (phase < 0.5f)
+                        ? (4.0f * phase - 1.0f)
+                        : (3.0f - 4.0f * phase);
+                } else if (waveform == "saw") {
+                    v = 2.0f * phase - 1.0f;
+                } else {
+                    std::fprintf(stderr,
+                        "gen-audio-tone: unknown waveform '%s' (sine|square|triangle|saw)\n",
+                        waveform.c_str());
+                    return 1;
+                }
+                float env = 1.0f;
+                if (envSamples > 0) {
+                    if (static_cast<int>(s) < envSamples) {
+                        env = static_cast<float>(s) / envSamples;
+                    } else if (static_cast<int>(totalSamples - s) < envSamples) {
+                        env = static_cast<float>(totalSamples - s) / envSamples;
+                    }
+                }
+                v *= env * 0.5f;  // 50% headroom, never clip
+                samples[s] = static_cast<int16_t>(std::clamp(v, -1.0f, 1.0f) * 32767.0f);
+            }
+            // RIFF/WAVE PCM-16 mono header. Field sizes match the
+            // canonical 44-byte layout for an uncompressed mono WAV.
+            FILE* f = std::fopen(outPath.c_str(), "wb");
+            if (!f) {
+                std::fprintf(stderr,
+                    "gen-audio-tone: cannot open %s for write\n", outPath.c_str());
+                return 1;
+            }
+            uint32_t dataBytes = totalSamples * 2;
+            uint32_t riffSize = 36 + dataBytes;
+            uint16_t numChannels = 1;
+            uint16_t bitsPerSample = 16;
+            uint16_t blockAlign = numChannels * bitsPerSample / 8;
+            uint32_t byteRate = sampleRate * blockAlign;
+            auto wU32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+            auto wU16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+            std::fwrite("RIFF", 1, 4, f);
+            wU32(riffSize);
+            std::fwrite("WAVE", 1, 4, f);
+            std::fwrite("fmt ", 1, 4, f);
+            wU32(16);                  // fmt chunk size
+            wU16(1);                   // PCM
+            wU16(numChannels);
+            wU32(static_cast<uint32_t>(sampleRate));
+            wU32(byteRate);
+            wU16(blockAlign);
+            wU16(bitsPerSample);
+            std::fwrite("data", 1, 4, f);
+            wU32(dataBytes);
+            std::fwrite(samples.data(), 2, totalSamples, f);
+            std::fclose(f);
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  format     : WAV PCM-16 mono\n");
+            std::printf("  freq       : %.2f Hz\n", freq);
+            std::printf("  duration   : %.3f sec\n", duration);
+            std::printf("  sampleRate : %d Hz\n", sampleRate);
+            std::printf("  waveform   : %s\n", waveform.c_str());
+            std::printf("  samples    : %u\n", totalSamples);
+            std::printf("  bytes      : %u (44-byte header + data)\n",
+                        riffSize + 8);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-random-project") == 0 && i + 1 < argc) {
             // Project-wide companion: spawn N random zones in one
