@@ -617,6 +617,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Run both texture-pack + mesh-pack in one pass — full open-format bootstrap\n");
     std::printf("  --gen-audio-tone <out.wav> <freqHz> <durationSec> [sampleRate] [waveform]\n");
     std::printf("                         Synthesize a procedural WAV (PCM-16 mono). Waveform: sine|square|triangle|saw\n");
+    std::printf("  --gen-zone-audio-pack <zoneDir>\n");
+    std::printf("                         Drop a starter WAV pack (drone/chime/click/alert) into <zoneDir>/audio/\n");
     std::printf("  --gen-random-zone <name> [tx ty] [--seed N] [--creatures N] [--objects N] [--items N]\n");
     std::printf("                         End-to-end: scaffold-zone + random-populate-zone + random-populate-items\n");
     std::printf("  --gen-random-project <count> [--prefix N] [--seed N] [--creatures N] [--objects N] [--items N]\n");
@@ -1114,7 +1116,7 @@ int main(int argc, char* argv[]) {
         "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
         "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
         "--gen-zone-mesh-pack", "--gen-zone-starter-pack", "--gen-audio-tone",
-        "--info-spawn",
+        "--gen-zone-audio-pack", "--info-spawn",
         "--diff-zone-spawns",
         "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
         "--export-project-items-md", "--export-project-items-csv",
@@ -14278,6 +14280,66 @@ int main(int argc, char* argv[]) {
             std::printf("  bytes      : %u (44-byte header + data)\n",
                         riffSize + 8);
             return 0;
+        } else if (std::strcmp(argv[i], "--gen-zone-audio-pack") == 0 && i + 1 < argc) {
+            // Drop a 6-WAV starter audio pack into <zoneDir>/audio/.
+            // Two ambient drones (low + fifth above), a melodic
+            // chime, a UI click, an alert, and a music stinger —
+            // covers the common zone-audio slots. All are
+            // hand-synthesized PCM-16 mono WAVs with no licensing
+            // baggage, replacing typical proprietary MP3 placeholders.
+            std::string zoneDir = argv[++i];
+            std::filesystem::path zp(zoneDir);
+            if (!std::filesystem::exists(zp / "zone.json")) {
+                std::fprintf(stderr,
+                    "gen-zone-audio-pack: %s has no zone.json\n",
+                    zoneDir.c_str());
+                return 1;
+            }
+            std::filesystem::path audioDir = zp / "audio";
+            std::error_code ec;
+            std::filesystem::create_directories(audioDir, ec);
+            if (ec) {
+                std::fprintf(stderr,
+                    "gen-zone-audio-pack: cannot create %s: %s\n",
+                    audioDir.string().c_str(), ec.message().c_str());
+                return 1;
+            }
+            std::string self = (argc > 0) ? argv[0] : "wowee_editor";
+            struct AudioJob {
+                std::string fileName;
+                std::string freq;
+                std::string duration;
+                std::string sampleRate;
+                std::string waveform;
+            };
+            std::vector<AudioJob> jobs = {
+                {"ambient-low.wav",    "110",  "3.0", "22050", "sine"},
+                {"ambient-mid.wav",    "165",  "3.0", "22050", "sine"},
+                {"music-stinger.wav",  "220",  "1.5", "44100", "triangle"},
+                {"chime.wav",          "880",  "0.4", "44100", "triangle"},
+                {"alert.wav",          "660",  "0.2", "44100", "square"},
+                {"click.wav",          "1500", "0.04","44100", "square"},
+            };
+            int written = 0;
+            for (const auto& job : jobs) {
+                std::filesystem::path out = audioDir / job.fileName;
+                std::string cmd = "\"" + self + "\" --gen-audio-tone \"" +
+                                  out.string() + "\" " +
+                                  job.freq + " " + job.duration + " " +
+                                  job.sampleRate + " " + job.waveform +
+                                  " > /dev/null 2>&1";
+                int rc = std::system(cmd.c_str());
+                if (rc != 0) {
+                    std::fprintf(stderr,
+                        "gen-zone-audio-pack: %s failed (rc=%d)\n",
+                        job.fileName.c_str(), rc);
+                } else {
+                    ++written;
+                }
+            }
+            std::printf("gen-zone-audio-pack: wrote %d of %zu sounds to %s\n",
+                        written, jobs.size(), audioDir.string().c_str());
+            return written == static_cast<int>(jobs.size()) ? 0 : 1;
         } else if (std::strcmp(argv[i], "--gen-random-project") == 0 && i + 1 < argc) {
             // Project-wide companion: spawn N random zones in one
             // pass. Names default to "Zone1, Zone2..."; tile
