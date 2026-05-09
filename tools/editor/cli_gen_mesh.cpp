@@ -5161,6 +5161,75 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handlePlanterBox(int& i, int argc, char** argv) {
+    // Window-sill / garden planter box: long open-top wooden
+    // basin (5-piece bottom + 4 walls construction) plus a
+    // visible "soil" slab inside that fills most of the cavity
+    // a bit below the rim — the natural "filled with potting
+    // dirt" look. Distinct from --gen-mesh-water-trough (square
+    // basin without a soil-fill block) — planter-box is the
+    // long elongated garden variant. The 78th procedural mesh
+    // primitive.
+    std::string womBase = argv[++i];
+    float length = 1.2f;
+    float width  = 0.30f;
+    float height = 0.30f;
+    float wallT  = 0.04f;
+    float soilTopFrac = 0.85f;     // soil top as fraction of height
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, wallT);
+    parseOptFloat(i, argc, argv, soilTopFrac);
+    if (length <= 0 || width <= 0 || height <= 0 || wallT <= 0 ||
+        wallT * 2 >= std::min(length, width) || wallT >= height ||
+        soilTopFrac <= 0.0f || soilTopFrac > 1.0f) {
+        std::fprintf(stderr,
+            "gen-mesh-planter-box: dims > 0; soilTopFrac (0,1]\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float L2 = length * 0.5f;
+    const float W2 = width  * 0.5f;
+    // Bottom slab (planter floor).
+    addFlatBox(wom, 0.0f, wallT * 0.5f, 0.0f, L2, wallT * 0.5f, W2);
+    // 4 perimeter walls (same scheme as --gen-mesh-water-trough).
+    const float wallCY = wallT + (height - wallT) * 0.5f;
+    const float wallHY = (height - wallT) * 0.5f;
+    addFlatBox(wom, +L2 - wallT * 0.5f, wallCY, 0.0f,
+               wallT * 0.5f, wallHY, W2);
+    addFlatBox(wom, -L2 + wallT * 0.5f, wallCY, 0.0f,
+               wallT * 0.5f, wallHY, W2);
+    const float innerL2 = L2 - wallT;
+    addFlatBox(wom, 0.0f, wallCY, +W2 - wallT * 0.5f,
+               innerL2, wallHY, wallT * 0.5f);
+    addFlatBox(wom, 0.0f, wallCY, -W2 + wallT * 0.5f,
+               innerL2, wallHY, wallT * 0.5f);
+    // Soil block: fills the inner cavity from the floor up to
+    // soilTopFrac * height. Slightly inset so it visually sits
+    // "inside" the walls instead of breaking the wall texture.
+    const float soilTopY = height * soilTopFrac;
+    const float soilCY = wallT + (soilTopY - wallT) * 0.5f;
+    const float soilHY = (soilTopY - wallT) * 0.5f;
+    if (soilHY > 0.0f) {
+        const float innerW2 = W2 - wallT;
+        addFlatBox(wom, 0.0f, soilCY, 0.0f,
+                   innerL2 - 0.005f, soilHY, innerW2 - 0.005f);
+    }
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, L2, W2, height);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-planter-box")) return 1;
+    printWomWrote(womBase);
+    std::printf("  box        : %.3fL x %.3fW x %.3fH (wallT %.3f)\n",
+                length, width, height, wallT);
+    std::printf("  soil       : top at %.0f%% of height\n",
+                soilTopFrac * 100.0f);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleBirdBath(int& i, int argc, char** argv) {
     // Garden bird-bath: thin cylindrical stem topped by a wide
     // shallow disc basin. Distinct from --gen-mesh-fountain
@@ -7253,6 +7322,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-pillar-row",     1, handlePillarRow},
     {"--gen-mesh-statue-base",    1, handleStatueBase},
     {"--gen-mesh-bird-bath",      1, handleBirdBath},
+    {"--gen-mesh-planter-box",    1, handlePlanterBox},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
