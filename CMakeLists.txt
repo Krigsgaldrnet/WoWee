@@ -1309,6 +1309,20 @@ add_executable(wowee_editor
     tools/editor/cli_gen_mesh.cpp
     tools/editor/cli_mesh_io.cpp
     tools/editor/cli_mesh_edit.cpp
+    tools/editor/cli_wom_info.cpp
+    tools/editor/cli_format_validate.cpp
+    tools/editor/cli_convert.cpp
+    tools/editor/cli_format_info.cpp
+    tools/editor/cli_pack.cpp
+    tools/editor/cli_content_info.cpp
+    tools/editor/cli_zone_info.cpp
+    tools/editor/cli_data_tree.cpp
+    tools/editor/cli_diff.cpp
+    tools/editor/cli_spawn_audit.cpp
+    tools/editor/cli_items.cpp
+    tools/editor/cli_extract_info.cpp
+    tools/editor/cli_export.cpp
+    tools/editor/cli_bake.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp

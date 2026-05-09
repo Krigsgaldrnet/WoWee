@@ -3723,6 +3723,801 @@ int handleCart(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBanner(int& i, int argc, char** argv) {
+    // Banner: vertical pole + rectangular flag hanging off it.
+    // Pole is a 12-segment cylinder along Y. Flag is a flat
+    // rectangle attached at the top of the pole, draped along
+    // -Z. Flag has both front (+X) and back (-X) faces so it
+    // reads from any viewing angle. The 31st mesh primitive.
+    std::string womBase = argv[++i];
+    float poleH = 3.0f;
+    float poleR = 0.05f;
+    float flagW = 0.8f;       // along -Z (drape direction)
+    float flagH = 1.2f;       // along Y (down from top)
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { poleH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { poleR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { flagW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { flagH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (poleH <= 0 || poleR <= 0 || flagW <= 0 || flagH <= 0 ||
+        flagH > poleH) {
+        std::fprintf(stderr,
+            "gen-mesh-banner: all dims > 0; flagH must be <= poleH\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    const float pi = 3.14159265358979f;
+    auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+        wowee::pipeline::WoweeModel::Vertex vtx;
+        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+        wom.vertices.push_back(vtx);
+        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    };
+    // Pole cylinder (12 segments)
+    const int poleSegs = 12;
+    uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+    for (int sg = 0; sg <= poleSegs; ++sg) {
+        float u = static_cast<float>(sg) / poleSegs;
+        float ang = u * 2.0f * pi;
+        glm::vec3 p(poleR * std::cos(ang), 0, poleR * std::sin(ang));
+        glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+        addV(p, n, {u, 0});
+    }
+    uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+    for (int sg = 0; sg <= poleSegs; ++sg) {
+        float u = static_cast<float>(sg) / poleSegs;
+        float ang = u * 2.0f * pi;
+        glm::vec3 p(poleR * std::cos(ang), poleH, poleR * std::sin(ang));
+        glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+        addV(p, n, {u, 1});
+    }
+    for (int sg = 0; sg < poleSegs; ++sg) {
+        wom.indices.insert(wom.indices.end(), {
+            bot + sg, top + sg, bot + sg + 1,
+            bot + sg + 1, top + sg, top + sg + 1
+        });
+    }
+    // Pole top + bottom caps
+    uint32_t bc = addV({0, 0, 0}, {0, -1, 0}, {0.5f, 0.5f});
+    uint32_t tc = addV({0, poleH, 0}, {0, 1, 0}, {0.5f, 0.5f});
+    for (int sg = 0; sg < poleSegs; ++sg) {
+        wom.indices.insert(wom.indices.end(),
+            {bc, bot + sg + 1, bot + sg});
+        wom.indices.insert(wom.indices.end(),
+            {tc, top + sg, top + sg + 1});
+    }
+    // Flag: rectangle from (poleR, poleH-flagH, 0) to
+    // (poleR, poleH, -flagW). Two faces (front +X, back -X)
+    // so it reads from both sides.
+    float fy0 = poleH - flagH;
+    float fy1 = poleH;
+    float fz0 = 0;
+    float fz1 = -flagW;
+    float fx = poleR;
+    glm::vec3 frontN(1, 0, 0);
+    glm::vec3 backN(-1, 0, 0);
+    // Front face (faces +X, looking at it from outside)
+    uint32_t fa = addV({fx, fy0, fz0}, frontN, {0, 0});
+    uint32_t fb = addV({fx, fy0, fz1}, frontN, {1, 0});
+    uint32_t fc_ = addV({fx, fy1, fz1}, frontN, {1, 1});
+    uint32_t fd = addV({fx, fy1, fz0}, frontN, {0, 1});
+    wom.indices.insert(wom.indices.end(), {fa, fb, fc_, fa, fc_, fd});
+    // Back face (faces -X)
+    uint32_t ba = addV({fx, fy0, fz0}, backN, {0, 0});
+    uint32_t bb = addV({fx, fy1, fz0}, backN, {0, 1});
+    uint32_t bc_v = addV({fx, fy1, fz1}, backN, {1, 1});
+    uint32_t bd = addV({fx, fy0, fz1}, backN, {1, 0});
+    wom.indices.insert(wom.indices.end(), {ba, bb, bc_v, ba, bc_v, bd});
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-poleR, 0, fz1);
+    wom.boundMax = glm::vec3(fx + poleR, poleH, poleR);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-banner: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  pole       : R=%.3f H=%.3f\n", poleR, poleH);
+    std::printf("  flag       : W=%.3f H=%.3f (drapes -Z)\n",
+                flagW, flagH);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
+int handleGrave(int& i, int argc, char** argv) {
+    // Tombstone: low rectangular base + vertical tablet on top.
+    // Tablet sits centered on the base; base is wider so the
+    // grave reads with a stable foundation. The 32nd procedural
+    // mesh primitive — useful for graveyards, undead zones,
+    // memorial set dressing.
+    std::string womBase = argv[++i];
+    float tabletW = 0.6f;     // along X
+    float tabletH = 1.0f;     // along Y
+    float tabletT = 0.15f;    // along Z (thickness)
+    float baseW = 0.8f;       // base wider than tablet
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { tabletW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { tabletH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { tabletT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (tabletW <= 0 || tabletH <= 0 || tabletT <= 0 || baseW <= 0 ||
+        baseW < tabletW) {
+        std::fprintf(stderr,
+            "gen-mesh-grave: all dims > 0; baseW must be >= tabletW\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Base: wider, lower. Sits at y=0 to baseH where baseH = 20% of tablet H.
+    float baseH = tabletH * 0.2f;
+    float baseDepth = tabletT * 1.5f;  // deeper than tablet for stability
+    addBox(0, baseH * 0.5f, 0,
+           baseW * 0.5f, baseH * 0.5f, baseDepth * 0.5f);
+    // Tablet: sits on top of base, centered.
+    float tabletY = baseH + tabletH * 0.5f;
+    addBox(0, tabletY, 0,
+           tabletW * 0.5f, tabletH * 0.5f, tabletT * 0.5f);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxY = baseH + tabletH;
+    float maxXZ = std::max(baseW * 0.5f, tabletW * 0.5f);
+    wom.boundMin = glm::vec3(-maxXZ, 0, -baseDepth * 0.5f);
+    wom.boundMax = glm::vec3( maxXZ, maxY,  baseDepth * 0.5f);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-grave: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  base       : %.3f × %.3f (h=%.3f)\n",
+                baseW, baseDepth, baseH);
+    std::printf("  tablet     : %.3f × %.3f × %.3f\n",
+                tabletW, tabletH, tabletT);
+    std::printf("  total H    : %.3f\n", maxY);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
+int handleBench(int& i, int argc, char** argv) {
+    // Wooden bench: long thin seat plank (X×Z plane) supported
+    // by 2 leg slabs (vertical Y rectangles) at each end. Legs
+    // are 90% of the bench's depth and span the full seat
+    // height down to the floor. The 33rd procedural mesh
+    // primitive — useful for taverns, plazas, roadside rest
+    // stops.
+    std::string womBase = argv[++i];
+    float length = 1.5f;       // along X (bench length)
+    float seatY = 0.5f;        // seat top height
+    float seatT = 0.06f;       // seat plank thickness (Y)
+    float seatW = 0.4f;        // seat width (Z)
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { length = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seatY = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seatT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seatW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (length <= 0 || seatY <= 0 || seatT <= 0 || seatW <= 0 ||
+        seatT > seatY) {
+        std::fprintf(stderr,
+            "gen-mesh-bench: all dims > 0; seatT must be <= seatY\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Seat: top plank at y=seatY-seatT to y=seatY.
+    float seatCY = seatY - seatT * 0.5f;
+    addBox(0, seatCY, 0, length * 0.5f, seatT * 0.5f, seatW * 0.5f);
+    // Two leg slabs: thin Y slabs at the +X and -X ends, span
+    // 90% of the seat depth, 5% of bench length thick, full
+    // height from floor to bottom-of-seat.
+    float legHy = (seatY - seatT) * 0.5f;
+    float legCY = legHy;
+    float legHx = length * 0.025f;     // ~2.5% of length on each side
+    float legHz = seatW * 0.45f;
+    float legX = length * 0.45f;       // legs at 90% of length out
+    addBox( legX, legCY, 0, legHx, legHy, legHz);
+    addBox(-legX, legCY, 0, legHx, legHy, legHz);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-length * 0.5f, 0, -seatW * 0.5f);
+    wom.boundMax = glm::vec3( length * 0.5f, seatY, seatW * 0.5f);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-bench: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  length    : %.3f\n", length);
+    std::printf("  seat Y    : %.3f (thickness %.3f)\n", seatY, seatT);
+    std::printf("  seat W    : %.3f\n", seatW);
+    std::printf("  legs      : 2 (at ±%.3f along X)\n", legX);
+    std::printf("  vertices  : %zu\n", wom.vertices.size());
+    std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
+int handleShrine(int& i, int argc, char** argv) {
+    // Small open canopy: square base + 4 cylindrical pillars
+    // at the corners + a flat roof slab covering all 4. Useful
+    // for wayside shrines, gazebos, well covers, market stalls.
+    // The 34th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float size = 1.5f;          // base width = depth
+    float pillarH = 2.0f;       // pillar height
+    float pillarR = 0.10f;      // pillar radius
+    float roofT = 0.15f;        // roof thickness
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { size = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { pillarH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { pillarR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { roofT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (size <= 0 || pillarH <= 0 || pillarR <= 0 || roofT <= 0 ||
+        pillarR * 2 >= size) {
+        std::fprintf(stderr,
+            "gen-mesh-shrine: dims > 0; pillarR×2 must fit inside size\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    const float pi = 3.14159265358979f;
+    auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+        wowee::pipeline::WoweeModel::Vertex vtx;
+        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+        wom.vertices.push_back(vtx);
+        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    };
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Base: low square slab, 10% of pillar height tall.
+    float baseH = pillarH * 0.1f;
+    float halfSize = size * 0.5f;
+    addBox(0, baseH * 0.5f, 0, halfSize, baseH * 0.5f, halfSize);
+    // 4 pillars at corners (inset by pillarR so they sit fully
+    // on the base). Each is a 12-segment cylinder.
+    const int segs = 12;
+    float pillarOffset = halfSize - pillarR;
+    auto addPillar = [&](float cx, float cz) {
+        float y0 = baseH;
+        float y1 = baseH + pillarH;
+        uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+        for (int sg = 0; sg <= segs; ++sg) {
+            float u = static_cast<float>(sg) / segs;
+            float ang = u * 2.0f * pi;
+            glm::vec3 p(cx + pillarR * std::cos(ang), y0,
+                        cz + pillarR * std::sin(ang));
+            glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+            addV(p, n, {u, 0});
+        }
+        uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+        for (int sg = 0; sg <= segs; ++sg) {
+            float u = static_cast<float>(sg) / segs;
+            float ang = u * 2.0f * pi;
+            glm::vec3 p(cx + pillarR * std::cos(ang), y1,
+                        cz + pillarR * std::sin(ang));
+            glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+            addV(p, n, {u, 1});
+        }
+        for (int sg = 0; sg < segs; ++sg) {
+            wom.indices.insert(wom.indices.end(), {
+                bot + sg, top + sg, bot + sg + 1,
+                bot + sg + 1, top + sg, top + sg + 1
+            });
+        }
+    };
+    addPillar( pillarOffset,  pillarOffset);
+    addPillar(-pillarOffset,  pillarOffset);
+    addPillar( pillarOffset, -pillarOffset);
+    addPillar(-pillarOffset, -pillarOffset);
+    // Roof: flat slab on top of pillars, slightly larger than
+    // the base so it overhangs the pillars.
+    float roofY = baseH + pillarH;
+    float roofHalfSize = halfSize * 1.05f;
+    addBox(0, roofY + roofT * 0.5f, 0,
+           roofHalfSize, roofT * 0.5f, roofHalfSize);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxY = roofY + roofT;
+    wom.boundMin = glm::vec3(-roofHalfSize, 0, -roofHalfSize);
+    wom.boundMax = glm::vec3( roofHalfSize, maxY, roofHalfSize);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-shrine: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  size       : %.3f × %.3f\n", size, size);
+    std::printf("  pillars    : 4 × R=%.3f H=%.3f\n", pillarR, pillarH);
+    std::printf("  roof       : %.3f thick (%.3f overhang)\n",
+                roofT, halfSize * 0.05f);
+    std::printf("  total H    : %.3f\n", maxY);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
+int handleTotem(int& i, int argc, char** argv) {
+    // Tribal totem: stack of N square blocks alternating wide/
+    // narrow widths so each carved face reads as distinct.
+    // Even-indexed blocks are full width, odd are 70% — gives
+    // the carved-segment look characteristic of totem poles.
+    // The 35th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float baseW = 0.5f;        // base block half-width × 2
+    int segments = 5;          // number of stacked blocks
+    float segH = 0.5f;         // height of each block
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { segments = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { segH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (baseW <= 0 || segH <= 0 || segments < 1 || segments > 32) {
+        std::fprintf(stderr,
+            "gen-mesh-totem: dims > 0, segments 1..32\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Stack blocks bottom-up. Bottom block always full width.
+    // Even blocks (0, 2, 4...) get full width, odd blocks 70%.
+    for (int s = 0; s < segments; ++s) {
+        float cy = (s + 0.5f) * segH;
+        float halfW = (s & 1) ? (baseW * 0.5f * 0.70f) : (baseW * 0.5f);
+        addBox(0, cy, 0, halfW, segH * 0.5f, halfW);
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxY = segments * segH;
+    float maxXZ = baseW * 0.5f;
+    wom.boundMin = glm::vec3(-maxXZ, 0, -maxXZ);
+    wom.boundMax = glm::vec3( maxXZ, maxY, maxXZ);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-totem: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  base width : %.3f\n", baseW);
+    std::printf("  segments   : %d (each %.3f tall)\n", segments, segH);
+    std::printf("  total H    : %.3f\n", maxY);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
+int handleCage(int& i, int argc, char** argv) {
+    // Square cage: top + bottom thin frame slabs + 4 corner
+    // posts + N evenly spaced bars on each of the 4 sides.
+    // Bars are thin square cross-section so they read as
+    // metal rods. Useful for prison cells, animal pens,
+    // dungeon set dressing.
+    std::string womBase = argv[++i];
+    float width = 1.5f;        // along X = Z (square footprint)
+    float height = 2.0f;
+    int barsPerSide = 5;
+    float barRadius = 0.04f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { barsPerSide = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { barRadius = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (width <= 0 || height <= 0 || barRadius <= 0 ||
+        barsPerSide < 0 || barsPerSide > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-cage: dims > 0, barsPerSide 0..64\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    float halfW = width * 0.5f;
+    float frameT = barRadius * 1.5f;  // top/bottom slab thickness
+    // Top + bottom frame slabs
+    addBox(0, frameT * 0.5f, 0, halfW, frameT * 0.5f, halfW);
+    addBox(0, height - frameT * 0.5f, 0, halfW, frameT * 0.5f, halfW);
+    // 4 corner posts (thicker than bars)
+    float postR = barRadius * 1.5f;
+    float postCY = height * 0.5f;
+    float postHy = height * 0.5f;
+    float corner = halfW - postR;
+    addBox( corner, postCY,  corner, postR, postHy, postR);
+    addBox(-corner, postCY,  corner, postR, postHy, postR);
+    addBox( corner, postCY, -corner, postR, postHy, postR);
+    addBox(-corner, postCY, -corner, postR, postHy, postR);
+    // Bars: N bars per side, evenly distributed between corners.
+    // Side spans from -corner to +corner; bars at (k+1)/(N+1)
+    // along the span so they're inset (no overlap with corners).
+    float barCY = height * 0.5f;
+    float barHy = (height - 2 * frameT) * 0.5f;
+    float barCYadj = frameT + barHy;
+    int barTotal = 0;
+    for (int k = 0; k < barsPerSide; ++k) {
+        float t = (k + 1.0f) / (barsPerSide + 1.0f);
+        float pos = -corner + t * 2.0f * corner;  // from -corner to +corner
+        // +Z and -Z sides (bars span X)
+        addBox(pos, barCYadj,  halfW - barRadius,
+               barRadius, barHy, barRadius);
+        addBox(pos, barCYadj, -halfW + barRadius,
+               barRadius, barHy, barRadius);
+        // +X and -X sides (bars span Z)
+        addBox( halfW - barRadius, barCYadj, pos,
+               barRadius, barHy, barRadius);
+        addBox(-halfW + barRadius, barCYadj, pos,
+               barRadius, barHy, barRadius);
+        barTotal += 4;
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-halfW, 0, -halfW);
+    wom.boundMax = glm::vec3( halfW, height, halfW);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-cage: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  width × height : %.3f × %.3f\n", width, height);
+    std::printf("  bars per side  : %d (%d total)\n",
+                barsPerSide, barTotal);
+    std::printf("  bar radius     : %.3f\n", barRadius);
+    std::printf("  vertices       : %zu\n", wom.vertices.size());
+    std::printf("  triangles      : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
+int handleThrone(int& i, int argc, char** argv) {
+    // Throne: pedestal slab + seat block + tall backrest +
+    // 2 armrests on either side. Reads as a regal seat from
+    // any angle. The 37th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float seatW = 0.8f;        // along X
+    float seatH = 0.5f;        // top of seat above pedestal
+    float backH = 1.5f;        // backrest extends this above seat
+    float pedSize = 1.2f;      // pedestal width = depth
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seatW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seatH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { backH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { pedSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (seatW <= 0 || seatH <= 0 || backH <= 0 || pedSize <= 0 ||
+        pedSize < seatW) {
+        std::fprintf(stderr,
+            "gen-mesh-throne: dims > 0; pedSize must be >= seatW\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Pedestal: low square slab at the floor
+    float pedH = seatH * 0.4f;
+    float halfPed = pedSize * 0.5f;
+    addBox(0, pedH * 0.5f, 0, halfPed, pedH * 0.5f, halfPed);
+    // Seat: thick square cushion sitting on pedestal
+    float seatT = seatH * 0.3f;       // seat thickness (along Y)
+    float seatCY = pedH + seatT * 0.5f;
+    float halfSeat = seatW * 0.5f;
+    addBox(0, seatCY, 0, halfSeat, seatT * 0.5f, halfSeat);
+    // Backrest: tall vertical slab at -Z edge of seat, slim in Z
+    float backT = seatT * 0.6f;
+    float backCY = pedH + seatT + backH * 0.5f;
+    addBox(0, backCY, -halfSeat + backT * 0.5f,
+           halfSeat, backH * 0.5f, backT * 0.5f);
+    // Armrests: 2 small blocks on the sides
+    float armW = backT * 0.8f;
+    float armH = seatH * 0.4f;
+    float armCY = pedH + seatT + armH * 0.5f;
+    float armDepth = halfSeat * 0.7f;
+    addBox( halfSeat - armW * 0.5f, armCY, 0,
+           armW * 0.5f, armH * 0.5f, armDepth);
+    addBox(-halfSeat + armW * 0.5f, armCY, 0,
+           armW * 0.5f, armH * 0.5f, armDepth);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxY = pedH + seatT + backH;
+    wom.boundMin = glm::vec3(-halfPed, 0, -halfPed);
+    wom.boundMax = glm::vec3( halfPed, maxY, halfPed);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-throne: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  pedestal   : %.3f × %.3f (h=%.3f)\n",
+                pedSize, pedSize, pedH);
+    std::printf("  seat       : %.3f × %.3f\n", seatW, seatT);
+    std::printf("  backrest   : H=%.3f\n", backH);
+    std::printf("  total H    : %.3f\n", maxY);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -3807,6 +4602,27 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-cart") == 0 && i + 1 < argc) {
         outRc = handleCart(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-banner") == 0 && i + 1 < argc) {
+        outRc = handleBanner(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-grave") == 0 && i + 1 < argc) {
+        outRc = handleGrave(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-bench") == 0 && i + 1 < argc) {
+        outRc = handleBench(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-shrine") == 0 && i + 1 < argc) {
+        outRc = handleShrine(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-totem") == 0 && i + 1 < argc) {
+        outRc = handleTotem(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-cage") == 0 && i + 1 < argc) {
+        outRc = handleCage(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-throne") == 0 && i + 1 < argc) {
+        outRc = handleThrone(i, argc, argv); return true;
     }
     return false;
 }

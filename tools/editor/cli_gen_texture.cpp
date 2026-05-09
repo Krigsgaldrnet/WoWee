@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <tuple>
 #include <vector>
 
 // stb_image_write impl lives in texture_exporter.cpp;
@@ -2093,6 +2094,792 @@ int handleClouds(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStars(int& i, int argc, char** argv) {
+    // Night sky: solid background color sprinkled with bright
+    // stars at random positions and varied per-star brightness
+    // (so the sky has a depth feel — bright nearby stars + dim
+    // distant ones). Density controls roughly what fraction of
+    // pixels become stars.
+    std::string outPath = argv[++i];
+    std::string bgHex = argv[++i];
+    std::string starHex = argv[++i];
+    uint32_t seed = 1;
+    float density = 0.005f;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { density = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        density < 0.0f || density > 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-stars: invalid dims (W/H 1..8192, density 0..1)\n");
+        return 1;
+    }
+    uint8_t br, bg, bb_, sr, sg, sb;
+    if (!parseHex(bgHex, br, bg, bb_)) {
+        std::fprintf(stderr,
+            "gen-texture-stars: '%s' is not a valid hex color\n",
+            bgHex.c_str());
+        return 1;
+    }
+    if (!parseHex(starHex, sr, sg, sb)) {
+        std::fprintf(stderr,
+            "gen-texture-stars: '%s' is not a valid hex color\n",
+            starHex.c_str());
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Background: flat fill.
+    for (int p = 0; p < W * H; ++p) {
+        size_t i2 = static_cast<size_t>(p) * 3;
+        pixels[i2 + 0] = br;
+        pixels[i2 + 1] = bg;
+        pixels[i2 + 2] = bb_;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    int starCount = static_cast<int>(W * H * density);
+    int bright = 0, faint = 0;
+    for (int s = 0; s < starCount; ++s) {
+        int sx = static_cast<int>(next01() * W);
+        int sy = static_cast<int>(next01() * H);
+        // Brightness: weighted toward dim stars (most stars at
+        // 30..60% blend, occasional bright at 100%). Keeps the
+        // texture from looking like equally-bright pixel noise.
+        float r = next01();
+        float t = (r < 0.85f) ? (0.3f + r * 0.35f) : (0.85f + r * 0.15f);
+        if (t > 0.7f) ++bright; else ++faint;
+        size_t i2 = (static_cast<size_t>(sy) * W + sx) * 3;
+        pixels[i2 + 0] = static_cast<uint8_t>(br * (1 - t) + sr * t);
+        pixels[i2 + 1] = static_cast<uint8_t>(bg * (1 - t) + sg * t);
+        pixels[i2 + 2] = static_cast<uint8_t>(bb_ * (1 - t) + sb * t);
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-stars: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/star    : %s / %s\n",
+                bgHex.c_str(), starHex.c_str());
+    std::printf("  density    : %.4f\n", density);
+    std::printf("  stars      : %d (%d bright, %d faint)\n",
+                starCount, bright, faint);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
+int handleVines(int& i, int argc, char** argv) {
+    // Wall with climbing vines: solid wall background plus N
+    // vine paths that walk upward from the bottom edge with
+    // small horizontal jitter, leaving a 2-px-wide vine trail
+    // on every column they pass through.
+    std::string outPath = argv[++i];
+    std::string wallHex = argv[++i];
+    std::string vineHex = argv[++i];
+    uint32_t seed = 1;
+    int vineCount = 8;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { vineCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        vineCount < 0 || vineCount > 256) {
+        std::fprintf(stderr,
+            "gen-texture-vines: invalid dims (W/H 1..8192, vineCount 0..256)\n");
+        return 1;
+    }
+    uint8_t wr, wg, wb_, vr, vg, vb;
+    if (!parseHex(wallHex, wr, wg, wb_)) {
+        std::fprintf(stderr,
+            "gen-texture-vines: '%s' is not a valid hex color\n",
+            wallHex.c_str());
+        return 1;
+    }
+    if (!parseHex(vineHex, vr, vg, vb)) {
+        std::fprintf(stderr,
+            "gen-texture-vines: '%s' is not a valid hex color\n",
+            vineHex.c_str());
+        return 1;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Background: flat wall color.
+    for (int p = 0; p < W * H; ++p) {
+        size_t i2 = static_cast<size_t>(p) * 3;
+        pixels[i2 + 0] = wr;
+        pixels[i2 + 1] = wg;
+        pixels[i2 + 2] = wb_;
+    }
+    // Each vine: pick a starting x at the bottom, walk upward
+    // with a small per-step horizontal drift. Set 2 pixels wide
+    // on each visited row so the vine reads as a thin band rather
+    // than a single-pixel line.
+    int leafPixels = 0;
+    for (int v = 0; v < vineCount; ++v) {
+        float x = next01() * W;
+        for (int y = H - 1; y >= 0; --y) {
+            // Drift: cosine wave + tiny random jitter.
+            x += std::cos(y * 0.08f + v * 1.7f) * 0.6f;
+            x += (next01() - 0.5f) * 0.4f;
+            int xi = static_cast<int>(x);
+            for (int dx = 0; dx < 2; ++dx) {
+                int px = xi + dx;
+                if (px < 0 || px >= W) continue;
+                size_t i2 = (static_cast<size_t>(y) * W + px) * 3;
+                pixels[i2 + 0] = vr;
+                pixels[i2 + 1] = vg;
+                pixels[i2 + 2] = vb;
+                ++leafPixels;
+            }
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-vines: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size        : %dx%d\n", W, H);
+    std::printf("  wall/vine   : %s / %s\n",
+                wallHex.c_str(), vineHex.c_str());
+    std::printf("  vines       : %d (%d painted pixels)\n",
+                vineCount, leafPixels);
+    std::printf("  seed        : %u\n", seed);
+    return 0;
+}
+
+int handleMosaic(int& i, int argc, char** argv) {
+    // 3-color mosaic: small square tiles randomly assigned one
+    // of 3 colors, with 1-px black grout lines between them.
+    // Per-tile color picked from a stable hash so the same seed
+    // always yields the same mosaic.
+    std::string outPath = argv[++i];
+    std::string aHex = argv[++i];
+    std::string bHex = argv[++i];
+    std::string cHex = argv[++i];
+    int tilePx = 16;
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { tilePx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        tilePx < 4 || tilePx > 256) {
+        std::fprintf(stderr,
+            "gen-texture-mosaic: invalid dims (W/H 1..8192, tilePx 4..256)\n");
+        return 1;
+    }
+    uint8_t ar, ag, ab, br, bg, bb_, cr, cg, cb;
+    if (!parseHex(aHex, ar, ag, ab) ||
+        !parseHex(bHex, br, bg, bb_) ||
+        !parseHex(cHex, cr, cg, cb)) {
+        std::fprintf(stderr,
+            "gen-texture-mosaic: one of the hex colors is invalid\n");
+        return 1;
+    }
+    auto cellPick = [seed](int cx, int cy) -> int {
+        uint32_t h = static_cast<uint32_t>(cx) * 374761393u +
+                     static_cast<uint32_t>(cy) * 668265263u +
+                     seed * 2147483647u;
+        h = (h ^ (h >> 13)) * 1274126177u;
+        h = h ^ (h >> 16);
+        return h % 3;
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    int counts[3] = {0, 0, 0};
+    for (int y = 0; y < H; ++y) {
+        int cy = y / tilePx;
+        int yInCell = y % tilePx;
+        for (int x = 0; x < W; ++x) {
+            int cx = x / tilePx;
+            int xInCell = x % tilePx;
+            // 1-px grout on the top and left edge of every cell.
+            bool grout = (xInCell == 0) || (yInCell == 0);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            if (grout) {
+                pixels[i2 + 0] = 0;
+                pixels[i2 + 1] = 0;
+                pixels[i2 + 2] = 0;
+            } else {
+                int pick = cellPick(cx, cy);
+                if (yInCell == 1 && xInCell == 1) ++counts[pick];
+                if (pick == 0) {
+                    pixels[i2 + 0] = ar; pixels[i2 + 1] = ag; pixels[i2 + 2] = ab;
+                } else if (pick == 1) {
+                    pixels[i2 + 0] = br; pixels[i2 + 1] = bg; pixels[i2 + 2] = bb_;
+                } else {
+                    pixels[i2 + 0] = cr; pixels[i2 + 1] = cg; pixels[i2 + 2] = cb;
+                }
+            }
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-mosaic: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  colors     : %s / %s / %s\n",
+                aHex.c_str(), bHex.c_str(), cHex.c_str());
+    std::printf("  tile px    : %d\n", tilePx);
+    std::printf("  tile counts: A=%d B=%d C=%d\n",
+                counts[0], counts[1], counts[2]);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
+int handleRust(int& i, int argc, char** argv) {
+    // Metal with rust patches: smooth multi-octave noise field
+    // thresholded by `coverage` to make rust blobs, blended
+    // with the metal base. Per-pixel grain jitter on top so
+    // both metal and rust regions read with subtle variation.
+    std::string outPath = argv[++i];
+    std::string metalHex = argv[++i];
+    std::string rustHex = argv[++i];
+    uint32_t seed = 1;
+    float coverage = 0.4f;  // 0=clean metal, 1=fully oxidized
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { coverage = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        coverage < 0.0f || coverage > 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-rust: invalid dims (W/H 1..8192, coverage 0..1)\n");
+        return 1;
+    }
+    uint8_t mr, mg, mb, rr, rg, rb;
+    if (!parseHex(metalHex, mr, mg, mb)) {
+        std::fprintf(stderr,
+            "gen-texture-rust: '%s' is not a valid hex color\n",
+            metalHex.c_str());
+        return 1;
+    }
+    if (!parseHex(rustHex, rr, rg, rb)) {
+        std::fprintf(stderr,
+            "gen-texture-rust: '%s' is not a valid hex color\n",
+            rustHex.c_str());
+        return 1;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    float seedF = static_cast<float>(seed);
+    auto blob = [&](float x, float y) -> float {
+        // 3-octave smooth noise; sin/cos product avoids needing
+        // a permutation table.
+        float n = 0.0f, total = 0.0f;
+        float freq = 0.025f, amp = 1.0f;
+        for (int o = 0; o < 3; ++o) {
+            n += amp * (0.5f + 0.5f *
+                std::sin(x * freq + seedF * (1.0f + o)) *
+                std::cos(y * freq + seedF * (0.6f + o)));
+            total += amp;
+            freq *= 2.0f;
+            amp *= 0.5f;
+        }
+        return n / total;  // 0..1
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    float thresh = 1.0f - coverage;
+    int rustPixels = 0;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float n = blob(static_cast<float>(x), static_cast<float>(y));
+            // Smoothstep across a 0.12 band around threshold so
+            // rust patches feather into clean metal.
+            float t = std::clamp((n - thresh) / 0.12f, 0.0f, 1.0f);
+            if (t > 0.5f) ++rustPixels;
+            // Per-pixel grain jitter (separate small jitter on
+            // each channel) so neither material reads as flat.
+            float jitter = (next01() - 0.5f) * 0.08f;
+            float r = (mr * (1 - t) + rr * t) * (1.0f + jitter);
+            float g = (mg * (1 - t) + rg * t) * (1.0f + jitter);
+            float b = (mb * (1 - t) + rb * t) * (1.0f + jitter);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = static_cast<uint8_t>(std::clamp(r, 0.0f, 255.0f));
+            pixels[i2 + 1] = static_cast<uint8_t>(std::clamp(g, 0.0f, 255.0f));
+            pixels[i2 + 2] = static_cast<uint8_t>(std::clamp(b, 0.0f, 255.0f));
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-rust: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  metal/rust : %s / %s\n",
+                metalHex.c_str(), rustHex.c_str());
+    std::printf("  coverage   : %.2f (%d rust pixels)\n",
+                coverage, rustPixels);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
+int handleCircuit(int& i, int argc, char** argv) {
+    // Sci-fi circuit board: solid PCB background plus N traces
+    // that walk the surface in orthogonal Manhattan style — each
+    // trace alternates random horizontal + vertical segments,
+    // mimicking right-angle PCB routing. Each segment endpoint
+    // gets a "via" dot (3×3 block) so the routing reads as
+    // intentional rather than random scribbles.
+    std::string outPath = argv[++i];
+    std::string pcbHex = argv[++i];
+    std::string traceHex = argv[++i];
+    uint32_t seed = 1;
+    int traceCount = 24;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { traceCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        traceCount < 0 || traceCount > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-circuit: invalid dims (W/H 1..8192, traceCount 0..1024)\n");
+        return 1;
+    }
+    uint8_t pr, pg, pb, tr, tg, tb;
+    if (!parseHex(pcbHex, pr, pg, pb)) {
+        std::fprintf(stderr,
+            "gen-texture-circuit: '%s' is not a valid hex color\n",
+            pcbHex.c_str());
+        return 1;
+    }
+    if (!parseHex(traceHex, tr, tg, tb)) {
+        std::fprintf(stderr,
+            "gen-texture-circuit: '%s' is not a valid hex color\n",
+            traceHex.c_str());
+        return 1;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Background fill
+    for (int p = 0; p < W * H; ++p) {
+        size_t i2 = static_cast<size_t>(p) * 3;
+        pixels[i2 + 0] = pr;
+        pixels[i2 + 1] = pg;
+        pixels[i2 + 2] = pb;
+    }
+    auto setPx = [&](int x, int y) {
+        if (x < 0 || y < 0 || x >= W || y >= H) return;
+        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+        pixels[i2 + 0] = tr;
+        pixels[i2 + 1] = tg;
+        pixels[i2 + 2] = tb;
+    };
+    auto setVia = [&](int x, int y) {
+        // 3×3 dot for vias / segment joints.
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx)
+                setPx(x + dx, y + dy);
+    };
+    int viaCount = 0;
+    for (int t = 0; t < traceCount; ++t) {
+        int x = static_cast<int>(next01() * W);
+        int y = static_cast<int>(next01() * H);
+        // Each trace runs 3-6 segments
+        int segs = 3 + static_cast<int>(next01() * 4);
+        bool horiz = next01() < 0.5f;
+        for (int s = 0; s < segs; ++s) {
+            int len = 8 + static_cast<int>(next01() * 24);
+            int dir = (next01() < 0.5f) ? 1 : -1;
+            int nx = x, ny = y;
+            for (int k = 0; k < len; ++k) {
+                if (horiz) nx += dir;
+                else ny += dir;
+                setPx(nx, ny);
+            }
+            x = nx; y = ny;
+            setVia(x, y);  // joint at the corner
+            ++viaCount;
+            horiz = !horiz;  // alternate axis
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-circuit: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  pcb/trace  : %s / %s\n",
+                pcbHex.c_str(), traceHex.c_str());
+    std::printf("  traces     : %d (~%d vias)\n", traceCount, viaCount);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
+int handleCoral(int& i, int argc, char** argv) {
+    // Coral reef: water-color background plus N branching tree
+    // shapes that grow from random anchor points. Each branch
+    // walks a curved path (random angle drift), splitting into
+    // 2-3 sub-branches at random intervals so the result reads
+    // as organic coral rather than straight lines.
+    std::string outPath = argv[++i];
+    std::string waterHex = argv[++i];
+    std::string coralHex = argv[++i];
+    uint32_t seed = 1;
+    int branchCount = 12;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { branchCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        branchCount < 0 || branchCount > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-coral: invalid dims (W/H 1..8192, branchCount 0..1024)\n");
+        return 1;
+    }
+    uint8_t wr, wg, wb_, cr, cg, cb;
+    if (!parseHex(waterHex, wr, wg, wb_)) {
+        std::fprintf(stderr,
+            "gen-texture-coral: '%s' is not a valid hex color\n",
+            waterHex.c_str());
+        return 1;
+    }
+    if (!parseHex(coralHex, cr, cg, cb)) {
+        std::fprintf(stderr,
+            "gen-texture-coral: '%s' is not a valid hex color\n",
+            coralHex.c_str());
+        return 1;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int p = 0; p < W * H; ++p) {
+        size_t i2 = static_cast<size_t>(p) * 3;
+        pixels[i2 + 0] = wr; pixels[i2 + 1] = wg; pixels[i2 + 2] = wb_;
+    }
+    auto setPx = [&](int x, int y) {
+        if (x < 0 || y < 0 || x >= W || y >= H) return;
+        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+        pixels[i2 + 0] = cr; pixels[i2 + 1] = cg; pixels[i2 + 2] = cb;
+    };
+    // Recursive branch growth via explicit stack (no real
+    // recursion to avoid blowing through stack for deep splits).
+    struct Branch { float x, y, angle, length, thickness; };
+    std::vector<Branch> stack;
+    int totalBranches = 0;
+    for (int b = 0; b < branchCount; ++b) {
+        // Anchor at the bottom edge, growing upward
+        Branch root;
+        root.x = next01() * W;
+        root.y = H - 1;
+        root.angle = -3.14159f * 0.5f + (next01() - 0.5f) * 0.6f;
+        root.length = 30 + next01() * 40;
+        root.thickness = 2.0f;
+        stack.push_back(root);
+        while (!stack.empty()) {
+            Branch br = stack.back();
+            stack.pop_back();
+            ++totalBranches;
+            float x = br.x, y = br.y;
+            int steps = static_cast<int>(br.length);
+            for (int s = 0; s < steps; ++s) {
+                // Random walk + slight upward bias
+                br.angle += (next01() - 0.5f) * 0.15f;
+                x += std::cos(br.angle);
+                y += std::sin(br.angle);
+                int rad = static_cast<int>(std::ceil(br.thickness));
+                for (int dy = -rad; dy <= rad; ++dy) {
+                    for (int dx = -rad; dx <= rad; ++dx) {
+                        if (dx*dx + dy*dy > rad*rad) continue;
+                        setPx(static_cast<int>(x) + dx,
+                              static_cast<int>(y) + dy);
+                    }
+                }
+                // Split occasionally
+                if (next01() < 0.05f && br.thickness > 1.0f) {
+                    Branch child;
+                    child.x = x; child.y = y;
+                    child.angle = br.angle + (next01() - 0.5f) * 1.2f;
+                    child.length = br.length * (0.4f + next01() * 0.3f);
+                    child.thickness = br.thickness * 0.7f;
+                    if (stack.size() < 256) stack.push_back(child);
+                }
+            }
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-coral: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size        : %dx%d\n", W, H);
+    std::printf("  water/coral : %s / %s\n",
+                waterHex.c_str(), coralHex.c_str());
+    std::printf("  branches    : %d roots → %d total (with splits)\n",
+                branchCount, totalBranches);
+    std::printf("  seed        : %u\n", seed);
+    return 0;
+}
+
+int handleFlame(int& i, int argc, char** argv) {
+    // Flame: vertical color gradient from dark hex at the
+    // bottom to hot hex at the top, mixed with smooth noise
+    // flicker so the boundary between hot and dark wavers
+    // randomly. Reads as a flame seen from a distance.
+    std::string outPath = argv[++i];
+    std::string darkHex = argv[++i];
+    std::string hotHex = argv[++i];
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+        std::fprintf(stderr,
+            "gen-texture-flame: invalid dims (W/H 1..8192)\n");
+        return 1;
+    }
+    uint8_t dr, dg, db, hr, hg, hb;
+    if (!parseHex(darkHex, dr, dg, db)) {
+        std::fprintf(stderr,
+            "gen-texture-flame: '%s' is not a valid hex color\n",
+            darkHex.c_str());
+        return 1;
+    }
+    if (!parseHex(hotHex, hr, hg, hb)) {
+        std::fprintf(stderr,
+            "gen-texture-flame: '%s' is not a valid hex color\n",
+            hotHex.c_str());
+        return 1;
+    }
+    float seedF = static_cast<float>(seed);
+    auto noise = [&](float x, float y) -> float {
+        // Multi-octave smooth noise; lower freq dominates.
+        float n = 0.0f, total = 0.0f;
+        float freq = 0.04f, amp = 1.0f;
+        for (int o = 0; o < 3; ++o) {
+            n += amp * (0.5f + 0.5f *
+                std::sin(x * freq + seedF * (1.0f + o)) *
+                std::cos(y * freq + seedF * (0.5f + o)));
+            total += amp;
+            freq *= 2.0f;
+            amp *= 0.5f;
+        }
+        return n / total;
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        // Vertical position: 0 at bottom (dark), 1 at top (hot).
+        float vy = static_cast<float>(H - 1 - y) / (H - 1);
+        for (int x = 0; x < W; ++x) {
+            // Add wavy flicker via noise so the gradient boundary
+            // isn't a clean horizontal line.
+            float n = noise(static_cast<float>(x), static_cast<float>(y));
+            float t = std::clamp(vy + (n - 0.5f) * 0.4f, 0.0f, 1.0f);
+            // Curve so the bottom stays dark longer and the top
+            // saturates faster (real flames are mostly dark with
+            // a bright core/tip).
+            t = t * t;
+            uint8_t r = static_cast<uint8_t>(dr * (1 - t) + hr * t);
+            uint8_t g = static_cast<uint8_t>(dg * (1 - t) + hg * t);
+            uint8_t b = static_cast<uint8_t>(db * (1 - t) + hb * t);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = r;
+            pixels[i2 + 1] = g;
+            pixels[i2 + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-flame: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  dark/hot   : %s / %s\n",
+                darkHex.c_str(), hotHex.c_str());
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
+int handleTartan(int& i, int argc, char** argv) {
+    // Tartan plaid: 3-color crossing band pattern. Each cell
+    // belongs to one of 6 logical zones (3 vertical + 3
+    // horizontal bands per repeat unit) and the displayed
+    // color is the additive mix of the band's vertical and
+    // horizontal contributions — produces the characteristic
+    // overlap diamond grid of Scottish tartans.
+    std::string outPath = argv[++i];
+    std::string aHex = argv[++i];
+    std::string bHex = argv[++i];
+    std::string cHex = argv[++i];
+    int bandPx = 32;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { bandPx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        bandPx < 4 || bandPx > 256) {
+        std::fprintf(stderr,
+            "gen-texture-tartan: invalid dims (W/H 1..8192, bandPx 4..256)\n");
+        return 1;
+    }
+    uint8_t ar, ag, ab, br, bg, bb_, cr_, cg_, cb_;
+    if (!parseHex(aHex, ar, ag, ab) ||
+        !parseHex(bHex, br, bg, bb_) ||
+        !parseHex(cHex, cr_, cg_, cb_)) {
+        std::fprintf(stderr,
+            "gen-texture-tartan: one of the hex colors is invalid\n");
+        return 1;
+    }
+    // 3-band repeat: A wide, B narrow, C medium. Repeat is
+    // 6 × bandPx wide. Each band weight is constant within
+    // its slice; the displayed pixel color is averaged from
+    // the vertical band (column) and horizontal band (row).
+    auto bandColor = [&](int t) -> std::tuple<uint8_t, uint8_t, uint8_t> {
+        // t is position modulo (6 * bandPx). Map to one of A/B/C
+        // based on which segment t falls in.
+        int slice = (t / bandPx) % 6;
+        // 6-slice repeat pattern: A A B C C B (gives a typical
+        // tartan look — wide A blocks separated by thin B/C lines).
+        switch (slice) {
+            case 0: case 1: return {ar, ag, ab};
+            case 2:         return {br, bg, bb_};
+            case 3: case 4: return {cr_, cg_, cb_};
+            default:        return {br, bg, bb_};
+        }
+    };
+    int repeat = 6 * bandPx;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int yMod = ((y % repeat) + repeat) % repeat;
+        auto [hr, hg, hb] = bandColor(yMod);
+        for (int x = 0; x < W; ++x) {
+            int xMod = ((x % repeat) + repeat) % repeat;
+            auto [vr, vg, vb] = bandColor(xMod);
+            // Average the horizontal-band and vertical-band
+            // colors. At intersections the average produces a
+            // distinct mid-tone that creates the diamond grid
+            // characteristic of plaid.
+            uint8_t r = static_cast<uint8_t>((hr + vr) / 2);
+            uint8_t g = static_cast<uint8_t>((hg + vg) / 2);
+            uint8_t b = static_cast<uint8_t>((hb + vb) / 2);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = r;
+            pixels[i2 + 1] = g;
+            pixels[i2 + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-tartan: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  colors A/B/C: %s / %s / %s\n",
+                aHex.c_str(), bHex.c_str(), cHex.c_str());
+    std::printf("  band px    : %d (repeat %d px)\n",
+                bandPx, repeat);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2163,6 +2950,30 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-clouds") == 0 && i + 3 < argc) {
         outRc = handleClouds(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-stars") == 0 && i + 3 < argc) {
+        outRc = handleStars(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-vines") == 0 && i + 3 < argc) {
+        outRc = handleVines(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-mosaic") == 0 && i + 4 < argc) {
+        outRc = handleMosaic(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-rust") == 0 && i + 3 < argc) {
+        outRc = handleRust(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-circuit") == 0 && i + 3 < argc) {
+        outRc = handleCircuit(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-coral") == 0 && i + 3 < argc) {
+        outRc = handleCoral(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-flame") == 0 && i + 3 < argc) {
+        outRc = handleFlame(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-tartan") == 0 && i + 4 < argc) {
+        outRc = handleTartan(i, argc, argv); return true;
     }
     return false;
 }
