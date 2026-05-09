@@ -5161,6 +5161,67 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handlePillarRow(int& i, int argc, char** argv) {
+    // Row of N stone pillars evenly spaced along the X axis.
+    // Each pillar is a single tall rectangular box, optionally
+    // crowned by a slightly-wider square cap. Useful for ruined
+    // temples, colonnades, palace walks, dungeon hallways. The
+    // 75th procedural mesh primitive — and the third "scene"
+    // composite (after crate-stack and gravel-pile) using the
+    // simple regular-grid placement.
+    std::string womBase = argv[++i];
+    int   count    = 4;
+    float span     = 4.0f;        // total length spanned by the row
+    float height   = 2.5f;        // pillar height
+    float pillarW  = 0.30f;       // pillar square footprint
+    float capH     = 0.10f;       // 0 → no caps
+    float capExtra = 0.06f;       // caps wider than pillar by this on each side
+    parseOptInt(i, argc, argv, count);
+    parseOptFloat(i, argc, argv, span);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, pillarW);
+    parseOptFloat(i, argc, argv, capH);
+    parseOptFloat(i, argc, argv, capExtra);
+    if (count < 2 || count > 64 ||
+        span <= 0 || height <= 0 || pillarW <= 0 ||
+        capH < 0 || capExtra < 0 ||
+        pillarW * count >= span) {
+        std::fprintf(stderr,
+            "gen-mesh-pillar-row: count 2..64; pillars must fit in span\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float availSpan = span - pillarW;
+    const float pillarHY = (height - capH) * 0.5f;
+    const float pillarCY = pillarHY;
+    for (int k = 0; k < count; ++k) {
+        float t = static_cast<float>(k) / (count - 1);
+        float cx = -availSpan * 0.5f + t * availSpan;
+        addFlatBox(wom, cx, pillarCY, 0.0f,
+                   pillarW * 0.5f, pillarHY, pillarW * 0.5f);
+        if (capH > 0.0f) {
+            const float capCY = height - capH * 0.5f;
+            const float capHX = pillarW * 0.5f + capExtra;
+            addFlatBox(wom, cx, capCY, 0.0f,
+                       capHX, capH * 0.5f, capHX);
+        }
+    }
+    finalizeAsSingleBatch(wom);
+    float halfX = span * 0.5f + (capH > 0 ? capExtra : 0);
+    float halfZ = pillarW * 0.5f + (capH > 0 ? capExtra : 0);
+    setCenteredBoundsXZ(wom, halfX, halfZ, height);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-pillar-row")) return 1;
+    printWomWrote(womBase);
+    std::printf("  pillars    : %d across %.3fL, %.3f tall (%.3f square)\n",
+                count, span, height, pillarW);
+    std::printf("  caps       : %s\n",
+                capH > 0 ? std::to_string(capH).c_str() : "(none)");
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleHitchingRail(int& i, int argc, char** argv) {
     // Long hitching rail: a horizontal bar held up by N evenly-
     // spaced vertical posts. Distinct from --gen-mesh-hitching-
@@ -6994,6 +7055,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-stone-bench",    1, handleStoneBench},
     {"--gen-mesh-mine-cart",      1, handleMineCart},
     {"--gen-mesh-hitching-rail",  1, handleHitchingRail},
+    {"--gen-mesh-pillar-row",     1, handlePillarRow},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
