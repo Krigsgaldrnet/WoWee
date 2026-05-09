@@ -3500,6 +3500,74 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleDamask(int& i, int argc, char** argv) {
+    // Damask: classic ornate-wallpaper motif — a 4-petal
+    // flower shape (one peak at each cell N/S/E/W) plus a
+    // small filled center dot, tiled across the texture.
+    // Each cell is a square block of `cell` pixels; petals
+    // are formed by `sin(theta * 2)^2` lobes that fade out
+    // toward the cell edge. The result reads as ornate
+    // fabric / gilded wallpaper — fits palace interiors,
+    // throne-room banners, noble-faction tapestries.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string fgHex   = argv[++i];
+    int cell = 64;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, cell);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cell < 8 || cell > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-damask: invalid dims (W/H 1..8192, cell 8..1024)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, fr, fg_, fb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-damask")) return 1;
+    if (!parseHexOrError(fgHex, fr, fg_, fb_,
+                         "gen-texture-damask")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float halfCell = cell * 0.5f;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            int tx = x % cell;
+            int ty = y % cell;
+            float dx = tx - halfCell;
+            float dy = ty - halfCell;
+            float r = std::sqrt(dx * dx + dy * dy);
+            // rNorm: 0 at center, 1 at cell-half radius.
+            float rNorm = std::min(1.0f, r / halfCell);
+            float theta = std::atan2(dy, dx);
+            // 4-fold petal lobes — peaks at theta = 0, π/2,
+            // π, 3π/2 (cell N/S/E/W). Squared to sharpen
+            // peaks vs valleys.
+            float lobe = std::abs(std::sin(theta * 2.0f));
+            lobe = lobe * lobe;
+            // Radial fall-off: petals fade out at cell edge.
+            float intensity = lobe * (1.0f - rNorm);
+            // Center dot: small filled circle keeps the
+            // motif anchored even at small cell sizes.
+            bool centerDot = r < halfCell * 0.18f;
+            bool isMotif = centerDot || intensity > 0.35f;
+            uint8_t r8, g8, b8;
+            if (isMotif) {
+                r8 = fr; g8 = fg_; b8 = fb_;
+            } else {
+                r8 = br_; g8 = bg_; b8 = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r8, g8, b8);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-damask")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/fg      : %s / %s\n", bgHex.c_str(), fgHex.c_str());
+    std::printf("  cell       : %d px\n", cell);
+    return 0;
+}
+
 int handleMoon(int& i, int argc, char** argv) {
     // Moon disc: solid filled circle of color moonHex on a bg.
     // Optional crescent: subtract a second disc of color bgHex
@@ -6033,6 +6101,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-halftone",       3, handleHalftone},
     {"--gen-texture-bayer",          3, handleBayer},
     {"--gen-texture-moon",           3, handleMoon},
+    {"--gen-texture-damask",         3, handleDamask},
 };
 }  // namespace
 
