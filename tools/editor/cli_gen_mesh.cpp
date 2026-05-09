@@ -5161,6 +5161,57 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleChalice(int& i, int argc, char** argv) {
+    // Ceremonial chalice / goblet: foot (wide flat base) →
+    // stem (thin tall connecting column) → bowl (wider shallow
+    // cup). 3-tier vertical-cylinder shape with the classic
+    // wide-narrow-wide silhouette of a wine goblet. The 82nd
+    // procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float footR  = 0.10f;
+    float footH  = 0.02f;
+    float stemR  = 0.025f;
+    float stemH  = 0.16f;
+    float bowlR  = 0.09f;
+    float bowlH  = 0.10f;
+    int   sides  = 14;
+    parseOptFloat(i, argc, argv, footR);
+    parseOptFloat(i, argc, argv, footH);
+    parseOptFloat(i, argc, argv, stemR);
+    parseOptFloat(i, argc, argv, stemH);
+    parseOptFloat(i, argc, argv, bowlR);
+    parseOptFloat(i, argc, argv, bowlH);
+    parseOptInt(i, argc, argv, sides);
+    if (footR <= 0 || footH <= 0 || stemR <= 0 || stemH <= 0 ||
+        bowlR <= 0 || bowlH <= 0 || sides < 6 || sides > 64 ||
+        stemR >= footR || stemR >= bowlR) {
+        std::fprintf(stderr,
+            "gen-mesh-chalice: dims > 0; sides 6..64; "
+            "stemR < footR; stemR < bowlR\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    float y = 0.0f;
+    addClosedCylinderY(wom, footR, y, y + footH, sides);
+    y += footH;
+    addClosedCylinderY(wom, stemR, y, y + stemH, sides);
+    y += stemH;
+    addClosedCylinderY(wom, bowlR, y, y + bowlH, sides);
+    y += bowlH;
+    finalizeAsSingleBatch(wom);
+    float maxR = std::max({footR, stemR, bowlR});
+    setCenteredBoundsXZ(wom, maxR, maxR, y);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-chalice")) return 1;
+    printWomWrote(womBase);
+    std::printf("  foot/stem/bowl : R=%.3f / %.3f / %.3f\n",
+                footR, stemR, bowlR);
+    std::printf("  total H    : %.3f (%d sides)\n", y, sides);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleLantern(int& i, int argc, char** argv) {
     // Hand lantern: small base disc → wider glass-globe cylinder
     // → narrow neck → wider top cap. 4 cylindrical tiers stacked,
@@ -7281,6 +7332,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-urn",            1, handleUrn},
     {"--gen-mesh-candle",         1, handleCandle},
     {"--gen-mesh-lantern",        1, handleLantern},
+    {"--gen-mesh-chalice",        1, handleChalice},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
