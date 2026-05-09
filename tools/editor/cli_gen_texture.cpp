@@ -3500,6 +3500,72 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleChevron(int& i, int argc, char** argv) {
+    // Chevron: stack of V-shape bands. Within each vertical
+    // period, the upper half slopes one way and the lower half
+    // slopes the other so a pixel lands on a chevron stripe if
+    // its X (after a Y-dependent shift) falls inside a stripe
+    // column. Distinct from --gen-texture-herringbone (which
+    // alternates slab orientation) and --gen-texture-zebra
+    // (sinusoidal stripes) — chevron has the characteristic
+    // sharp-V seam.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string lineHex = argv[++i];
+    int period = 24;          // vertical V wavelength (pixels)
+    int stride = 24;          // horizontal stripe pitch
+    int lineW  = 6;           // stripe thickness
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, period);
+    parseOptInt(i, argc, argv, stride);
+    parseOptInt(i, argc, argv, lineW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        period < 4 || period > 1024 ||
+        stride < 4 || stride > 1024 ||
+        lineW < 1 || lineW * 2 >= stride) {
+        std::fprintf(stderr,
+            "gen-texture-chevron: invalid dims (W/H 1..8192, "
+            "period 4..1024, stride 4..1024, lineW 1..stride/2)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, lr, lg, lb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-chevron")) return 1;
+    if (!parseHexOrError(lineHex, lr, lg, lb_,
+                         "gen-texture-chevron")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const int half = period / 2;
+    for (int y = 0; y < H; ++y) {
+        // V phase: distance from the nearest V point in [0, half].
+        // Apex points at y % period == 0 (top) and y % period ==
+        // period (bottom of next V).
+        int yPhase = y % period;
+        int distFromApex = std::abs(yPhase - half);   // 0..half
+        // The chevron stripe at column N is active where
+        // (x + distFromApex) % stride < lineW. The +distFromApex
+        // shifts the stripe column to follow the V.
+        int xShift = distFromApex;
+        for (int x = 0; x < W; ++x) {
+            int shifted = ((x + xShift) % stride + stride) % stride;
+            uint8_t r, g, b;
+            if (shifted < lineW) {
+                r = lr; g = lg; b = lb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-chevron")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/line    : %s / %s\n", bgHex.c_str(), lineHex.c_str());
+    std::printf("  pattern    : period=%d, stride=%d, lineW=%d\n",
+                period, stride, lineW);
+    return 0;
+}
+
 int handleHoundstooth(int& i, int argc, char** argv) {
     // Houndstooth: classic textile broken-check pattern. The 8x8
     // motif stored below tiles seamlessly to produce the
@@ -4945,6 +5011,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-plaid",          3, handlePlaid},
     {"--gen-texture-diamond-grid",   3, handleDiamondGrid},
     {"--gen-texture-houndstooth",    3, handleHoundstooth},
+    {"--gen-texture-chevron",        3, handleChevron},
 };
 }  // namespace
 
