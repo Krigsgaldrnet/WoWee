@@ -123,6 +123,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-anvil", "--gen-mesh-mushroom", "--gen-mesh-cart",
         "--gen-mesh-banner", "--gen-mesh-grave", "--gen-mesh-bench",
         "--gen-mesh-shrine", "--gen-mesh-totem", "--gen-mesh-cage",
+        "--gen-mesh-throne",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
