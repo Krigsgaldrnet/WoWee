@@ -1882,6 +1882,116 @@ int handleTile(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBark(int& i, int argc, char** argv) {
+    // Tree bark: vertical wavy streaks (the trunk's growth lines)
+    // plus dark vertical cracks at random columns (where bark
+    // splits as the tree expands). Streaks waver per row via a
+    // smooth cosine offset so the texture doesn't look gridded.
+    std::string outPath = argv[++i];
+    std::string baseHex = argv[++i];
+    std::string crackHex = argv[++i];
+    uint32_t seed = 1;
+    float density = 0.04f;  // fraction of columns that become cracks
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { density = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        density < 0.0f || density > 0.5f) {
+        std::fprintf(stderr,
+            "gen-texture-bark: invalid dims (W/H 1..8192, density 0..0.5)\n");
+        return 1;
+    }
+    uint8_t br, bg, bb_, cr, cg, cb;
+    if (!parseHex(baseHex, br, bg, bb_)) {
+        std::fprintf(stderr,
+            "gen-texture-bark: '%s' is not a valid hex color\n",
+            baseHex.c_str());
+        return 1;
+    }
+    if (!parseHex(crackHex, cr, cg, cb)) {
+        std::fprintf(stderr,
+            "gen-texture-bark: '%s' is not a valid hex color\n",
+            crackHex.c_str());
+        return 1;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    // Pick crack columns up front (sparse).
+    int crackCount = static_cast<int>(W * density);
+    std::vector<int> crackCols;
+    crackCols.reserve(crackCount);
+    for (int k = 0; k < crackCount; ++k) {
+        crackCols.push_back(static_cast<int>(next01() * W));
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    float seedF = static_cast<float>(seed);
+    // Per-column shade variation (each vertical streak has its own
+    // brightness derived from a column hash). Pre-compute so each
+    // pixel just reads the column.
+    std::vector<float> colShade(W);
+    for (int x = 0; x < W; ++x) {
+        // Stable column hash → 0.85..1.10 shade
+        uint32_t h = static_cast<uint32_t>(x) * 2654435761u + seed;
+        h = (h ^ (h >> 13)) * 1274126177u;
+        h = h ^ (h >> 16);
+        float n = (h >> 8) * (1.0f / 16777216.0f);
+        colShade[x] = 0.85f + 0.25f * n;
+    }
+    for (int y = 0; y < H; ++y) {
+        // Slow horizontal sway so vertical streaks waver per row.
+        float sway = std::sin(y * 0.04f + seedF * 0.3f) * 1.5f;
+        for (int x = 0; x < W; ++x) {
+            int sx = x + static_cast<int>(sway);
+            if (sx < 0) sx = 0;
+            if (sx >= W) sx = W - 1;
+            float shade = colShade[sx];
+            uint8_t r = static_cast<uint8_t>(std::clamp(br * shade, 0.0f, 255.0f));
+            uint8_t g = static_cast<uint8_t>(std::clamp(bg * shade, 0.0f, 255.0f));
+            uint8_t b = static_cast<uint8_t>(std::clamp(bb_ * shade, 0.0f, 255.0f));
+            // Crack overlay: any pixel within 1 px of a crack column
+            // (with sway applied) becomes the crack color.
+            for (int cc : crackCols) {
+                if (std::abs(sx - cc) <= 1) {
+                    r = cr; g = cg; b = cb;
+                    break;
+                }
+            }
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = r;
+            pixels[i2 + 1] = g;
+            pixels[i2 + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-bark: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  base/crack : %s / %s\n",
+                baseHex.c_str(), crackHex.c_str());
+    std::printf("  density    : %.4f (%d cracks)\n",
+                density, crackCount);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -1946,6 +2056,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-tile") == 0 && i + 3 < argc) {
         outRc = handleTile(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-bark") == 0 && i + 3 < argc) {
+        outRc = handleBark(i, argc, argv); return true;
     }
     return false;
 }
