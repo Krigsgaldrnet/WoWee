@@ -4281,6 +4281,131 @@ int handleTotem(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCage(int& i, int argc, char** argv) {
+    // Square cage: top + bottom thin frame slabs + 4 corner
+    // posts + N evenly spaced bars on each of the 4 sides.
+    // Bars are thin square cross-section so they read as
+    // metal rods. Useful for prison cells, animal pens,
+    // dungeon set dressing.
+    std::string womBase = argv[++i];
+    float width = 1.5f;        // along X = Z (square footprint)
+    float height = 2.0f;
+    int barsPerSide = 5;
+    float barRadius = 0.04f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { barsPerSide = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { barRadius = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (width <= 0 || height <= 0 || barRadius <= 0 ||
+        barsPerSide < 0 || barsPerSide > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-cage: dims > 0, barsPerSide 0..64\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    float halfW = width * 0.5f;
+    float frameT = barRadius * 1.5f;  // top/bottom slab thickness
+    // Top + bottom frame slabs
+    addBox(0, frameT * 0.5f, 0, halfW, frameT * 0.5f, halfW);
+    addBox(0, height - frameT * 0.5f, 0, halfW, frameT * 0.5f, halfW);
+    // 4 corner posts (thicker than bars)
+    float postR = barRadius * 1.5f;
+    float postCY = height * 0.5f;
+    float postHy = height * 0.5f;
+    float corner = halfW - postR;
+    addBox( corner, postCY,  corner, postR, postHy, postR);
+    addBox(-corner, postCY,  corner, postR, postHy, postR);
+    addBox( corner, postCY, -corner, postR, postHy, postR);
+    addBox(-corner, postCY, -corner, postR, postHy, postR);
+    // Bars: N bars per side, evenly distributed between corners.
+    // Side spans from -corner to +corner; bars at (k+1)/(N+1)
+    // along the span so they're inset (no overlap with corners).
+    float barCY = height * 0.5f;
+    float barHy = (height - 2 * frameT) * 0.5f;
+    float barCYadj = frameT + barHy;
+    int barTotal = 0;
+    for (int k = 0; k < barsPerSide; ++k) {
+        float t = (k + 1.0f) / (barsPerSide + 1.0f);
+        float pos = -corner + t * 2.0f * corner;  // from -corner to +corner
+        // +Z and -Z sides (bars span X)
+        addBox(pos, barCYadj,  halfW - barRadius,
+               barRadius, barHy, barRadius);
+        addBox(pos, barCYadj, -halfW + barRadius,
+               barRadius, barHy, barRadius);
+        // +X and -X sides (bars span Z)
+        addBox( halfW - barRadius, barCYadj, pos,
+               barRadius, barHy, barRadius);
+        addBox(-halfW + barRadius, barCYadj, pos,
+               barRadius, barHy, barRadius);
+        barTotal += 4;
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-halfW, 0, -halfW);
+    wom.boundMax = glm::vec3( halfW, height, halfW);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-cage: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  width × height : %.3f × %.3f\n", width, height);
+    std::printf("  bars per side  : %d (%d total)\n",
+                barsPerSide, barTotal);
+    std::printf("  bar radius     : %.3f\n", barRadius);
+    std::printf("  vertices       : %zu\n", wom.vertices.size());
+    std::printf("  triangles      : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -4380,6 +4505,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-totem") == 0 && i + 1 < argc) {
         outRc = handleTotem(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-cage") == 0 && i + 1 < argc) {
+        outRc = handleCage(i, argc, argv); return true;
     }
     return false;
 }
