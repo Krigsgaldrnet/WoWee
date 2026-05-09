@@ -330,6 +330,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Standing torch: tall thin post + wider fire-bowl on top (hall lining / dungeon entry / ceremony path)\n");
     std::printf("  --gen-mesh-scroll-case <wom-base> [bodyR] [bodyH] [capR] [capH] [sides]\n");
     std::printf("                         Scroll case: thin tall cylinder + optional wider cap (set capR=0 to skip) — libraries / mage scenes\n");
+    std::printf("  --gen-mesh-stove <wom-base> [bodyR] [bodyH] [chimneyR] [chimneyH] [sides]\n");
+    std::printf("                         Pot-bellied stove: round cylindrical body + thin chimney column on top (cottage / workshop heating)\n");
     std::printf("  --gen-camp-pack <outDir>\n");
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-blacksmith-pack <outDir>\n");

@@ -5161,6 +5161,46 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStove(int& i, int argc, char** argv) {
+    // Pot-bellied wood stove: wide cylindrical body + thin
+    // tall chimney column rising from the top of the body.
+    // Distinct from --gen-mesh-forge (square stone hearth +
+    // hood + chimney) — stove is the round-cylinder home/
+    // workshop variant. The 85th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float bodyR    = 0.30f;
+    float bodyH    = 0.65f;
+    float chimneyR = 0.07f;
+    float chimneyH = 1.10f;
+    int   sides    = 16;
+    parseOptFloat(i, argc, argv, bodyR);
+    parseOptFloat(i, argc, argv, bodyH);
+    parseOptFloat(i, argc, argv, chimneyR);
+    parseOptFloat(i, argc, argv, chimneyH);
+    parseOptInt(i, argc, argv, sides);
+    if (bodyR <= 0 || bodyH <= 0 || chimneyR <= 0 || chimneyH <= 0 ||
+        sides < 6 || sides > 64 || chimneyR >= bodyR) {
+        std::fprintf(stderr,
+            "gen-mesh-stove: dims > 0; sides 6..64; "
+            "chimneyR < bodyR\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    addClosedCylinderY(wom, bodyR, 0.0f, bodyH, sides);
+    addClosedCylinderY(wom, chimneyR, bodyH, bodyH + chimneyH, sides);
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, bodyR, bodyR, bodyH + chimneyH);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-stove")) return 1;
+    printWomWrote(womBase);
+    std::printf("  body       : R=%.3f x %.3f tall\n", bodyR, bodyH);
+    std::printf("  chimney    : R=%.3f x %.3f tall (%d sides)\n",
+                chimneyR, chimneyH, sides);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleScrollCase(int& i, int argc, char** argv) {
     // Cylindrical scroll case / map tube: thin tall cylindrical
     // body with an optional shorter wider cap on top. Distinct
@@ -7445,6 +7485,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-chalice",        1, handleChalice},
     {"--gen-mesh-standing-torch", 1, handleStandingTorch},
     {"--gen-mesh-scroll-case",    1, handleScrollCase},
+    {"--gen-mesh-stove",          1, handleStove},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
