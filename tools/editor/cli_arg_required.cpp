@@ -28,6 +28,7 @@ const char* const kArgRequired[] = {
     "--gen-sound-catalog", "--gen-sound-catalog-ambient",
     "--gen-sound-catalog-tavern",
     "--info-wsnd", "--validate-wsnd",
+    "--export-wsnd-json", "--import-wsnd-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

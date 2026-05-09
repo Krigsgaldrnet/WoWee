@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -135,6 +136,150 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Export a .wsnd to a human-editable JSON sidecar. The
+    // intent is the same as the WOL/WOW/WOMX JSON pairs:
+    // give a quick-author surface for hand-editing entries
+    // without writing a binary patcher. All entry fields
+    // round-trip; both kind int + kindName string are emitted
+    // so a hand-editor can use either.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWsndExt(base);
+    if (outPath.empty()) outPath = base + ".wsnd.json";
+    if (!wowee::pipeline::WoweeSoundLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wsnd-json: WSND not found: %s.wsnd\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSoundLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["soundId"] = e.soundId;
+        je["kind"] = e.kind;
+        je["kindName"] = wowee::pipeline::WoweeSound::kindName(e.kind);
+        je["flags"] = e.flags;
+        // String form of flags for hand-edit clarity. The
+        // importer accepts either form.
+        nlohmann::json fa = nlohmann::json::array();
+        if (e.flags & wowee::pipeline::WoweeSound::Loop)   fa.push_back("loop");
+        if (e.flags & wowee::pipeline::WoweeSound::Is3D)   fa.push_back("3d");
+        if (e.flags & wowee::pipeline::WoweeSound::Stream) fa.push_back("stream");
+        je["flagsList"] = fa;
+        je["volume"] = e.volume;
+        je["minDistance"] = e.minDistance;
+        je["maxDistance"] = e.maxDistance;
+        je["filePath"] = e.filePath;
+        je["label"] = e.label;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wsnd-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source  : %s.wsnd\n", base.c_str());
+    std::printf("  entries : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    // Round-trip pair for --export-wsnd-json. Tolerates
+    // either kind int or kindName string, and either flags
+    // int or flagsList string array. Missing optional fields
+    // fall back to WoweeSound::Entry defaults.
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wsnd.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWsndExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wsnd-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wsnd-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "sfx")     return wowee::pipeline::WoweeSound::Sfx;
+        if (s == "music")   return wowee::pipeline::WoweeSound::Music;
+        if (s == "ambient") return wowee::pipeline::WoweeSound::Ambient;
+        if (s == "ui")      return wowee::pipeline::WoweeSound::Ui;
+        if (s == "voice")   return wowee::pipeline::WoweeSound::Voice;
+        if (s == "spell")   return wowee::pipeline::WoweeSound::Spell;
+        if (s == "combat")  return wowee::pipeline::WoweeSound::Combat;
+        return wowee::pipeline::WoweeSound::Sfx;
+    };
+    auto flagFromName = [](const std::string& s) -> uint32_t {
+        if (s == "loop")   return wowee::pipeline::WoweeSound::Loop;
+        if (s == "3d")     return wowee::pipeline::WoweeSound::Is3D;
+        if (s == "stream") return wowee::pipeline::WoweeSound::Stream;
+        return 0;
+    };
+    wowee::pipeline::WoweeSound c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeSound::Entry e;
+            e.soundId = je.value("soundId", 0u);
+            if (je.contains("kind") && je["kind"].is_number_integer()) {
+                e.kind = static_cast<uint8_t>(je["kind"].get<int>());
+            } else if (je.contains("kindName") && je["kindName"].is_string()) {
+                e.kind = kindFromName(je["kindName"].get<std::string>());
+            }
+            if (je.contains("flags") && je["flags"].is_number_integer()) {
+                e.flags = je["flags"].get<uint32_t>();
+            } else if (je.contains("flagsList") && je["flagsList"].is_array()) {
+                for (const auto& f : je["flagsList"]) {
+                    if (f.is_string()) e.flags |= flagFromName(f.get<std::string>());
+                }
+            }
+            e.volume = je.value("volume", 1.0f);
+            e.minDistance = je.value("minDistance", 0.0f);
+            e.maxDistance = je.value("maxDistance", 0.0f);
+            e.filePath = je.value("filePath", std::string{});
+            e.label = je.value("label", std::string{});
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeSoundLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wsnd-json: failed to save %s.wsnd\n",
+            outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wsnd\n", outBase.c_str());
+    std::printf("  source  : %s\n", jsonPath.c_str());
+    std::printf("  entries : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -239,6 +384,12 @@ bool handleSoundCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wsnd") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wsnd-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wsnd-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

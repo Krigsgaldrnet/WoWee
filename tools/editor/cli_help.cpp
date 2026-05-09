@@ -845,6 +845,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSND catalog entries (id / kind / flags / volume / 3D distances / file path / label)\n");
     std::printf("  --validate-wsnd <wsnd-base> [--json]\n");
     std::printf("                         Static checks: kind in 0..6, finite distances, 3D needs max>min>=0, no duplicate sound IDs\n");
+    std::printf("  --export-wsnd-json <wsnd-base> [out.json]\n");
+    std::printf("                         Export binary .wsnd to a human-editable JSON sidecar (defaults to <base>.wsnd.json)\n");
+    std::printf("  --import-wsnd-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wsnd.json sidecar back into binary .wsnd (accepts either kind int OR kindName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
