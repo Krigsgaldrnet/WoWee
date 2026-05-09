@@ -5212,6 +5212,66 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleWaterTrough(int& i, int argc, char** argv) {
+    // Open-top water trough / horse trough: a 4-walled rectangular
+    // basin with a flat floor. 5 boxes total — bottom slab plus
+    // 4 perimeter walls. Perimeter walls are sized so they butt up
+    // against the floor and each other without overlap; the inner
+    // cavity (length-2*wallT × height-wallT × width-2*wallT) is
+    // the open water volume. Useful for stables, farmsteads,
+    // taverns, stockyards. The 65th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float length = 1.4f;
+    float width  = 0.5f;
+    float height = 0.5f;
+    float wallT  = 0.06f;
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, wallT);
+    if (length <= 0 || width <= 0 || height <= 0 || wallT <= 0 ||
+        wallT * 2 >= std::min(length, width) || wallT >= height) {
+        std::fprintf(stderr,
+            "gen-mesh-water-trough: dims > 0; wallT*2 < length/width; "
+            "wallT < height\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float L2 = length * 0.5f;
+    const float W2 = width  * 0.5f;
+    // Bottom slab spans full footprint, sits at y=0.
+    addFlatBox(wom, 0.0f, wallT * 0.5f, 0.0f,
+               L2, wallT * 0.5f, W2);
+    // Perimeter walls. The +X / -X walls span the full length;
+    // the +Z / -Z walls span the inner length so they tuck
+    // INSIDE the X walls without overlap.
+    const float wallCY = wallT + (height - wallT) * 0.5f;
+    const float wallHY = (height - wallT) * 0.5f;
+    addFlatBox(wom, +L2 - wallT * 0.5f, wallCY, 0.0f,
+               wallT * 0.5f, wallHY, W2);
+    addFlatBox(wom, -L2 + wallT * 0.5f, wallCY, 0.0f,
+               wallT * 0.5f, wallHY, W2);
+    const float innerL2 = L2 - wallT;
+    addFlatBox(wom, 0.0f, wallCY, +W2 - wallT * 0.5f,
+               innerL2, wallHY, wallT * 0.5f);
+    addFlatBox(wom, 0.0f, wallCY, -W2 + wallT * 0.5f,
+               innerL2, wallHY, wallT * 0.5f);
+    finalizeAsSingleBatch(wom);
+    wom.boundMin = glm::vec3(-L2, 0, -W2);
+    wom.boundMax = glm::vec3(+L2, height, +W2);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-water-trough")) return 1;
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  basin      : %.3f x %.3f x %.3f (wallT %.3f)\n",
+                length, width, height, wallT);
+    std::printf("  cavity     : %.3f x %.3f x %.3f\n",
+                length - 2 * wallT, height - wallT, width - 2 * wallT);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleWatchpost(int& i, int argc, char** argv) {
     // Sentry watchpost: tall central pole topped by a wider square
     // platform, with optional corner railing posts. Distinct from
@@ -6204,6 +6264,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-workbench",      1, handleWorkbench},
     {"--gen-mesh-crate-stack",    1, handleCrateStack},
     {"--gen-mesh-watchpost",      1, handleWatchpost},
+    {"--gen-mesh-water-trough",   1, handleWaterTrough},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},

@@ -248,6 +248,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Crate stack: N×M×K cube grid with small gap between crates (warehouses, cargo holds, dockyards)\n");
     std::printf("  --gen-mesh-watchpost <wom-base> [postH] [postW] [platformSize] [platformT] [railingH] [railingW]\n");
     std::printf("                         Watchpost: tall pole + square platform + 4 corner railing posts (sentry / scout outpost)\n");
+    std::printf("  --gen-mesh-water-trough <wom-base> [length] [width] [height] [wallT]\n");
+    std::printf("                         Water trough: 4-walled rectangular basin with flat floor (stable / farm / tavern set dressing)\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
     std::printf("                         Table: flat top slab on 4 corner legs (default 1.6/1.0/0.85/0.10/0.06)\n");
     std::printf("  --gen-mesh-lamppost <wom-base> [poleH] [poleT] [baseSize] [lanternSize] [lanternH]\n");
