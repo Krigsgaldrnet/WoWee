@@ -6791,6 +6791,25 @@ int handleGenBlacksmithPack(int& i, int /*argc*/, char** argv) {
     });
 }
 
+int handleGenGraveyardPack(int& i, int /*argc*/, char** argv) {
+    // Cemetery / graveyard scene: grave (filled plot mound),
+    // tombstone (marker stone), coffin (above-ground or open),
+    // statue (mourning angel / patron deity), stone-bench (for
+    // visitors), gravel-pile (loose earth from a fresh dig),
+    // cage (cemetery-fence section / mausoleum gate). Together
+    // these form the standard town-edge burial yard.
+    std::string outDir = argv[++i];
+    return emitMeshPack(outDir, "graveyard pack", {
+        {"--gen-mesh-grave",        handleGrave,       "grave"},
+        {"--gen-mesh-tombstone",    handleTombstone,   "tombstone"},
+        {"--gen-mesh-coffin",       handleCoffin,      "coffin"},
+        {"--gen-mesh-statue",       handleStatue,      "statue"},
+        {"--gen-mesh-stone-bench",  handleStoneBench,  "bench"},
+        {"--gen-mesh-gravel-pile",  handleGravelPile,  "rubble"},
+        {"--gen-mesh-cage",         handleCage,        "fence"},
+    });
+}
+
 int handleGenTemplePack(int& i, int /*argc*/, char** argv) {
     // Temple / shrine scene: altar (the focal point), shrine
     // (auxiliary devotional), brazier (lit on either side of the
@@ -6905,6 +6924,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
     {"--gen-temple-pack",         1, handleGenTemplePack},
+    {"--gen-graveyard-pack",      1, handleGenGraveyardPack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
