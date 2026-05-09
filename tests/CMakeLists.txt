@@ -411,6 +411,9 @@ add_executable(test_open_formats
 target_include_directories(test_open_formats PRIVATE ${TEST_INCLUDE_DIRS})
 target_include_directories(test_open_formats SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
 target_link_libraries(test_open_formats PRIVATE catch2_main)
+if(TARGET glm::glm)
+    target_link_libraries(test_open_formats PRIVATE glm::glm)
+endif()
 add_test(NAME open_formats COMMAND test_open_formats)
 register_test_target(test_open_formats)
 
@@ -438,6 +441,9 @@ target_include_directories(test_open_format_emitter SYSTEM PRIVATE
     ${CMAKE_SOURCE_DIR}/extern/nlohmann
 )
 target_link_libraries(test_open_format_emitter PRIVATE catch2_main)
+if(TARGET glm::glm)
+    target_link_libraries(test_open_format_emitter PRIVATE glm::glm)
+endif()
 add_test(NAME open_format_emitter COMMAND test_open_format_emitter)
 register_test_target(test_open_format_emitter)
 
