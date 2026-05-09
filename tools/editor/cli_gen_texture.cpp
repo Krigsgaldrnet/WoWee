@@ -2278,6 +2278,98 @@ int handleVines(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleMosaic(int& i, int argc, char** argv) {
+    // 3-color mosaic: small square tiles randomly assigned one
+    // of 3 colors, with 1-px black grout lines between them.
+    // Per-tile color picked from a stable hash so the same seed
+    // always yields the same mosaic.
+    std::string outPath = argv[++i];
+    std::string aHex = argv[++i];
+    std::string bHex = argv[++i];
+    std::string cHex = argv[++i];
+    int tilePx = 16;
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { tilePx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        tilePx < 4 || tilePx > 256) {
+        std::fprintf(stderr,
+            "gen-texture-mosaic: invalid dims (W/H 1..8192, tilePx 4..256)\n");
+        return 1;
+    }
+    uint8_t ar, ag, ab, br, bg, bb_, cr, cg, cb;
+    if (!parseHex(aHex, ar, ag, ab) ||
+        !parseHex(bHex, br, bg, bb_) ||
+        !parseHex(cHex, cr, cg, cb)) {
+        std::fprintf(stderr,
+            "gen-texture-mosaic: one of the hex colors is invalid\n");
+        return 1;
+    }
+    auto cellPick = [seed](int cx, int cy) -> int {
+        uint32_t h = static_cast<uint32_t>(cx) * 374761393u +
+                     static_cast<uint32_t>(cy) * 668265263u +
+                     seed * 2147483647u;
+        h = (h ^ (h >> 13)) * 1274126177u;
+        h = h ^ (h >> 16);
+        return h % 3;
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    int counts[3] = {0, 0, 0};
+    for (int y = 0; y < H; ++y) {
+        int cy = y / tilePx;
+        int yInCell = y % tilePx;
+        for (int x = 0; x < W; ++x) {
+            int cx = x / tilePx;
+            int xInCell = x % tilePx;
+            // 1-px grout on the top and left edge of every cell.
+            bool grout = (xInCell == 0) || (yInCell == 0);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            if (grout) {
+                pixels[i2 + 0] = 0;
+                pixels[i2 + 1] = 0;
+                pixels[i2 + 2] = 0;
+            } else {
+                int pick = cellPick(cx, cy);
+                if (yInCell == 1 && xInCell == 1) ++counts[pick];
+                if (pick == 0) {
+                    pixels[i2 + 0] = ar; pixels[i2 + 1] = ag; pixels[i2 + 2] = ab;
+                } else if (pick == 1) {
+                    pixels[i2 + 0] = br; pixels[i2 + 1] = bg; pixels[i2 + 2] = bb_;
+                } else {
+                    pixels[i2 + 0] = cr; pixels[i2 + 1] = cg; pixels[i2 + 2] = cb;
+                }
+            }
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-mosaic: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  colors     : %s / %s / %s\n",
+                aHex.c_str(), bHex.c_str(), cHex.c_str());
+    std::printf("  tile px    : %d\n", tilePx);
+    std::printf("  tile counts: A=%d B=%d C=%d\n",
+                counts[0], counts[1], counts[2]);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2354,6 +2446,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-vines") == 0 && i + 3 < argc) {
         outRc = handleVines(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-mosaic") == 0 && i + 4 < argc) {
+        outRc = handleMosaic(i, argc, argv); return true;
     }
     return false;
 }
