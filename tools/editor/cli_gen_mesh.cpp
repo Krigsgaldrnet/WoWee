@@ -3723,6 +3723,125 @@ int handleCart(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBanner(int& i, int argc, char** argv) {
+    // Banner: vertical pole + rectangular flag hanging off it.
+    // Pole is a 12-segment cylinder along Y. Flag is a flat
+    // rectangle attached at the top of the pole, draped along
+    // -Z. Flag has both front (+X) and back (-X) faces so it
+    // reads from any viewing angle. The 31st mesh primitive.
+    std::string womBase = argv[++i];
+    float poleH = 3.0f;
+    float poleR = 0.05f;
+    float flagW = 0.8f;       // along -Z (drape direction)
+    float flagH = 1.2f;       // along Y (down from top)
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { poleH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { poleR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { flagW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { flagH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (poleH <= 0 || poleR <= 0 || flagW <= 0 || flagH <= 0 ||
+        flagH > poleH) {
+        std::fprintf(stderr,
+            "gen-mesh-banner: all dims > 0; flagH must be <= poleH\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    const float pi = 3.14159265358979f;
+    auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+        wowee::pipeline::WoweeModel::Vertex vtx;
+        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+        wom.vertices.push_back(vtx);
+        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    };
+    // Pole cylinder (12 segments)
+    const int poleSegs = 12;
+    uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+    for (int sg = 0; sg <= poleSegs; ++sg) {
+        float u = static_cast<float>(sg) / poleSegs;
+        float ang = u * 2.0f * pi;
+        glm::vec3 p(poleR * std::cos(ang), 0, poleR * std::sin(ang));
+        glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+        addV(p, n, {u, 0});
+    }
+    uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+    for (int sg = 0; sg <= poleSegs; ++sg) {
+        float u = static_cast<float>(sg) / poleSegs;
+        float ang = u * 2.0f * pi;
+        glm::vec3 p(poleR * std::cos(ang), poleH, poleR * std::sin(ang));
+        glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+        addV(p, n, {u, 1});
+    }
+    for (int sg = 0; sg < poleSegs; ++sg) {
+        wom.indices.insert(wom.indices.end(), {
+            bot + sg, top + sg, bot + sg + 1,
+            bot + sg + 1, top + sg, top + sg + 1
+        });
+    }
+    // Pole top + bottom caps
+    uint32_t bc = addV({0, 0, 0}, {0, -1, 0}, {0.5f, 0.5f});
+    uint32_t tc = addV({0, poleH, 0}, {0, 1, 0}, {0.5f, 0.5f});
+    for (int sg = 0; sg < poleSegs; ++sg) {
+        wom.indices.insert(wom.indices.end(),
+            {bc, bot + sg + 1, bot + sg});
+        wom.indices.insert(wom.indices.end(),
+            {tc, top + sg, top + sg + 1});
+    }
+    // Flag: rectangle from (poleR, poleH-flagH, 0) to
+    // (poleR, poleH, -flagW). Two faces (front +X, back -X)
+    // so it reads from both sides.
+    float fy0 = poleH - flagH;
+    float fy1 = poleH;
+    float fz0 = 0;
+    float fz1 = -flagW;
+    float fx = poleR;
+    glm::vec3 frontN(1, 0, 0);
+    glm::vec3 backN(-1, 0, 0);
+    // Front face (faces +X, looking at it from outside)
+    uint32_t fa = addV({fx, fy0, fz0}, frontN, {0, 0});
+    uint32_t fb = addV({fx, fy0, fz1}, frontN, {1, 0});
+    uint32_t fc_ = addV({fx, fy1, fz1}, frontN, {1, 1});
+    uint32_t fd = addV({fx, fy1, fz0}, frontN, {0, 1});
+    wom.indices.insert(wom.indices.end(), {fa, fb, fc_, fa, fc_, fd});
+    // Back face (faces -X)
+    uint32_t ba = addV({fx, fy0, fz0}, backN, {0, 0});
+    uint32_t bb = addV({fx, fy1, fz0}, backN, {0, 1});
+    uint32_t bc_v = addV({fx, fy1, fz1}, backN, {1, 1});
+    uint32_t bd = addV({fx, fy0, fz1}, backN, {1, 0});
+    wom.indices.insert(wom.indices.end(), {ba, bb, bc_v, ba, bc_v, bd});
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-poleR, 0, fz1);
+    wom.boundMax = glm::vec3(fx + poleR, poleH, poleR);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-banner: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  pole       : R=%.3f H=%.3f\n", poleR, poleH);
+    std::printf("  flag       : W=%.3f H=%.3f (drapes -Z)\n",
+                flagW, flagH);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -3807,6 +3926,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-cart") == 0 && i + 1 < argc) {
         outRc = handleCart(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-banner") == 0 && i + 1 < argc) {
+        outRc = handleBanner(i, argc, argv); return true;
     }
     return false;
 }
