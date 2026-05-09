@@ -5193,6 +5193,127 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleArcheryTarget(int& i, int argc, char** argv) {
+    // Archery target: round face on a 2-post stand. The face is a
+    // short cylinder oriented along the Z axis (its flat circular
+    // surfaces face ±Z, where archers shoot from). Stand uses two
+    // vertical posts joined by a horizontal cross-beam underneath
+    // the face. The 70th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float faceR    = 0.40f;     // target face radius
+    float faceT    = 0.08f;     // target face thickness (Z extent)
+    int   sides    = 24;        // face cylinder smoothness
+    float postH    = 1.2f;      // height from ground to face center
+    float postW    = 0.08f;     // post thickness
+    float beamT    = 0.06f;     // cross-beam thickness
+    parseOptFloat(i, argc, argv, faceR);
+    parseOptFloat(i, argc, argv, faceT);
+    parseOptInt(i, argc, argv, sides);
+    parseOptFloat(i, argc, argv, postH);
+    parseOptFloat(i, argc, argv, postW);
+    parseOptFloat(i, argc, argv, beamT);
+    if (faceR <= 0 || faceT <= 0 || sides < 6 || sides > 64 ||
+        postH <= 0 || postW <= 0 || beamT <= 0 ||
+        postW * 2 >= faceR * 2) {
+        std::fprintf(stderr,
+            "gen-mesh-archery-target: dims > 0; sides 6..64; "
+            "postW*2 < faceR*2\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float pi = 3.14159265358979f;
+    const float halfStanceX = faceR + postW * 0.5f;
+    // Two vertical posts of the stand, sized to reach from ground
+    // to the bottom of the face.
+    const float postTopY = postH - faceR;
+    if (postTopY > 0.0f) {
+        addFlatBox(wom, +halfStanceX, postTopY * 0.5f, 0.0f,
+                   postW * 0.5f, postTopY * 0.5f, postW * 0.5f);
+        addFlatBox(wom, -halfStanceX, postTopY * 0.5f, 0.0f,
+                   postW * 0.5f, postTopY * 0.5f, postW * 0.5f);
+    }
+    // Horizontal cross-beam underneath the face joining the two
+    // posts (gives the stand visual rigidity).
+    const float beamCY = postTopY - beamT * 0.5f;
+    if (beamCY > 0.0f) {
+        addFlatBox(wom, 0.0f, beamCY, 0.0f,
+                   halfStanceX, beamT * 0.5f, beamT * 0.5f);
+    }
+    // Target face: closed cylinder along the Z axis centered at
+    // (0, postH, 0). Flat ±Z caps face the archer line; side
+    // wall is the rim.
+    const float halfT = faceT * 0.5f;
+    uint32_t back = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+        glm::vec3 p(faceR * dir.x, postH + faceR * dir.y, -halfT);
+        addVertex(wom, p, dir, {u, 0});
+    }
+    uint32_t front = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+        glm::vec3 p(faceR * dir.x, postH + faceR * dir.y, +halfT);
+        addVertex(wom, p, dir, {u, 1});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(), {
+            back + s, front + s, back + s + 1,
+            back + s + 1, front + s, front + s + 1
+        });
+    }
+    // Cap fans on -Z and +Z so the face is closed.
+    uint32_t backCenter = addVertex(wom, {0, postH, -halfT},
+                                     {0, 0, -1}, {0.5f, 0.5f});
+    uint32_t backRing = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 p(faceR * std::cos(ang),
+                    postH + faceR * std::sin(ang), -halfT);
+        addVertex(wom, p, {0, 0, -1},
+                  {0.5f + 0.5f * std::cos(ang),
+                   0.5f + 0.5f * std::sin(ang)});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(),
+            {backCenter, backRing + s + 1, backRing + s});
+    }
+    uint32_t frontCenter = addVertex(wom, {0, postH, +halfT},
+                                      {0, 0, +1}, {0.5f, 0.5f});
+    uint32_t frontRing = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 p(faceR * std::cos(ang),
+                    postH + faceR * std::sin(ang), +halfT);
+        addVertex(wom, p, {0, 0, +1},
+                  {0.5f + 0.5f * std::cos(ang),
+                   0.5f + 0.5f * std::sin(ang)});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(),
+            {frontCenter, frontRing + s, frontRing + s + 1});
+    }
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, halfStanceX + postW * 0.5f, halfT,
+                         postH + faceR);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-archery-target")) return 1;
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  face       : R=%.3f x %.3f deep, %d sides\n",
+                faceR, faceT, sides);
+    std::printf("  stand      : posts at ±%.3f, beam %.3f thick\n",
+                halfStanceX, beamT);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleForge(int& i, int argc, char** argv) {
     // Blacksmith forge: rectangular stone hearth with a smaller
     // hood on top and an optional thin chimney rising from the
@@ -6593,6 +6714,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-hitching-post",  1, handleHitchingPost},
     {"--gen-mesh-outhouse",       1, handleOuthouse},
     {"--gen-mesh-forge",          1, handleForge},
+    {"--gen-mesh-archery-target", 1, handleArcheryTarget},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-mesh-table",          1, handleTable},
