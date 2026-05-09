@@ -961,6 +961,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WLCK lock entries with per-channel detail (kind / target / required skill rank)\n");
     std::printf("  --validate-wlck <wlck-base> [--json]\n");
     std::printf("                         Static checks: lockId>0+unique, at least 1 active channel, item/spell/lockpick need targetId\n");
+    std::printf("  --gen-skills <wskl-base> [name]\n");
+    std::printf("                         Emit .wskl starter: Swords + Common + First Aid + Mining (id=186) + Lockpicking (id=633) — matches WGOT/WLCK\n");
+    std::printf("  --gen-skills-professions <wskl-base> [name]\n");
+    std::printf("                         Emit .wskl 12 classic professions (9 primary + 3 secondary) with canonical SkillLine IDs\n");
+    std::printf("  --gen-skills-weapons <wskl-base> [name]\n");
+    std::printf("                         Emit .wskl all 16 weapon skills with rankPerLevel=5 auto-grow (use-trained, not trainer-trained)\n");
+    std::printf("  --info-wskl <wskl-base> [--json]\n");
+    std::printf("                         Print WSKL entries (id / category / max rank / per-level grow / trainer-required / name)\n");
+    std::printf("  --validate-wskl <wskl-base> [--json]\n");
+    std::printf("                         Static checks: skillId>0+unique, name not empty, maxRank>0, weapon needs rankPerLevel>0\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
