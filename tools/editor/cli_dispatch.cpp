@@ -49,6 +49,7 @@
 #include "cli_skills_catalog.hpp"
 #include "cli_spells_catalog.hpp"
 #include "cli_achievements_catalog.hpp"
+#include "cli_trainers_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -139,6 +140,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleSkillsCatalog,
     handleSpellsCatalog,
     handleAchievementsCatalog,
+    handleTrainersCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

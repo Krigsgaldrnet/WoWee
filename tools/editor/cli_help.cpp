@@ -1007,6 +1007,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wach to a human-editable JSON sidecar (defaults to <base>.wach.json)\n");
     std::printf("  --import-wach-json <json-path> [out-base]\n");
     std::printf("                         Import a .wach.json sidecar back into binary .wach (accepts kind/faction/flag int OR name forms)\n");
+    std::printf("  --gen-trainers <wtrn-base> [name]\n");
+    std::printf("                         Emit .wtrn starter: 1 NPC (innkeeper 4001) acting as both vendor + trainer with WSKL/WIT cross-refs\n");
+    std::printf("  --gen-trainers-mage <wtrn-base> [name]\n");
+    std::printf("                         Emit .wtrn mage trainer (npcId=4003): teaches Frostbolt/Fireball/Arcane Intellect/Blink at scaling cost\n");
+    std::printf("  --gen-trainers-weapons <wtrn-base> [name]\n");
+    std::printf("                         Emit .wtrn weapon vendor (npcId=4002): 5 weapons with mixed unlimited/finite stock + restock timers\n");
+    std::printf("  --info-wtrn <wtrn-base> [--json]\n");
+    std::printf("                         Print WTRN entries (npc / kind / spells with skill+level reqs / items with stock + restock)\n");
+    std::printf("  --validate-wtrn <wtrn-base> [--json]\n");
+    std::printf("                         Static checks: npcId>0+unique, kindMask>0, Trainer needs spells, Vendor needs items, no orphan offers\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
