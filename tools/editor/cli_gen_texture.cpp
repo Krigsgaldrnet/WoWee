@@ -3483,6 +3483,113 @@ int handleFrost(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleParquet(int& i, int argc, char** argv) {
+    // Parquet: basket-weave wood floor pattern. The image is
+    // tiled with 2N x 2N cells; cells alternate orientation in
+    // a checkerboard so half are split into 2 horizontal planks
+    // and half into 2 vertical planks. Two wood colors (one
+    // per orientation) make the basket-weave structure pop;
+    // a third "gap" color paints thin lines along plank edges
+    // for the inset / wood-joint look.
+    std::string outPath = argv[++i];
+    std::string woodAHex = argv[++i];
+    std::string woodBHex = argv[++i];
+    std::string gapHex   = argv[++i];
+    int cellSize = 32;   // cell side = 2N; each plank is N wide
+    int gapW     = 1;    // gap line thickness between planks
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { cellSize = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { gapW = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellSize < 8 || cellSize > 512 ||
+        gapW < 0 || gapW * 4 >= cellSize) {
+        std::fprintf(stderr,
+            "gen-texture-parquet: invalid dims (W/H 1..8192, cellSize 8..512, gap 0..cellSize/4)\n");
+        return 1;
+    }
+    uint8_t ar, ag, ab, br, bg, bb_, gr, gg, gb_;
+    if (!parseHex(woodAHex, ar, ag, ab) ||
+        !parseHex(woodBHex, br, bg, bb_) ||
+        !parseHex(gapHex,   gr, gg, gb_)) {
+        std::fprintf(stderr,
+            "gen-texture-parquet: woodA/woodB/gap hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        // Use floor division for negative coords (just-in-case
+        // future callers pass tile-offset images).
+        int cellY = y / cellSize;
+        int yMod  = y - cellY * cellSize;
+        for (int x = 0; x < W; ++x) {
+            int cellX = x / cellSize;
+            int xMod  = x - cellX * cellSize;
+            // Checkerboard: (cellX + cellY) even -> horizontal
+            // planks (long axis along X, two stacked vertically);
+            // odd -> vertical planks (long axis along Y, two
+            // side by side).
+            bool horizontalPair = (((cellX + cellY) & 1) == 0);
+            uint8_t r, g, b;
+            if (horizontalPair) {
+                // 2 horizontal planks: top half = wood A, bottom
+                // half = wood A (same color since the orientation
+                // is what matters for the weave). Gap line at the
+                // midline between the two planks, plus around the
+                // cell perimeter.
+                bool inMidline = (yMod >= cellSize / 2 - gapW &&
+                                   yMod <  cellSize / 2 + gapW);
+                bool onCellEdge = (yMod < gapW || yMod >= cellSize - gapW ||
+                                    xMod < gapW || xMod >= cellSize - gapW);
+                if (inMidline || onCellEdge) {
+                    r = gr; g = gg; b = gb_;
+                } else {
+                    r = ar; g = ag; b = ab;
+                }
+            } else {
+                // 2 vertical planks: left half + right half (wood B).
+                // Gap line at the vertical midline.
+                bool inMidline = (xMod >= cellSize / 2 - gapW &&
+                                   xMod <  cellSize / 2 + gapW);
+                bool onCellEdge = (yMod < gapW || yMod >= cellSize - gapW ||
+                                    xMod < gapW || xMod >= cellSize - gapW);
+                if (inMidline || onCellEdge) {
+                    r = gr; g = gg; b = gb_;
+                } else {
+                    r = br; g = bg; b = bb_;
+                }
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-parquet: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  wood A/B   : %s / %s (%s gap)\n",
+                woodAHex.c_str(), woodBHex.c_str(), gapHex.c_str());
+    std::printf("  cell       : %d px (gap %d px, basket-weave)\n",
+                cellSize, gapW);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -3595,6 +3702,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-frost") == 0 && i + 3 < argc) {
         outRc = handleFrost(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-parquet") == 0 && i + 4 < argc) {
+        outRc = handleParquet(i, argc, argv); return true;
     }
     return false;
 }
