@@ -4655,6 +4655,118 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleGate(int& i, int argc, char** argv) {
+    // Gate: 5-box wooden farm gate — 2 vertical posts on either
+    // side and 3 horizontal cross rails (top, middle, bottom)
+    // spanning the opening. The opening sits flat in the X-Y
+    // plane (rails along X, posts along Y) so it can hang in
+    // a wall slot without rotation. The 51st procedural mesh
+    // primitive — useful for fenced fields, manor entrances,
+    // pen openings, courtyard barriers.
+    std::string womBase = argv[++i];
+    float openingWidth = 1.80f;     // gap between posts (rail span)
+    float postHeight   = 1.30f;     // post height (= gate frame height)
+    float postT        = 0.10f;     // post square cross-section
+    float railT        = 0.06f;     // rail square cross-section
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { openingWidth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { railT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (openingWidth <= 0 || postHeight <= 0 || postT <= 0 ||
+        railT <= 0 || railT >= postHeight / 4) {
+        std::fprintf(stderr,
+            "gen-mesh-gate: dims > 0; railT < postHeight/4\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Total gate width = openingWidth + 2*postT (posts sit flush
+    // against the rails so the rail length = openingWidth).
+    float halfPost  = postT * 0.5f;
+    float halfRail  = railT * 0.5f;
+    float postX     = openingWidth * 0.5f + halfPost;
+    float postCY    = postHeight * 0.5f;
+    // 2 vertical posts.
+    addBox( postX, postCY, 0, halfPost, postHeight * 0.5f, halfPost);
+    addBox(-postX, postCY, 0, halfPost, postHeight * 0.5f, halfPost);
+    // 3 horizontal rails: top, middle, bottom. Bottom sits a
+    // little above the floor so it reads as a gate rather than
+    // bouncing off the ground; top sits a little below the post
+    // top so the post crowns are visible.
+    float halfRailLen = openingWidth * 0.5f;
+    float topRailY    = postHeight - halfRail * 1.5f;
+    float bottomRailY = halfRail * 2.0f;
+    float midRailY    = (topRailY + bottomRailY) * 0.5f;
+    addBox(0, topRailY,    0, halfRailLen, halfRail, halfRail);
+    addBox(0, midRailY,    0, halfRailLen, halfRail, halfRail);
+    addBox(0, bottomRailY, 0, halfRailLen, halfRail, halfRail);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float halfTotalX = postX + halfPost;
+    wom.boundMin = glm::vec3(-halfTotalX, 0.0f,        -halfPost);
+    wom.boundMax = glm::vec3( halfTotalX, postHeight,   halfPost);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-gate: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  total W    : %.3f (opening %.3f + 2 posts)\n",
+                openingWidth + postT * 2, openingWidth);
+    std::printf("  posts      : 2 × %.3f square × %.3f tall\n",
+                postT, postHeight);
+    std::printf("  rails      : 3 × %.3f square (top/mid/bottom)\n", railT);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleCauldron(int& i, int argc, char** argv) {
     // Cauldron: 7-box witch's pot — 4 small corner legs at the
     // floor, narrow bottom-bowl tier, wider mid-bowl tier, and
@@ -6250,6 +6362,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-cauldron") == 0 && i + 1 < argc) {
         outRc = handleCauldron(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-gate") == 0 && i + 1 < argc) {
+        outRc = handleGate(i, argc, argv); return true;
     }
     return false;
 }
