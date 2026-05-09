@@ -2183,6 +2183,101 @@ int handleStars(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleVines(int& i, int argc, char** argv) {
+    // Wall with climbing vines: solid wall background plus N
+    // vine paths that walk upward from the bottom edge with
+    // small horizontal jitter, leaving a 2-px-wide vine trail
+    // on every column they pass through.
+    std::string outPath = argv[++i];
+    std::string wallHex = argv[++i];
+    std::string vineHex = argv[++i];
+    uint32_t seed = 1;
+    int vineCount = 8;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { vineCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        vineCount < 0 || vineCount > 256) {
+        std::fprintf(stderr,
+            "gen-texture-vines: invalid dims (W/H 1..8192, vineCount 0..256)\n");
+        return 1;
+    }
+    uint8_t wr, wg, wb_, vr, vg, vb;
+    if (!parseHex(wallHex, wr, wg, wb_)) {
+        std::fprintf(stderr,
+            "gen-texture-vines: '%s' is not a valid hex color\n",
+            wallHex.c_str());
+        return 1;
+    }
+    if (!parseHex(vineHex, vr, vg, vb)) {
+        std::fprintf(stderr,
+            "gen-texture-vines: '%s' is not a valid hex color\n",
+            vineHex.c_str());
+        return 1;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Background: flat wall color.
+    for (int p = 0; p < W * H; ++p) {
+        size_t i2 = static_cast<size_t>(p) * 3;
+        pixels[i2 + 0] = wr;
+        pixels[i2 + 1] = wg;
+        pixels[i2 + 2] = wb_;
+    }
+    // Each vine: pick a starting x at the bottom, walk upward
+    // with a small per-step horizontal drift. Set 2 pixels wide
+    // on each visited row so the vine reads as a thin band rather
+    // than a single-pixel line.
+    int leafPixels = 0;
+    for (int v = 0; v < vineCount; ++v) {
+        float x = next01() * W;
+        for (int y = H - 1; y >= 0; --y) {
+            // Drift: cosine wave + tiny random jitter.
+            x += std::cos(y * 0.08f + v * 1.7f) * 0.6f;
+            x += (next01() - 0.5f) * 0.4f;
+            int xi = static_cast<int>(x);
+            for (int dx = 0; dx < 2; ++dx) {
+                int px = xi + dx;
+                if (px < 0 || px >= W) continue;
+                size_t i2 = (static_cast<size_t>(y) * W + px) * 3;
+                pixels[i2 + 0] = vr;
+                pixels[i2 + 1] = vg;
+                pixels[i2 + 2] = vb;
+                ++leafPixels;
+            }
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-vines: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size        : %dx%d\n", W, H);
+    std::printf("  wall/vine   : %s / %s\n",
+                wallHex.c_str(), vineHex.c_str());
+    std::printf("  vines       : %d (%d painted pixels)\n",
+                vineCount, leafPixels);
+    std::printf("  seed        : %u\n", seed);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2256,6 +2351,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-stars") == 0 && i + 3 < argc) {
         outRc = handleStars(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-vines") == 0 && i + 3 < argc) {
+        outRc = handleVines(i, argc, argv); return true;
     }
     return false;
 }
