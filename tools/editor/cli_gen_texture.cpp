@@ -2093,6 +2093,96 @@ int handleClouds(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStars(int& i, int argc, char** argv) {
+    // Night sky: solid background color sprinkled with bright
+    // stars at random positions and varied per-star brightness
+    // (so the sky has a depth feel — bright nearby stars + dim
+    // distant ones). Density controls roughly what fraction of
+    // pixels become stars.
+    std::string outPath = argv[++i];
+    std::string bgHex = argv[++i];
+    std::string starHex = argv[++i];
+    uint32_t seed = 1;
+    float density = 0.005f;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { density = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        density < 0.0f || density > 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-stars: invalid dims (W/H 1..8192, density 0..1)\n");
+        return 1;
+    }
+    uint8_t br, bg, bb_, sr, sg, sb;
+    if (!parseHex(bgHex, br, bg, bb_)) {
+        std::fprintf(stderr,
+            "gen-texture-stars: '%s' is not a valid hex color\n",
+            bgHex.c_str());
+        return 1;
+    }
+    if (!parseHex(starHex, sr, sg, sb)) {
+        std::fprintf(stderr,
+            "gen-texture-stars: '%s' is not a valid hex color\n",
+            starHex.c_str());
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Background: flat fill.
+    for (int p = 0; p < W * H; ++p) {
+        size_t i2 = static_cast<size_t>(p) * 3;
+        pixels[i2 + 0] = br;
+        pixels[i2 + 1] = bg;
+        pixels[i2 + 2] = bb_;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    int starCount = static_cast<int>(W * H * density);
+    int bright = 0, faint = 0;
+    for (int s = 0; s < starCount; ++s) {
+        int sx = static_cast<int>(next01() * W);
+        int sy = static_cast<int>(next01() * H);
+        // Brightness: weighted toward dim stars (most stars at
+        // 30..60% blend, occasional bright at 100%). Keeps the
+        // texture from looking like equally-bright pixel noise.
+        float r = next01();
+        float t = (r < 0.85f) ? (0.3f + r * 0.35f) : (0.85f + r * 0.15f);
+        if (t > 0.7f) ++bright; else ++faint;
+        size_t i2 = (static_cast<size_t>(sy) * W + sx) * 3;
+        pixels[i2 + 0] = static_cast<uint8_t>(br * (1 - t) + sr * t);
+        pixels[i2 + 1] = static_cast<uint8_t>(bg * (1 - t) + sg * t);
+        pixels[i2 + 2] = static_cast<uint8_t>(bb_ * (1 - t) + sb * t);
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-stars: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/star    : %s / %s\n",
+                bgHex.c_str(), starHex.c_str());
+    std::printf("  density    : %.4f\n", density);
+    std::printf("  stars      : %d (%d bright, %d faint)\n",
+                starCount, bright, faint);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2163,6 +2253,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-clouds") == 0 && i + 3 < argc) {
         outRc = handleClouds(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-stars") == 0 && i + 3 < argc) {
+        outRc = handleStars(i, argc, argv); return true;
     }
     return false;
 }

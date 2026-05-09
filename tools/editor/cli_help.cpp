@@ -79,6 +79,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Tree bark: vertical wavy streaks + dark vertical cracks (default density=0.04)\n");
     std::printf("  --gen-texture-clouds <out.png> <skyHex> <cloudHex> [seed] [coverage] [W H]\n");
     std::printf("                         Sky with puffy clouds: multi-octave noise thresholded by coverage (default 0.5)\n");
+    std::printf("  --gen-texture-stars <out.png> <bgHex> <starHex> [seed] [density] [W H]\n");
+    std::printf("                         Night sky with scattered stars (varied brightness, density 0..1, default 0.005)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
