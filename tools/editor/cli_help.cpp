@@ -284,6 +284,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Stone bench: long seat slab on 2 block supports near the ends (park / temple / ruined city)\n");
     std::printf("  --gen-mesh-mine-cart <wom-base> [length] [width] [bodyH] [wallT] [wheelR] [wheelInset]\n");
     std::printf("                         Mine cart: open-top bin (5-piece basin) on 4 wheel boxes (mines / dwarven forges / junk yards)\n");
+    std::printf("  --gen-mesh-hitching-rail <wom-base> [length] [height] [posts] [postW] [barT]\n");
+    std::printf("                         Hitching rail: long horizontal bar on N evenly-spaced posts (taverns / stockyards / market days)\n");
     std::printf("  --gen-camp-pack <outDir>\n");
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-blacksmith-pack <outDir>\n");

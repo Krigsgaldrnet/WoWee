@@ -5161,6 +5161,60 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleHitchingRail(int& i, int argc, char** argv) {
+    // Long hitching rail: a horizontal bar held up by N evenly-
+    // spaced vertical posts. Distinct from --gen-mesh-hitching-
+    // post (which is just 2 posts + bar) — this is the longer
+    // multi-post variant for taverns, stockyards, racecourse
+    // parking, market days. The 74th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float length = 4.0f;
+    float height = 1.2f;
+    int   posts  = 4;
+    float postW  = 0.10f;
+    float barT   = 0.08f;
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, height);
+    parseOptInt(i, argc, argv, posts);
+    parseOptFloat(i, argc, argv, postW);
+    parseOptFloat(i, argc, argv, barT);
+    if (length <= 0 || height <= 0 || postW <= 0 || barT <= 0 ||
+        posts < 2 || posts > 64 ||
+        postW * posts >= length || barT >= height) {
+        std::fprintf(stderr,
+            "gen-mesh-hitching-rail: dims > 0; posts 2..64; "
+            "posts must fit within length\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float L2 = length * 0.5f;
+    // Posts evenly spaced from -L2 to +L2, inset by postW so end
+    // posts align with the rail ends.
+    const float postCY = (height - barT) * 0.5f;
+    const float postHY = (height - barT) * 0.5f;
+    const float availSpan = length - postW;
+    for (int k = 0; k < posts; ++k) {
+        float t = static_cast<float>(k) / (posts - 1);
+        float cx = -availSpan * 0.5f + t * availSpan;
+        addFlatBox(wom, cx, postCY, 0.0f,
+                   postW * 0.5f, postHY, postW * 0.5f);
+    }
+    // Long horizontal rail spanning the full length on top.
+    addFlatBox(wom, 0.0f, height - barT * 0.5f, 0.0f,
+               L2, barT * 0.5f, barT * 0.5f);
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, L2, postW * 0.5f, height);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-hitching-rail")) return 1;
+    printWomWrote(womBase);
+    std::printf("  rail       : %.3fL at H=%.3f, %d posts (W=%.3f)\n",
+                length, height, posts, postW);
+    std::printf("  bar        : %.3f thick\n", barT);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleMineCart(int& i, int argc, char** argv) {
     // Mine cart: rectangular open-top bin on 4 wheel boxes. The
     // bin uses the 5-piece basin construction from
@@ -6920,6 +6974,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-gravel-pile",    1, handleGravelPile},
     {"--gen-mesh-stone-bench",    1, handleStoneBench},
     {"--gen-mesh-mine-cart",      1, handleMineCart},
+    {"--gen-mesh-hitching-rail",  1, handleHitchingRail},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
