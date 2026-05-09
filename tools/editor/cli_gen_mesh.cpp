@@ -5161,6 +5161,58 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleMug(int& i, int argc, char** argv) {
+    // Drinking mug / tankard: closed cylindrical body plus a
+    // small box handle attached to the side. Without rotation
+    // the handle is a thin slab rather than a real C-loop, but
+    // the asymmetric silhouette still reads as a handled cup
+    // distinct from --gen-mesh-chalice (3-tier goblet) and
+    // --gen-mesh-well-pail (top-handle bucket). The 87th
+    // procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float bodyR    = 0.05f;
+    float bodyH    = 0.12f;
+    float handleW  = 0.025f;     // handle thickness (inset from body)
+    float handleH  = 0.08f;      // handle vertical extent
+    float handleArm = 0.04f;     // how far handle extends from body
+    int   sides    = 14;
+    parseOptFloat(i, argc, argv, bodyR);
+    parseOptFloat(i, argc, argv, bodyH);
+    parseOptFloat(i, argc, argv, handleW);
+    parseOptFloat(i, argc, argv, handleH);
+    parseOptFloat(i, argc, argv, handleArm);
+    parseOptInt(i, argc, argv, sides);
+    if (bodyR <= 0 || bodyH <= 0 || handleW <= 0 || handleH <= 0 ||
+        handleArm <= 0 || handleH >= bodyH ||
+        sides < 6 || sides > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-mug: dims > 0; sides 6..64; handleH < bodyH\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    addClosedCylinderY(wom, bodyR, 0.0f, bodyH, sides);
+    // Handle: thin box positioned on +X side of body, centered
+    // vertically. Pushes outward by handleArm/2 + bodyR so its
+    // inner face touches the body.
+    const float handleCY = bodyH * 0.5f;
+    const float handleCX = bodyR + handleArm * 0.5f;
+    addFlatBox(wom, handleCX, handleCY, 0.0f,
+               handleArm * 0.5f, handleH * 0.5f, handleW * 0.5f);
+    finalizeAsSingleBatch(wom);
+    float maxX = bodyR + handleArm;
+    setCenteredBoundsXZ(wom, maxX, bodyR, bodyH);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-mug")) return 1;
+    printWomWrote(womBase);
+    std::printf("  body       : R=%.3f x %.3f tall (%d sides)\n",
+                bodyR, bodyH, sides);
+    std::printf("  handle     : %.3f arm x %.3f tall x %.3f thick\n",
+                handleArm, handleH, handleW);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleWellPail(int& i, int argc, char** argv) {
     // Wooden well-pail / bucket: a closed cylindrical body
     // (collision-watertight) plus a thin horizontal handle bar
@@ -7538,6 +7590,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-scroll-case",    1, handleScrollCase},
     {"--gen-mesh-stove",          1, handleStove},
     {"--gen-mesh-well-pail",      1, handleWellPail},
+    {"--gen-mesh-mug",            1, handleMug},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
