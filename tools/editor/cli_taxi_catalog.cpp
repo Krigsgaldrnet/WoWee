@@ -159,6 +159,152 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Two top-level arrays (nodes / paths)
+    // mirroring the binary layout. Vec3 fields become
+    // 3-element JSON arrays.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWtaxExt(base);
+    if (outPath.empty()) outPath = base + ".wtax.json";
+    if (!wowee::pipeline::WoweeTaxiLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtax-json: WTAX not found: %s.wtax\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTaxiLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json na = nlohmann::json::array();
+    for (const auto& n : c.nodes) {
+        na.push_back({
+            {"nodeId", n.nodeId},
+            {"mapId", n.mapId},
+            {"name", n.name},
+            {"iconPath", n.iconPath},
+            {"position", {n.position.x, n.position.y, n.position.z}},
+            {"factionAlliance", n.factionAlliance},
+            {"factionHorde", n.factionHorde},
+        });
+    }
+    j["nodes"] = na;
+    nlohmann::json pa = nlohmann::json::array();
+    for (const auto& p : c.paths) {
+        nlohmann::json wpa = nlohmann::json::array();
+        for (const auto& w : p.waypoints) {
+            wpa.push_back({
+                {"position", {w.position.x, w.position.y, w.position.z}},
+                {"delaySec", w.delaySec},
+            });
+        }
+        pa.push_back({
+            {"pathId", p.pathId},
+            {"fromNodeId", p.fromNodeId},
+            {"toNodeId", p.toNodeId},
+            {"moneyCostCopper", p.moneyCostCopper},
+            {"waypoints", wpa},
+        });
+    }
+    j["paths"] = pa;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wtax-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wtax\n", base.c_str());
+    std::printf("  nodes  : %zu  paths : %zu\n",
+                c.nodes.size(), c.paths.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wtax.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWtaxExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wtax-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wtax-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto readVec3 = [](const nlohmann::json& jv, glm::vec3& v) {
+        if (jv.is_array() && jv.size() >= 3) {
+            v.x = jv[0].get<float>();
+            v.y = jv[1].get<float>();
+            v.z = jv[2].get<float>();
+        }
+    };
+    wowee::pipeline::WoweeTaxi c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("nodes") && j["nodes"].is_array()) {
+        for (const auto& jn : j["nodes"]) {
+            wowee::pipeline::WoweeTaxi::Node n;
+            n.nodeId = jn.value("nodeId", 0u);
+            n.mapId = jn.value("mapId", 0u);
+            n.name = jn.value("name", std::string{});
+            n.iconPath = jn.value("iconPath", std::string{});
+            if (jn.contains("position")) readVec3(jn["position"], n.position);
+            n.factionAlliance = jn.value("factionAlliance", 0u);
+            n.factionHorde = jn.value("factionHorde", 0u);
+            c.nodes.push_back(n);
+        }
+    }
+    if (j.contains("paths") && j["paths"].is_array()) {
+        for (const auto& jp : j["paths"]) {
+            wowee::pipeline::WoweeTaxi::Path p;
+            p.pathId = jp.value("pathId", 0u);
+            p.fromNodeId = jp.value("fromNodeId", 0u);
+            p.toNodeId = jp.value("toNodeId", 0u);
+            p.moneyCostCopper = jp.value("moneyCostCopper", 0u);
+            if (jp.contains("waypoints") && jp["waypoints"].is_array()) {
+                for (const auto& jw : jp["waypoints"]) {
+                    wowee::pipeline::WoweeTaxi::Waypoint w;
+                    if (jw.contains("position")) readVec3(jw["position"], w.position);
+                    w.delaySec = jw.value("delaySec", 0.0f);
+                    p.waypoints.push_back(w);
+                }
+            }
+            c.paths.push_back(p);
+        }
+    }
+    if (!wowee::pipeline::WoweeTaxiLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtax-json: failed to save %s.wtax\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtax\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  nodes  : %zu  paths : %zu\n",
+                c.nodes.size(), c.paths.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -292,6 +438,12 @@ bool handleTaxiCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wtax") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtax-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtax-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

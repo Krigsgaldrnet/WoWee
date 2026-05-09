@@ -1047,6 +1047,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTAX nodes (id / map / position / name) + paths (id / from->to / cost / waypoint count)\n");
     std::printf("  --validate-wtax <wtax-base> [--json]\n");
     std::printf("                         Static checks: ids>0+unique, finite positions, paths reference real nodes, no self-loop, non-negative delays\n");
+    std::printf("  --export-wtax-json <wtax-base> [out.json]\n");
+    std::printf("                         Export binary .wtax to a human-editable JSON sidecar (defaults to <base>.wtax.json)\n");
+    std::printf("  --import-wtax-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtax.json sidecar back into binary .wtax (round-trip with --export-wtax-json)\n");
     std::printf("  --gen-talents <wtal-base> [name]\n");
     std::printf("                         Emit .wtal starter: 1 small tree (3 talents in chain) for class warrior\n");
     std::printf("  --gen-talents-warrior <wtal-base> [name]\n");
