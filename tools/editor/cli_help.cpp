@@ -296,6 +296,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Pillar row: N evenly-spaced rectangular pillars with optional square caps (colonnade / temple ruin)\n");
     std::printf("  --gen-mesh-statue-base <wom-base> [bodyW] [bodyH] [plinthExtra] [plinthH] [capitalExtra] [capitalH]\n");
     std::printf("                         Statue base: 3-tier pedestal (plinth + body + capital) for monuments / hero memorials\n");
+    std::printf("  --gen-mesh-bird-bath <wom-base> [stemR] [stemH] [basinR] [basinH] [sides]\n");
+    std::printf("                         Bird bath: thin cylindrical stem topped by a wide shallow basin disc (small garden water feature)\n");
     std::printf("  --gen-camp-pack <outDir>\n");
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-blacksmith-pack <outDir>\n");

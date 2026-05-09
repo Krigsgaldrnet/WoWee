@@ -5161,6 +5161,104 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBirdBath(int& i, int argc, char** argv) {
+    // Garden bird-bath: thin cylindrical stem topped by a wide
+    // shallow disc basin. Distinct from --gen-mesh-fountain
+    // (basin + spout column, larger water feature) — this is
+    // the small ornamental garden version. The 77th procedural
+    // mesh primitive.
+    std::string womBase = argv[++i];
+    float stemR    = 0.06f;       // stem (column) radius
+    float stemH    = 0.85f;       // stem height
+    float basinR   = 0.30f;       // basin top radius
+    float basinH   = 0.10f;       // basin disc thickness
+    int   sides    = 16;          // cylinder smoothness
+    parseOptFloat(i, argc, argv, stemR);
+    parseOptFloat(i, argc, argv, stemH);
+    parseOptFloat(i, argc, argv, basinR);
+    parseOptFloat(i, argc, argv, basinH);
+    parseOptInt(i, argc, argv, sides);
+    if (stemR <= 0 || stemH <= 0 || basinR <= 0 || basinH <= 0 ||
+        sides < 6 || sides > 64 || stemR >= basinR) {
+        std::fprintf(stderr,
+            "gen-mesh-bird-bath: dims > 0; sides 6..64; "
+            "stemR < basinR\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float pi = 3.14159265358979f;
+    // Helper: emit a Y-axis closed cylinder of radius R from
+    // y = y0 to y = y1.
+    auto addYCylinder = [&](float R, float y0, float y1) {
+        // Side wall: ring at y0, ring at y1.
+        uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            glm::vec3 dir(std::cos(ang), 0.0f, std::sin(ang));
+            addVertex(wom, {R * dir.x, y0, R * dir.z}, dir, {u, 0});
+        }
+        uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            glm::vec3 dir(std::cos(ang), 0.0f, std::sin(ang));
+            addVertex(wom, {R * dir.x, y1, R * dir.z}, dir, {u, 1});
+        }
+        for (int s = 0; s < sides; ++s) {
+            wom.indices.insert(wom.indices.end(), {
+                bot + s, top + s, bot + s + 1,
+                bot + s + 1, top + s, top + s + 1
+            });
+        }
+        // Bottom cap (-Y) fan.
+        uint32_t botCenter = addVertex(wom, {0, y0, 0}, {0, -1, 0},
+                                        {0.5f, 0.5f});
+        uint32_t botRing = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            addVertex(wom, {R * std::cos(ang), y0, R * std::sin(ang)},
+                      {0, -1, 0},
+                      {0.5f + 0.5f * std::cos(ang),
+                       0.5f + 0.5f * std::sin(ang)});
+        }
+        for (int s = 0; s < sides; ++s) {
+            wom.indices.insert(wom.indices.end(),
+                {botCenter, botRing + s + 1, botRing + s});
+        }
+        // Top cap (+Y) fan.
+        uint32_t topCenter = addVertex(wom, {0, y1, 0}, {0, 1, 0},
+                                        {0.5f, 0.5f});
+        uint32_t topRing = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            addVertex(wom, {R * std::cos(ang), y1, R * std::sin(ang)},
+                      {0, 1, 0},
+                      {0.5f + 0.5f * std::cos(ang),
+                       0.5f + 0.5f * std::sin(ang)});
+        }
+        for (int s = 0; s < sides; ++s) {
+            wom.indices.insert(wom.indices.end(),
+                {topCenter, topRing + s, topRing + s + 1});
+        }
+    };
+    addYCylinder(stemR, 0.0f, stemH);
+    addYCylinder(basinR, stemH, stemH + basinH);
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, basinR, basinR, stemH + basinH);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-bird-bath")) return 1;
+    printWomWrote(womBase);
+    std::printf("  stem       : R=%.3f x %.3f tall\n", stemR, stemH);
+    std::printf("  basin      : R=%.3f x %.3f thick (%d sides)\n",
+                basinR, basinH, sides);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleStatueBase(int& i, int argc, char** argv) {
     // Statue / monument pedestal: 3-tier stacked-box pedestal
     // (plinth foundation, tall body, capital cap). Distinct from
@@ -7135,6 +7233,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-hitching-rail",  1, handleHitchingRail},
     {"--gen-mesh-pillar-row",     1, handlePillarRow},
     {"--gen-mesh-statue-base",    1, handleStatueBase},
+    {"--gen-mesh-bird-bath",      1, handleBirdBath},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
