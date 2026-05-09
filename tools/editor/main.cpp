@@ -162,7 +162,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-argyle", "--gen-texture-herringbone",
         "--gen-texture-scales", "--gen-texture-stained-glass",
         "--gen-texture-shingles", "--gen-texture-frost",
-        "--gen-texture-parquet",
+        "--gen-texture-parquet", "--gen-texture-bubbles",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",

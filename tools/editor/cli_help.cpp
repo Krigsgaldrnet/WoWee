@@ -109,6 +109,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Frost: scattered crystal nuclei with 6-spike rosettes that fade with distance\n");
     std::printf("  --gen-texture-parquet <out.png> <woodAHex> <woodBHex> <gapHex> [cellSize] [gapW] [W H]\n");
     std::printf("                         Parquet: basket-weave wood floor pattern with checkered horizontal/vertical plank pairs\n");
+    std::printf("  --gen-texture-bubbles <out.png> <bgHex> <fillHex> <rimHex> [count] [minR] [maxR] [rimW] [W H]\n");
+    std::printf("                         Bubbles: scattered overlapping circles with bright rims (foam, water, magic)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

@@ -3590,6 +3590,123 @@ int handleParquet(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBubbles(int& i, int argc, char** argv) {
+    // Bubbles: scattered circles of varied radii, drawn as
+    // translucent fills with a brighter rim. Bubbles overlap;
+    // rim color wins at any pixel that lies in any bubble's
+    // ring band (so overlapping outlines stay readable).
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string fillHex = argv[++i];
+    std::string rimHex  = argv[++i];
+    int bubbleCount = 50;
+    int minR = 6;
+    int maxR = 24;
+    int rimW = 2;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { bubbleCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { minR = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { maxR = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { rimW = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        bubbleCount < 1 || bubbleCount > 4096 ||
+        minR < 1 || maxR < minR || maxR > 1024 ||
+        rimW < 1 || rimW > minR) {
+        std::fprintf(stderr,
+            "gen-texture-bubbles: invalid dims (W/H 1..8192, bubbles 1..4096, "
+            "minR..maxR 1..1024, rimW 1..minR)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, fr, fg, fb_, rr, rg, rb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(fillHex, fr, fg, fb_) ||
+        !parseHex(rimHex, rr, rg, rb_)) {
+        std::fprintf(stderr,
+            "gen-texture-bubbles: bg/fill/rim hex color is invalid\n");
+        return 1;
+    }
+    // Deterministic seed placement so re-runs reproduce.
+    struct Bubble { int x, y, r; int rimRsq; int rSq; };
+    std::vector<Bubble> bubbles;
+    bubbles.reserve(bubbleCount);
+    uint32_t rng = static_cast<uint32_t>(bubbleCount) * 0x9E3779B9u +
+                   static_cast<uint32_t>(W) * 0x85EBCA6Bu +
+                   static_cast<uint32_t>(maxR);
+    auto rngStep = [&]() {
+        rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+        return rng;
+    };
+    int radSpan = maxR - minR + 1;
+    for (int s = 0; s < bubbleCount; ++s) {
+        Bubble b;
+        b.x = static_cast<int>((rngStep() & 0xFFFF) / 65535.0f * W);
+        b.y = static_cast<int>((rngStep() & 0xFFFF) / 65535.0f * H);
+        b.r = minR + static_cast<int>(rngStep() % radSpan);
+        b.rSq = b.r * b.r;
+        int innerR = std::max(1, b.r - rimW);
+        b.rimRsq = innerR * innerR;
+        bubbles.push_back(b);
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            bool onRim = false;
+            bool hasFill = false;
+            for (const auto& b : bubbles) {
+                int dx = b.x - x;
+                int dy = b.y - y;
+                int distSq = dx * dx + dy * dy;
+                if (distSq > b.rSq) continue;
+                hasFill = true;
+                if (distSq >= b.rimRsq) {
+                    onRim = true;
+                    break;  // rim wins; no need to check further
+                }
+            }
+            uint8_t r, g, b;
+            if (onRim) {
+                r = rr; g = rg; b = rb_;
+            } else if (hasFill) {
+                r = fr; g = fg; b = fb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-bubbles: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/fill/rim: %s / %s / %s\n",
+                bgHex.c_str(), fillHex.c_str(), rimHex.c_str());
+    std::printf("  bubbles    : %d (radius %d-%d, rim %d px)\n",
+                bubbleCount, minR, maxR, rimW);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -3705,6 +3822,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-parquet") == 0 && i + 4 < argc) {
         outRc = handleParquet(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-bubbles") == 0 && i + 4 < argc) {
+        outRc = handleBubbles(i, argc, argv); return true;
     }
     return false;
 }
