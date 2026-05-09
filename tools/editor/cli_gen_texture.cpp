@@ -4586,6 +4586,93 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStuds(int& i, int argc, char** argv) {
+    // Riveted studs: grid of round caps with an inner highlight.
+    // Distinct from --gen-texture-dots (flat solid circles): each
+    // stud has a brighter inner core (40% radius) over a darker
+    // outer ring, giving a 3D rivet/stud appearance for armor and
+    // leather work. Cap color is studHex; the highlight is
+    // automatically derived as a 40%-brighter version of it.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string studHex = argv[++i];
+    int stride = 24;
+    int studR  = 7;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stride = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { studR = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stride < 4 || stride > 1024 ||
+        studR < 1 || studR * 2 >= stride) {
+        std::fprintf(stderr,
+            "gen-texture-studs: invalid dims (W/H 1..8192, "
+            "stride 4..1024, studR 1..stride/2)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr, sg, sb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(studHex, sr, sg, sb_)) {
+        std::fprintf(stderr,
+            "gen-texture-studs: bg or stud hex color is invalid\n");
+        return 1;
+    }
+    auto brighten = [](uint8_t c) -> uint8_t {
+        int v = static_cast<int>(c) * 7 / 5;   // ×1.4
+        return v > 255 ? 255 : static_cast<uint8_t>(v);
+    };
+    uint8_t hr = brighten(sr), hg = brighten(sg), hb_ = brighten(sb_);
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float coreR = studR * 0.4f;       // inner highlight radius
+    const float coreR2 = coreR * coreR;
+    const float studR2 = static_cast<float>(studR) * studR;
+    for (int y = 0; y < H; ++y) {
+        // Nearest stud center: round(y/stride)*stride.
+        int row = (y + stride / 2) / stride;
+        float cy = row * stride;
+        for (int x = 0; x < W; ++x) {
+            int col = (x + stride / 2) / stride;
+            float cx = col * stride;
+            float dx = x - cx;
+            float dy = y - cy;
+            float d2 = dx * dx + dy * dy;
+            uint8_t r, g, b;
+            if (d2 > studR2) {
+                r = br_; g = bg_; b = bb_;
+            } else if (d2 < coreR2) {
+                r = hr; g = hg; b = hb_;
+            } else {
+                r = sr; g = sg; b = sb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-studs: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/stud    : %s / %s\n", bgHex.c_str(), studHex.c_str());
+    std::printf("  studs      : R=%d on %d-stride grid\n", studR, stride);
+    return 0;
+}
+
 int handleStarburst(int& i, int argc, char** argv) {
     // Starburst: N rays radiating from the texture center. Each
     // pixel computes its angle from center; if it falls inside any
@@ -5194,6 +5281,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-rope",           3, handleRope},
     {"--gen-texture-caustics",       3, handleCaustics},
     {"--gen-texture-starburst",      3, handleStarburst},
+    {"--gen-texture-studs",          3, handleStuds},
 };
 }  // namespace
 

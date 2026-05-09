@@ -141,6 +141,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Caustics: 4 superimposed sine waves (x/y/x+y/x-y) producing diamond-mesh water shimmer\n");
     std::printf("  --gen-texture-starburst <out.png> <bgHex> <rayHex> [rays] [beamWidth] [W H]\n");
     std::printf("                         Starburst: N rays radiating from center with linear falloff (sun / holy symbol / mosaic hub)\n");
+    std::printf("  --gen-texture-studs <out.png> <bgHex> <studHex> [stride] [studR] [W H]\n");
+    std::printf("                         Studs: rivet grid with derived inner highlight (3D rivet/stud appearance for armor + leather)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
