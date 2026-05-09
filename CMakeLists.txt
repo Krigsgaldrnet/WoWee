@@ -596,6 +596,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_collision.cpp
     src/pipeline/wowee_light.cpp
     src/pipeline/wowee_weather.cpp
+    src/pipeline/wowee_world_map.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1338,6 +1339,7 @@ add_executable(wowee_editor
     tools/editor/cli_info_density.cpp
     tools/editor/cli_info_audio.cpp
     tools/editor/cli_world_info.cpp
+    tools/editor/cli_world_map.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1412,6 +1414,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_collision.cpp
     src/pipeline/wowee_light.cpp
     src/pipeline/wowee_weather.cpp
+    src/pipeline/wowee_world_map.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

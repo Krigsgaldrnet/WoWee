@@ -36,6 +36,7 @@
 #include "cli_info_density.hpp"
 #include "cli_info_audio.hpp"
 #include "cli_world_info.hpp"
+#include "cli_world_map.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -113,6 +114,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleInfoDensity,
     handleInfoAudio,
     handleWorldInfo,
+    handleWorldMap,
     handleQuestObjective,
     handleQuestReward,
     handleClone,

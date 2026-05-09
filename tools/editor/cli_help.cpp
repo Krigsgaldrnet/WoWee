@@ -817,6 +817,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Walk every WOW entry; check typeId / intensity bounds [0,1] / weight > 0 / duration min ≤ max\n");
     std::printf("  --validate-wom <wom-base> [--json]\n");
     std::printf("                         Static sanity checks on .wom: index range, bone refs, bound box, batch coverage, animation track count\n");
+    std::printf("  --gen-world-map <womx-base> [mapName]\n");
+    std::printf("                         Emit .womx world-tile manifest: 64x64 continent grid with all tiles present (open WDT replacement)\n");
+    std::printf("  --gen-world-map-instance <womx-base> [mapName]\n");
+    std::printf("                         Emit .womx world-tile manifest: 4x4 instance grid (small-world / dungeon scale)\n");
+    std::printf("  --gen-world-map-arena <womx-base> [mapName]\n");
+    std::printf("                         Emit .womx world-tile manifest: 1x1 single-tile arena (smallest valid world)\n");
+    std::printf("  --info-womx <womx-base> [--json]\n");
+    std::printf("                         Print WOMX manifest (worldType / gridSize / tilesPresent / defaultLightId / defaultWeatherId)\n");
+    std::printf("  --validate-womx <womx-base> [--json]\n");
+    std::printf("                         Static checks on .womx: gridSize 1..128, worldType in range, tileBitmap matches expected size\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
