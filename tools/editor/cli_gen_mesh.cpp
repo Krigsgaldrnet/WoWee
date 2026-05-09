@@ -259,8 +259,7 @@ int handlePillar(int& i, int argc, char** argv) {
     connect(baseTop, shaftBot);
     connect(shaftTop, capBot);
     finalizeAsSingleBatch(wom);
-    wom.boundMin = glm::vec3(-capR, 0,      -capR);
-    wom.boundMax = glm::vec3( capR, height,  capR);
+    setCenteredBoundsXZ(wom, capR, capR, height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-pillar")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  radius    : %.3f\n", radius);
@@ -342,8 +341,7 @@ int handleBridge(int& i, int argc, char** argv) {
     }
     finalizeAsSingleBatch(wom);
     float maxY = plankThickness + railHeight;
-    wom.boundMin = glm::vec3(-length * 0.5f, 0,        -width * 0.5f);
-    wom.boundMax = glm::vec3( length * 0.5f, maxY,      width * 0.5f);
+    setCenteredBoundsXZ(wom, length * 0.5f, width * 0.5f, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-bridge")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  length    : %.3f\n", length);
@@ -473,8 +471,7 @@ int handleTower(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     float maxY = height + battlementH;
     float maxR = radius * 1.05f;
-    wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
-    wom.boundMax = glm::vec3( maxR, maxY,  maxR);
+    setCenteredBoundsXZ(wom, maxR, maxR, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-tower")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  radius      : %.3f\n", radius);
@@ -567,8 +564,7 @@ int handleHouse(int& i, int argc, char** argv) {
         wom.indices.insert(wom.indices.end(), {a, b, c});
     }
     finalizeAsSingleBatch(wom);
-    wom.boundMin = glm::vec3(-hx, 0, -hz);
-    wom.boundMax = glm::vec3( hx, apexY,  hz);
+    setCenteredBoundsXZ(wom, hx, hz, apexY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-house")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  width      : %.3f\n", width);
@@ -656,8 +652,7 @@ int handleFountain(int& i, int argc, char** argv) {
     cylinder(spoutR, basinH, basinH + spoutH);
     finalizeAsSingleBatch(wom);
     float maxY = basinH + spoutH;
-    wom.boundMin = glm::vec3(-basinR, 0,    -basinR);
-    wom.boundMax = glm::vec3( basinR, maxY,  basinR);
+    setCenteredBoundsXZ(wom, basinR, basinR, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-fountain")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  basin    : R=%.3f H=%.3f\n", basinR, basinH);
@@ -783,8 +778,7 @@ int handleStatue(int& i, int argc, char** argv) {
     }
     finalizeAsSingleBatch(wom);
     float maxY = headY + headR;
-    wom.boundMin = glm::vec3(-hp, 0,    -hp);
-    wom.boundMax = glm::vec3( hp, maxY,  hp);
+    setCenteredBoundsXZ(wom, hp, hp, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-statue")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  pedestal  : %.3f × %.3f × %.3f\n", pedSize, pedH, pedSize);
@@ -886,8 +880,7 @@ int handleAltar(int& i, int argc, char** argv) {
     float maxY = curY + topH;
     finalizeAsSingleBatch(wom);
     float maxR = topR + steps * stepStride;
-    wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
-    wom.boundMax = glm::vec3( maxR, maxY,  maxR);
+    setCenteredBoundsXZ(wom, maxR, maxR, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-altar")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  top      : R=%.3f H=%.3f\n", topR, topH);
@@ -948,8 +941,7 @@ int handlePortal(int& i, int argc, char** argv) {
                postHt, lintelH * 0.5f, width * 0.5f);
     }
     finalizeAsSingleBatch(wom);
-    wom.boundMin = glm::vec3(-postHt, 0,      -width * 0.5f);
-    wom.boundMax = glm::vec3( postHt, height,  width * 0.5f);
+    setCenteredBoundsXZ(wom, postHt, width * 0.5f, height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-portal")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  width      : %.3f\n", width);
@@ -1108,8 +1100,7 @@ int handleArchway(int& i, int argc, char** argv) {
     }
     finalizeAsSingleBatch(wom);
     float maxY = pillarH + arcOuter;
-    wom.boundMin = glm::vec3(-thickness, 0,    -width * 0.5f);
-    wom.boundMax = glm::vec3( thickness, maxY,  width * 0.5f);
+    setCenteredBoundsXZ(wom, thickness, width * 0.5f, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-archway")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  width      : %.3f\n", width);
@@ -1201,8 +1192,7 @@ int handleBarrel(int& i, int argc, char** argv) {
     }
     finalizeAsSingleBatch(wom);
     float maxR = midR + hoopThick;
-    wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
-    wom.boundMax = glm::vec3( maxR, height, maxR);
+    setCenteredBoundsXZ(wom, maxR, maxR, height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-barrel")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  rim R     : %.3f\n", topR);
@@ -2131,8 +2121,7 @@ int handlePyramid(int& i, int argc, char** argv) {
         wom.indices.push_back(baseRingStart + (k + 1) % sides);
         wom.indices.push_back(baseRingStart + k);
     }
-    wom.boundMin = glm::vec3(-baseR, 0, -baseR);
-    wom.boundMax = glm::vec3( baseR, height, baseR);
+    setCenteredBoundsXZ(wom, baseR, baseR, height);
     wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
     wowee::pipeline::WoweeModel::Batch b;
     b.indexStart = 0;
@@ -2326,8 +2315,7 @@ int handleTree(int& i, int argc, char** argv) {
             wom.indices.push_back(d);
         }
     }
-    wom.boundMin = glm::vec3(-foliR, 0, -foliR);
-    wom.boundMax = glm::vec3( foliR, foliCY + foliR, foliR);
+    setCenteredBoundsXZ(wom, foliR, foliR, foliCY + foliR);
     wom.boundRadius = glm::length(wom.boundMax - wom.boundMin) * 0.5f;
     wowee::pipeline::WoweeModel::Batch b;
     b.indexStart = 0;
@@ -2899,8 +2887,7 @@ int handleMushroom(int& i, int argc, char** argv) {
     }
     finalizeAsSingleBatch(wom);
     float maxY = stalkH + capR;
-    wom.boundMin = glm::vec3(-capR, 0, -capR);
-    wom.boundMax = glm::vec3( capR, maxY, capR);
+    setCenteredBoundsXZ(wom, capR, capR, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-mushroom")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  stalk     : R=%.3f H=%.3f\n", stalkR, stalkH);
@@ -3154,8 +3141,7 @@ int handleGrave(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     float maxY = baseH + tabletH;
     float maxXZ = std::max(baseW * 0.5f, tabletW * 0.5f);
-    wom.boundMin = glm::vec3(-maxXZ, 0, -baseDepth * 0.5f);
-    wom.boundMax = glm::vec3( maxXZ, maxY,  baseDepth * 0.5f);
+    setCenteredBoundsXZ(wom, maxXZ, baseDepth * 0.5f, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-grave")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  base       : %.3f × %.3f (h=%.3f)\n",
@@ -3211,8 +3197,7 @@ int handleBench(int& i, int argc, char** argv) {
     addBox( legX, legCY, 0, legHx, legHy, legHz);
     addBox(-legX, legCY, 0, legHx, legHy, legHz);
     finalizeAsSingleBatch(wom);
-    wom.boundMin = glm::vec3(-length * 0.5f, 0, -seatW * 0.5f);
-    wom.boundMax = glm::vec3( length * 0.5f, seatY, seatW * 0.5f);
+    setCenteredBoundsXZ(wom, length * 0.5f, seatW * 0.5f, seatY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-bench")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  length    : %.3f\n", length);
@@ -3303,8 +3288,7 @@ int handleShrine(int& i, int argc, char** argv) {
            roofHalfSize, roofT * 0.5f, roofHalfSize);
     finalizeAsSingleBatch(wom);
     float maxY = roofY + roofT;
-    wom.boundMin = glm::vec3(-roofHalfSize, 0, -roofHalfSize);
-    wom.boundMax = glm::vec3( roofHalfSize, maxY, roofHalfSize);
+    setCenteredBoundsXZ(wom, roofHalfSize, roofHalfSize, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-shrine")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  size       : %.3f × %.3f\n", size, size);
@@ -3352,8 +3336,7 @@ int handleTotem(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     float maxY = segments * segH;
     float maxXZ = baseW * 0.5f;
-    wom.boundMin = glm::vec3(-maxXZ, 0, -maxXZ);
-    wom.boundMax = glm::vec3( maxXZ, maxY, maxXZ);
+    setCenteredBoundsXZ(wom, maxXZ, maxXZ, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-totem")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  base width : %.3f\n", baseW);
@@ -3428,8 +3411,7 @@ int handleCage(int& i, int argc, char** argv) {
         barTotal += 4;
     }
     finalizeAsSingleBatch(wom);
-    wom.boundMin = glm::vec3(-halfW, 0, -halfW);
-    wom.boundMax = glm::vec3( halfW, height, halfW);
+    setCenteredBoundsXZ(wom, halfW, halfW, height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-cage")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  width × height : %.3f × %.3f\n", width, height);
@@ -3492,8 +3474,7 @@ int handleThrone(int& i, int argc, char** argv) {
            armW * 0.5f, armH * 0.5f, armDepth);
     finalizeAsSingleBatch(wom);
     float maxY = pedH + seatT + backH;
-    wom.boundMin = glm::vec3(-halfPed, 0, -halfPed);
-    wom.boundMax = glm::vec3( halfPed, maxY, halfPed);
+    setCenteredBoundsXZ(wom, halfPed, halfPed, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-throne")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  pedestal   : %.3f × %.3f (h=%.3f)\n",
@@ -6070,8 +6051,7 @@ int handleHaystack(int& i, int argc, char** argv) {
         }
     }
     finalizeAsSingleBatch(wom);
-    wom.boundMin = glm::vec3(-baseR, 0, -baseR);
-    wom.boundMax = glm::vec3( baseR, height, baseR);
+    setCenteredBoundsXZ(wom, baseR, baseR, height);
     if (!saveWomOrError(wom, womBase, "gen-mesh-haystack")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  base R     : %.3f, height %.3f\n", baseR, height);
@@ -6322,8 +6302,7 @@ int handleFirepit(int& i, int argc, char** argv) {
     finalizeAsSingleBatch(wom);
     float maxR = std::max(ringR + stoneSize, logLen * 0.5f);
     float maxY = std::max(stoneSize * 2.0f, logCY + logThick * 1.5f);
-    wom.boundMin = glm::vec3(-maxR, 0, -maxR);
-    wom.boundMax = glm::vec3( maxR, maxY, maxR);
+    setCenteredBoundsXZ(wom, maxR, maxR, maxY);
     if (!saveWomOrError(wom, womBase, "gen-mesh-firepit")) return 1;
     std::printf("Wrote %s.wom\n", womBase.c_str());
     std::printf("  ring       : R=%.3f, %d stones (%.3f cubes)\n",

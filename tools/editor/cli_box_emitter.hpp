@@ -21,6 +21,16 @@ inline void initWomDefaults(wowee::pipeline::WoweeModel& wom,
     wom.version = 3;
 }
 
+// Set the WoweeModel's bound box for a primitive whose footprint
+// is symmetric around the origin in X+Z and rises from y=0 to
+// y=maxY. 21+ procedural mesh handlers use this exact pattern;
+// extracting collapses two-line stanzas to one call.
+inline void setCenteredBoundsXZ(wowee::pipeline::WoweeModel& wom,
+                                float halfX, float halfZ, float maxY) {
+    wom.boundMin = glm::vec3(-halfX, 0.0f, -halfZ);
+    wom.boundMax = glm::vec3( halfX, maxY,  halfZ);
+}
+
 // Save a WoweeModel and report a stderr message on failure.
 // Returns true on success so the caller can do
 // `if (!saveWomOrError(...)) return 1;`. The cmdName is included
