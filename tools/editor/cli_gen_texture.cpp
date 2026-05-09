@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <tuple>
 #include <vector>
 
 // stb_image_write impl lives in texture_exporter.cpp;
@@ -2789,6 +2790,96 @@ int handleFlame(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleTartan(int& i, int argc, char** argv) {
+    // Tartan plaid: 3-color crossing band pattern. Each cell
+    // belongs to one of 6 logical zones (3 vertical + 3
+    // horizontal bands per repeat unit) and the displayed
+    // color is the additive mix of the band's vertical and
+    // horizontal contributions — produces the characteristic
+    // overlap diamond grid of Scottish tartans.
+    std::string outPath = argv[++i];
+    std::string aHex = argv[++i];
+    std::string bHex = argv[++i];
+    std::string cHex = argv[++i];
+    int bandPx = 32;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { bandPx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        bandPx < 4 || bandPx > 256) {
+        std::fprintf(stderr,
+            "gen-texture-tartan: invalid dims (W/H 1..8192, bandPx 4..256)\n");
+        return 1;
+    }
+    uint8_t ar, ag, ab, br, bg, bb_, cr_, cg_, cb_;
+    if (!parseHex(aHex, ar, ag, ab) ||
+        !parseHex(bHex, br, bg, bb_) ||
+        !parseHex(cHex, cr_, cg_, cb_)) {
+        std::fprintf(stderr,
+            "gen-texture-tartan: one of the hex colors is invalid\n");
+        return 1;
+    }
+    // 3-band repeat: A wide, B narrow, C medium. Repeat is
+    // 6 × bandPx wide. Each band weight is constant within
+    // its slice; the displayed pixel color is averaged from
+    // the vertical band (column) and horizontal band (row).
+    auto bandColor = [&](int t) -> std::tuple<uint8_t, uint8_t, uint8_t> {
+        // t is position modulo (6 * bandPx). Map to one of A/B/C
+        // based on which segment t falls in.
+        int slice = (t / bandPx) % 6;
+        // 6-slice repeat pattern: A A B C C B (gives a typical
+        // tartan look — wide A blocks separated by thin B/C lines).
+        switch (slice) {
+            case 0: case 1: return {ar, ag, ab};
+            case 2:         return {br, bg, bb_};
+            case 3: case 4: return {cr_, cg_, cb_};
+            default:        return {br, bg, bb_};
+        }
+    };
+    int repeat = 6 * bandPx;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int yMod = ((y % repeat) + repeat) % repeat;
+        auto [hr, hg, hb] = bandColor(yMod);
+        for (int x = 0; x < W; ++x) {
+            int xMod = ((x % repeat) + repeat) % repeat;
+            auto [vr, vg, vb] = bandColor(xMod);
+            // Average the horizontal-band and vertical-band
+            // colors. At intersections the average produces a
+            // distinct mid-tone that creates the diamond grid
+            // characteristic of plaid.
+            uint8_t r = static_cast<uint8_t>((hr + vr) / 2);
+            uint8_t g = static_cast<uint8_t>((hg + vg) / 2);
+            uint8_t b = static_cast<uint8_t>((hb + vb) / 2);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = r;
+            pixels[i2 + 1] = g;
+            pixels[i2 + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-tartan: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  colors A/B/C: %s / %s / %s\n",
+                aHex.c_str(), bHex.c_str(), cHex.c_str());
+    std::printf("  band px    : %d (repeat %d px)\n",
+                bandPx, repeat);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2880,6 +2971,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-flame") == 0 && i + 3 < argc) {
         outRc = handleFlame(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-tartan") == 0 && i + 4 < argc) {
+        outRc = handleTartan(i, argc, argv); return true;
     }
     return false;
 }
