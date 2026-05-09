@@ -86,6 +86,7 @@ const char* const kArgRequired[] = {
     "--gen-texture-knit", "--gen-texture-chainmail",
     "--gen-texture-planks", "--gen-texture-corrugated",
     "--gen-texture-rope", "--gen-texture-caustics",
+    "--gen-texture-starburst",
     "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
     "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
     "--validate-png", "--validate-blp",

@@ -4586,6 +4586,102 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStarburst(int& i, int argc, char** argv) {
+    // Starburst: N rays radiating from the texture center. Each
+    // pixel computes its angle from center; if it falls inside any
+    // ray's angular band, paint it as the ray color. Brightness
+    // tapers with distance from the center (1.0 at the hub down to
+    // a configurable rim factor at the texture edge) so the rays
+    // read as fading light beams rather than infinite lines.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string rayHex  = argv[++i];
+    int rayCount = 12;
+    float beamWidth = 0.18f;   // radians half-width of each ray
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { rayCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { beamWidth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        rayCount < 2 || rayCount > 256 ||
+        beamWidth <= 0 || beamWidth >= 3.14f) {
+        std::fprintf(stderr,
+            "gen-texture-starburst: invalid dims (W/H 1..8192, "
+            "rays 2..256, beamWidth (0,π))\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, rr_, rg_, rb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(rayHex, rr_, rg_, rb_)) {
+        std::fprintf(stderr,
+            "gen-texture-starburst: bg or ray hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float twoPi = 6.28318530717958f;
+    const float cx = W * 0.5f;
+    const float cy = H * 0.5f;
+    const float maxR = std::sqrt(cx * cx + cy * cy);
+    const float anglePer = twoPi / rayCount;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float dx = x - cx;
+            float dy = y - cy;
+            float r = std::sqrt(dx * dx + dy * dy);
+            float theta = std::atan2(dy, dx);   // [-π, +π]
+            // Distance in angle space to the nearest ray axis. The
+            // ray axes are at integer multiples of anglePer; we
+            // wrap theta into [0, anglePer) and take the smaller of
+            // (wrapped, anglePer - wrapped) so the ends meet around
+            // the wraparound boundary.
+            float wrapped = std::fmod(theta + twoPi, anglePer);
+            float angDist = std::min(wrapped, anglePer - wrapped);
+            uint8_t resR, resG, resB;
+            if (angDist < beamWidth) {
+                // Brightness: 1.0 at the hub, falling linearly to
+                // 0.4 at the texture diagonal — gives sun-rays that
+                // taper as they extend outward.
+                float t = std::max(0.0f, std::min(1.0f, r / maxR));
+                float bright = 1.0f - 0.6f * t;
+                resR = static_cast<uint8_t>(std::min(255.0f,
+                    br_ + bright * (rr_ - br_)));
+                resG = static_cast<uint8_t>(std::min(255.0f,
+                    bg_ + bright * (rg_ - bg_)));
+                resB = static_cast<uint8_t>(std::min(255.0f,
+                    bb_ + bright * (rb_ - bb_)));
+            } else {
+                resR = br_; resG = bg_; resB = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = resR;
+            pixels[idx + 1] = resG;
+            pixels[idx + 2] = resB;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-starburst: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/ray     : %s / %s\n", bgHex.c_str(), rayHex.c_str());
+    std::printf("  rays       : %d (beam width %.3f rad)\n",
+                rayCount, beamWidth);
+    return 0;
+}
+
 int handleCaustics(int& i, int argc, char** argv) {
     // Water caustics: 4 superimposed sine waves running along
     // x, y, x+y, and x-y, summed into [-4,+4] and remapped to
@@ -5097,6 +5193,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-corrugated",     3, handleCorrugated},
     {"--gen-texture-rope",           3, handleRope},
     {"--gen-texture-caustics",       3, handleCaustics},
+    {"--gen-texture-starburst",      3, handleStarburst},
 };
 }  // namespace
 
