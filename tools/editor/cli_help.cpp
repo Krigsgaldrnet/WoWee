@@ -153,6 +153,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Pinstripe: thin vertical lines at every stride; every Nth stripe is doubled-thick feature line\n");
     std::printf("  --gen-texture-camo <out.png> <aHex> <bHex> [cellSize] [threshold] [seed] [W H]\n");
     std::printf("                         Camouflage: 2-octave value noise thresholded into hard bg/fg blobs (woodland disruption pattern)\n");
+    std::printf("  --gen-texture-snake-skin <out.png> <bgHex> <scaleHex> [cellW] [cellH] [outlineW] [W H]\n");
+    std::printf("                         Snake skin: brick-offset diamond scales (L1 metric) with derived dark outline (reptile / dragon hide)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

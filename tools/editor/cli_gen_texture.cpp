@@ -3594,6 +3594,83 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleSnakeSkin(int& i, int argc, char** argv) {
+    // Snake skin: brick-offset grid of diamond-shaped scales.
+    // Each scale is a rotated square in L1 (taxicab) metric so
+    // |dx|/halfW + |dy|/halfH < 1 inside the diamond. Adjacent
+    // scales touch tangentially via the row-offset trick (every
+    // odd row shifted by halfW). A thin dark outline around each
+    // diamond gives definition. Distinct from --gen-texture-scales
+    // (overlapping circles) and --gen-texture-chainmail (rings).
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string scaleHex = argv[++i];
+    int cellW = 24;
+    int cellH = 16;
+    int outlineW = 1;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, cellW);
+    parseOptInt(i, argc, argv, cellH);
+    parseOptInt(i, argc, argv, outlineW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellW < 4 || cellW > 1024 ||
+        cellH < 4 || cellH > 1024 ||
+        outlineW < 0 || outlineW * 2 >= std::min(cellW, cellH)) {
+        std::fprintf(stderr,
+            "gen-texture-snake-skin: invalid dims (W/H 1..8192, "
+            "cellW/H 4..1024, outlineW 0..min(cellW,cellH)/2)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr, sg, sb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-snake-skin")) return 1;
+    if (!parseHexOrError(scaleHex, sr, sg, sb_,
+                         "gen-texture-snake-skin")) return 1;
+    // Outline color: scaleHex × 0.4 (darkened version).
+    uint8_t outR = static_cast<uint8_t>(sr * 2 / 5);
+    uint8_t outG = static_cast<uint8_t>(sg * 2 / 5);
+    uint8_t outB = static_cast<uint8_t>(sb_ * 2 / 5);
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float halfW = cellW * 0.5f;
+    const float halfH = cellH * 0.5f;
+    const float outlineFrac = 1.0f - outlineW / std::min(halfW, halfH);
+    for (int y = 0; y < H; ++y) {
+        int row = y / cellH;
+        float rowOffset = (row & 1) ? halfW : 0.0f;
+        float cy = (row + 0.5f) * cellH;
+        for (int x = 0; x < W; ++x) {
+            float xOff = x - rowOffset;
+            int col = static_cast<int>(std::floor(xOff / cellW));
+            float cx = (col + 0.5f) * cellW + rowOffset;
+            float dx = std::abs(x - cx) / halfW;
+            float dy = std::abs(y - cy) / halfH;
+            float d = dx + dy;          // L1 (diamond) metric
+            uint8_t r, g, b;
+            if (d > 1.0f) {
+                r = br_; g = bg_; b = bb_;
+            } else if (outlineW > 0 && d > outlineFrac) {
+                r = outR; g = outG; b = outB;
+            } else {
+                r = sr; g = sg; b = sb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-snake-skin")) return 1;
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/scale   : %s / %s\n", bgHex.c_str(), scaleHex.c_str());
+    std::printf("  diamond    : %dx%d (outline %d px)\n",
+                cellW, cellH, outlineW);
+    return 0;
+}
+
 int handleCamo(int& i, int argc, char** argv) {
     // Camouflage: 2-octave value noise thresholded into hard
     // bg/fg blobs. Distinct from --gen-texture-noise-color (which
@@ -4536,6 +4613,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-carbon",         3, handleCarbon},
     {"--gen-texture-pinstripe",      3, handlePinstripe},
     {"--gen-texture-camo",           3, handleCamo},
+    {"--gen-texture-snake-skin",     3, handleSnakeSkin},
 };
 }  // namespace
 
