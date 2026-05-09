@@ -4655,6 +4655,114 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleTable(int& i, int argc, char** argv) {
+    // Table: 5 boxes — flat tabletop slab on top of 4 vertical
+    // legs at each corner. Thinnest of the furniture meshes,
+    // pairs naturally with --gen-mesh-bench / --gen-mesh-throne
+    // for taverns and dining halls. The 40th procedural mesh
+    // primitive.
+    std::string womBase = argv[++i];
+    float width  = 1.6f;     // along X
+    float depth  = 1.0f;     // along Z
+    float height = 0.85f;    // along Y (top of tabletop)
+    float legT   = 0.10f;    // leg thickness (square cross-section)
+    float topT   = 0.06f;    // tabletop thickness
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { depth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { legT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { topT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (width <= 0 || depth <= 0 || height <= 0 || legT <= 0 ||
+        topT <= 0 || legT * 2 > width || legT * 2 > depth ||
+        topT >= height) {
+        std::fprintf(stderr,
+            "gen-mesh-table: dims > 0; legT must fit in width/depth; topT < height\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    float halfW = width  * 0.5f;
+    float halfD = depth  * 0.5f;
+    float halfLeg = legT * 0.5f;
+    float legHeight = height - topT;
+    // Tabletop: spans full width × depth, sits at y=height-topT to y=height.
+    addBox(0, height - topT * 0.5f, 0,
+           halfW, topT * 0.5f, halfD);
+    // 4 legs: one at each corner, inset by legT/2 from the edge.
+    float legCY = legHeight * 0.5f;
+    float legX  = halfW - halfLeg;
+    float legZ  = halfD - halfLeg;
+    addBox( legX, legCY,  legZ, halfLeg, legHeight * 0.5f, halfLeg);
+    addBox(-legX, legCY,  legZ, halfLeg, legHeight * 0.5f, halfLeg);
+    addBox( legX, legCY, -legZ, halfLeg, legHeight * 0.5f, halfLeg);
+    addBox(-legX, legCY, -legZ, halfLeg, legHeight * 0.5f, halfLeg);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfD);
+    wom.boundMax = glm::vec3( halfW, height,   halfD);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-table: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  size       : %.3f x %.3f x %.3f\n", width, height, depth);
+    std::printf("  legs       : 4 × %.3f square (%.3f tall)\n",
+                legT, legHeight);
+    std::printf("  top thick  : %.3f\n", topT);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleBookshelf(int& i, int argc, char** argv) {
     // Bookshelf: cabinet (5 panels: back / left / right / top /
     // bottom) divided by N-1 horizontal shelves, with rows of
@@ -4927,6 +5035,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-bookshelf") == 0 && i + 1 < argc) {
         outRc = handleBookshelf(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-table") == 0 && i + 1 < argc) {
+        outRc = handleTable(i, argc, argv); return true;
     }
     return false;
 }
