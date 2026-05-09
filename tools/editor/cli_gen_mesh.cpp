@@ -5828,6 +5828,101 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleWorkbench(int& i, int argc, char** argv) {
+    // Crafter's workbench: flat top slab on 4 corner legs, plus
+    // an optional vise box at the +X end of the top and a small
+    // raised tool tray along the +Z back edge. All axis-aligned
+    // boxes — uses cli_box_emitter::addFlatBox throughout. Pairs
+    // naturally with --gen-mesh-anvil (existing) for blacksmith
+    // shop set dressing. The 62nd procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float length   = 1.6f;
+    float depth    = 0.7f;
+    float height   = 0.85f;
+    float legR     = 0.05f;
+    float topT     = 0.06f;
+    float viseSize = 0.18f;          // 0 → no vise
+    float trayH    = 0.15f;          // 0 → no tray
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, legR);
+    parseOptFloat(i, argc, argv, topT);
+    parseOptFloat(i, argc, argv, viseSize);
+    parseOptFloat(i, argc, argv, trayH);
+    if (length <= 0 || depth <= 0 || height <= 0 || topT <= 0 ||
+        legR <= 0 || legR * 2 >= std::min(length, depth) ||
+        viseSize < 0 || trayH < 0) {
+        std::fprintf(stderr,
+            "gen-mesh-workbench: dims > 0; legR*2 < length/depth\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    const float L2 = length * 0.5f;
+    const float D2 = depth  * 0.5f;
+    const float legH = height - topT;
+    const float legCY = legH * 0.5f;
+    const float legX = L2 - legR;
+    const float legZ = D2 - legR;
+    addFlatBox(wom, +legX, legCY, +legZ, legR, legH * 0.5f, legR);
+    addFlatBox(wom, -legX, legCY, +legZ, legR, legH * 0.5f, legR);
+    addFlatBox(wom, +legX, legCY, -legZ, legR, legH * 0.5f, legR);
+    addFlatBox(wom, -legX, legCY, -legZ, legR, legH * 0.5f, legR);
+    // Top slab.
+    addFlatBox(wom, 0.0f, legH + topT * 0.5f, 0.0f,
+               L2, topT * 0.5f, D2);
+    if (viseSize > 0.0f) {
+        // Vise: small box at the +X end, sitting on the top slab.
+        const float vCX = L2 - viseSize * 0.5f;
+        const float vCY = legH + topT + viseSize * 0.5f;
+        addFlatBox(wom, vCX, vCY, 0.0f,
+                   viseSize * 0.5f, viseSize * 0.5f, viseSize * 0.5f);
+    }
+    if (trayH > 0.0f) {
+        // Back tool tray: thin raised lip along the +Z edge of the
+        // top slab. Width = full length minus a corner inset, depth
+        // = a small fraction of bench depth so it's clearly behind
+        // the working area.
+        const float trayD = depth * 0.12f;
+        const float trayCZ = D2 - trayD * 0.5f;
+        const float trayCY = legH + topT + trayH * 0.5f;
+        addFlatBox(wom, 0.0f, trayCY, trayCZ,
+                   L2 - legR, trayH * 0.5f, trayD * 0.5f);
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxY = legH + topT;
+    if (viseSize > 0) maxY = std::max(maxY, legH + topT + viseSize);
+    if (trayH > 0)    maxY = std::max(maxY, legH + topT + trayH);
+    wom.boundMin = glm::vec3(-L2, 0, -D2);
+    wom.boundMax = glm::vec3(+L2, maxY, +D2);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-workbench: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  bench      : %.3f x %.3f x %.3f (top %.3f thick)\n",
+                length, depth, height, topT);
+    std::printf("  legs       : 4 corners (R=%.3f)\n", legR);
+    std::printf("  vise       : %s\n",
+                viseSize > 0 ? std::to_string(viseSize).c_str() : "(none)");
+    std::printf("  tray       : %s\n",
+                trayH > 0 ? std::to_string(trayH).c_str() : "(none)");
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleBedroll(int& i, int argc, char** argv) {
     // Camp bedroll: a horizontal closed cylinder lying along the
     // Z axis at ground level (y = R), with an optional flatter
@@ -6696,6 +6791,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-pergola",        1, handlePergola},
     {"--gen-mesh-chimney",        1, handleChimney},
     {"--gen-mesh-bedroll",        1, handleBedroll},
+    {"--gen-mesh-workbench",      1, handleWorkbench},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
