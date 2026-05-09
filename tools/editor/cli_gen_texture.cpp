@@ -4682,152 +4682,79 @@ int handleChainmail(int& i, int argc, char** argv) {
 
 }  // namespace
 
+namespace {
+// Same dispatch pattern as cli_gen_mesh.cpp's kMeshTable. Each row
+// names the flag, the minimum arg count after it (used as a guard
+// for the dispatcher — kArgRequired catches the bare-flag case at
+// argv parse time, but this guard fires when there are zero args
+// AND no later argv slots), and the handler function pointer.
+struct TextureEntry {
+    const char* flag;
+    int minNextArgs;
+    int (*fn)(int&, int, char**);
+};
+
+constexpr TextureEntry kTextureTable[] = {
+    {"--gen-texture-gradient",       3, handleGradient},
+    {"--gen-texture-noise-color",    3, handleNoiseColor},
+    {"--gen-texture-noise",          1, handleNoise},
+    {"--gen-texture-radial",         3, handleRadial},
+    {"--gen-texture-stripes",        3, handleStripes},
+    {"--gen-texture-dots",           3, handleDots},
+    {"--gen-texture-rings",          3, handleRings},
+    {"--gen-texture-checker",        3, handleChecker},
+    {"--gen-texture-brick",          3, handleBrick},
+    {"--gen-texture-wood",           3, handleWood},
+    {"--gen-texture-grass",          3, handleGrass},
+    {"--gen-texture-fabric",         3, handleFabric},
+    {"--gen-texture-cobble",         3, handleCobble},
+    {"--gen-texture-marble",         2, handleMarble},
+    {"--gen-texture-metal",          2, handleMetal},
+    {"--gen-texture-leather",        2, handleLeather},
+    {"--gen-texture-sand",           2, handleSand},
+    {"--gen-texture-snow",           2, handleSnow},
+    {"--gen-texture-lava",           3, handleLava},
+    {"--gen-texture-tile",           3, handleTile},
+    {"--gen-texture-bark",           3, handleBark},
+    {"--gen-texture-clouds",         3, handleClouds},
+    {"--gen-texture-stars",          3, handleStars},
+    {"--gen-texture-vines",          3, handleVines},
+    {"--gen-texture-mosaic",         4, handleMosaic},
+    {"--gen-texture-rust",           3, handleRust},
+    {"--gen-texture-circuit",        3, handleCircuit},
+    {"--gen-texture-coral",          3, handleCoral},
+    {"--gen-texture-flame",          3, handleFlame},
+    {"--gen-texture-tartan",         4, handleTartan},
+    {"--gen-texture-argyle",         4, handleArgyle},
+    {"--gen-texture-herringbone",    3, handleHerringbone},
+    {"--gen-texture-scales",         4, handleScales},
+    {"--gen-texture-stained-glass",  5, handleStainedGlass},
+    {"--gen-texture-shingles",       4, handleShingles},
+    {"--gen-texture-frost",          3, handleFrost},
+    {"--gen-texture-parquet",        4, handleParquet},
+    {"--gen-texture-bubbles",        4, handleBubbles},
+    {"--gen-texture-spider-web",     3, handleSpiderWeb},
+    {"--gen-texture-gingham",        4, handleGingham},
+    {"--gen-texture-lattice",        3, handleLattice},
+    {"--gen-texture-honeycomb",      3, handleHoneycomb},
+    {"--gen-texture-cracked",        3, handleCracked},
+    {"--gen-texture-runes",          3, handleRunes},
+    {"--gen-texture-leopard",        3, handleLeopard},
+    {"--gen-texture-zebra",          3, handleZebra},
+    {"--gen-texture-knit",           3, handleKnit},
+    {"--gen-texture-chainmail",      3, handleChainmail},
+};
+}  // namespace
+
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
-    if (std::strcmp(argv[i], "--gen-texture-gradient") == 0 && i + 3 < argc) {
-        outRc = handleGradient(i, argc, argv); return true;
-    }
-    // noise-color first because the prefix-match would otherwise hit
-    // 'noise' on a 'noise-color' invocation.
-    if (std::strcmp(argv[i], "--gen-texture-noise-color") == 0 && i + 3 < argc) {
-        outRc = handleNoiseColor(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-noise") == 0 && i + 1 < argc) {
-        outRc = handleNoise(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-radial") == 0 && i + 3 < argc) {
-        outRc = handleRadial(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-stripes") == 0 && i + 3 < argc) {
-        outRc = handleStripes(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-dots") == 0 && i + 3 < argc) {
-        outRc = handleDots(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-rings") == 0 && i + 3 < argc) {
-        outRc = handleRings(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-checker") == 0 && i + 3 < argc) {
-        outRc = handleChecker(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-brick") == 0 && i + 3 < argc) {
-        outRc = handleBrick(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-wood") == 0 && i + 3 < argc) {
-        outRc = handleWood(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-grass") == 0 && i + 3 < argc) {
-        outRc = handleGrass(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-fabric") == 0 && i + 3 < argc) {
-        outRc = handleFabric(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-cobble") == 0 && i + 3 < argc) {
-        outRc = handleCobble(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-marble") == 0 && i + 2 < argc) {
-        outRc = handleMarble(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-metal") == 0 && i + 2 < argc) {
-        outRc = handleMetal(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-leather") == 0 && i + 2 < argc) {
-        outRc = handleLeather(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-sand") == 0 && i + 2 < argc) {
-        outRc = handleSand(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-snow") == 0 && i + 2 < argc) {
-        outRc = handleSnow(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-lava") == 0 && i + 3 < argc) {
-        outRc = handleLava(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-tile") == 0 && i + 3 < argc) {
-        outRc = handleTile(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-bark") == 0 && i + 3 < argc) {
-        outRc = handleBark(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-clouds") == 0 && i + 3 < argc) {
-        outRc = handleClouds(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-stars") == 0 && i + 3 < argc) {
-        outRc = handleStars(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-vines") == 0 && i + 3 < argc) {
-        outRc = handleVines(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-mosaic") == 0 && i + 4 < argc) {
-        outRc = handleMosaic(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-rust") == 0 && i + 3 < argc) {
-        outRc = handleRust(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-circuit") == 0 && i + 3 < argc) {
-        outRc = handleCircuit(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-coral") == 0 && i + 3 < argc) {
-        outRc = handleCoral(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-flame") == 0 && i + 3 < argc) {
-        outRc = handleFlame(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-tartan") == 0 && i + 4 < argc) {
-        outRc = handleTartan(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-argyle") == 0 && i + 4 < argc) {
-        outRc = handleArgyle(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-herringbone") == 0 && i + 3 < argc) {
-        outRc = handleHerringbone(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-scales") == 0 && i + 4 < argc) {
-        outRc = handleScales(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-stained-glass") == 0 && i + 5 < argc) {
-        outRc = handleStainedGlass(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-shingles") == 0 && i + 4 < argc) {
-        outRc = handleShingles(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-frost") == 0 && i + 3 < argc) {
-        outRc = handleFrost(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-parquet") == 0 && i + 4 < argc) {
-        outRc = handleParquet(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-bubbles") == 0 && i + 4 < argc) {
-        outRc = handleBubbles(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-spider-web") == 0 && i + 3 < argc) {
-        outRc = handleSpiderWeb(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-gingham") == 0 && i + 4 < argc) {
-        outRc = handleGingham(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-lattice") == 0 && i + 3 < argc) {
-        outRc = handleLattice(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-honeycomb") == 0 && i + 3 < argc) {
-        outRc = handleHoneycomb(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-cracked") == 0 && i + 3 < argc) {
-        outRc = handleCracked(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-runes") == 0 && i + 3 < argc) {
-        outRc = handleRunes(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-leopard") == 0 && i + 3 < argc) {
-        outRc = handleLeopard(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-zebra") == 0 && i + 3 < argc) {
-        outRc = handleZebra(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-knit") == 0 && i + 3 < argc) {
-        outRc = handleKnit(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-texture-chainmail") == 0 && i + 3 < argc) {
-        outRc = handleChainmail(i, argc, argv); return true;
+    // Note: order matters only for prefix-collision flags. strcmp
+    // is exact-match so e.g. --gen-texture-noise vs --gen-texture-noise-color
+    // are unambiguous regardless of order.
+    for (const auto& e : kTextureTable) {
+        if (std::strcmp(argv[i], e.flag) == 0 && i + e.minNextArgs < argc) {
+            outRc = e.fn(i, argc, argv);
+            return true;
+        }
     }
     return false;
 }
