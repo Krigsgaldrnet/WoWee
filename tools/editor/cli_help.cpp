@@ -789,6 +789,8 @@ void printUsage(const char* argv0) {
     std::printf("  --pack-wcp <zone> [dst]   Pack a zone dir/name into a .wcp archive and exit\n");
     std::printf("  --unpack-wcp <wcp> [dst]  Extract a WCP archive (default dst=custom_zones/) and exit\n");
     std::printf("  --list-commands        Print every recognized --flag, one per line, and exit\n");
+    std::printf("  --list-primitives [--mesh|--texture] [--json]\n");
+    std::printf("                         Filtered list of just procedural primitive flags (--gen-mesh-*, --gen-texture-*)\n");
     std::printf("  --info-cli-stats [--json]\n");
     std::printf("                         Meta-stats on the CLI surface (command count by category prefix)\n");
     std::printf("  --info-cli-categories\n");
