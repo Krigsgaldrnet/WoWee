@@ -226,6 +226,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Scarecrow: cruciform body + cross arms + head + brimmed hat (default 1.80/1.40/0.06/0.22/0.32)\n");
     std::printf("  --gen-mesh-sundial <wom-base> [baseSize] [baseH] [gnomonH] [gnomonT]\n");
     std::printf("                         Sundial: square base + central gnomon slab + 4 cardinal hour markers (default 0.80/0.06/0.35/0.04)\n");
+    std::printf("  --gen-mesh-podium <wom-base> [baseSize] [stepH] [steps] [lecternSize]\n");
+    std::printf("                         Podium: stepped pyramid + lectern at back of top platform (default 1.60/0.20/3/0.30)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
