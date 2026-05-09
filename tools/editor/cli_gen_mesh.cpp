@@ -4655,6 +4655,108 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStool(int& i, int argc, char** argv) {
+    // Stool: 5-box small backless seat — flat round-ish seat
+    // (square here, since axis-aligned) on 4 short legs at the
+    // corners. Pairs with --gen-mesh-table for taverns and
+    // workshops. Smaller-footprint counterpart to --gen-mesh-bench.
+    // The 49th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float seatSize  = 0.36f;     // seat side length
+    float seatT     = 0.04f;     // seat thickness
+    float legHeight = 0.45f;
+    float legT      = 0.04f;     // square leg cross-section
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seatSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seatT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { legHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { legT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (seatSize <= 0 || seatT <= 0 || legHeight <= 0 || legT <= 0 ||
+        legT * 2 >= seatSize) {
+        std::fprintf(stderr,
+            "gen-mesh-stool: dims > 0; legT must fit in seatSize\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    float halfSeat = seatSize * 0.5f;
+    float halfLeg  = legT * 0.5f;
+    float seatTopY = legHeight + seatT;
+    // Seat: flat slab on top of the legs.
+    addBox(0, legHeight + seatT * 0.5f, 0,
+           halfSeat, seatT * 0.5f, halfSeat);
+    // 4 legs: corner-inset by halfLeg so they sit flush with
+    // the seat's edge.
+    float legX = halfSeat - halfLeg;
+    float legCY = legHeight * 0.5f;
+    addBox( legX, legCY,  legX, halfLeg, legHeight * 0.5f, halfLeg);
+    addBox(-legX, legCY,  legX, halfLeg, legHeight * 0.5f, halfLeg);
+    addBox( legX, legCY, -legX, halfLeg, legHeight * 0.5f, halfLeg);
+    addBox(-legX, legCY, -legX, halfLeg, legHeight * 0.5f, halfLeg);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-halfSeat, 0.0f,    -halfSeat);
+    wom.boundMax = glm::vec3( halfSeat, seatTopY, halfSeat);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-stool: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  seat       : %.3f square × %.3f thick\n", seatSize, seatT);
+    std::printf("  legs       : 4 × %.3f square (%.3f tall)\n",
+                legT, legHeight);
+    std::printf("  total H    : %.3f\n", seatTopY);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleCrate(int& i, int argc, char** argv) {
     // Crate: 5-box wooden shipping crate — main cube body
     // plus 4 reinforcement posts running along the vertical
@@ -6026,6 +6128,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-crate") == 0 && i + 1 < argc) {
         outRc = handleCrate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-stool") == 0 && i + 1 < argc) {
+        outRc = handleStool(i, argc, argv); return true;
     }
     return false;
 }
