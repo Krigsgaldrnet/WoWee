@@ -55,7 +55,7 @@ const char* const kArgRequired[] = {
     "--gen-mesh-stool", "--gen-mesh-cauldron", "--gen-mesh-gate",
     "--gen-mesh-beehive", "--gen-mesh-weathervane",
     "--gen-mesh-scarecrow", "--gen-mesh-sundial",
-    "--gen-mesh-podium", "--gen-mesh-brazier",
+    "--gen-mesh-podium", "--gen-mesh-brazier", "--gen-mesh-archway-double",
     "--gen-texture-gradient",
     "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
     "--displace-mesh",

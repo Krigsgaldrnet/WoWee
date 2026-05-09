@@ -4655,6 +4655,120 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleArchwayDouble(int& i, int argc, char** argv) {
+    // Double archway: 5-box twin-opening passage — 3 vertical
+    // posts (left / shared center / right) plus 2 horizontal
+    // lintels spanning each opening. Pairs with the existing
+    // single --gen-mesh-archway for plaza approaches, double-
+    // door tomb fronts, formal garden entrances. The 58th
+    // procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float openingWidth  = 1.40f;     // each opening's width
+    float openingHeight = 2.40f;     // post height under lintel
+    float postT         = 0.18f;
+    float lintelT       = 0.20f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { openingWidth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { openingHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { lintelT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (openingWidth <= 0 || openingHeight <= 0 ||
+        postT <= 0 || lintelT <= 0) {
+        std::fprintf(stderr,
+            "gen-mesh-archway-double: all dims must be > 0\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    float halfPost = postT * 0.5f;
+    float halfLintel = lintelT * 0.5f;
+    // Post X positions: -X = left edge of left opening, 0 = shared
+    // center, +X = right edge of right opening. Posts straddle
+    // those positions so the inside opening stays openingWidth.
+    float leftPostX  = -(openingWidth + postT * 0.5f);
+    float rightPostX =  (openingWidth + postT * 0.5f);
+    float centerPostX = 0.0f;
+    float postCY = openingHeight * 0.5f;
+    addBox(leftPostX,   postCY, 0, halfPost, openingHeight * 0.5f, halfPost);
+    addBox(centerPostX, postCY, 0, halfPost, openingHeight * 0.5f, halfPost);
+    addBox(rightPostX,  postCY, 0, halfPost, openingHeight * 0.5f, halfPost);
+    // 2 lintels: each spans from the outer post inner-face to
+    // the center post inner-face. Lintel center sits at the
+    // midpoint of (leftPost, centerPost) for the left opening,
+    // and (centerPost, rightPost) for the right opening.
+    float lintelCY = openingHeight + halfLintel;
+    float halfLintelLen = openingWidth * 0.5f + halfPost;
+    float leftLintelX  = (leftPostX + centerPostX) * 0.5f;
+    float rightLintelX = (centerPostX + rightPostX) * 0.5f;
+    addBox(leftLintelX,  lintelCY, 0, halfLintelLen, halfLintel, halfPost);
+    addBox(rightLintelX, lintelCY, 0, halfLintelLen, halfLintel, halfPost);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = openingHeight + lintelT;
+    float halfTotalX = rightPostX + halfPost;
+    wom.boundMin = glm::vec3(-halfTotalX, 0.0f,    -halfPost);
+    wom.boundMax = glm::vec3( halfTotalX, totalH,   halfPost);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-archway-double: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  total W    : %.3f (2 openings × %.3f + 3 posts × %.3f)\n",
+                halfTotalX * 2, openingWidth, postT);
+    std::printf("  height     : %.3f opening + %.3f lintel\n",
+                openingHeight, lintelT);
+    std::printf("  total H    : %.3f\n", totalH);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleBrazier(int& i, int argc, char** argv) {
     // Brazier: 7-box fire-pit on a pedestal — square base
     // plate, narrow vertical stem, wider bowl on top of the
@@ -7102,6 +7216,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-brazier") == 0 && i + 1 < argc) {
         outRc = handleBrazier(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-archway-double") == 0 && i + 1 < argc) {
+        outRc = handleArchwayDouble(i, argc, argv); return true;
     }
     return false;
 }
