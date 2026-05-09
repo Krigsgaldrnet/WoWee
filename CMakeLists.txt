@@ -1298,6 +1298,12 @@ install(TARGETS blp_convert RUNTIME DESTINATION bin)
 # ---- Tool: wowee_editor (Standalone World Editor) ----
 add_executable(wowee_editor
     tools/editor/main.cpp
+    tools/editor/cli_gen_audio.cpp
+    tools/editor/cli_zone_packs.cpp
+    tools/editor/cli_audits.cpp
+    tools/editor/cli_readmes.cpp
+    tools/editor/cli_zone_inventory.cpp
+    tools/editor/cli_project_inventory.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
