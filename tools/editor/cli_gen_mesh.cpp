@@ -5212,6 +5212,74 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleTrainingDummy(int& i, int argc, char** argv) {
+    // Combat training dummy: vertical pole with a cubic torso block
+    // and a horizontal cross-bar simulating outstretched arms. All
+    // axis-aligned boxes — uses every shared helper from
+    // cli_box_emitter. Pairs with --gen-mesh-anvil / --gen-mesh-
+    // workbench / --gen-mesh-fence for sparring grounds, training
+    // yards, militia drill squares. The 66th procedural mesh
+    // primitive.
+    std::string womBase = argv[++i];
+    float baseH    = 1.0f;            // post height to bottom of torso
+    float postW    = 0.10f;           // post thickness
+    float torsoSize = 0.40f;          // cubic torso edge
+    float armSpan  = 0.90f;           // total cross-bar length (X axis)
+    float armT     = 0.06f;           // cross-bar thickness
+    float headSize = 0.18f;           // 0 → no head
+    parseOptFloat(i, argc, argv, baseH);
+    parseOptFloat(i, argc, argv, postW);
+    parseOptFloat(i, argc, argv, torsoSize);
+    parseOptFloat(i, argc, argv, armSpan);
+    parseOptFloat(i, argc, argv, armT);
+    parseOptFloat(i, argc, argv, headSize);
+    if (baseH <= 0 || postW <= 0 || torsoSize <= 0 ||
+        armSpan <= 0 || armT <= 0 || headSize < 0 ||
+        postW * 2 >= torsoSize) {
+        std::fprintf(stderr,
+            "gen-mesh-training-dummy: dims > 0; postW*2 < torsoSize\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    // Vertical post from y=0 to y=baseH.
+    addFlatBox(wom, 0.0f, baseH * 0.5f, 0.0f,
+               postW * 0.5f, baseH * 0.5f, postW * 0.5f);
+    // Torso cube centered at the top of the post.
+    const float torsoCY = baseH + torsoSize * 0.5f;
+    addFlatBox(wom, 0.0f, torsoCY, 0.0f,
+               torsoSize * 0.5f, torsoSize * 0.5f, torsoSize * 0.5f);
+    // Horizontal cross-bar (arms) running along X through the
+    // upper third of the torso.
+    const float armCY = torsoCY + torsoSize * 0.15f;
+    addFlatBox(wom, 0.0f, armCY, 0.0f,
+               armSpan * 0.5f, armT * 0.5f, armT * 0.5f);
+    // Optional head: smaller cube on top of the torso.
+    float topY = torsoCY + torsoSize * 0.5f;
+    if (headSize > 0.0f) {
+        const float headCY = topY + headSize * 0.5f;
+        addFlatBox(wom, 0.0f, headCY, 0.0f,
+                   headSize * 0.5f, headSize * 0.5f, headSize * 0.5f);
+        topY = headCY + headSize * 0.5f;
+    }
+    finalizeAsSingleBatch(wom);
+    float halfX = std::max(armSpan * 0.5f, torsoSize * 0.5f);
+    float halfZ = std::max(torsoSize * 0.5f, armT * 0.5f);
+    wom.boundMin = glm::vec3(-halfX, 0, -halfZ);
+    wom.boundMax = glm::vec3(+halfX, topY, +halfZ);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-training-dummy")) return 1;
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  post       : %.3f tall, %.3f square\n", baseH, postW);
+    std::printf("  torso      : %.3f cube at y=%.3f\n", torsoSize, torsoCY);
+    std::printf("  arms       : %.3f span x %.3f thick\n", armSpan, armT);
+    std::printf("  head       : %s\n",
+                headSize > 0 ? std::to_string(headSize).c_str() : "(none)");
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleWaterTrough(int& i, int argc, char** argv) {
     // Open-top water trough / horse trough: a 4-walled rectangular
     // basin with a flat floor. 5 boxes total — bottom slab plus
@@ -6265,6 +6333,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-crate-stack",    1, handleCrateStack},
     {"--gen-mesh-watchpost",      1, handleWatchpost},
     {"--gen-mesh-water-trough",   1, handleWaterTrough},
+    {"--gen-mesh-training-dummy", 1, handleTrainingDummy},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
