@@ -7120,6 +7120,24 @@ int handleGenBlacksmithPack(int& i, int /*argc*/, char** argv) {
     });
 }
 
+int handleGenArenaPack(int& i, int /*argc*/, char** argv) {
+    // Combat training / gladiator pit / militia drill yard scene:
+    // training-dummy (the practice target), archery-target (range
+    // station), workbench (weapons-rack stand), crate-stack
+    // (gear storage), bench (audience seating), water-trough
+    // (between-bout refresh), hitching-rail (mount parking).
+    std::string outDir = argv[++i];
+    return emitMeshPack(outDir, "arena pack", {
+        {"--gen-mesh-training-dummy", handleTrainingDummy, "dummy"},
+        {"--gen-mesh-archery-target", handleArcheryTarget, "target"},
+        {"--gen-mesh-workbench",      handleWorkbench,     "rack"},
+        {"--gen-mesh-crate-stack",    handleCrateStack,    "crates"},
+        {"--gen-mesh-bench",          handleBench,         "bench"},
+        {"--gen-mesh-water-trough",   handleWaterTrough,   "trough"},
+        {"--gen-mesh-hitching-rail",  handleHitchingRail,  "rail"},
+    });
+}
+
 int handleGenMiningPack(int& i, int /*argc*/, char** argv) {
     // Mining shaft / quarry scene: gravel-pile (loose rubble),
     // crate-stack (raw-ore cargo), mine-cart (underground
@@ -7342,6 +7360,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-dock-pack",           1, handleGenDockPack},
     {"--gen-tavern-pack",         1, handleGenTavernPack},
     {"--gen-mining-pack",         1, handleGenMiningPack},
+    {"--gen-arena-pack",          1, handleGenArenaPack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
