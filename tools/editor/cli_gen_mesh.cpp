@@ -4655,6 +4655,130 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBrazier(int& i, int argc, char** argv) {
+    // Brazier: 7-box fire-pit on a pedestal — square base
+    // plate, narrow vertical stem, wider bowl on top of the
+    // stem, and 3 small flame boxes of varying heights rising
+    // from the bowl. Useful for dungeons, temples, watchtowers,
+    // throne rooms — anywhere a fantasy world needs visible
+    // light sources. The 57th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float bowlSize = 0.55f;
+    float stemHeight = 0.80f;
+    float stemT = 0.10f;
+    float baseSize = 0.35f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { bowlSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stemHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stemT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (bowlSize <= 0 || stemHeight <= 0 || stemT <= 0 || baseSize <= 0 ||
+        stemT >= baseSize || stemT >= bowlSize) {
+        std::fprintf(stderr,
+            "gen-mesh-brazier: dims > 0; stem must fit in base & bowl\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Base plate.
+    float baseHeight = baseSize * 0.20f;
+    float halfBase = baseSize * 0.5f;
+    addBox(0, baseHeight * 0.5f, 0,
+           halfBase, baseHeight * 0.5f, halfBase);
+    // Stem rising from base to where the bowl will sit.
+    float halfStemT = stemT * 0.5f;
+    float stemCY = baseHeight + stemHeight * 0.5f;
+    addBox(0, stemCY, 0,
+           halfStemT, stemHeight * 0.5f, halfStemT);
+    // Bowl: wide thin slab on top of the stem.
+    float bowlH = bowlSize * 0.25f;
+    float halfBowl = bowlSize * 0.5f;
+    float bowlCY = baseHeight + stemHeight + bowlH * 0.5f;
+    addBox(0, bowlCY, 0, halfBowl, bowlH * 0.5f, halfBowl);
+    // 3 flame boxes rising from the bowl, varying heights so
+    // the silhouette reads as a fire rather than a uniform
+    // block. Centered triangle layout.
+    float flameTop = baseHeight + stemHeight + bowlH;
+    float flameW = bowlSize * 0.18f;
+    float halfFW = flameW * 0.5f;
+    struct Flame { float dx, dz, h; };
+    Flame flames[3] = {
+        { 0.0f,                 0.0f, bowlSize * 0.50f },  // tallest center
+        { bowlSize * 0.18f, bowlSize * 0.10f, bowlSize * 0.30f },
+        {-bowlSize * 0.18f, bowlSize * 0.10f, bowlSize * 0.35f },
+    };
+    for (const auto& f : flames) {
+        addBox(f.dx, flameTop + f.h * 0.5f, f.dz,
+               halfFW, f.h * 0.5f, halfFW);
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = flameTop + bowlSize * 0.50f;
+    wom.boundMin = glm::vec3(-halfBowl, 0.0f,    -halfBowl);
+    wom.boundMax = glm::vec3( halfBowl, totalH,   halfBowl);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-brazier: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  base       : %.3f square × %.3f thick\n",
+                baseSize, baseHeight);
+    std::printf("  stem       : %.3f square × %.3f tall\n",
+                stemT, stemHeight);
+    std::printf("  bowl       : %.3f wide × %.3f thick\n", bowlSize, bowlH);
+    std::printf("  flames     : 3 (varied heights)\n");
+    std::printf("  total H    : %.3f\n", totalH);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handlePodium(int& i, int argc, char** argv) {
     // Podium: 4-box stepped pyramid speaker stand — large
     // bottom step, medium middle step, small top platform,
@@ -6975,6 +7099,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-podium") == 0 && i + 1 < argc) {
         outRc = handlePodium(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-brazier") == 0 && i + 1 < argc) {
+        outRc = handleBrazier(i, argc, argv); return true;
     }
     return false;
 }
