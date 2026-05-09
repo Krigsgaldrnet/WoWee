@@ -6314,6 +6314,110 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handlePergola(int& i, int argc, char** argv) {
+    // Pergola: 4 corner posts holding 2 long perimeter beams plus
+    // N cross-beams running between the long beams. Distinct from
+    // --gen-mesh-canopy because there's no flat overhead panel —
+    // the open lattice top reads as a garden arbor / sun-trellis
+    // rather than a closed-top market stall. The 59th procedural
+    // mesh primitive.
+    std::string womBase = argv[++i];
+    float length = 2.4f;
+    float width  = 1.6f;
+    float height = 2.2f;
+    float postR  = 0.06f;
+    float beamT  = 0.05f;
+    int   crossbeams = 5;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { length = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { beamT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { crossbeams = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (length <= 0 || width <= 0 || height <= 0 ||
+        postR <= 0 || postR * 2 >= std::min(length, width) ||
+        beamT <= 0 || crossbeams < 0 || crossbeams > 32) {
+        std::fprintf(stderr,
+            "gen-mesh-pergola: dims > 0; postR*2 < length/width; "
+            "crossbeams 0..32\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    const float L2 = length * 0.5f;
+    const float W2 = width  * 0.5f;
+    // Posts: full height at the 4 corners, inset by postR so the
+    // outer face lines up with the (-L2..+L2, -W2..+W2) footprint.
+    const float postX = L2 - postR;
+    const float postZ = W2 - postR;
+    const float postH = height - beamT;       // posts stop at beam underside
+    const float postCY = postH * 0.5f;
+    const float postHY = postH * 0.5f;
+    addFlatBox(wom, +postX, postCY, +postZ, postR, postHY, postR);
+    addFlatBox(wom, -postX, postCY, +postZ, postR, postHY, postR);
+    addFlatBox(wom, +postX, postCY, -postZ, postR, postHY, postR);
+    addFlatBox(wom, -postX, postCY, -postZ, postR, postHY, postR);
+    // Two long perimeter beams along ±Z, spanning the full length
+    // and sitting on top of the posts.
+    const float beamCY = postH + beamT * 0.5f;
+    const float beamHY = beamT * 0.5f;
+    addFlatBox(wom, 0, beamCY, +postZ, L2, beamHY, postR);
+    addFlatBox(wom, 0, beamCY, -postZ, L2, beamHY, postR);
+    // N cross beams running along ±X, spaced evenly between the
+    // perimeter beams. They sit ON TOP of the perimeter beams so
+    // the lattice has visible crossings.
+    if (crossbeams > 0) {
+        const float xbCY = postH + beamT + beamT * 0.5f;
+        const float xbHY = beamT * 0.5f;
+        const float xbHZ = postR * 0.6f;       // a bit thinner than perimeter
+        for (int k = 0; k < crossbeams; ++k) {
+            float t = (crossbeams == 1) ? 0.5f
+                       : static_cast<float>(k) / (crossbeams - 1);
+            float cx = -L2 + postR + t * (length - 2.0f * postR);
+            addFlatBox(wom, cx, xbCY, 0, xbHZ, xbHY, W2);
+        }
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float topY = (crossbeams > 0) ? (postH + 2.0f * beamT) : (postH + beamT);
+    wom.boundMin = glm::vec3(-L2, 0, -W2);
+    wom.boundMax = glm::vec3(+L2, topY, +W2);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-pergola: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  footprint  : %.3f x %.3f\n", length, width);
+    std::printf("  height     : %.3f (post %.3f + beam %.3f)\n",
+                height, postH, beamT);
+    std::printf("  posts      : 4 corners (R=%.3f)\n", postR);
+    std::printf("  cross beams: %d\n", crossbeams);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleDock(int& i, int argc, char** argv) {
     // Wooden dock / pier: a flat plank deck supported by N pairs
     // of square pilings. Distinct from --gen-mesh-bridge which
@@ -6953,6 +7057,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-canopy",         1, handleCanopy},
     {"--gen-mesh-haystack",       1, handleHaystack},
     {"--gen-mesh-dock",           1, handleDock},
+    {"--gen-mesh-pergola",        1, handlePergola},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
