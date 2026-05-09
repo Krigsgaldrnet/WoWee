@@ -7191,6 +7191,140 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleWoodpile(int& i, int argc, char** argv) {
+    // Stacked-firewood pile: N=6 cylindrical logs aligned along
+    // the Z axis, packed into a tight 3-2-1 pyramid (3 logs on
+    // the bottom row, 2 in the middle, 1 on top). The middle and
+    // top rows nestle into the gaps between the logs below using
+    // exact cos(30°) = sqrt(3)/2 vertical spacing so adjacent
+    // logs touch tangentially. The 55th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float logR   = 0.10f;
+    float logLen = 0.80f;
+    int   sides  = 12;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { logR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { logLen = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { sides = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (logR <= 0 || logLen <= 0 || sides < 6 || sides > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-woodpile: dims > 0; sides 6..64\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+        wowee::pipeline::WoweeModel::Vertex vtx;
+        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+        wom.vertices.push_back(vtx);
+        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    };
+    // Add a log: z-axis cylinder centered at (cx, cy, 0) with
+    // length logLen along Z. Each log gets unique vertices for
+    // both the side and the two end caps so flat shading works
+    // across the disc/cylinder transition.
+    const float pi = 3.14159265358979f;
+    const float halfL = logLen * 0.5f;
+    auto addLog = [&](float cx, float cy) {
+        // Side wall: ring at z=-halfL, ring at z=+halfL.
+        uint32_t back = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+            glm::vec3 p(cx + logR * dir.x, cy + logR * dir.y, -halfL);
+            addV(p, dir, {u, 0});
+        }
+        uint32_t front = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+            glm::vec3 p(cx + logR * dir.x, cy + logR * dir.y, +halfL);
+            addV(p, dir, {u, 1});
+        }
+        for (int s = 0; s < sides; ++s) {
+            wom.indices.insert(wom.indices.end(), {
+                back + s, front + s, back + s + 1,
+                back + s + 1, front + s, front + s + 1
+            });
+        }
+        // End caps: -Z and +Z fans.
+        uint32_t backCenter = addV({cx, cy, -halfL}, {0, 0, -1}, {0.5f, 0.5f});
+        uint32_t backRing = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            glm::vec3 p(cx + logR * std::cos(ang),
+                        cy + logR * std::sin(ang), -halfL);
+            addV(p, {0, 0, -1},
+                 {0.5f + 0.5f * std::cos(ang),
+                  0.5f + 0.5f * std::sin(ang)});
+        }
+        for (int s = 0; s < sides; ++s) {
+            wom.indices.insert(wom.indices.end(),
+                {backCenter, backRing + s + 1, backRing + s});
+        }
+        uint32_t frontCenter = addV({cx, cy, +halfL}, {0, 0, +1}, {0.5f, 0.5f});
+        uint32_t frontRing = static_cast<uint32_t>(wom.vertices.size());
+        for (int s = 0; s <= sides; ++s) {
+            float u = static_cast<float>(s) / sides;
+            float ang = u * 2.0f * pi;
+            glm::vec3 p(cx + logR * std::cos(ang),
+                        cy + logR * std::sin(ang), +halfL);
+            addV(p, {0, 0, +1},
+                 {0.5f + 0.5f * std::cos(ang),
+                  0.5f + 0.5f * std::sin(ang)});
+        }
+        for (int s = 0; s < sides; ++s) {
+            wom.indices.insert(wom.indices.end(),
+                {frontCenter, frontRing + s, frontRing + s + 1});
+        }
+    };
+    // 3-2-1 stack: bottom row of 3 logs sitting on the ground,
+    // middle row of 2 nestled in their gaps, top single log
+    // crowning the pile. cos(30°) ≈ sqrt(3)/2 vertical step.
+    const float yStep = logR * std::sqrt(3.0f);
+    addLog(-2.0f * logR, logR);          // bottom-left
+    addLog( 0.0f,         logR);          // bottom-center
+    addLog(+2.0f * logR, logR);          // bottom-right
+    addLog(-1.0f * logR, logR + yStep);   // middle-left
+    addLog(+1.0f * logR, logR + yStep);   // middle-right
+    addLog( 0.0f,         logR + 2 * yStep);  // top
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxX = 3.0f * logR;
+    float maxY = 2.0f * logR + 2.0f * yStep;
+    wom.boundMin = glm::vec3(-maxX, 0, -halfL);
+    wom.boundMax = glm::vec3( maxX, maxY, +halfL);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-woodpile: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  logs       : 6 in 3-2-1 stack (R=%.3f, len=%.3f, sides=%d)\n",
+                logR, logLen, sides);
+    std::printf("  span       : %.3fW x %.3fH x %.3fL\n",
+                maxX * 2.0f, maxY, logLen);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleFirepit(int& i, int argc, char** argv) {
     // Camp firepit: a ring of N stone cubes around two crossed log
     // boxes (one along X, one along Z, slightly raised). Pairs
@@ -7356,6 +7490,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-bookshelf",      1, handleBookshelf},
     {"--gen-mesh-tent",           1, handleTent},
     {"--gen-mesh-firepit",        1, handleFirepit},
+    {"--gen-mesh-woodpile",       1, handleWoodpile},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
