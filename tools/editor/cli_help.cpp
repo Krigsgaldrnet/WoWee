@@ -103,6 +103,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Scales: half-row-staggered overlapping circles forming fish/dragon/chain-mail look\n");
     std::printf("  --gen-texture-stained-glass <out.png> <leadHex> <colorAHex> <colorBHex> <colorCHex> [cells] [W H]\n");
     std::printf("                         Stained glass: Voronoi cells in 3-color rotation, separated by dark lead lines\n");
+    std::printf("  --gen-texture-shingles <out.png> <baseHex> <shadowHex> <seamHex> [shingleW] [shingleH] [shadowH] [W H]\n");
+    std::printf("                         Roof shingles: half-offset rows of rectangular tiles with shadow band + vertical seams\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

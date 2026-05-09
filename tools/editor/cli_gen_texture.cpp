@@ -3275,6 +3275,97 @@ int handleStainedGlass(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleShingles(int& i, int argc, char** argv) {
+    // Roof shingles: offset rows of rectangular tiles, with a
+    // dark shadow band at the top of each row (where the row
+    // above overlaps) and thin vertical seams between adjacent
+    // shingles in a row. Three colors give the shingle body
+    // its base tone, a shadow tone for the overlap band, and
+    // a darker seam color.
+    std::string outPath = argv[++i];
+    std::string baseHex   = argv[++i];
+    std::string shadowHex = argv[++i];
+    std::string seamHex   = argv[++i];
+    int shingleW = 32;
+    int shingleH = 24;
+    int shadowH  = 4;     // shadow band thickness at top of each row
+    int seamW    = 1;     // vertical seam width between shingles
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { shingleW = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { shingleH = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { shadowH = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        shingleW < 4 || shingleW > 512 ||
+        shingleH < 4 || shingleH > 512 ||
+        shadowH < 0 || shadowH >= shingleH) {
+        std::fprintf(stderr,
+            "gen-texture-shingles: invalid dims (W/H 1..8192, shingleW/H 4..512, shadowH 0..shingleH-1)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr_, sg_, sb_, er_, eg_, eb_;
+    if (!parseHex(baseHex, br_, bg_, bb_) ||
+        !parseHex(shadowHex, sr_, sg_, sb_) ||
+        !parseHex(seamHex, er_, eg_, eb_)) {
+        std::fprintf(stderr,
+            "gen-texture-shingles: base/shadow/seam hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int rowIdx = y / shingleH;
+        int withinRow = y - rowIdx * shingleH;
+        int shift  = (rowIdx & 1) ? shingleW / 2 : 0;
+        for (int x = 0; x < W; ++x) {
+            // Position within the current shingle along x.
+            int xRel = x - shift;
+            int xMod;
+            if (xRel >= 0) xMod = xRel % shingleW;
+            else           xMod = ((xRel % shingleW) + shingleW) % shingleW;
+            uint8_t r, g, b;
+            if (withinRow < shadowH) {
+                // Top of row: shadow band where the row above
+                // overlaps this row's shingles.
+                r = sr_; g = sg_; b = sb_;
+            } else if (xMod < seamW || xMod >= shingleW - seamW) {
+                // Vertical seam between adjacent shingles.
+                r = er_; g = eg_; b = eb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-shingles: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  base/shadow/seam: %s / %s / %s\n",
+                baseHex.c_str(), shadowHex.c_str(), seamHex.c_str());
+    std::printf("  shingle    : %dx%d (shadow %d px, seam %d px)\n",
+                shingleW, shingleH, shadowH, seamW);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -3381,6 +3472,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-stained-glass") == 0 && i + 5 < argc) {
         outRc = handleStainedGlass(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-shingles") == 0 && i + 4 < argc) {
+        outRc = handleShingles(i, argc, argv); return true;
     }
     return false;
 }
