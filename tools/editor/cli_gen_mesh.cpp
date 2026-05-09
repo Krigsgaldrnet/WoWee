@@ -7069,6 +7069,25 @@ int handleGenBlacksmithPack(int& i, int /*argc*/, char** argv) {
     });
 }
 
+int handleGenMiningPack(int& i, int /*argc*/, char** argv) {
+    // Mining shaft / quarry scene: gravel-pile (loose rubble),
+    // crate-stack (raw-ore cargo), mine-cart (underground
+    // transport), pillar-row (roof supports), lantern (light
+    // source), workbench (assay / sorting station), hitching-
+    // post (mule / cart tie). Together these form a complete
+    // working mine entrance / quarry-floor layout.
+    std::string outDir = argv[++i];
+    return emitMeshPack(outDir, "mining pack", {
+        {"--gen-mesh-gravel-pile",   handleGravelPile,    "gravel"},
+        {"--gen-mesh-crate-stack",   handleCrateStack,    "crates"},
+        {"--gen-mesh-mine-cart",     handleMineCart,      "cart"},
+        {"--gen-mesh-pillar-row",    handlePillarRow,     "pillars"},
+        {"--gen-mesh-lantern",       handleLantern,       "lantern"},
+        {"--gen-mesh-workbench",     handleWorkbench,     "workbench"},
+        {"--gen-mesh-hitching-post", handleHitchingPost,  "hitching"},
+    });
+}
+
 int handleGenTavernPack(int& i, int /*argc*/, char** argv) {
     // Inn / tavern scene: house (the inn building), chimney
     // (above the kitchen hearth), table + bench (the common
@@ -7270,6 +7289,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-garden-pack",         1, handleGenGardenPack},
     {"--gen-dock-pack",           1, handleGenDockPack},
     {"--gen-tavern-pack",         1, handleGenTavernPack},
+    {"--gen-mining-pack",         1, handleGenMiningPack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
