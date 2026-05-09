@@ -198,6 +198,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Signpost: base + pole + sign board + cap (default 2.5/0.10/0.30/0.80/0.35)\n");
     std::printf("  --gen-mesh-mailbox <wom-base> [postH] [postT] [boxL] [boxW] [boxH]\n");
     std::printf("                         Mailbox: post + horizontal box + side flag (default 1.10/0.08/0.45/0.20/0.20)\n");
+    std::printf("  --gen-mesh-tombstone <wom-base> [width] [height] [depth] [baseScale]\n");
+    std::printf("                         Tombstone: base plinth + tall slab + decorative crown (default 0.60/1.10/0.18/1.45)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");

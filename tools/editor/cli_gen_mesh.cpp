@@ -4655,6 +4655,119 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleTombstone(int& i, int argc, char** argv) {
+    // Tombstone: 3-box vertical headstone — wide low base
+    // plinth, tall thin main slab on top, and a small
+    // decorative crown / cornice at the very top. Pairs
+    // naturally with --gen-mesh-grave and --gen-mesh-coffin
+    // for graveyards. The 47th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float width    = 0.60f;     // along X (face width)
+    float height   = 1.10f;     // total tombstone height including base + crown
+    float depth    = 0.18f;     // along Z (slab thickness)
+    float baseScale = 1.45f;    // base extends this much beyond slab in X & Z
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { depth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseScale = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (width <= 0 || height <= 0 || depth <= 0 ||
+        baseScale < 1.0f || baseScale > 5.0f) {
+        std::fprintf(stderr,
+            "gen-mesh-tombstone: dims > 0; baseScale 1.0..5.0\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Vertical layout: base 15%, slab 75%, crown 10% of total height.
+    float baseH  = height * 0.15f;
+    float crownH = height * 0.10f;
+    float slabH  = height - baseH - crownH;
+    // Base plinth: wider in X & Z than the slab so it reads as
+    // an explicit foundation.
+    float halfBaseW = width * baseScale * 0.5f;
+    float halfBaseD = depth * baseScale * 0.5f;
+    addBox(0, baseH * 0.5f, 0,
+           halfBaseW, baseH * 0.5f, halfBaseD);
+    // Main slab: thin tall rectangle centered above the base.
+    float slabCY = baseH + slabH * 0.5f;
+    float halfW = width * 0.5f;
+    float halfD = depth * 0.5f;
+    addBox(0, slabCY, 0, halfW, slabH * 0.5f, halfD);
+    // Crown: slightly wider/deeper than the slab, sits on top.
+    // Acts as a decorative cornice (a flat-cap variant of the
+    // arched-top headstone shape that we can't do with
+    // axis-aligned boxes alone).
+    float crownScale = 1.18f;
+    float halfCrownW = width * crownScale * 0.5f;
+    float halfCrownD = depth * crownScale * 0.5f;
+    float crownCY = baseH + slabH + crownH * 0.5f;
+    addBox(0, crownCY, 0, halfCrownW, crownH * 0.5f, halfCrownD);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-halfBaseW, 0.0f,    -halfBaseD);
+    wom.boundMax = glm::vec3( halfBaseW, height,   halfBaseD);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-tombstone: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  total H    : %.3f (base %.3f + slab %.3f + crown %.3f)\n",
+                height, baseH, slabH, crownH);
+    std::printf("  slab       : %.3f wide × %.3f deep\n", width, depth);
+    std::printf("  base scale : %.2fx (base %.3f wide × %.3f deep)\n",
+                baseScale, halfBaseW * 2, halfBaseD * 2);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleMailbox(int& i, int argc, char** argv) {
     // Mailbox: 4-box wayside prop — vertical post, horizontal
     // box body mounted on top of the post (long axis along Z),
@@ -5811,6 +5924,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-mailbox") == 0 && i + 1 < argc) {
         outRc = handleMailbox(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-tombstone") == 0 && i + 1 < argc) {
+        outRc = handleTombstone(i, argc, argv); return true;
     }
     return false;
 }
