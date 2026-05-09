@@ -5161,6 +5161,47 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStandingTorch(int& i, int argc, char** argv) {
+    // Standing floor torch: tall thin post with a wider shallow
+    // fire-bowl cylinder on top. Distinct from --gen-mesh-brazier
+    // (squat fire-bowl on a stem with a bowl-on-base silhouette)
+    // — standing-torch is the tall thin walking-height variant
+    // for lining hallways, ceremonial paths, dungeon entries.
+    // The 83rd procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float postR  = 0.04f;
+    float postH  = 1.20f;
+    float bowlR  = 0.10f;
+    float bowlH  = 0.08f;
+    int   sides  = 14;
+    parseOptFloat(i, argc, argv, postR);
+    parseOptFloat(i, argc, argv, postH);
+    parseOptFloat(i, argc, argv, bowlR);
+    parseOptFloat(i, argc, argv, bowlH);
+    parseOptInt(i, argc, argv, sides);
+    if (postR <= 0 || postH <= 0 || bowlR <= 0 || bowlH <= 0 ||
+        sides < 6 || sides > 64 || postR >= bowlR) {
+        std::fprintf(stderr,
+            "gen-mesh-standing-torch: dims > 0; sides 6..64; "
+            "postR < bowlR\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    addClosedCylinderY(wom, postR, 0.0f, postH, sides);
+    addClosedCylinderY(wom, bowlR, postH, postH + bowlH, sides);
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, bowlR, bowlR, postH + bowlH);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-standing-torch")) return 1;
+    printWomWrote(womBase);
+    std::printf("  post       : R=%.3f x %.3f tall\n", postR, postH);
+    std::printf("  bowl       : R=%.3f x %.3f thick (%d sides)\n",
+                bowlR, bowlH, sides);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleChalice(int& i, int argc, char** argv) {
     // Ceremonial chalice / goblet: foot (wide flat base) →
     // stem (thin tall connecting column) → bowl (wider shallow
@@ -7351,6 +7392,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-candle",         1, handleCandle},
     {"--gen-mesh-lantern",        1, handleLantern},
     {"--gen-mesh-chalice",        1, handleChalice},
+    {"--gen-mesh-standing-torch", 1, handleStandingTorch},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},

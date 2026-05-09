@@ -320,6 +320,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Lantern: 4-tier base + glass-globe + neck + cap stack (hand lantern / oil lamp silhouette)\n");
     std::printf("  --gen-mesh-chalice <wom-base> [footR] [footH] [stemR] [stemH] [bowlR] [bowlH] [sides]\n");
     std::printf("                         Chalice: ceremonial 3-tier foot + stem + bowl goblet (chapel / treasure / ritual scene)\n");
+    std::printf("  --gen-mesh-standing-torch <wom-base> [postR] [postH] [bowlR] [bowlH] [sides]\n");
+    std::printf("                         Standing torch: tall thin post + wider fire-bowl on top (hall lining / dungeon entry / ceremony path)\n");
     std::printf("  --gen-camp-pack <outDir>\n");
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-blacksmith-pack <outDir>\n");
