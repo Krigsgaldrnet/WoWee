@@ -1344,6 +1344,7 @@ add_executable(wowee_editor
     tools/editor/cli_random.cpp
     tools/editor/cli_items_export.cpp
     tools/editor/cli_items_mutate.cpp
+    tools/editor/cli_zone_create.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
