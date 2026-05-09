@@ -3500,6 +3500,71 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleSwirl(int& i, int argc, char** argv) {
+    // Logarithmic spiral: pixels are colored as the spiral arm
+    // when (θ - log(r) * spiralFactor) mod 2π/N falls inside a
+    // small angular band. N independent arms tile the circle.
+    // Distinct from --gen-texture-starburst (straight rays from
+    // center) — this is the curved-arm vortex variant for magic
+    // sigils, summoning circles, ritual floor markings, mystical-
+    // pool surfaces.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string armHex  = argv[++i];
+    int armCount = 3;
+    float spiralFactor = 0.4f;       // higher = tighter spiral
+    float armWidth = 0.30f;          // radians half-width
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, armCount);
+    parseOptFloat(i, argc, argv, spiralFactor);
+    parseOptFloat(i, argc, argv, armWidth);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        armCount < 1 || armCount > 32 ||
+        spiralFactor <= 0.0f || spiralFactor > 10.0f ||
+        armWidth <= 0.0f || armWidth >= 3.14f) {
+        std::fprintf(stderr,
+            "gen-texture-swirl: invalid dims (W/H 1..8192, "
+            "armCount 1..32, spiralFactor (0,10], armWidth (0,π))\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, ar, ag, ab;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-swirl")) return 1;
+    if (!parseHexOrError(armHex, ar, ag, ab,
+                         "gen-texture-swirl")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float twoPi = 6.28318530717958f;
+    const float cx = W * 0.5f;
+    const float cy = H * 0.5f;
+    const float anglePer = twoPi / armCount;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float dx = x - cx;
+            float dy = y - cy;
+            float r = std::sqrt(dx * dx + dy * dy);
+            // Avoid log(0) at the center: use r+1.
+            float armPhase = std::atan2(dy, dx) -
+                              std::log(r + 1.0f) * spiralFactor;
+            float wrapped = std::fmod(armPhase + 100.0f * twoPi, anglePer);
+            float angDist = std::min(wrapped, anglePer - wrapped);
+            uint8_t outR, outG, outB;
+            if (angDist < armWidth) {
+                outR = ar; outG = ag; outB = ab;
+            } else {
+                outR = br_; outG = bg_; outB = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, outR, outG, outB);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-swirl")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/arm     : %s / %s\n", bgHex.c_str(), armHex.c_str());
+    std::printf("  spiral     : %d arms, factor=%.2f, width=%.3f rad\n",
+                armCount, spiralFactor, armWidth);
+    return 0;
+}
+
 int handleDunes(int& i, int argc, char** argv) {
     // Sand dunes / wave-ripple pattern: a stack of parallel
     // sinusoidal curves spaced verticalSpacing apart. A pixel
@@ -5079,6 +5144,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-houndstooth",    3, handleHoundstooth},
     {"--gen-texture-chevron",        3, handleChevron},
     {"--gen-texture-dunes",          3, handleDunes},
+    {"--gen-texture-swirl",          3, handleSwirl},
 };
 }  // namespace
 
