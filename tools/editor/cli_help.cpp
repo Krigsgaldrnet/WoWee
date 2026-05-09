@@ -118,6 +118,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Semicircular arched doorway: two pillars + curved keystone vault (default 12 segs)\n");
     std::printf("  --gen-mesh-barrel <wom-base> [topRadius] [midRadius] [height] [hoopThickness]\n");
     std::printf("                         Tapered barrel: bulges in middle + 2 rim hoops (default 0.4/0.5/1.0/0.06)\n");
+    std::printf("  --gen-mesh-chest <wom-base> [width] [depth] [bodyHeight] [lidHeight]\n");
+    std::printf("                         Treasure chest: body box + lid box + 3 iron bands + lock plate (default 1.4×0.9×0.9)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");

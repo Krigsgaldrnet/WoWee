@@ -555,7 +555,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
         "--gen-mesh-tower", "--gen-mesh-house", "--gen-mesh-fountain",
         "--gen-mesh-statue", "--gen-mesh-altar", "--gen-mesh-portal",
-        "--gen-mesh-archway", "--gen-mesh-barrel",
+        "--gen-mesh-archway", "--gen-mesh-barrel", "--gen-mesh-chest",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -21051,6 +21051,127 @@ int main(int argc, char* argv[]) {
             std::printf("  hoops     : 2 (thickness %.3f)\n", hoopThick);
             std::printf("  vertices  : %zu\n", wom.vertices.size());
             std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-chest") == 0 && i + 1 < argc) {
+            // Treasure chest: rectangular body box + smaller lid
+            // box on top + 3 thin iron bands wrapping around the
+            // body + a small lock plate on the front center face.
+            // The 27th procedural mesh primitive — useful for
+            // dungeon loot, room decoration, quest objectives.
+            std::string womBase = argv[++i];
+            float width = 1.4f;       // along X
+            float depth = 0.9f;       // along Z
+            float bodyH = 0.9f;       // body box height
+            float lidH = 0.25f;       // lid height above body
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { width = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { depth = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { bodyH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { lidH = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (width <= 0 || depth <= 0 || bodyH <= 0 || lidH < 0) {
+                std::fprintf(stderr,
+                    "gen-mesh-chest: width/depth/bodyH > 0, lidH >= 0\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            // Box helper — adds 24 unique verts / 12 tris centered
+            // on (cx, cy, cz) with half-extents (hx, hy, hz). Each
+            // face gets unique normals for flat shading.
+            auto addBox = [&](float cx, float cy, float cz,
+                              float hx, float hy, float hz) {
+                struct Face { glm::vec3 n, du, dv; };
+                Face faces[6] = {
+                    {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+                    {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+                    {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+                    {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+                    {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+                    {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+                };
+                glm::vec3 c(cx, cy, cz);
+                glm::vec3 ext(hx, hy, hz);
+                for (const Face& f : faces) {
+                    glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+                    glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+                    glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+                    uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+                    auto push = [&](glm::vec3 p, float u, float v) {
+                        wowee::pipeline::WoweeModel::Vertex vtx;
+                        vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                        wom.vertices.push_back(vtx);
+                    };
+                    push(center - du - dv, 0, 0);
+                    push(center + du - dv, 1, 0);
+                    push(center + du + dv, 1, 1);
+                    push(center - du + dv, 0, 1);
+                    wom.indices.insert(wom.indices.end(),
+                        {base, base + 1, base + 2, base, base + 2, base + 3});
+                }
+            };
+            float hx = width * 0.5f;
+            float hz = depth * 0.5f;
+            // Body: y=0 to y=bodyH
+            addBox(0, bodyH * 0.5f, 0, hx, bodyH * 0.5f, hz);
+            // Lid: smaller box on top, slightly inset on each side
+            float lidInset = std::min(width, depth) * 0.04f;
+            float lidHx = hx - lidInset;
+            float lidHz = hz - lidInset;
+            if (lidH > 0.0f && lidHx > 0 && lidHz > 0) {
+                addBox(0, bodyH + lidH * 0.5f, 0,
+                       lidHx, lidH * 0.5f, lidHz);
+            }
+            // 3 iron bands wrapping the body — thin slabs
+            // protruding ~3% radially on the sides + top.
+            // Band positions: 15%, 50%, 85% of body width.
+            float bandThickX = width * 0.04f;  // band depth along X
+            float bandHy = bodyH * 0.5f + 0.005f;
+            float bandHz = hz + 0.012f;
+            float bandPositions[3] = {-hx * 0.7f, 0.0f, hx * 0.7f};
+            for (float bx : bandPositions) {
+                addBox(bx, bandHy, 0,
+                       bandThickX * 0.5f, bandHy, bandHz);
+            }
+            // Lock plate: small thin box on the front face, centered.
+            // Front face is +Z. Plate sits at z = hz + tiny epsilon.
+            float lockW = width * 0.10f;
+            float lockH = bodyH * 0.18f;
+            float lockY = bodyH * 0.65f;
+            float lockEps = 0.008f;
+            addBox(0, lockY, hz + lockEps,
+                   lockW * 0.5f, lockH * 0.5f, lockEps);
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            float maxY = bodyH + lidH;
+            wom.boundMin = glm::vec3(-hx, 0, -hz - 0.012f);
+            wom.boundMax = glm::vec3( hx, maxY, hz + 0.012f);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-chest: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  width × depth : %.3f × %.3f\n", width, depth);
+            std::printf("  body H        : %.3f\n", bodyH);
+            std::printf("  lid H         : %.3f\n", lidH);
+            std::printf("  components    : body + lid + 3 bands + lock\n");
+            std::printf("  vertices      : %zu\n", wom.vertices.size());
+            std::printf("  triangles     : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
