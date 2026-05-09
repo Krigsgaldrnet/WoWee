@@ -5212,6 +5212,73 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleHitchingPost(int& i, int argc, char** argv) {
+    // Hitching post: two vertical posts joined by a horizontal
+    // cross-bar at upper height. Standard town/stable fixture
+    // for tying up mounts. All axis-aligned boxes — exercises
+    // the new addFlatBox helper. The 67th procedural mesh
+    // primitive.
+    std::string womBase = argv[++i];
+    float span    = 1.6f;             // distance between post centers
+    float height  = 1.2f;             // post height
+    float postW   = 0.10f;            // post thickness (square)
+    float barT    = 0.08f;            // cross-bar thickness
+    float capH    = 0.05f;            // 0 → no decorative caps
+    parseOptFloat(i, argc, argv, span);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, postW);
+    parseOptFloat(i, argc, argv, barT);
+    parseOptFloat(i, argc, argv, capH);
+    if (span <= 0 || height <= 0 || postW <= 0 || barT <= 0 ||
+        capH < 0 || postW * 2 >= span || barT >= height) {
+        std::fprintf(stderr,
+            "gen-mesh-hitching-post: dims > 0; postW*2 < span; barT < height\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float halfSpan = span * 0.5f;
+    // Two vertical posts.
+    addFlatBox(wom, +halfSpan, height * 0.5f, 0.0f,
+               postW * 0.5f, height * 0.5f, postW * 0.5f);
+    addFlatBox(wom, -halfSpan, height * 0.5f, 0.0f,
+               postW * 0.5f, height * 0.5f, postW * 0.5f);
+    // Cross-bar at upper post height (between post tops). Inset
+    // by postW so it tucks BETWEEN the post inner faces, not over
+    // them — matches the standard 4-rail fence look.
+    const float barCY = height - barT * 0.5f;
+    const float barHX = (span - postW) * 0.5f;
+    addFlatBox(wom, 0.0f, barCY, 0.0f,
+               barHX, barT * 0.5f, barT * 0.5f);
+    // Optional decorative caps on each post.
+    float topY = height;
+    if (capH > 0.0f) {
+        const float capCY = height + capH * 0.5f;
+        const float capHX = postW * 0.7f;          // a bit wider than post
+        addFlatBox(wom, +halfSpan, capCY, 0.0f,
+                   capHX, capH * 0.5f, capHX);
+        addFlatBox(wom, -halfSpan, capCY, 0.0f,
+                   capHX, capH * 0.5f, capHX);
+        topY = height + capH;
+    }
+    finalizeAsSingleBatch(wom);
+    float halfX = halfSpan + (capH > 0 ? postW * 0.7f : postW * 0.5f);
+    float halfZ = (capH > 0 ? postW * 0.7f : postW * 0.5f);
+    wom.boundMin = glm::vec3(-halfX, 0, -halfZ);
+    wom.boundMax = glm::vec3(+halfX, topY, +halfZ);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-hitching-post")) return 1;
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  posts      : 2 separated by %.3f, %.3f tall\n",
+                span, height);
+    std::printf("  cross-bar  : %.3f thick at upper post height\n", barT);
+    std::printf("  caps       : %s\n",
+                capH > 0 ? std::to_string(capH).c_str() : "(none)");
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleTrainingDummy(int& i, int argc, char** argv) {
     // Combat training dummy: vertical pole with a cubic torso block
     // and a horizontal cross-bar simulating outstretched arms. All
@@ -6334,6 +6401,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-watchpost",      1, handleWatchpost},
     {"--gen-mesh-water-trough",   1, handleWaterTrough},
     {"--gen-mesh-training-dummy", 1, handleTrainingDummy},
+    {"--gen-mesh-hitching-post",  1, handleHitchingPost},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},

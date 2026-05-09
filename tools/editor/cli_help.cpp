@@ -256,6 +256,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Water trough: 4-walled rectangular basin with flat floor (stable / farm / tavern set dressing)\n");
     std::printf("  --gen-mesh-training-dummy <wom-base> [baseH] [postW] [torsoSize] [armSpan] [armT] [headSize]\n");
     std::printf("                         Training dummy: post + cubic torso + cross-bar arms + optional head (sparring / drill yard)\n");
+    std::printf("  --gen-mesh-hitching-post <wom-base> [span] [height] [postW] [barT] [capH]\n");
+    std::printf("                         Hitching post: 2 vertical posts + horizontal cross-bar + optional decorative caps (stable / town square)\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
     std::printf("                         Table: flat top slab on 4 corner legs (default 1.6/1.0/0.85/0.10/0.06)\n");
     std::printf("  --gen-mesh-lamppost <wom-base> [poleH] [poleT] [baseSize] [lanternSize] [lanternH]\n");
