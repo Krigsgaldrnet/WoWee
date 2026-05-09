@@ -4235,6 +4235,80 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handlePinstripe(int& i, int argc, char** argv) {
+    // Pinstripe: thin vertical lines at every `stride` x position,
+    // with optional thicker "feature" line every Nth stripe so the
+    // pattern reads as a real pinstripe (the periodic emphasis is
+    // what distinguishes it from --gen-texture-stripes which uses
+    // wide alternating bands). Useful for noble-house tabards,
+    // formal-attire fabric, sci-fi panel detailing, banker's
+    // counter cloth.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string lineHex = argv[++i];
+    int stride  = 12;
+    int lineW   = 1;
+    int featureEvery = 6;     // every Nth stripe is a thicker feature line
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, stride);
+    parseOptInt(i, argc, argv, lineW);
+    parseOptInt(i, argc, argv, featureEvery);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stride < 2 || stride > 1024 ||
+        lineW < 1 || lineW * 2 >= stride ||
+        featureEvery < 0 || featureEvery > 64) {
+        std::fprintf(stderr,
+            "gen-texture-pinstripe: invalid dims (W/H 1..8192, "
+            "stride 2..1024, lineW 1..stride/2, featureEvery 0..64)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, lr, lg, lb;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(lineHex, lr, lg, lb)) {
+        std::fprintf(stderr,
+            "gen-texture-pinstripe: bg or line hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const int featureW = lineW * 2;     // feature line is 2× normal width
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            int colIdx = x / stride;
+            int xLocal = x - colIdx * stride;
+            // Center the line within its column.
+            int center = stride / 2;
+            int dist = std::abs(xLocal - center);
+            int targetW = (featureEvery > 0 && (colIdx % featureEvery) == 0)
+                           ? featureW : lineW;
+            uint8_t r, g, b;
+            if (dist < (targetW + 1) / 2) {
+                r = lr; g = lg; b = lb;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-pinstripe: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/line    : %s / %s\n", bgHex.c_str(), lineHex.c_str());
+    std::printf("  stripes    : stride=%d, lineW=%d, featureEvery=%d\n",
+                stride, lineW, featureEvery);
+    return 0;
+}
+
 int handleCarbon(int& i, int argc, char** argv) {
     // Carbon-fiber weave: 2x2 cells where alternating cells hold
     // horizontal vs vertical fiber segments. Each segment has a
@@ -5128,6 +5202,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-moss",           3, handleMoss},
     {"--gen-texture-woodgrain",      3, handleWoodgrain},
     {"--gen-texture-carbon",         3, handleCarbon},
+    {"--gen-texture-pinstripe",      3, handlePinstripe},
 };
 }  // namespace
 
