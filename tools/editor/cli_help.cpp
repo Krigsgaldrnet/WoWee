@@ -296,6 +296,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Convenience: emit altar + shrine + brazier + pillar + statue + portal + podium into outDir\n");
     std::printf("  --gen-graveyard-pack <outDir>\n");
     std::printf("                         Convenience: emit grave + tombstone + coffin + statue + stone-bench + gravel-pile + cage into outDir\n");
+    std::printf("  --gen-garden-pack <outDir>\n");
+    std::printf("                         Convenience: emit pergola + fountain + stone-bench + shrine + beehive + scarecrow + well into outDir\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
     std::printf("                         Table: flat top slab on 4 corner legs (default 1.6/1.0/0.85/0.10/0.06)\n");
     std::printf("  --gen-mesh-lamppost <wom-base> [poleH] [poleT] [baseSize] [lanternSize] [lanternH]\n");

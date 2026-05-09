@@ -6845,6 +6845,25 @@ int handleGenBlacksmithPack(int& i, int /*argc*/, char** argv) {
     });
 }
 
+int handleGenGardenPack(int& i, int /*argc*/, char** argv) {
+    // Garden / courtyard scene: pergola (vine-arbor frame),
+    // fountain (centerpiece), stone-bench (seating), shrine
+    // (decorative focal), beehive (productive prop), scarecrow
+    // (rural touch), well (water source). Together these form
+    // a recognizable kitchen-garden / monastery courtyard /
+    // small park.
+    std::string outDir = argv[++i];
+    return emitMeshPack(outDir, "garden pack", {
+        {"--gen-mesh-pergola",      handlePergola,     "pergola"},
+        {"--gen-mesh-fountain",     handleFountain,    "fountain"},
+        {"--gen-mesh-stone-bench",  handleStoneBench,  "bench"},
+        {"--gen-mesh-shrine",       handleShrine,      "shrine"},
+        {"--gen-mesh-beehive",      handleBeehive,     "beehive"},
+        {"--gen-mesh-scarecrow",    handleScarecrow,   "scarecrow"},
+        {"--gen-mesh-well",         handleWell,        "well"},
+    });
+}
+
 int handleGenGraveyardPack(int& i, int /*argc*/, char** argv) {
     // Cemetery / graveyard scene: grave (filled plot mound),
     // tombstone (marker stone), coffin (above-ground or open),
@@ -6980,6 +6999,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-village-pack",        1, handleGenVillagePack},
     {"--gen-temple-pack",         1, handleGenTemplePack},
     {"--gen-graveyard-pack",      1, handleGenGraveyardPack},
+    {"--gen-garden-pack",         1, handleGenGardenPack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
