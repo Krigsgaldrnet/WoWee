@@ -6906,6 +6906,24 @@ int handleGenBlacksmithPack(int& i, int /*argc*/, char** argv) {
     });
 }
 
+int handleGenDockPack(int& i, int /*argc*/, char** argv) {
+    // Harbor / dockyard scene: dock (the pier itself), crate-
+    // stack (cargo waiting to be loaded), barrel (sailor stash),
+    // canopy (shade for the dockmaster's station), bench (waiting
+    // area for passengers), signpost (port marker), hitching-post
+    // (for tying up small boats / mounts arriving with goods).
+    std::string outDir = argv[++i];
+    return emitMeshPack(outDir, "dock pack", {
+        {"--gen-mesh-dock",          handleDock,          "dock"},
+        {"--gen-mesh-crate-stack",   handleCrateStack,    "crates"},
+        {"--gen-mesh-barrel",        handleBarrel,        "barrel"},
+        {"--gen-mesh-canopy",        handleCanopy,        "canopy"},
+        {"--gen-mesh-bench",         handleBench,         "bench"},
+        {"--gen-mesh-signpost",      handleSignpost,      "signpost"},
+        {"--gen-mesh-hitching-post", handleHitchingPost,  "hitching"},
+    });
+}
+
 int handleGenGardenPack(int& i, int /*argc*/, char** argv) {
     // Garden / courtyard scene: pergola (vine-arbor frame),
     // fountain (centerpiece), stone-bench (seating), shrine
@@ -7062,6 +7080,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-temple-pack",         1, handleGenTemplePack},
     {"--gen-graveyard-pack",      1, handleGenGraveyardPack},
     {"--gen-garden-pack",         1, handleGenGardenPack},
+    {"--gen-dock-pack",           1, handleGenDockPack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
