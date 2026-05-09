@@ -18,6 +18,7 @@ const char* const kArgRequired[] = {
     "--info-wol", "--info-wol-at", "--validate-wol", "--gen-light",
     "--gen-light-cave", "--gen-light-dungeon", "--gen-light-night",
     "--export-wol-json", "--import-wol-json",
+    "--export-wow-json", "--import-wow-json",
     "--info-wow", "--validate-wow",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",

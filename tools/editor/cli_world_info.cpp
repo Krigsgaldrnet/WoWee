@@ -886,6 +886,128 @@ int handleGenWeatherStormy(int& i, int argc, char** argv) {
         "heavy rain + storm + occasional clear");
 }
 
+int handleExportWowJson(int& i, int argc, char** argv) {
+    // Export a binary .wow to a human-editable JSON sidecar.
+    // Pairs with --import-wow-json for the round-trip authoring
+    // workflow on weather schedules.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wow")
+        base = base.substr(0, base.size() - 4);
+    if (outPath.empty()) outPath = base + ".wow.json";
+    if (!wowee::pipeline::WoweeWeatherLoader::exists(base)) {
+        std::fprintf(stderr, "WOW not found: %s.wow\n", base.c_str());
+        return 1;
+    }
+    auto wow = wowee::pipeline::WoweeWeatherLoader::load(base);
+    if (!wow.isValid()) {
+        std::fprintf(stderr, "WOW parse failed: %s.wow\n", base.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    j["name"] = wow.name;
+    nlohmann::json es = nlohmann::json::array();
+    for (const auto& e : wow.entries) {
+        es.push_back({
+            {"type",
+                wowee::pipeline::WoweeWeather::typeName(e.weatherTypeId)},
+            {"typeId", e.weatherTypeId},
+            {"minIntensity", e.minIntensity},
+            {"maxIntensity", e.maxIntensity},
+            {"weight", e.weight},
+            {"minDurationSec", e.minDurationSec},
+            {"maxDurationSec", e.maxDurationSec},
+        });
+    }
+    j["entries"] = es;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wow-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << '\n';
+    std::printf("Wrote %s (%zu entry/entries)\n",
+                outPath.c_str(), wow.entries.size());
+    return 0;
+}
+
+int handleImportWowJson(int& i, int argc, char** argv) {
+    // Import a JSON sidecar back into binary .wow. The "type"
+    // string field is human-friendly ("clear" / "rain" / etc.)
+    // but typeId still wins if both are present, so users can
+    // edit either. Schema mismatches fail with a clear message.
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (i + 1 < argc && argv[i + 1][0] != '-') outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        if (outBase.size() >= 9 &&
+            outBase.substr(outBase.size() - 9) == ".wow.json") {
+            outBase = outBase.substr(0, outBase.size() - 9);
+        } else if (outBase.size() >= 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    if (outBase.size() >= 4 && outBase.substr(outBase.size() - 4) == ".wow") {
+        outBase = outBase.substr(0, outBase.size() - 4);
+    }
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wow-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { is >> j; } catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wow-json: parse error: %s\n", e.what());
+        return 1;
+    }
+    auto typeFromName = [](const std::string& s) -> uint32_t {
+        if (s == "clear")     return wowee::pipeline::WoweeWeather::Clear;
+        if (s == "rain")      return wowee::pipeline::WoweeWeather::Rain;
+        if (s == "snow")      return wowee::pipeline::WoweeWeather::Snow;
+        if (s == "storm")     return wowee::pipeline::WoweeWeather::Storm;
+        if (s == "sandstorm") return wowee::pipeline::WoweeWeather::Sandstorm;
+        if (s == "fog")       return wowee::pipeline::WoweeWeather::Fog;
+        if (s == "blizzard")  return wowee::pipeline::WoweeWeather::Blizzard;
+        return wowee::pipeline::WoweeWeather::Clear;
+    };
+    wowee::pipeline::WoweeWeather wow;
+    try {
+        wow.name = j.value("name", std::string("Imported"));
+        for (const auto& je : j.at("entries")) {
+            wowee::pipeline::WoweeWeather::Entry e;
+            if (je.contains("typeId")) {
+                e.weatherTypeId = je.at("typeId").get<uint32_t>();
+            } else if (je.contains("type")) {
+                e.weatherTypeId = typeFromName(je.at("type").get<std::string>());
+            }
+            e.minIntensity = je.at("minIntensity").get<float>();
+            e.maxIntensity = je.at("maxIntensity").get<float>();
+            e.weight = je.at("weight").get<float>();
+            e.minDurationSec = je.at("minDurationSec").get<uint32_t>();
+            e.maxDurationSec = je.at("maxDurationSec").get<uint32_t>();
+            wow.entries.push_back(e);
+        }
+    } catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wow-json: schema error: %s\n", e.what());
+        return 1;
+    }
+    if (!wowee::pipeline::WoweeWeatherLoader::save(wow, outBase)) {
+        std::fprintf(stderr,
+            "import-wow-json: failed to save %s.wow\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wow (%zu entry/entries, name=%s)\n",
+                outBase.c_str(), wow.entries.size(), wow.name.c_str());
+    return 0;
+}
+
 int handleGenZoneAtmosphere(int& i, int argc, char** argv) {
     // Convenience composite: drop both a default day/night WOL
     // and a temperate WOW into <zoneDir>/atmosphere.{wol,wow}.
@@ -1020,6 +1142,12 @@ bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-zone-atmosphere") == 0 && i + 1 < argc) {
         outRc = handleGenZoneAtmosphere(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wow-json") == 0 && i + 1 < argc) {
+        outRc = handleExportWowJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wow-json") == 0 && i + 1 < argc) {
+        outRc = handleImportWowJson(i, argc, argv); return true;
     }
     return false;
 }

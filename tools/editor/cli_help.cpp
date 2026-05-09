@@ -803,6 +803,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wol to a human-editable JSON sidecar (defaults to <base>.wol.json)\n");
     std::printf("  --import-wol-json <json-path> [out-base]\n");
     std::printf("                         Import a .wol.json sidecar back into binary .wol (round-trip with --export-wol-json)\n");
+    std::printf("  --export-wow-json <wow-base> [out.json]\n");
+    std::printf("                         Export binary .wow to a human-editable JSON sidecar (defaults to <base>.wow.json)\n");
+    std::printf("  --import-wow-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wow.json sidecar back into binary .wow (accepts type-name string OR typeId int)\n");
     std::printf("  --info-wow <wow-base> [--json]\n");
     std::printf("                         Print WOW weather entries (zone + per-state type / intensity / weight / duration) and exit\n");
     std::printf("  --validate-wow <wow-base> [--json]\n");
