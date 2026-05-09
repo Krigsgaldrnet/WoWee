@@ -150,6 +150,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Wooden bench: seat plank + 2 leg slabs (default 1.5/0.5/0.06/0.4)\n");
     std::printf("  --gen-mesh-shrine <wom-base> [size] [pillarHeight] [pillarRadius] [roofThickness]\n");
     std::printf("                         Small canopy: square base + 4 corner pillars + flat roof slab (default 1.5/2/0.1/0.15)\n");
+    std::printf("  --gen-mesh-totem <wom-base> [width] [segments] [segmentHeight]\n");
+    std::printf("                         Tribal totem: stack of N alternating-width carved blocks (default w=0.5, 5 segs, h=0.5)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");

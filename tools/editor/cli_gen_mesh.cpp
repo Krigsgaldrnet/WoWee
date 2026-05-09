@@ -4189,6 +4189,98 @@ int handleShrine(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleTotem(int& i, int argc, char** argv) {
+    // Tribal totem: stack of N square blocks alternating wide/
+    // narrow widths so each carved face reads as distinct.
+    // Even-indexed blocks are full width, odd are 70% — gives
+    // the carved-segment look characteristic of totem poles.
+    // The 35th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float baseW = 0.5f;        // base block half-width × 2
+    int segments = 5;          // number of stacked blocks
+    float segH = 0.5f;         // height of each block
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { segments = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { segH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (baseW <= 0 || segH <= 0 || segments < 1 || segments > 32) {
+        std::fprintf(stderr,
+            "gen-mesh-totem: dims > 0, segments 1..32\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Stack blocks bottom-up. Bottom block always full width.
+    // Even blocks (0, 2, 4...) get full width, odd blocks 70%.
+    for (int s = 0; s < segments; ++s) {
+        float cy = (s + 0.5f) * segH;
+        float halfW = (s & 1) ? (baseW * 0.5f * 0.70f) : (baseW * 0.5f);
+        addBox(0, cy, 0, halfW, segH * 0.5f, halfW);
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxY = segments * segH;
+    float maxXZ = baseW * 0.5f;
+    wom.boundMin = glm::vec3(-maxXZ, 0, -maxXZ);
+    wom.boundMax = glm::vec3( maxXZ, maxY, maxXZ);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-totem: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  base width : %.3f\n", baseW);
+    std::printf("  segments   : %d (each %.3f tall)\n", segments, segH);
+    std::printf("  total H    : %.3f\n", maxY);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -4285,6 +4377,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-shrine") == 0 && i + 1 < argc) {
         outRc = handleShrine(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-totem") == 0 && i + 1 < argc) {
+        outRc = handleTotem(i, argc, argv); return true;
     }
     return false;
 }
