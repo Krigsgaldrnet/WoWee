@@ -142,11 +142,7 @@ int handleRock(int& i, int argc, char** argv) {
     float bound = radius * (1.0f + roughness);
     wom.boundMin = glm::vec3(-bound);
     wom.boundMax = glm::vec3( bound);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
         std::fprintf(stderr,
             "gen-mesh-rock: failed to save %s.wom\n", womBase.c_str());
@@ -268,11 +264,7 @@ int handlePillar(int& i, int argc, char** argv) {
     // sit at the same Y so this looks like a flat ring.
     connect(baseTop, shaftBot);
     connect(shaftTop, capBot);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-capR, 0,      -capR);
     wom.boundMax = glm::vec3( capR, height,  capR);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -359,11 +351,7 @@ int handleBridge(int& i, int argc, char** argv) {
             }
         }
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = plankThickness + railHeight;
     wom.boundMin = glm::vec3(-length * 0.5f, 0,        -width * 0.5f);
     wom.boundMax = glm::vec3( length * 0.5f, maxY,      width * 0.5f);
@@ -498,11 +486,7 @@ int handleTower(int& i, int argc, char** argv) {
             wom.indices.insert(wom.indices.end(), {bbr, btr, ibr, ibr, btr, itr});
         }
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = height + battlementH;
     float maxR = radius * 1.05f;
     wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
@@ -603,11 +587,7 @@ int handleHouse(int& i, int argc, char** argv) {
         uint32_t c = addV(apex, fn, {0.5f, 1});
         wom.indices.insert(wom.indices.end(), {a, b, c});
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-hx, 0, -hz);
     wom.boundMax = glm::vec3( hx, apexY,  hz);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -700,11 +680,7 @@ int handleFountain(int& i, int argc, char** argv) {
     cylinder(basinR, 0.0f, basinH);
     // Spout: cylinder from y=basinH to y=basinH+spoutH at spoutR.
     cylinder(spoutR, basinH, basinH + spoutH);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = basinH + spoutH;
     wom.boundMin = glm::vec3(-basinR, 0,    -basinR);
     wom.boundMax = glm::vec3( basinR, maxY,  basinR);
@@ -836,11 +812,7 @@ int handleStatue(int& i, int argc, char** argv) {
                 {i00, i10, i01, i01, i10, i11});
         }
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = headY + headR;
     wom.boundMin = glm::vec3(-hp, 0,    -hp);
     wom.boundMax = glm::vec3( hp, maxY,  hp);
@@ -948,11 +920,7 @@ int handleAltar(int& i, int argc, char** argv) {
     // Top disc (the actual altar surface)
     disc(topR, curY, curY + topH, steps == 0);
     float maxY = curY + topH;
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxR = topR + steps * stepStride;
     wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
     wom.boundMax = glm::vec3( maxR, maxY,  maxR);
@@ -1020,11 +988,7 @@ int handlePortal(int& i, int argc, char** argv) {
         addBox(0, lintelY, 0,
                postHt, lintelH * 0.5f, width * 0.5f);
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-postHt, 0,      -width * 0.5f);
     wom.boundMax = glm::vec3( postHt, height,  width * 0.5f);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -1188,11 +1152,7 @@ int handleArchway(int& i, int argc, char** argv) {
         wom.indices.insert(wom.indices.end(),
             {bi0, bo1, bo0, bi0, bi1, bo1});
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = pillarH + arcOuter;
     wom.boundMin = glm::vec3(-thickness, 0,    -width * 0.5f);
     wom.boundMax = glm::vec3( thickness, maxY,  width * 0.5f);
@@ -1290,11 +1250,7 @@ int handleBarrel(int& i, int argc, char** argv) {
         wom.indices.insert(wom.indices.end(),
             {topCenter, topRing + sg, topRing + sg + 1});
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxR = midR + hoopThick;
     wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
     wom.boundMax = glm::vec3( maxR, height, maxR);
@@ -1375,11 +1331,7 @@ int handleChest(int& i, int argc, char** argv) {
     float lockEps = 0.008f;
     addBox(0, lockY, hz + lockEps,
            lockW * 0.5f, lockH * 0.5f, lockEps);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = bodyH + lidH;
     wom.boundMin = glm::vec3(-hx, 0, -hz - 0.012f);
     wom.boundMax = glm::vec3( hx, maxY, hz + 0.012f);
@@ -1489,11 +1441,7 @@ int handleAnvil(int& i, int argc, char** argv) {
         wom.indices.insert(wom.indices.end(),
             {base, base + 1, base + 2, base, base + 2, base + 3});
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxX = std::max(faceHx, faceHx + hornLen);
     float maxZ = std::max({baseHz, waistHz, capHz, faceHz});
     wom.boundMin = glm::vec3(-faceHx, 0, -maxZ);
@@ -3070,11 +3018,7 @@ int handleMushroom(int& i, int argc, char** argv) {
         wom.indices.insert(wom.indices.end(),
             {capBot, edge1, edge0});
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = stalkH + capR;
     wom.boundMin = glm::vec3(-capR, 0, -capR);
     wom.boundMax = glm::vec3( capR, maxY, capR);
@@ -3184,11 +3128,7 @@ int handleCart(int& i, int argc, char** argv) {
     };
     addWheel( wheelOffsetZ);
     addWheel(-wheelOffsetZ);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = wheelR + bedH;
     float maxZ = wheelOffsetZ + wheelThick * 0.5f;
     wom.boundMin = glm::vec3(-bedLen * 0.5f, 0, -maxZ);
@@ -3292,11 +3232,7 @@ int handleBanner(int& i, int argc, char** argv) {
     uint32_t bc_v = addV({fx, fy1, fz1}, backN, {1, 1});
     uint32_t bd = addV({fx, fy0, fz1}, backN, {1, 0});
     wom.indices.insert(wom.indices.end(), {ba, bb, bc_v, ba, bc_v, bd});
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-poleR, 0, fz1);
     wom.boundMax = glm::vec3(fx + poleR, poleH, poleR);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -3351,11 +3287,7 @@ int handleGrave(int& i, int argc, char** argv) {
     float tabletY = baseH + tabletH * 0.5f;
     addBox(0, tabletY, 0,
            tabletW * 0.5f, tabletH * 0.5f, tabletT * 0.5f);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = baseH + tabletH;
     float maxXZ = std::max(baseW * 0.5f, tabletW * 0.5f);
     wom.boundMin = glm::vec3(-maxXZ, 0, -baseDepth * 0.5f);
@@ -3419,11 +3351,7 @@ int handleBench(int& i, int argc, char** argv) {
     float legX = length * 0.45f;       // legs at 90% of length out
     addBox( legX, legCY, 0, legHx, legHy, legHz);
     addBox(-legX, legCY, 0, legHx, legHy, legHz);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-length * 0.5f, 0, -seatW * 0.5f);
     wom.boundMax = glm::vec3( length * 0.5f, seatY, seatW * 0.5f);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -3519,11 +3447,7 @@ int handleShrine(int& i, int argc, char** argv) {
     float roofHalfSize = halfSize * 1.05f;
     addBox(0, roofY + roofT * 0.5f, 0,
            roofHalfSize, roofT * 0.5f, roofHalfSize);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = roofY + roofT;
     wom.boundMin = glm::vec3(-roofHalfSize, 0, -roofHalfSize);
     wom.boundMax = glm::vec3( roofHalfSize, maxY, roofHalfSize);
@@ -3576,11 +3500,7 @@ int handleTotem(int& i, int argc, char** argv) {
         float halfW = (s & 1) ? (baseW * 0.5f * 0.70f) : (baseW * 0.5f);
         addBox(0, cy, 0, halfW, segH * 0.5f, halfW);
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = segments * segH;
     float maxXZ = baseW * 0.5f;
     wom.boundMin = glm::vec3(-maxXZ, 0, -maxXZ);
@@ -3663,11 +3583,7 @@ int handleCage(int& i, int argc, char** argv) {
                barRadius, barHy, barRadius);
         barTotal += 4;
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfW, 0, -halfW);
     wom.boundMax = glm::vec3( halfW, height, halfW);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -3735,11 +3651,7 @@ int handleThrone(int& i, int argc, char** argv) {
            armW * 0.5f, armH * 0.5f, armDepth);
     addBox(-halfSeat + armW * 0.5f, armCY, 0,
            armW * 0.5f, armH * 0.5f, armDepth);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = pedH + seatT + backH;
     wom.boundMin = glm::vec3(-halfPed, 0, -halfPed);
     wom.boundMax = glm::vec3( halfPed, maxY, halfPed);
@@ -3866,11 +3778,7 @@ int handleCoffin(int& i, int argc, char** argv) {
                  base + static_cast<uint32_t>(t)});
         }
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-hW, 0.0f,    -hL);
     wom.boundMax = glm::vec3( hW, height,   hL);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -3939,11 +3847,7 @@ int handleArchwayDouble(int& i, int argc, char** argv) {
     float rightLintelX = (centerPostX + rightPostX) * 0.5f;
     addBox(leftLintelX,  lintelCY, 0, halfLintelLen, halfLintel, halfPost);
     addBox(rightLintelX, lintelCY, 0, halfLintelLen, halfLintel, halfPost);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = openingHeight + lintelT;
     float halfTotalX = rightPostX + halfPost;
     wom.boundMin = glm::vec3(-halfTotalX, 0.0f,    -halfPost);
@@ -4025,11 +3929,7 @@ int handleBrazier(int& i, int argc, char** argv) {
         addBox(f.dx, flameTop + f.h * 0.5f, f.dz,
                halfFW, f.h * 0.5f, halfFW);
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = flameTop + bowlSize * 0.50f;
     wom.boundMin = glm::vec3(-halfBowl, 0.0f,    -halfBowl);
     wom.boundMax = glm::vec3( halfBowl, totalH,   halfBowl);
@@ -4100,11 +4000,7 @@ int handlePodium(int& i, int argc, char** argv) {
     float lecternZ  = -topSize * 0.25f;     // pushed back
     addBox(0, lecternCY, lecternZ,
            halfL, lecternH * 0.5f, halfL * 0.4f);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = lecternCY + lecternH * 0.5f;
     float halfBase = baseSize * 0.5f;
     wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
@@ -4180,11 +4076,7 @@ int handleSundial(int& i, int argc, char** argv) {
     addBox(-markerOff, markerCY, 0,        halfMW, markerH * 0.5f, halfMW); // W
     addBox(0,          markerCY,  markerOff, halfMW, markerH * 0.5f, halfMW); // N
     addBox(0,          markerCY, -markerOff, halfMW, markerH * 0.5f, halfMW); // S
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = baseHeight + gnomonHeight;
     wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
     wom.boundMax = glm::vec3( halfBase, totalH,   halfBase);
@@ -4265,11 +4157,7 @@ int handleScarecrow(int& i, int argc, char** argv) {
     float halfCrown = crownSize * 0.5f;
     float crownCY   = hatCY + hatH * 0.5f + crownH * 0.5f;
     addBox(0, crownCY, 0, halfCrown, crownH * 0.5f, halfCrown);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = crownCY + crownH * 0.5f;
     float halfArm = armSpan * 0.5f;
     wom.boundMin = glm::vec3(-halfArm, 0.0f,    -halfHead);
@@ -4353,11 +4241,7 @@ int handleWeathervane(int& i, int argc, char** argv) {
     float tailLen = arrowLen * 0.3f;
     float tailX   = -arrowLen + tailLen;
     addBox(tailX, arrowY, 0, halfAT, arrowT2 * 1.4f, halfAT);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = arrowY + arrowT2 * 1.4f;
     float maxX = std::max({halfBase, arrowLen, tailX + halfAT});
     wom.boundMin = glm::vec3(-maxX,    0.0f,    -armLen);
@@ -4435,11 +4319,7 @@ int handleBeehive(int& i, int argc, char** argv) {
     float entryCZ = halfBaseW + entryT * 0.5f;
     addBox(0, entryCY, entryCZ,
            entryW * 0.5f, entryH * 0.5f, entryT * 0.5f);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = plateH + height;
     wom.boundMin = glm::vec3(-halfPlateW, 0.0f,    -halfPlateW);
     wom.boundMax = glm::vec3( halfPlateW, totalH,   halfBaseW + entryT);
@@ -4510,11 +4390,7 @@ int handleGate(int& i, int argc, char** argv) {
     addBox(0, topRailY,    0, halfRailLen, halfRail, halfRail);
     addBox(0, midRailY,    0, halfRailLen, halfRail, halfRail);
     addBox(0, bottomRailY, 0, halfRailLen, halfRail, halfRail);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float halfTotalX = postX + halfPost;
     wom.boundMin = glm::vec3(-halfTotalX, 0.0f,        -halfPost);
     wom.boundMax = glm::vec3( halfTotalX, postHeight,   halfPost);
@@ -4591,11 +4467,7 @@ int handleCauldron(int& i, int argc, char** argv) {
     float halfRim = rimWidth * 0.5f;
     float rimCY = legHeight + bottomH + midH + rimH * 0.5f;
     addBox(0, rimCY, 0, halfRim, rimH * 0.5f, halfRim);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = legHeight + bodyHeight;
     wom.boundMin = glm::vec3(-halfRim, 0.0f,    -halfRim);
     wom.boundMax = glm::vec3( halfRim, totalH,   halfRim);
@@ -4658,11 +4530,7 @@ int handleStool(int& i, int argc, char** argv) {
     addBox(-legX, legCY,  legX, halfLeg, legHeight * 0.5f, halfLeg);
     addBox( legX, legCY, -legX, halfLeg, legHeight * 0.5f, halfLeg);
     addBox(-legX, legCY, -legX, halfLeg, legHeight * 0.5f, halfLeg);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfSeat, 0.0f,    -halfSeat);
     wom.boundMax = glm::vec3( halfSeat, seatTopY, halfSeat);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -4721,11 +4589,7 @@ int handleCrate(int& i, int argc, char** argv) {
     addBox(-postOffset, postCY,  postOffset, halfPost, postHeight * 0.5f, halfPost);
     addBox( postOffset, postCY, -postOffset, halfPost, postHeight * 0.5f, halfPost);
     addBox(-postOffset, postCY, -postOffset, halfPost, postHeight * 0.5f, halfPost);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float halfTotal = halfBody + halfPost;
     wom.boundMin = glm::vec3(-halfTotal, 0.0f,    -halfTotal);
     wom.boundMax = glm::vec3( halfTotal, size,     halfTotal);
@@ -4796,11 +4660,7 @@ int handleTombstone(int& i, int argc, char** argv) {
     float halfCrownD = depth * crownScale * 0.5f;
     float crownCY = baseH + slabH + crownH * 0.5f;
     addBox(0, crownCY, 0, halfCrownW, crownH * 0.5f, halfCrownD);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfBaseW, 0.0f,    -halfBaseD);
     wom.boundMax = glm::vec3( halfBaseW, height,   halfBaseD);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -4883,11 +4743,7 @@ int handleMailbox(int& i, int argc, char** argv) {
     float flagPlateCY = postHeight + boxHeight + flagPoleH - flagPlateW * 0.5f;
     addBox(flagPlateX, flagPlateCY, flagPoleZ,
            halfFlagL, flagPlateW * 0.5f, flagPlateT * 0.5f);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = postHeight + boxHeight + flagPoleH;
     float maxX = std::max(halfBoxW, flagPlateX + halfFlagL);
     wom.boundMin = glm::vec3(-halfBoxW, 0.0f,    -halfBoxL);
@@ -4967,11 +4823,7 @@ int handleSignpost(int& i, int argc, char** argv) {
     float halfCap = postThickness * 0.9f;
     addBox(0, capCY, 0,
            halfCap, capHeight * 0.5f, halfCap);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = capCY + capHeight * 0.5f;
     float halfSignZ = signWidth * 0.5f;
     wom.boundMin = glm::vec3(-std::max(halfBase, halfSignZ), 0.0f,    -halfSignZ);
@@ -5064,11 +4916,7 @@ int handleWell(int& i, int argc, char** argv) {
     float beamCY = wallH + postH - halfBeamT;
     addBox(0, beamCY, 0,
            halfOuter * 0.85f, halfBeamT, halfBeamT);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = wallH + postH;
     wom.boundMin = glm::vec3(-halfOuter, 0.0f,    -halfOuter);
     wom.boundMax = glm::vec3( halfOuter, totalH,   halfOuter);
@@ -5137,11 +4985,7 @@ int handleLadder(int& i, int argc, char** argv) {
         float rungCY = (r + 1) * rungSpacing;
         addBox(0, rungCY, 0, halfRungLen, halfRung, halfRung);
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfRail);
     wom.boundMax = glm::vec3( halfW, height,   halfRail);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -5227,11 +5071,7 @@ int handleBed(int& i, int argc, char** argv) {
     float pillowZ    = halfL - pillowL - headThick;
     addBox(0, pillowCY, pillowZ,
            pillowW * 0.5f, pillowH * 0.5f, pillowL * 0.5f);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = matBottomY + std::max({matThick + pillowH, headH, footH});
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfL);
     wom.boundMax = glm::vec3( halfW, totalH,   halfL);
@@ -5312,11 +5152,7 @@ int handleLamppost(int& i, int argc, char** argv) {
     float capCY   = lanternBottomY + lanternHeight + capH * 0.5f;
     addBox(0, capCY, 0,
            halfCap, capH * 0.5f, halfCap);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float totalH = capCY + capH * 0.5f;
     wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
     wom.boundMax = glm::vec3( halfBase, totalH,   halfBase);
@@ -5385,11 +5221,7 @@ int handleTable(int& i, int argc, char** argv) {
     addBox(-legX, legCY,  legZ, halfLeg, legHeight * 0.5f, halfLeg);
     addBox( legX, legCY, -legZ, halfLeg, legHeight * 0.5f, halfLeg);
     addBox(-legX, legCY, -legZ, halfLeg, legHeight * 0.5f, halfLeg);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfD);
     wom.boundMax = glm::vec3( halfW, height,   halfD);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -5509,11 +5341,7 @@ int handleBookshelf(int& i, int argc, char** argv) {
             totalBooks++;
         }
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfD);
     wom.boundMax = glm::vec3( halfW, height,   halfD);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -5637,11 +5465,7 @@ int handleTent(int& i, int argc, char** argv) {
         uint32_t d = addV({-L2, 0, +W2}, n, {0, 1});
         wom.indices.insert(wom.indices.end(), {a, d, c, a, c, b});
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-L2, 0, -W2);
     wom.boundMax = glm::vec3(+L2, height, +W2);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -5727,11 +5551,7 @@ int handleWorkbench(int& i, int argc, char** argv) {
         addFlatBox(wom, 0.0f, trayCY, trayCZ,
                    L2 - legR, trayH * 0.5f, trayD * 0.5f);
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxY = legH + topT;
     if (viseSize > 0) maxY = std::max(maxY, legH + topT + viseSize);
     if (trayH > 0)    maxY = std::max(maxY, legH + topT + trayH);
@@ -5850,11 +5670,7 @@ int handleBedroll(int& i, int argc, char** argv) {
         addFlatBox(wom, 0.0f, pHeight * 0.5f, halfL + pHalf,
                    pHalf, pHeight * 0.5f, pHalf);
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxZ = halfL + (pillowSize > 0 ? pillowSize : 0);
     wom.boundMin = glm::vec3(-radius, 0, -halfL);
     wom.boundMax = glm::vec3(+radius, 2.0f * radius, +maxZ);
@@ -5912,11 +5728,7 @@ int handleChimney(int& i, int argc, char** argv) {
         addFlatBox(wom, 0.0f, shaftH + capH * 0.5f, 0.0f,
                    capW2, capH * 0.5f, capD2);
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxX = W2 + (capH > 0 ? capExtra : 0);
     float maxZ = D2 + (capH > 0 ? capExtra : 0);
     wom.boundMin = glm::vec3(-maxX, 0, -maxZ);
@@ -6002,11 +5814,7 @@ int handlePergola(int& i, int argc, char** argv) {
             addFlatBox(wom, cx, xbCY, 0, xbHZ, xbHY, W2);
         }
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float topY = (crossbeams > 0) ? (postH + 2.0f * beamT) : (postH + beamT);
     wom.boundMin = glm::vec3(-L2, 0, -W2);
     wom.boundMax = glm::vec3(+L2, topY, +W2);
@@ -6077,11 +5885,7 @@ int handleDock(int& i, int argc, char** argv) {
         addBox(+pilingX, pilingHY, cz, pilingW, pilingHY, pilingW);
         addBox(-pilingX, pilingHY, cz, pilingW, pilingHY, pilingW);
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-W2, 0, -L2);
     wom.boundMax = glm::vec3( W2, height + deckT, +L2);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -6237,11 +6041,7 @@ int handleHaystack(int& i, int argc, char** argv) {
                 {center, ring + s + 1, ring + s});
         }
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     wom.boundMin = glm::vec3(-baseR, 0, -baseR);
     wom.boundMax = glm::vec3( baseR, height, baseR);
     if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
@@ -6317,11 +6117,7 @@ int handleCanopy(int& i, int argc, char** argv) {
         addBox(+W2 + drapeT, drapeCY, 0, drapeT, drapeHY, D2);
         addBox(-W2 - drapeT, drapeCY, 0, drapeT, drapeHY, D2);
     }
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxX = W2 + (drape > 0 ? panelT * 0.5f : 0);
     float maxZ = D2 + (drape > 0 ? panelT * 0.5f : 0);
     wom.boundMin = glm::vec3(-maxX, 0, -maxZ);
@@ -6443,11 +6239,7 @@ int handleWoodpile(int& i, int argc, char** argv) {
     addLog(-1.0f * logR, logR + yStep);   // middle-left
     addLog(+1.0f * logR, logR + yStep);   // middle-right
     addLog( 0.0f,         logR + 2 * yStep);  // top
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxX = 3.0f * logR;
     float maxY = 2.0f * logR + 2.0f * yStep;
     wom.boundMin = glm::vec3(-maxX, 0, -halfL);
@@ -6514,11 +6306,7 @@ int handleFirepit(int& i, int argc, char** argv) {
     addBox(0, logCY, 0, logLen * 0.5f, logThick * 0.5f, logThick * 0.5f);
     addBox(0, logCY + logThick, 0, logThick * 0.5f, logThick * 0.5f,
            logLen * 0.5f);
-    wowee::pipeline::WoweeModel::Batch batch;
-    batch.indexStart = 0;
-    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
-    batch.textureIndex = 0;
-    wom.batches.push_back(batch);
+    finalizeAsSingleBatch(wom);
     float maxR = std::max(ringR + stoneSize, logLen * 0.5f);
     float maxY = std::max(stoneSize * 2.0f, logCY + logThick * 1.5f);
     wom.boundMin = glm::vec3(-maxR, 0, -maxR);

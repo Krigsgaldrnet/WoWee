@@ -26,6 +26,19 @@ inline void stripExt(std::string& base, const char* ext) {
     }
 }
 
+// Append a single batch covering ALL of wom.indices to wom.batches.
+// Called at the end of every gen-mesh primitive (the procedural
+// builders emit just one batch per primitive). The same 4-line
+// "construct + populate + push" boilerplate was repeated in 53
+// handlers before extraction.
+inline void finalizeAsSingleBatch(wowee::pipeline::WoweeModel& wom) {
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+}
+
 // Append one vertex (position, normal, UV) to a WoweeModel and
 // return its newly-assigned index. Inline because the procedural
 // mesh primitives call this thousands of times per build and the
