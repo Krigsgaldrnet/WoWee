@@ -155,6 +155,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Camouflage: 2-octave value noise thresholded into hard bg/fg blobs (woodland disruption pattern)\n");
     std::printf("  --gen-texture-snake-skin <out.png> <bgHex> <scaleHex> [cellW] [cellH] [outlineW] [W H]\n");
     std::printf("                         Snake skin: brick-offset diamond scales (L1 metric) with derived dark outline (reptile / dragon hide)\n");
+    std::printf("  --gen-texture-mesh-screen <out.png> <bgHex> <wireHex> [stride] [wireW] [W H]\n");
+    std::printf("                         Mesh-screen: orthogonal H+V wire grid (window screen / chain-link / sci-fi grille)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

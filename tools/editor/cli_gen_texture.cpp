@@ -3546,6 +3546,58 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleMeshScreen(int& i, int argc, char** argv) {
+    // Orthogonal mesh-screen / grille: thin horizontal + vertical
+    // wires forming an axis-aligned grid. Distinct from
+    // --gen-texture-lattice (which uses ±45° diagonals to make
+    // diamond openings) — this is the right-angle window-screen /
+    // chain-link / sci-fi-grille look.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string wireHex = argv[++i];
+    int stride = 12;
+    int wireW  = 2;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, stride);
+    parseOptInt(i, argc, argv, wireW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stride < 2 || stride > 1024 ||
+        wireW < 1 || wireW * 2 >= stride) {
+        std::fprintf(stderr,
+            "gen-texture-mesh-screen: invalid dims (W/H 1..8192, "
+            "stride 2..1024, wireW 1..stride/2)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, wr, wg, wb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-mesh-screen")) return 1;
+    if (!parseHexOrError(wireHex, wr, wg, wb_,
+                         "gen-texture-mesh-screen")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        bool yOnWire = (y % stride) < wireW;
+        for (int x = 0; x < W; ++x) {
+            bool xOnWire = (x % stride) < wireW;
+            uint8_t r, g, b;
+            if (xOnWire || yOnWire) {
+                r = wr; g = wg; b = wb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-mesh-screen")) return 1;
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/wire    : %s / %s\n", bgHex.c_str(), wireHex.c_str());
+    std::printf("  grid       : stride=%d, wireW=%d\n", stride, wireW);
+    return 0;
+}
+
 int handleSnakeSkin(int& i, int argc, char** argv) {
     // Snake skin: brick-offset grid of diamond-shaped scales.
     // Each scale is a rotated square in L1 (taxicab) metric so
@@ -4527,6 +4579,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-pinstripe",      3, handlePinstripe},
     {"--gen-texture-camo",           3, handleCamo},
     {"--gen-texture-snake-skin",     3, handleSnakeSkin},
+    {"--gen-texture-mesh-screen",    3, handleMeshScreen},
 };
 }  // namespace
 
