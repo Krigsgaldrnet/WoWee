@@ -6245,6 +6245,81 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleChimney(int& i, int argc, char** argv) {
+    // Brick chimney: rectangular shaft topped by a slightly-wider
+    // cap (the protective crown that throws rain off the masonry).
+    // All axis-aligned boxes — uses cli_box_emitter::addFlatBox.
+    // The 60th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float width  = 0.45f;
+    float depth  = 0.45f;
+    float height = 1.8f;
+    float capH   = 0.10f;
+    float capExtra = 0.05f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { depth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { capH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { capExtra = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (width <= 0 || depth <= 0 || height <= 0 ||
+        capH < 0 || capH >= height || capExtra < 0) {
+        std::fprintf(stderr,
+            "gen-mesh-chimney: dims > 0; capH < height; capExtra >= 0\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    const float W2 = width  * 0.5f;
+    const float D2 = depth  * 0.5f;
+    const float shaftH = height - capH;
+    addFlatBox(wom, 0.0f, shaftH * 0.5f, 0.0f,
+               W2, shaftH * 0.5f, D2);
+    if (capH > 0.0f) {
+        const float capW2 = W2 + capExtra;
+        const float capD2 = D2 + capExtra;
+        addFlatBox(wom, 0.0f, shaftH + capH * 0.5f, 0.0f,
+                   capW2, capH * 0.5f, capD2);
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxX = W2 + (capH > 0 ? capExtra : 0);
+    float maxZ = D2 + (capH > 0 ? capExtra : 0);
+    wom.boundMin = glm::vec3(-maxX, 0, -maxZ);
+    wom.boundMax = glm::vec3(+maxX, height, +maxZ);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-chimney: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  shaft      : %.3f x %.3f x %.3f\n", width, depth, shaftH);
+    if (capH > 0)
+        std::printf("  cap        : %.3f thick, %.3f wider\n", capH, capExtra);
+    else
+        std::printf("  cap        : (none)\n");
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handlePergola(int& i, int argc, char** argv) {
     // Pergola: 4 corner posts holding 2 long perimeter beams plus
     // N cross-beams running between the long beams. Distinct from
@@ -6983,6 +7058,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-haystack",       1, handleHaystack},
     {"--gen-mesh-dock",           1, handleDock},
     {"--gen-mesh-pergola",        1, handlePergola},
+    {"--gen-mesh-chimney",        1, handleChimney},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},

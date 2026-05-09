@@ -228,6 +228,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Dock: flat plank deck on N pairs of square pilings (default 3.0/1.0/0.6/3/0.10/0.10)\n");
     std::printf("  --gen-mesh-pergola <wom-base> [length] [width] [height] [postR] [beamT] [crossbeams]\n");
     std::printf("                         Pergola: 4 corner posts + 2 perimeter beams + N cross beams (open lattice top, no panel)\n");
+    std::printf("  --gen-mesh-chimney <wom-base> [width] [depth] [height] [capH] [capExtra]\n");
+    std::printf("                         Chimney: rectangular brick shaft topped by a slightly wider rain-cap (default 0.45/0.45/1.8/0.10/0.05)\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
     std::printf("                         Table: flat top slab on 4 corner legs (default 1.6/1.0/0.85/0.10/0.06)\n");
     std::printf("  --gen-mesh-lamppost <wom-base> [poleH] [poleT] [baseSize] [lanternSize] [lanternH]\n");
