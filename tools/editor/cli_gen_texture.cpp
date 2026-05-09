@@ -2971,6 +2971,93 @@ int handleArgyle(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleHerringbone(int& i, int argc, char** argv) {
+    // Herringbone (chevron-style): horizontal strips of slanted
+    // parallel lines whose slant direction flips every strip,
+    // producing the V-shaped "fish bone" pattern that's the
+    // hallmark of herringbone fabric and parquet flooring.
+    // Implemented as a per-pixel shear: shifting x by the row's
+    // local-y collapses each diagonal line into a vertical band
+    // in shifted-x space, where modular arithmetic picks line vs
+    // background.
+    std::string outPath = argv[++i];
+    std::string bgHex = argv[++i];
+    std::string lineHex = argv[++i];
+    int stripHeight  = 32;   // height of each constant-direction strip
+    int lineSpacing  = 12;   // distance between adjacent lines along x
+    int lineWidth    = 4;    // line thickness in shifted-x coords
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stripHeight = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { lineSpacing = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { lineWidth = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stripHeight < 4 || stripHeight > 256 ||
+        lineSpacing < 4 || lineSpacing > 256 ||
+        lineWidth < 1 || lineWidth >= lineSpacing) {
+        std::fprintf(stderr,
+            "gen-texture-herringbone: invalid dims (W/H 1..8192, stripH 4..256, "
+            "spacing 4..256, lineW 1..spacing-1)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, lr_, lg_, lb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(lineHex, lr_, lg_, lb_)) {
+        std::fprintf(stderr,
+            "gen-texture-herringbone: bg or line hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int rowOfStrips = y / stripHeight;
+        int withinStrip = y - rowOfStrips * stripHeight;
+        // Even strips: lines slant down-right (+45°-ish, scaled by
+        // stripHeight/lineSpacing). Odd strips: slant down-left.
+        int sign = (rowOfStrips & 1) ? -1 : 1;
+        for (int x = 0; x < W; ++x) {
+            // Shift x by ±withinStrip — collapses the slanted line
+            // into a vertical strip in shifted-x coords.
+            int shifted = x + sign * withinStrip;
+            int phase = ((shifted % lineSpacing) + lineSpacing) % lineSpacing;
+            uint8_t r, g, b;
+            if (phase < lineWidth) {
+                r = lr_; g = lg_; b = lb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-herringbone: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg / line  : %s / %s\n", bgHex.c_str(), lineHex.c_str());
+    std::printf("  strip H    : %d (slant flips per strip)\n", stripHeight);
+    std::printf("  line       : width %d / spacing %d\n",
+                lineWidth, lineSpacing);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -3068,6 +3155,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-argyle") == 0 && i + 4 < argc) {
         outRc = handleArgyle(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-herringbone") == 0 && i + 3 < argc) {
+        outRc = handleHerringbone(i, argc, argv); return true;
     }
     return false;
 }
