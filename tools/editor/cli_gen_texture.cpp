@@ -2700,6 +2700,95 @@ int handleCoral(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleFlame(int& i, int argc, char** argv) {
+    // Flame: vertical color gradient from dark hex at the
+    // bottom to hot hex at the top, mixed with smooth noise
+    // flicker so the boundary between hot and dark wavers
+    // randomly. Reads as a flame seen from a distance.
+    std::string outPath = argv[++i];
+    std::string darkHex = argv[++i];
+    std::string hotHex = argv[++i];
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192) {
+        std::fprintf(stderr,
+            "gen-texture-flame: invalid dims (W/H 1..8192)\n");
+        return 1;
+    }
+    uint8_t dr, dg, db, hr, hg, hb;
+    if (!parseHex(darkHex, dr, dg, db)) {
+        std::fprintf(stderr,
+            "gen-texture-flame: '%s' is not a valid hex color\n",
+            darkHex.c_str());
+        return 1;
+    }
+    if (!parseHex(hotHex, hr, hg, hb)) {
+        std::fprintf(stderr,
+            "gen-texture-flame: '%s' is not a valid hex color\n",
+            hotHex.c_str());
+        return 1;
+    }
+    float seedF = static_cast<float>(seed);
+    auto noise = [&](float x, float y) -> float {
+        // Multi-octave smooth noise; lower freq dominates.
+        float n = 0.0f, total = 0.0f;
+        float freq = 0.04f, amp = 1.0f;
+        for (int o = 0; o < 3; ++o) {
+            n += amp * (0.5f + 0.5f *
+                std::sin(x * freq + seedF * (1.0f + o)) *
+                std::cos(y * freq + seedF * (0.5f + o)));
+            total += amp;
+            freq *= 2.0f;
+            amp *= 0.5f;
+        }
+        return n / total;
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        // Vertical position: 0 at bottom (dark), 1 at top (hot).
+        float vy = static_cast<float>(H - 1 - y) / (H - 1);
+        for (int x = 0; x < W; ++x) {
+            // Add wavy flicker via noise so the gradient boundary
+            // isn't a clean horizontal line.
+            float n = noise(static_cast<float>(x), static_cast<float>(y));
+            float t = std::clamp(vy + (n - 0.5f) * 0.4f, 0.0f, 1.0f);
+            // Curve so the bottom stays dark longer and the top
+            // saturates faster (real flames are mostly dark with
+            // a bright core/tip).
+            t = t * t;
+            uint8_t r = static_cast<uint8_t>(dr * (1 - t) + hr * t);
+            uint8_t g = static_cast<uint8_t>(dg * (1 - t) + hg * t);
+            uint8_t b = static_cast<uint8_t>(db * (1 - t) + hb * t);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = r;
+            pixels[i2 + 1] = g;
+            pixels[i2 + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-flame: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  dark/hot   : %s / %s\n",
+                darkHex.c_str(), hotHex.c_str());
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2788,6 +2877,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-coral") == 0 && i + 3 < argc) {
         outRc = handleCoral(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-flame") == 0 && i + 3 < argc) {
+        outRc = handleFlame(i, argc, argv); return true;
     }
     return false;
 }
