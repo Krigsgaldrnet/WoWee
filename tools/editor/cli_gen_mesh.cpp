@@ -2535,17 +2535,9 @@ int handleArch(int& i, int argc, char** argv) {
         // Outer ring point at angle a.
         glm::vec3 outer0(archR * c0, 0, archCenterZ + archR * s0);
         glm::vec3 outer1(archR * c1, 0, archCenterZ + archR * s1);
-        // Inner ring (offset down to be a thin band — we're
-        // making just a bridge across the top, no thickness
-        // for now to keep vertex count tractable). The arch
-        // band is a flat strip from the outer curve down to
-        // the column tops at the SAME XZ — use the column
-        // tops at the band ends. For simplicity, treat the
-        // band as a thin shell along the curve.
-        glm::vec3 outer0b = outer0 + glm::vec3(0, depth, 0);
-        glm::vec3 outer1b = outer1 + glm::vec3(0, depth, 0);
-        // Top face of band (pointing radially outward from
-        // arch center).
+        // The arch band is a flat strip along the curve, no
+        // explicit inner ring. Top face of band points radially
+        // outward from arch center.
         glm::vec3 n((c0 + c1) * 0.5f, 0, (s0 + s1) * 0.5f);
         n = glm::normalize(n);
         uint32_t base = static_cast<uint32_t>(wom.vertices.size());
@@ -4365,7 +4357,6 @@ int handleCage(int& i, int argc, char** argv) {
     // Bars: N bars per side, evenly distributed between corners.
     // Side spans from -corner to +corner; bars at (k+1)/(N+1)
     // along the span so they're inset (no overlap with corners).
-    float barCY = height * 0.5f;
     float barHy = (height - 2 * frameT) * 0.5f;
     float barCYadj = frameT + barHy;
     int barTotal = 0;
@@ -7203,175 +7194,84 @@ int handleTent(int& i, int argc, char** argv) {
 
 }  // namespace
 
+namespace {
+// Table-driven dispatch for every --gen-mesh-* flag. minNextArgs
+// is the count of *required* positional args after the flag — used
+// as a guard so a bare `--gen-mesh-X` (or `--gen-mesh-X` followed
+// only by the next switch) is rejected by the dispatcher even
+// without consulting kArgRequired. Every primitive in this file
+// must have an entry here OR it will not be reachable from the CLI.
+struct MeshEntry {
+    const char* flag;
+    int minNextArgs;
+    int (*fn)(int&, int, char**);
+};
+
+constexpr MeshEntry kMeshTable[] = {
+    {"--gen-mesh-textured",       3, handleTextured},
+    {"--gen-mesh",                2, handleMeshDispatch},
+    {"--gen-mesh-stairs",         2, handleStairs},
+    {"--gen-mesh-grid",           2, handleGrid},
+    {"--gen-mesh-disc",           1, handleDisc},
+    {"--gen-mesh-tube",           1, handleTube},
+    {"--gen-mesh-capsule",        1, handleCapsule},
+    {"--gen-mesh-arch",           1, handleArch},
+    {"--gen-mesh-pyramid",        1, handlePyramid},
+    {"--gen-mesh-fence",          1, handleFence},
+    {"--gen-mesh-tree",           1, handleTree},
+    {"--gen-mesh-rock",           1, handleRock},
+    {"--gen-mesh-pillar",         1, handlePillar},
+    {"--gen-mesh-bridge",         1, handleBridge},
+    {"--gen-mesh-tower",          1, handleTower},
+    {"--gen-mesh-house",          1, handleHouse},
+    {"--gen-mesh-fountain",       1, handleFountain},
+    {"--gen-mesh-statue",         1, handleStatue},
+    {"--gen-mesh-altar",          1, handleAltar},
+    {"--gen-mesh-portal",         1, handlePortal},
+    {"--gen-mesh-archway",        1, handleArchway},
+    {"--gen-mesh-archway-double", 1, handleArchwayDouble},
+    {"--gen-mesh-barrel",         1, handleBarrel},
+    {"--gen-mesh-chest",          1, handleChest},
+    {"--gen-mesh-anvil",          1, handleAnvil},
+    {"--gen-mesh-mushroom",       1, handleMushroom},
+    {"--gen-mesh-cart",           1, handleCart},
+    {"--gen-mesh-banner",         1, handleBanner},
+    {"--gen-mesh-grave",          1, handleGrave},
+    {"--gen-mesh-bench",          1, handleBench},
+    {"--gen-mesh-shrine",         1, handleShrine},
+    {"--gen-mesh-totem",          1, handleTotem},
+    {"--gen-mesh-cage",           1, handleCage},
+    {"--gen-mesh-throne",         1, handleThrone},
+    {"--gen-mesh-coffin",         1, handleCoffin},
+    {"--gen-mesh-bookshelf",      1, handleBookshelf},
+    {"--gen-mesh-tent",           1, handleTent},
+    {"--gen-mesh-table",          1, handleTable},
+    {"--gen-mesh-lamppost",       1, handleLamppost},
+    {"--gen-mesh-bed",            1, handleBed},
+    {"--gen-mesh-ladder",         1, handleLadder},
+    {"--gen-mesh-well",           1, handleWell},
+    {"--gen-mesh-signpost",       1, handleSignpost},
+    {"--gen-mesh-mailbox",        1, handleMailbox},
+    {"--gen-mesh-tombstone",      1, handleTombstone},
+    {"--gen-mesh-crate",          1, handleCrate},
+    {"--gen-mesh-stool",          1, handleStool},
+    {"--gen-mesh-cauldron",       1, handleCauldron},
+    {"--gen-mesh-gate",           1, handleGate},
+    {"--gen-mesh-beehive",        1, handleBeehive},
+    {"--gen-mesh-weathervane",    1, handleWeathervane},
+    {"--gen-mesh-scarecrow",      1, handleScarecrow},
+    {"--gen-mesh-sundial",        1, handleSundial},
+    {"--gen-mesh-podium",         1, handlePodium},
+    {"--gen-mesh-brazier",        1, handleBrazier},
+};
+}  // namespace
+
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
-    // Match --gen-mesh-textured BEFORE the bare --gen-mesh dispatcher.
-    // strcmp is exact-match so the order doesn't actually matter, but
-    // keeping the longer name first matches the convention used for
-    // --gen-texture-noise vs --gen-texture-noise-color.
-    if (std::strcmp(argv[i], "--gen-mesh-textured") == 0 && i + 3 < argc) {
-        outRc = handleTextured(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
-        outRc = handleMeshDispatch(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-stairs") == 0 && i + 2 < argc) {
-        outRc = handleStairs(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-grid") == 0 && i + 2 < argc) {
-        outRc = handleGrid(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-disc") == 0 && i + 1 < argc) {
-        outRc = handleDisc(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-tube") == 0 && i + 1 < argc) {
-        outRc = handleTube(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-capsule") == 0 && i + 1 < argc) {
-        outRc = handleCapsule(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-arch") == 0 && i + 1 < argc) {
-        outRc = handleArch(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-pyramid") == 0 && i + 1 < argc) {
-        outRc = handlePyramid(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-fence") == 0 && i + 1 < argc) {
-        outRc = handleFence(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-tree") == 0 && i + 1 < argc) {
-        outRc = handleTree(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-rock") == 0 && i + 1 < argc) {
-        outRc = handleRock(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-pillar") == 0 && i + 1 < argc) {
-        outRc = handlePillar(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-bridge") == 0 && i + 1 < argc) {
-        outRc = handleBridge(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-tower") == 0 && i + 1 < argc) {
-        outRc = handleTower(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-house") == 0 && i + 1 < argc) {
-        outRc = handleHouse(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-fountain") == 0 && i + 1 < argc) {
-        outRc = handleFountain(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-statue") == 0 && i + 1 < argc) {
-        outRc = handleStatue(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-altar") == 0 && i + 1 < argc) {
-        outRc = handleAltar(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-portal") == 0 && i + 1 < argc) {
-        outRc = handlePortal(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-archway") == 0 && i + 1 < argc) {
-        outRc = handleArchway(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-barrel") == 0 && i + 1 < argc) {
-        outRc = handleBarrel(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-chest") == 0 && i + 1 < argc) {
-        outRc = handleChest(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-anvil") == 0 && i + 1 < argc) {
-        outRc = handleAnvil(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-mushroom") == 0 && i + 1 < argc) {
-        outRc = handleMushroom(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-cart") == 0 && i + 1 < argc) {
-        outRc = handleCart(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-banner") == 0 && i + 1 < argc) {
-        outRc = handleBanner(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-grave") == 0 && i + 1 < argc) {
-        outRc = handleGrave(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-bench") == 0 && i + 1 < argc) {
-        outRc = handleBench(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-shrine") == 0 && i + 1 < argc) {
-        outRc = handleShrine(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-totem") == 0 && i + 1 < argc) {
-        outRc = handleTotem(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-cage") == 0 && i + 1 < argc) {
-        outRc = handleCage(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-throne") == 0 && i + 1 < argc) {
-        outRc = handleThrone(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-coffin") == 0 && i + 1 < argc) {
-        outRc = handleCoffin(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-bookshelf") == 0 && i + 1 < argc) {
-        outRc = handleBookshelf(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-tent") == 0 && i + 1 < argc) {
-        outRc = handleTent(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-table") == 0 && i + 1 < argc) {
-        outRc = handleTable(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-lamppost") == 0 && i + 1 < argc) {
-        outRc = handleLamppost(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-bed") == 0 && i + 1 < argc) {
-        outRc = handleBed(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-ladder") == 0 && i + 1 < argc) {
-        outRc = handleLadder(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-well") == 0 && i + 1 < argc) {
-        outRc = handleWell(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-signpost") == 0 && i + 1 < argc) {
-        outRc = handleSignpost(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-mailbox") == 0 && i + 1 < argc) {
-        outRc = handleMailbox(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-tombstone") == 0 && i + 1 < argc) {
-        outRc = handleTombstone(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-crate") == 0 && i + 1 < argc) {
-        outRc = handleCrate(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-stool") == 0 && i + 1 < argc) {
-        outRc = handleStool(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-cauldron") == 0 && i + 1 < argc) {
-        outRc = handleCauldron(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-gate") == 0 && i + 1 < argc) {
-        outRc = handleGate(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-beehive") == 0 && i + 1 < argc) {
-        outRc = handleBeehive(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-weathervane") == 0 && i + 1 < argc) {
-        outRc = handleWeathervane(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-scarecrow") == 0 && i + 1 < argc) {
-        outRc = handleScarecrow(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-sundial") == 0 && i + 1 < argc) {
-        outRc = handleSundial(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-podium") == 0 && i + 1 < argc) {
-        outRc = handlePodium(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-brazier") == 0 && i + 1 < argc) {
-        outRc = handleBrazier(i, argc, argv); return true;
-    }
-    if (std::strcmp(argv[i], "--gen-mesh-archway-double") == 0 && i + 1 < argc) {
-        outRc = handleArchwayDouble(i, argc, argv); return true;
+    for (const auto& e : kMeshTable) {
+        if (std::strcmp(argv[i], e.flag) == 0 && i + e.minNextArgs < argc) {
+            outRc = e.fn(i, argc, argv);
+            return true;
+        }
     }
     return false;
 }
