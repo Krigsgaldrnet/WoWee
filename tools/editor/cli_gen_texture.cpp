@@ -3500,6 +3500,90 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleDewdrops(int& i, int argc, char** argv) {
+    // Scattered dewdrops / water droplets: N small circles of
+    // hash-derived (position, radius) blended onto bg via radial
+    // brightness — bright at the center and fading to bg at the
+    // drop edge. Where drops overlap they accumulate brighter
+    // (max-of-individual-contributions). Useful for morning
+    // grass blades, wet glass, leaf surfaces, magic-pool detail.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string dropHex = argv[++i];
+    int dropCount = 60;
+    int maxR = 8;
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, dropCount);
+    parseOptInt(i, argc, argv, maxR);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        dropCount < 1 || dropCount > 8192 ||
+        maxR < 1 || maxR > 256) {
+        std::fprintf(stderr,
+            "gen-texture-dewdrops: invalid dims (W/H 1..8192, "
+            "dropCount 1..8192, maxR 1..256)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, dr, dg, db;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-dewdrops")) return 1;
+    if (!parseHexOrError(dropHex, dr, dg, db,
+                         "gen-texture-dewdrops")) return 1;
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    // Pre-compute drop centers + radii.
+    struct Drop { int cx, cy, R; };
+    std::vector<Drop> drops(dropCount);
+    for (int k = 0; k < dropCount; ++k) {
+        uint32_t h = hash32(static_cast<uint32_t>(k) + seed);
+        drops[k].cx = static_cast<int>(h % W);
+        drops[k].cy = static_cast<int>((h >> 8) % H);
+        // Radius distributed in [maxR/4, maxR].
+        drops[k].R = maxR / 4 + static_cast<int>((h >> 16) % (maxR * 3 / 4 + 1));
+    }
+    // Compute per-pixel max contribution from any drop in range.
+    std::vector<float> bright(static_cast<size_t>(W) * H, 0.0f);
+    for (const Drop& d : drops) {
+        int yLo = std::max(0, d.cy - d.R);
+        int yHi = std::min(H - 1, d.cy + d.R);
+        int xLo = std::max(0, d.cx - d.R);
+        int xHi = std::min(W - 1, d.cx + d.R);
+        for (int y = yLo; y <= yHi; ++y) {
+            for (int x = xLo; x <= xHi; ++x) {
+                int dx = x - d.cx, dy = y - d.cy;
+                float dist = std::sqrt(static_cast<float>(dx * dx + dy * dy));
+                if (dist > d.R) continue;
+                float t = 1.0f - dist / d.R;
+                float& b = bright[static_cast<size_t>(y) * W + x];
+                if (t > b) b = t;
+            }
+        }
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float t = bright[static_cast<size_t>(y) * W + x];
+            uint8_t r = static_cast<uint8_t>(br_ + t * (dr - br_));
+            uint8_t g = static_cast<uint8_t>(bg_ + t * (dg - bg_));
+            uint8_t b = static_cast<uint8_t>(bb_ + t * (db - bb_));
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-dewdrops")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/drop    : %s / %s\n", bgHex.c_str(), dropHex.c_str());
+    std::printf("  drops      : %d (max R=%d, seed %u)\n",
+                dropCount, maxR, seed);
+    return 0;
+}
+
 int handleLightbeam(int& i, int argc, char** argv) {
     // Vertical light-beam / sun-ray gradient. Brightness fades
     // both horizontally (away from the center column) and
@@ -5454,6 +5538,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-mold",           3, handleMold},
     {"--gen-texture-embroidery",     3, handleEmbroidery},
     {"--gen-texture-lightbeam",      3, handleLightbeam},
+    {"--gen-texture-dewdrops",       3, handleDewdrops},
 };
 }  // namespace
 
