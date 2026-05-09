@@ -568,6 +568,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-wood", "--gen-texture-grass", "--gen-texture-fabric",
         "--gen-texture-cobble", "--gen-texture-marble", "--gen-texture-metal",
         "--gen-texture-leather", "--gen-texture-sand", "--gen-texture-snow",
+        "--gen-texture-lava",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -18751,6 +18752,151 @@ int main(int argc, char* argv[]) {
             std::printf("  density    : %.4f (%d sparkles)\n",
                         density, sparkles);
             std::printf("  seed       : %u\n", seed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-lava") == 0 && i + 3 < argc) {
+            // Lava texture: dark cooled-crust base with bright
+            // glowing cracks tracing Worley cell boundaries — the
+            // canonical "broken obsidian shell over magma" look.
+            // Same cellular noise structure as gen-texture-cobble
+            // but the boundary regions glow hot instead of darken.
+            std::string outPath = argv[++i];
+            std::string darkHex = argv[++i];
+            std::string hotHex = argv[++i];
+            uint32_t seed = 1;
+            int crackScale = 32;  // average cell size in px
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { crackScale = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                crackScale < 8 || crackScale > 512) {
+                std::fprintf(stderr,
+                    "gen-texture-lava: invalid dims (W/H 1..8192, crackScale 8..512)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t dr, dg, db, hr, hg, hb;
+            if (!parseHex(darkHex, dr, dg, db)) {
+                std::fprintf(stderr,
+                    "gen-texture-lava: '%s' is not a valid hex color\n",
+                    darkHex.c_str());
+                return 1;
+            }
+            if (!parseHex(hotHex, hr, hg, hb)) {
+                std::fprintf(stderr,
+                    "gen-texture-lava: '%s' is not a valid hex color\n",
+                    hotHex.c_str());
+                return 1;
+            }
+            auto hash01 = [seed](int cx, int cy, int comp) -> float {
+                uint32_t h = static_cast<uint32_t>(cx) * 374761393u +
+                             static_cast<uint32_t>(cy) * 668265263u +
+                             seed * 2147483647u +
+                             static_cast<uint32_t>(comp) * 16777619u;
+                h = (h ^ (h >> 13)) * 1274126177u;
+                h = h ^ (h >> 16);
+                return (h >> 8) * (1.0f / 16777216.0f);
+            };
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            for (int y = 0; y < H; ++y) {
+                int cy0 = y / crackScale;
+                for (int x = 0; x < W; ++x) {
+                    int cx0 = x / crackScale;
+                    float bestD = 1e9f, second = 1e9f;
+                    for (int dy = -1; dy <= 1; ++dy) {
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            int cx = cx0 + dx;
+                            int cy = cy0 + dy;
+                            float jx = (hash01(cx, cy, 0) - 0.5f) * 0.7f;
+                            float jy = (hash01(cx, cy, 1) - 0.5f) * 0.7f;
+                            float ccx = (cx + 0.5f + jx) * crackScale;
+                            float ccy = (cy + 0.5f + jy) * crackScale;
+                            float dxp = x - ccx, dyp = y - ccy;
+                            float d = std::sqrt(dxp * dxp + dyp * dyp);
+                            if (d < bestD) { second = bestD; bestD = d; }
+                            else if (d < second) { second = d; }
+                        }
+                    }
+                    // Boundary intensity: thin glow band where the
+                    // distance to the second-closest center is
+                    // close to the distance to the closest. Glow
+                    // strength falls off as we move away from the
+                    // crack into the cell interior.
+                    float boundary = (second - bestD) / crackScale;
+                    float crackWidth = 0.08f;
+                    float glow = 0.0f;
+                    if (boundary < crackWidth) {
+                        // Inside the crack — bright hot color.
+                        glow = 1.0f - boundary / crackWidth;
+                    } else if (boundary < crackWidth * 4.0f) {
+                        // Penumbra: soft glow falling off into crust.
+                        glow = 0.3f * (1.0f - (boundary - crackWidth) /
+                                              (crackWidth * 3.0f));
+                    }
+                    glow = std::clamp(glow, 0.0f, 1.0f);
+                    uint8_t r = static_cast<uint8_t>(dr * (1 - glow) + hr * glow);
+                    uint8_t g = static_cast<uint8_t>(dg * (1 - glow) + hg * glow);
+                    uint8_t b = static_cast<uint8_t>(db * (1 - glow) + hb * glow);
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = r;
+                    pixels[i2 + 1] = g;
+                    pixels[i2 + 2] = b;
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-lava: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size        : %dx%d\n", W, H);
+            std::printf("  dark/hot    : %s / %s\n",
+                        darkHex.c_str(), hotHex.c_str());
+            std::printf("  crack scale : %d px\n", crackScale);
+            std::printf("  seed        : %u\n", seed);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
