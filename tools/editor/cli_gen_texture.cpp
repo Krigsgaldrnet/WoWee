@@ -4586,6 +4586,116 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleMoss(int& i, int argc, char** argv) {
+    // Moss: irregular spots scattered on a jittered grid. Each
+    // grid cell has a hashed (x, y, presence, radius) so the
+    // spots don't form a visible lattice — they read as random
+    // patches of organic growth. Inside a spot the color is
+    // mossHex; outside is bg. Useful for forest floors,
+    // weathered stone walls, dungeon flagstones, swamp ground.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string mossHex = argv[++i];
+    int stride = 16;            // average spacing between spot centers
+    int density = 70;           // 0..100 chance of spot per cell
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stride = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { density = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stride < 4 || stride > 1024 ||
+        density < 0 || density > 100) {
+        std::fprintf(stderr,
+            "gen-texture-moss: invalid dims (W/H 1..8192, stride 4..1024, "
+            "density 0..100)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, mr, mg, mb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(mossHex, mr, mg, mb_)) {
+        std::fprintf(stderr,
+            "gen-texture-moss: bg or moss hex color is invalid\n");
+        return 1;
+    }
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    auto cellHash = [&](int cx, int cy, uint32_t salt) -> uint32_t {
+        uint32_t h = static_cast<uint32_t>(cx) * 0x9E3779B1u;
+        h ^= static_cast<uint32_t>(cy) * 0x85EBCA77u + seed;
+        h ^= salt;
+        return hash32(h);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            // Test the 9 neighboring cells (current + 8 around) so
+            // spots at cell boundaries don't get clipped at the
+            // cell wall.
+            int cellX = x / stride;
+            int cellY = y / stride;
+            bool inMoss = false;
+            for (int dy = -1; dy <= 1 && !inMoss; ++dy) {
+                for (int dx = -1; dx <= 1 && !inMoss; ++dx) {
+                    int cx = cellX + dx;
+                    int cy = cellY + dy;
+                    uint32_t h = cellHash(cx, cy, 0xA5A5A5A5u);
+                    if (static_cast<int>(h % 100) >= density) continue;
+                    // Spot center jittered within its cell.
+                    float jx = (cellHash(cx, cy, 1) % 1000) / 1000.0f;
+                    float jy = (cellHash(cx, cy, 2) % 1000) / 1000.0f;
+                    float scx = (cx + jx) * stride;
+                    float scy = (cy + jy) * stride;
+                    // Spot radius hashed in [0.25, 0.75] of stride.
+                    float scale = 0.25f + 0.5f *
+                                   ((cellHash(cx, cy, 3) % 1000) / 1000.0f);
+                    float spotR = stride * scale;
+                    float ddx = x - scx;
+                    float ddy = y - scy;
+                    if (ddx * ddx + ddy * ddy < spotR * spotR) {
+                        inMoss = true;
+                    }
+                }
+            }
+            uint8_t r, g, b;
+            if (inMoss) { r = mr; g = mg; b = mb_; }
+            else        { r = br_; g = bg_; b = bb_; }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-moss: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/moss    : %s / %s\n", bgHex.c_str(), mossHex.c_str());
+    std::printf("  spots      : stride=%d, density=%d/100, seed=%u\n",
+                stride, density, seed);
+    return 0;
+}
+
 int handleStuds(int& i, int argc, char** argv) {
     // Riveted studs: grid of round caps with an inner highlight.
     // Distinct from --gen-texture-dots (flat solid circles): each
@@ -5282,6 +5392,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-caustics",       3, handleCaustics},
     {"--gen-texture-starburst",      3, handleStarburst},
     {"--gen-texture-studs",          3, handleStuds},
+    {"--gen-texture-moss",           3, handleMoss},
 };
 }  // namespace
 
