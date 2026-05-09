@@ -174,6 +174,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Bookshelf: 5-panel cabinet with N-1 shelves and rows of varied book boxes (default 1.5/2.0/0.4/4)\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
     std::printf("                         Table: flat top slab on 4 corner legs (default 1.6/1.0/0.85/0.10/0.06)\n");
+    std::printf("  --gen-mesh-lamppost <wom-base> [poleH] [poleT] [baseSize] [lanternSize] [lanternH]\n");
+    std::printf("                         Lamppost: square base + tall pole + lantern body + cap (default 3.0/0.12/0.4/0.35/0.5)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");

@@ -4655,6 +4655,131 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleLamppost(int& i, int argc, char** argv) {
+    // Lamppost: 4-box urban prop — square base plinth, tall
+    // vertical pole, lantern body box around the pole top,
+    // and a small cap box on top. Useful for streets, plazas,
+    // taverns, anywhere that wants explicit lighting fixtures.
+    // The 41st procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float postHeight    = 3.0f;
+    float postThickness = 0.12f;
+    float baseSize      = 0.4f;
+    float lanternSize   = 0.35f;
+    float lanternHeight = 0.5f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postThickness = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { lanternSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { lanternHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (postHeight <= 0 || postThickness <= 0 || baseSize <= 0 ||
+        lanternSize <= 0 || lanternHeight <= 0 ||
+        postThickness >= baseSize || postThickness >= lanternSize) {
+        std::fprintf(stderr,
+            "gen-mesh-lamppost: dims > 0; post must fit in base & lantern\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Base plinth: low square slab at the floor.
+    float baseHeight = baseSize * 0.4f;
+    float halfBase = baseSize * 0.5f;
+    addBox(0, baseHeight * 0.5f, 0,
+           halfBase, baseHeight * 0.5f, halfBase);
+    // Vertical pole: thin square box from top of base to top.
+    float poleBottomY = baseHeight;
+    float poleTopY    = baseHeight + postHeight;
+    float poleCY      = (poleBottomY + poleTopY) * 0.5f;
+    float halfPole    = postThickness * 0.5f;
+    addBox(0, poleCY, 0,
+           halfPole, postHeight * 0.5f, halfPole);
+    // Lantern body: box centred on the top of the pole; bottom
+    // of the box overlaps the pole so the lamp visually 'caps'
+    // the pole rather than just floating above it.
+    float halfLantern = lanternSize * 0.5f;
+    float lanternBottomY = poleTopY - lanternHeight * 0.3f;
+    float lanternCY = lanternBottomY + lanternHeight * 0.5f;
+    addBox(0, lanternCY, 0,
+           halfLantern, lanternHeight * 0.5f, halfLantern);
+    // Cap: thin square plate on top of the lantern. Slightly
+    // wider than the lantern body so the cap reads as an awning.
+    float capH    = lanternHeight * 0.18f;
+    float capSize = lanternSize * 1.15f;
+    float halfCap = capSize * 0.5f;
+    float capCY   = lanternBottomY + lanternHeight + capH * 0.5f;
+    addBox(0, capCY, 0,
+           halfCap, capH * 0.5f, halfCap);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = capCY + capH * 0.5f;
+    wom.boundMin = glm::vec3(-halfBase, 0.0f,    -halfBase);
+    wom.boundMax = glm::vec3( halfBase, totalH,   halfBase);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-lamppost: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  total H    : %.3f\n", totalH);
+    std::printf("  base       : %.3f square × %.3f tall\n",
+                baseSize, baseHeight);
+    std::printf("  pole       : %.3f square × %.3f tall\n",
+                postThickness, postHeight);
+    std::printf("  lantern    : %.3f square × %.3f tall (with cap)\n",
+                lanternSize, lanternHeight);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleTable(int& i, int argc, char** argv) {
     // Table: 5 boxes — flat tabletop slab on top of 4 vertical
     // legs at each corner. Thinnest of the furniture meshes,
@@ -5038,6 +5163,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-table") == 0 && i + 1 < argc) {
         outRc = handleTable(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-lamppost") == 0 && i + 1 < argc) {
+        outRc = handleLamppost(i, argc, argv); return true;
     }
     return false;
 }
