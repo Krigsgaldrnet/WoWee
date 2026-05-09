@@ -147,6 +147,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Moss: irregular spots scattered on a hash-jittered grid (forest floor / weathered stone / swamp)\n");
     std::printf("  --gen-texture-woodgrain <out.png> <lightHex> <darkHex> [spacing] [seed] [W H]\n");
     std::printf("                         Woodgrain: concentric annual rings centered off-image with per-ring jitter (end-cut wood)\n");
+    std::printf("  --gen-texture-carbon <out.png> <bgHex> <fiberHex> [cellSize] [W H]\n");
+    std::printf("                         Carbon-fiber: 2x2 alternating-orientation weave with sin² fiber highlights (sci-fi/tech panels)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

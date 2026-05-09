@@ -4235,6 +4235,75 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCarbon(int& i, int argc, char** argv) {
+    // Carbon-fiber weave: 2x2 cells where alternating cells hold
+    // horizontal vs vertical fiber segments. Each segment has a
+    // sin² brightness profile across its perpendicular axis,
+    // simulating the rounded highlight on a real woven fiber bundle.
+    // Useful for sci-fi armor, sleek tech panels, hi-tech vehicle
+    // bodies, ritual obsidian inlays, or any "machined composite"
+    // surface where a flat color would read as plastic.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string fibHex  = argv[++i];
+    int cellSize = 12;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, cellSize);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellSize < 2 || cellSize > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-carbon: invalid dims (W/H 1..8192, "
+            "cellSize 2..1024)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, fr, fg, fb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(fibHex, fr, fg, fb_)) {
+        std::fprintf(stderr,
+            "gen-texture-carbon: bg or fiber hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float pi = 3.14159265358979f;
+    const float invCell = 1.0f / cellSize;
+    for (int y = 0; y < H; ++y) {
+        int cy = y / cellSize;
+        int ly = y - cy * cellSize;
+        for (int x = 0; x < W; ++x) {
+            int cx = x / cellSize;
+            int lx = x - cx * cellSize;
+            // (cx + cy) parity determines fiber orientation.
+            // Brightness profile is sin² of the perpendicular
+            // local coord normalized to [0, π].
+            bool horiz = ((cx + cy) & 1) == 0;
+            float perp = horiz ? (ly * invCell) : (lx * invCell);
+            float s = std::sin(perp * pi);
+            float t = s * s;        // 0..1, peak at center
+            uint8_t r = static_cast<uint8_t>(br_ + t * (fr - br_));
+            uint8_t g = static_cast<uint8_t>(bg_ + t * (fg - bg_));
+            uint8_t b = static_cast<uint8_t>(bb_ + t * (fb_ - bb_));
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-carbon: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/fiber   : %s / %s\n", bgHex.c_str(), fibHex.c_str());
+    std::printf("  weave cell : %d\n", cellSize);
+    return 0;
+}
+
 int handleWoodgrain(int& i, int argc, char** argv) {
     // Wood-end grain: concentric annual rings centered slightly
     // outside the image (so the texture shows arcs sweeping across
@@ -5058,6 +5127,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-studs",          3, handleStuds},
     {"--gen-texture-moss",           3, handleMoss},
     {"--gen-texture-woodgrain",      3, handleWoodgrain},
+    {"--gen-texture-carbon",         3, handleCarbon},
 };
 }  // namespace
 
