@@ -1,5 +1,6 @@
 #include "cli_gen_mesh.hpp"
 #include "cli_box_emitter.hpp"
+#include "cli_arg_parse.hpp"
 
 #include "pipeline/wowee_model.hpp"
 #include <glm/glm.hpp>
@@ -36,18 +37,10 @@ int handleRock(int& i, int argc, char** argv) {
     float roughness = 0.25f;  // 0..1, fraction of radius
     int subdiv = 2;           // 0=8 tris, 1=32, 2=128, 3=512
     uint32_t seed = 1;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { radius = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { roughness = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { subdiv = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, radius);
+    parseOptFloat(i, argc, argv, roughness);
+    parseOptInt(i, argc, argv, subdiv);
+    parseOptUint(i, argc, argv, seed);
     if (radius <= 0 || roughness < 0 || roughness > 1 ||
         subdiv < 0 || subdiv > 4) {
         std::fprintf(stderr,
@@ -184,18 +177,10 @@ int handlePillar(int& i, int argc, char** argv) {
     float height = 4.0f;
     int flutes = 12;
     float capScale = 1.25f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { radius = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { flutes = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { capScale = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, radius);
+    parseOptFloat(i, argc, argv, height);
+    parseOptInt(i, argc, argv, flutes);
+    parseOptFloat(i, argc, argv, capScale);
     if (radius <= 0 || height <= 0 ||
         flutes < 4 || flutes > 64 ||
         capScale < 1.0f || capScale > 4.0f) {
@@ -323,18 +308,10 @@ int handleBridge(int& i, int argc, char** argv) {
     float width = 2.0f;      // along Z
     int planks = 6;          // plank count across the length
     float railHeight = 1.0f; // rail height above deck (0 = no rails)
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { length = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { planks = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { railHeight = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, width);
+    parseOptInt(i, argc, argv, planks);
+    parseOptFloat(i, argc, argv, railHeight);
     if (length <= 0 || width <= 0 ||
         planks < 1 || planks > 64 ||
         railHeight < 0 || railHeight > 4.0f) {
@@ -428,18 +405,10 @@ int handleTower(int& i, int argc, char** argv) {
     float height = 8.0f;
     int battlements = 8;     // merlons around the rim
     float battlementH = 0.5f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { radius = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { battlements = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { battlementH = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, radius);
+    parseOptFloat(i, argc, argv, height);
+    parseOptInt(i, argc, argv, battlements);
+    parseOptFloat(i, argc, argv, battlementH);
     if (radius <= 0 || height <= 0 ||
         battlements < 4 || battlements > 64 ||
         battlementH < 0 || battlementH > 4.0f) {
@@ -578,18 +547,10 @@ int handleHouse(int& i, int argc, char** argv) {
     float depth = 4.0f;       // along Z
     float height = 3.0f;      // wall height (Y)
     float roofH = 2.0f;       // pyramid above walls
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { depth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { roofH = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, roofH);
     if (width <= 0 || depth <= 0 || height <= 0 ||
         roofH < 0 || roofH > 20.0f) {
         std::fprintf(stderr,
@@ -692,18 +653,10 @@ int handleFountain(int& i, int argc, char** argv) {
     float basinH = 0.5f;
     float spoutR = 0.2f;
     float spoutH = 1.5f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { basinR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { basinH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { spoutR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { spoutH = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, basinR);
+    parseOptFloat(i, argc, argv, basinH);
+    parseOptFloat(i, argc, argv, spoutR);
+    parseOptFloat(i, argc, argv, spoutH);
     if (basinR <= 0 || basinH <= 0 || spoutR <= 0 || spoutH <= 0 ||
         spoutR >= basinR) {
         std::fprintf(stderr,
@@ -799,15 +752,9 @@ int handleStatue(int& i, int argc, char** argv) {
     float pedSize = 1.0f;     // pedestal width and depth
     float bodyH = 2.5f;       // body cylinder height
     float headR = 0.4f;       // head sphere radius
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { pedSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bodyH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { headR = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, pedSize);
+    parseOptFloat(i, argc, argv, bodyH);
+    parseOptFloat(i, argc, argv, headR);
     if (pedSize <= 0 || bodyH <= 0 || headR <= 0) {
         std::fprintf(stderr,
             "gen-mesh-statue: all dims must be positive\n");
@@ -947,18 +894,10 @@ int handleAltar(int& i, int argc, char** argv) {
     float topH = 0.3f;        // top altar disc height
     int steps = 3;            // base steps below the top
     float stepStride = 0.3f;  // each step grows R by this much, shrinks H
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { topR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { topH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { steps = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stepStride = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, topR);
+    parseOptFloat(i, argc, argv, topH);
+    parseOptInt(i, argc, argv, steps);
+    parseOptFloat(i, argc, argv, stepStride);
     if (topR <= 0 || topH <= 0 || steps < 0 || steps > 16 ||
         stepStride <= 0 || stepStride > 5.0f) {
         std::fprintf(stderr,
@@ -1069,18 +1008,10 @@ int handlePortal(int& i, int argc, char** argv) {
     float height = 4.0f;         // total Y
     float postThick = 0.4f;      // post width in X and Z
     float lintelH = 0.5f;        // top lintel height (Y)
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postThick = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { lintelH = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, postThick);
+    parseOptFloat(i, argc, argv, lintelH);
     if (width <= 0 || height <= 0 || postThick <= 0 ||
         lintelH < 0 || postThick * 2 >= width ||
         lintelH > height) {
@@ -1153,18 +1084,10 @@ int handleArchway(int& i, int argc, char** argv) {
     float pillarH = 3.0f;      // pillar height (Y)
     float thickness = 0.4f;    // pillar radius and arch radial thickness
     int archSegs = 12;         // segments around the half-circle
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { pillarH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { thickness = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { archSegs = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, pillarH);
+    parseOptFloat(i, argc, argv, thickness);
+    parseOptInt(i, argc, argv, archSegs);
     if (width <= 0 || pillarH <= 0 || thickness <= 0 ||
         archSegs < 4 || archSegs > 64 ||
         thickness * 4 >= width) {
@@ -1330,18 +1253,10 @@ int handleBarrel(int& i, int argc, char** argv) {
     float midR = 0.5f;        // radius at the middle bulge
     float height = 1.0f;
     float hoopThick = 0.06f;  // hoop band radial protrusion
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { topR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { midR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { hoopThick = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, topR);
+    parseOptFloat(i, argc, argv, midR);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, hoopThick);
     if (topR <= 0 || midR <= 0 || height <= 0 ||
         hoopThick < 0 || hoopThick > 0.5f) {
         std::fprintf(stderr,
@@ -1442,18 +1357,10 @@ int handleChest(int& i, int argc, char** argv) {
     float depth = 0.9f;       // along Z
     float bodyH = 0.9f;       // body box height
     float lidH = 0.25f;       // lid height above body
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { depth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bodyH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { lidH = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptFloat(i, argc, argv, bodyH);
+    parseOptFloat(i, argc, argv, lidH);
     if (width <= 0 || depth <= 0 || bodyH <= 0 || lidH < 0) {
         std::fprintf(stderr,
             "gen-mesh-chest: width/depth/bodyH > 0, lidH >= 0\n");
@@ -1537,18 +1444,10 @@ int handleAnvil(int& i, int argc, char** argv) {
     float width = 0.4f;        // along Z
     float hornLen = 0.5f;      // horn extending past face
     float bodyH = 0.5f;        // total height
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { length = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { hornLen = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bodyH = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, hornLen);
+    parseOptFloat(i, argc, argv, bodyH);
     if (length <= 0 || width <= 0 || hornLen < 0 || bodyH <= 0) {
         std::fprintf(stderr,
             "gen-mesh-anvil: length/width/bodyH > 0, hornLen >= 0\n");
@@ -1681,15 +1580,9 @@ int handleStairs(int& i, int argc, char** argv) {
             "gen-mesh-stairs: steps %d out of range (1..256)\n", steps);
         return 1;
     }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stepHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stepDepth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, stepHeight);
+    parseOptFloat(i, argc, argv, stepDepth);
+    parseOptFloat(i, argc, argv, width);
     if (stepHeight <= 0 || stepDepth <= 0 || width <= 0) {
         std::fprintf(stderr,
             "gen-mesh-stairs: dimensions must be positive\n");
@@ -1798,9 +1691,7 @@ int handleGrid(int& i, int argc, char** argv) {
         return 1;
     }
     float size = 1.0f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { size = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, size);
     if (size <= 0.0f) {
         std::fprintf(stderr,
             "gen-mesh-grid: size must be positive\n");
@@ -1879,12 +1770,8 @@ int handleDisc(int& i, int argc, char** argv) {
     std::string womBase = argv[++i];
     float radius = 1.0f;
     int segments = 32;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { radius = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { segments = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, radius);
+    parseOptInt(i, argc, argv, segments);
     if (radius <= 0.0f || segments < 3 || segments > 1024) {
         std::fprintf(stderr,
             "gen-mesh-disc: radius must be positive, segments 3..1024\n");
@@ -1960,18 +1847,10 @@ int handleTube(int& i, int argc, char** argv) {
     float innerR = 0.7f;
     float height = 2.0f;
     int segments = 24;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { outerR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { innerR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { segments = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, outerR);
+    parseOptFloat(i, argc, argv, innerR);
+    parseOptFloat(i, argc, argv, height);
+    parseOptInt(i, argc, argv, segments);
     if (outerR <= 0 || innerR <= 0 || innerR >= outerR ||
         height <= 0 || segments < 3 || segments > 1024) {
         std::fprintf(stderr,
@@ -2132,18 +2011,10 @@ int handleCapsule(int& i, int argc, char** argv) {
     float cylHeight = 1.0f;
     int segments = 16;
     int stacks = 8;  // per hemisphere
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { radius = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cylHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { segments = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stacks = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, radius);
+    parseOptFloat(i, argc, argv, cylHeight);
+    parseOptInt(i, argc, argv, segments);
+    parseOptInt(i, argc, argv, stacks);
     if (radius <= 0 || cylHeight < 0 ||
         segments < 3 || segments > 1024 ||
         stacks < 1 || stacks > 256) {
@@ -2290,21 +2161,11 @@ int handleArch(int& i, int argc, char** argv) {
     float thickness = 0.2f;  // column thickness (X)
     float depth = 0.3f;       // Y extrusion
     int segments = 12;        // arch curve segments
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { openingW = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { openingH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { thickness = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { depth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { segments = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, openingW);
+    parseOptFloat(i, argc, argv, openingH);
+    parseOptFloat(i, argc, argv, thickness);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptInt(i, argc, argv, segments);
     if (openingW <= 0 || openingH <= 0 ||
         thickness <= 0 || depth <= 0 ||
         segments < 2 || segments > 256) {
@@ -2419,15 +2280,9 @@ int handlePyramid(int& i, int argc, char** argv) {
     int sides = 4;
     float baseR = 1.0f;
     float height = 1.0f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { sides = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, sides);
+    parseOptFloat(i, argc, argv, baseR);
+    parseOptFloat(i, argc, argv, height);
     if (sides < 3 || sides > 256 || baseR <= 0 || height <= 0) {
         std::fprintf(stderr,
             "gen-mesh-pyramid: sides 3..256, baseR > 0, height > 0\n");
@@ -2527,18 +2382,10 @@ int handleFence(int& i, int argc, char** argv) {
     float spacing = 1.0f;
     float postH = 1.0f;
     float rt = 0.05f;  // rail/post thickness
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { posts = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { spacing = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { rt = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, posts);
+    parseOptFloat(i, argc, argv, spacing);
+    parseOptFloat(i, argc, argv, postH);
+    parseOptFloat(i, argc, argv, rt);
     if (posts < 2 || posts > 256 ||
         spacing <= 0 || postH <= 0 || rt <= 0) {
         std::fprintf(stderr,
@@ -2622,15 +2469,9 @@ int handleTree(int& i, int argc, char** argv) {
     float trunkR = 0.1f;
     float trunkH = 2.0f;
     float foliR = 0.7f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { trunkR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { trunkH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { foliR = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, trunkR);
+    parseOptFloat(i, argc, argv, trunkH);
+    parseOptFloat(i, argc, argv, foliR);
     if (trunkR <= 0 || trunkH <= 0 || foliR <= 0) {
         std::fprintf(stderr,
             "gen-mesh-tree: trunkR / trunkH / foliR must be positive\n");
@@ -2750,9 +2591,7 @@ int handleMeshDispatch(int& i, int argc, char** argv) {
     std::string womBase = argv[++i];
     std::string shape = argv[++i];
     float size = 1.0f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { size = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, size);
     if (size <= 0.0f) {
         std::fprintf(stderr,
             "gen-mesh: size must be positive (got %g)\n", size);
@@ -3215,15 +3054,9 @@ int handleMushroom(int& i, int argc, char** argv) {
     float stalkR = 0.1f;
     float stalkH = 0.6f;
     float capR = 0.4f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stalkR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stalkH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { capR = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, stalkR);
+    parseOptFloat(i, argc, argv, stalkH);
+    parseOptFloat(i, argc, argv, capR);
     if (stalkR <= 0 || stalkH <= 0 || capR <= 0) {
         std::fprintf(stderr,
             "gen-mesh-mushroom: all dims must be positive\n");
@@ -3345,18 +3178,10 @@ int handleCart(int& i, int argc, char** argv) {
     float bedWidth = 0.8f;   // along Z
     float bedH = 0.5f;       // bed height (Y)
     float wheelR = 0.35f;    // wheel radius
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bedLen = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bedWidth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bedH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { wheelR = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, bedLen);
+    parseOptFloat(i, argc, argv, bedWidth);
+    parseOptFloat(i, argc, argv, bedH);
+    parseOptFloat(i, argc, argv, wheelR);
     if (bedLen <= 0 || bedWidth <= 0 || bedH <= 0 || wheelR <= 0) {
         std::fprintf(stderr,
             "gen-mesh-cart: all dims must be positive\n");
@@ -3472,18 +3297,10 @@ int handleBanner(int& i, int argc, char** argv) {
     float poleR = 0.05f;
     float flagW = 0.8f;       // along -Z (drape direction)
     float flagH = 1.2f;       // along Y (down from top)
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { poleH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { poleR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { flagW = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { flagH = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, poleH);
+    parseOptFloat(i, argc, argv, poleR);
+    parseOptFloat(i, argc, argv, flagW);
+    parseOptFloat(i, argc, argv, flagH);
     if (poleH <= 0 || poleR <= 0 || flagW <= 0 || flagH <= 0 ||
         flagH > poleH) {
         std::fprintf(stderr,
@@ -3588,18 +3405,10 @@ int handleGrave(int& i, int argc, char** argv) {
     float tabletH = 1.0f;     // along Y
     float tabletT = 0.15f;    // along Z (thickness)
     float baseW = 0.8f;       // base wider than tablet
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { tabletW = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { tabletH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { tabletT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseW = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, tabletW);
+    parseOptFloat(i, argc, argv, tabletH);
+    parseOptFloat(i, argc, argv, tabletT);
+    parseOptFloat(i, argc, argv, baseW);
     if (tabletW <= 0 || tabletH <= 0 || tabletT <= 0 || baseW <= 0 ||
         baseW < tabletW) {
         std::fprintf(stderr,
@@ -3663,18 +3472,10 @@ int handleBench(int& i, int argc, char** argv) {
     float seatY = 0.5f;        // seat top height
     float seatT = 0.06f;       // seat plank thickness (Y)
     float seatW = 0.4f;        // seat width (Z)
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { length = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seatY = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seatT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seatW = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, seatY);
+    parseOptFloat(i, argc, argv, seatT);
+    parseOptFloat(i, argc, argv, seatW);
     if (length <= 0 || seatY <= 0 || seatT <= 0 || seatW <= 0 ||
         seatT > seatY) {
         std::fprintf(stderr,
@@ -3737,18 +3538,10 @@ int handleShrine(int& i, int argc, char** argv) {
     float pillarH = 2.0f;       // pillar height
     float pillarR = 0.10f;      // pillar radius
     float roofT = 0.15f;        // roof thickness
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { size = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { pillarH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { pillarR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { roofT = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, size);
+    parseOptFloat(i, argc, argv, pillarH);
+    parseOptFloat(i, argc, argv, pillarR);
+    parseOptFloat(i, argc, argv, roofT);
     if (size <= 0 || pillarH <= 0 || pillarR <= 0 || roofT <= 0 ||
         pillarR * 2 >= size) {
         std::fprintf(stderr,
@@ -3850,15 +3643,9 @@ int handleTotem(int& i, int argc, char** argv) {
     float baseW = 0.5f;        // base block half-width × 2
     int segments = 5;          // number of stacked blocks
     float segH = 0.5f;         // height of each block
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseW = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { segments = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { segH = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, baseW);
+    parseOptInt(i, argc, argv, segments);
+    parseOptFloat(i, argc, argv, segH);
     if (baseW <= 0 || segH <= 0 || segments < 1 || segments > 32) {
         std::fprintf(stderr,
             "gen-mesh-totem: dims > 0, segments 1..32\n");
@@ -3916,18 +3703,10 @@ int handleCage(int& i, int argc, char** argv) {
     float height = 2.0f;
     int barsPerSide = 5;
     float barRadius = 0.04f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { barsPerSide = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { barRadius = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, height);
+    parseOptInt(i, argc, argv, barsPerSide);
+    parseOptFloat(i, argc, argv, barRadius);
     if (width <= 0 || height <= 0 || barRadius <= 0 ||
         barsPerSide < 0 || barsPerSide > 64) {
         std::fprintf(stderr,
@@ -4011,18 +3790,10 @@ int handleThrone(int& i, int argc, char** argv) {
     float seatH = 0.5f;        // top of seat above pedestal
     float backH = 1.5f;        // backrest extends this above seat
     float pedSize = 1.2f;      // pedestal width = depth
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seatW = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seatH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { backH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { pedSize = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, seatW);
+    parseOptFloat(i, argc, argv, seatH);
+    parseOptFloat(i, argc, argv, backH);
+    parseOptFloat(i, argc, argv, pedSize);
     if (seatW <= 0 || seatH <= 0 || backH <= 0 || pedSize <= 0 ||
         pedSize < seatW) {
         std::fprintf(stderr,
@@ -4099,15 +3870,9 @@ int handleCoffin(int& i, int argc, char** argv) {
     float length = 2.0f;     // along Z
     float width  = 0.8f;     // shoulder width along X
     float height = 0.6f;     // along Y
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { length = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, height);
     if (length <= 0 || width <= 0 || height <= 0) {
         std::fprintf(stderr,
             "gen-mesh-coffin: length/width/height must be > 0\n");
@@ -4236,18 +4001,10 @@ int handleArchwayDouble(int& i, int argc, char** argv) {
     float openingHeight = 2.40f;     // post height under lintel
     float postT         = 0.18f;
     float lintelT       = 0.20f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { openingWidth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { openingHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { lintelT = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, openingWidth);
+    parseOptFloat(i, argc, argv, openingHeight);
+    parseOptFloat(i, argc, argv, postT);
+    parseOptFloat(i, argc, argv, lintelT);
     if (openingWidth <= 0 || openingHeight <= 0 ||
         postT <= 0 || lintelT <= 0) {
         std::fprintf(stderr,
@@ -4324,18 +4081,10 @@ int handleBrazier(int& i, int argc, char** argv) {
     float stemHeight = 0.80f;
     float stemT = 0.10f;
     float baseSize = 0.35f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bowlSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stemHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stemT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseSize = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, bowlSize);
+    parseOptFloat(i, argc, argv, stemHeight);
+    parseOptFloat(i, argc, argv, stemT);
+    parseOptFloat(i, argc, argv, baseSize);
     if (bowlSize <= 0 || stemHeight <= 0 || stemT <= 0 || baseSize <= 0 ||
         stemT >= baseSize || stemT >= bowlSize) {
         std::fprintf(stderr,
@@ -4421,18 +4170,10 @@ int handlePodium(int& i, int argc, char** argv) {
     float baseHeight  = 0.20f;
     int   stepCount   = 3;          // total stepped tiers (incl. top)
     float lecternSize = 0.30f;      // lectern at the very top
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stepCount = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { lecternSize = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, baseSize);
+    parseOptFloat(i, argc, argv, baseHeight);
+    parseOptInt(i, argc, argv, stepCount);
+    parseOptFloat(i, argc, argv, lecternSize);
     if (baseSize <= 0 || baseHeight <= 0 || lecternSize <= 0 ||
         stepCount < 2 || stepCount > 8) {
         std::fprintf(stderr,
@@ -4508,18 +4249,10 @@ int handleSundial(int& i, int argc, char** argv) {
     float baseHeight  = 0.06f;
     float gnomonHeight = 0.35f;
     float gnomonT     = 0.04f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { gnomonHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { gnomonT = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, baseSize);
+    parseOptFloat(i, argc, argv, baseHeight);
+    parseOptFloat(i, argc, argv, gnomonHeight);
+    parseOptFloat(i, argc, argv, gnomonT);
     if (baseSize <= 0 || baseHeight <= 0 ||
         gnomonHeight <= 0 || gnomonT <= 0 ||
         gnomonT * 2 >= baseSize) {
@@ -4600,21 +4333,11 @@ int handleScarecrow(int& i, int argc, char** argv) {
     float postT      = 0.06f;
     float headSize   = 0.22f;
     float hatSize    = 0.32f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bodyHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { armSpan = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { headSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { hatSize = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, bodyHeight);
+    parseOptFloat(i, argc, argv, armSpan);
+    parseOptFloat(i, argc, argv, postT);
+    parseOptFloat(i, argc, argv, headSize);
+    parseOptFloat(i, argc, argv, hatSize);
     if (bodyHeight <= 0 || armSpan <= 0 || postT <= 0 ||
         headSize <= 0 || hatSize <= 0) {
         std::fprintf(stderr, "gen-mesh-scarecrow: all dims must be > 0\n");
@@ -4698,21 +4421,11 @@ int handleWeathervane(int& i, int argc, char** argv) {
     float baseSize   = 0.30f;
     float armLen     = 0.40f;     // half-length of each cross arm
     float arrowLen   = 0.55f;     // half-length of the arrow body
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { armLen = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { arrowLen = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, postHeight);
+    parseOptFloat(i, argc, argv, postT);
+    parseOptFloat(i, argc, argv, baseSize);
+    parseOptFloat(i, argc, argv, armLen);
+    parseOptFloat(i, argc, argv, arrowLen);
     if (postHeight <= 0 || postT <= 0 || baseSize <= 0 ||
         armLen <= 0 || arrowLen <= 0 || postT >= baseSize) {
         std::fprintf(stderr,
@@ -4798,15 +4511,9 @@ int handleBeehive(int& i, int argc, char** argv) {
     float baseWidth = 0.70f;     // bottom tier width
     float height    = 0.85f;     // total dome height (excluding base plate)
     float plateH    = 0.05f;     // optional foundation plate thickness
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseWidth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { plateH = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, baseWidth);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, plateH);
     if (baseWidth <= 0 || height <= 0 || plateH < 0) {
         std::fprintf(stderr,
             "gen-mesh-beehive: baseWidth/height > 0; plateH >= 0\n");
@@ -4888,18 +4595,10 @@ int handleGate(int& i, int argc, char** argv) {
     float postHeight   = 1.30f;     // post height (= gate frame height)
     float postT        = 0.10f;     // post square cross-section
     float railT        = 0.06f;     // rail square cross-section
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { openingWidth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { railT = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, openingWidth);
+    parseOptFloat(i, argc, argv, postHeight);
+    parseOptFloat(i, argc, argv, postT);
+    parseOptFloat(i, argc, argv, railT);
     if (openingWidth <= 0 || postHeight <= 0 || postT <= 0 ||
         railT <= 0 || railT >= postHeight / 4) {
         std::fprintf(stderr,
@@ -4973,15 +4672,9 @@ int handleCauldron(int& i, int argc, char** argv) {
     float rimWidth   = 0.80f;   // top-rim extent (widest dim)
     float bodyHeight = 0.70f;   // total height excluding legs
     float legHeight  = 0.10f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { rimWidth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bodyHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { legHeight = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, rimWidth);
+    parseOptFloat(i, argc, argv, bodyHeight);
+    parseOptFloat(i, argc, argv, legHeight);
     if (rimWidth <= 0 || bodyHeight <= 0 || legHeight <= 0) {
         std::fprintf(stderr,
             "gen-mesh-cauldron: all dims must be > 0\n");
@@ -5062,18 +4755,10 @@ int handleStool(int& i, int argc, char** argv) {
     float seatT     = 0.04f;     // seat thickness
     float legHeight = 0.45f;
     float legT      = 0.04f;     // square leg cross-section
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seatSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seatT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { legHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { legT = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, seatSize);
+    parseOptFloat(i, argc, argv, seatT);
+    parseOptFloat(i, argc, argv, legHeight);
+    parseOptFloat(i, argc, argv, legT);
     if (seatSize <= 0 || seatT <= 0 || legHeight <= 0 || legT <= 0 ||
         legT * 2 >= seatSize) {
         std::fprintf(stderr,
@@ -5137,12 +4822,8 @@ int handleCrate(int& i, int argc, char** argv) {
     std::string womBase = argv[++i];
     float size       = 0.80f;     // cube side length
     float postRadius = 0.05f;     // half-thickness of corner posts
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { size = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postRadius = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, size);
+    parseOptFloat(i, argc, argv, postRadius);
     if (size <= 0 || postRadius <= 0 || postRadius * 4 >= size) {
         std::fprintf(stderr,
             "gen-mesh-crate: size/postRadius > 0; postRadius < size/4\n");
@@ -5208,18 +4889,10 @@ int handleTombstone(int& i, int argc, char** argv) {
     float height   = 1.10f;     // total tombstone height including base + crown
     float depth    = 0.18f;     // along Z (slab thickness)
     float baseScale = 1.45f;    // base extends this much beyond slab in X & Z
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { depth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseScale = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptFloat(i, argc, argv, baseScale);
     if (width <= 0 || height <= 0 || depth <= 0 ||
         baseScale < 1.0f || baseScale > 5.0f) {
         std::fprintf(stderr,
@@ -5296,21 +4969,11 @@ int handleMailbox(int& i, int argc, char** argv) {
     float boxLength     = 0.45f;   // along Z
     float boxWidth      = 0.20f;   // along X
     float boxHeight     = 0.20f;   // along Y
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postThickness = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { boxLength = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { boxWidth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { boxHeight = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, postHeight);
+    parseOptFloat(i, argc, argv, postThickness);
+    parseOptFloat(i, argc, argv, boxLength);
+    parseOptFloat(i, argc, argv, boxWidth);
+    parseOptFloat(i, argc, argv, boxHeight);
     if (postHeight <= 0 || postThickness <= 0 ||
         boxLength <= 0 || boxWidth <= 0 || boxHeight <= 0) {
         std::fprintf(stderr,
@@ -5399,21 +5062,11 @@ int handleSignpost(int& i, int argc, char** argv) {
     float baseSize      = 0.30f;
     float signWidth     = 0.80f;   // along Z (perpendicular to pole face)
     float signHeight    = 0.35f;   // along Y
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postThickness = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { signWidth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { signHeight = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, postHeight);
+    parseOptFloat(i, argc, argv, postThickness);
+    parseOptFloat(i, argc, argv, baseSize);
+    parseOptFloat(i, argc, argv, signWidth);
+    parseOptFloat(i, argc, argv, signHeight);
     if (postHeight <= 0 || postThickness <= 0 || baseSize <= 0 ||
         signWidth <= 0 || signHeight <= 0 ||
         postThickness >= baseSize) {
@@ -5498,21 +5151,11 @@ int handleWell(int& i, int argc, char** argv) {
     float wallT     = 0.15f;    // wall thickness
     float postH     = 1.6f;     // roof post height above wall
     float postT     = 0.12f;    // roof post thickness (square)
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { outerSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { wallH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { wallT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postT = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, outerSize);
+    parseOptFloat(i, argc, argv, wallH);
+    parseOptFloat(i, argc, argv, wallT);
+    parseOptFloat(i, argc, argv, postH);
+    parseOptFloat(i, argc, argv, postT);
     if (outerSize <= 0 || wallH <= 0 || wallT <= 0 ||
         postH <= 0 || postT <= 0 || wallT * 2 >= outerSize) {
         std::fprintf(stderr,
@@ -5603,21 +5246,11 @@ int handleLadder(int& i, int argc, char** argv) {
     int   rungs  = 8;
     float railT  = 0.06f;
     float rungT  = 0.04f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { rungs = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { railT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { rungT = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, width);
+    parseOptInt(i, argc, argv, rungs);
+    parseOptFloat(i, argc, argv, railT);
+    parseOptFloat(i, argc, argv, rungT);
     if (height <= 0 || width <= 0 || railT <= 0 || rungT <= 0 ||
         rungs < 2 || rungs > 64 || railT * 2 >= width) {
         std::fprintf(stderr,
@@ -5690,24 +5323,12 @@ int handleBed(int& i, int argc, char** argv) {
     float matThick  = 0.20f;
     float headH     = 1.0f;     // headboard height above mattress
     float footH     = 0.4f;     // footboard height above mattress
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { length = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { legHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { matThick = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { headH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { footH = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, legHeight);
+    parseOptFloat(i, argc, argv, matThick);
+    parseOptFloat(i, argc, argv, headH);
+    parseOptFloat(i, argc, argv, footH);
     if (length <= 0 || width <= 0 || legHeight <= 0 ||
         matThick <= 0 || headH <= 0 || footH <= 0) {
         std::fprintf(stderr, "gen-mesh-bed: all dims must be > 0\n");
@@ -5796,21 +5417,11 @@ int handleLamppost(int& i, int argc, char** argv) {
     float baseSize      = 0.4f;
     float lanternSize   = 0.35f;
     float lanternHeight = 0.5f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postHeight = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postThickness = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { lanternSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { lanternHeight = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, postHeight);
+    parseOptFloat(i, argc, argv, postThickness);
+    parseOptFloat(i, argc, argv, baseSize);
+    parseOptFloat(i, argc, argv, lanternSize);
+    parseOptFloat(i, argc, argv, lanternHeight);
     if (postHeight <= 0 || postThickness <= 0 || baseSize <= 0 ||
         lanternSize <= 0 || lanternHeight <= 0 ||
         postThickness >= baseSize || postThickness >= lanternSize) {
@@ -5895,21 +5506,11 @@ int handleTable(int& i, int argc, char** argv) {
     float height = 0.85f;    // along Y (top of tabletop)
     float legT   = 0.10f;    // leg thickness (square cross-section)
     float topT   = 0.06f;    // tabletop thickness
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { depth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { legT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { topT = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, legT);
+    parseOptFloat(i, argc, argv, topT);
     if (width <= 0 || depth <= 0 || height <= 0 || legT <= 0 ||
         topT <= 0 || legT * 2 > width || legT * 2 > depth ||
         topT >= height) {
@@ -5977,18 +5578,10 @@ int handleBookshelf(int& i, int argc, char** argv) {
     float height = 2.0f;
     float depth  = 0.4f;
     int shelves  = 4;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { depth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { shelves = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptInt(i, argc, argv, shelves);
     if (width <= 0 || height <= 0 || depth <= 0 ||
         shelves < 2 || shelves > 12) {
         std::fprintf(stderr,
@@ -6114,21 +5707,11 @@ int handleTent(int& i, int argc, char** argv) {
     float height = 0.9f;
     float doorH  = 0.5f;
     float doorW  = 0.4f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { length = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { doorH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { doorW = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, doorH);
+    parseOptFloat(i, argc, argv, doorW);
     if (length <= 0 || width <= 0 || height <= 0 ||
         doorH < 0 || doorH >= height ||
         doorW < 0 || doorW >= width) {
@@ -6257,18 +5840,10 @@ int handleBedroll(int& i, int argc, char** argv) {
     float radius = 0.16f;
     int   sides  = 12;
     float pillowSize = 0.18f;       // 0 → no pillow
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { length = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { radius = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { sides = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { pillowSize = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, radius);
+    parseOptInt(i, argc, argv, sides);
+    parseOptFloat(i, argc, argv, pillowSize);
     if (length <= 0 || radius <= 0 || sides < 6 || sides > 64 ||
         pillowSize < 0 || pillowSize >= length * 0.5f) {
         std::fprintf(stderr,
@@ -6387,21 +5962,11 @@ int handleChimney(int& i, int argc, char** argv) {
     float height = 1.8f;
     float capH   = 0.10f;
     float capExtra = 0.05f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { depth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { capH = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { capExtra = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, capH);
+    parseOptFloat(i, argc, argv, capExtra);
     if (width <= 0 || depth <= 0 || height <= 0 ||
         capH < 0 || capH >= height || capExtra < 0) {
         std::fprintf(stderr,
@@ -6465,24 +6030,12 @@ int handlePergola(int& i, int argc, char** argv) {
     float postR  = 0.06f;
     float beamT  = 0.05f;
     int   crossbeams = 5;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { length = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { beamT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { crossbeams = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, postR);
+    parseOptFloat(i, argc, argv, beamT);
+    parseOptInt(i, argc, argv, crossbeams);
     if (length <= 0 || width <= 0 || height <= 0 ||
         postR <= 0 || postR * 2 >= std::min(length, width) ||
         beamT <= 0 || crossbeams < 0 || crossbeams > 32) {
@@ -6568,24 +6121,12 @@ int handleDock(int& i, int argc, char** argv) {
     int   pilingsPerSide = 3;
     float pilingW = 0.10f;
     float deckT  = 0.10f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { length = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { pilingsPerSide = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { pilingW = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { deckT = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, height);
+    parseOptInt(i, argc, argv, pilingsPerSide);
+    parseOptFloat(i, argc, argv, pilingW);
+    parseOptFloat(i, argc, argv, deckT);
     if (length <= 0 || width <= 0 || height <= 0 ||
         deckT <= 0 || pilingW <= 0 || pilingW * 2 >= width ||
         pilingsPerSide < 1 || pilingsPerSide > 16) {
@@ -6654,18 +6195,10 @@ int handleHaystack(int& i, int argc, char** argv) {
     float height = 0.9f;
     int   layers = 3;
     int   sides  = 12;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { baseR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { layers = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { sides = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, baseR);
+    parseOptFloat(i, argc, argv, height);
+    parseOptInt(i, argc, argv, layers);
+    parseOptInt(i, argc, argv, sides);
     if (baseR <= 0 || height <= 0 ||
         layers < 2 || layers > 16 ||
         sides < 6 || sides > 64) {
@@ -6825,24 +6358,12 @@ int handleCanopy(int& i, int argc, char** argv) {
     float postR  = 0.05f;
     float panelT = 0.03f;
     float drape  = 0.15f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { width = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { depth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { height = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { postR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { panelT = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { drape = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, postR);
+    parseOptFloat(i, argc, argv, panelT);
+    parseOptFloat(i, argc, argv, drape);
     if (width <= 0 || depth <= 0 || height <= 0 ||
         postR <= 0 || postR * 2 >= std::min(width, depth) ||
         panelT <= 0 || drape < 0 || drape >= height) {
@@ -6926,15 +6447,9 @@ int handleWoodpile(int& i, int argc, char** argv) {
     float logR   = 0.10f;
     float logLen = 0.80f;
     int   sides  = 12;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { logR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { logLen = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { sides = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, logR);
+    parseOptFloat(i, argc, argv, logLen);
+    parseOptInt(i, argc, argv, sides);
     if (logR <= 0 || logLen <= 0 || sides < 6 || sides > 64) {
         std::fprintf(stderr,
             "gen-mesh-woodpile: dims > 0; sides 6..64\n");
@@ -7057,21 +6572,11 @@ int handleFirepit(int& i, int argc, char** argv) {
     float stoneSize = 0.10f;
     float logLen = 0.45f;
     float logThick = 0.05f;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { ringR = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stones = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stoneSize = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { logLen = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { logThick = std::stof(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, ringR);
+    parseOptInt(i, argc, argv, stones);
+    parseOptFloat(i, argc, argv, stoneSize);
+    parseOptFloat(i, argc, argv, logLen);
+    parseOptFloat(i, argc, argv, logThick);
     if (ringR <= 0 || stoneSize <= 0 || logLen <= 0 || logThick <= 0 ||
         stones < 3 || stones > 64) {
         std::fprintf(stderr,

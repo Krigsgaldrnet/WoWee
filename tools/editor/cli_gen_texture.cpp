@@ -1,4 +1,5 @@
 #include "cli_gen_texture.hpp"
+#include "cli_arg_parse.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -68,18 +69,10 @@ int handleCobble(int& i, int argc, char** argv) {
     int stonePx = 24;
     uint32_t seed = 1;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stonePx = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, stonePx);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         stonePx < 8 || stonePx > 512) {
         std::fprintf(stderr,
@@ -198,18 +191,10 @@ int handleMarble(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     float sharpness = 8.0f;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { sharpness = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptFloat(i, argc, argv, sharpness);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         sharpness < 1.0f || sharpness > 64.0f) {
         std::fprintf(stderr,
@@ -296,18 +281,12 @@ int handleMetal(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     std::string orientation = "horizontal";
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
     if (i + 1 < argc && argv[i + 1][0] != '-') {
         orientation = argv[++i];
     }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192) {
         std::fprintf(stderr,
             "gen-texture-metal: invalid dims (W/H 1..8192)\n");
@@ -404,18 +383,10 @@ int handleLeather(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     int grainSize = 4;  // average pebble cell size in px
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { grainSize = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, grainSize);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         grainSize < 2 || grainSize > 64) {
         std::fprintf(stderr,
@@ -508,18 +479,10 @@ int handleSand(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     int rippleSpacing = 24;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { rippleSpacing = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, rippleSpacing);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         rippleSpacing < 4 || rippleSpacing > 512) {
         std::fprintf(stderr,
@@ -591,18 +554,10 @@ int handleSnow(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     float density = 0.005f;  // fraction of pixels that sparkle
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { density = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptFloat(i, argc, argv, density);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         density < 0.0f || density > 0.5f) {
         std::fprintf(stderr,
@@ -679,18 +634,10 @@ int handleLava(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     int crackScale = 32;  // average cell size in px
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { crackScale = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, crackScale);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         crackScale < 8 || crackScale > 512) {
         std::fprintf(stderr,
@@ -805,12 +752,8 @@ int handleGradient(int& i, int argc, char** argv) {
             i++;
         }
     }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192) {
         std::fprintf(stderr,
             "gen-texture-gradient: invalid size %dx%d (1..8192)\n",
@@ -888,12 +831,8 @@ int handleNoise(int& i, int argc, char** argv) {
         try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); }
         catch (...) {}
     }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192) {
         std::fprintf(stderr,
             "gen-texture-noise: invalid size %dx%d (1..8192)\n",
@@ -969,12 +908,8 @@ int handleNoiseColor(int& i, int argc, char** argv) {
         try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); }
         catch (...) {}
     }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192) {
         std::fprintf(stderr,
             "gen-texture-noise-color: invalid size %dx%d\n", W, H);
@@ -1060,12 +995,8 @@ int handleRadial(int& i, int argc, char** argv) {
     std::string centerHex = argv[++i];
     std::string edgeHex = argv[++i];
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192) {
         std::fprintf(stderr,
             "gen-texture-radial: invalid size %dx%d (1..8192)\n",
@@ -1136,9 +1067,7 @@ int handleStripes(int& i, int argc, char** argv) {
     int stripePx = 16;
     std::string dir = "diagonal";
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stripePx = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, stripePx);
     if (i + 1 < argc && argv[i + 1][0] != '-') {
         std::string d = argv[i + 1];
         std::transform(d.begin(), d.end(), d.begin(),
@@ -1148,12 +1077,8 @@ int handleStripes(int& i, int argc, char** argv) {
             i++;
         }
     }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         stripePx < 1 || stripePx > 4096) {
         std::fprintf(stderr,
@@ -1211,18 +1136,10 @@ int handleDots(int& i, int argc, char** argv) {
     std::string dotHex = argv[++i];
     int radius = 8, spacing = 32;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { radius = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { spacing = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, radius);
+    parseOptInt(i, argc, argv, spacing);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         radius < 1 || radius > 1024 ||
         spacing < 2 || spacing > 4096) {
@@ -1285,15 +1202,9 @@ int handleRings(int& i, int argc, char** argv) {
     std::string bHex = argv[++i];
     int ringPx = 16;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { ringPx = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, ringPx);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         ringPx < 1 || ringPx > 4096) {
         std::fprintf(stderr,
@@ -1353,15 +1264,9 @@ int handleChecker(int& i, int argc, char** argv) {
     std::string bHex = argv[++i];
     int cellPx = 32;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cellPx = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, cellPx);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         cellPx < 1 || cellPx > 4096) {
         std::fprintf(stderr,
@@ -1415,21 +1320,11 @@ int handleBrick(int& i, int argc, char** argv) {
     std::string mortarHex = argv[++i];
     int brickW = 64, brickH = 24, mortarPx = 4;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { brickW = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { brickH = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { mortarPx = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, brickW);
+    parseOptInt(i, argc, argv, brickH);
+    parseOptInt(i, argc, argv, mortarPx);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         brickW < 4 || brickW > 4096 ||
         brickH < 4 || brickH > 4096 ||
@@ -1496,18 +1391,10 @@ int handleWood(int& i, int argc, char** argv) {
     int spacing = 12;     // average grain spacing in px
     uint32_t seed = 1;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { spacing = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, spacing);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         spacing < 2 || spacing > 256) {
         std::fprintf(stderr,
@@ -1621,18 +1508,10 @@ int handleGrass(int& i, int argc, char** argv) {
     float density = 0.15f;
     uint32_t seed = 1;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { density = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptFloat(i, argc, argv, density);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         density < 0.0f || density > 1.0f) {
         std::fprintf(stderr,
@@ -1716,15 +1595,9 @@ int handleFabric(int& i, int argc, char** argv) {
     std::string weftHex = argv[++i];
     int threadPx = 4;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { threadPx = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, threadPx);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         threadPx < 2 || threadPx > 256) {
         std::fprintf(stderr,
@@ -1800,18 +1673,10 @@ int handleTile(int& i, int argc, char** argv) {
     int tilePx = 32;
     int groutPx = 2;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { tilePx = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { groutPx = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, tilePx);
+    parseOptInt(i, argc, argv, groutPx);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         tilePx < 4 || tilePx > 1024 ||
         groutPx < 0 || groutPx > tilePx / 2) {
@@ -1894,18 +1759,10 @@ int handleBark(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     float density = 0.04f;  // fraction of columns that become cracks
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { density = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptFloat(i, argc, argv, density);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         density < 0.0f || density > 0.5f) {
         std::fprintf(stderr,
@@ -2005,18 +1862,10 @@ int handleClouds(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     float coverage = 0.5f;  // 0=clear sky, 1=overcast
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { coverage = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptFloat(i, argc, argv, coverage);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         coverage < 0.0f || coverage > 1.0f) {
         std::fprintf(stderr,
@@ -2106,18 +1955,10 @@ int handleStars(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     float density = 0.005f;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { density = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptFloat(i, argc, argv, density);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         density < 0.0f || density > 1.0f) {
         std::fprintf(stderr,
@@ -2195,18 +2036,10 @@ int handleVines(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     int vineCount = 8;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { vineCount = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, vineCount);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         vineCount < 0 || vineCount > 256) {
         std::fprintf(stderr,
@@ -2291,18 +2124,10 @@ int handleMosaic(int& i, int argc, char** argv) {
     int tilePx = 16;
     uint32_t seed = 1;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { tilePx = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, tilePx);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         tilePx < 4 || tilePx > 256) {
         std::fprintf(stderr,
@@ -2382,18 +2207,10 @@ int handleRust(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     float coverage = 0.4f;  // 0=clean metal, 1=fully oxidized
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { coverage = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptFloat(i, argc, argv, coverage);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         coverage < 0.0f || coverage > 1.0f) {
         std::fprintf(stderr,
@@ -2486,18 +2303,10 @@ int handleCircuit(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     int traceCount = 24;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { traceCount = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, traceCount);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         traceCount < 0 || traceCount > 1024) {
         std::fprintf(stderr,
@@ -2593,18 +2402,10 @@ int handleCoral(int& i, int argc, char** argv) {
     uint32_t seed = 1;
     int branchCount = 12;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { branchCount = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, branchCount);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         branchCount < 0 || branchCount > 1024) {
         std::fprintf(stderr,
@@ -2711,15 +2512,9 @@ int handleFlame(int& i, int argc, char** argv) {
     std::string hotHex = argv[++i];
     uint32_t seed = 1;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192) {
         std::fprintf(stderr,
             "gen-texture-flame: invalid dims (W/H 1..8192)\n");
@@ -2803,15 +2598,9 @@ int handleTartan(int& i, int argc, char** argv) {
     std::string cHex = argv[++i];
     int bandPx = 32;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bandPx = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, bandPx);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         bandPx < 4 || bandPx > 256) {
         std::fprintf(stderr,
@@ -2892,15 +2681,9 @@ int handleArgyle(int& i, int argc, char** argv) {
     std::string stitchHex = argv[++i];
     int cellPx = 64;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cellPx = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, cellPx);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         cellPx < 8 || cellPx > 512) {
         std::fprintf(stderr,
@@ -2987,21 +2770,11 @@ int handleHerringbone(int& i, int argc, char** argv) {
     int lineSpacing  = 12;   // distance between adjacent lines along x
     int lineWidth    = 4;    // line thickness in shifted-x coords
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stripHeight = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { lineSpacing = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { lineWidth = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, stripHeight);
+    parseOptInt(i, argc, argv, lineSpacing);
+    parseOptInt(i, argc, argv, lineWidth);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         stripHeight < 4 || stripHeight > 256 ||
         lineSpacing < 4 || lineSpacing > 256 ||
@@ -3073,18 +2846,10 @@ int handleScales(int& i, int argc, char** argv) {
     int cellW = 24;
     int cellH = 16;   // shorter than wide for natural overlap
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cellW = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cellH = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, cellW);
+    parseOptInt(i, argc, argv, cellH);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         cellW < 4 || cellW > 256 ||
         cellH < 4 || cellH > 256) {
@@ -3173,15 +2938,9 @@ int handleStainedGlass(int& i, int argc, char** argv) {
     std::string cHex     = argv[++i];
     int cellCount = 32;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cellCount = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, cellCount);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         cellCount < 4 || cellCount > 1024) {
         std::fprintf(stderr,
@@ -3291,21 +3050,11 @@ int handleShingles(int& i, int argc, char** argv) {
     int shadowH  = 4;     // shadow band thickness at top of each row
     int seamW    = 1;     // vertical seam width between shingles
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { shingleW = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { shingleH = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { shadowH = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, shingleW);
+    parseOptInt(i, argc, argv, shingleH);
+    parseOptInt(i, argc, argv, shadowH);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         shingleW < 4 || shingleW > 512 ||
         shingleH < 4 || shingleH > 512 ||
@@ -3379,18 +3128,10 @@ int handleFrost(int& i, int argc, char** argv) {
     int seedCount = 80;
     int rayLen    = 18;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seedCount = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { rayLen = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, seedCount);
+    parseOptInt(i, argc, argv, rayLen);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         seedCount < 1 || seedCount > 8192 ||
         rayLen < 2 || rayLen > 256) {
@@ -3498,18 +3239,10 @@ int handleParquet(int& i, int argc, char** argv) {
     int cellSize = 32;   // cell side = 2N; each plank is N wide
     int gapW     = 1;    // gap line thickness between planks
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cellSize = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { gapW = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, cellSize);
+    parseOptInt(i, argc, argv, gapW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         cellSize < 8 || cellSize > 512 ||
         gapW < 0 || gapW * 4 >= cellSize) {
@@ -3604,24 +3337,12 @@ int handleBubbles(int& i, int argc, char** argv) {
     int maxR = 24;
     int rimW = 2;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { bubbleCount = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { minR = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { maxR = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { rimW = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, bubbleCount);
+    parseOptInt(i, argc, argv, minR);
+    parseOptInt(i, argc, argv, maxR);
+    parseOptInt(i, argc, argv, rimW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         bubbleCount < 1 || bubbleCount > 4096 ||
         minR < 1 || maxR < minR || maxR > 1024 ||
@@ -3721,18 +3442,10 @@ int handleSpiderWeb(int& i, int argc, char** argv) {
     int spokes = 8;
     int rings  = 5;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { spokes = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { rings = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, spokes);
+    parseOptInt(i, argc, argv, rings);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         spokes < 3 || spokes > 64 ||
         rings < 1 || rings > 32) {
@@ -3823,18 +3536,10 @@ int handleGingham(int& i, int argc, char** argv) {
     int stripeSpacing = 16;
     int stripeWidth   = 8;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stripeSpacing = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stripeWidth = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, stripeSpacing);
+    parseOptInt(i, argc, argv, stripeWidth);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         stripeSpacing < 4 || stripeSpacing > 256 ||
         stripeWidth < 1 || stripeWidth >= stripeSpacing) {
@@ -3900,18 +3605,10 @@ int handleLattice(int& i, int argc, char** argv) {
     int lineSpacing = 24;
     int lineWidth   = 3;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { lineSpacing = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { lineWidth = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, lineSpacing);
+    parseOptInt(i, argc, argv, lineWidth);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         lineSpacing < 4 || lineSpacing > 256 ||
         lineWidth < 1 || lineWidth >= lineSpacing) {
@@ -3973,15 +3670,9 @@ int handleHoneycomb(int& i, int argc, char** argv) {
     std::string borderHex = argv[++i];
     int hexSide = 16;     // hex side length in pixels
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { hexSide = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, hexSide);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         hexSide < 4 || hexSide > 256) {
         std::fprintf(stderr,
@@ -4081,18 +3772,10 @@ int handleCracked(int& i, int argc, char** argv) {
     int seedCount = 12;
     int maxLength = 40;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seedCount = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { maxLength = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, seedCount);
+    parseOptInt(i, argc, argv, maxLength);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         seedCount < 1 || seedCount > 4096 ||
         maxLength < 4 || maxLength > 1024) {
@@ -4194,15 +3877,9 @@ int handleRunes(int& i, int argc, char** argv) {
     std::string runeHex  = argv[++i];
     int gridSpacing = 64;     // rune slot size
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { gridSpacing = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, gridSpacing);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         gridSpacing < 16 || gridSpacing > 512) {
         std::fprintf(stderr,
@@ -4313,18 +3990,10 @@ int handleLeopard(int& i, int argc, char** argv) {
     int spotCount = 60;
     int spotRadius = 8;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { spotCount = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { spotRadius = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, spotCount);
+    parseOptInt(i, argc, argv, spotRadius);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         spotCount < 1 || spotCount > 4096 ||
         spotRadius < 2 || spotRadius > 256) {
@@ -4432,21 +4101,11 @@ int handleZebra(int& i, int argc, char** argv) {
     int amplitude    = 8;      // sine-wave amplitude (px)
     int wavelength   = 80;     // x-period of the sine wave (px)
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stripePeriod = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { amplitude = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { wavelength = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, stripePeriod);
+    parseOptInt(i, argc, argv, amplitude);
+    parseOptInt(i, argc, argv, wavelength);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         stripePeriod < 4 || stripePeriod > 256 ||
         amplitude < 0 || amplitude > 128 ||
@@ -4514,21 +4173,11 @@ int handleKnit(int& i, int argc, char** argv) {
     int cellH = 12;
     int strokeWidth = 2;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cellW = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cellH = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { strokeWidth = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, cellW);
+    parseOptInt(i, argc, argv, cellH);
+    parseOptInt(i, argc, argv, strokeWidth);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         cellW < 4 || cellW > 256 ||
         cellH < 4 || cellH > 256 ||
@@ -4600,21 +4249,11 @@ int handleMoss(int& i, int argc, char** argv) {
     int density = 70;           // 0..100 chance of spot per cell
     uint32_t seed = 1;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stride = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { density = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, stride);
+    parseOptInt(i, argc, argv, density);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         stride < 4 || stride > 1024 ||
         density < 0 || density > 100) {
@@ -4709,18 +4348,10 @@ int handleStuds(int& i, int argc, char** argv) {
     int stride = 24;
     int studR  = 7;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { stride = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { studR = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, stride);
+    parseOptInt(i, argc, argv, studR);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         stride < 4 || stride > 1024 ||
         studR < 1 || studR * 2 >= stride) {
@@ -4796,18 +4427,10 @@ int handleStarburst(int& i, int argc, char** argv) {
     int rayCount = 12;
     float beamWidth = 0.18f;   // radians half-width of each ray
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { rayCount = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { beamWidth = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, rayCount);
+    parseOptFloat(i, argc, argv, beamWidth);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         rayCount < 2 || rayCount > 256 ||
         beamWidth <= 0 || beamWidth >= 3.14f) {
@@ -4891,15 +4514,9 @@ int handleCaustics(int& i, int argc, char** argv) {
     std::string hiHex   = argv[++i];
     int period = 24;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { period = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, period);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         period < 4 || period > 1024) {
         std::fprintf(stderr,
@@ -4970,18 +4587,10 @@ int handleRope(int& i, int argc, char** argv) {
     int period = 24;
     int strandW = 8;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { period = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { strandW = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, period);
+    parseOptInt(i, argc, argv, strandW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         period < 4 || period > 1024 ||
         strandW < 2 || strandW > W) {
@@ -5060,20 +4669,14 @@ int handleCorrugated(int& i, int argc, char** argv) {
     int period = 16;
     char dir = 'v';        // 'v' = vertical ridges, 'h' = horizontal
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { period = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, period);
     if (i + 1 < argc && argv[i + 1][0] != '-') {
         const char* a = argv[++i];
         if (a[0] == 'h' || a[0] == 'H') dir = 'h';
         else if (a[0] == 'v' || a[0] == 'V') dir = 'v';
     }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         period < 2 || period > 1024) {
         std::fprintf(stderr,
@@ -5132,21 +4735,11 @@ int handlePlanks(int& i, int argc, char** argv) {
     int grainsPerPlank = 5;
     uint32_t seed = 1;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { plankH = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { grainsPerPlank = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, plankH);
+    parseOptInt(i, argc, argv, grainsPerPlank);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         plankH < 4 || plankH > 256 ||
         grainsPerPlank < 0 || grainsPerPlank > 64) {
@@ -5244,24 +4837,12 @@ int handleChainmail(int& i, int argc, char** argv) {
     int ringR = 5;
     float strokeW = 1.5f;
     int W = 256, H = 256;
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cellW = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { cellH = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { ringR = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { strokeW = std::stof(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { W = std::stoi(argv[++i]); } catch (...) {}
-    }
-    if (i + 1 < argc && argv[i + 1][0] != '-') {
-        try { H = std::stoi(argv[++i]); } catch (...) {}
-    }
+    parseOptInt(i, argc, argv, cellW);
+    parseOptInt(i, argc, argv, cellH);
+    parseOptInt(i, argc, argv, ringR);
+    parseOptFloat(i, argc, argv, strokeW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
     if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
         cellW < 4 || cellW > 256 ||
         cellH < 4 || cellH > 256 ||
