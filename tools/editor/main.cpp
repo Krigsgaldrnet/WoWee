@@ -568,6 +568,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Leather grain: irregular pebbled bumps via cellular noise (default grain=4px)\n");
     std::printf("  --gen-texture-sand <out.png> <baseHex> [seed] [rippleSpacing] [W H]\n");
     std::printf("                         Sand dunes: per-pixel grain noise + sinusoidal ripple bands (default ripple=24px)\n");
+    std::printf("  --gen-texture-snow <out.png> <baseHex> [seed] [sparkleDensity] [W H]\n");
+    std::printf("                         Snow: soft cool-white base + scattered bright sparkle pixels (default density=0.005)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -1159,7 +1161,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
         "--gen-texture-wood", "--gen-texture-grass", "--gen-texture-fabric",
         "--gen-texture-cobble", "--gen-texture-marble", "--gen-texture-metal",
-        "--gen-texture-leather", "--gen-texture-sand",
+        "--gen-texture-leather", "--gen-texture-sand", "--gen-texture-snow",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -19227,6 +19229,123 @@ int main(int argc, char* argv[]) {
             std::printf("  base color     : %s\n", baseHex.c_str());
             std::printf("  ripple spacing : %d px\n", rippleSpacing);
             std::printf("  seed           : %u\n", seed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-snow") == 0 && i + 2 < argc) {
+            // Snow texture: cool-white base with very subtle blueish
+            // tint variation (the soft uneven luminance of fresh
+            // powder), plus scattered single-pixel "sparkles" at
+            // bright white where ice crystals catch light.
+            std::string outPath = argv[++i];
+            std::string baseHex = argv[++i];
+            uint32_t seed = 1;
+            float density = 0.005f;  // fraction of pixels that sparkle
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { density = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                density < 0.0f || density > 0.5f) {
+                std::fprintf(stderr,
+                    "gen-texture-snow: invalid dims (W/H 1..8192, density 0..0.5)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t br, bg, bb_;
+            if (!parseHex(baseHex, br, bg, bb_)) {
+                std::fprintf(stderr,
+                    "gen-texture-snow: '%s' is not a valid hex color\n",
+                    baseHex.c_str());
+                return 1;
+            }
+            uint32_t state = seed ? seed : 1u;
+            auto next01 = [&state]() -> float {
+                state = state * 1664525u + 1013904223u;
+                return (state >> 8) * (1.0f / 16777216.0f);
+            };
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            // Soft luminance variation via low-frequency cosine
+            // sums — gives the surface a gently uneven powdery
+            // look rather than a flat field.
+            float seedF = static_cast<float>(seed);
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    float wave = std::cos(x * 0.03f + seedF) *
+                                 std::cos(y * 0.04f + seedF * 0.7f);
+                    float jitter = (next01() - 0.5f) * 0.04f;
+                    float shade = 1.0f + 0.05f * wave + jitter;
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = static_cast<uint8_t>(
+                        std::clamp(br * shade, 0.0f, 255.0f));
+                    pixels[i2 + 1] = static_cast<uint8_t>(
+                        std::clamp(bg * shade, 0.0f, 255.0f));
+                    pixels[i2 + 2] = static_cast<uint8_t>(
+                        std::clamp(bb_ * shade, 0.0f, 255.0f));
+                }
+            }
+            // Sparkle pass: scatter bright single-pixel highlights.
+            int sparkles = static_cast<int>(W * H * density);
+            for (int s = 0; s < sparkles; ++s) {
+                int sx = static_cast<int>(next01() * W);
+                int sy = static_cast<int>(next01() * H);
+                size_t i2 = (static_cast<size_t>(sy) * W + sx) * 3;
+                pixels[i2 + 0] = 255;
+                pixels[i2 + 1] = 255;
+                pixels[i2 + 2] = 255;
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-snow: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size       : %dx%d\n", W, H);
+            std::printf("  base color : %s\n", baseHex.c_str());
+            std::printf("  density    : %.4f (%d sparkles)\n",
+                        density, sparkles);
+            std::printf("  seed       : %u\n", seed);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
