@@ -21,6 +21,7 @@ const char* const kArgRequired[] = {
     "--info-wow", "--validate-wow",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
+    "--gen-zone-atmosphere",
     "--info-creatures", "--info-objects", "--info-quests",
     "--info-extract", "--info-extract-tree", "--info-extract-budget",
     "--list-missing-sidecars",

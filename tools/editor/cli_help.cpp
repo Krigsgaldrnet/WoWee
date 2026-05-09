@@ -813,6 +813,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Emit .wow weather schedule: clear-dominant + sandstorm (dunes / wasteland)\n");
     std::printf("  --gen-weather-stormy <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: heavy rain + storm + occasional clear (coastal / monsoon)\n");
+    std::printf("  --gen-zone-atmosphere <zoneDir> [--name <zoneName>] [--preset default|arctic|desert|stormy|cave]\n");
+    std::printf("                         Convenience: drop both atmosphere.wol + atmosphere.wow into <zoneDir> using a paired light/weather preset\n");
     std::printf("  --info-wot <wot-base> [--json]\n");
     std::printf("                         Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-extract <dir> [--json]\n");

@@ -886,6 +886,78 @@ int handleGenWeatherStormy(int& i, int argc, char** argv) {
         "heavy rain + storm + occasional clear");
 }
 
+int handleGenZoneAtmosphere(int& i, int argc, char** argv) {
+    // Convenience composite: drop both a default day/night WOL
+    // and a temperate WOW into <zoneDir>/atmosphere.{wol,wow}.
+    // Optional --preset <name> picks WOW + WOL preset pair:
+    //   default  → makeDefaultDayNight + makeTemperate
+    //   arctic   → makeNight            + makeArctic
+    //   desert   → makeDefaultDayNight  + makeDesert
+    //   stormy   → makeDefaultDayNight  + makeStormy
+    //   cave     → makeCave             + makeTemperate (no rain UX, but kept for symmetry)
+    std::string zoneDir = argv[++i];
+    std::string zoneName = "Default";
+    std::string preset = "default";
+    while (i + 1 < argc && argv[i + 1][0] == '-') {
+        if (std::strcmp(argv[i + 1], "--name") == 0 && i + 2 < argc) {
+            zoneName = argv[i + 2];
+            i += 2;
+        } else if (std::strcmp(argv[i + 1], "--preset") == 0 && i + 2 < argc) {
+            preset = argv[i + 2];
+            i += 2;
+        } else {
+            break;
+        }
+    }
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::create_directories(zoneDir, ec);
+    if (ec) {
+        std::fprintf(stderr,
+            "gen-zone-atmosphere: cannot create %s: %s\n",
+            zoneDir.c_str(), ec.message().c_str());
+        return 1;
+    }
+    wowee::pipeline::WoweeLight wol;
+    wowee::pipeline::WoweeWeather wow;
+    if (preset == "arctic") {
+        wol = wowee::pipeline::WoweeLightLoader::makeNight(zoneName);
+        wow = wowee::pipeline::WoweeWeatherLoader::makeArctic(zoneName);
+    } else if (preset == "desert") {
+        wol = wowee::pipeline::WoweeLightLoader::makeDefaultDayNight(zoneName);
+        wow = wowee::pipeline::WoweeWeatherLoader::makeDesert(zoneName);
+    } else if (preset == "stormy") {
+        wol = wowee::pipeline::WoweeLightLoader::makeDefaultDayNight(zoneName);
+        wow = wowee::pipeline::WoweeWeatherLoader::makeStormy(zoneName);
+    } else if (preset == "cave") {
+        wol = wowee::pipeline::WoweeLightLoader::makeCave(zoneName);
+        wow = wowee::pipeline::WoweeWeatherLoader::makeTemperate(zoneName);
+    } else {
+        wol = wowee::pipeline::WoweeLightLoader::makeDefaultDayNight(zoneName);
+        wow = wowee::pipeline::WoweeWeatherLoader::makeTemperate(zoneName);
+    }
+    std::string wolBase = zoneDir + "/atmosphere";
+    std::string wowBase = zoneDir + "/atmosphere";
+    if (!wowee::pipeline::WoweeLightLoader::save(wol, wolBase)) {
+        std::fprintf(stderr,
+            "gen-zone-atmosphere: failed to save %s.wol\n", wolBase.c_str());
+        return 1;
+    }
+    if (!wowee::pipeline::WoweeWeatherLoader::save(wow, wowBase)) {
+        std::fprintf(stderr,
+            "gen-zone-atmosphere: failed to save %s.wow\n", wowBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote zone atmosphere to %s/\n", zoneDir.c_str());
+    std::printf("  zone       : %s\n", zoneName.c_str());
+    std::printf("  preset     : %s\n", preset.c_str());
+    std::printf("  atmosphere.wol : %zu light keyframe%s\n",
+                wol.keyframes.size(), wol.keyframes.size() == 1 ? "" : "s");
+    std::printf("  atmosphere.wow : %zu weather entry/entries\n",
+                wow.entries.size());
+    return 0;
+}
+
 }  // namespace
 
 bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
@@ -945,6 +1017,9 @@ bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-weather-stormy") == 0 && i + 1 < argc) {
         outRc = handleGenWeatherStormy(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-zone-atmosphere") == 0 && i + 1 < argc) {
+        outRc = handleGenZoneAtmosphere(i, argc, argv); return true;
     }
     return false;
 }
