@@ -1003,6 +1003,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WACH entries (id / points / faction / flags / criteria with kind+target+qty)\n");
     std::printf("  --validate-wach <wach-base> [--json]\n");
     std::printf("                         Static checks: id>0+unique, name not empty, faction 0..2, criteria need targetId+quantity>0\n");
+    std::printf("  --export-wach-json <wach-base> [out.json]\n");
+    std::printf("                         Export binary .wach to a human-editable JSON sidecar (defaults to <base>.wach.json)\n");
+    std::printf("  --import-wach-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wach.json sidecar back into binary .wach (accepts kind/faction/flag int OR name forms)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

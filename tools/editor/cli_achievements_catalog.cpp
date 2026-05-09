@@ -170,6 +170,186 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each achievement emits scalar fields plus
+    // criteria array; criterion.kind, faction, and flags emit
+    // dual int + name forms.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWachExt(base);
+    if (outPath.empty()) outPath = base + ".wach.json";
+    if (!wowee::pipeline::WoweeAchievementLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wach-json: WACH not found: %s.wach\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeAchievementLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["achievementId"] = e.achievementId;
+        je["categoryId"] = e.categoryId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["iconPath"] = e.iconPath;
+        je["titleReward"] = e.titleReward;
+        je["points"] = e.points;
+        je["minLevel"] = e.minLevel;
+        je["faction"] = e.faction;
+        je["factionName"] = wowee::pipeline::WoweeAchievement::factionName(e.faction);
+        je["flags"] = e.flags;
+        nlohmann::json fa = nlohmann::json::array();
+        if (e.flags & wowee::pipeline::WoweeAchievement::HiddenUntilEarned) fa.push_back("hidden");
+        if (e.flags & wowee::pipeline::WoweeAchievement::ServerFirst)       fa.push_back("server-first");
+        if (e.flags & wowee::pipeline::WoweeAchievement::RealmFirst)        fa.push_back("realm-first");
+        if (e.flags & wowee::pipeline::WoweeAchievement::Tracking)          fa.push_back("tracking");
+        if (e.flags & wowee::pipeline::WoweeAchievement::Counter)           fa.push_back("counter");
+        if (e.flags & wowee::pipeline::WoweeAchievement::Account)           fa.push_back("account");
+        je["flagsList"] = fa;
+        nlohmann::json ca = nlohmann::json::array();
+        for (const auto& cr : e.criteria) {
+            ca.push_back({
+                {"criteriaId", cr.criteriaId},
+                {"kind", cr.kind},
+                {"kindName", wowee::pipeline::WoweeAchievement::criteriaKindName(cr.kind)},
+                {"targetId", cr.targetId},
+                {"quantity", cr.quantity},
+                {"description", cr.description},
+            });
+        }
+        je["criteria"] = ca;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wach-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source       : %s.wach\n", base.c_str());
+    std::printf("  achievements : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wach.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWachExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wach-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wach-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "kill")    return wowee::pipeline::WoweeAchievement::KillCreature;
+        if (s == "quest")   return wowee::pipeline::WoweeAchievement::CompleteQuest;
+        if (s == "loot")    return wowee::pipeline::WoweeAchievement::LootItem;
+        if (s == "level")   return wowee::pipeline::WoweeAchievement::ReachLevel;
+        if (s == "rep")     return wowee::pipeline::WoweeAchievement::EarnReputation;
+        if (s == "cast")    return wowee::pipeline::WoweeAchievement::CastSpell;
+        if (s == "skill")   return wowee::pipeline::WoweeAchievement::ReachSkillLevel;
+        if (s == "visit")   return wowee::pipeline::WoweeAchievement::VisitArea;
+        if (s == "meta")    return wowee::pipeline::WoweeAchievement::CompleteAchievement;
+        return wowee::pipeline::WoweeAchievement::KillCreature;
+    };
+    auto factionFromName = [](const std::string& s) -> uint8_t {
+        if (s == "both")     return wowee::pipeline::WoweeAchievement::FactionBoth;
+        if (s == "alliance") return wowee::pipeline::WoweeAchievement::FactionAlliance;
+        if (s == "horde")    return wowee::pipeline::WoweeAchievement::FactionHorde;
+        return wowee::pipeline::WoweeAchievement::FactionBoth;
+    };
+    auto flagFromName = [](const std::string& s) -> uint32_t {
+        if (s == "hidden")       return wowee::pipeline::WoweeAchievement::HiddenUntilEarned;
+        if (s == "server-first") return wowee::pipeline::WoweeAchievement::ServerFirst;
+        if (s == "realm-first")  return wowee::pipeline::WoweeAchievement::RealmFirst;
+        if (s == "tracking")     return wowee::pipeline::WoweeAchievement::Tracking;
+        if (s == "counter")      return wowee::pipeline::WoweeAchievement::Counter;
+        if (s == "account")      return wowee::pipeline::WoweeAchievement::Account;
+        return 0;
+    };
+    wowee::pipeline::WoweeAchievement c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeAchievement::Entry e;
+            e.achievementId = je.value("achievementId", 0u);
+            e.categoryId = je.value("categoryId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            e.titleReward = je.value("titleReward", std::string{});
+            e.points = je.value("points", 10u);
+            e.minLevel = static_cast<uint16_t>(je.value("minLevel", 1));
+            if (je.contains("faction") && je["faction"].is_number_integer()) {
+                e.faction = static_cast<uint8_t>(je["faction"].get<int>());
+            } else if (je.contains("factionName") && je["factionName"].is_string()) {
+                e.faction = factionFromName(je["factionName"].get<std::string>());
+            }
+            if (je.contains("flags") && je["flags"].is_number_integer()) {
+                e.flags = je["flags"].get<uint32_t>();
+            } else if (je.contains("flagsList") && je["flagsList"].is_array()) {
+                for (const auto& f : je["flagsList"]) {
+                    if (f.is_string()) e.flags |= flagFromName(f.get<std::string>());
+                }
+            }
+            if (je.contains("criteria") && je["criteria"].is_array()) {
+                for (const auto& jc : je["criteria"]) {
+                    wowee::pipeline::WoweeAchievement::Criterion cr;
+                    cr.criteriaId = jc.value("criteriaId", 0u);
+                    if (jc.contains("kind") && jc["kind"].is_number_integer()) {
+                        cr.kind = static_cast<uint8_t>(jc["kind"].get<int>());
+                    } else if (jc.contains("kindName") && jc["kindName"].is_string()) {
+                        cr.kind = kindFromName(jc["kindName"].get<std::string>());
+                    }
+                    cr.targetId = jc.value("targetId", 0u);
+                    cr.quantity = jc.value("quantity", 1u);
+                    cr.description = jc.value("description", std::string{});
+                    e.criteria.push_back(cr);
+                }
+            }
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeAchievementLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wach-json: failed to save %s.wach\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wach\n", outBase.c_str());
+    std::printf("  source       : %s\n", jsonPath.c_str());
+    std::printf("  achievements : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -279,6 +459,12 @@ bool handleAchievementsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wach") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wach-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wach-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
