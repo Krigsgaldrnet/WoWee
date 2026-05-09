@@ -3500,6 +3500,57 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handlePlaid(int& i, int argc, char** argv) {
+    // Plaid: two sets of parallel "translucent" bands (one
+    // horizontal, one vertical) overlaid on a bg. Where bands
+    // cross, both half-alphas combine for the darkest color —
+    // that's the plaid grid intersection. Distinct from
+    // --gen-texture-tartan (3-4 colors, asymmetric stripes) —
+    // this is the simple 2-color symmetric variant.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string bandHex = argv[++i];
+    int stride = 24;
+    int bandW  = 8;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, stride);
+    parseOptInt(i, argc, argv, bandW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stride < 2 || stride > 1024 ||
+        bandW < 1 || bandW * 2 >= stride) {
+        std::fprintf(stderr,
+            "gen-texture-plaid: invalid dims (W/H 1..8192, "
+            "stride 2..1024, bandW 1..stride/2)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, pr_, pg_, pb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-plaid")) return 1;
+    if (!parseHexOrError(bandHex, pr_, pg_, pb_,
+                         "gen-texture-plaid")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        bool yInBand = (y % stride) < bandW;
+        for (int x = 0; x < W; ++x) {
+            bool xInBand = (x % stride) < bandW;
+            // Each band contributes 0.5 alpha. 0 bands = bg, 1 band
+            // = half-blended, 2 bands = full plaid color.
+            float alpha = 0.5f * (xInBand ? 1.0f : 0.0f) +
+                          0.5f * (yInBand ? 1.0f : 0.0f);
+            uint8_t r = static_cast<uint8_t>(br_ + alpha * (pr_ - br_));
+            uint8_t g = static_cast<uint8_t>(bg_ + alpha * (pg_ - bg_));
+            uint8_t b = static_cast<uint8_t>(bb_ + alpha * (pb_ - bb_));
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-plaid")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/band    : %s / %s\n", bgHex.c_str(), bandHex.c_str());
+    std::printf("  bands      : stride=%d, bandW=%d\n", stride, bandW);
+    return 0;
+}
+
 int handleRustStreaks(int& i, int argc, char** argv) {
     // Vertical rust drips on a metal base. Each streak is a
     // vertical band of varying width (hash-derived) starting at a
@@ -4767,6 +4818,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-bamboo",         3, handleBamboo},
     {"--gen-texture-blueprint",      3, handleBlueprint},
     {"--gen-texture-rust-streaks",   3, handleRustStreaks},
+    {"--gen-texture-plaid",          3, handlePlaid},
 };
 }  // namespace
 
