@@ -4655,6 +4655,102 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCrate(int& i, int argc, char** argv) {
+    // Crate: 5-box wooden shipping crate — main cube body
+    // plus 4 reinforcement posts running along the vertical
+    // edges. The posts are slightly proud of the body so they
+    // read as separate rails rather than texture detail. The
+    // 48th procedural mesh primitive — useful for dock yards,
+    // warehouse interiors, dungeon room set dressing.
+    std::string womBase = argv[++i];
+    float size       = 0.80f;     // cube side length
+    float postRadius = 0.05f;     // half-thickness of corner posts
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { size = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postRadius = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (size <= 0 || postRadius <= 0 || postRadius * 4 >= size) {
+        std::fprintf(stderr,
+            "gen-mesh-crate: size/postRadius > 0; postRadius < size/4\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    float halfBody = size * 0.5f;
+    // Main body: cube centered at (0, halfBody, 0).
+    addBox(0, halfBody, 0, halfBody, halfBody, halfBody);
+    // 4 corner posts: thin boxes running the full height,
+    // positioned at the 4 vertical edges of the cube. Posts
+    // extend slightly proud of the body on each axis (from
+    // halfBody to halfBody + postRadius) so they're visible
+    // from any angle without z-fighting the body's faces.
+    float postOffset = halfBody;
+    float postCY = halfBody;
+    float postHeight = size;
+    float halfPost = postRadius;
+    addBox( postOffset, postCY,  postOffset, halfPost, postHeight * 0.5f, halfPost);
+    addBox(-postOffset, postCY,  postOffset, halfPost, postHeight * 0.5f, halfPost);
+    addBox( postOffset, postCY, -postOffset, halfPost, postHeight * 0.5f, halfPost);
+    addBox(-postOffset, postCY, -postOffset, halfPost, postHeight * 0.5f, halfPost);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float halfTotal = halfBody + halfPost;
+    wom.boundMin = glm::vec3(-halfTotal, 0.0f,    -halfTotal);
+    wom.boundMax = glm::vec3( halfTotal, size,     halfTotal);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-crate: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  size       : %.3f cube\n", size);
+    std::printf("  posts      : 4 × %.3f square (full height)\n",
+                postRadius * 2);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleTombstone(int& i, int argc, char** argv) {
     // Tombstone: 3-box vertical headstone — wide low base
     // plinth, tall thin main slab on top, and a small
@@ -5927,6 +6023,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-tombstone") == 0 && i + 1 < argc) {
         outRc = handleTombstone(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-crate") == 0 && i + 1 < argc) {
+        outRc = handleCrate(i, argc, argv); return true;
     }
     return false;
 }
