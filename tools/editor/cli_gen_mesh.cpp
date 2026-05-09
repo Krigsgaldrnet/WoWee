@@ -5213,6 +5213,54 @@ int handleMug(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleMortarPestle(int& i, int argc, char** argv) {
+    // Mortar and pestle: a wider-than-tall closed cylinder
+    // (the mortar bowl) with a thin tall closed cylinder
+    // (the pestle) standing inside its rim. The bowl reads
+    // as carved stone or wood; the pestle reads as a small
+    // grinding rod. The 90th procedural mesh primitive.
+    //
+    // Distinct from --gen-mesh-cauldron (much larger, with
+    // legs) and --gen-mesh-chalice (3-tier goblet with no
+    // separate utensil).
+    std::string womBase = argv[++i];
+    float bowlR    = 0.06f;
+    float bowlH    = 0.05f;
+    float pestleR  = 0.012f;
+    float pestleH  = 0.10f;
+    int   sides    = 14;
+    parseOptFloat(i, argc, argv, bowlR);
+    parseOptFloat(i, argc, argv, bowlH);
+    parseOptFloat(i, argc, argv, pestleR);
+    parseOptFloat(i, argc, argv, pestleH);
+    parseOptInt(i, argc, argv, sides);
+    if (bowlR <= 0 || bowlH <= 0 || pestleR <= 0 || pestleH <= 0 ||
+        pestleR >= bowlR || sides < 6 || sides > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-mortar-pestle: dims > 0; sides 6..64; "
+            "pestleR < bowlR\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    // Bowl sits on the ground; pestle is centered laterally
+    // and rises up out of the bowl.
+    addClosedCylinderY(wom, bowlR, 0.0f, bowlH, sides);
+    addClosedCylinderY(wom, pestleR, bowlH * 0.5f,
+                       bowlH * 0.5f + pestleH, sides);
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, bowlR, bowlR, bowlH + pestleH);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-mortar-pestle")) return 1;
+    printWomWrote(womBase);
+    std::printf("  bowl       : R=%.3f x %.3f tall (%d sides)\n",
+                bowlR, bowlH, sides);
+    std::printf("  pestle     : R=%.3f x %.3f tall\n",
+                pestleR, pestleH);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleWellPail(int& i, int argc, char** argv) {
     // Wooden well-pail / bucket: a closed cylindrical body
     // (collision-watertight) plus a thin horizontal handle bar
@@ -7591,6 +7639,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-stove",          1, handleStove},
     {"--gen-mesh-well-pail",      1, handleWellPail},
     {"--gen-mesh-mug",            1, handleMug},
+    {"--gen-mesh-mortar-pestle",  1, handleMortarPestle},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},

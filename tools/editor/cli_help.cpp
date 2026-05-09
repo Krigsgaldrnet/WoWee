@@ -342,6 +342,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Wooden well-pail: closed cylindrical body + thin horizontal handle bar above (water-haul / mop-bucket prop)\n");
     std::printf("  --gen-mesh-mug <wom-base> [bodyR] [bodyH] [handleW] [handleH] [handleArm] [sides]\n");
     std::printf("                         Drinking mug / tankard: closed cylinder body + side handle slab (tavern / banquet / inn dressing)\n");
+    std::printf("  --gen-mesh-mortar-pestle <wom-base> [bowlR] [bowlH] [pestleR] [pestleH] [sides]\n");
+    std::printf("                         Mortar + pestle: wide squat cylinder (bowl) + thin tall cylinder rising from inside (alchemy / kitchen)\n");
     std::printf("  --gen-camp-pack <outDir>\n");
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-blacksmith-pack <outDir>\n");
