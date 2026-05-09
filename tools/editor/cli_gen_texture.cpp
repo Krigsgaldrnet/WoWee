@@ -3500,6 +3500,94 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCrackle(int& i, int argc, char** argv) {
+    // Fine crack network from Worley cellular noise. For each
+    // pixel, find the two nearest jittered cell centers; the
+    // difference between (distance to second-nearest) and
+    // (distance to nearest) approximates distance to the
+    // Voronoi cell boundary. Pixels near a boundary get the
+    // crack color; inside cells get the base. Distinct from
+    // --gen-texture-cracked (wide stone cracks at large scale)
+    // and --gen-texture-frost (6-spike crystal rosettes) — this
+    // is the fine-mud / dry-leather / parched-earth variant.
+    std::string outPath = argv[++i];
+    std::string baseHex = argv[++i];
+    std::string crackHex = argv[++i];
+    int stride = 14;
+    float crackW = 1.5f;
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, stride);
+    parseOptFloat(i, argc, argv, crackW);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stride < 4 || stride > 1024 ||
+        crackW <= 0.0f || crackW >= stride * 0.5f) {
+        std::fprintf(stderr,
+            "gen-texture-crackle: invalid dims (W/H 1..8192, "
+            "stride 4..1024, crackW (0, stride/2))\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, cr_, cg_, cb_;
+    if (!parseHexOrError(baseHex, br_, bg_, bb_,
+                         "gen-texture-crackle")) return 1;
+    if (!parseHexOrError(crackHex, cr_, cg_, cb_,
+                         "gen-texture-crackle")) return 1;
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    auto cellHash = [&](int cx, int cy, uint32_t salt) -> uint32_t {
+        uint32_t h = static_cast<uint32_t>(cx) * 0x9E3779B1u
+                    ^ static_cast<uint32_t>(cy) * 0x85EBCA77u
+                    ^ seed ^ salt;
+        return hash32(h);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int cellY = y / stride;
+        for (int x = 0; x < W; ++x) {
+            int cellX = x / stride;
+            // Find the two smallest distances across the 9 cells.
+            float d1 = 1e9f, d2 = 1e9f;
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    int cx = cellX + dx;
+                    int cy = cellY + dy;
+                    float jx = (cellHash(cx, cy, 1) % 1000) / 1000.0f;
+                    float jy = (cellHash(cx, cy, 2) % 1000) / 1000.0f;
+                    float scx = (cx + jx) * stride;
+                    float scy = (cy + jy) * stride;
+                    float ddx = x - scx;
+                    float ddy = y - scy;
+                    float d = std::sqrt(ddx * ddx + ddy * ddy);
+                    if (d < d1) { d2 = d1; d1 = d; }
+                    else if (d < d2) { d2 = d; }
+                }
+            }
+            float boundary = d2 - d1;          // 0 at cell edge
+            uint8_t r, g, b;
+            if (boundary < crackW) {
+                r = cr_; g = cg_; b = cb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-crackle")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  base/crack : %s / %s\n",
+                baseHex.c_str(), crackHex.c_str());
+    std::printf("  cells      : stride=%d, crackW=%.2f, seed=%u\n",
+                stride, crackW, seed);
+    return 0;
+}
+
 int handleScratchedMetal(int& i, int argc, char** argv) {
     // Scratched / worn metal: base metal color overlaid with N
     // short angled line segments brightened against the base.
@@ -5669,6 +5757,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-dewdrops",       3, handleDewdrops},
     {"--gen-texture-pinwheel",       3, handlePinwheel},
     {"--gen-texture-scratched-metal",3, handleScratchedMetal},
+    {"--gen-texture-crackle",        3, handleCrackle},
 };
 }  // namespace
 

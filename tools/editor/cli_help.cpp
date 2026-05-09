@@ -189,6 +189,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Pinwheel: alternating colored triangular wedges radiating from center (mandala / wind-rose / wheel inlay)\n");
     std::printf("  --gen-texture-scratched-metal <out.png> <baseHex> <scratchHex> [scratchCount] [maxLen] [seed] [W H]\n");
     std::printf("                         Scratched metal: base color overlaid with N angled hash-derived line segments (worn armor / blades)\n");
+    std::printf("  --gen-texture-crackle <out.png> <baseHex> <crackHex> [stride] [crackW] [seed] [W H]\n");
+    std::printf("                         Crackle: fine Voronoi cell-boundary cracks (dried mud / parched earth / aged leather)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
