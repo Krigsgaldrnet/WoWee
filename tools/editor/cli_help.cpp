@@ -166,6 +166,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Throne: pedestal + seat + backrest + 2 armrests (default 0.8/0.5/1.5/1.2)\n");
     std::printf("  --gen-mesh-coffin <wom-base> [length] [width] [height]\n");
     std::printf("                         Hexagonal coffin: narrow head + wide shoulder + tapered foot prism (default 2.0/0.8/0.6)\n");
+    std::printf("  --gen-mesh-bookshelf <wom-base> [width] [height] [depth] [shelves]\n");
+    std::printf("                         Bookshelf: 5-panel cabinet with N-1 shelves and rows of varied book boxes (default 1.5/2.0/0.4/4)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");

@@ -4655,6 +4655,167 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBookshelf(int& i, int argc, char** argv) {
+    // Bookshelf: cabinet (5 panels: back / left / right / top /
+    // bottom) divided by N-1 horizontal shelves, with rows of
+    // thin "book" boxes at varying heights on each shelf.
+    // Books sway in width and height pseudo-randomly so the
+    // shelf doesn't read as a perfect grid. The 39th procedural
+    // mesh primitive.
+    std::string womBase = argv[++i];
+    float width  = 1.5f;
+    float height = 2.0f;
+    float depth  = 0.4f;
+    int shelves  = 4;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { depth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { shelves = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (width <= 0 || height <= 0 || depth <= 0 ||
+        shelves < 2 || shelves > 12) {
+        std::fprintf(stderr,
+            "gen-mesh-bookshelf: dims > 0; shelves must be 2..12\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Cabinet skin: thickness scales with the smaller cabinet
+    // dimension so the shelf reads at any size without becoming
+    // either too chunky or too flimsy.
+    float panelT = std::min(width, depth) * 0.06f;
+    float halfW = width  * 0.5f;
+    float halfD = depth  * 0.5f;
+    // Bottom + top panels span full width and depth.
+    addBox(0, panelT * 0.5f, 0,
+           halfW, panelT * 0.5f, halfD);
+    addBox(0, height - panelT * 0.5f, 0,
+           halfW, panelT * 0.5f, halfD);
+    // Left + right side panels span between bottom and top panels.
+    float sideCY = (panelT + (height - panelT)) * 0.5f;
+    float sideHY = (height - 2 * panelT) * 0.5f;
+    addBox(-halfW + panelT * 0.5f, sideCY, 0,
+           panelT * 0.5f, sideHY, halfD);
+    addBox( halfW - panelT * 0.5f, sideCY, 0,
+           panelT * 0.5f, sideHY, halfD);
+    // Back panel — thin slab at the rear of the cabinet.
+    addBox(0, sideCY, -halfD + panelT * 0.5f,
+           halfW - panelT, sideHY, panelT * 0.5f);
+    // Horizontal shelves divide the interior into 'shelves' bays.
+    // shelf[0] is the cabinet bottom, shelf[shelves] is the top —
+    // we only emit the (shelves-1) interior shelves between them.
+    float interiorTop = height - panelT;
+    float interiorBottom = panelT;
+    float bayHeight = (interiorTop - interiorBottom) /
+                      static_cast<float>(shelves);
+    float shelfT = panelT;  // shelf thickness matches panel skin
+    float interiorHalfW = halfW - panelT;
+    for (int s = 1; s < shelves; ++s) {
+        float shelfCY = interiorBottom + s * bayHeight - shelfT * 0.5f;
+        addBox(0, shelfCY, 0,
+               interiorHalfW, shelfT * 0.5f, halfD - panelT * 0.5f);
+    }
+    // Books: per-bay row of thin boxes leaning along the shelf.
+    // Pseudo-random width/height variation seeded by bay index so
+    // re-generating the same shelf gives the same layout.
+    auto rngStep = [](uint32_t& s) {
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        return s;
+    };
+    int totalBooks = 0;
+    for (int s = 0; s < shelves; ++s) {
+        // Bottom Y of this bay's books = top of the shelf below.
+        float bayBottomY = (s == 0) ? interiorBottom
+                                    : interiorBottom + s * bayHeight;
+        float bayTopY    = interiorBottom + (s + 1) * bayHeight - shelfT;
+        if (s == shelves - 1) bayTopY = interiorTop - shelfT;
+        float availableH = bayTopY - bayBottomY;
+        if (availableH < bayHeight * 0.3f) continue;
+        // Lay books from left to right with narrow gaps. Variable
+        // book widths are 50–120% of nominal — yields ~6 books per
+        // bay at default size.
+        float nominalBookW = bayHeight * 0.18f;
+        float bookHalfD    = (halfD - panelT) * 0.7f;
+        uint32_t rng = static_cast<uint32_t>(s * 0x9E3779B9u + 1);
+        float cursor = -interiorHalfW + nominalBookW * 0.6f;
+        while (cursor + nominalBookW < interiorHalfW) {
+            float wScale = 0.5f + (rngStep(rng) & 0xFFFF) / 65535.0f * 0.7f;
+            float hScale = 0.7f + (rngStep(rng) & 0xFFFF) / 65535.0f * 0.3f;
+            float bookW  = nominalBookW * wScale;
+            float bookH  = availableH * 0.85f * hScale;
+            if (cursor + bookW > interiorHalfW) break;
+            addBox(cursor + bookW * 0.5f,
+                   bayBottomY + bookH * 0.5f,
+                   0,
+                   bookW * 0.5f, bookH * 0.5f, bookHalfD);
+            cursor += bookW + nominalBookW * 0.05f;
+            totalBooks++;
+        }
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfD);
+    wom.boundMax = glm::vec3( halfW, height,   halfD);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-bookshelf: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  size       : %.3f x %.3f x %.3f\n", width, height, depth);
+    std::printf("  shelves    : %d (%d books across all bays)\n",
+                shelves, totalBooks);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -4763,6 +4924,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-coffin") == 0 && i + 1 < argc) {
         outRc = handleCoffin(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-bookshelf") == 0 && i + 1 < argc) {
+        outRc = handleBookshelf(i, argc, argv); return true;
     }
     return false;
 }
