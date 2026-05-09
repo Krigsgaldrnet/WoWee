@@ -111,6 +111,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Parquet: basket-weave wood floor pattern with checkered horizontal/vertical plank pairs\n");
     std::printf("  --gen-texture-bubbles <out.png> <bgHex> <fillHex> <rimHex> [count] [minR] [maxR] [rimW] [W H]\n");
     std::printf("                         Bubbles: scattered overlapping circles with bright rims (foam, water, magic)\n");
+    std::printf("  --gen-texture-spider-web <out.png> <bgHex> <webHex> [spokes] [rings] [W H]\n");
+    std::printf("                         Spider web: N radial spokes + M concentric polygonal rings centered on the image\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

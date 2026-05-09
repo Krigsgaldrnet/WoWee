@@ -3707,6 +3707,109 @@ int handleBubbles(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleSpiderWeb(int& i, int argc, char** argv) {
+    // Spider web: classic geometric web with N radial spokes
+    // and M concentric polygonal rings centered on the image.
+    // Spokes are detected by angular distance to the nearest
+    // multiple of 2pi/N (scaled by radius so spokes are pixel-
+    // wide near the center and stay readable far out). Rings
+    // are detected by radial distance to the nearest of M
+    // evenly-spaced radii.
+    std::string outPath = argv[++i];
+    std::string bgHex  = argv[++i];
+    std::string webHex = argv[++i];
+    int spokes = 8;
+    int rings  = 5;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { spokes = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { rings = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        spokes < 3 || spokes > 64 ||
+        rings < 1 || rings > 32) {
+        std::fprintf(stderr,
+            "gen-texture-spider-web: invalid dims (W/H 1..8192, spokes 3..64, rings 1..32)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, wr, wg, wb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(webHex, wr, wg, wb_)) {
+        std::fprintf(stderr,
+            "gen-texture-spider-web: bg or web hex color is invalid\n");
+        return 1;
+    }
+    constexpr float kPi = 3.14159265358979323846f;
+    const float cx = W * 0.5f;
+    const float cy = H * 0.5f;
+    // Web extends to the smaller half-extent so it always fits.
+    const float maxR = std::min(cx, cy);
+    const float spokeStep = 2.0f * kPi / spokes;
+    const float ringStep = maxR / rings;
+    // Line widths in pixels — kept fixed so the web reads at any
+    // image size; users wanting a denser/thicker web can re-run
+    // with bigger spoke/ring counts.
+    const float lineHalfW = 1.0f;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float dx = x + 0.5f - cx;
+            float dy = y + 0.5f - cy;
+            float r = std::sqrt(dx * dx + dy * dy);
+            uint8_t cr_, cg_, cb_;
+            cr_ = br_; cg_ = bg_; cb_ = bb_;
+            if (r > 0.5f && r < maxR + lineHalfW) {
+                // Spoke check: angular distance to nearest spoke
+                // line, measured as arc length (= r * dTheta) so
+                // spokes have constant pixel width regardless of r.
+                float theta = std::atan2(dy, dx);
+                float wrapped = std::fmod(theta + kPi * 100.0f, spokeStep);
+                float spokeDelta = std::min(wrapped, spokeStep - wrapped);
+                float arcDist = spokeDelta * r;
+                if (arcDist <= lineHalfW) {
+                    cr_ = wr; cg_ = wg; cb_ = wb_;
+                }
+                // Ring check: nearest ring radius. Skip the
+                // would-be ring at r=0 (which is the center).
+                float ringIdx = r / ringStep;
+                float nearestRing = std::round(ringIdx) * ringStep;
+                if (nearestRing > 0.5f &&
+                    std::fabs(r - nearestRing) <= lineHalfW) {
+                    cr_ = wr; cg_ = wg; cb_ = wb_;
+                }
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = cr_;
+            pixels[idx + 1] = cg_;
+            pixels[idx + 2] = cb_;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-spider-web: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d (web center at %.1f, %.1f)\n",
+                W, H, cx, cy);
+    std::printf("  bg / web   : %s / %s\n", bgHex.c_str(), webHex.c_str());
+    std::printf("  spokes     : %d (every %.1f°)\n",
+                spokes, 360.0f / spokes);
+    std::printf("  rings      : %d (spacing %.1f px)\n",
+                rings, ringStep);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -3825,6 +3928,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-bubbles") == 0 && i + 4 < argc) {
         outRc = handleBubbles(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-spider-web") == 0 && i + 3 < argc) {
+        outRc = handleSpiderWeb(i, argc, argv); return true;
     }
     return false;
 }
