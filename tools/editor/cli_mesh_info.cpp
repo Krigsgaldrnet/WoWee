@@ -2,15 +2,18 @@
 
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
+#include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <unordered_map>
 #include <vector>
 
 namespace wowee {
@@ -315,6 +318,145 @@ int handleInfoMesh(int& i, int argc, char** argv) {
 }
 
 
+int handleInfoMeshStats(int& i, int argc, char** argv) {
+    // Geometric statistics on a WOM mesh: total surface area,
+    // triangle area distribution (min/max/mean/median), edge
+    // count, and a watertight check (is every edge shared by
+    // exactly 2 triangles?). Watertightness is what collision
+    // baking and physics need; the histogram catches degenerate
+    // (zero-area) and outsized triangles that would otherwise
+    // hide inside a mesh.
+    std::string base = argv[++i];
+    bool jsonOut = (i + 1 < argc &&
+                    std::strcmp(argv[i + 1], "--json") == 0);
+    if (jsonOut) i++;
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom") {
+        base = base.substr(0, base.size() - 4);
+    }
+    if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+        std::fprintf(stderr,
+            "info-mesh-stats: %s.wom does not exist\n", base.c_str());
+        return 1;
+    }
+    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+    if (!wom.isValid()) {
+        std::fprintf(stderr,
+            "info-mesh-stats: failed to load %s.wom\n", base.c_str());
+        return 1;
+    }
+    if (wom.indices.size() % 3 != 0) {
+        std::fprintf(stderr,
+            "info-mesh-stats: index count %zu not divisible by 3\n",
+            wom.indices.size());
+        return 1;
+    }
+    const std::size_t triCount = wom.indices.size() / 3;
+    std::vector<double> areas;
+    areas.reserve(triCount);
+    double totalArea = 0.0;
+    std::size_t degenerate = 0;
+    // Edge-use counter: key is (lo<<32 | hi) of the two endpoint
+    // indices; value counts how many triangles share that edge.
+    // Skipped for huge meshes (>2M tris) since the unordered_map
+    // would balloon.
+    const bool runEdgeAnalysis = (triCount <= 2'000'000);
+    std::unordered_map<uint64_t, uint32_t> edgeUses;
+    if (runEdgeAnalysis) edgeUses.reserve(triCount * 3);
+    auto edgeKey = [](uint32_t a, uint32_t b) -> uint64_t {
+        if (a > b) std::swap(a, b);
+        return (uint64_t(a) << 32) | uint64_t(b);
+    };
+    for (std::size_t t = 0; t < triCount; ++t) {
+        uint32_t i0 = wom.indices[t * 3 + 0];
+        uint32_t i1 = wom.indices[t * 3 + 1];
+        uint32_t i2 = wom.indices[t * 3 + 2];
+        if (i0 >= wom.vertices.size() ||
+            i1 >= wom.vertices.size() ||
+            i2 >= wom.vertices.size()) {
+            std::fprintf(stderr,
+                "info-mesh-stats: out-of-range index in triangle %zu\n", t);
+            return 1;
+        }
+        glm::vec3 a = wom.vertices[i0].position;
+        glm::vec3 b = wom.vertices[i1].position;
+        glm::vec3 c = wom.vertices[i2].position;
+        glm::vec3 e1 = b - a;
+        glm::vec3 e2 = c - a;
+        double area = 0.5 * glm::length(glm::cross(e1, e2));
+        if (area < 1e-12) ++degenerate;
+        areas.push_back(area);
+        totalArea += area;
+        if (runEdgeAnalysis) {
+            ++edgeUses[edgeKey(i0, i1)];
+            ++edgeUses[edgeKey(i1, i2)];
+            ++edgeUses[edgeKey(i2, i0)];
+        }
+    }
+    double minArea = areas.empty() ? 0.0 :
+                     *std::min_element(areas.begin(), areas.end());
+    double maxArea = areas.empty() ? 0.0 :
+                     *std::max_element(areas.begin(), areas.end());
+    double meanArea = areas.empty() ? 0.0 : totalArea / areas.size();
+    double medianArea = 0.0;
+    if (!areas.empty()) {
+        std::vector<double> sortedAreas(areas);
+        std::nth_element(sortedAreas.begin(),
+                         sortedAreas.begin() + sortedAreas.size() / 2,
+                         sortedAreas.end());
+        medianArea = sortedAreas[sortedAreas.size() / 2];
+    }
+    std::size_t boundaryEdges = 0;     // shared by 1 triangle
+    std::size_t manifoldEdges = 0;     // shared by 2
+    std::size_t nonManifoldEdges = 0;  // shared by 3+
+    for (const auto& [_k, count] : edgeUses) {
+        if (count == 1) ++boundaryEdges;
+        else if (count == 2) ++manifoldEdges;
+        else ++nonManifoldEdges;
+    }
+    bool watertight = runEdgeAnalysis && boundaryEdges == 0 &&
+                      nonManifoldEdges == 0;
+    glm::vec3 dim = wom.boundMax - wom.boundMin;
+    double bboxVol = double(dim.x) * dim.y * dim.z;
+    if (jsonOut) {
+        nlohmann::json j;
+        j["base"] = base;
+        j["triangles"] = triCount;
+        j["surfaceArea"] = totalArea;
+        j["bboxVolume"] = bboxVol;
+        j["areas"] = {{"min", minArea}, {"max", maxArea},
+                       {"mean", meanArea}, {"median", medianArea}};
+        j["degenerateTriangles"] = degenerate;
+        if (runEdgeAnalysis) {
+            j["edges"] = {{"total", edgeUses.size()},
+                           {"boundary", boundaryEdges},
+                           {"manifold", manifoldEdges},
+                           {"nonManifold", nonManifoldEdges}};
+            j["watertight"] = watertight;
+        }
+        std::printf("%s\n", j.dump(2).c_str());
+        return 0;
+    }
+    std::printf("Mesh stats: %s.wom\n", base.c_str());
+    std::printf("  triangles      : %zu (%zu degenerate)\n",
+                triCount, degenerate);
+    std::printf("  surface area   : %.4f\n", totalArea);
+    std::printf("  bbox volume    : %.4f (%.3f x %.3f x %.3f)\n",
+                bboxVol, dim.x, dim.y, dim.z);
+    std::printf("  triangle area  : min %.6f / max %.6f / mean %.6f / median %.6f\n",
+                minArea, maxArea, meanArea, medianArea);
+    if (runEdgeAnalysis) {
+        std::printf("  edges          : %zu total\n", edgeUses.size());
+        std::printf("    boundary     : %zu (open seams)\n", boundaryEdges);
+        std::printf("    manifold     : %zu (shared by 2 tris)\n", manifoldEdges);
+        std::printf("    non-manifold : %zu (shared by 3+ tris)\n",
+                    nonManifoldEdges);
+        std::printf("  watertight     : %s\n", watertight ? "YES" : "NO");
+    } else {
+        std::printf("  edges          : (skipped, too many triangles)\n");
+    }
+    return 0;
+}
+
 int handleInfoMeshStorageBudget(int& i, int argc, char** argv) {
     // Estimated bytes-per-category breakdown for a WOM.
     // Numbers are based on the in-memory struct sizes, not
@@ -585,6 +727,9 @@ bool handleMeshInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--info-mesh-storage-budget") == 0 && i + 1 < argc) {
         outRc = handleInfoMeshStorageBudget(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--info-mesh-stats") == 0 && i + 1 < argc) {
+        outRc = handleInfoMeshStats(i, argc, argv); return true;
     }
     if (std::strcmp(argv[i], "--info-project-models-total") == 0 && i + 1 < argc) {
         outRc = handleInfoProjectModelsTotal(i, argc, argv); return true;

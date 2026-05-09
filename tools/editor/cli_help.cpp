@@ -613,6 +613,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Single-mesh detail: bounds, version, batches, bones, textures, attachments in one view\n");
     std::printf("  --info-mesh-storage-budget <wom-base> [--json]\n");
     std::printf("                         Estimated bytes-per-category breakdown for a single WOM (vertices/indices/bones/...)\n");
+    std::printf("  --info-mesh-stats <wom-base> [--json]\n");
+    std::printf("                         Geometric stats: total surface area, triangle area histogram, edge use, watertight check\n");
     std::printf("  --list-project-meshes-detail <projectDir> [--json]\n");
     std::printf("                         Per-mesh listing across every zone in a project (sorted by triangle count)\n");
     std::printf("  --info-project-models-total <projectDir> [--json]\n");
