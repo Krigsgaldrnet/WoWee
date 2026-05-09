@@ -7064,6 +7064,25 @@ int handleGenBlacksmithPack(int& i, int /*argc*/, char** argv) {
     });
 }
 
+int handleGenTavernPack(int& i, int /*argc*/, char** argv) {
+    // Inn / tavern scene: house (the inn building), chimney
+    // (above the kitchen hearth), table + bench (the common
+    // room), barrel (ale/cider stock), bookshelf (back-wall
+    // record / register / library), signpost (inn-sign post).
+    // Together these form the minimum-viable tavern setup for
+    // any roadside inn or town watering-hole.
+    std::string outDir = argv[++i];
+    return emitMeshPack(outDir, "tavern pack", {
+        {"--gen-mesh-house",      handleHouse,       "house"},
+        {"--gen-mesh-chimney",    handleChimney,     "chimney"},
+        {"--gen-mesh-table",      handleTable,       "table"},
+        {"--gen-mesh-bench",      handleBench,       "bench"},
+        {"--gen-mesh-barrel",     handleBarrel,      "barrel"},
+        {"--gen-mesh-bookshelf",  handleBookshelf,   "shelf"},
+        {"--gen-mesh-signpost",   handleSignpost,    "sign"},
+    });
+}
+
 int handleGenDockPack(int& i, int /*argc*/, char** argv) {
     // Harbor / dockyard scene: dock (the pier itself), crate-
     // stack (cargo waiting to be loaded), barrel (sailor stash),
@@ -7241,6 +7260,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-graveyard-pack",      1, handleGenGraveyardPack},
     {"--gen-garden-pack",         1, handleGenGardenPack},
     {"--gen-dock-pack",           1, handleGenDockPack},
+    {"--gen-tavern-pack",         1, handleGenTavernPack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
