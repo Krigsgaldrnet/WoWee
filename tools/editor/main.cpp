@@ -220,7 +220,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-leather", "--gen-texture-sand", "--gen-texture-snow",
         "--gen-texture-lava", "--gen-texture-tile", "--gen-texture-bark",
         "--gen-texture-clouds", "--gen-texture-stars", "--gen-texture-vines",
-        "--gen-texture-mosaic", "--gen-texture-rust",
+        "--gen-texture-mosaic", "--gen-texture-rust", "--gen-texture-circuit",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",

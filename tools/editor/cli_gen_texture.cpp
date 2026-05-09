@@ -2472,6 +2472,114 @@ int handleRust(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCircuit(int& i, int argc, char** argv) {
+    // Sci-fi circuit board: solid PCB background plus N traces
+    // that walk the surface in orthogonal Manhattan style — each
+    // trace alternates random horizontal + vertical segments,
+    // mimicking right-angle PCB routing. Each segment endpoint
+    // gets a "via" dot (3×3 block) so the routing reads as
+    // intentional rather than random scribbles.
+    std::string outPath = argv[++i];
+    std::string pcbHex = argv[++i];
+    std::string traceHex = argv[++i];
+    uint32_t seed = 1;
+    int traceCount = 24;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { traceCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        traceCount < 0 || traceCount > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-circuit: invalid dims (W/H 1..8192, traceCount 0..1024)\n");
+        return 1;
+    }
+    uint8_t pr, pg, pb, tr, tg, tb;
+    if (!parseHex(pcbHex, pr, pg, pb)) {
+        std::fprintf(stderr,
+            "gen-texture-circuit: '%s' is not a valid hex color\n",
+            pcbHex.c_str());
+        return 1;
+    }
+    if (!parseHex(traceHex, tr, tg, tb)) {
+        std::fprintf(stderr,
+            "gen-texture-circuit: '%s' is not a valid hex color\n",
+            traceHex.c_str());
+        return 1;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Background fill
+    for (int p = 0; p < W * H; ++p) {
+        size_t i2 = static_cast<size_t>(p) * 3;
+        pixels[i2 + 0] = pr;
+        pixels[i2 + 1] = pg;
+        pixels[i2 + 2] = pb;
+    }
+    auto setPx = [&](int x, int y) {
+        if (x < 0 || y < 0 || x >= W || y >= H) return;
+        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+        pixels[i2 + 0] = tr;
+        pixels[i2 + 1] = tg;
+        pixels[i2 + 2] = tb;
+    };
+    auto setVia = [&](int x, int y) {
+        // 3×3 dot for vias / segment joints.
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx)
+                setPx(x + dx, y + dy);
+    };
+    int viaCount = 0;
+    for (int t = 0; t < traceCount; ++t) {
+        int x = static_cast<int>(next01() * W);
+        int y = static_cast<int>(next01() * H);
+        // Each trace runs 3-6 segments
+        int segs = 3 + static_cast<int>(next01() * 4);
+        bool horiz = next01() < 0.5f;
+        for (int s = 0; s < segs; ++s) {
+            int len = 8 + static_cast<int>(next01() * 24);
+            int dir = (next01() < 0.5f) ? 1 : -1;
+            int nx = x, ny = y;
+            for (int k = 0; k < len; ++k) {
+                if (horiz) nx += dir;
+                else ny += dir;
+                setPx(nx, ny);
+            }
+            x = nx; y = ny;
+            setVia(x, y);  // joint at the corner
+            ++viaCount;
+            horiz = !horiz;  // alternate axis
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-circuit: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  pcb/trace  : %s / %s\n",
+                pcbHex.c_str(), traceHex.c_str());
+    std::printf("  traces     : %d (~%d vias)\n", traceCount, viaCount);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2554,6 +2662,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-rust") == 0 && i + 3 < argc) {
         outRc = handleRust(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-circuit") == 0 && i + 3 < argc) {
+        outRc = handleCircuit(i, argc, argv); return true;
     }
     return false;
 }
