@@ -58,6 +58,7 @@ const char* const kArgRequired[] = {
     "--export-wskl-json", "--import-wskl-json",
     "--gen-spells", "--gen-spells-mage", "--gen-spells-warrior",
     "--info-wspl", "--validate-wspl",
+    "--export-wspl-json", "--import-wspl-json",
     "--gen-achievements", "--gen-achievements-bandit", "--gen-achievements-meta",
     "--info-wach", "--validate-wach",
     "--gen-weather-temperate", "--gen-weather-arctic",

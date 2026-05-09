@@ -989,6 +989,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSPL spell entries (id / school / effect / cast/cd / mana / range / damage range / name)\n");
     std::printf("  --validate-wspl <wspl-base> [--json]\n");
     std::printf("                         Static checks: spellId>0+unique, name not empty, school 0..6, range/value min<=max, friendly+hostile incoherent\n");
+    std::printf("  --export-wspl-json <wspl-base> [out.json]\n");
+    std::printf("                         Export binary .wspl to a human-editable JSON sidecar (defaults to <base>.wspl.json)\n");
+    std::printf("  --import-wspl-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wspl.json sidecar back into binary .wspl (accepts school/target/effect/flag int OR name forms)\n");
     std::printf("  --gen-achievements <wach-base> [name]\n");
     std::printf("                         Emit .wach starter: 3 achievements (First Blood / Helping Hand / Coming of Age)\n");
     std::printf("  --gen-achievements-bandit <wach-base> [name]\n");

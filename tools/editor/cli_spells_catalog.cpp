@@ -155,6 +155,206 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each spell emits all 18 scalar fields
+    // plus dual int + name forms for school, targetType,
+    // effectKind, and the flags bitset.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWsplExt(base);
+    if (outPath.empty()) outPath = base + ".wspl.json";
+    if (!wowee::pipeline::WoweeSpellLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wspl-json: WSPL not found: %s.wspl\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeSpellLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["spellId"] = e.spellId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["iconPath"] = e.iconPath;
+        je["school"] = e.school;
+        je["schoolName"] = wowee::pipeline::WoweeSpell::schoolName(e.school);
+        je["targetType"] = e.targetType;
+        je["targetTypeName"] = wowee::pipeline::WoweeSpell::targetTypeName(e.targetType);
+        je["effectKind"] = e.effectKind;
+        je["effectKindName"] = wowee::pipeline::WoweeSpell::effectKindName(e.effectKind);
+        je["castTimeMs"] = e.castTimeMs;
+        je["cooldownMs"] = e.cooldownMs;
+        je["gcdMs"] = e.gcdMs;
+        je["manaCost"] = e.manaCost;
+        je["rangeMin"] = e.rangeMin;
+        je["rangeMax"] = e.rangeMax;
+        je["minLevel"] = e.minLevel;
+        je["maxStacks"] = e.maxStacks;
+        je["durationMs"] = e.durationMs;
+        je["effectValueMin"] = e.effectValueMin;
+        je["effectValueMax"] = e.effectValueMax;
+        je["effectMisc"] = e.effectMisc;
+        je["flags"] = e.flags;
+        nlohmann::json fa = nlohmann::json::array();
+        if (e.flags & wowee::pipeline::WoweeSpell::Passive)        fa.push_back("passive");
+        if (e.flags & wowee::pipeline::WoweeSpell::Hidden)         fa.push_back("hidden");
+        if (e.flags & wowee::pipeline::WoweeSpell::Channeled)      fa.push_back("channeled");
+        if (e.flags & wowee::pipeline::WoweeSpell::Ranged)         fa.push_back("ranged");
+        if (e.flags & wowee::pipeline::WoweeSpell::AreaOfEffect)   fa.push_back("aoe");
+        if (e.flags & wowee::pipeline::WoweeSpell::Triggered)      fa.push_back("triggered");
+        if (e.flags & wowee::pipeline::WoweeSpell::UnitTargetOnly) fa.push_back("unit-only");
+        if (e.flags & wowee::pipeline::WoweeSpell::FriendlyOnly)   fa.push_back("friendly");
+        if (e.flags & wowee::pipeline::WoweeSpell::HostileOnly)    fa.push_back("hostile");
+        je["flagsList"] = fa;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wspl-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wspl\n", base.c_str());
+    std::printf("  spells : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wspl.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWsplExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wspl-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wspl-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto schoolFromName = [](const std::string& s) -> uint8_t {
+        if (s == "physical") return wowee::pipeline::WoweeSpell::SchoolPhysical;
+        if (s == "holy")     return wowee::pipeline::WoweeSpell::SchoolHoly;
+        if (s == "fire")     return wowee::pipeline::WoweeSpell::SchoolFire;
+        if (s == "nature")   return wowee::pipeline::WoweeSpell::SchoolNature;
+        if (s == "frost")    return wowee::pipeline::WoweeSpell::SchoolFrost;
+        if (s == "shadow")   return wowee::pipeline::WoweeSpell::SchoolShadow;
+        if (s == "arcane")   return wowee::pipeline::WoweeSpell::SchoolArcane;
+        return wowee::pipeline::WoweeSpell::SchoolPhysical;
+    };
+    auto targetFromName = [](const std::string& s) -> uint8_t {
+        if (s == "self")        return wowee::pipeline::WoweeSpell::TargetSelf;
+        if (s == "single")      return wowee::pipeline::WoweeSpell::TargetSingle;
+        if (s == "cone")        return wowee::pipeline::WoweeSpell::TargetCone;
+        if (s == "aoe-self")    return wowee::pipeline::WoweeSpell::TargetAoeFromSelf;
+        if (s == "line")        return wowee::pipeline::WoweeSpell::TargetLine;
+        if (s == "ground")      return wowee::pipeline::WoweeSpell::TargetGround;
+        return wowee::pipeline::WoweeSpell::TargetSelf;
+    };
+    auto effectFromName = [](const std::string& s) -> uint8_t {
+        if (s == "damage")   return wowee::pipeline::WoweeSpell::EffectDamage;
+        if (s == "heal")     return wowee::pipeline::WoweeSpell::EffectHeal;
+        if (s == "buff")     return wowee::pipeline::WoweeSpell::EffectBuff;
+        if (s == "debuff")   return wowee::pipeline::WoweeSpell::EffectDebuff;
+        if (s == "teleport") return wowee::pipeline::WoweeSpell::EffectTeleport;
+        if (s == "summon")   return wowee::pipeline::WoweeSpell::EffectSummon;
+        if (s == "dispel")   return wowee::pipeline::WoweeSpell::EffectDispel;
+        return wowee::pipeline::WoweeSpell::EffectDamage;
+    };
+    auto flagFromName = [](const std::string& s) -> uint32_t {
+        if (s == "passive")    return wowee::pipeline::WoweeSpell::Passive;
+        if (s == "hidden")     return wowee::pipeline::WoweeSpell::Hidden;
+        if (s == "channeled")  return wowee::pipeline::WoweeSpell::Channeled;
+        if (s == "ranged")     return wowee::pipeline::WoweeSpell::Ranged;
+        if (s == "aoe")        return wowee::pipeline::WoweeSpell::AreaOfEffect;
+        if (s == "triggered")  return wowee::pipeline::WoweeSpell::Triggered;
+        if (s == "unit-only")  return wowee::pipeline::WoweeSpell::UnitTargetOnly;
+        if (s == "friendly")   return wowee::pipeline::WoweeSpell::FriendlyOnly;
+        if (s == "hostile")    return wowee::pipeline::WoweeSpell::HostileOnly;
+        return 0;
+    };
+    wowee::pipeline::WoweeSpell c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeSpell::Entry e;
+            e.spellId = je.value("spellId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            if (je.contains("school") && je["school"].is_number_integer()) {
+                e.school = static_cast<uint8_t>(je["school"].get<int>());
+            } else if (je.contains("schoolName") && je["schoolName"].is_string()) {
+                e.school = schoolFromName(je["schoolName"].get<std::string>());
+            }
+            if (je.contains("targetType") && je["targetType"].is_number_integer()) {
+                e.targetType = static_cast<uint8_t>(je["targetType"].get<int>());
+            } else if (je.contains("targetTypeName") && je["targetTypeName"].is_string()) {
+                e.targetType = targetFromName(je["targetTypeName"].get<std::string>());
+            }
+            if (je.contains("effectKind") && je["effectKind"].is_number_integer()) {
+                e.effectKind = static_cast<uint8_t>(je["effectKind"].get<int>());
+            } else if (je.contains("effectKindName") && je["effectKindName"].is_string()) {
+                e.effectKind = effectFromName(je["effectKindName"].get<std::string>());
+            }
+            e.castTimeMs = je.value("castTimeMs", 0u);
+            e.cooldownMs = je.value("cooldownMs", 0u);
+            e.gcdMs = je.value("gcdMs", 1500u);
+            e.manaCost = je.value("manaCost", 0u);
+            e.rangeMin = je.value("rangeMin", 0.0f);
+            e.rangeMax = je.value("rangeMax", 5.0f);
+            e.minLevel = static_cast<uint16_t>(je.value("minLevel", 1));
+            e.maxStacks = static_cast<uint16_t>(je.value("maxStacks", 1));
+            e.durationMs = je.value("durationMs", 0);
+            e.effectValueMin = je.value("effectValueMin", 0);
+            e.effectValueMax = je.value("effectValueMax", 0);
+            e.effectMisc = je.value("effectMisc", 0);
+            if (je.contains("flags") && je["flags"].is_number_integer()) {
+                e.flags = je["flags"].get<uint32_t>();
+            } else if (je.contains("flagsList") && je["flagsList"].is_array()) {
+                for (const auto& f : je["flagsList"]) {
+                    if (f.is_string()) e.flags |= flagFromName(f.get<std::string>());
+                }
+            }
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeSpellLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wspl-json: failed to save %s.wspl\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wspl\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  spells : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -282,6 +482,12 @@ bool handleSpellsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wspl") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wspl-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wspl-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
