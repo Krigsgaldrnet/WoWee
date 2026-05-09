@@ -55,6 +55,8 @@ const char* const kArgRequired[] = {
     "--export-wlck-json", "--import-wlck-json",
     "--gen-skills", "--gen-skills-professions", "--gen-skills-weapons",
     "--info-wskl", "--validate-wskl",
+    "--gen-spells", "--gen-spells-mage", "--gen-spells-warrior",
+    "--info-wspl", "--validate-wspl",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

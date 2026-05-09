@@ -975,6 +975,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSKL entries (id / category / max rank / per-level grow / trainer-required / name)\n");
     std::printf("  --validate-wskl <wskl-base> [--json]\n");
     std::printf("                         Static checks: skillId>0+unique, name not empty, maxRank>0, weapon needs rankPerLevel>0\n");
+    std::printf("  --gen-spells <wspl-base> [name]\n");
+    std::printf("                         Emit .wspl starter spell catalog: 4 spells covering damage / heal / buff / teleport effect kinds\n");
+    std::printf("  --gen-spells-mage <wspl-base> [name]\n");
+    std::printf("                         Emit .wspl mage spell set: Frostbolt + Fireball + Arcane Intellect + Blink (canonical IDs 116/133/1459/1953)\n");
+    std::printf("  --gen-spells-warrior <wspl-base> [name]\n");
+    std::printf("                         Emit .wspl warrior spell set: Heroic Strike + Thunder Clap + Battle Shout + Mortal Strike\n");
+    std::printf("  --info-wspl <wspl-base> [--json]\n");
+    std::printf("                         Print WSPL spell entries (id / school / effect / cast/cd / mana / range / damage range / name)\n");
+    std::printf("  --validate-wspl <wspl-base> [--json]\n");
+    std::printf("                         Static checks: spellId>0+unique, name not empty, school 0..6, range/value min<=max, friendly+hostile incoherent\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
