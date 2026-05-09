@@ -1304,6 +1304,11 @@ add_executable(wowee_editor
     tools/editor/cli_readmes.cpp
     tools/editor/cli_zone_inventory.cpp
     tools/editor/cli_project_inventory.cpp
+    tools/editor/cli_help.cpp
+    tools/editor/cli_gen_texture.cpp
+    tools/editor/cli_gen_mesh.cpp
+    tools/editor/cli_mesh_io.cpp
+    tools/editor/cli_mesh_edit.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
