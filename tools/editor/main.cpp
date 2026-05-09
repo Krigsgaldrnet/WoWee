@@ -62,6 +62,7 @@
 #include "cli_zone_data.hpp"
 #include "cli_project_actions.hpp"
 #include "cli_zone_export.hpp"
+#include "cli_arg_required.hpp"
 #include "content_pack.hpp"
 #include "npc_spawner.hpp"
 #include "object_placer.hpp"
@@ -118,147 +119,9 @@ int main(int argc, char* argv[]) {
 
     // Detect non-GUI options that are missing their argument and bail out
     // with a helpful message instead of silently dropping into the GUI.
-    static const char* kArgRequired[] = {
-        "--data", "--info", "--info-batches", "--info-textures", "--info-doodads",
-        "--info-attachments", "--info-particles", "--info-sequences",
-        "--info-bones", "--export-bones-dot",
-        "--list-zone-meshes", "--list-zone-audio", "--list-zone-textures",
-        "--list-project-meshes", "--list-project-audio",
-        "--list-project-textures",
-        "--info-zone-models-total", "--info-project-models-total",
-        "--list-zone-meshes-detail", "--list-project-meshes-detail", "--info-mesh",
-        "--info-mesh-storage-budget",
-        "--info-wob", "--info-woc", "--info-wot",
-        "--info-creatures", "--info-objects", "--info-quests",
-        "--info-extract", "--info-extract-tree", "--info-extract-budget",
-        "--list-missing-sidecars",
-        "--info-png", "--info-jsondbc", "--info-blp", "--info-pack-budget",
-        "--info-pack-tree",
-        "--info-m2", "--info-wmo", "--info-adt",
-        "--info-zone", "--info-zone-overview", "--info-project-overview",
-        "--copy-project", "--info-wcp", "--list-wcp",
-        "--list-creatures", "--list-objects", "--list-quests",
-        "--list-quest-objectives", "--list-quest-rewards",
-        "--info-creature", "--info-quest", "--info-object",
-        "--info-quest-graph-stats",
-        "--info-creatures-by-faction", "--info-creatures-by-level",
-        "--info-objects-by-path", "--info-objects-by-type",
-        "--info-quests-by-level", "--info-quests-by-xp",
-        "--unpack-wcp", "--pack-wcp",
-        "--validate", "--validate-wom", "--validate-wob", "--validate-woc",
-        "--validate-whm", "--validate-all", "--validate-project",
-        "--validate-project-open-only", "--audit-project", "--bench-audit-project",
-        "--bench-validate-project", "--bench-bake-project",
-        "--bench-migrate-data-tree", "--list-data-tree-largest",
-        "--export-data-tree-md", "--gen-texture", "--gen-mesh", "--gen-mesh-textured",
-        "--add-texture-to-mesh", "--add-texture-to-zone",
-        "--gen-mesh-stairs", "--gen-mesh-grid", "--gen-mesh-disc",
-        "--gen-mesh-tube", "--gen-mesh-capsule", "--gen-mesh-arch",
-        "--gen-mesh-pyramid", "--gen-mesh-fence", "--gen-mesh-tree",
-        "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
-        "--gen-mesh-tower", "--gen-mesh-house", "--gen-mesh-fountain",
-        "--gen-mesh-statue", "--gen-mesh-altar", "--gen-mesh-portal",
-        "--gen-mesh-archway", "--gen-mesh-barrel", "--gen-mesh-chest",
-        "--gen-mesh-anvil", "--gen-mesh-mushroom", "--gen-mesh-cart",
-        "--gen-mesh-banner", "--gen-mesh-grave", "--gen-mesh-bench",
-        "--gen-mesh-shrine", "--gen-mesh-totem", "--gen-mesh-cage",
-        "--gen-mesh-throne", "--gen-mesh-coffin", "--gen-mesh-bookshelf",
-        "--gen-mesh-table", "--gen-mesh-lamppost", "--gen-mesh-bed",
-        "--gen-mesh-ladder", "--gen-mesh-well", "--gen-mesh-signpost",
-        "--gen-mesh-mailbox", "--gen-mesh-tombstone", "--gen-mesh-crate",
-        "--gen-mesh-stool", "--gen-mesh-cauldron", "--gen-mesh-gate",
-        "--gen-mesh-beehive", "--gen-mesh-weathervane",
-        "--gen-mesh-scarecrow", "--gen-mesh-sundial",
-        "--gen-mesh-podium", "--gen-mesh-brazier",
-        "--gen-texture-gradient",
-        "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
-        "--displace-mesh",
-        "--scale-mesh", "--translate-mesh", "--strip-mesh",
-        "--gen-texture-noise", "--gen-texture-noise-color", "--rotate-mesh",
-        "--center-mesh", "--flip-mesh-normals", "--mirror-mesh",
-        "--smooth-mesh-normals",
-        "--merge-meshes",
-        "--gen-texture-radial", "--gen-texture-stripes", "--gen-texture-dots",
-        "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
-        "--gen-texture-wood", "--gen-texture-grass", "--gen-texture-fabric",
-        "--gen-texture-cobble", "--gen-texture-marble", "--gen-texture-metal",
-        "--gen-texture-leather", "--gen-texture-sand", "--gen-texture-snow",
-        "--gen-texture-lava", "--gen-texture-tile", "--gen-texture-bark",
-        "--gen-texture-clouds", "--gen-texture-stars", "--gen-texture-vines",
-        "--gen-texture-mosaic", "--gen-texture-rust", "--gen-texture-circuit",
-        "--gen-texture-coral", "--gen-texture-flame", "--gen-texture-tartan",
-        "--gen-texture-argyle", "--gen-texture-herringbone",
-        "--gen-texture-scales", "--gen-texture-stained-glass",
-        "--gen-texture-shingles", "--gen-texture-frost",
-        "--gen-texture-parquet", "--gen-texture-bubbles",
-        "--gen-texture-spider-web", "--gen-texture-gingham",
-        "--gen-texture-lattice", "--gen-texture-honeycomb",
-        "--gen-texture-cracked", "--gen-texture-runes",
-        "--gen-texture-leopard", "--gen-texture-zebra",
-        "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
-        "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
-        "--validate-png", "--validate-blp",
-        "--zone-summary", "--info-zone-tree", "--info-project-tree",
-        "--info-zone-bytes", "--info-project-bytes",
-        "--info-zone-extents", "--info-project-extents",
-        "--info-zone-water", "--info-project-water",
-        "--info-zone-density", "--info-project-density",
-        "--export-zone-summary-md", "--export-quest-graph",
-        "--export-zone-csv", "--export-zone-html", "--export-project-html",
-        "--export-project-md", "--export-zone-checksum", "--export-project-checksum",
-        "--validate-project-checksum",
-        "--scaffold-zone", "--mvp-zone", "--add-tile", "--remove-tile", "--list-tiles",
-        "--for-each-zone", "--for-each-tile", "--zone-stats", "--info-tilemap",
-        "--list-zone-deps", "--list-project-orphans", "--remove-project-orphans",
-        "--check-zone-refs", "--check-zone-content",
-        "--check-project-content", "--check-project-refs",
-        "--export-zone-deps-md", "--export-zone-spawn-png",
-        "--add-creature", "--add-object", "--add-quest", "--add-item",
-        "--random-populate-zone", "--random-populate-items",
-        "--info-zone-audio", "--snap-zone-to-ground", "--audit-zone-spawns",
-        "--info-project-audio", "--snap-project-to-ground",
-        "--audit-project-spawns", "--list-zone-spawns", "--list-project-spawns",
-        "--gen-random-zone", "--gen-random-project", "--gen-zone-texture-pack",
-        "--gen-zone-mesh-pack", "--gen-zone-starter-pack",
-        "--gen-project-starter-pack", "--gen-audio-tone",
-        "--gen-audio-noise", "--gen-audio-sweep", "--gen-zone-audio-pack",
-        "--info-zone-summary", "--info-project-summary",
-        "--info-zone-deps", "--info-project-deps",
-        "--gen-zone-readme", "--gen-project-readme",
-        "--validate-zone-pack", "--validate-project-packs", "--info-spawn",
-        "--diff-zone-spawns",
-        "--list-items", "--info-item", "--set-item", "--export-zone-items-md",
-        "--export-project-items-md", "--export-project-items-csv",
-        "--add-quest-objective", "--add-quest-reward-item", "--set-quest-reward",
-        "--remove-quest-objective", "--clone-quest", "--clone-creature",
-        "--clone-item", "--validate-items", "--validate-project-items",
-        "--info-project-items",
-        "--clone-object",
-        "--remove-creature", "--remove-object", "--remove-quest", "--remove-item",
-        "--copy-zone-items",
-        "--copy-zone", "--rename-zone", "--remove-zone",
-        "--clear-zone-content", "--strip-zone", "--strip-project",
-        "--repair-zone", "--repair-project",
-        "--gen-makefile", "--gen-project-makefile",
-        "--build-woc", "--regen-collision", "--fix-zone",
-        "--export-png", "--export-obj", "--import-obj",
-        "--export-wob-obj", "--import-wob-obj",
-        "--export-woc-obj", "--export-whm-obj",
-        "--export-glb", "--export-wob-glb", "--export-whm-glb",
-        "--export-stl", "--import-stl",
-        "--bake-zone-glb", "--bake-zone-stl", "--bake-zone-obj",
-        "--bake-project-obj", "--bake-project-stl", "--bake-project-glb",
-        "--convert-m2", "--convert-m2-batch",
-        "--convert-wmo", "--convert-wmo-batch",
-        "--convert-dbc-json", "--convert-dbc-batch", "--convert-json-dbc",
-        "--convert-blp-png", "--convert-blp-batch",
-        "--migrate-wom", "--migrate-zone", "--migrate-project",
-        "--migrate-data-tree", "--info-data-tree", "--strip-data-tree",
-        "--audit-data-tree",
-        "--migrate-jsondbc",
-    };
     for (int i = 1; i < argc; i++) {
-        for (const char* opt : kArgRequired) {
+        for (std::size_t k = 0; k < wowee::editor::cli::kArgRequiredSize; ++k) {
+            const char* opt = wowee::editor::cli::kArgRequired[k];
             if (std::strcmp(argv[i], opt) == 0 && i + 1 >= argc) {
                 std::fprintf(stderr, "%s requires an argument\n", opt);
                 return 1;
@@ -598,59 +461,6 @@ int main(int argc, char* argv[]) {
             adtMap = argv[++i];
             adtX = std::atoi(argv[++i]);
             adtY = std::atoi(argv[++i]);
-        } else if (std::strcmp(argv[i], "--version") == 0 || std::strcmp(argv[i], "-v") == 0) {
-            std::printf("Wowee World Editor v1.0.0\n");
-            std::printf("Open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON (all novel)\n");
-            std::printf("By Kelsi Davis\n");
-            return 0;
-        } else if (std::strcmp(argv[i], "--validate-cli-help") == 0) {
-            // Self-check: every flag we declare in kArgRequired (the list
-            // of commands needing positional args) must appear in the
-            // help text printUsage emits. Catches drift where someone
-            // adds a handler + argument check but forgets the help line.
-            bool jsonOut = (i + 1 < argc &&
-                            std::strcmp(argv[i + 1], "--json") == 0);
-            if (jsonOut) i++;
-            // Capture printUsage's stdout.
-            FILE* old = stdout;
-            FILE* tmp = std::tmpfile();
-            if (!tmp) { std::fprintf(stderr, "validate-cli-help: tmpfile failed\n"); return 1; }
-            stdout = tmp;
-            wowee::editor::cli::printUsage(argv[0]);
-            stdout = old;
-            std::fseek(tmp, 0, SEEK_SET);
-            std::string helpText;
-            char chunk[1024];
-            while (std::fgets(chunk, sizeof(chunk), tmp)) helpText += chunk;
-            std::fclose(tmp);
-            // Walk kArgRequired and check each appears in the help.
-            std::vector<std::string> missing;
-            for (const char* opt : kArgRequired) {
-                if (helpText.find(opt) == std::string::npos) {
-                    missing.push_back(opt);
-                }
-            }
-            if (jsonOut) {
-                nlohmann::json j;
-                j["totalArgRequired"] = sizeof(kArgRequired) / sizeof(kArgRequired[0]);
-                j["missing"] = missing;
-                j["passed"] = missing.empty();
-                std::printf("%s\n", j.dump(2).c_str());
-                return missing.empty() ? 0 : 1;
-            }
-            std::printf("CLI help self-check\n");
-            std::printf("  kArgRequired entries : %zu\n",
-                        sizeof(kArgRequired) / sizeof(kArgRequired[0]));
-            if (missing.empty()) {
-                std::printf("  PASSED — every kArgRequired flag is documented\n");
-                return 0;
-            }
-            std::printf("  FAILED — %zu flag(s) missing from help text:\n", missing.size());
-            for (const auto& m : missing) std::printf("    - %s\n", m.c_str());
-            return 1;
-        } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
-            wowee::editor::cli::printUsage(argv[0]);
-            return 0;
         }
     }
 

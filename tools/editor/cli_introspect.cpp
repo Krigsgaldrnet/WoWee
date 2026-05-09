@@ -1,5 +1,6 @@
 #include "cli_introspect.hpp"
 #include "cli_help.hpp"
+#include "cli_arg_required.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -310,6 +311,65 @@ int handleGenCompletion(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleValidateCliHelp(int& i, int argc, char** argv) {
+    // Self-check: every flag we declare in kArgRequired (the list
+    // of commands needing positional args) must appear in the
+    // help text printUsage emits. Catches drift where someone
+    // adds a handler + argument check but forgets the help line.
+    bool jsonOut = (i + 1 < argc &&
+                    std::strcmp(argv[i + 1], "--json") == 0);
+    if (jsonOut) i++;
+    // Capture printUsage's stdout.
+    FILE* old = stdout;
+    FILE* tmp = std::tmpfile();
+    if (!tmp) { std::fprintf(stderr, "validate-cli-help: tmpfile failed\n"); return 1; }
+    stdout = tmp;
+    wowee::editor::cli::printUsage(argv[0]);
+    stdout = old;
+    std::fseek(tmp, 0, SEEK_SET);
+    std::string helpText;
+    char chunk[1024];
+    while (std::fgets(chunk, sizeof(chunk), tmp)) helpText += chunk;
+    std::fclose(tmp);
+    // Walk kArgRequired and check each appears in the help.
+    std::vector<std::string> missing;
+    for (std::size_t k = 0; k < kArgRequiredSize; ++k) {
+        const char* opt = kArgRequired[k];
+        if (helpText.find(opt) == std::string::npos) {
+            missing.push_back(opt);
+        }
+    }
+    if (jsonOut) {
+        nlohmann::json j;
+        j["totalArgRequired"] = kArgRequiredSize;
+        j["missing"] = missing;
+        j["passed"] = missing.empty();
+        std::printf("%s\n", j.dump(2).c_str());
+        return missing.empty() ? 0 : 1;
+    }
+    std::printf("CLI help self-check\n");
+    std::printf("  kArgRequired entries : %zu\n", kArgRequiredSize);
+    if (missing.empty()) {
+        std::printf("  PASSED — every kArgRequired flag is documented\n");
+        return 0;
+    }
+    std::printf("  FAILED — %zu flag(s) missing from help text:\n", missing.size());
+    for (const auto& m : missing) std::printf("    - %s\n", m.c_str());
+    (void)argc;
+    return 1;
+}
+
+int handleHelp(int& /*i*/, int /*argc*/, char** argv) {
+    wowee::editor::cli::printUsage(argv[0]);
+    return 0;
+}
+
+int handleVersion(int& /*i*/, int /*argc*/, char** /*argv*/) {
+    std::printf("Wowee World Editor v1.0.0\n");
+    std::printf("Open formats: WOT/WHM/WOM/WOB/WOC/WCP + PNG/JSON (all novel)\n");
+    std::printf("By Kelsi Davis\n");
+    return 0;
+}
 
 }  // namespace
 
@@ -328,6 +388,17 @@ bool handleIntrospect(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-completion") == 0 && i + 1 < argc) {
         outRc = handleGenCompletion(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--validate-cli-help") == 0) {
+        outRc = handleValidateCliHelp(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--help") == 0 ||
+        std::strcmp(argv[i], "-h") == 0) {
+        outRc = handleHelp(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--version") == 0 ||
+        std::strcmp(argv[i], "-v") == 0) {
+        outRc = handleVersion(i, argc, argv); return true;
     }
     return false;
 }
