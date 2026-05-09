@@ -161,6 +161,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Bamboo: vertical stalks with sin² shading + horizontal node bands (jungle / asian-themed)\n");
     std::printf("  --gen-texture-blueprint <out.png> <bgHex> <lineHex> [minorStride] [majorEvery] [minorW] [majorW] [W H]\n");
     std::printf("                         Blueprint: minor + major grid lines (technical drawing / drafting paper / engineer's table)\n");
+    std::printf("  --gen-texture-rust-streaks <out.png> <bgHex> <rustHex> [streakCount] [seed] [W H]\n");
+    std::printf("                         Rust streaks: vertical drip bands fading down from hash-jittered tops (weathered metal / hull stains)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

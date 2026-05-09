@@ -3546,6 +3546,95 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleRustStreaks(int& i, int argc, char** argv) {
+    // Vertical rust drips on a metal base. Each streak is a
+    // vertical band of varying width (hash-derived) starting at a
+    // hash-jittered top position and fading toward bgHex over its
+    // length. Distinct from --gen-texture-rust (generic rough
+    // surface noise) — this is the "drip-line" variant for
+    // weathered metal walls, sewer-grate backings, ship-hull
+    // stains, abandoned-machinery details.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string rustHex = argv[++i];
+    int streakCount = 40;
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, streakCount);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        streakCount < 1 || streakCount > 4096) {
+        std::fprintf(stderr,
+            "gen-texture-rust-streaks: invalid dims (W/H 1..8192, "
+            "streakCount 1..4096)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, rr_, rg_, rb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-rust-streaks")) return 1;
+    if (!parseHexOrError(rustHex, rr_, rg_, rb_,
+                         "gen-texture-rust-streaks")) return 1;
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    // Pre-compute streak parameters: x position, width, top y,
+    // length. All hash-derived from streak index + seed so the
+    // result is deterministic for a given seed.
+    struct Streak {
+        int x;
+        int width;
+        int top;
+        int length;
+    };
+    std::vector<Streak> streaks(streakCount);
+    for (int k = 0; k < streakCount; ++k) {
+        uint32_t h = hash32(static_cast<uint32_t>(k) + seed);
+        streaks[k].x      = static_cast<int>(h % W);
+        streaks[k].width  = 1 + static_cast<int>((h >> 8) % 4);   // 1..4
+        streaks[k].top    = static_cast<int>((h >> 12) % H);
+        streaks[k].length = static_cast<int>(H / 3 + (h >> 16) % (2 * H / 3));
+    }
+    // Init pixels to bg.
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            setPixelRGB(pixels, W, x, y, br_, bg_, bb_);
+        }
+    }
+    // Paint each streak.
+    for (const auto& s : streaks) {
+        for (int dy = 0; dy < s.length; ++dy) {
+            int y = s.top + dy;
+            if (y < 0 || y >= H) continue;
+            // Fade: full strength at top, zero at bottom.
+            float frac = 1.0f - static_cast<float>(dy) / s.length;
+            for (int dx = -s.width / 2; dx <= s.width / 2; ++dx) {
+                int x = s.x + dx;
+                if (x < 0 || x >= W) continue;
+                std::size_t idx =
+                    (static_cast<std::size_t>(y) * W + x) * 3;
+                pixels[idx + 0] = static_cast<uint8_t>(
+                    pixels[idx + 0] + (rr_ - pixels[idx + 0]) * frac);
+                pixels[idx + 1] = static_cast<uint8_t>(
+                    pixels[idx + 1] + (rg_ - pixels[idx + 1]) * frac);
+                pixels[idx + 2] = static_cast<uint8_t>(
+                    pixels[idx + 2] + (rb_ - pixels[idx + 2]) * frac);
+            }
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-rust-streaks")) return 1;
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/rust    : %s / %s\n", bgHex.c_str(), rustHex.c_str());
+    std::printf("  streaks    : %d (seed %u)\n", streakCount, seed);
+    return 0;
+}
+
 int handleBlueprint(int& i, int argc, char** argv) {
     // Blueprint / engineer's grid: minor grid lines at every
     // `minorStride` pixels with a thicker major line every
@@ -4740,6 +4829,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-mesh-screen",    3, handleMeshScreen},
     {"--gen-texture-bamboo",         3, handleBamboo},
     {"--gen-texture-blueprint",      3, handleBlueprint},
+    {"--gen-texture-rust-streaks",   3, handleRustStreaks},
 };
 }  // namespace
 
