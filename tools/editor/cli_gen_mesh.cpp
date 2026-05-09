@@ -6314,6 +6314,64 @@ int handleFirepit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleGenCampPack(int& i, int /*argc*/, char** argv) {
+    // Convenience composite: emit a complete outdoor-camp scene
+    // (tent, firepit, bedroll, canopy, woodpile, haystack) into
+    // <outDir> in one command. Each primitive lands as its own
+    // .wom file using the existing handler — no per-primitive
+    // tweaking is exposed; users wanting custom dimensions should
+    // call the individual --gen-mesh-* commands directly.
+    std::string outDir = argv[++i];
+    std::error_code ec;
+    std::filesystem::create_directories(outDir, ec);
+    if (ec) {
+        std::fprintf(stderr,
+            "gen-camp-pack: cannot create %s: %s\n",
+            outDir.c_str(), ec.message().c_str());
+        return 1;
+    }
+    auto invoke = [&](int (*fn)(int&, int, char**),
+                       const char* flag, const std::string& path) -> int {
+        // Build a synthetic argv where index 0 = the flag name and
+        // index 1 = the wom-base path (handlers do argv[++i] from
+        // the flag's position to read the base).
+        const char* args[2];
+        args[0] = flag;
+        args[1] = path.c_str();
+        std::vector<char*> mut;
+        mut.reserve(2);
+        for (auto* a : args) mut.push_back(const_cast<char*>(a));
+        int idx = 0;
+        return fn(idx, 2, mut.data());
+    };
+    struct Item {
+        const char* flag;
+        int (*fn)(int&, int, char**);
+        const char* leaf;
+    };
+    const Item items[] = {
+        {"--gen-mesh-tent",     handleTent,     "tent"},
+        {"--gen-mesh-firepit",  handleFirepit,  "firepit"},
+        {"--gen-mesh-bedroll",  handleBedroll,  "bedroll"},
+        {"--gen-mesh-canopy",   handleCanopy,   "canopy"},
+        {"--gen-mesh-woodpile", handleWoodpile, "woodpile"},
+        {"--gen-mesh-haystack", handleHaystack, "haystack"},
+    };
+    int produced = 0;
+    for (const auto& it : items) {
+        std::string path = outDir + "/" + it.leaf;
+        if (invoke(it.fn, it.flag, path) != 0) {
+            std::fprintf(stderr,
+                "gen-camp-pack: %s sub-handler failed\n", it.flag);
+            return 1;
+        }
+        ++produced;
+    }
+    std::printf("\nWrote camp pack to %s/ — %d primitives\n",
+                outDir.c_str(), produced);
+    return 0;
+}
+
 }  // namespace
 
 namespace {
@@ -6381,6 +6439,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-water-trough",   1, handleWaterTrough},
     {"--gen-mesh-training-dummy", 1, handleTrainingDummy},
     {"--gen-mesh-hitching-post",  1, handleHitchingPost},
+    {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
