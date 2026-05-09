@@ -6245,6 +6245,137 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBedroll(int& i, int argc, char** argv) {
+    // Camp bedroll: a horizontal closed cylinder lying along the
+    // Z axis at ground level (y = R), with an optional flatter
+    // pillow box at the +Z end. Pairs naturally with --gen-mesh-
+    // tent / --gen-mesh-firepit for camp set dressing. Uses the
+    // shared addVertex helper plus addFlatBox for the pillow.
+    // The 61st procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float length = 1.4f;
+    float radius = 0.16f;
+    int   sides  = 12;
+    float pillowSize = 0.18f;       // 0 → no pillow
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { length = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { radius = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { sides = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { pillowSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (length <= 0 || radius <= 0 || sides < 6 || sides > 64 ||
+        pillowSize < 0 || pillowSize >= length * 0.5f) {
+        std::fprintf(stderr,
+            "gen-mesh-bedroll: dims > 0; sides 6..64; pillow < length/2\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    const float pi = 3.14159265358979f;
+    const float halfL = length * 0.5f;
+    // Z-axis cylinder centered at (0, radius, 0). Same end-cap fan
+    // pattern used by --gen-mesh-woodpile's logs.
+    uint32_t back = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+        glm::vec3 p(radius * dir.x, radius + radius * dir.y, -halfL);
+        addVertex(wom, p, dir, {u, 0});
+    }
+    uint32_t front = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
+        glm::vec3 p(radius * dir.x, radius + radius * dir.y, +halfL);
+        addVertex(wom, p, dir, {u, 1});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(), {
+            back + s, front + s, back + s + 1,
+            back + s + 1, front + s, front + s + 1
+        });
+    }
+    // Back cap (-Z) fan.
+    uint32_t backCenter = addVertex(wom, {0, radius, -halfL},
+                                     {0, 0, -1}, {0.5f, 0.5f});
+    uint32_t backRing = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 p(radius * std::cos(ang),
+                    radius + radius * std::sin(ang), -halfL);
+        addVertex(wom, p, {0, 0, -1},
+                  {0.5f + 0.5f * std::cos(ang),
+                   0.5f + 0.5f * std::sin(ang)});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(),
+            {backCenter, backRing + s + 1, backRing + s});
+    }
+    // Front cap (+Z) fan.
+    uint32_t frontCenter = addVertex(wom, {0, radius, +halfL},
+                                      {0, 0, +1}, {0.5f, 0.5f});
+    uint32_t frontRing = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 p(radius * std::cos(ang),
+                    radius + radius * std::sin(ang), +halfL);
+        addVertex(wom, p, {0, 0, +1},
+                  {0.5f + 0.5f * std::cos(ang),
+                   0.5f + 0.5f * std::sin(ang)});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(),
+            {frontCenter, frontRing + s, frontRing + s + 1});
+    }
+    // Optional pillow box at +Z end. Sits flat on the ground and
+    // pushes a bit past the bedroll's front cap so it reads as a
+    // separate prop.
+    if (pillowSize > 0) {
+        const float pHalf = pillowSize * 0.5f;
+        const float pHeight = pillowSize * 0.5f;  // squashed
+        addFlatBox(wom, 0.0f, pHeight * 0.5f, halfL + pHalf,
+                   pHalf, pHeight * 0.5f, pHalf);
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxZ = halfL + (pillowSize > 0 ? pillowSize : 0);
+    wom.boundMin = glm::vec3(-radius, 0, -halfL);
+    wom.boundMax = glm::vec3(+radius, 2.0f * radius, +maxZ);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-bedroll: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  bedroll    : len=%.3f, R=%.3f, %d sides\n",
+                length, radius, sides);
+    if (pillowSize > 0)
+        std::printf("  pillow     : %.3f cube at +Z end\n", pillowSize);
+    else
+        std::printf("  pillow     : (none)\n");
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleChimney(int& i, int argc, char** argv) {
     // Brick chimney: rectangular shaft topped by a slightly-wider
     // cap (the protective crown that throws rain off the masonry).
@@ -7059,6 +7190,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-dock",           1, handleDock},
     {"--gen-mesh-pergola",        1, handlePergola},
     {"--gen-mesh-chimney",        1, handleChimney},
+    {"--gen-mesh-bedroll",        1, handleBedroll},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
