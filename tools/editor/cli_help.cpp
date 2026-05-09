@@ -218,6 +218,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Gate: 2 vertical posts + 3 horizontal rails (default 1.80/1.30/0.10/0.06)\n");
     std::printf("  --gen-mesh-beehive <wom-base> [baseWidth] [height] [plateH]\n");
     std::printf("                         Beehive (skep): 4 tapered tiers + entrance notch on +Z face (default 0.70/0.85/0.05)\n");
+    std::printf("  --gen-mesh-weathervane <wom-base> [postH] [postT] [baseSize] [armLen] [arrowLen]\n");
+    std::printf("                         Weathervane: base + post + N-S/E-W cross arms + arrow with tail (default 1.50/0.05/0.30/0.40/0.55)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");

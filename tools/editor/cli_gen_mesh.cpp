@@ -4655,6 +4655,136 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleWeathervane(int& i, int argc, char** argv) {
+    // Weathervane: 6-box rooftop wind indicator — base plate,
+    // tall vertical post, perpendicular N-S and E-W cross arms
+    // (cardinal direction markers), a long horizontal arrow on
+    // top of the cross, and a small tail box at the back end of
+    // the arrow that visually balances the head. Useful for
+    // farm rooftops, chapel spires, town halls, lighthouse caps.
+    // The 53rd procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float postHeight = 1.50f;
+    float postT      = 0.05f;
+    float baseSize   = 0.30f;
+    float armLen     = 0.40f;     // half-length of each cross arm
+    float arrowLen   = 0.55f;     // half-length of the arrow body
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { armLen = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { arrowLen = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (postHeight <= 0 || postT <= 0 || baseSize <= 0 ||
+        armLen <= 0 || arrowLen <= 0 || postT >= baseSize) {
+        std::fprintf(stderr,
+            "gen-mesh-weathervane: dims > 0; post must fit in base\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Base plate at floor.
+    float baseHeight = baseSize * 0.30f;
+    float halfBase = baseSize * 0.5f;
+    addBox(0, baseHeight * 0.5f, 0,
+           halfBase, baseHeight * 0.5f, halfBase);
+    // Vertical post.
+    float halfPost = postT * 0.5f;
+    float poleBottomY = baseHeight;
+    float poleTopY    = baseHeight + postHeight;
+    float poleCY      = (poleBottomY + poleTopY) * 0.5f;
+    addBox(0, poleCY, 0, halfPost, postHeight * 0.5f, halfPost);
+    // Cross arms at the top of the post — 2 perpendicular thin
+    // bars forming the cardinal-direction "+" marker.
+    float armT       = postT * 0.7f;
+    float halfArmT   = armT * 0.5f;
+    float crossY     = poleTopY - armT * 1.0f;
+    addBox(0, crossY, 0, armLen, halfArmT, halfArmT);   // E-W (along X)
+    addBox(0, crossY, 0, halfArmT, halfArmT, armLen);   // N-S (along Z)
+    // Arrow body on top of the cross — long thin bar that
+    // would rotate to the wind direction. Aligned along +X by
+    // default (designers can rotate at placement time).
+    float arrowY  = poleTopY + armT * 0.7f;
+    float arrowT2 = armT * 1.1f;
+    float halfAT  = arrowT2 * 0.5f;
+    addBox(0, arrowY, 0, arrowLen, halfAT, halfAT);
+    // Arrow tail: small box at -X end so the arrow looks
+    // directional rather than symmetric.
+    float tailLen = arrowLen * 0.3f;
+    float tailX   = -arrowLen + tailLen;
+    addBox(tailX, arrowY, 0, halfAT, arrowT2 * 1.4f, halfAT);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = arrowY + arrowT2 * 1.4f;
+    float maxX = std::max({halfBase, arrowLen, tailX + halfAT});
+    wom.boundMin = glm::vec3(-maxX,    0.0f,    -armLen);
+    wom.boundMax = glm::vec3( maxX,    totalH,   armLen);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-weathervane: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  total H    : %.3f\n", totalH);
+    std::printf("  base       : %.3f square × %.3f tall\n",
+                baseSize, baseHeight);
+    std::printf("  post       : %.3f square × %.3f tall\n",
+                postT, postHeight);
+    std::printf("  cross arms : 2 × %.3f half-length (N-S + E-W)\n", armLen);
+    std::printf("  arrow      : %.3f half-length (with tail at -X)\n",
+                arrowLen);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleBeehive(int& i, int argc, char** argv) {
     // Beehive: 5-box woven straw skep — stacked tiers of
     // decreasing width approximating a dome, with a small
@@ -6481,6 +6611,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-beehive") == 0 && i + 1 < argc) {
         outRc = handleBeehive(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-weathervane") == 0 && i + 1 < argc) {
+        outRc = handleWeathervane(i, argc, argv); return true;
     }
     return false;
 }
