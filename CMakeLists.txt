@@ -1321,6 +1321,7 @@ add_executable(wowee_editor
     tools/editor/cli_spawn_audit.cpp
     tools/editor/cli_items.cpp
     tools/editor/cli_extract_info.cpp
+    tools/editor/cli_export.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
