@@ -1360,6 +1360,7 @@ add_executable(wowee_editor
     tools/editor/cli_mesh_info.cpp
     tools/editor/cli_zone_data.cpp
     tools/editor/cli_project_actions.cpp
+    tools/editor/cli_zone_export.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
