@@ -1325,6 +1325,7 @@ add_executable(wowee_editor
     tools/editor/cli_bake.cpp
     tools/editor/cli_migrate.cpp
     tools/editor/cli_convert_single.cpp
+    tools/editor/cli_validate_interop.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
