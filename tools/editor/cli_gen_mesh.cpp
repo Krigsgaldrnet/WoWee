@@ -4655,6 +4655,138 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleWell(int& i, int argc, char** argv) {
+    // Well: 4 stone walls arranged in a square ring (hollow
+    // interior so a player can see down the shaft) + 2 vertical
+    // roof posts on opposite sides + 1 horizontal cross beam at
+    // the top (where the rope/bucket would mount). Useful for
+    // village squares, courtyards, dungeon water sources.
+    // The 44th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float outerSize = 1.4f;     // square wall outer footprint
+    float wallH     = 0.8f;     // wall height above ground
+    float wallT     = 0.15f;    // wall thickness
+    float postH     = 1.6f;     // roof post height above wall
+    float postT     = 0.12f;    // roof post thickness (square)
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { outerSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { wallH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { wallT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (outerSize <= 0 || wallH <= 0 || wallT <= 0 ||
+        postH <= 0 || postT <= 0 || wallT * 2 >= outerSize) {
+        std::fprintf(stderr,
+            "gen-mesh-well: dims > 0; wallT must fit in outerSize\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    float halfOuter = outerSize * 0.5f;
+    float halfWallT = wallT * 0.5f;
+    float halfPostT = postT * 0.5f;
+    // 4 wall panels arranged in a hollow square. Each panel
+    // spans full outerSize along its long axis. Walls along X
+    // sit at z = ±(halfOuter - halfWallT); walls along Z sit at
+    // x = ±(halfOuter - halfWallT) but shortened so they don't
+    // overlap the X walls (interior length = outerSize - 2*wallT).
+    float wallCY = wallH * 0.5f;
+    // North wall (+Z edge) — full outerSize wide.
+    addBox(0, wallCY, halfOuter - halfWallT,
+           halfOuter, wallH * 0.5f, halfWallT);
+    // South wall (-Z edge) — full outerSize wide.
+    addBox(0, wallCY, -halfOuter + halfWallT,
+           halfOuter, wallH * 0.5f, halfWallT);
+    // East wall (+X edge) — interior length only.
+    float eastWestLen = outerSize - 2 * wallT;
+    addBox(halfOuter - halfWallT, wallCY, 0,
+           halfWallT, wallH * 0.5f, eastWestLen * 0.5f);
+    // West wall (-X edge) — interior length only.
+    addBox(-halfOuter + halfWallT, wallCY, 0,
+           halfWallT, wallH * 0.5f, eastWestLen * 0.5f);
+    // 2 vertical roof posts mounted on top of the east and west
+    // walls, centred in z. Posts rise from the top of the walls
+    // (y=wallH) by postH.
+    float postCY = wallH + postH * 0.5f;
+    float postX = halfOuter - halfPostT;
+    addBox( postX, postCY, 0, halfPostT, postH * 0.5f, halfPostT);
+    addBox(-postX, postCY, 0, halfPostT, postH * 0.5f, halfPostT);
+    // Horizontal cross beam connecting the post tops. The beam
+    // spans the full distance between posts (so it ends inside
+    // each post). Beam is square in cross section, slightly
+    // thicker than the posts so it visually overlaps the joint.
+    float beamT = postT * 1.2f;
+    float halfBeamT = beamT * 0.5f;
+    float beamCY = wallH + postH - halfBeamT;
+    addBox(0, beamCY, 0,
+           halfOuter * 0.85f, halfBeamT, halfBeamT);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = wallH + postH;
+    wom.boundMin = glm::vec3(-halfOuter, 0.0f,    -halfOuter);
+    wom.boundMax = glm::vec3( halfOuter, totalH,   halfOuter);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-well: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  outerSize  : %.3f square\n", outerSize);
+    std::printf("  wall       : %.3f tall, %.3f thick\n", wallH, wallT);
+    std::printf("  roof posts : 2 × %.3f tall\n", postH);
+    std::printf("  total H    : %.3f (with cross beam)\n", totalH);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleLadder(int& i, int argc, char** argv) {
     // Ladder: 2 vertical rails + N horizontal rungs evenly
     // spaced between them. Sits flat against +Z (the climbing
@@ -5417,6 +5549,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-ladder") == 0 && i + 1 < argc) {
         outRc = handleLadder(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-well") == 0 && i + 1 < argc) {
+        outRc = handleWell(i, argc, argv); return true;
     }
     return false;
 }
