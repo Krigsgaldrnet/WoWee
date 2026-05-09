@@ -5778,7 +5778,6 @@ int handleArcheryTarget(int& i, int argc, char** argv) {
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     initWomDefaults(wom, womBase);
-    const float pi = 3.14159265358979f;
     const float halfStanceX = faceR + postW * 0.5f;
     // Two vertical posts of the stand, sized to reach from ground
     // to the bottom of the face.
@@ -5800,61 +5799,7 @@ int handleArcheryTarget(int& i, int argc, char** argv) {
     // (0, postH, 0). Flat ±Z caps face the archer line; side
     // wall is the rim.
     const float halfT = faceT * 0.5f;
-    uint32_t back = static_cast<uint32_t>(wom.vertices.size());
-    for (int s = 0; s <= sides; ++s) {
-        float u = static_cast<float>(s) / sides;
-        float ang = u * 2.0f * pi;
-        glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
-        glm::vec3 p(faceR * dir.x, postH + faceR * dir.y, -halfT);
-        addVertex(wom, p, dir, {u, 0});
-    }
-    uint32_t front = static_cast<uint32_t>(wom.vertices.size());
-    for (int s = 0; s <= sides; ++s) {
-        float u = static_cast<float>(s) / sides;
-        float ang = u * 2.0f * pi;
-        glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
-        glm::vec3 p(faceR * dir.x, postH + faceR * dir.y, +halfT);
-        addVertex(wom, p, dir, {u, 1});
-    }
-    for (int s = 0; s < sides; ++s) {
-        wom.indices.insert(wom.indices.end(), {
-            back + s, front + s, back + s + 1,
-            back + s + 1, front + s, front + s + 1
-        });
-    }
-    // Cap fans on -Z and +Z so the face is closed.
-    uint32_t backCenter = addVertex(wom, {0, postH, -halfT},
-                                     {0, 0, -1}, {0.5f, 0.5f});
-    uint32_t backRing = static_cast<uint32_t>(wom.vertices.size());
-    for (int s = 0; s <= sides; ++s) {
-        float u = static_cast<float>(s) / sides;
-        float ang = u * 2.0f * pi;
-        glm::vec3 p(faceR * std::cos(ang),
-                    postH + faceR * std::sin(ang), -halfT);
-        addVertex(wom, p, {0, 0, -1},
-                  {0.5f + 0.5f * std::cos(ang),
-                   0.5f + 0.5f * std::sin(ang)});
-    }
-    for (int s = 0; s < sides; ++s) {
-        wom.indices.insert(wom.indices.end(),
-            {backCenter, backRing + s + 1, backRing + s});
-    }
-    uint32_t frontCenter = addVertex(wom, {0, postH, +halfT},
-                                      {0, 0, +1}, {0.5f, 0.5f});
-    uint32_t frontRing = static_cast<uint32_t>(wom.vertices.size());
-    for (int s = 0; s <= sides; ++s) {
-        float u = static_cast<float>(s) / sides;
-        float ang = u * 2.0f * pi;
-        glm::vec3 p(faceR * std::cos(ang),
-                    postH + faceR * std::sin(ang), +halfT);
-        addVertex(wom, p, {0, 0, +1},
-                  {0.5f + 0.5f * std::cos(ang),
-                   0.5f + 0.5f * std::sin(ang)});
-    }
-    for (int s = 0; s < sides; ++s) {
-        wom.indices.insert(wom.indices.end(),
-            {frontCenter, frontRing + s, frontRing + s + 1});
-    }
+    addClosedCylinderZ(wom, 0.0f, postH, faceR, -halfT, +halfT, sides);
     finalizeAsSingleBatch(wom);
     setCenteredBoundsXZ(wom, halfStanceX + postW * 0.5f, halfT,
                          postH + faceR);
@@ -6429,66 +6374,10 @@ int handleBedroll(int& i, int argc, char** argv) {
     stripExt(womBase, ".wom");
     wowee::pipeline::WoweeModel wom;
     initWomDefaults(wom, womBase);
-    const float pi = 3.14159265358979f;
     const float halfL = length * 0.5f;
-    // Z-axis cylinder centered at (0, radius, 0). Same end-cap fan
-    // pattern used by --gen-mesh-woodpile's logs.
-    uint32_t back = static_cast<uint32_t>(wom.vertices.size());
-    for (int s = 0; s <= sides; ++s) {
-        float u = static_cast<float>(s) / sides;
-        float ang = u * 2.0f * pi;
-        glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
-        glm::vec3 p(radius * dir.x, radius + radius * dir.y, -halfL);
-        addVertex(wom, p, dir, {u, 0});
-    }
-    uint32_t front = static_cast<uint32_t>(wom.vertices.size());
-    for (int s = 0; s <= sides; ++s) {
-        float u = static_cast<float>(s) / sides;
-        float ang = u * 2.0f * pi;
-        glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
-        glm::vec3 p(radius * dir.x, radius + radius * dir.y, +halfL);
-        addVertex(wom, p, dir, {u, 1});
-    }
-    for (int s = 0; s < sides; ++s) {
-        wom.indices.insert(wom.indices.end(), {
-            back + s, front + s, back + s + 1,
-            back + s + 1, front + s, front + s + 1
-        });
-    }
-    // Back cap (-Z) fan.
-    uint32_t backCenter = addVertex(wom, {0, radius, -halfL},
-                                     {0, 0, -1}, {0.5f, 0.5f});
-    uint32_t backRing = static_cast<uint32_t>(wom.vertices.size());
-    for (int s = 0; s <= sides; ++s) {
-        float u = static_cast<float>(s) / sides;
-        float ang = u * 2.0f * pi;
-        glm::vec3 p(radius * std::cos(ang),
-                    radius + radius * std::sin(ang), -halfL);
-        addVertex(wom, p, {0, 0, -1},
-                  {0.5f + 0.5f * std::cos(ang),
-                   0.5f + 0.5f * std::sin(ang)});
-    }
-    for (int s = 0; s < sides; ++s) {
-        wom.indices.insert(wom.indices.end(),
-            {backCenter, backRing + s + 1, backRing + s});
-    }
-    // Front cap (+Z) fan.
-    uint32_t frontCenter = addVertex(wom, {0, radius, +halfL},
-                                      {0, 0, +1}, {0.5f, 0.5f});
-    uint32_t frontRing = static_cast<uint32_t>(wom.vertices.size());
-    for (int s = 0; s <= sides; ++s) {
-        float u = static_cast<float>(s) / sides;
-        float ang = u * 2.0f * pi;
-        glm::vec3 p(radius * std::cos(ang),
-                    radius + radius * std::sin(ang), +halfL);
-        addVertex(wom, p, {0, 0, +1},
-                  {0.5f + 0.5f * std::cos(ang),
-                   0.5f + 0.5f * std::sin(ang)});
-    }
-    for (int s = 0; s < sides; ++s) {
-        wom.indices.insert(wom.indices.end(),
-            {frontCenter, frontRing + s, frontRing + s + 1});
-    }
+    // Z-axis cylinder centered at (0, radius). Sits on the ground
+    // (cy = radius means the bottom of the cylinder is at y=0).
+    addClosedCylinderZ(wom, 0.0f, radius, radius, -halfL, +halfL, sides);
     // Optional pillow box at +Z end. Sits flat on the ground and
     // pushes a bit past the bedroll's front cap so it reads as a
     // separate prop.
