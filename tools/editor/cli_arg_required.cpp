@@ -141,7 +141,7 @@ const char* const kArgRequired[] = {
     "--export-stl", "--import-stl",
     "--bake-zone-glb", "--bake-zone-stl", "--bake-zone-obj",
     "--bake-project-obj", "--bake-project-stl", "--bake-project-glb",
-    "--bake-wom-collision", "--bake-wob-collision",
+    "--bake-wom-collision", "--bake-wob-collision", "--bake-zone-collision",
     "--audit-watertight", "--audit-watertight-wob",
     "--convert-m2", "--convert-m2-batch",
     "--convert-wmo", "--convert-wmo-batch",

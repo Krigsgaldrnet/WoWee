@@ -511,6 +511,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Convert a WOM into a WOC collision file (raycast / walkability mesh) with optional vertex weld\n");
     std::printf("  --bake-wob-collision <wob-base> [out.woc] [--weld <eps>] [--steep <deg>]\n");
     std::printf("                         Convert a multi-group WOB building into a single WOC collision file (weld is per-group)\n");
+    std::printf("  --bake-zone-collision <zoneDir> [out.woc] [--weld <eps>] [--steep <deg>]\n");
+    std::printf("                         Walk every .wom + .wob under zoneDir, weld each independently, append to one shared WOC\n");
     std::printf("  --audit-watertight <zoneDir|projectDir> [--weld <eps>] [--json]\n");
     std::printf("                         Walk every .wom under root, run welded watertight check; exit code = failure count (CI-friendly)\n");
     std::printf("  --audit-watertight-wob <zoneDir|projectDir> [--weld <eps>] [--json]\n");
