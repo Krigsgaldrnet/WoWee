@@ -891,6 +891,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WLOT loot tables (creatureId / dropCount / money range / per-drop chance + qty + flags)\n");
     std::printf("  --validate-wlot <wlot-base> [--json]\n");
     std::printf("                         Static checks: creatureId>0 + unique, chance in 0..100, minQty<=maxQty, money min<=max\n");
+    std::printf("  --gen-creatures <wcrt-base> [name]\n");
+    std::printf("                         Emit .wcrt starter creature template: 1 friendly innkeeper (vendor + repair flags)\n");
+    std::printf("  --gen-creatures-bandit <wcrt-base> [name]\n");
+    std::printf("                         Emit .wcrt bandit (creatureId=1000, matches WSPN camp + WLOT bandit table, equips WIT sword)\n");
+    std::printf("  --gen-creatures-merchants <wcrt-base> [name]\n");
+    std::printf("                         Emit .wcrt 3-NPC village set (innkeeper / smith / alchemist, matches WSPN village creatureIds)\n");
+    std::printf("  --info-wcrt <wcrt-base> [--json]\n");
+    std::printf("                         Print WCRT entries (id / level / hp / type / faction / npc-flags / name + subname)\n");
+    std::printf("  --validate-wcrt <wcrt-base> [--json]\n");
+    std::printf("                         Static checks: creatureId>0+unique, level/hp>0, min<=max, attackSpeed>0, AI flag conflicts\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
