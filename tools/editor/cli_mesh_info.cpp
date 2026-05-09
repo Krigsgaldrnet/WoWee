@@ -11,8 +11,10 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -383,20 +385,21 @@ int handleInfoMeshStats(int& i, int argc, char** argv) {
     std::vector<uint32_t> canon(wom.vertices.size());
     std::size_t uniquePositions = 0;
     if (useWeld) {
+        // Use the quantized (qx, qy, qz) tuple as the equality key —
+        // a hash key would risk false-positive collisions that
+        // incorrectly merge distinct corners (e.g. a cube's 8 corners
+        // collapsing to 2). std::map gives exact-match equality at
+        // O(log n) per op which is fast enough for any real mesh.
         const float invEps = 1.0f / std::max(weldEps, 1e-9f);
-        std::unordered_map<uint64_t, uint32_t> bucket;
-        bucket.reserve(wom.vertices.size());
-        auto posKey = [&](const glm::vec3& p) -> uint64_t {
-            int64_t qx = static_cast<int64_t>(std::lround(p.x * invEps));
-            int64_t qy = static_cast<int64_t>(std::lround(p.y * invEps));
-            int64_t qz = static_cast<int64_t>(std::lround(p.z * invEps));
-            uint64_t h = static_cast<uint64_t>(qx) * 0x9E3779B185EBCA87ULL;
-            h ^= static_cast<uint64_t>(qy) * 0xC2B2AE3D27D4EB4FULL;
-            h ^= static_cast<uint64_t>(qz) * 0x165667B19E3779F9ULL;
-            return h;
+        using QKey = std::tuple<int64_t, int64_t, int64_t>;
+        std::map<QKey, uint32_t> bucket;
+        auto qkey = [&](const glm::vec3& p) -> QKey {
+            return {static_cast<int64_t>(std::lround(p.x * invEps)),
+                    static_cast<int64_t>(std::lround(p.y * invEps)),
+                    static_cast<int64_t>(std::lround(p.z * invEps))};
         };
         for (std::size_t v = 0; v < wom.vertices.size(); ++v) {
-            uint64_t k = posKey(wom.vertices[v].position);
+            QKey k = qkey(wom.vertices[v].position);
             auto it = bucket.find(k);
             if (it == bucket.end()) {
                 bucket.emplace(k, static_cast<uint32_t>(v));

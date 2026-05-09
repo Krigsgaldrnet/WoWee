@@ -627,6 +627,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Aggregate WOM/WOB stats across an entire project (per-zone breakdown + totals)\n");
     std::printf("  --info-wob <wob-base> [--json]\n");
     std::printf("                         Print WOB building metadata (groups, portals, doodads) and exit\n");
+    std::printf("  --info-wob-stats <wob-base> [--weld <eps>] [--json]\n");
+    std::printf("                         Per-group + aggregate geometric stats (surface area, edges, watertight) for a WOB building\n");
     std::printf("  --info-woc <woc-path> [--json]\n");
     std::printf("                         Print WOC collision metadata (triangle counts, bounds) and exit\n");
     std::printf("  --info-wot <wot-base> [--json]\n");
