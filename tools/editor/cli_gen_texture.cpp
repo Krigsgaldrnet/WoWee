@@ -3810,6 +3810,83 @@ int handleSpiderWeb(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleGingham(int& i, int argc, char** argv) {
+    // Gingham: classic picnic-blanket / shirt fabric pattern.
+    // Two perpendicular sets of stripes (horizontal + vertical)
+    // with a darker color where they cross. The crossing creates
+    // the characteristic 3-tone checker that gingham is known
+    // for, distinct from --gen-texture-checker (solid blocks).
+    std::string outPath = argv[++i];
+    std::string bgHex     = argv[++i];
+    std::string stripeHex = argv[++i];
+    std::string crossHex  = argv[++i];
+    int stripeSpacing = 16;
+    int stripeWidth   = 8;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stripeSpacing = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stripeWidth = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stripeSpacing < 4 || stripeSpacing > 256 ||
+        stripeWidth < 1 || stripeWidth >= stripeSpacing) {
+        std::fprintf(stderr,
+            "gen-texture-gingham: invalid dims (W/H 1..8192, spacing 4..256, width 1..spacing-1)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr, sg, sb_, cr_, cg_, cb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(stripeHex, sr, sg, sb_) ||
+        !parseHex(crossHex, cr_, cg_, cb_)) {
+        std::fprintf(stderr,
+            "gen-texture-gingham: bg/stripe/cross hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        bool inHStripe = ((y % stripeSpacing) < stripeWidth);
+        for (int x = 0; x < W; ++x) {
+            bool inVStripe = ((x % stripeSpacing) < stripeWidth);
+            uint8_t r, g, b;
+            if (inHStripe && inVStripe) {
+                // Crossing region: darkest of the three colors.
+                r = cr_; g = cg_; b = cb_;
+            } else if (inHStripe || inVStripe) {
+                // Single-direction stripe band.
+                r = sr; g = sg; b = sb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-gingham: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/stripe/cross : %s / %s / %s\n",
+                bgHex.c_str(), stripeHex.c_str(), crossHex.c_str());
+    std::printf("  spacing    : %d px (stripe width %d)\n",
+                stripeSpacing, stripeWidth);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -3931,6 +4008,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-spider-web") == 0 && i + 3 < argc) {
         outRc = handleSpiderWeb(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-gingham") == 0 && i + 4 < argc) {
+        outRc = handleGingham(i, argc, argv); return true;
     }
     return false;
 }
