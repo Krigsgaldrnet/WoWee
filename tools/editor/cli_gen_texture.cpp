@@ -3500,6 +3500,78 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleScratchedMetal(int& i, int argc, char** argv) {
+    // Scratched / worn metal: base metal color overlaid with N
+    // short angled line segments brightened against the base.
+    // Each scratch is a hash-derived (cx, cy, length, angle)
+    // segment drawn via Bresenham-style stepping. Useful for
+    // weathered armor, worn weapon blades, well-used metal
+    // tools, salvaged hull plating, ancient relic surfaces.
+    std::string outPath = argv[++i];
+    std::string baseHex = argv[++i];
+    std::string scratchHex = argv[++i];
+    int scratchCount = 100;
+    int maxLen = 24;
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, scratchCount);
+    parseOptInt(i, argc, argv, maxLen);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        scratchCount < 0 || scratchCount > 16384 ||
+        maxLen < 2 || maxLen > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-scratched-metal: invalid dims (W/H 1..8192, "
+            "scratchCount 0..16384, maxLen 2..1024)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr, sg, sb_;
+    if (!parseHexOrError(baseHex, br_, bg_, bb_,
+                         "gen-texture-scratched-metal")) return 1;
+    if (!parseHexOrError(scratchHex, sr, sg, sb_,
+                         "gen-texture-scratched-metal")) return 1;
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    // Init pixels to base.
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            setPixelRGB(pixels, W, x, y, br_, bg_, bb_);
+        }
+    }
+    // Draw each scratch as a stepped line.
+    const float twoPi = 6.28318530717958f;
+    for (int k = 0; k < scratchCount; ++k) {
+        uint32_t h = hash32(static_cast<uint32_t>(k) + seed);
+        int cx = static_cast<int>(h % W);
+        int cy = static_cast<int>((h >> 8) % H);
+        int len = 4 + static_cast<int>((h >> 16) % maxLen);
+        float angle = static_cast<float>((h >> 4) % 1000) / 1000.0f * twoPi;
+        float dx = std::cos(angle);
+        float dy = std::sin(angle);
+        // Step from -len/2 to +len/2 along the angle.
+        for (int t = -len / 2; t <= len / 2; ++t) {
+            int px = static_cast<int>(cx + dx * t + 0.5f);
+            int py = static_cast<int>(cy + dy * t + 0.5f);
+            if (px < 0 || px >= W || py < 0 || py >= H) continue;
+            setPixelRGB(pixels, W, px, py, sr, sg, sb_);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-scratched-metal")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  base/scratch : %s / %s\n",
+                baseHex.c_str(), scratchHex.c_str());
+    std::printf("  scratches    : %d (max len %d, seed %u)\n",
+                scratchCount, maxLen, seed);
+    return 0;
+}
+
 int handlePinwheel(int& i, int argc, char** argv) {
     // N-sector pinwheel: alternating colored triangular wedges
     // radiating from the texture center, each subtending 2π/N
@@ -5596,6 +5668,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-lightbeam",      3, handleLightbeam},
     {"--gen-texture-dewdrops",       3, handleDewdrops},
     {"--gen-texture-pinwheel",       3, handlePinwheel},
+    {"--gen-texture-scratched-metal",3, handleScratchedMetal},
 };
 }  // namespace
 
