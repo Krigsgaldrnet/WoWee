@@ -58,6 +58,13 @@ public:
     // outdoor defaults. Used by --gen-light to create a starter
     // file users can edit.
     static WoweeLight makeDefaultDayNight(const std::string& zoneName);
+
+    // Lookup the interpolated lighting state at any time-of-day
+    // (clamped to 0..1439 minutes). Linearly blends between the
+    // two adjacent keyframes; wraps around midnight if the query
+    // time falls between the last and first keyframe.
+    static WoweeLight::Keyframe sampleAtTime(const WoweeLight& light,
+                                              uint32_t timeMin);
 };
 
 } // namespace pipeline

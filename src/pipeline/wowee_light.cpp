@@ -104,6 +104,54 @@ bool WoweeLightLoader::exists(const std::string& basePath) {
     return is.good();
 }
 
+WoweeLight::Keyframe WoweeLightLoader::sampleAtTime(
+        const WoweeLight& light, uint32_t timeMin) {
+    if (light.keyframes.empty()) return WoweeLight::Keyframe{};
+    if (light.keyframes.size() == 1) return light.keyframes.front();
+    timeMin = timeMin % 1440;
+    // Find the keyframe pair (a, b) such that a.t <= timeMin < b.t.
+    // Wrap: if timeMin is before the first keyframe or at/after the
+    // last, blend between (last, first + 1440).
+    const auto& kfs = light.keyframes;
+    auto it = std::upper_bound(kfs.begin(), kfs.end(), timeMin,
+        [](uint32_t t, const WoweeLight::Keyframe& kf) {
+            return t < kf.timeOfDayMin;
+        });
+    const WoweeLight::Keyframe* a;
+    const WoweeLight::Keyframe* b;
+    uint32_t aT, bT;
+    if (it == kfs.begin() || it == kfs.end()) {
+        // Wrap-around: between last and first (+ 1440).
+        a = &kfs.back();
+        b = &kfs.front();
+        aT = a->timeOfDayMin;
+        bT = b->timeOfDayMin + 1440;
+        if (it == kfs.begin()) {
+            // timeMin is BEFORE the first keyframe, so we're in
+            // the wrap window. Shift query into [aT, bT) by adding
+            // 1440 to it.
+            timeMin += 1440;
+        }
+    } else {
+        b = &(*it);
+        a = &(*(it - 1));
+        aT = a->timeOfDayMin;
+        bT = b->timeOfDayMin;
+    }
+    float t = (bT == aT) ? 0.0f
+                          : static_cast<float>(timeMin - aT) /
+                            static_cast<float>(bT - aT);
+    WoweeLight::Keyframe out;
+    out.timeOfDayMin = timeMin % 1440;
+    out.ambientColor     = a->ambientColor     + t * (b->ambientColor     - a->ambientColor);
+    out.directionalColor = a->directionalColor + t * (b->directionalColor - a->directionalColor);
+    out.directionalDir   = a->directionalDir   + t * (b->directionalDir   - a->directionalDir);
+    out.fogColor         = a->fogColor         + t * (b->fogColor         - a->fogColor);
+    out.fogStart         = a->fogStart         + t * (b->fogStart         - a->fogStart);
+    out.fogEnd           = a->fogEnd           + t * (b->fogEnd           - a->fogEnd);
+    return out;
+}
+
 WoweeLight WoweeLightLoader::makeDefaultDayNight(
         const std::string& zoneName) {
     WoweeLight out;

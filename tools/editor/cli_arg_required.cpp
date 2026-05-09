@@ -15,7 +15,7 @@ const char* const kArgRequired[] = {
     "--list-zone-meshes-detail", "--list-project-meshes-detail", "--info-mesh",
     "--info-mesh-storage-budget", "--info-mesh-stats",
     "--info-wob", "--info-wob-stats", "--info-woc", "--info-wot",
-    "--info-wol", "--gen-light",
+    "--info-wol", "--info-wol-at", "--validate-wol", "--gen-light",
     "--info-creatures", "--info-objects", "--info-quests",
     "--info-extract", "--info-extract-tree", "--info-extract-budget",
     "--list-missing-sidecars",

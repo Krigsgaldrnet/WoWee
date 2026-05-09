@@ -773,6 +773,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WOC collision metadata (triangle counts, bounds) and exit\n");
     std::printf("  --info-wol <wol-base> [--json]\n");
     std::printf("                         Print WOL lighting keyframes (zone name + per-time-of-day ambient/directional/fog) and exit\n");
+    std::printf("  --info-wol-at <wol-base> <HH:MM|minutes>\n");
+    std::printf("                         Sample the WOL's interpolated lighting at a specific time-of-day (linear blend between keyframes)\n");
+    std::printf("  --validate-wol <wol-base> [--json]\n");
+    std::printf("                         Walk every keyframe; check time bounds + sort order + fogEnd > fogStart + finite color components\n");
     std::printf("  --gen-light <wol-base> [zoneName]\n");
     std::printf("                         Emit a starter .wol with the canonical 4-keyframe day/night cycle (midnight + dawn + noon + dusk)\n");
     std::printf("  --info-wot <wot-base> [--json]\n");

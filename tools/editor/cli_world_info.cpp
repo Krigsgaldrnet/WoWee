@@ -389,6 +389,142 @@ int handleInfoWol(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleValidateWol(int& i, int argc, char** argv) {
+    // Walk every keyframe in a .wol and report structural problems:
+    //   • times outside [0, 1440)
+    //   • unsorted timeOfDayMin
+    //   • duplicate timestamps
+    //   • zero-area fog distances (fogEnd <= fogStart)
+    //   • non-finite color components
+    // Returns 0 PASS / 1 FAIL.
+    std::string base = argv[++i];
+    bool jsonOut = (i + 1 < argc &&
+                    std::strcmp(argv[i + 1], "--json") == 0);
+    if (jsonOut) ++i;
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wol")
+        base = base.substr(0, base.size() - 4);
+    if (!wowee::pipeline::WoweeLightLoader::exists(base)) {
+        std::fprintf(stderr, "WOL not found: %s.wol\n", base.c_str());
+        return 1;
+    }
+    auto wol = wowee::pipeline::WoweeLightLoader::load(base);
+    std::vector<std::string> errors;
+    if (wol.keyframes.empty()) {
+        errors.push_back("no keyframes");
+    }
+    uint32_t prevTime = 0;
+    bool first = true;
+    auto checkColor = [&](const glm::vec3& c, const char* label, int idx) {
+        for (int k = 0; k < 3; ++k) {
+            float v = c[k];
+            if (!std::isfinite(v)) {
+                errors.push_back("kf " + std::to_string(idx) + " " +
+                                  label + " channel " + std::to_string(k) +
+                                  " is non-finite");
+            }
+        }
+    };
+    for (std::size_t k = 0; k < wol.keyframes.size(); ++k) {
+        const auto& kf = wol.keyframes[k];
+        if (kf.timeOfDayMin >= 1440) {
+            errors.push_back("kf " + std::to_string(k) +
+                              " time " + std::to_string(kf.timeOfDayMin) +
+                              " >= 1440");
+        }
+        if (!first && kf.timeOfDayMin <= prevTime) {
+            errors.push_back("kf " + std::to_string(k) +
+                              " time " + std::to_string(kf.timeOfDayMin) +
+                              " <= previous " + std::to_string(prevTime));
+        }
+        if (kf.fogEnd <= kf.fogStart) {
+            errors.push_back("kf " + std::to_string(k) +
+                              " fogEnd " + std::to_string(kf.fogEnd) +
+                              " <= fogStart " +
+                              std::to_string(kf.fogStart));
+        }
+        checkColor(kf.ambientColor, "ambient", static_cast<int>(k));
+        checkColor(kf.directionalColor, "directional",
+                   static_cast<int>(k));
+        checkColor(kf.fogColor, "fog", static_cast<int>(k));
+        prevTime = kf.timeOfDayMin;
+        first = false;
+    }
+    if (jsonOut) {
+        nlohmann::json j;
+        j["wol"] = base + ".wol";
+        j["passed"] = errors.empty();
+        j["errorCount"] = errors.size();
+        j["errors"] = errors;
+        std::printf("%s\n", j.dump(2).c_str());
+        return errors.empty() ? 0 : 1;
+    }
+    if (errors.empty()) {
+        std::printf("WOL %s.wol PASSED — %zu keyframe(s) valid\n",
+                    base.c_str(), wol.keyframes.size());
+        return 0;
+    }
+    std::printf("WOL %s.wol FAILED — %zu error(s):\n",
+                base.c_str(), errors.size());
+    for (const auto& e : errors) std::printf("  - %s\n", e.c_str());
+    return 1;
+}
+
+int handleInfoWolAt(int& i, int argc, char** argv) {
+    // Sample the WOL's interpolated lighting state at a specific
+    // time-of-day, given as HH:MM (24-hour) or as raw minutes.
+    std::string base = argv[++i];
+    if (i + 1 >= argc) {
+        std::fprintf(stderr, "info-wol-at: missing time argument\n");
+        return 1;
+    }
+    std::string timeStr = argv[++i];
+    int timeMin = 0;
+    auto colon = timeStr.find(':');
+    if (colon != std::string::npos) {
+        try {
+            int hh = std::stoi(timeStr.substr(0, colon));
+            int mm = std::stoi(timeStr.substr(colon + 1));
+            timeMin = (hh * 60 + mm) % 1440;
+        } catch (...) {
+            std::fprintf(stderr, "info-wol-at: bad time %s (use HH:MM)\n",
+                         timeStr.c_str());
+            return 1;
+        }
+    } else {
+        try { timeMin = std::stoi(timeStr) % 1440; } catch (...) {
+            std::fprintf(stderr, "info-wol-at: bad time %s (use minutes)\n",
+                         timeStr.c_str());
+            return 1;
+        }
+    }
+    if (timeMin < 0) timeMin += 1440;
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wol")
+        base = base.substr(0, base.size() - 4);
+    if (!wowee::pipeline::WoweeLightLoader::exists(base)) {
+        std::fprintf(stderr, "WOL not found: %s.wol\n", base.c_str());
+        return 1;
+    }
+    auto wol = wowee::pipeline::WoweeLightLoader::load(base);
+    if (!wol.isValid()) {
+        std::fprintf(stderr, "WOL parse failed: %s.wol\n", base.c_str());
+        return 1;
+    }
+    auto kf = wowee::pipeline::WoweeLightLoader::sampleAtTime(
+        wol, static_cast<uint32_t>(timeMin));
+    std::printf("WOL %s.wol  sample at %02d:%02d\n",
+                base.c_str(), timeMin / 60, timeMin % 60);
+    std::printf("  ambient    : (%.3f, %.3f, %.3f)\n",
+                kf.ambientColor.r, kf.ambientColor.g, kf.ambientColor.b);
+    std::printf("  directional: (%.3f, %.3f, %.3f) dir (%.2f, %.2f, %.2f)\n",
+                kf.directionalColor.r, kf.directionalColor.g,
+                kf.directionalColor.b,
+                kf.directionalDir.x, kf.directionalDir.y, kf.directionalDir.z);
+    std::printf("  fog        : (%.3f, %.3f, %.3f) [%.1f..%.1f]\n",
+                kf.fogColor.r, kf.fogColor.g, kf.fogColor.b,
+                kf.fogStart, kf.fogEnd);
+    return 0;
+}
+
 int handleGenLight(int& i, int argc, char** argv) {
     // Emit a starter .wol file with the default 4-keyframe day/
     // night cycle (midnight, dawn, noon, dusk). User can edit
@@ -433,6 +569,12 @@ bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--info-wol") == 0 && i + 1 < argc) {
         outRc = handleInfoWol(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--info-wol-at") == 0 && i + 2 < argc) {
+        outRc = handleInfoWolAt(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--validate-wol") == 0 && i + 1 < argc) {
+        outRc = handleValidateWol(i, argc, argv); return true;
     }
     if (std::strcmp(argv[i], "--gen-light") == 0 && i + 1 < argc) {
         outRc = handleGenLight(i, argc, argv); return true;
