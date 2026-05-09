@@ -3058,6 +3058,106 @@ int handleHerringbone(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleScales(int& i, int argc, char** argv) {
+    // Scales: fish / dragon / chain mail pattern. Each scale is a
+    // circle whose center sits at the bottom-center of a cell;
+    // adjacent rows are offset by half a cell width so the
+    // circles interlock into the classic overlapping-scale look.
+    // Three colors: background (gaps), scale body, and a rim
+    // highlight near the top of each scale that gives the
+    // armoured/raised appearance.
+    std::string outPath = argv[++i];
+    std::string bgHex = argv[++i];
+    std::string scaleHex = argv[++i];
+    std::string rimHex = argv[++i];
+    int cellW = 24;
+    int cellH = 16;   // shorter than wide for natural overlap
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { cellW = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { cellH = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellW < 4 || cellW > 256 ||
+        cellH < 4 || cellH > 256) {
+        std::fprintf(stderr,
+            "gen-texture-scales: invalid dims (W/H 1..8192, cellW/H 4..256)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr_, sg_, sb_, rr_, rg_, rb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(scaleHex, sr_, sg_, sb_) ||
+        !parseHex(rimHex, rr_, rg_, rb_)) {
+        std::fprintf(stderr,
+            "gen-texture-scales: bg, scale, or rim hex color is invalid\n");
+        return 1;
+    }
+    // Scale radius is 55% of cell width so adjacent scales in the
+    // same row touch + slightly overlap, and rows interlock cleanly
+    // through the half-row stagger.
+    float scaleR = cellW * 0.55f;
+    float scaleR2 = scaleR * scaleR;
+    // Rim threshold: top 25% of each scale gets the rim color.
+    float rimNormY = 0.55f;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int rowIdx = y / cellH;
+        int shift  = (rowIdx & 1) ? cellW / 2 : 0;
+        for (int x = 0; x < W; ++x) {
+            // Snap x into the current row's lattice (with stagger).
+            // Use floor-div semantics that work for x near 0.
+            int xRel = x - shift;
+            int col;
+            if (xRel >= 0) col = xRel / cellW;
+            else           col = -((-xRel + cellW - 1) / cellW);
+            // Scale center: bottom-middle of the cell.
+            float cx = col * cellW + shift + cellW * 0.5f;
+            float cy = rowIdx * cellH + cellH;
+            float dx = x - cx;
+            float dy = y - cy;
+            float distSq = dx * dx + dy * dy;
+            uint8_t r, g, b;
+            if (distSq < scaleR2) {
+                // Inside a scale. -dy/R is 0 at center, ~1 at top.
+                float normY = -dy / scaleR;
+                if (normY > rimNormY) {
+                    r = rr_; g = rg_; b = rb_;
+                } else {
+                    r = sr_; g = sg_; b = sb_;
+                }
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-scales: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/scale/rim : %s / %s / %s\n",
+                bgHex.c_str(), scaleHex.c_str(), rimHex.c_str());
+    std::printf("  cell       : %dx%d (radius %.1f, half-row stagger)\n",
+                cellW, cellH, scaleR);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -3158,6 +3258,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-herringbone") == 0 && i + 3 < argc) {
         outRc = handleHerringbone(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-scales") == 0 && i + 4 < argc) {
+        outRc = handleScales(i, argc, argv); return true;
     }
     return false;
 }

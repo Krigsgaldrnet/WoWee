@@ -99,6 +99,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Argyle: 45-rotated lozenge checkerboard with diagonal stitch lines (sweater knit)\n");
     std::printf("  --gen-texture-herringbone <out.png> <bgHex> <lineHex> [stripH] [lineSpacing] [lineWidth] [W H]\n");
     std::printf("                         Herringbone: slanted parallel lines that flip direction every strip (chevron / fish-bone)\n");
+    std::printf("  --gen-texture-scales <out.png> <bgHex> <scaleHex> <rimHex> [cellW] [cellH] [W H]\n");
+    std::printf("                         Scales: half-row-staggered overlapping circles forming fish/dragon/chain-mail look\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
