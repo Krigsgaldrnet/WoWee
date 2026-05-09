@@ -59,6 +59,17 @@ public:
     // file users can edit.
     static WoweeLight makeDefaultDayNight(const std::string& zoneName);
 
+    // Preset variants for non-outdoor zones — these emit a
+    // single-keyframe WOL since the lighting doesn't vary by
+    // time-of-day for an enclosed scene.
+    //
+    //   makeCave        dim blue ambient + heavy fog
+    //   makeDungeon     moody indoor torchlit + medium fog
+    //   makeNight       dark blue ambient + far fog (night-only zone)
+    static WoweeLight makeCave(const std::string& zoneName);
+    static WoweeLight makeDungeon(const std::string& zoneName);
+    static WoweeLight makeNight(const std::string& zoneName);
+
     // Lookup the interpolated lighting state at any time-of-day
     // (clamped to 0..1439 minutes). Linearly blends between the
     // two adjacent keyframes; wraps around midnight if the query

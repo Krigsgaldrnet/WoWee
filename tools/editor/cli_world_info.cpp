@@ -525,12 +525,12 @@ int handleInfoWolAt(int& i, int argc, char** argv) {
     return 0;
 }
 
-int handleGenLight(int& i, int argc, char** argv) {
-    // Emit a starter .wol file with the default 4-keyframe day/
-    // night cycle (midnight, dawn, noon, dusk). User can edit
-    // the keyframes by re-saving via a future authoring tool;
-    // for now this is the canonical "make me a usable atmosphere
-    // file in one command" entrypoint.
+// Emit a .wol from a named preset. Used by all four
+// --gen-light* convenience commands.
+int emitLightPreset(const std::string& cmdName,
+                    int& i, int argc, char** argv,
+                    wowee::pipeline::WoweeLight (*maker)(const std::string&),
+                    const char* presetDescription) {
     std::string base = argv[++i];
     std::string zoneName = "Default";
     if (i + 1 < argc && argv[i + 1][0] != '-') {
@@ -539,17 +539,46 @@ int handleGenLight(int& i, int argc, char** argv) {
     if (base.size() >= 4 && base.substr(base.size() - 4) == ".wol") {
         base = base.substr(0, base.size() - 4);
     }
-    auto wol = wowee::pipeline::WoweeLightLoader::makeDefaultDayNight(zoneName);
+    auto wol = maker(zoneName);
     if (!wowee::pipeline::WoweeLightLoader::save(wol, base)) {
-        std::fprintf(stderr, "gen-light: failed to save %s.wol\n",
-                     base.c_str());
+        std::fprintf(stderr, "%s: failed to save %s.wol\n",
+                     cmdName.c_str(), base.c_str());
         return 1;
     }
     std::printf("Wrote %s.wol\n", base.c_str());
     std::printf("  zone       : %s\n", zoneName.c_str());
-    std::printf("  keyframes  : %zu (midnight + dawn + noon + dusk)\n",
-                wol.keyframes.size());
+    std::printf("  preset     : %s (%zu keyframe%s)\n",
+                presetDescription, wol.keyframes.size(),
+                wol.keyframes.size() == 1 ? "" : "s");
     return 0;
+}
+
+int handleGenLight(int& i, int argc, char** argv) {
+    return emitLightPreset(
+        "gen-light", i, argc, argv,
+        wowee::pipeline::WoweeLightLoader::makeDefaultDayNight,
+        "midnight + dawn + noon + dusk");
+}
+
+int handleGenLightCave(int& i, int argc, char** argv) {
+    return emitLightPreset(
+        "gen-light-cave", i, argc, argv,
+        wowee::pipeline::WoweeLightLoader::makeCave,
+        "dim cool ambient + heavy short-range fog");
+}
+
+int handleGenLightDungeon(int& i, int argc, char** argv) {
+    return emitLightPreset(
+        "gen-light-dungeon", i, argc, argv,
+        wowee::pipeline::WoweeLightLoader::makeDungeon,
+        "warm torchlit ambient + medium fog");
+}
+
+int handleGenLightNight(int& i, int argc, char** argv) {
+    return emitLightPreset(
+        "gen-light-night", i, argc, argv,
+        wowee::pipeline::WoweeLightLoader::makeNight,
+        "moonlit directional + far fog");
 }
 
 }  // namespace
@@ -578,6 +607,15 @@ bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-light") == 0 && i + 1 < argc) {
         outRc = handleGenLight(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-light-cave") == 0 && i + 1 < argc) {
+        outRc = handleGenLightCave(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-light-dungeon") == 0 && i + 1 < argc) {
+        outRc = handleGenLightDungeon(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-light-night") == 0 && i + 1 < argc) {
+        outRc = handleGenLightNight(i, argc, argv); return true;
     }
     return false;
 }

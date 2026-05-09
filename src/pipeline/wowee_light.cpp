@@ -152,6 +152,52 @@ WoweeLight::Keyframe WoweeLightLoader::sampleAtTime(
     return out;
 }
 
+WoweeLight WoweeLightLoader::makeCave(const std::string& zoneName) {
+    WoweeLight out;
+    out.name = zoneName;
+    // Single dim keyframe (caves don't change with time-of-day).
+    out.keyframes.push_back({
+        720,                                    // noon (arbitrary)
+        glm::vec3(0.05f, 0.05f, 0.07f),         // very dim cool ambient
+        glm::vec3(0.10f, 0.10f, 0.14f),         // faint indirect bounce
+        glm::vec3(0.0f, -1.0f, 0.0f),
+        glm::vec3(0.04f, 0.05f, 0.07f),         // near-black fog
+        15.0f, 80.0f                            // heavy short-range fog
+    });
+    return out;
+}
+
+WoweeLight WoweeLightLoader::makeDungeon(const std::string& zoneName) {
+    WoweeLight out;
+    out.name = zoneName;
+    // Single moody warm-torchlit keyframe.
+    out.keyframes.push_back({
+        720,
+        glm::vec3(0.18f, 0.14f, 0.10f),         // warm dim ambient
+        glm::vec3(0.55f, 0.40f, 0.25f),         // amber torchlight tint
+        glm::vec3(0.0f, -1.0f, 0.0f),
+        glm::vec3(0.10f, 0.08f, 0.06f),         // dark warm fog
+        25.0f, 200.0f                           // medium fog range
+    });
+    return out;
+}
+
+WoweeLight WoweeLightLoader::makeNight(const std::string& zoneName) {
+    WoweeLight out;
+    out.name = zoneName;
+    // Single dark-night keyframe (e.g., always-night zones like
+    // some druid graves or shadow-realm scenes).
+    out.keyframes.push_back({
+        0,
+        glm::vec3(0.06f, 0.07f, 0.12f),         // cold dim blue ambient
+        glm::vec3(0.18f, 0.20f, 0.32f),         // moonlight-tinted directional
+        glm::vec3(0.30f, -0.94f, 0.0f),         // moon at low angle
+        glm::vec3(0.05f, 0.06f, 0.10f),         // near-black blue fog
+        80.0f, 500.0f                           // far fog (open night air)
+    });
+    return out;
+}
+
 WoweeLight WoweeLightLoader::makeDefaultDayNight(
         const std::string& zoneName) {
     WoweeLight out;

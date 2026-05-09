@@ -783,6 +783,12 @@ void printUsage(const char* argv0) {
     std::printf("                         Walk every keyframe; check time bounds + sort order + fogEnd > fogStart + finite color components\n");
     std::printf("  --gen-light <wol-base> [zoneName]\n");
     std::printf("                         Emit a starter .wol with the canonical 4-keyframe day/night cycle (midnight + dawn + noon + dusk)\n");
+    std::printf("  --gen-light-cave <wol-base> [zoneName]\n");
+    std::printf("                         Emit a single-keyframe .wol with dim cool ambient + heavy short-range fog (cave / mine interior)\n");
+    std::printf("  --gen-light-dungeon <wol-base> [zoneName]\n");
+    std::printf("                         Emit a single-keyframe .wol with warm torchlit ambient + medium fog (dungeon / crypt interior)\n");
+    std::printf("  --gen-light-night <wol-base> [zoneName]\n");
+    std::printf("                         Emit a single-keyframe .wol with moonlit directional + far fog (always-night zone / shadow realm)\n");
     std::printf("  --info-wot <wot-base> [--json]\n");
     std::printf("                         Print WOT/WHM terrain metadata (tile, chunks, height range) and exit\n");
     std::printf("  --info-extract <dir> [--json]\n");
