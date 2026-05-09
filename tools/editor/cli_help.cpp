@@ -589,8 +589,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Convert a multi-group WOB building into a single WOC collision file (weld is per-group)\n");
     std::printf("  --bake-zone-collision <zoneDir> [out.woc] [--weld <eps>] [--steep <deg>]\n");
     std::printf("                         Walk every .wom + .wob under zoneDir, weld each independently, append to one shared WOC\n");
-    std::printf("  --audit-watertight <zoneDir|projectDir> [--weld <eps>] [--json]\n");
-    std::printf("                         Walk every .wom under root, run welded watertight check; exit code = failure count (CI-friendly)\n");
+    std::printf("  --audit-watertight <zoneDir|projectDir> [--weld <eps>] [--json] [--summary]\n");
+    std::printf("                         Walk every .wom under root, run welded watertight check; --summary prints a one-line rollup\n");
     std::printf("  --audit-watertight-wob <zoneDir|projectDir> [--weld <eps>] [--json]\n");
     std::printf("                         Walk every .wob, check that EVERY group is closed (per-group weld) — interior rooms must be solid\n");
     std::printf("  --import-obj <obj-path> [wom-base]\n");
