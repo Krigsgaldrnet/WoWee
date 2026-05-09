@@ -3500,6 +3500,62 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handlePinwheel(int& i, int argc, char** argv) {
+    // N-sector pinwheel: alternating colored triangular wedges
+    // radiating from the texture center, each subtending 2π/N
+    // radians. Distinct from --gen-texture-starburst (thin rays
+    // with bg between) and --gen-texture-swirl (spiral arms) —
+    // pinwheel uses solid wedges with no bg. Useful for ceiling
+    // decorations, sun-mandala medallions, magical wheels,
+    // wind-rose floor inlays.
+    std::string outPath = argv[++i];
+    std::string aHex    = argv[++i];
+    std::string bHex    = argv[++i];
+    int sectors = 8;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, sectors);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        sectors < 2 || sectors > 256) {
+        std::fprintf(stderr,
+            "gen-texture-pinwheel: invalid dims (W/H 1..8192, "
+            "sectors 2..256)\n");
+        return 1;
+    }
+    uint8_t ar, ag, ab, br_, bg_, bb_;
+    if (!parseHexOrError(aHex, ar, ag, ab,
+                         "gen-texture-pinwheel")) return 1;
+    if (!parseHexOrError(bHex, br_, bg_, bb_,
+                         "gen-texture-pinwheel")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float twoPi = 6.28318530717958f;
+    const float cx = W * 0.5f;
+    const float cy = H * 0.5f;
+    const float anglePer = twoPi / sectors;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float dx = x - cx;
+            float dy = y - cy;
+            float theta = std::atan2(dy, dx) + 100.0f * twoPi;
+            int sector = static_cast<int>(std::fmod(theta, twoPi) / anglePer);
+            uint8_t r, g, b;
+            if (sector & 1) {
+                r = br_; g = bg_; b = bb_;
+            } else {
+                r = ar; g = ag; b = ab;
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-pinwheel")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  a / b      : %s / %s\n", aHex.c_str(), bHex.c_str());
+    std::printf("  sectors    : %d\n", sectors);
+    return 0;
+}
+
 int handleDewdrops(int& i, int argc, char** argv) {
     // Scattered dewdrops / water droplets: N small circles of
     // hash-derived (position, radius) blended onto bg via radial
@@ -5539,6 +5595,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-embroidery",     3, handleEmbroidery},
     {"--gen-texture-lightbeam",      3, handleLightbeam},
     {"--gen-texture-dewdrops",       3, handleDewdrops},
+    {"--gen-texture-pinwheel",       3, handlePinwheel},
 };
 }  // namespace
 

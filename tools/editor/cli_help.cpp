@@ -185,6 +185,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Lightbeam: vertical sun-ray gradient fading horizontally + vertically (sunbeam / holy radiance)\n");
     std::printf("  --gen-texture-dewdrops <out.png> <bgHex> <dropHex> [dropCount] [maxR] [seed] [W H]\n");
     std::printf("                         Dewdrops: scattered translucent water drops with radial brightness (grass / glass / leaf surfaces)\n");
+    std::printf("  --gen-texture-pinwheel <out.png> <aHex> <bHex> [sectors] [W H]\n");
+    std::printf("                         Pinwheel: alternating colored triangular wedges radiating from center (mandala / wind-rose / wheel inlay)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
