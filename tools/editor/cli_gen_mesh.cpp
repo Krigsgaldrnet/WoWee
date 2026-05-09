@@ -5261,6 +5261,56 @@ int handleMortarPestle(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleRuneStone(int& i, int argc, char** argv) {
+    // Standing rune stone: a wide flat base block plus a tall
+    // narrow monolith standing on top. Reads as a small carved
+    // standing-stone marker — fits alongside --gen-mesh-altar
+    // / --gen-mesh-shrine / --gen-mesh-tombstone in the
+    // ritual-prop family. Distinct from --gen-mesh-tombstone
+    // (curved top, narrower) and --gen-mesh-pillar (round
+    // column). The 91st procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float baseW    = 0.40f;     // base block width  (X)
+    float baseD    = 0.30f;     // base block depth  (Z)
+    float baseH    = 0.10f;     // base block height (Y)
+    float stoneW   = 0.20f;     // monolith width
+    float stoneD   = 0.12f;     // monolith depth
+    float stoneH   = 0.80f;     // monolith height
+    parseOptFloat(i, argc, argv, baseW);
+    parseOptFloat(i, argc, argv, baseD);
+    parseOptFloat(i, argc, argv, baseH);
+    parseOptFloat(i, argc, argv, stoneW);
+    parseOptFloat(i, argc, argv, stoneD);
+    parseOptFloat(i, argc, argv, stoneH);
+    if (baseW <= 0 || baseD <= 0 || baseH <= 0 ||
+        stoneW <= 0 || stoneD <= 0 || stoneH <= 0 ||
+        stoneW > baseW || stoneD > baseD) {
+        std::fprintf(stderr,
+            "gen-mesh-rune-stone: dims > 0; stone(W,D) <= base(W,D)\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    // Base block sits on the ground.
+    addFlatBox(wom, 0.0f, baseH * 0.5f, 0.0f,
+               baseW * 0.5f, baseH * 0.5f, baseD * 0.5f);
+    // Monolith stands centered on the base.
+    const float stoneCY = baseH + stoneH * 0.5f;
+    addFlatBox(wom, 0.0f, stoneCY, 0.0f,
+               stoneW * 0.5f, stoneH * 0.5f, stoneD * 0.5f);
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, baseW * 0.5f, baseD * 0.5f, baseH + stoneH);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-rune-stone")) return 1;
+    printWomWrote(womBase);
+    std::printf("  base       : %.2f x %.2f x %.2f tall\n",
+                baseW, baseD, baseH);
+    std::printf("  monolith   : %.2f x %.2f x %.2f tall\n",
+                stoneW, stoneD, stoneH);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleWellPail(int& i, int argc, char** argv) {
     // Wooden well-pail / bucket: a closed cylindrical body
     // (collision-watertight) plus a thin horizontal handle bar
@@ -7660,6 +7710,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-well-pail",      1, handleWellPail},
     {"--gen-mesh-mug",            1, handleMug},
     {"--gen-mesh-mortar-pestle",  1, handleMortarPestle},
+    {"--gen-mesh-rune-stone",     1, handleRuneStone},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
