@@ -3546,6 +3546,96 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBamboo(int& i, int argc, char** argv) {
+    // Bamboo: vertical stalks with cylindrical sin² shading and
+    // horizontal node bands at regular Y intervals. Each stalk
+    // gets a small hash-derived hue jitter so adjacent stalks
+    // don't read as a perfect repeat. Useful for jungle huts,
+    // pandaren / asian-themed architecture, swamp boardwalks,
+    // tropical-tribe weapon trim.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string bambooHex = argv[++i];
+    int stalkW   = 24;        // horizontal stalk pitch
+    int nodeY    = 64;        // vertical spacing between nodes
+    int nodeBand = 4;         // pixel height of each node band
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, stalkW);
+    parseOptInt(i, argc, argv, nodeY);
+    parseOptInt(i, argc, argv, nodeBand);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stalkW < 4 || stalkW > 1024 ||
+        nodeY < 8 || nodeY > 4096 ||
+        nodeBand < 1 || nodeBand >= nodeY) {
+        std::fprintf(stderr,
+            "gen-texture-bamboo: invalid dims (W/H 1..8192, stalkW 4..1024, "
+            "nodeY 8..4096, nodeBand 1..nodeY-1)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr, sg, sb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-bamboo")) return 1;
+    if (!parseHexOrError(bambooHex, sr, sg, sb_,
+                         "gen-texture-bamboo")) return 1;
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float pi = 3.14159265358979f;
+    const float gapFrac = 0.10f;        // 10% horizontal gap between stalks
+    const float stalkFrac = 1.0f - gapFrac;
+    for (int y = 0; y < H; ++y) {
+        // Node band test: a horizontal stripe darker than the
+        // surrounding stalk every nodeY pixels.
+        bool inNode = (y % nodeY) < nodeBand;
+        for (int x = 0; x < W; ++x) {
+            int stalkIdx = x / stalkW;
+            int xLocal = x - stalkIdx * stalkW;
+            float xNorm = xLocal / static_cast<float>(stalkW);
+            // Inside-stalk region runs xNorm in [gapFrac/2, 1-gapFrac/2].
+            float inset = (xNorm - gapFrac * 0.5f) / stalkFrac;
+            uint8_t r, g, b;
+            if (inset < 0.0f || inset > 1.0f) {
+                r = br_; g = bg_; b = bb_;
+            } else {
+                // sin² brightness across stalk width = round highlight.
+                float bright = std::sin(inset * pi);
+                bright = bright * bright;
+                // Per-stalk tint jitter ±15.
+                int tint = (static_cast<int>(hash32(stalkIdx + seed) % 31)) - 15;
+                auto clamp = [](int v) {
+                    return v < 0 ? 0 : (v > 255 ? 255 : v);
+                };
+                int rr = clamp(static_cast<int>(sr * bright) + tint);
+                int gg = clamp(static_cast<int>(sg * bright) + tint);
+                int bb2 = clamp(static_cast<int>(sb_ * bright) + tint);
+                if (inNode) {
+                    // Node bands are darker — knock brightness down.
+                    rr = rr * 2 / 3;
+                    gg = gg * 2 / 3;
+                    bb2 = bb2 * 2 / 3;
+                }
+                r = static_cast<uint8_t>(rr);
+                g = static_cast<uint8_t>(gg);
+                b = static_cast<uint8_t>(bb2);
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-bamboo")) return 1;
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/bamboo  : %s / %s\n", bgHex.c_str(), bambooHex.c_str());
+    std::printf("  stalks     : pitch=%d, nodeY=%d (%d-px band), seed=%u\n",
+                stalkW, nodeY, nodeBand, seed);
+    return 0;
+}
+
 int handleMeshScreen(int& i, int argc, char** argv) {
     // Orthogonal mesh-screen / grille: thin horizontal + vertical
     // wires forming an axis-aligned grid. Distinct from
@@ -4580,6 +4670,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-camo",           3, handleCamo},
     {"--gen-texture-snake-skin",     3, handleSnakeSkin},
     {"--gen-texture-mesh-screen",    3, handleMeshScreen},
+    {"--gen-texture-bamboo",         3, handleBamboo},
 };
 }  // namespace
 
