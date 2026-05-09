@@ -4655,6 +4655,135 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleMailbox(int& i, int argc, char** argv) {
+    // Mailbox: 4-box wayside prop — vertical post, horizontal
+    // box body mounted on top of the post (long axis along Z),
+    // small rectangular flag mounted on the right side near the
+    // front of the body. Useful for inns, post stations, manor
+    // gates, frontier outposts. The 46th procedural mesh.
+    std::string womBase = argv[++i];
+    float postHeight    = 1.10f;
+    float postThickness = 0.08f;
+    float boxLength     = 0.45f;   // along Z
+    float boxWidth      = 0.20f;   // along X
+    float boxHeight     = 0.20f;   // along Y
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postThickness = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { boxLength = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { boxWidth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { boxHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (postHeight <= 0 || postThickness <= 0 ||
+        boxLength <= 0 || boxWidth <= 0 || boxHeight <= 0) {
+        std::fprintf(stderr,
+            "gen-mesh-mailbox: all dims must be > 0\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Vertical post from y=0 to y=postHeight.
+    float halfPost = postThickness * 0.5f;
+    addBox(0, postHeight * 0.5f, 0,
+           halfPost, postHeight * 0.5f, halfPost);
+    // Mailbox body: sits on top of the post, slightly wider than
+    // the post on each axis so the body visually caps the post.
+    float bodyCY = postHeight + boxHeight * 0.5f;
+    float halfBoxW = boxWidth  * 0.5f;
+    float halfBoxH = boxHeight * 0.5f;
+    float halfBoxL = boxLength * 0.5f;
+    addBox(0, bodyCY, 0, halfBoxW, halfBoxH, halfBoxL);
+    // Small rectangular flag mounted on the right side (+X face)
+    // of the body near the front (+Z end). Flag pole is a thin
+    // box; the flag itself is a thin square plate at the top of
+    // the pole.
+    float flagPoleH    = boxHeight * 0.7f;
+    float flagPoleT    = postThickness * 0.4f;
+    float halfFlagPole = flagPoleT * 0.5f;
+    float flagPoleX    = halfBoxW + halfFlagPole;  // sits flush against +X face
+    float flagPoleZ    = halfBoxL - flagPoleT * 1.5f;
+    float flagPoleCY   = postHeight + boxHeight + flagPoleH * 0.5f;
+    addBox(flagPoleX, flagPoleCY, flagPoleZ,
+           halfFlagPole, flagPoleH * 0.5f, halfFlagPole);
+    // Flag plate at the top of the pole, extending +X away from
+    // the body so it reads as a raised flag.
+    float flagPlateW = boxHeight * 0.6f;     // along Y (vertical extent)
+    float flagPlateL = boxHeight * 0.7f;     // along X (away from body)
+    float flagPlateT = flagPoleT * 0.6f;     // along Z (thickness)
+    float halfFlagL  = flagPlateL * 0.5f;
+    float flagPlateX = flagPoleX + halfFlagL;
+    float flagPlateCY = postHeight + boxHeight + flagPoleH - flagPlateW * 0.5f;
+    addBox(flagPlateX, flagPlateCY, flagPoleZ,
+           halfFlagL, flagPlateW * 0.5f, flagPlateT * 0.5f);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = postHeight + boxHeight + flagPoleH;
+    float maxX = std::max(halfBoxW, flagPlateX + halfFlagL);
+    wom.boundMin = glm::vec3(-halfBoxW, 0.0f,    -halfBoxL);
+    wom.boundMax = glm::vec3( maxX,     totalH,   halfBoxL);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-mailbox: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  total H    : %.3f\n", totalH);
+    std::printf("  post       : %.3f square × %.3f tall\n",
+                postThickness, postHeight);
+    std::printf("  box body   : %.3f L × %.3f W × %.3f H\n",
+                boxLength, boxWidth, boxHeight);
+    std::printf("  flag       : pole + plate on +X side near front\n");
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleSignpost(int& i, int argc, char** argv) {
     // Signpost: 4-box wayfinding prop — stone base anchor at the
     // ground, tall vertical pole, decorative cap, and one
@@ -5679,6 +5808,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-signpost") == 0 && i + 1 < argc) {
         outRc = handleSignpost(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-mailbox") == 0 && i + 1 < argc) {
+        outRc = handleMailbox(i, argc, argv); return true;
     }
     return false;
 }

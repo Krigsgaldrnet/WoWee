@@ -194,6 +194,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Well: 4 stone walls in a hollow square + 2 roof posts + cross beam (default 1.4/0.8/0.15/1.6/0.12)\n");
     std::printf("  --gen-mesh-signpost <wom-base> [poleH] [poleT] [baseSize] [signWidth] [signHeight]\n");
     std::printf("                         Signpost: base + pole + sign board + cap (default 2.5/0.10/0.30/0.80/0.35)\n");
+    std::printf("  --gen-mesh-mailbox <wom-base> [postH] [postT] [boxL] [boxW] [boxH]\n");
+    std::printf("                         Mailbox: post + horizontal box + side flag (default 1.10/0.08/0.45/0.20/0.20)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
