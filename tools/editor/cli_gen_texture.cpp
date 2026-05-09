@@ -4182,6 +4182,124 @@ int handleCracked(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleRunes(int& i, int argc, char** argv) {
+    // Runes: magical glyphs scattered on a textured background.
+    // Each rune is 3-5 random line segments emanating from a
+    // center point; segments use 8 cardinal/diagonal angles
+    // (0°, 45°, 90°, ...) so the strokes read as deliberate
+    // angular runes rather than random scribbles. Layout is a
+    // sparse grid with per-rune jitter so they look hand-carved.
+    std::string outPath  = argv[++i];
+    std::string bgHex    = argv[++i];
+    std::string runeHex  = argv[++i];
+    int gridSpacing = 64;     // rune slot size
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { gridSpacing = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        gridSpacing < 16 || gridSpacing > 512) {
+        std::fprintf(stderr,
+            "gen-texture-runes: invalid dims (W/H 1..8192, gridSpacing 16..512)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, rr_, rg_, rb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(runeHex, rr_, rg_, rb_)) {
+        std::fprintf(stderr,
+            "gen-texture-runes: bg or rune hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (size_t p = 0; p < pixels.size(); p += 3) {
+        pixels[p + 0] = br_;
+        pixels[p + 1] = bg_;
+        pixels[p + 2] = bb_;
+    }
+    auto paint = [&](int x, int y) {
+        if (x < 0 || x >= W || y < 0 || y >= H) return;
+        size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+        pixels[idx + 0] = rr_;
+        pixels[idx + 1] = rg_;
+        pixels[idx + 2] = rb_;
+    };
+    auto drawLine = [&](int x0, int y0, int x1, int y1) {
+        // Bresenham. Pixels paint with the rune color.
+        int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        int err = dx + dy;
+        while (true) {
+            paint(x0, y0);
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    };
+    // 8 cardinal/diagonal direction unit vectors.
+    static const int kDir[8][2] = {
+        { 1, 0}, { 1, 1}, {0,  1}, {-1,  1},
+        {-1, 0}, {-1,-1}, {0, -1}, { 1, -1},
+    };
+    // Rune slot grid. Each slot gets a single rune centered
+    // (with jitter) inside it.
+    int slotR = gridSpacing / 2;
+    uint32_t rng = static_cast<uint32_t>(gridSpacing) * 0x9E3779B9u +
+                   static_cast<uint32_t>(W) * 0x85EBCA6Bu;
+    auto rngStep = [&]() {
+        rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+        return rng;
+    };
+    int runeRadius = slotR / 3;       // half-length of each stroke
+    int jitterMax  = slotR / 4;
+    int runeCount = 0;
+    for (int sy = slotR; sy < H + slotR; sy += gridSpacing) {
+        for (int sx = slotR; sx < W + slotR; sx += gridSpacing) {
+            // Per-rune jitter so the layout doesn't look like a
+            // perfect grid; 5% of slots are skipped (empty
+            // ground between runes).
+            if ((rngStep() & 0xFF) < 13) continue;  // ~5% skip
+            int cx = sx + (static_cast<int>(rngStep() & 0xFF) - 128) *
+                          jitterMax / 128;
+            int cy = sy + (static_cast<int>(rngStep() & 0xFF) - 128) *
+                          jitterMax / 128;
+            // 3-5 strokes per rune.
+            int strokeCount = 3 + (rngStep() % 3);
+            for (int s = 0; s < strokeCount; ++s) {
+                int dirA = rngStep() & 7;
+                int dirB = rngStep() & 7;
+                int lenA = runeRadius * (40 + static_cast<int>(rngStep() % 60)) / 100;
+                int lenB = runeRadius * (40 + static_cast<int>(rngStep() % 60)) / 100;
+                int x0 = cx + kDir[dirA][0] * lenA;
+                int y0 = cy + kDir[dirA][1] * lenA;
+                int x1 = cx + kDir[dirB][0] * lenB;
+                int y1 = cy + kDir[dirB][1] * lenB;
+                drawLine(x0, y0, x1, y1);
+            }
+            runeCount++;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-runes: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg / rune  : %s / %s\n", bgHex.c_str(), runeHex.c_str());
+    std::printf("  runes      : %d (slot %d px, 3-5 strokes each)\n",
+                runeCount, gridSpacing);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -4315,6 +4433,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-cracked") == 0 && i + 3 < argc) {
         outRc = handleCracked(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-runes") == 0 && i + 3 < argc) {
+        outRc = handleRunes(i, argc, argv); return true;
     }
     return false;
 }

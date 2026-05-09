@@ -121,6 +121,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Honeycomb: hexagonal cells via Voronoi over a triangular seed lattice\n");
     std::printf("  --gen-texture-cracked <out.png> <bgHex> <crackHex> [seeds] [maxLength] [W H]\n");
     std::printf("                         Cracked: branching random walks form fissures (mud / glass / dry earth)\n");
+    std::printf("  --gen-texture-runes <out.png> <bgHex> <runeHex> [gridSpacing] [W H]\n");
+    std::printf("                         Runes: scattered angular glyphs of 3-5 strokes each (8 cardinal/diagonal angles)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
