@@ -1323,6 +1323,49 @@ add_executable(wowee_editor
     tools/editor/cli_extract_info.cpp
     tools/editor/cli_export.cpp
     tools/editor/cli_bake.cpp
+    tools/editor/cli_migrate.cpp
+    tools/editor/cli_convert_single.cpp
+    tools/editor/cli_validate_interop.cpp
+    tools/editor/cli_glb_inspect.cpp
+    tools/editor/cli_wom_io.cpp
+    tools/editor/cli_world_io.cpp
+    tools/editor/cli_info_tree.cpp
+    tools/editor/cli_info_bytes.cpp
+    tools/editor/cli_info_extents.cpp
+    tools/editor/cli_info_water.cpp
+    tools/editor/cli_info_density.cpp
+    tools/editor/cli_info_audio.cpp
+    tools/editor/cli_world_info.cpp
+    tools/editor/cli_quest_objective.cpp
+    tools/editor/cli_quest_reward.cpp
+    tools/editor/cli_clone.cpp
+    tools/editor/cli_remove.cpp
+    tools/editor/cli_add.cpp
+    tools/editor/cli_random.cpp
+    tools/editor/cli_items_export.cpp
+    tools/editor/cli_items_mutate.cpp
+    tools/editor/cli_zone_create.cpp
+    tools/editor/cli_tiles.cpp
+    tools/editor/cli_zone_mgmt.cpp
+    tools/editor/cli_strip.cpp
+    tools/editor/cli_repair.cpp
+    tools/editor/cli_makefile.cpp
+    tools/editor/cli_zone_list.cpp
+    tools/editor/cli_tilemap.cpp
+    tools/editor/cli_deps.cpp
+    tools/editor/cli_for_each.cpp
+    tools/editor/cli_check.cpp
+    tools/editor/cli_introspect.cpp
+    tools/editor/cli_texture_helpers.cpp
+    tools/editor/cli_mesh_info.cpp
+    tools/editor/cli_zone_data.cpp
+    tools/editor/cli_project_actions.cpp
+    tools/editor/cli_zone_export.cpp
+    tools/editor/cli_arg_required.cpp
+    tools/editor/cli_multi_arg_required.cpp
+    tools/editor/cli_weld.cpp
+    tools/editor/cli_box_emitter.cpp
+    tools/editor/cli_dispatch.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp

@@ -1,6 +1,9 @@
 #include "cli_audits.hpp"
+#include "cli_weld.hpp"
 
 #include "pipeline/wowee_model.hpp"
+#include "pipeline/wowee_building.hpp"
+#include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -10,6 +13,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace wowee {
@@ -318,6 +322,248 @@ int handleValidateZonePack(int& i, int argc, char** argv) {
     return pass ? 0 : 1;
 }
 
+// Watertight check on a single WOM after the standard weld pass.
+// Returns true if every welded edge is shared by exactly 2 triangles.
+// Per-mesh stats are written through outBoundary / outNonManifold
+// for the audit's summary line.
+bool isWomWatertightAfterWeld(
+        const std::string& womBase, float eps,
+        std::size_t& outTris, std::size_t& outBoundary,
+        std::size_t& outNonManifold) {
+    auto wom = wowee::pipeline::WoweeModelLoader::load(womBase);
+    if (!wom.isValid() || wom.indices.size() % 3 != 0) {
+        outTris = outBoundary = outNonManifold = 0;
+        return false;
+    }
+    outTris = wom.indices.size() / 3;
+    std::vector<glm::vec3> positions;
+    positions.reserve(wom.vertices.size());
+    for (const auto& v : wom.vertices) positions.push_back(v.position);
+    std::size_t uniq = 0;
+    auto canon = buildWeldMap(positions, eps, uniq);
+    EdgeStats edges = classifyEdges(wom.indices, canon);
+    outBoundary = edges.boundary;
+    outNonManifold = edges.nonManifold;
+    return edges.watertight();
+}
+
+int handleAuditWatertight(int& i, int argc, char** argv) {
+    // Walk every .wom under <zoneDir|projectDir> and run the
+    // welded-watertight check. Reports per-mesh PASS/FAIL plus a
+    // rollup. Exit code is the number of failures, capped at 255 —
+    // CI-friendly: zero on full success.
+    std::string root = argv[++i];
+    bool jsonOut = false;
+    float weldEps = 1e-4f;
+    while (i + 1 < argc && argv[i + 1][0] == '-') {
+        if (std::strcmp(argv[i + 1], "--json") == 0) {
+            jsonOut = true; ++i;
+        } else if (std::strcmp(argv[i + 1], "--weld") == 0 && i + 2 < argc) {
+            try { weldEps = std::stof(argv[i + 2]); } catch (...) {}
+            i += 2;
+        } else {
+            break;
+        }
+    }
+    namespace fs = std::filesystem;
+    if (!fs::exists(root) || !fs::is_directory(root)) {
+        std::fprintf(stderr,
+            "audit-watertight: %s is not a directory\n", root.c_str());
+        return 1;
+    }
+    struct Result {
+        std::string rel;
+        std::size_t tris;
+        std::size_t boundary;
+        std::size_t nonManifold;
+        bool ok;
+    };
+    std::vector<Result> rows;
+    std::error_code ec;
+    for (const auto& e : fs::recursive_directory_iterator(root, ec)) {
+        if (!e.is_regular_file()) continue;
+        if (e.path().extension() != ".wom") continue;
+        std::string base = e.path().string();
+        base = base.substr(0, base.size() - 4);
+        Result r;
+        r.rel = fs::relative(e.path(), root).string();
+        r.ok = isWomWatertightAfterWeld(base, weldEps, r.tris,
+                                         r.boundary, r.nonManifold);
+        rows.push_back(std::move(r));
+    }
+    std::sort(rows.begin(), rows.end(), [](const Result& a, const Result& b) {
+        return a.rel < b.rel;
+    });
+    int failCount = 0;
+    for (const auto& r : rows) if (!r.ok) ++failCount;
+    if (jsonOut) {
+        nlohmann::json j;
+        j["root"] = root;
+        j["weldEps"] = weldEps;
+        j["totalMeshes"] = rows.size();
+        j["failures"] = failCount;
+        nlohmann::json items = nlohmann::json::array();
+        for (const auto& r : rows) {
+            items.push_back({{"path", r.rel},
+                              {"triangles", r.tris},
+                              {"boundary", r.boundary},
+                              {"nonManifold", r.nonManifold},
+                              {"watertight", r.ok}});
+        }
+        j["meshes"] = items;
+        std::printf("%s\n", j.dump(2).c_str());
+        return std::min(failCount, 255);
+    }
+    std::printf("Watertight audit: %s (weld eps %.6f)\n",
+                root.c_str(), weldEps);
+    if (rows.empty()) {
+        std::printf("  No .wom files found.\n");
+        return 0;
+    }
+    for (const auto& r : rows) {
+        std::printf("  %s  %s  (%zu tris", r.ok ? "PASS" : "FAIL",
+                    r.rel.c_str(), r.tris);
+        if (!r.ok) {
+            std::printf(", %zu boundary, %zu non-manifold",
+                        r.boundary, r.nonManifold);
+        }
+        std::printf(")\n");
+    }
+    std::printf("\n  TOTAL: %zu meshes, %d failure(s)\n",
+                rows.size(), failCount);
+    return std::min(failCount, 255);
+}
+
+// Welded watertight check on a single WOB. Each group is welded
+// independently (rooms separated by portals must stay distinct
+// collision surfaces). A WOB passes if EVERY group is closed —
+// per-group failure breakdowns are returned via the out vectors.
+bool isWobWatertightAfterWeld(
+        const std::string& wobBase, float eps,
+        std::vector<std::string>& outFailedGroups,
+        std::size_t& outTotalTris,
+        std::size_t& outTotalBoundary,
+        std::size_t& outTotalNonManifold) {
+    auto bld = wowee::pipeline::WoweeBuildingLoader::load(wobBase);
+    outTotalTris = outTotalBoundary = outTotalNonManifold = 0;
+    if (!bld.isValid()) return false;
+    bool allOk = true;
+    for (const auto& g : bld.groups) {
+        if (g.indices.size() % 3 != 0) {
+            outFailedGroups.push_back(g.name + " (indices%3 != 0)");
+            allOk = false;
+            continue;
+        }
+        outTotalTris += g.indices.size() / 3;
+        std::vector<glm::vec3> positions;
+        positions.reserve(g.vertices.size());
+        for (const auto& v : g.vertices) positions.push_back(v.position);
+        std::size_t uniq = 0;
+        auto canon = buildWeldMap(positions, eps, uniq);
+        EdgeStats edges = classifyEdges(g.indices, canon);
+        outTotalBoundary += edges.boundary;
+        outTotalNonManifold += edges.nonManifold;
+        if (!edges.watertight()) {
+            outFailedGroups.push_back(
+                g.name + " (" + std::to_string(edges.boundary) +
+                " boundary, " + std::to_string(edges.nonManifold) +
+                " non-manifold)");
+            allOk = false;
+        }
+    }
+    return allOk;
+}
+
+int handleAuditWatertightWob(int& i, int argc, char** argv) {
+    // Walk every .wob under <root> and run the welded-watertight
+    // check on every group. PASS only if all groups in all WOBs
+    // are closed — a real building's interior groups should each
+    // be a closed surface even though the building as a whole has
+    // intentional portal openings between them.
+    std::string root = argv[++i];
+    bool jsonOut = false;
+    float weldEps = 1e-4f;
+    while (i + 1 < argc && argv[i + 1][0] == '-') {
+        if (std::strcmp(argv[i + 1], "--json") == 0) {
+            jsonOut = true; ++i;
+        } else if (std::strcmp(argv[i + 1], "--weld") == 0 && i + 2 < argc) {
+            try { weldEps = std::stof(argv[i + 2]); } catch (...) {}
+            i += 2;
+        } else {
+            break;
+        }
+    }
+    namespace fs = std::filesystem;
+    if (!fs::exists(root) || !fs::is_directory(root)) {
+        std::fprintf(stderr,
+            "audit-watertight-wob: %s is not a directory\n", root.c_str());
+        return 1;
+    }
+    struct Result {
+        std::string rel;
+        std::size_t tris;
+        std::size_t boundary;
+        std::size_t nonManifold;
+        std::vector<std::string> failedGroups;
+        bool ok;
+    };
+    std::vector<Result> rows;
+    std::error_code ec;
+    for (const auto& e : fs::recursive_directory_iterator(root, ec)) {
+        if (!e.is_regular_file()) continue;
+        if (e.path().extension() != ".wob") continue;
+        std::string base = e.path().string();
+        base = base.substr(0, base.size() - 4);
+        Result r;
+        r.rel = fs::relative(e.path(), root).string();
+        r.ok = isWobWatertightAfterWeld(base, weldEps, r.failedGroups,
+                                         r.tris, r.boundary, r.nonManifold);
+        rows.push_back(std::move(r));
+    }
+    std::sort(rows.begin(), rows.end(), [](const Result& a, const Result& b) {
+        return a.rel < b.rel;
+    });
+    int failCount = 0;
+    for (const auto& r : rows) if (!r.ok) ++failCount;
+    if (jsonOut) {
+        nlohmann::json j;
+        j["root"] = root;
+        j["weldEps"] = weldEps;
+        j["totalBuildings"] = rows.size();
+        j["failures"] = failCount;
+        nlohmann::json items = nlohmann::json::array();
+        for (const auto& r : rows) {
+            items.push_back({{"path", r.rel},
+                              {"triangles", r.tris},
+                              {"boundary", r.boundary},
+                              {"nonManifold", r.nonManifold},
+                              {"failedGroups", r.failedGroups},
+                              {"watertight", r.ok}});
+        }
+        j["buildings"] = items;
+        std::printf("%s\n", j.dump(2).c_str());
+        return std::min(failCount, 255);
+    }
+    std::printf("Watertight WOB audit: %s (weld eps %.6f)\n",
+                root.c_str(), weldEps);
+    if (rows.empty()) {
+        std::printf("  No .wob files found.\n");
+        return 0;
+    }
+    for (const auto& r : rows) {
+        std::printf("  %s  %s  (%zu tris)\n",
+                    r.ok ? "PASS" : "FAIL", r.rel.c_str(), r.tris);
+        if (!r.ok) {
+            for (const auto& fg : r.failedGroups) {
+                std::printf("        group %s\n", fg.c_str());
+            }
+        }
+    }
+    std::printf("\n  TOTAL: %zu buildings, %d failure(s)\n",
+                rows.size(), failCount);
+    return std::min(failCount, 255);
+}
+
 }  // namespace
 
 bool handleAudits(int& i, int argc, char** argv, int& outRc) {
@@ -342,6 +588,14 @@ bool handleAudits(int& i, int argc, char** argv, int& outRc) {
         std::string self = (argc > 0) ? argv[0] : "wowee_editor";
         outRc = runPerZoneAudit(projectDir, "Project pack audit",
                                 "--validate-zone-pack", self, "");
+        return true;
+    }
+    if (std::strcmp(argv[i], "--audit-watertight") == 0 && i + 1 < argc) {
+        outRc = handleAuditWatertight(i, argc, argv);
+        return true;
+    }
+    if (std::strcmp(argv[i], "--audit-watertight-wob") == 0 && i + 1 < argc) {
+        outRc = handleAuditWatertightWob(i, argc, argv);
         return true;
     }
     return false;
