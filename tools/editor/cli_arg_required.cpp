@@ -20,6 +20,7 @@ const char* const kArgRequired[] = {
     "--export-wol-json", "--import-wol-json",
     "--export-wow-json", "--import-wow-json",
     "--info-wow", "--validate-wow",
+    "--validate-wom",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

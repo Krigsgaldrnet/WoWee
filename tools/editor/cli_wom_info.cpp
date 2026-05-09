@@ -540,6 +540,192 @@ int handleInfoBones(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleValidateWom(int& i, int argc, char** argv) {
+    // Static sanity checks on a .wom: catches malformed
+    // hand-built or import-corrupted models before they reach
+    // the renderer (where errors usually crash or render blank).
+    // Mirrors --validate-wol / --validate-wow. Reports each
+    // failed check with details and exits non-zero on any
+    // failure; clean models print a single OK line.
+    std::string base = argv[++i];
+    bool jsonOut = (i + 1 < argc &&
+                    std::strcmp(argv[i + 1], "--json") == 0);
+    if (jsonOut) i++;
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
+        base = base.substr(0, base.size() - 4);
+    if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+        std::fprintf(stderr, "validate-wom: WOM not found: %s.wom\n",
+                     base.c_str());
+        return 1;
+    }
+    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+
+    // 1) version field
+    if (wom.version < 1 || wom.version > 3) {
+        errors.push_back("version " + std::to_string(wom.version) +
+                         " not in supported range 1-3");
+    }
+    // 2) non-empty geometry
+    if (wom.vertices.empty()) errors.push_back("vertex list is empty");
+    if (wom.indices.empty())  errors.push_back("index list is empty");
+    if (wom.indices.size() % 3 != 0) {
+        errors.push_back("index count " +
+                         std::to_string(wom.indices.size()) +
+                         " is not a multiple of 3 (not a triangle list)");
+    }
+    // 3) all indices < vertex count
+    uint32_t vCount = static_cast<uint32_t>(wom.vertices.size());
+    size_t oobIdx = 0;
+    for (uint32_t idx : wom.indices) {
+        if (idx >= vCount) { oobIdx++; }
+    }
+    if (oobIdx > 0) {
+        errors.push_back(std::to_string(oobIdx) +
+                         " triangle indices reference out-of-range vertices");
+    }
+    // 4) bone refs (only meaningful when bones exist)
+    if (!wom.bones.empty()) {
+        size_t oobBoneIdx = 0;
+        size_t badWeightSum = 0;
+        for (const auto& v : wom.vertices) {
+            int sum = 0;
+            for (int k = 0; k < 4; ++k) {
+                if (v.boneWeights[k] > 0 &&
+                    v.boneIndices[k] >= wom.bones.size()) {
+                    oobBoneIdx++;
+                }
+                sum += v.boneWeights[k];
+            }
+            // Allow either 0 (no skinning) or 255 (full skinning,
+            // possibly split across slots). Anything else is a
+            // weight-table mistake.
+            if (sum != 0 && sum != 255) {
+                badWeightSum++;
+            }
+        }
+        if (oobBoneIdx > 0) {
+            errors.push_back(std::to_string(oobBoneIdx) +
+                             " vertex bone-index slots reference out-of-range bones");
+        }
+        if (badWeightSum > 0) {
+            warnings.push_back(std::to_string(badWeightSum) +
+                               " vertices have boneWeights summing to neither 0 nor 255");
+        }
+        // parentBone < bones.size() (or -1 for root)
+        size_t oobParent = 0;
+        for (const auto& b : wom.bones) {
+            if (b.parentBone >= 0 &&
+                b.parentBone >= static_cast<int16_t>(wom.bones.size())) {
+                oobParent++;
+            }
+        }
+        if (oobParent > 0) {
+            errors.push_back(std::to_string(oobParent) +
+                             " bones reference out-of-range parent bones");
+        }
+    }
+    // 5) WOM3 batch coverage: union of all batch ranges should
+    //    equal [0, indices.size()) without gaps or overlaps, and
+    //    each batch.textureIndex must be a valid index.
+    if (wom.hasBatches()) {
+        size_t oobTex = 0, oobRange = 0;
+        for (const auto& b : wom.batches) {
+            if (!wom.texturePaths.empty() &&
+                b.textureIndex >= wom.texturePaths.size()) {
+                oobTex++;
+            }
+            if (static_cast<size_t>(b.indexStart) + b.indexCount >
+                wom.indices.size()) {
+                oobRange++;
+            }
+        }
+        if (oobTex > 0) {
+            errors.push_back(std::to_string(oobTex) +
+                             " batch.textureIndex values out of range");
+        }
+        if (oobRange > 0) {
+            errors.push_back(std::to_string(oobRange) +
+                             " batches index past end of index buffer");
+        }
+        // Coverage check via bytemap of triangles.
+        size_t triCount = wom.indices.size() / 3;
+        std::vector<uint8_t> covered(triCount, 0);
+        for (const auto& b : wom.batches) {
+            uint32_t tStart = b.indexStart / 3;
+            uint32_t tEnd = (b.indexStart + b.indexCount) / 3;
+            for (uint32_t t = tStart; t < tEnd && t < triCount; ++t)
+                covered[t]++;
+        }
+        size_t uncovered = 0, overlapped = 0;
+        for (auto c : covered) {
+            if (c == 0) uncovered++;
+            else if (c > 1) overlapped++;
+        }
+        if (uncovered > 0) {
+            warnings.push_back(std::to_string(uncovered) +
+                               " triangles not covered by any batch");
+        }
+        if (overlapped > 0) {
+            warnings.push_back(std::to_string(overlapped) +
+                               " triangles covered by multiple batches");
+        }
+    }
+    // 6) bounds sanity
+    if (wom.boundRadius <= 0) {
+        warnings.push_back("boundRadius <= 0 (model will fail frustum culling)");
+    }
+    if (wom.boundMin.x > wom.boundMax.x ||
+        wom.boundMin.y > wom.boundMax.y ||
+        wom.boundMin.z > wom.boundMax.z) {
+        errors.push_back("boundMin > boundMax on at least one axis (inverted AABB)");
+    }
+    // 7) animation sanity (WOM2/3): per-bone keyframe arrays
+    //    must have one entry per bone in the model.
+    for (size_t a = 0; a < wom.animations.size(); ++a) {
+        const auto& anim = wom.animations[a];
+        if (!wom.bones.empty() &&
+            anim.boneKeyframes.size() != wom.bones.size()) {
+            errors.push_back("animation " + std::to_string(a) +
+                             " (id=" + std::to_string(anim.id) +
+                             ") has " + std::to_string(anim.boneKeyframes.size()) +
+                             " bone tracks but model has " +
+                             std::to_string(wom.bones.size()) + " bones");
+        }
+    }
+
+    bool ok = errors.empty();
+    if (jsonOut) {
+        nlohmann::json j;
+        j["wom"] = base + ".wom";
+        j["ok"] = ok;
+        j["errors"] = errors;
+        j["warnings"] = warnings;
+        std::printf("%s\n", j.dump(2).c_str());
+        return ok ? 0 : 1;
+    }
+    std::printf("validate-wom: %s.wom\n", base.c_str());
+    if (ok && warnings.empty()) {
+        std::printf("  OK — %zu vertices, %zu triangles, %zu batches, %zu bones, %zu animations\n",
+                    wom.vertices.size(), wom.indices.size() / 3,
+                    wom.batches.size(), wom.bones.size(),
+                    wom.animations.size());
+        return 0;
+    }
+    if (!warnings.empty()) {
+        std::printf("  warnings (%zu):\n", warnings.size());
+        for (const auto& w : warnings)
+            std::printf("    - %s\n", w.c_str());
+    }
+    if (!errors.empty()) {
+        std::printf("  ERRORS (%zu):\n", errors.size());
+        for (const auto& e : errors)
+            std::printf("    - %s\n", e.c_str());
+    }
+    return ok ? 0 : 1;
+}
+
 int handleExportBonesDot(int& i, int argc, char** argv) {
     // Render WOM bone hierarchy as Graphviz DOT. Mirrors
     // --export-quest-graph for skeleton trees: trying to read
@@ -626,6 +812,9 @@ bool handleWomInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--export-bones-dot") == 0 && i + 1 < argc) {
         outRc = handleExportBonesDot(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--validate-wom") == 0 && i + 1 < argc) {
+        outRc = handleValidateWom(i, argc, argv); return true;
     }
     return false;
 }
