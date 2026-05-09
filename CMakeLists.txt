@@ -604,6 +604,7 @@ set(WOWEE_SOURCES
     src/pipeline/wowee_creatures.cpp
     src/pipeline/wowee_quests.cpp
     src/pipeline/wowee_objects.cpp
+    src/pipeline/wowee_factions.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/dbc_layout.cpp
 
@@ -1354,6 +1355,7 @@ add_executable(wowee_editor
     tools/editor/cli_creatures_catalog.cpp
     tools/editor/cli_quests_catalog.cpp
     tools/editor/cli_objects_catalog.cpp
+    tools/editor/cli_factions_catalog.cpp
     tools/editor/cli_quest_objective.cpp
     tools/editor/cli_quest_reward.cpp
     tools/editor/cli_clone.cpp
@@ -1436,6 +1438,7 @@ add_executable(wowee_editor
     src/pipeline/wowee_creatures.cpp
     src/pipeline/wowee_quests.cpp
     src/pipeline/wowee_objects.cpp
+    src/pipeline/wowee_factions.cpp
     src/pipeline/custom_zone_discovery.cpp
     src/pipeline/terrain_mesh.cpp
 

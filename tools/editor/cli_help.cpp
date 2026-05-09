@@ -933,6 +933,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGOT entries (objectId / type / lock / loot / required skill / name)\n");
     std::printf("  --validate-wgot <wgot-base> [--json]\n");
     std::printf("                         Static checks: objectId>0+unique, size>0, time min<=max, gathering needs skill, chest warns on no loot\n");
+    std::printf("  --gen-factions <wfac-base> [name]\n");
+    std::printf("                         Emit .wfac starter: 3 factions (Friendly id=35 / Hostile id=14 / Player id=1) matching WCRT defaults\n");
+    std::printf("  --gen-factions-alliance <wfac-base> [name]\n");
+    std::printf("                         Emit .wfac Alliance set: header + Stormwind + Darnassus + Ironforge (reciprocal friends) + Defias enemy\n");
+    std::printf("  --gen-factions-wildlife <wfac-base> [name]\n");
+    std::printf("                         Emit .wfac wildlife: wolves + bears + spiders + kobolds (each hostile to player, ignores other beasts)\n");
+    std::printf("  --info-wfac <wfac-base> [--json]\n");
+    std::printf("                         Print WFAC entries (id / parent / flags / enemy + friend counts / name)\n");
+    std::printf("  --validate-wfac <wfac-base> [--json]\n");
+    std::printf("                         Static checks: factionId>0+unique, name not empty, threshold ordering, no self-enemy, no enemy/friend overlap\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
