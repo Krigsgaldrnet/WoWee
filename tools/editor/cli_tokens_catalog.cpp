@@ -135,6 +135,144 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each token emits all 8 scalar fields
+    // plus dual int + name forms for category and the flags
+    // bitset.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWtknExt(base);
+    if (outPath.empty()) outPath = base + ".wtkn.json";
+    if (!wowee::pipeline::WoweeTokenLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtkn-json: WTKN not found: %s.wtkn\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTokenLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["tokenId"] = e.tokenId;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        je["iconPath"] = e.iconPath;
+        je["category"] = e.category;
+        je["categoryName"] = wowee::pipeline::WoweeToken::categoryName(e.category);
+        je["maxBalance"] = e.maxBalance;
+        je["weeklyCap"] = e.weeklyCap;
+        je["flags"] = e.flags;
+        nlohmann::json fa = nlohmann::json::array();
+        if (e.flags & wowee::pipeline::WoweeToken::AccountWide)       fa.push_back("account");
+        if (e.flags & wowee::pipeline::WoweeToken::Tradeable)         fa.push_back("trade");
+        if (e.flags & wowee::pipeline::WoweeToken::HiddenUntilEarned) fa.push_back("hidden");
+        if (e.flags & wowee::pipeline::WoweeToken::ResetsOnLogout)    fa.push_back("resets");
+        if (e.flags & wowee::pipeline::WoweeToken::ConvertsToGold)    fa.push_back("to-gold");
+        je["flagsList"] = fa;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wtkn-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wtkn\n", base.c_str());
+    std::printf("  tokens : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wtkn.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWtknExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wtkn-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wtkn-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto categoryFromName = [](const std::string& s) -> uint8_t {
+        if (s == "misc")     return wowee::pipeline::WoweeToken::Misc;
+        if (s == "pvp")      return wowee::pipeline::WoweeToken::Pvp;
+        if (s == "rep")      return wowee::pipeline::WoweeToken::Reputation;
+        if (s == "crafting") return wowee::pipeline::WoweeToken::Crafting;
+        if (s == "seasonal") return wowee::pipeline::WoweeToken::Seasonal;
+        if (s == "holiday")  return wowee::pipeline::WoweeToken::Holiday;
+        return wowee::pipeline::WoweeToken::Misc;
+    };
+    auto flagFromName = [](const std::string& s) -> uint32_t {
+        if (s == "account") return wowee::pipeline::WoweeToken::AccountWide;
+        if (s == "trade")   return wowee::pipeline::WoweeToken::Tradeable;
+        if (s == "hidden")  return wowee::pipeline::WoweeToken::HiddenUntilEarned;
+        if (s == "resets")  return wowee::pipeline::WoweeToken::ResetsOnLogout;
+        if (s == "to-gold") return wowee::pipeline::WoweeToken::ConvertsToGold;
+        return 0;
+    };
+    wowee::pipeline::WoweeToken c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeToken::Entry e;
+            e.tokenId = je.value("tokenId", 0u);
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            e.iconPath = je.value("iconPath", std::string{});
+            if (je.contains("category") && je["category"].is_number_integer()) {
+                e.category = static_cast<uint8_t>(je["category"].get<int>());
+            } else if (je.contains("categoryName") && je["categoryName"].is_string()) {
+                e.category = categoryFromName(je["categoryName"].get<std::string>());
+            }
+            e.maxBalance = je.value("maxBalance", 0u);
+            e.weeklyCap = je.value("weeklyCap", 0u);
+            if (je.contains("flags") && je["flags"].is_number_integer()) {
+                e.flags = je["flags"].get<uint32_t>();
+            } else if (je.contains("flagsList") && je["flagsList"].is_array()) {
+                for (const auto& f : je["flagsList"]) {
+                    if (f.is_string()) e.flags |= flagFromName(f.get<std::string>());
+                }
+            }
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeTokenLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtkn-json: failed to save %s.wtkn\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtkn\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  tokens : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -227,6 +365,12 @@ bool handleTokensCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wtkn") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtkn-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtkn-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

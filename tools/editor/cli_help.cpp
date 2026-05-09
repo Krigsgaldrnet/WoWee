@@ -1103,6 +1103,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTKN entries (id / category / max balance / weekly cap / flags / name)\n");
     std::printf("  --validate-wtkn <wtkn-base> [--json]\n");
     std::printf("                         Static checks: tokenId>0+unique, name not empty, weeklyCap<=maxBalance, no Resets+AccountWide conflict\n");
+    std::printf("  --export-wtkn-json <wtkn-base> [out.json]\n");
+    std::printf("                         Export binary .wtkn to a human-editable JSON sidecar (defaults to <base>.wtkn.json)\n");
+    std::printf("  --import-wtkn-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtkn.json sidecar back into binary .wtkn (accepts category/flag int OR name forms)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
