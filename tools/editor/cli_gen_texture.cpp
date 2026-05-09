@@ -1992,6 +1992,107 @@ int handleBark(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleClouds(int& i, int argc, char** argv) {
+    // Sky with puffy clouds. Multi-octave smooth noise (4
+    // octaves of cosine-product noise at doubling frequencies)
+    // gives soft cloud blobs; the result is thresholded by
+    // `coverage` so values above the threshold blend toward
+    // cloud color, and values below fade smoothly to sky.
+    std::string outPath = argv[++i];
+    std::string skyHex = argv[++i];
+    std::string cloudHex = argv[++i];
+    uint32_t seed = 1;
+    float coverage = 0.5f;  // 0=clear sky, 1=overcast
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { coverage = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        coverage < 0.0f || coverage > 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-clouds: invalid dims (W/H 1..8192, coverage 0..1)\n");
+        return 1;
+    }
+    uint8_t sr, sg, sb, cr, cg, cb;
+    if (!parseHex(skyHex, sr, sg, sb)) {
+        std::fprintf(stderr,
+            "gen-texture-clouds: '%s' is not a valid hex color\n",
+            skyHex.c_str());
+        return 1;
+    }
+    if (!parseHex(cloudHex, cr, cg, cb)) {
+        std::fprintf(stderr,
+            "gen-texture-clouds: '%s' is not a valid hex color\n",
+            cloudHex.c_str());
+        return 1;
+    }
+    float seedF = static_cast<float>(seed);
+    auto cloudNoise = [&](float x, float y) -> float {
+        // 4 octaves of sin/cos noise at doubling frequency,
+        // halving amplitude. Output in 0..1 after normalize.
+        float n = 0.0f;
+        float total = 0.0f;
+        float freq = 0.015f;
+        float amp = 1.0f;
+        for (int o = 0; o < 4; ++o) {
+            n += amp * (0.5f + 0.5f *
+                std::sin(x * freq + seedF * (1.0f + o * 0.7f)) *
+                std::cos(y * freq + seedF * (0.5f + o * 0.4f)));
+            total += amp;
+            freq *= 2.0f;
+            amp *= 0.5f;
+        }
+        return n / total;
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Coverage maps to a noise threshold: low coverage = high
+    // threshold (only the brightest noise becomes clouds);
+    // high coverage = low threshold (more area is cloudy).
+    float thresh = 1.0f - coverage;
+    int cloudPixels = 0;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float n = cloudNoise(static_cast<float>(x),
+                                 static_cast<float>(y));
+            // Smooth blend across a 0.15-wide band around the
+            // threshold so cloud edges feather rather than step.
+            float t = std::clamp((n - thresh) / 0.15f, 0.0f, 1.0f);
+            if (t > 0.5f) ++cloudPixels;
+            uint8_t r = static_cast<uint8_t>(sr * (1 - t) + cr * t);
+            uint8_t g = static_cast<uint8_t>(sg * (1 - t) + cg * t);
+            uint8_t b = static_cast<uint8_t>(sb * (1 - t) + cb * t);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = r;
+            pixels[i2 + 1] = g;
+            pixels[i2 + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-clouds: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  sky/cloud  : %s / %s\n",
+                skyHex.c_str(), cloudHex.c_str());
+    std::printf("  coverage   : %.2f (%d cloud pixels)\n",
+                coverage, cloudPixels);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2059,6 +2160,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-bark") == 0 && i + 3 < argc) {
         outRc = handleBark(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-clouds") == 0 && i + 3 < argc) {
+        outRc = handleClouds(i, argc, argv); return true;
     }
     return false;
 }
