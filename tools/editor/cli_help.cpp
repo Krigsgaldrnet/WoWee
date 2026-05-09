@@ -210,6 +210,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Crate: cube body + 4 corner reinforcement posts (default 0.80/0.05)\n");
     std::printf("  --gen-mesh-stool <wom-base> [seatSize] [seatThick] [legHeight] [legThick]\n");
     std::printf("                         Stool: small backless seat on 4 corner legs (default 0.36/0.04/0.45/0.04)\n");
+    std::printf("  --gen-mesh-cauldron <wom-base> [rimWidth] [bodyHeight] [legHeight]\n");
+    std::printf("                         Cauldron: 4 legs + narrow bottom + wider mid + widest rim tiers (default 0.80/0.70/0.10)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");

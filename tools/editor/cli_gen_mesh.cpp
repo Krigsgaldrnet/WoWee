@@ -4655,6 +4655,122 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCauldron(int& i, int argc, char** argv) {
+    // Cauldron: 7-box witch's pot — 4 small corner legs at the
+    // floor, narrow bottom-bowl tier, wider mid-bowl tier, and
+    // a still-wider thin rim at the top. The stacked tiers
+    // approximate the curved silhouette of a cast-iron pot
+    // without needing rotated faces. The 50th procedural mesh
+    // primitive — pairs with --gen-mesh-shrine / --gen-mesh-totem
+    // for ritual / alchemy set dressing.
+    std::string womBase = argv[++i];
+    float rimWidth   = 0.80f;   // top-rim extent (widest dim)
+    float bodyHeight = 0.70f;   // total height excluding legs
+    float legHeight  = 0.10f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { rimWidth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { bodyHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { legHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (rimWidth <= 0 || bodyHeight <= 0 || legHeight <= 0) {
+        std::fprintf(stderr,
+            "gen-mesh-cauldron: all dims must be > 0\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Tier proportions (bottom → top): 60% / 90% / 100% of rimWidth.
+    // Heights split: legs / 30% body / 55% body / 15% body (rim).
+    float bottomW = rimWidth * 0.60f;
+    float midW    = rimWidth * 0.90f;
+    float bottomH = bodyHeight * 0.30f;
+    float midH    = bodyHeight * 0.55f;
+    float rimH    = bodyHeight * 0.15f;
+    // 4 legs at corners of a footprint slightly smaller than the
+    // bottom tier so the legs visually carry the pot's weight.
+    float legT = bottomW * 0.18f;
+    float halfLegT = legT * 0.5f;
+    float legX = bottomW * 0.5f - halfLegT * 1.4f;
+    float legCY = legHeight * 0.5f;
+    addBox( legX, legCY,  legX, halfLegT, legHeight * 0.5f, halfLegT);
+    addBox(-legX, legCY,  legX, halfLegT, legHeight * 0.5f, halfLegT);
+    addBox( legX, legCY, -legX, halfLegT, legHeight * 0.5f, halfLegT);
+    addBox(-legX, legCY, -legX, halfLegT, legHeight * 0.5f, halfLegT);
+    // Bottom tier (narrow): sits on top of the legs.
+    float halfBottom = bottomW * 0.5f;
+    float bottomCY = legHeight + bottomH * 0.5f;
+    addBox(0, bottomCY, 0, halfBottom, bottomH * 0.5f, halfBottom);
+    // Middle tier (widest body): main bulge of the pot.
+    float halfMid = midW * 0.5f;
+    float midCY = legHeight + bottomH + midH * 0.5f;
+    addBox(0, midCY, 0, halfMid, midH * 0.5f, halfMid);
+    // Rim: thin slab capping the body, slightly wider than mid.
+    float halfRim = rimWidth * 0.5f;
+    float rimCY = legHeight + bottomH + midH + rimH * 0.5f;
+    addBox(0, rimCY, 0, halfRim, rimH * 0.5f, halfRim);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = legHeight + bodyHeight;
+    wom.boundMin = glm::vec3(-halfRim, 0.0f,    -halfRim);
+    wom.boundMax = glm::vec3( halfRim, totalH,   halfRim);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-cauldron: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  rim width  : %.3f (widest)\n", rimWidth);
+    std::printf("  body H     : %.3f (legs %.3f tall)\n", bodyHeight, legHeight);
+    std::printf("  tiers      : bottom %.3f / mid %.3f / rim %.3f\n",
+                bottomW, midW, rimWidth);
+    std::printf("  total H    : %.3f\n", totalH);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleStool(int& i, int argc, char** argv) {
     // Stool: 5-box small backless seat — flat round-ish seat
     // (square here, since axis-aligned) on 4 short legs at the
@@ -6131,6 +6247,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-stool") == 0 && i + 1 < argc) {
         outRc = handleStool(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-cauldron") == 0 && i + 1 < argc) {
+        outRc = handleCauldron(i, argc, argv); return true;
     }
     return false;
 }
