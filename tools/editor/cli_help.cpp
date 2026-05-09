@@ -101,6 +101,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Herringbone: slanted parallel lines that flip direction every strip (chevron / fish-bone)\n");
     std::printf("  --gen-texture-scales <out.png> <bgHex> <scaleHex> <rimHex> [cellW] [cellH] [W H]\n");
     std::printf("                         Scales: half-row-staggered overlapping circles forming fish/dragon/chain-mail look\n");
+    std::printf("  --gen-texture-stained-glass <out.png> <leadHex> <colorAHex> <colorBHex> <colorCHex> [cells] [W H]\n");
+    std::printf("                         Stained glass: Voronoi cells in 3-color rotation, separated by dark lead lines\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

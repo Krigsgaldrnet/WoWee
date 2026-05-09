@@ -3158,6 +3158,123 @@ int handleScales(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStainedGlass(int& i, int argc, char** argv) {
+    // Stained glass: Voronoi-cell pattern with dark lead lines
+    // separating colored regions. Each pixel is classified by
+    // which seed point it's closest to; pixels near a cell
+    // boundary (small relative gap to the second-nearest seed)
+    // become the lead color, producing the leaded-glass look.
+    // Three stained colors cycle across cells (cellIdx % 3) for
+    // a balanced palette without per-cell color authoring.
+    std::string outPath = argv[++i];
+    std::string leadHex  = argv[++i];
+    std::string aHex     = argv[++i];
+    std::string bHex     = argv[++i];
+    std::string cHex     = argv[++i];
+    int cellCount = 32;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { cellCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellCount < 4 || cellCount > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-stained-glass: invalid dims (W/H 1..8192, cells 4..1024)\n");
+        return 1;
+    }
+    uint8_t lr_, lg_, lb_, ar, ag, ab, br, bg, bb_, cr_, cg_, cb_;
+    if (!parseHex(leadHex, lr_, lg_, lb_) ||
+        !parseHex(aHex, ar, ag, ab) ||
+        !parseHex(bHex, br, bg, bb_) ||
+        !parseHex(cHex, cr_, cg_, cb_)) {
+        std::fprintf(stderr,
+            "gen-texture-stained-glass: one of the hex colors is invalid\n");
+        return 1;
+    }
+    // Deterministic seed placement — same image dimensions and
+    // cellCount always yield the same cells, so re-running the
+    // command reproduces previous output exactly.
+    struct Seed { float x, y; int colorIdx; };
+    std::vector<Seed> seeds;
+    seeds.reserve(cellCount);
+    uint32_t rng = static_cast<uint32_t>(cellCount) * 0x9E3779B9u +
+                   static_cast<uint32_t>(W) * 0x85EBCA6Bu;
+    auto rngStep = [&]() {
+        rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+        return rng;
+    };
+    for (int s = 0; s < cellCount; ++s) {
+        Seed sd;
+        sd.x = (rngStep() & 0xFFFF) / 65535.0f * W;
+        sd.y = (rngStep() & 0xFFFF) / 65535.0f * H;
+        sd.colorIdx = s % 3;
+        seeds.push_back(sd);
+    }
+    // Lead-line threshold: pixels where dist2/dist1 < threshold
+    // are within the boundary band. 1.08 gives ~3-4 px lead
+    // lines at 256x256 with 32 cells — readable but not heavy.
+    const float boundaryRatio = 1.08f;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float fx = static_cast<float>(x);
+            float fy = static_cast<float>(y);
+            // Track best two distances so we can detect cell
+            // boundaries by the dist2/dist1 ratio.
+            float bestSq = 1e30f, secondSq = 1e30f;
+            int bestIdx = 0;
+            for (int s = 0; s < cellCount; ++s) {
+                float dx = seeds[s].x - fx;
+                float dy = seeds[s].y - fy;
+                float d2 = dx * dx + dy * dy;
+                if (d2 < bestSq) {
+                    secondSq = bestSq;
+                    bestSq = d2;
+                    bestIdx = s;
+                } else if (d2 < secondSq) {
+                    secondSq = d2;
+                }
+            }
+            uint8_t r, g, b;
+            // sqrt comparison via ratio of squared distances
+            // works because boundaryRatio^2 is what we compare.
+            float ratioSq = (bestSq > 0.0f) ? secondSq / bestSq : 1e30f;
+            if (ratioSq < boundaryRatio * boundaryRatio) {
+                r = lr_; g = lg_; b = lb_;
+            } else {
+                int ci = seeds[bestIdx].colorIdx;
+                if      (ci == 0) { r = ar;  g = ag;  b = ab;  }
+                else if (ci == 1) { r = br;  g = bg;  b = bb_; }
+                else              { r = cr_; g = cg_; b = cb_; }
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-stained-glass: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  lead       : %s\n", leadHex.c_str());
+    std::printf("  glass A/B/C: %s / %s / %s\n",
+                aHex.c_str(), bHex.c_str(), cHex.c_str());
+    std::printf("  cells      : %d (Voronoi)\n", cellCount);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -3261,6 +3378,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-scales") == 0 && i + 4 < argc) {
         outRc = handleScales(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-stained-glass") == 0 && i + 5 < argc) {
+        outRc = handleStainedGlass(i, argc, argv); return true;
     }
     return false;
 }
