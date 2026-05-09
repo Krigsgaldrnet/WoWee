@@ -50,6 +50,7 @@ const char* const kArgRequired[] = {
     "--gen-mesh-shrine", "--gen-mesh-totem", "--gen-mesh-cage",
     "--gen-mesh-throne", "--gen-mesh-coffin", "--gen-mesh-bookshelf",
     "--gen-mesh-tent", "--gen-mesh-firepit", "--gen-mesh-woodpile",
+    "--gen-mesh-canopy",
     "--gen-mesh-table", "--gen-mesh-lamppost", "--gen-mesh-bed",
     "--gen-mesh-ladder", "--gen-mesh-well", "--gen-mesh-signpost",
     "--gen-mesh-mailbox", "--gen-mesh-tombstone", "--gen-mesh-crate",

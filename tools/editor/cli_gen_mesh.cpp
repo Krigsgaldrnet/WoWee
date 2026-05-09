@@ -7191,6 +7191,136 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCanopy(int& i, int argc, char** argv) {
+    // Market-stall canopy: 4 corner posts holding a flat fabric
+    // panel overhead. Optional drape lip hanging down from each
+    // edge of the panel for a real awning look. All axis-aligned
+    // boxes — closed solid for collision baking. The 56th
+    // procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float width  = 1.6f;
+    float depth  = 1.2f;
+    float height = 2.0f;
+    float postR  = 0.05f;
+    float panelT = 0.03f;
+    float drape  = 0.15f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { depth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { panelT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { drape = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (width <= 0 || depth <= 0 || height <= 0 ||
+        postR <= 0 || postR * 2 >= std::min(width, depth) ||
+        panelT <= 0 || drape < 0 || drape >= height) {
+        std::fprintf(stderr,
+            "gen-mesh-canopy: dims > 0; postR*2 < width/depth; drape < height\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        const Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base+1, base+2, base, base+2, base+3});
+        }
+    };
+    const float W2 = width * 0.5f;
+    const float D2 = depth * 0.5f;
+    const float postH = height - panelT;
+    const float postCY = postH * 0.5f;
+    const float postHY = postH * 0.5f;
+    // Posts inset by postR so the outer corners line up with the
+    // panel edges above.
+    const float postX = W2 - postR;
+    const float postZ = D2 - postR;
+    addBox(+postX, postCY, +postZ, postR, postHY, postR);
+    addBox(-postX, postCY, +postZ, postR, postHY, postR);
+    addBox(+postX, postCY, -postZ, postR, postHY, postR);
+    addBox(-postX, postCY, -postZ, postR, postHY, postR);
+    // Top fabric panel — a thin slab spanning the full footprint.
+    addBox(0, postH + panelT * 0.5f, 0, W2, panelT * 0.5f, D2);
+    // Optional drape lips hanging down from each panel edge.
+    if (drape > 0.0f) {
+        const float drapeT = panelT * 0.5f;     // half thickness of drape
+        const float drapeCY = postH - drape * 0.5f + panelT;
+        const float drapeHY = drape * 0.5f;
+        // Front edge (+Z): box spans width, hangs over front edge.
+        addBox(0, drapeCY, +D2 + drapeT, W2, drapeHY, drapeT);
+        addBox(0, drapeCY, -D2 - drapeT, W2, drapeHY, drapeT);
+        addBox(+W2 + drapeT, drapeCY, 0, drapeT, drapeHY, D2);
+        addBox(-W2 - drapeT, drapeCY, 0, drapeT, drapeHY, D2);
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxX = W2 + (drape > 0 ? panelT * 0.5f : 0);
+    float maxZ = D2 + (drape > 0 ? panelT * 0.5f : 0);
+    wom.boundMin = glm::vec3(-maxX, 0, -maxZ);
+    wom.boundMax = glm::vec3( maxX, height, +maxZ);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-canopy: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  footprint  : %.3f x %.3f\n", width, depth);
+    std::printf("  height     : %.3f (post %.3f + panel %.3f)\n",
+                height, postH, panelT);
+    std::printf("  posts      : 4 corners (R=%.3f)\n", postR);
+    if (drape > 0)
+        std::printf("  drape      : %.3f hanging from each edge\n", drape);
+    else
+        std::printf("  drape      : (none)\n");
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleWoodpile(int& i, int argc, char** argv) {
     // Stacked-firewood pile: N=6 cylindrical logs aligned along
     // the Z axis, packed into a tight 3-2-1 pyramid (3 logs on
@@ -7491,6 +7621,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-tent",           1, handleTent},
     {"--gen-mesh-firepit",        1, handleFirepit},
     {"--gen-mesh-woodpile",       1, handleWoodpile},
+    {"--gen-mesh-canopy",         1, handleCanopy},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
