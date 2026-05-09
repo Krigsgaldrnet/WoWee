@@ -3500,6 +3500,80 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleLightbeam(int& i, int argc, char** argv) {
+    // Vertical light-beam / sun-ray gradient. Brightness fades
+    // both horizontally (away from the center column) and
+    // vertically (top-down or bottom-up depending on direction
+    // flag). Useful for dust-mote sunbeams, holy radiance,
+    // crystal glow, lighthouse columns, projector / stage
+    // light effects.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string beamHex = argv[++i];
+    int beamHalfW = 32;             // half-width of bright core in pixels
+    float vFadeFrac = 0.6f;         // brightness retained at far end
+    char dir = 'd';                 // 'd' = brightest at top, fades down
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, beamHalfW);
+    parseOptFloat(i, argc, argv, vFadeFrac);
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        const char* a = argv[++i];
+        if (a[0] == 'u' || a[0] == 'U') dir = 'u';
+        else if (a[0] == 'd' || a[0] == 'D') dir = 'd';
+    }
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        beamHalfW < 1 || beamHalfW > W ||
+        vFadeFrac < 0.0f || vFadeFrac > 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-lightbeam: invalid dims (W/H 1..8192, "
+            "beamHalfW 1..W, vFadeFrac 0..1)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, lr, lg, lb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-lightbeam")) return 1;
+    if (!parseHexOrError(beamHex, lr, lg, lb_,
+                         "gen-texture-lightbeam")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float halfW = W * 0.5f;
+    const float maxRadial = static_cast<float>(W) * 0.5f;
+    for (int y = 0; y < H; ++y) {
+        // Vertical fade: 1.0 at the bright end, vFadeFrac at the
+        // dim end. dir 'd' brightens at top (small y).
+        float yT = static_cast<float>(y) / (H - 1);
+        if (dir == 'd') yT = 1.0f - yT * (1.0f - vFadeFrac);
+        else            yT = vFadeFrac + yT * (1.0f - vFadeFrac);
+        for (int x = 0; x < W; ++x) {
+            float dx = std::abs(x - halfW);
+            // Radial fade: brightness drops from 1.0 in the core to
+            // 0 at maxRadial. Outside the bright core, exponential
+            // falloff continues to 0.
+            float radialT;
+            if (dx < beamHalfW) {
+                radialT = 1.0f;
+            } else {
+                float t = (dx - beamHalfW) / (maxRadial - beamHalfW);
+                radialT = std::max(0.0f, 1.0f - t);
+            }
+            float br = yT * radialT;
+            uint8_t r = static_cast<uint8_t>(br_ + br * (lr - br_));
+            uint8_t g = static_cast<uint8_t>(bg_ + br * (lg - bg_));
+            uint8_t b = static_cast<uint8_t>(bb_ + br * (lb_ - bb_));
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-lightbeam")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/beam    : %s / %s\n", bgHex.c_str(), beamHex.c_str());
+    std::printf("  beam       : halfW=%d, vFade=%.2f, dir=%s\n",
+                beamHalfW, vFadeFrac,
+                dir == 'd' ? "down (bright top)" : "up (bright bottom)");
+    return 0;
+}
+
 int handleEmbroidery(int& i, int argc, char** argv) {
     // Cross-stitch embroidery: a grid of X-shape stitches. Each
     // cell holds an X formed by two diagonal strokes from cell
@@ -5379,6 +5453,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-ironbark",       3, handleIronbark},
     {"--gen-texture-mold",           3, handleMold},
     {"--gen-texture-embroidery",     3, handleEmbroidery},
+    {"--gen-texture-lightbeam",      3, handleLightbeam},
 };
 }  // namespace
 

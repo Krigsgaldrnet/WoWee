@@ -181,6 +181,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Mold: Worley-noise field patches (cellars / dungeon walls / sewer overflow / fungal growth)\n");
     std::printf("  --gen-texture-embroidery <out.png> <bgHex> <threadHex> [cellSize] [strokeW] [W H]\n");
     std::printf("                         Embroidery: grid of cross-stitch X marks (counted-thread textile / sampler / folk-art trim)\n");
+    std::printf("  --gen-texture-lightbeam <out.png> <bgHex> <beamHex> [beamHalfW] [vFadeFrac] [u|d] [W H]\n");
+    std::printf("                         Lightbeam: vertical sun-ray gradient fading horizontally + vertically (sunbeam / holy radiance)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
