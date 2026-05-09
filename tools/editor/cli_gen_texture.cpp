@@ -3500,6 +3500,78 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStar(int& i, int argc, char** argv) {
+    // N-pointed star polygon centered on the texture. Each pixel
+    // computes its polar (r, θ); the star boundary at any θ
+    // alternates between outer and inner radii using a 2π/N
+    // saw-pattern. Pixels with r < boundary(θ) are filled with
+    // the star color. Distinct from --gen-texture-starburst
+    // (rays only) and --gen-texture-pinwheel (alternating wedges)
+    // — star is a single solid polygon shape.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string starHex = argv[++i];
+    int points = 5;
+    float innerFrac = 0.40f;     // inner radius / outer radius
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, points);
+    parseOptFloat(i, argc, argv, innerFrac);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        points < 3 || points > 32 ||
+        innerFrac <= 0.0f || innerFrac >= 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-star: invalid dims (W/H 1..8192, "
+            "points 3..32, innerFrac (0,1))\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr, sg, sb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-star")) return 1;
+    if (!parseHexOrError(starHex, sr, sg, sb_,
+                         "gen-texture-star")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float twoPi = 6.28318530717958f;
+    const float pi    = 3.14159265358979f;
+    const float cx = W * 0.5f;
+    const float cy = H * 0.5f;
+    const float outerR = std::min(cx, cy) * 0.95f;
+    const float anglePer = twoPi / points;
+    // Rotate so a point is at the top (-Y in screen coords).
+    const float pointAngleOffset = -pi * 0.5f;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float dx = x - cx;
+            float dy = y - cy;
+            float r = std::sqrt(dx * dx + dy * dy);
+            // Map θ into [0, anglePer); position within determines
+            // whether we're climbing toward a point (0..0.5 of the
+            // sector) or descending (0.5..1).
+            float theta = std::atan2(dy, dx) - pointAngleOffset
+                          + 100.0f * twoPi;
+            float phase = std::fmod(theta, anglePer) / anglePer;
+            // Triangular wave: 0 at sector start (point), 1 at
+            // sector center (valley), 0 at sector end (next point).
+            float tri = (phase < 0.5f) ? phase * 2.0f
+                                       : (1.0f - phase) * 2.0f;
+            float boundary = outerR * (1.0f - tri * (1.0f - innerFrac));
+            uint8_t resR, resG, resB;
+            if (r < boundary) {
+                resR = sr; resG = sg; resB = sb_;
+            } else {
+                resR = br_; resG = bg_; resB = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, resR, resG, resB);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-star")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/star    : %s / %s\n", bgHex.c_str(), starHex.c_str());
+    std::printf("  star       : %d points, innerFrac=%.2f\n",
+                points, innerFrac);
+    return 0;
+}
+
 int handleCrackle(int& i, int argc, char** argv) {
     // Fine crack network from Worley cellular noise. For each
     // pixel, find the two nearest jittered cell centers; the
@@ -5758,6 +5830,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-pinwheel",       3, handlePinwheel},
     {"--gen-texture-scratched-metal",3, handleScratchedMetal},
     {"--gen-texture-crackle",        3, handleCrackle},
+    {"--gen-texture-star",           3, handleStar},
 };
 }  // namespace
 
