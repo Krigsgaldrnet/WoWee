@@ -947,6 +947,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WFAC entries (id / parent / flags / enemy + friend counts / name)\n");
     std::printf("  --validate-wfac <wfac-base> [--json]\n");
     std::printf("                         Static checks: factionId>0+unique, name not empty, threshold ordering, no self-enemy, no enemy/friend overlap\n");
+    std::printf("  --export-wfac-json <wfac-base> [out.json]\n");
+    std::printf("                         Export binary .wfac to a human-editable JSON sidecar (defaults to <base>.wfac.json)\n");
+    std::printf("  --import-wfac-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wfac.json sidecar back into binary .wfac (accepts flag int OR flagsList strings)\n");
     std::printf("  --gen-locks <wlck-base> [name]\n");
     std::printf("                         Emit .wlck starter: 2 locks (Iron Door key+force, Wooden Chest force-only) — lockId=1 matches WGOT\n");
     std::printf("  --gen-locks-dungeon <wlck-base> [name]\n");
