@@ -3435,6 +3435,137 @@ int handleTextured(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleMushroom(int& i, int argc, char** argv) {
+    // Mushroom: cylindrical stalk + UV-sphere top half (cap).
+    // Cap radius is independent so users get the classic
+    // narrow-stalk-wide-cap silhouette of a forest mushroom.
+    // The 29th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float stalkR = 0.1f;
+    float stalkH = 0.6f;
+    float capR = 0.4f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stalkR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stalkH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { capR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (stalkR <= 0 || stalkH <= 0 || capR <= 0) {
+        std::fprintf(stderr,
+            "gen-mesh-mushroom: all dims must be positive\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    const float pi = 3.14159265358979f;
+    auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+        wowee::pipeline::WoweeModel::Vertex vtx;
+        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+        wom.vertices.push_back(vtx);
+        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    };
+    // Stalk: 12-segment cylinder from y=0 to y=stalkH.
+    const int segs = 12;
+    uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+    for (int sg = 0; sg <= segs; ++sg) {
+        float u = static_cast<float>(sg) / segs;
+        float ang = u * 2.0f * pi;
+        glm::vec3 p(stalkR * std::cos(ang), 0, stalkR * std::sin(ang));
+        glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+        addV(p, n, {u, 0});
+    }
+    uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+    for (int sg = 0; sg <= segs; ++sg) {
+        float u = static_cast<float>(sg) / segs;
+        float ang = u * 2.0f * pi;
+        glm::vec3 p(stalkR * std::cos(ang), stalkH,
+                    stalkR * std::sin(ang));
+        glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+        addV(p, n, {u, 1});
+    }
+    for (int sg = 0; sg < segs; ++sg) {
+        wom.indices.insert(wom.indices.end(), {
+            bot + sg, top + sg, bot + sg + 1,
+            bot + sg + 1, top + sg, top + sg + 1
+        });
+    }
+    // Bottom cap (faces -Y) so the stalk is closed
+    uint32_t bc = addV({0, 0, 0}, {0, -1, 0}, {0.5f, 0.5f});
+    for (int sg = 0; sg < segs; ++sg) {
+        wom.indices.insert(wom.indices.end(),
+            {bc, bot + sg + 1, bot + sg});
+    }
+    // Cap: top half of UV sphere centered at (0, stalkH, 0).
+    // Latitude 0..pi/2 (top hemisphere only). 16 longitude × 8
+    // latitude segments.
+    const int capLon = 16;
+    const int capLat = 8;
+    uint32_t capStart = static_cast<uint32_t>(wom.vertices.size());
+    for (int la = 0; la <= capLat; ++la) {
+        float v = static_cast<float>(la) / capLat;
+        float phi = (1.0f - v) * pi * 0.5f;  // pi/2 down to 0
+        float sphi = std::sin(phi), cphi = std::cos(phi);
+        for (int lo = 0; lo <= capLon; ++lo) {
+            float u = static_cast<float>(lo) / capLon;
+            float theta = u * 2.0f * pi;
+            glm::vec3 dir(cphi * std::cos(theta),
+                          sphi,
+                          cphi * std::sin(theta));
+            glm::vec3 p(dir.x * capR, stalkH + dir.y * capR,
+                        dir.z * capR);
+            addV(p, dir, {u, v});
+        }
+    }
+    int rowSize = capLon + 1;
+    for (int la = 0; la < capLat; ++la) {
+        for (int lo = 0; lo < capLon; ++lo) {
+            uint32_t i00 = capStart + la * rowSize + lo;
+            uint32_t i01 = capStart + la * rowSize + lo + 1;
+            uint32_t i10 = capStart + (la + 1) * rowSize + lo;
+            uint32_t i11 = capStart + (la + 1) * rowSize + lo + 1;
+            wom.indices.insert(wom.indices.end(),
+                {i00, i10, i01, i01, i10, i11});
+        }
+    }
+    // Underside of cap (the "gills" disc, faces -Y) so the
+    // mushroom is watertight viewed from below.
+    uint32_t capBot = addV({0, stalkH, 0}, {0, -1, 0}, {0.5f, 0.5f});
+    for (int sg = 0; sg < capLon; ++sg) {
+        uint32_t edge0 = capStart + capLat * rowSize + sg;
+        uint32_t edge1 = capStart + capLat * rowSize + sg + 1;
+        wom.indices.insert(wom.indices.end(),
+            {capBot, edge1, edge0});
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxY = stalkH + capR;
+    wom.boundMin = glm::vec3(-capR, 0, -capR);
+    wom.boundMax = glm::vec3( capR, maxY, capR);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-mushroom: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  stalk     : R=%.3f H=%.3f\n", stalkR, stalkH);
+    std::printf("  cap       : R=%.3f\n", capR);
+    std::printf("  total H   : %.3f\n", maxY);
+    std::printf("  vertices  : %zu\n", wom.vertices.size());
+    std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -3513,6 +3644,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-anvil") == 0 && i + 1 < argc) {
         outRc = handleAnvil(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-mushroom") == 0 && i + 1 < argc) {
+        outRc = handleMushroom(i, argc, argv); return true;
     }
     return false;
 }

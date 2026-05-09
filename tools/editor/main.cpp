@@ -557,7 +557,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-tower", "--gen-mesh-house", "--gen-mesh-fountain",
         "--gen-mesh-statue", "--gen-mesh-altar", "--gen-mesh-portal",
         "--gen-mesh-archway", "--gen-mesh-barrel", "--gen-mesh-chest",
-        "--gen-mesh-anvil",
+        "--gen-mesh-anvil", "--gen-mesh-mushroom",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
