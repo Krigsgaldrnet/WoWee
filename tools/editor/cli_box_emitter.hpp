@@ -2,6 +2,7 @@
 
 #include "pipeline/wowee_model.hpp"
 #include <glm/glm.hpp>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -117,6 +118,67 @@ inline uint32_t addVertex(wowee::pipeline::WoweeModel& wom,
                           float u,  float v) {
     return addVertex(wom, glm::vec3(px, py, pz), glm::vec3(nx, ny, nz),
                       glm::vec2(u, v));
+}
+
+// Append a closed Y-axis cylinder (side wall + ±Y end caps) to a
+// WoweeModel. The cylinder spans from y=y0 to y=y1 with radius R
+// and `sides` segments around the circumference. Side wall faces
+// outward radially; cap fans face -Y / +Y. Used by --gen-mesh-
+// bird-bath and any future cylindrical garden / well / ornament
+// primitive that needs a watertight Y-axis tube.
+inline void addClosedCylinderY(wowee::pipeline::WoweeModel& wom,
+                               float R, float y0, float y1, int sides) {
+    constexpr float pi = 3.14159265358979f;
+    uint32_t bot = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 dir(std::cos(ang), 0.0f, std::sin(ang));
+        addVertex(wom, {R * dir.x, y0, R * dir.z}, dir, {u, 0});
+    }
+    uint32_t top = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        glm::vec3 dir(std::cos(ang), 0.0f, std::sin(ang));
+        addVertex(wom, {R * dir.x, y1, R * dir.z}, dir, {u, 1});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(), {
+            bot + s, top + s, bot + s + 1,
+            bot + s + 1, top + s, top + s + 1
+        });
+    }
+    uint32_t botCenter = addVertex(wom, {0.0f, y0, 0.0f},
+                                    {0.0f, -1.0f, 0.0f}, {0.5f, 0.5f});
+    uint32_t botRing = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        addVertex(wom, {R * std::cos(ang), y0, R * std::sin(ang)},
+                  {0.0f, -1.0f, 0.0f},
+                  {0.5f + 0.5f * std::cos(ang),
+                   0.5f + 0.5f * std::sin(ang)});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(),
+            {botCenter, botRing + s + 1, botRing + s});
+    }
+    uint32_t topCenter = addVertex(wom, {0.0f, y1, 0.0f},
+                                    {0.0f, 1.0f, 0.0f}, {0.5f, 0.5f});
+    uint32_t topRing = static_cast<uint32_t>(wom.vertices.size());
+    for (int s = 0; s <= sides; ++s) {
+        float u = static_cast<float>(s) / sides;
+        float ang = u * 2.0f * pi;
+        addVertex(wom, {R * std::cos(ang), y1, R * std::sin(ang)},
+                  {0.0f, 1.0f, 0.0f},
+                  {0.5f + 0.5f * std::cos(ang),
+                   0.5f + 0.5f * std::sin(ang)});
+    }
+    for (int s = 0; s < sides; ++s) {
+        wom.indices.insert(wom.indices.end(),
+            {topCenter, topRing + s, topRing + s + 1});
+    }
 }
 
 // Append a flat-shaded axis-aligned box to a WoweeModel. The box
