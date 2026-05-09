@@ -5161,6 +5161,65 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleUrn(int& i, int argc, char** argv) {
+    // Multi-tier vertical urn: foot (wide short cylinder) →
+    // body (tall main cylinder) → neck (narrow constriction) →
+    // lip (slightly wider rim). All four tiers use the shared
+    // addClosedCylinderY helper, so the urn is a stack of four
+    // independent watertight tubes. Useful for temple offerings,
+    // mausoleum interiors, kitchen storage, alchemist labs,
+    // funerary scenes. The 79th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float bodyR  = 0.18f;
+    float bodyH  = 0.40f;
+    float footR  = 0.22f;
+    float footH  = 0.06f;
+    float neckR  = 0.12f;
+    float neckH  = 0.10f;
+    float lipR   = 0.16f;
+    float lipH   = 0.04f;
+    int   sides  = 18;
+    parseOptFloat(i, argc, argv, bodyR);
+    parseOptFloat(i, argc, argv, bodyH);
+    parseOptFloat(i, argc, argv, footR);
+    parseOptFloat(i, argc, argv, footH);
+    parseOptFloat(i, argc, argv, neckR);
+    parseOptFloat(i, argc, argv, neckH);
+    parseOptFloat(i, argc, argv, lipR);
+    parseOptFloat(i, argc, argv, lipH);
+    parseOptInt(i, argc, argv, sides);
+    if (bodyR <= 0 || bodyH <= 0 || footR <= 0 || footH <= 0 ||
+        neckR <= 0 || neckH <= 0 || lipR <= 0 || lipH <= 0 ||
+        sides < 6 || sides > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-urn: dims > 0; sides 6..64\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    // Stack 4 tiers from ground up.
+    float y = 0.0f;
+    addClosedCylinderY(wom, footR, y, y + footH, sides);
+    y += footH;
+    addClosedCylinderY(wom, bodyR, y, y + bodyH, sides);
+    y += bodyH;
+    addClosedCylinderY(wom, neckR, y, y + neckH, sides);
+    y += neckH;
+    addClosedCylinderY(wom, lipR, y, y + lipH, sides);
+    y += lipH;
+    finalizeAsSingleBatch(wom);
+    float maxR = std::max({footR, bodyR, lipR});
+    setCenteredBoundsXZ(wom, maxR, maxR, y);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-urn")) return 1;
+    printWomWrote(womBase);
+    std::printf("  tiers      : foot R=%.3f, body R=%.3f, neck R=%.3f, "
+                "lip R=%.3f\n", footR, bodyR, neckR, lipR);
+    std::printf("  total H    : %.3f (%d sides)\n", y, sides);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handlePlanterBox(int& i, int argc, char** argv) {
     // Window-sill / garden planter box: long open-top wooden
     // basin (5-piece bottom + 4 walls construction) plus a
@@ -7265,6 +7324,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-statue-base",    1, handleStatueBase},
     {"--gen-mesh-bird-bath",      1, handleBirdBath},
     {"--gen-mesh-planter-box",    1, handlePlanterBox},
+    {"--gen-mesh-urn",            1, handleUrn},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
