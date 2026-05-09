@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -171,6 +172,228 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each creature emits all 22 scalar fields
+    // plus dual int + name forms for typeId, familyId, and
+    // both flag bitsets so the importer accepts either form.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWcrtExt(base);
+    if (outPath.empty()) outPath = base + ".wcrt.json";
+    if (!wowee::pipeline::WoweeCreatureLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wcrt-json: WCRT not found: %s.wcrt\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeCreatureLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["creatureId"] = e.creatureId;
+        je["displayId"] = e.displayId;
+        je["name"] = e.name;
+        je["subname"] = e.subname;
+        je["minLevel"] = e.minLevel;
+        je["maxLevel"] = e.maxLevel;
+        je["baseHealth"] = e.baseHealth;
+        je["healthPerLevel"] = e.healthPerLevel;
+        je["baseMana"] = e.baseMana;
+        je["manaPerLevel"] = e.manaPerLevel;
+        je["factionId"] = e.factionId;
+        je["npcFlags"] = e.npcFlags;
+        nlohmann::json npcArr = nlohmann::json::array();
+        if (e.npcFlags & wowee::pipeline::WoweeCreature::Vendor)       npcArr.push_back("vendor");
+        if (e.npcFlags & wowee::pipeline::WoweeCreature::QuestGiver)   npcArr.push_back("quest");
+        if (e.npcFlags & wowee::pipeline::WoweeCreature::Trainer)      npcArr.push_back("trainer");
+        if (e.npcFlags & wowee::pipeline::WoweeCreature::Banker)       npcArr.push_back("banker");
+        if (e.npcFlags & wowee::pipeline::WoweeCreature::Innkeeper)    npcArr.push_back("innkeeper");
+        if (e.npcFlags & wowee::pipeline::WoweeCreature::FlightMaster) npcArr.push_back("flight");
+        if (e.npcFlags & wowee::pipeline::WoweeCreature::Auctioneer)   npcArr.push_back("auction");
+        if (e.npcFlags & wowee::pipeline::WoweeCreature::Repair)       npcArr.push_back("repair");
+        if (e.npcFlags & wowee::pipeline::WoweeCreature::Stable)       npcArr.push_back("stable");
+        je["npcFlagsList"] = npcArr;
+        je["typeId"] = e.typeId;
+        je["typeName"] = wowee::pipeline::WoweeCreature::typeName(e.typeId);
+        je["familyId"] = e.familyId;
+        je["familyName"] = wowee::pipeline::WoweeCreature::familyName(e.familyId);
+        je["damageMin"] = e.damageMin;
+        je["damageMax"] = e.damageMax;
+        je["attackSpeedMs"] = e.attackSpeedMs;
+        je["baseArmor"] = e.baseArmor;
+        je["walkSpeed"] = e.walkSpeed;
+        je["runSpeed"] = e.runSpeed;
+        je["gossipId"] = e.gossipId;
+        je["equippedMain"] = e.equippedMain;
+        je["equippedOffhand"] = e.equippedOffhand;
+        je["equippedRanged"] = e.equippedRanged;
+        je["aiFlags"] = e.aiFlags;
+        nlohmann::json aiArr = nlohmann::json::array();
+        if (e.aiFlags & wowee::pipeline::WoweeCreature::AiPassive)    aiArr.push_back("passive");
+        if (e.aiFlags & wowee::pipeline::WoweeCreature::AiAggressive) aiArr.push_back("aggressive");
+        if (e.aiFlags & wowee::pipeline::WoweeCreature::AiFleeLowHp)  aiArr.push_back("flee");
+        if (e.aiFlags & wowee::pipeline::WoweeCreature::AiCallHelp)   aiArr.push_back("call-help");
+        if (e.aiFlags & wowee::pipeline::WoweeCreature::AiNoLeash)    aiArr.push_back("no-leash");
+        je["aiFlagsList"] = aiArr;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wcrt-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source  : %s.wcrt\n", base.c_str());
+    std::printf("  entries : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wcrt.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWcrtExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wcrt-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wcrt-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto typeFromName = [](const std::string& s) -> uint8_t {
+        if (s == "beast")      return wowee::pipeline::WoweeCreature::Beast;
+        if (s == "dragon")     return wowee::pipeline::WoweeCreature::Dragon;
+        if (s == "demon")      return wowee::pipeline::WoweeCreature::Demon;
+        if (s == "elemental")  return wowee::pipeline::WoweeCreature::Elemental;
+        if (s == "giant")      return wowee::pipeline::WoweeCreature::Giant;
+        if (s == "undead")     return wowee::pipeline::WoweeCreature::Undead;
+        if (s == "humanoid")   return wowee::pipeline::WoweeCreature::Humanoid;
+        if (s == "critter")    return wowee::pipeline::WoweeCreature::Critter;
+        if (s == "mechanical") return wowee::pipeline::WoweeCreature::Mechanical;
+        return wowee::pipeline::WoweeCreature::Humanoid;
+    };
+    auto familyFromName = [](const std::string& s) -> uint8_t {
+        if (s == "wolf")    return wowee::pipeline::WoweeCreature::FamWolf;
+        if (s == "cat")     return wowee::pipeline::WoweeCreature::FamCat;
+        if (s == "bear")    return wowee::pipeline::WoweeCreature::FamBear;
+        if (s == "boar")    return wowee::pipeline::WoweeCreature::FamBoar;
+        if (s == "raptor")  return wowee::pipeline::WoweeCreature::FamRaptor;
+        if (s == "hyena")   return wowee::pipeline::WoweeCreature::FamHyena;
+        if (s == "spider")  return wowee::pipeline::WoweeCreature::FamSpider;
+        if (s == "gorilla") return wowee::pipeline::WoweeCreature::FamGorilla;
+        if (s == "crab")    return wowee::pipeline::WoweeCreature::FamCrab;
+        return wowee::pipeline::WoweeCreature::FamNone;
+    };
+    auto npcFlagFromName = [](const std::string& s) -> uint32_t {
+        if (s == "vendor")     return wowee::pipeline::WoweeCreature::Vendor;
+        if (s == "quest")      return wowee::pipeline::WoweeCreature::QuestGiver;
+        if (s == "trainer")    return wowee::pipeline::WoweeCreature::Trainer;
+        if (s == "banker")     return wowee::pipeline::WoweeCreature::Banker;
+        if (s == "innkeeper")  return wowee::pipeline::WoweeCreature::Innkeeper;
+        if (s == "flight")     return wowee::pipeline::WoweeCreature::FlightMaster;
+        if (s == "auction")    return wowee::pipeline::WoweeCreature::Auctioneer;
+        if (s == "repair")     return wowee::pipeline::WoweeCreature::Repair;
+        if (s == "stable")     return wowee::pipeline::WoweeCreature::Stable;
+        return 0;
+    };
+    auto aiFlagFromName = [](const std::string& s) -> uint32_t {
+        if (s == "passive")    return wowee::pipeline::WoweeCreature::AiPassive;
+        if (s == "aggressive") return wowee::pipeline::WoweeCreature::AiAggressive;
+        if (s == "flee")       return wowee::pipeline::WoweeCreature::AiFleeLowHp;
+        if (s == "call-help")  return wowee::pipeline::WoweeCreature::AiCallHelp;
+        if (s == "no-leash")   return wowee::pipeline::WoweeCreature::AiNoLeash;
+        return 0;
+    };
+    wowee::pipeline::WoweeCreature c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeCreature::Entry e;
+            e.creatureId = je.value("creatureId", 0u);
+            e.displayId = je.value("displayId", 0u);
+            e.name = je.value("name", std::string{});
+            e.subname = je.value("subname", std::string{});
+            e.minLevel = static_cast<uint16_t>(je.value("minLevel", 1));
+            e.maxLevel = static_cast<uint16_t>(je.value("maxLevel", 1));
+            e.baseHealth = je.value("baseHealth", 50u);
+            e.healthPerLevel = static_cast<uint16_t>(je.value("healthPerLevel", 0));
+            e.baseMana = je.value("baseMana", 0u);
+            e.manaPerLevel = static_cast<uint16_t>(je.value("manaPerLevel", 0));
+            e.factionId = je.value("factionId", 35u);
+            if (je.contains("npcFlags") && je["npcFlags"].is_number_integer()) {
+                e.npcFlags = je["npcFlags"].get<uint32_t>();
+            } else if (je.contains("npcFlagsList") && je["npcFlagsList"].is_array()) {
+                for (const auto& f : je["npcFlagsList"]) {
+                    if (f.is_string()) e.npcFlags |= npcFlagFromName(f.get<std::string>());
+                }
+            }
+            if (je.contains("typeId") && je["typeId"].is_number_integer()) {
+                e.typeId = static_cast<uint8_t>(je["typeId"].get<int>());
+            } else if (je.contains("typeName") && je["typeName"].is_string()) {
+                e.typeId = typeFromName(je["typeName"].get<std::string>());
+            }
+            if (je.contains("familyId") && je["familyId"].is_number_integer()) {
+                e.familyId = static_cast<uint8_t>(je["familyId"].get<int>());
+            } else if (je.contains("familyName") && je["familyName"].is_string()) {
+                e.familyId = familyFromName(je["familyName"].get<std::string>());
+            }
+            e.damageMin = je.value("damageMin", 1u);
+            e.damageMax = je.value("damageMax", 3u);
+            e.attackSpeedMs = je.value("attackSpeedMs", 2000u);
+            e.baseArmor = je.value("baseArmor", 0u);
+            e.walkSpeed = je.value("walkSpeed", 1.0f);
+            e.runSpeed = je.value("runSpeed", 1.14f);
+            e.gossipId = je.value("gossipId", 0u);
+            e.equippedMain = je.value("equippedMain", 0u);
+            e.equippedOffhand = je.value("equippedOffhand", 0u);
+            e.equippedRanged = je.value("equippedRanged", 0u);
+            if (je.contains("aiFlags") && je["aiFlags"].is_number_integer()) {
+                e.aiFlags = je["aiFlags"].get<uint32_t>();
+            } else if (je.contains("aiFlagsList") && je["aiFlagsList"].is_array()) {
+                e.aiFlags = 0;
+                for (const auto& f : je["aiFlagsList"]) {
+                    if (f.is_string()) e.aiFlags |= aiFlagFromName(f.get<std::string>());
+                }
+            }
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeCreatureLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wcrt-json: failed to save %s.wcrt\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wcrt\n", outBase.c_str());
+    std::printf("  source  : %s\n", jsonPath.c_str());
+    std::printf("  entries : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -281,6 +504,12 @@ bool handleCreaturesCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wcrt") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wcrt-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wcrt-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

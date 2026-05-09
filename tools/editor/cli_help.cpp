@@ -905,6 +905,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WCRT entries (id / level / hp / type / faction / npc-flags / name + subname)\n");
     std::printf("  --validate-wcrt <wcrt-base> [--json]\n");
     std::printf("                         Static checks: creatureId>0+unique, level/hp>0, min<=max, attackSpeed>0, behavior flag conflicts\n");
+    std::printf("  --export-wcrt-json <wcrt-base> [out.json]\n");
+    std::printf("                         Export binary .wcrt to a human-editable JSON sidecar (defaults to <base>.wcrt.json)\n");
+    std::printf("  --import-wcrt-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wcrt.json sidecar back into binary .wcrt (accepts type/family/flag int OR name forms)\n");
     std::printf("  --gen-quests <wqt-base> [name]\n");
     std::printf("                         Emit .wqt starter quest: 'Kill 10 Defias Bandits' giver=4001 (matches WCRT village innkeeper)\n");
     std::printf("  --gen-quests-chain <wqt-base> [name]\n");
