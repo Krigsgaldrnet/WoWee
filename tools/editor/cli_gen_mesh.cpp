@@ -5193,6 +5193,70 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleOuthouse(int& i, int argc, char** argv) {
+    // Small wooden shed / outhouse: solid body box with an
+    // inset door slab on the +Z face and a slightly-larger flat
+    // roof slab overhanging the body. Distinct from
+    // --gen-mesh-house (multi-walled, peaked-roof dwelling) — an
+    // outhouse is the single-room privy / tool-shed variant.
+    // The 68th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float width  = 0.9f;
+    float depth  = 1.0f;
+    float height = 1.8f;
+    float doorH  = 1.4f;
+    float doorW  = 0.5f;
+    float roofOverhang = 0.10f;
+    float roofT  = 0.06f;
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptFloat(i, argc, argv, height);
+    parseOptFloat(i, argc, argv, doorH);
+    parseOptFloat(i, argc, argv, doorW);
+    parseOptFloat(i, argc, argv, roofOverhang);
+    parseOptFloat(i, argc, argv, roofT);
+    if (width <= 0 || depth <= 0 || height <= 0 ||
+        doorH <= 0 || doorH >= height ||
+        doorW <= 0 || doorW >= width ||
+        roofOverhang < 0 || roofT <= 0 || roofT >= height) {
+        std::fprintf(stderr,
+            "gen-mesh-outhouse: dims > 0; doorH < height; doorW < width\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float W2 = width  * 0.5f;
+    const float D2 = depth  * 0.5f;
+    const float bodyH = height - roofT;
+    // Body: solid rectangular box.
+    addFlatBox(wom, 0.0f, bodyH * 0.5f, 0.0f,
+               W2, bodyH * 0.5f, D2);
+    // Door slab on the +Z face: thin box pushed slightly outward
+    // so it visually sits on the wall (gives doorframe-like depth).
+    const float doorT = 0.03f;
+    addFlatBox(wom, 0.0f, doorH * 0.5f, +D2 + doorT * 0.5f,
+               doorW * 0.5f, doorH * 0.5f, doorT * 0.5f);
+    // Roof slab: slightly larger than the body footprint and
+    // sitting on top of the body.
+    const float rofW2 = W2 + roofOverhang;
+    const float rofD2 = D2 + roofOverhang;
+    addFlatBox(wom, 0.0f, bodyH + roofT * 0.5f, 0.0f,
+               rofW2, roofT * 0.5f, rofD2);
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, std::max(W2, rofW2),
+                        std::max(D2 + doorT, rofD2), height);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-outhouse")) return 1;
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  body       : %.3f x %.3f x %.3f\n", width, depth, bodyH);
+    std::printf("  door       : %.3f x %.3f on +Z face\n", doorW, doorH);
+    std::printf("  roof       : %.3f thick, %.3f overhang\n",
+                roofT, roofOverhang);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleHitchingPost(int& i, int argc, char** argv) {
     // Hitching post: two vertical posts joined by a horizontal
     // cross-bar at upper height. Standard town/stable fixture
@@ -6439,6 +6503,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-water-trough",   1, handleWaterTrough},
     {"--gen-mesh-training-dummy", 1, handleTrainingDummy},
     {"--gen-mesh-hitching-post",  1, handleHitchingPost},
+    {"--gen-mesh-outhouse",       1, handleOuthouse},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
