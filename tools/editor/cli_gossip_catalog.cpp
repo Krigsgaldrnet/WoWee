@@ -156,6 +156,166 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each menu emits scalar fields plus the
+    // options array; option.kind and requiredFlags emit dual
+    // int + name forms.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWgspExt(base);
+    if (outPath.empty()) outPath = base + ".wgsp.json";
+    if (!wowee::pipeline::WoweeGossipLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wgsp-json: WGSP not found: %s.wgsp\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeGossipLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["menuId"] = e.menuId;
+        je["titleText"] = e.titleText;
+        nlohmann::json opts = nlohmann::json::array();
+        for (const auto& o : e.options) {
+            nlohmann::json jo;
+            jo["optionId"] = o.optionId;
+            jo["text"] = o.text;
+            jo["kind"] = o.kind;
+            jo["kindName"] = wowee::pipeline::WoweeGossip::optionKindName(o.kind);
+            jo["actionTarget"] = o.actionTarget;
+            jo["requiredFlags"] = o.requiredFlags;
+            nlohmann::json fa = nlohmann::json::array();
+            if (o.requiredFlags & wowee::pipeline::WoweeGossip::AllianceOnly) fa.push_back("alliance");
+            if (o.requiredFlags & wowee::pipeline::WoweeGossip::HordeOnly)    fa.push_back("horde");
+            if (o.requiredFlags & wowee::pipeline::WoweeGossip::Coinpouch)    fa.push_back("coin");
+            if (o.requiredFlags & wowee::pipeline::WoweeGossip::QuestGated)   fa.push_back("quest-gated");
+            if (o.requiredFlags & wowee::pipeline::WoweeGossip::Closes)       fa.push_back("closes");
+            jo["requiredFlagsList"] = fa;
+            jo["moneyCostCopper"] = o.moneyCostCopper;
+            opts.push_back(jo);
+        }
+        je["options"] = opts;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wgsp-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wgsp\n", base.c_str());
+    std::printf("  menus  : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wgsp.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWgspExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wgsp-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wgsp-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "close")        return wowee::pipeline::WoweeGossip::Close;
+        if (s == "submenu")      return wowee::pipeline::WoweeGossip::Submenu;
+        if (s == "vendor")       return wowee::pipeline::WoweeGossip::Vendor;
+        if (s == "trainer")      return wowee::pipeline::WoweeGossip::Trainer;
+        if (s == "quest")        return wowee::pipeline::WoweeGossip::Quest;
+        if (s == "tabard")       return wowee::pipeline::WoweeGossip::Tabard;
+        if (s == "banker")       return wowee::pipeline::WoweeGossip::Banker;
+        if (s == "innkeeper")    return wowee::pipeline::WoweeGossip::Innkeeper;
+        if (s == "flight")       return wowee::pipeline::WoweeGossip::FlightMaster;
+        if (s == "text")         return wowee::pipeline::WoweeGossip::TextOnly;
+        if (s == "script")       return wowee::pipeline::WoweeGossip::Script;
+        if (s == "battlemaster") return wowee::pipeline::WoweeGossip::Battlemaster;
+        if (s == "auctioneer")   return wowee::pipeline::WoweeGossip::Auctioneer;
+        return wowee::pipeline::WoweeGossip::TextOnly;
+    };
+    auto flagFromName = [](const std::string& s) -> uint32_t {
+        if (s == "alliance")     return wowee::pipeline::WoweeGossip::AllianceOnly;
+        if (s == "horde")        return wowee::pipeline::WoweeGossip::HordeOnly;
+        if (s == "coin")         return wowee::pipeline::WoweeGossip::Coinpouch;
+        if (s == "quest-gated")  return wowee::pipeline::WoweeGossip::QuestGated;
+        if (s == "closes")       return wowee::pipeline::WoweeGossip::Closes;
+        return 0;
+    };
+    wowee::pipeline::WoweeGossip c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeGossip::Entry e;
+            e.menuId = je.value("menuId", 0u);
+            e.titleText = je.value("titleText", std::string{});
+            if (je.contains("options") && je["options"].is_array()) {
+                for (const auto& jo : je["options"]) {
+                    wowee::pipeline::WoweeGossip::Option o;
+                    o.optionId = jo.value("optionId", 0u);
+                    o.text = jo.value("text", std::string{});
+                    if (jo.contains("kind") && jo["kind"].is_number_integer()) {
+                        o.kind = static_cast<uint8_t>(jo["kind"].get<int>());
+                    } else if (jo.contains("kindName") && jo["kindName"].is_string()) {
+                        o.kind = kindFromName(jo["kindName"].get<std::string>());
+                    }
+                    o.actionTarget = jo.value("actionTarget", 0u);
+                    if (jo.contains("requiredFlags") &&
+                        jo["requiredFlags"].is_number_integer()) {
+                        o.requiredFlags = jo["requiredFlags"].get<uint32_t>();
+                    } else if (jo.contains("requiredFlagsList") &&
+                               jo["requiredFlagsList"].is_array()) {
+                        for (const auto& f : jo["requiredFlagsList"]) {
+                            if (f.is_string())
+                                o.requiredFlags |= flagFromName(f.get<std::string>());
+                        }
+                    }
+                    o.moneyCostCopper = jo.value("moneyCostCopper", 0u);
+                    e.options.push_back(o);
+                }
+            }
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeGossipLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wgsp-json: failed to save %s.wgsp\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wgsp\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  menus  : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -284,6 +444,12 @@ bool handleGossipCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wgsp") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wgsp-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wgsp-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

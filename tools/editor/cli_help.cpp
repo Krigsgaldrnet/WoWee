@@ -1033,6 +1033,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGSP entries (menuId / title / per-option kind / target / cost / flags)\n");
     std::printf("  --validate-wgsp <wgsp-base> [--json]\n");
     std::printf("                         Static checks: menuId>0+unique, options non-empty, Submenu actionTarget exists, Coinpouch needs cost, faction conflict\n");
+    std::printf("  --export-wgsp-json <wgsp-base> [out.json]\n");
+    std::printf("                         Export binary .wgsp to a human-editable JSON sidecar (defaults to <base>.wgsp.json)\n");
+    std::printf("  --import-wgsp-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wgsp.json sidecar back into binary .wgsp (accepts kind/flag int OR name forms)\n");
     std::printf("  --gen-taxi <wtax-base> [name]\n");
     std::printf("                         Emit .wtax starter: 2 nodes (Stormwind / Goldshire) + 2 paths (round-trip, 50s each, 3 waypoints)\n");
     std::printf("  --gen-taxi-region <wtax-base> [name]\n");
