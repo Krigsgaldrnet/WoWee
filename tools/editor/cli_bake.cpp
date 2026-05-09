@@ -2,12 +2,14 @@
 
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
+#include "pipeline/wowee_collision.hpp"
 #include "pipeline/wowee_terrain_loader.hpp"
 #include "object_placer.hpp"
 #include "zone_manifest.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
+#include <tuple>
 
 #include <algorithm>
 #include <chrono>
@@ -903,6 +905,106 @@ int handleBakeProjectStlOrGlb(int& i, int argc, char** argv) {
 
 }  // namespace
 
+int handleBakeWomCollision(int& i, int argc, char** argv) {
+    // Convert a single WOM into a WOC collision file. Optional
+    // --weld <eps> first welds vertices that share a position so
+    // adjacent per-face-shaded faces land in the same triangle
+    // network for collision queries — without it, the WOC still
+    // has the right triangles but they're authored independently
+    // (which is fine for raycast/walkability but loses the edge
+    // adjacency info that some physics queries want).
+    std::string base = argv[++i];
+    std::string outPath;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        outPath = argv[++i];
+    }
+    bool useWeld = false;
+    float weldEps = 1e-5f;
+    float steepAngle = 50.0f;
+    while (i + 1 < argc && argv[i + 1][0] == '-') {
+        if (std::strcmp(argv[i + 1], "--weld") == 0 && i + 2 < argc) {
+            useWeld = true;
+            try { weldEps = std::stof(argv[i + 2]); } catch (...) {}
+            i += 2;
+        } else if (std::strcmp(argv[i + 1], "--steep") == 0 && i + 2 < argc) {
+            try { steepAngle = std::stof(argv[i + 2]); } catch (...) {}
+            i += 2;
+        } else {
+            break;
+        }
+    }
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom") {
+        base = base.substr(0, base.size() - 4);
+    }
+    if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
+        std::fprintf(stderr,
+            "bake-wom-collision: %s.wom does not exist\n", base.c_str());
+        return 1;
+    }
+    auto wom = wowee::pipeline::WoweeModelLoader::load(base);
+    if (!wom.isValid() || wom.indices.size() % 3 != 0) {
+        std::fprintf(stderr,
+            "bake-wom-collision: invalid WOM (no geometry or "
+            "indices%%3 != 0)\n");
+        return 1;
+    }
+    if (outPath.empty()) outPath = base + ".woc";
+    std::vector<glm::vec3> positions;
+    std::vector<uint32_t> indices;
+    if (useWeld) {
+        // Build the canon[] map first, then re-emit positions/indices
+        // using only the canonical (lowest-index) vertex of each
+        // welded equivalence class. This produces a properly indexed
+        // mesh so collision raycasts can share edges between faces.
+        const float invEps = 1.0f / std::max(weldEps, 1e-9f);
+        using QKey = std::tuple<int64_t, int64_t, int64_t>;
+        std::map<QKey, uint32_t> bucket;
+        std::vector<uint32_t> canon(wom.vertices.size());
+        for (std::size_t v = 0; v < wom.vertices.size(); ++v) {
+            const auto& p = wom.vertices[v].position;
+            QKey k{static_cast<int64_t>(std::lround(p.x * invEps)),
+                   static_cast<int64_t>(std::lround(p.y * invEps)),
+                   static_cast<int64_t>(std::lround(p.z * invEps))};
+            auto it = bucket.find(k);
+            if (it == bucket.end()) {
+                uint32_t newIdx = static_cast<uint32_t>(positions.size());
+                bucket.emplace(k, newIdx);
+                positions.push_back(p);
+                canon[v] = newIdx;
+            } else {
+                canon[v] = it->second;
+            }
+        }
+        indices.reserve(wom.indices.size());
+        for (uint32_t orig : wom.indices) indices.push_back(canon[orig]);
+    } else {
+        positions.reserve(wom.vertices.size());
+        for (const auto& vert : wom.vertices) positions.push_back(vert.position);
+        indices = wom.indices;
+    }
+    wowee::pipeline::WoweeCollision collision;
+    glm::mat4 identity(1.0f);
+    wowee::pipeline::WoweeCollisionBuilder::addMesh(
+        collision, positions, indices, identity, 0, steepAngle);
+    if (!wowee::pipeline::WoweeCollisionBuilder::save(collision, outPath)) {
+        std::fprintf(stderr,
+            "bake-wom-collision: failed to write %s\n", outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source     : %s.wom (%zu verts -> %zu)\n",
+                base.c_str(), wom.vertices.size(), positions.size());
+    std::printf("  triangles  : %zu (%zu walkable, %zu steep)\n",
+                collision.triangles.size(),
+                collision.walkableCount(),
+                collision.steepCount());
+    std::printf("  steep cut  : %.1f° from horizontal\n", steepAngle);
+    if (useWeld) {
+        std::printf("  weld eps   : %.6f\n", weldEps);
+    }
+    return 0;
+}
+
 bool handleBake(int& i, int argc, char** argv, int& outRc) {
     if (std::strcmp(argv[i], "--bake-zone-glb") == 0 && i + 1 < argc) {
         outRc = handleBakeZoneGlb(i, argc, argv); return true;
@@ -920,6 +1022,9 @@ bool handleBake(int& i, int argc, char** argv, int& outRc) {
          std::strcmp(argv[i], "--bake-project-glb") == 0) &&
         i + 1 < argc) {
         outRc = handleBakeProjectStlOrGlb(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--bake-wom-collision") == 0 && i + 1 < argc) {
+        outRc = handleBakeWomCollision(i, argc, argv); return true;
     }
     return false;
 }
