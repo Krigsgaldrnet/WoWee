@@ -3500,6 +3500,68 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleDiamondGrid(int& i, int argc, char** argv) {
+    // Axis-aligned grid of solid diamond shapes (no row offset)
+    // separated by visible bg gaps. Distinct from
+    // --gen-texture-snake-skin (brick-offset diamonds that touch
+    // tangentially with a derived dark outline) — diamond-grid
+    // uses uniform spacing and a configurable fill fraction so
+    // diamonds float in clean rows.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string fillHex = argv[++i];
+    int cellW = 24;
+    int cellH = 24;
+    float fillFrac = 0.80f;          // 0..1 fraction of cell occupied
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, cellW);
+    parseOptInt(i, argc, argv, cellH);
+    parseOptFloat(i, argc, argv, fillFrac);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellW < 4 || cellW > 1024 ||
+        cellH < 4 || cellH > 1024 ||
+        fillFrac <= 0.0f || fillFrac > 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-diamond-grid: invalid dims (W/H 1..8192, "
+            "cellW/H 4..1024, fillFrac (0,1])\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, fr, fg, fb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-diamond-grid")) return 1;
+    if (!parseHexOrError(fillHex, fr, fg, fb_,
+                         "gen-texture-diamond-grid")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float halfW = cellW * 0.5f;
+    const float halfH = cellH * 0.5f;
+    for (int y = 0; y < H; ++y) {
+        int row = y / cellH;
+        float cy = (row + 0.5f) * cellH;
+        for (int x = 0; x < W; ++x) {
+            int col = x / cellW;
+            float cx = (col + 0.5f) * cellW;
+            // L1 (diamond) distance from cell center, normalized
+            // so 1.0 = full cell extent.
+            float dx = std::abs(x - cx) / halfW;
+            float dy = std::abs(y - cy) / halfH;
+            float d = dx + dy;
+            uint8_t r, g, b;
+            if (d < fillFrac) { r = fr;  g = fg;  b = fb_; }
+            else              { r = br_; g = bg_; b = bb_; }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-diamond-grid")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/fill    : %s / %s\n", bgHex.c_str(), fillHex.c_str());
+    std::printf("  cells      : %dx%d, fillFrac=%.2f\n",
+                cellW, cellH, fillFrac);
+    return 0;
+}
+
 int handlePlaid(int& i, int argc, char** argv) {
     // Plaid: two sets of parallel "translucent" bands (one
     // horizontal, one vertical) overlaid on a bg. Where bands
@@ -4819,6 +4881,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-blueprint",      3, handleBlueprint},
     {"--gen-texture-rust-streaks",   3, handleRustStreaks},
     {"--gen-texture-plaid",          3, handlePlaid},
+    {"--gen-texture-diamond-grid",   3, handleDiamondGrid},
 };
 }  // namespace
 
