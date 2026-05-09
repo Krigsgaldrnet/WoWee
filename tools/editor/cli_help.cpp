@@ -125,6 +125,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Runes: scattered angular glyphs of 3-5 strokes each (8 cardinal/diagonal angles)\n");
     std::printf("  --gen-texture-leopard <out.png> <bgHex> <spotHex> [count] [radius] [W H]\n");
     std::printf("                         Leopard: irregular spots (4 sub-circles each) for animal-print fabric/fur\n");
+    std::printf("  --gen-texture-zebra <out.png> <bgHex> <stripeHex> [period] [amplitude] [wavelength] [W H]\n");
+    std::printf("                         Zebra: wavy parallel stripes via sinusoidal y-shift (animal-print stripes)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

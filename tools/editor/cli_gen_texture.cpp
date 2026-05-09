@@ -4418,6 +4418,89 @@ int handleLeopard(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleZebra(int& i, int argc, char** argv) {
+    // Zebra: wavy parallel stripes. The base stripes run
+    // horizontally; a sinusoidal y-shift in x makes them
+    // undulate, producing the characteristic non-straight
+    // zebra look without lining up perfectly with the row
+    // grid. Two-color (bg + stripe) for the iconic black-on-
+    // white animal-print effect.
+    std::string outPath  = argv[++i];
+    std::string bgHex    = argv[++i];
+    std::string stripeHex = argv[++i];
+    int stripePeriod = 24;     // stripe + gap together
+    int amplitude    = 8;      // sine-wave amplitude (px)
+    int wavelength   = 80;     // x-period of the sine wave (px)
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { stripePeriod = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { amplitude = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { wavelength = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stripePeriod < 4 || stripePeriod > 256 ||
+        amplitude < 0 || amplitude > 128 ||
+        wavelength < 8 || wavelength > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-zebra: invalid dims (W/H 1..8192, period 4..256, "
+            "amplitude 0..128, wavelength 8..1024)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr, sg, sb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(stripeHex, sr, sg, sb_)) {
+        std::fprintf(stderr,
+            "gen-texture-zebra: bg or stripe hex color is invalid\n");
+        return 1;
+    }
+    constexpr float kPi = 3.14159265358979323846f;
+    const float twoPi = 2.0f * kPi;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    int halfPeriod = stripePeriod / 2;     // each stripe = half the period
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            // Apply sine perturbation to the row index. Each
+            // column gets a y-shift based on cos(x * 2π/wavelength).
+            float shift = amplitude * std::sin(x * twoPi / wavelength);
+            int adjY = y + static_cast<int>(shift);
+            int phase = ((adjY % stripePeriod) + stripePeriod) % stripePeriod;
+            uint8_t r, g, b;
+            if (phase < halfPeriod) {
+                r = sr; g = sg; b = sb_;     // stripe
+            } else {
+                r = br_; g = bg_; b = bb_;   // bg
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-zebra: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/stripe  : %s / %s\n", bgHex.c_str(), stripeHex.c_str());
+    std::printf("  stripes    : period %d (amplitude %d, wavelength %d px)\n",
+                stripePeriod, amplitude, wavelength);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -4557,6 +4640,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-leopard") == 0 && i + 3 < argc) {
         outRc = handleLeopard(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-zebra") == 0 && i + 3 < argc) {
+        outRc = handleZebra(i, argc, argv); return true;
     }
     return false;
 }

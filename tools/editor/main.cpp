@@ -194,7 +194,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-spider-web", "--gen-texture-gingham",
         "--gen-texture-lattice", "--gen-texture-honeycomb",
         "--gen-texture-cracked", "--gen-texture-runes",
-        "--gen-texture-leopard",
+        "--gen-texture-leopard", "--gen-texture-zebra",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
