@@ -140,6 +140,165 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each object emits all 13 scalar fields
+    // plus dual int + name forms for typeId and flags.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWgotExt(base);
+    if (outPath.empty()) outPath = base + ".wgot.json";
+    if (!wowee::pipeline::WoweeGameObjectLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wgot-json: WGOT not found: %s.wgot\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeGameObjectLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["objectId"] = e.objectId;
+        je["displayId"] = e.displayId;
+        je["name"] = e.name;
+        je["typeId"] = e.typeId;
+        je["typeName"] = wowee::pipeline::WoweeGameObject::typeName(e.typeId);
+        je["size"] = e.size;
+        je["castBarCaption"] = e.castBarCaption;
+        je["requiredSkill"] = e.requiredSkill;
+        je["requiredSkillValue"] = e.requiredSkillValue;
+        je["lockId"] = e.lockId;
+        je["lootTableId"] = e.lootTableId;
+        je["minOpenTimeMs"] = e.minOpenTimeMs;
+        je["maxOpenTimeMs"] = e.maxOpenTimeMs;
+        je["flags"] = e.flags;
+        nlohmann::json fa = nlohmann::json::array();
+        if (e.flags & wowee::pipeline::WoweeGameObject::Disabled)        fa.push_back("disabled");
+        if (e.flags & wowee::pipeline::WoweeGameObject::ScriptOnly)      fa.push_back("script-only");
+        if (e.flags & wowee::pipeline::WoweeGameObject::UsableFromMount) fa.push_back("from-mount");
+        if (e.flags & wowee::pipeline::WoweeGameObject::Despawn)         fa.push_back("despawn");
+        if (e.flags & wowee::pipeline::WoweeGameObject::Frozen)          fa.push_back("frozen");
+        if (e.flags & wowee::pipeline::WoweeGameObject::QuestGated)      fa.push_back("quest-gated");
+        je["flagsList"] = fa;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wgot-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source  : %s.wgot\n", base.c_str());
+    std::printf("  objects : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wgot.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWgotExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wgot-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wgot-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto typeFromName = [](const std::string& s) -> uint8_t {
+        if (s == "door")          return wowee::pipeline::WoweeGameObject::Door;
+        if (s == "button")        return wowee::pipeline::WoweeGameObject::Button;
+        if (s == "chest")         return wowee::pipeline::WoweeGameObject::Chest;
+        if (s == "container")     return wowee::pipeline::WoweeGameObject::Container;
+        if (s == "quest-giver")   return wowee::pipeline::WoweeGameObject::QuestGiver;
+        if (s == "text")          return wowee::pipeline::WoweeGameObject::Text;
+        if (s == "trap")          return wowee::pipeline::WoweeGameObject::Trap;
+        if (s == "goober")        return wowee::pipeline::WoweeGameObject::Goober;
+        if (s == "transport")     return wowee::pipeline::WoweeGameObject::Transport;
+        if (s == "mailbox")       return wowee::pipeline::WoweeGameObject::Mailbox;
+        if (s == "ore-node")      return wowee::pipeline::WoweeGameObject::MineralNode;
+        if (s == "herb-node")     return wowee::pipeline::WoweeGameObject::HerbNode;
+        if (s == "fishing-node")  return wowee::pipeline::WoweeGameObject::FishingNode;
+        if (s == "mount")         return wowee::pipeline::WoweeGameObject::Mount;
+        if (s == "sign")          return wowee::pipeline::WoweeGameObject::Sign;
+        if (s == "bonfire")       return wowee::pipeline::WoweeGameObject::Bonfire;
+        return wowee::pipeline::WoweeGameObject::Goober;
+    };
+    auto flagFromName = [](const std::string& s) -> uint32_t {
+        if (s == "disabled")    return wowee::pipeline::WoweeGameObject::Disabled;
+        if (s == "script-only") return wowee::pipeline::WoweeGameObject::ScriptOnly;
+        if (s == "from-mount")  return wowee::pipeline::WoweeGameObject::UsableFromMount;
+        if (s == "despawn")     return wowee::pipeline::WoweeGameObject::Despawn;
+        if (s == "frozen")      return wowee::pipeline::WoweeGameObject::Frozen;
+        if (s == "quest-gated") return wowee::pipeline::WoweeGameObject::QuestGated;
+        return 0;
+    };
+    wowee::pipeline::WoweeGameObject c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeGameObject::Entry e;
+            e.objectId = je.value("objectId", 0u);
+            e.displayId = je.value("displayId", 0u);
+            e.name = je.value("name", std::string{});
+            if (je.contains("typeId") && je["typeId"].is_number_integer()) {
+                e.typeId = static_cast<uint8_t>(je["typeId"].get<int>());
+            } else if (je.contains("typeName") && je["typeName"].is_string()) {
+                e.typeId = typeFromName(je["typeName"].get<std::string>());
+            }
+            e.size = je.value("size", 1.0f);
+            e.castBarCaption = je.value("castBarCaption", std::string{});
+            e.requiredSkill = je.value("requiredSkill", 0u);
+            e.requiredSkillValue = je.value("requiredSkillValue", 0u);
+            e.lockId = je.value("lockId", 0u);
+            e.lootTableId = je.value("lootTableId", 0u);
+            e.minOpenTimeMs = je.value("minOpenTimeMs", 0u);
+            e.maxOpenTimeMs = je.value("maxOpenTimeMs", 0u);
+            if (je.contains("flags") && je["flags"].is_number_integer()) {
+                e.flags = je["flags"].get<uint32_t>();
+            } else if (je.contains("flagsList") && je["flagsList"].is_array()) {
+                for (const auto& f : je["flagsList"]) {
+                    if (f.is_string()) e.flags |= flagFromName(f.get<std::string>());
+                }
+            }
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeGameObjectLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wgot-json: failed to save %s.wgot\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wgot\n", outBase.c_str());
+    std::printf("  source  : %s\n", jsonPath.c_str());
+    std::printf("  objects : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -246,6 +405,12 @@ bool handleObjectsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wgot") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wgot-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wgot-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

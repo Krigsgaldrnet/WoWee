@@ -933,6 +933,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WGOT entries (objectId / type / lock / loot / required skill / name)\n");
     std::printf("  --validate-wgot <wgot-base> [--json]\n");
     std::printf("                         Static checks: objectId>0+unique, size>0, time min<=max, gathering needs skill, chest warns on no loot\n");
+    std::printf("  --export-wgot-json <wgot-base> [out.json]\n");
+    std::printf("                         Export binary .wgot to a human-editable JSON sidecar (defaults to <base>.wgot.json)\n");
+    std::printf("  --import-wgot-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wgot.json sidecar back into binary .wgot (accepts type/flag int OR name forms)\n");
     std::printf("  --gen-factions <wfac-base> [name]\n");
     std::printf("                         Emit .wfac starter: 3 factions (Friendly id=35 / Hostile id=14 / Player id=1) matching WCRT defaults\n");
     std::printf("  --gen-factions-alliance <wfac-base> [name]\n");
