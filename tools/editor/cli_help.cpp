@@ -1061,6 +1061,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTAL trees + per-talent grid position / max rank / prereq chain / rank-1 spellId\n");
     std::printf("  --validate-wtal <wtal-base> [--json]\n");
     std::printf("                         Static checks: tree+talent ids>0+unique, maxRank 1..5, prereq references resolve, no self-prereq\n");
+    std::printf("  --gen-maps <wms-base> [name]\n");
+    std::printf("                         Emit .wms starter: 1 map (Eastern Kingdoms) + 3 areas (Stormwind / Elwynn / Goldshire) with parent chain\n");
+    std::printf("  --gen-maps-classic <wms-base> [name]\n");
+    std::printf("                         Emit .wms classic set: 2 continents + Deadmines instance + 6 areas with sub-zone parent chains + WSND refs\n");
+    std::printf("  --gen-maps-bgarena <wms-base> [name]\n");
+    std::printf("                         Emit .wms PvP maps: Alterac Valley (40-player BG) + Nagrand Arena (5v5)\n");
+    std::printf("  --info-wms <wms-base> [--json]\n");
+    std::printf("                         Print WMS maps (id / type / expansion / max players) + areas (id / map / parent / level / faction / xp)\n");
+    std::printf("  --validate-wms <wms-base> [--json]\n");
+    std::printf("                         Static checks: ids unique, areas reference real maps, parent areas exist + same map, BG/Arena needs maxPlayers\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

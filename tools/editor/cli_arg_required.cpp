@@ -73,6 +73,8 @@ const char* const kArgRequired[] = {
     "--export-wtax-json", "--import-wtax-json",
     "--gen-talents", "--gen-talents-warrior", "--gen-talents-mage",
     "--info-wtal", "--validate-wtal",
+    "--gen-maps", "--gen-maps-classic", "--gen-maps-bgarena",
+    "--info-wms", "--validate-wms",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

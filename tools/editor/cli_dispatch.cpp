@@ -53,6 +53,7 @@
 #include "cli_gossip_catalog.hpp"
 #include "cli_taxi_catalog.hpp"
 #include "cli_talents_catalog.hpp"
+#include "cli_maps_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -147,6 +148,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleGossipCatalog,
     handleTaxiCatalog,
     handleTalentsCatalog,
+    handleMapsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
