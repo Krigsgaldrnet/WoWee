@@ -1061,6 +1061,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTAL trees + per-talent grid position / max rank / prereq chain / rank-1 spellId\n");
     std::printf("  --validate-wtal <wtal-base> [--json]\n");
     std::printf("                         Static checks: tree+talent ids>0+unique, maxRank 1..5, prereq references resolve, no self-prereq\n");
+    std::printf("  --export-wtal-json <wtal-base> [out.json]\n");
+    std::printf("                         Export binary .wtal to a human-editable JSON sidecar (defaults to <base>.wtal.json)\n");
+    std::printf("  --import-wtal-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtal.json sidecar back into binary .wtal (round-trip with --export-wtal-json)\n");
     std::printf("  --gen-maps <wms-base> [name]\n");
     std::printf("                         Emit .wms starter: 1 map (Eastern Kingdoms) + 3 areas (Stormwind / Elwynn / Goldshire) with parent chain\n");
     std::printf("  --gen-maps-classic <wms-base> [name]\n");

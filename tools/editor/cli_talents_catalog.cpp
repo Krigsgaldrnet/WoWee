@@ -149,6 +149,142 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each tree emits scalar fields plus the
+    // talent array; rankSpellIds becomes a 5-element JSON
+    // array.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWtalExt(base);
+    if (outPath.empty()) outPath = base + ".wtal.json";
+    if (!wowee::pipeline::WoweeTalentLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtal-json: WTAL not found: %s.wtal\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTalentLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& t : c.trees) {
+        nlohmann::json jt;
+        jt["treeId"] = t.treeId;
+        jt["name"] = t.name;
+        jt["iconPath"] = t.iconPath;
+        jt["requiredClassMask"] = t.requiredClassMask;
+        nlohmann::json ta = nlohmann::json::array();
+        for (const auto& a : t.talents) {
+            nlohmann::json ja;
+            ja["talentId"] = a.talentId;
+            ja["row"] = a.row;
+            ja["col"] = a.col;
+            ja["maxRank"] = a.maxRank;
+            ja["prereqTalentId"] = a.prereqTalentId;
+            ja["prereqRank"] = a.prereqRank;
+            nlohmann::json sa = nlohmann::json::array();
+            for (int r = 0; r < wowee::pipeline::WoweeTalent::kMaxRanks; ++r) {
+                sa.push_back(a.rankSpellIds[r]);
+            }
+            ja["rankSpellIds"] = sa;
+            ta.push_back(ja);
+        }
+        jt["talents"] = ta;
+        arr.push_back(jt);
+    }
+    j["trees"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wtal-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wtal\n", base.c_str());
+    std::printf("  trees  : %zu\n", c.trees.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wtal.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWtalExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wtal-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wtal-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeTalent c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("trees") && j["trees"].is_array()) {
+        for (const auto& jt : j["trees"]) {
+            wowee::pipeline::WoweeTalent::Tree t;
+            t.treeId = jt.value("treeId", 0u);
+            t.name = jt.value("name", std::string{});
+            t.iconPath = jt.value("iconPath", std::string{});
+            t.requiredClassMask = jt.value("requiredClassMask", 0u);
+            if (jt.contains("talents") && jt["talents"].is_array()) {
+                for (const auto& ja : jt["talents"]) {
+                    wowee::pipeline::WoweeTalent::Talent a;
+                    a.talentId = ja.value("talentId", 0u);
+                    a.row = static_cast<uint8_t>(ja.value("row", 0));
+                    a.col = static_cast<uint8_t>(ja.value("col", 0));
+                    a.maxRank = static_cast<uint8_t>(ja.value("maxRank", 1));
+                    a.prereqTalentId = ja.value("prereqTalentId", 0u);
+                    a.prereqRank = static_cast<uint8_t>(
+                        ja.value("prereqRank", 0));
+                    if (ja.contains("rankSpellIds") &&
+                        ja["rankSpellIds"].is_array()) {
+                        const auto& sa = ja["rankSpellIds"];
+                        for (int r = 0;
+                             r < wowee::pipeline::WoweeTalent::kMaxRanks &&
+                             r < static_cast<int>(sa.size()); ++r) {
+                            if (sa[r].is_number_integer()) {
+                                a.rankSpellIds[r] = sa[r].get<uint32_t>();
+                            }
+                        }
+                    }
+                    t.talents.push_back(a);
+                }
+            }
+            c.trees.push_back(std::move(t));
+        }
+    }
+    if (!wowee::pipeline::WoweeTalentLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtal-json: failed to save %s.wtal\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtal\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  trees  : %zu\n", c.trees.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -295,6 +431,12 @@ bool handleTalentsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wtal") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtal-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtal-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
