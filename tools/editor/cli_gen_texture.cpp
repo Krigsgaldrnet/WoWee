@@ -2258,10 +2258,7 @@ int handleArgyle(int& i, int argc, char** argv) {
             if (onStitch) {
                 r = sr_; g = sg_; b = sb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-argyle")) return 1;
@@ -2324,10 +2321,7 @@ int handleHerringbone(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-herringbone")) return 1;
@@ -2406,10 +2400,7 @@ int handleScales(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-scales")) return 1;
@@ -2507,10 +2498,7 @@ int handleStainedGlass(int& i, int argc, char** argv) {
                 else if (ci == 1) { r = br;  g = bg;  b = bb_; }
                 else              { r = cr_; g = cg_; b = cb_; }
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-stained-glass")) return 1;
@@ -2578,10 +2566,7 @@ int handleShingles(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-shingles")) return 1;
@@ -2766,10 +2751,7 @@ int handleParquet(int& i, int argc, char** argv) {
                     r = br; g = bg; b = bb_;
                 }
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-parquet")) return 1;
@@ -2861,10 +2843,7 @@ int handleBubbles(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-bubbles")) return 1;
@@ -2944,10 +2923,7 @@ int handleSpiderWeb(int& i, int argc, char** argv) {
                     cr_ = wr; cg_ = wg; cb_ = wb_;
                 }
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = cr_;
-            pixels[idx + 1] = cg_;
-            pixels[idx + 2] = cb_;
+            setPixelRGB(pixels, W, x, y, cr_, cg_, cb_);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-spider-web")) return 1;
@@ -3005,10 +2981,7 @@ int handleGingham(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-gingham")) return 1;
@@ -3062,10 +3035,7 @@ int handleLattice(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-lattice")) return 1;
@@ -3152,10 +3122,7 @@ int handleHoneycomb(int& i, int argc, char** argv) {
             } else {
                 r = fr; g = fg; b = fb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-honeycomb")) return 1;
@@ -3212,10 +3179,7 @@ int handleCracked(int& i, int argc, char** argv) {
     auto next01 = [&]() { return (rngStep() & 0xFFFFFF) / float(0x1000000); };
     auto paintPixel = [&](int x, int y) {
         if (x < 0 || x >= W || y < 0 || y >= H) return;
-        size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-        pixels[idx + 0] = cr_;
-        pixels[idx + 1] = cg_;
-        pixels[idx + 2] = cb_;
+        setPixelRGB(pixels, W, x, y, cr_, cg_, cb_);
     };
     constexpr float kPi = 3.14159265358979323846f;
     // Iterative DFS instead of true recursion so we don't blow
@@ -3296,10 +3260,7 @@ int handleRunes(int& i, int argc, char** argv) {
     }
     auto paint = [&](int x, int y) {
         if (x < 0 || x >= W || y < 0 || y >= H) return;
-        size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-        pixels[idx + 0] = rr_;
-        pixels[idx + 1] = rg_;
-        pixels[idx + 2] = rb_;
+        setPixelRGB(pixels, W, x, y, rr_, rg_, rb_);
     };
     auto drawLine = [&](int x0, int y0, int x1, int y1) {
         // Bresenham. Pixels paint with the rune color.
@@ -3450,10 +3411,7 @@ int handleLeopard(int& i, int argc, char** argv) {
                 if (inSpot) break;
             }
             if (inSpot) {
-                size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-                pixels[idx + 0] = sr_;
-                pixels[idx + 1] = sg_;
-                pixels[idx + 2] = sb_;
+                setPixelRGB(pixels, W, x, y, sr_, sg_, sb_);
             }
         }
     }
@@ -3514,10 +3472,7 @@ int handleZebra(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;   // bg
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-zebra")) return 1;
@@ -3579,10 +3534,7 @@ int handleKnit(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-knit")) return 1;
@@ -3655,10 +3607,7 @@ int handleSnakeSkin(int& i, int argc, char** argv) {
             } else {
                 r = sr; g = sg; b = sb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels,
@@ -3739,10 +3688,7 @@ int handleCamo(int& i, int argc, char** argv) {
             uint8_t r, g, b;
             if (v >= threshold) { r = br_; g = bg_; b = bb_; }
             else                { r = ar; g = ag; b = ab; }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-camo")) return 1;
@@ -3803,10 +3749,7 @@ int handlePinstripe(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-pinstripe")) return 1;
@@ -3863,10 +3806,7 @@ int handleCarbon(int& i, int argc, char** argv) {
             uint8_t r = static_cast<uint8_t>(br_ + t * (fr - br_));
             uint8_t g = static_cast<uint8_t>(bg_ + t * (fg - bg_));
             uint8_t b = static_cast<uint8_t>(bb_ + t * (fb_ - bb_));
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-carbon")) return 1;
@@ -3936,10 +3876,7 @@ int handleWoodgrain(int& i, int argc, char** argv) {
             uint8_t r8 = static_cast<uint8_t>(lr + t * (dr - lr));
             uint8_t g8 = static_cast<uint8_t>(lg + t * (dg - lg));
             uint8_t b8 = static_cast<uint8_t>(lb + t * (db - lb));
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r8;
-            pixels[idx + 1] = g8;
-            pixels[idx + 2] = b8;
+            setPixelRGB(pixels, W, x, y, r8, g8, b8);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-woodgrain")) return 1;
@@ -4025,10 +3962,7 @@ int handleMoss(int& i, int argc, char** argv) {
             uint8_t r, g, b;
             if (inMoss) { r = mr; g = mg; b = mb_; }
             else        { r = br_; g = bg_; b = bb_; }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-moss")) return 1;
@@ -4095,10 +4029,7 @@ int handleStuds(int& i, int argc, char** argv) {
             } else {
                 r = sr; g = sg; b = sb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-studs")) return 1;
@@ -4172,10 +4103,7 @@ int handleStarburst(int& i, int argc, char** argv) {
             } else {
                 resR = br_; resG = bg_; resB = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = resR;
-            pixels[idx + 1] = resG;
-            pixels[idx + 2] = resB;
+            setPixelRGB(pixels, W, x, y, resR, resG, resB);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-starburst")) return 1;
@@ -4233,10 +4161,7 @@ int handleCaustics(int& i, int argc, char** argv) {
             uint8_t r = static_cast<uint8_t>(br_ + t * (hr - br_));
             uint8_t g = static_cast<uint8_t>(bg_ + t * (hg - bg_));
             uint8_t b = static_cast<uint8_t>(bb_ + t * (hb_ - bb_));
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-caustics")) return 1;
@@ -4306,10 +4231,7 @@ int handleRope(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-rope")) return 1;
@@ -4362,10 +4284,7 @@ int handleCorrugated(int& i, int argc, char** argv) {
             uint8_t r = static_cast<uint8_t>(br_ + t * (hr - br_));
             uint8_t g = static_cast<uint8_t>(bg_ + t * (hg - bg_));
             uint8_t b = static_cast<uint8_t>(bb_ + t * (hb_ - bb_));
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-corrugated")) return 1;
@@ -4451,10 +4370,7 @@ int handlePlanks(int& i, int argc, char** argv) {
                     b = static_cast<uint8_t>(clamp(int(b) - 15));
                 }
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-planks")) return 1;
@@ -4524,10 +4440,7 @@ int handleChainmail(int& i, int argc, char** argv) {
             } else {
                 r = br_; g = bg_; b = bb_;
             }
-            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
-            pixels[idx + 0] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
+            setPixelRGB(pixels, W, x, y, r, g, b);
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-chainmail")) return 1;

@@ -62,6 +62,20 @@ inline bool parseHexOrError(const std::string& hex,
     return false;
 }
 
+// Inline pixel-write helper for the inner loops of procedural
+// texture handlers. 30 sites in cli_gen_texture.cpp open-coded
+// the same 4-line index-and-write block. Header-inline because
+// the procedural handlers call this once per pixel — the
+// abstraction shouldn't cost a function-call frame.
+inline void setPixelRGB(std::vector<uint8_t>& pixels, int W,
+                        int x, int y,
+                        uint8_t r, uint8_t g, uint8_t b) {
+    std::size_t idx = (static_cast<std::size_t>(y) * W + x) * 3;
+    pixels[idx + 0] = r;
+    pixels[idx + 1] = g;
+    pixels[idx + 2] = b;
+}
+
 // Shared PNG-write wrapper used by every --gen-texture-* handler.
 // Calls stbi_write_png with the standard RGB/24-bit/W*3-stride
 // arguments and reports a stderr message on failure. Returns true
