@@ -976,8 +976,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Aggregate texture refs across all WOM models in a zone (deduped)\n");
     std::printf("  --info-zone-models-total <zoneDir> [--json]\n");
     std::printf("                         Aggregate WOM/WOB stats across a zone (verts, tris, bones, batches, doodads)\n");
-    std::printf("  --list-zone-meshes <zoneDir> [--json]\n");
-    std::printf("                         Per-mesh listing of every .wom in a zone (verts, tris, bones, textures, bytes)\n");
+    std::printf("  --list-zone-meshes-detail <zoneDir> [--json]\n");
+    std::printf("                         Per-mesh listing of every .wom in a zone, sorted by triangle count\n");
     std::printf("  --info-mesh <wom-base> [--json]\n");
     std::printf("                         Single-mesh detail: bounds, version, batches, bones, textures, attachments in one view\n");
     std::printf("  --info-mesh-storage-budget <wom-base> [--json]\n");
@@ -1116,7 +1116,7 @@ int main(int argc, char* argv[]) {
         "--list-project-meshes", "--list-project-audio",
         "--list-project-textures",
         "--info-zone-models-total", "--info-project-models-total",
-        "--list-zone-meshes", "--list-project-meshes-detail", "--info-mesh",
+        "--list-zone-meshes-detail", "--list-project-meshes-detail", "--info-mesh",
         "--info-mesh-storage-budget",
         "--info-wob", "--info-woc", "--info-wot",
         "--info-creatures", "--info-objects", "--info-quests",
@@ -2045,15 +2045,14 @@ int main(int argc, char* argv[]) {
             std::printf("    vertices  : %llu\n", static_cast<unsigned long long>(womVerts + wobVerts));
             std::printf("    triangles : %llu\n", static_cast<unsigned long long>((womIndices + wobIndices) / 3));
             return 0;
-        } else if (std::strcmp(argv[i], "--list-zone-meshes") == 0 && i + 1 < argc) {
-            // Per-mesh breakdown of every .wom file in <zoneDir>.
-            // Complements --info-zone-models-total (aggregate)
-            // by surfacing individual mesh metrics — useful for
-            // spotting outliers ("which mesh is using 80% of my
-            // triangle budget?") and for content audits.
-            //
-            // Sorted by triangle count descending so the heaviest
-            // meshes float to the top of the table.
+        } else if (std::strcmp(argv[i], "--list-zone-meshes-detail") == 0 && i + 1 < argc) {
+            // Per-mesh breakdown of every .wom file in <zoneDir>,
+            // sorted by triangle count descending so the heaviest
+            // meshes float to the top. Complements
+            // --list-zone-meshes (per-zone summary) by surfacing
+            // individual mesh metrics — useful for spotting
+            // outliers ("which mesh is using 80% of my triangle
+            // budget?") and for content audits.
             std::string zoneDir = argv[++i];
             bool jsonOut = (i + 1 < argc &&
                             std::strcmp(argv[i + 1], "--json") == 0);
@@ -2061,7 +2060,7 @@ int main(int argc, char* argv[]) {
             namespace fs = std::filesystem;
             if (!fs::exists(zoneDir)) {
                 std::fprintf(stderr,
-                    "list-zone-meshes: %s does not exist\n", zoneDir.c_str());
+                    "list-zone-meshes-detail: %s does not exist\n", zoneDir.c_str());
                 return 1;
             }
             struct Row {
