@@ -1,67 +1,6 @@
 #include "editor_app.hpp"
-#include "cli_gen_audio.hpp"
-#include "cli_zone_packs.hpp"
-#include "cli_audits.hpp"
-#include "cli_readmes.hpp"
-#include "cli_zone_inventory.hpp"
-#include "cli_project_inventory.hpp"
-#include "cli_help.hpp"
-#include "cli_gen_texture.hpp"
-#include "cli_gen_mesh.hpp"
-#include "cli_mesh_io.hpp"
-#include "cli_mesh_edit.hpp"
-#include "cli_wom_info.hpp"
-#include "cli_format_validate.hpp"
-#include "cli_convert.hpp"
-#include "cli_format_info.hpp"
-#include "cli_pack.hpp"
-#include "cli_content_info.hpp"
-#include "cli_zone_info.hpp"
-#include "cli_data_tree.hpp"
-#include "cli_diff.hpp"
-#include "cli_spawn_audit.hpp"
-#include "cli_items.hpp"
-#include "cli_extract_info.hpp"
-#include "cli_export.hpp"
-#include "cli_bake.hpp"
-#include "cli_migrate.hpp"
+#include "cli_dispatch.hpp"
 #include "cli_convert_single.hpp"
-#include "cli_validate_interop.hpp"
-#include "cli_glb_inspect.hpp"
-#include "cli_wom_io.hpp"
-#include "cli_world_io.hpp"
-#include "cli_info_tree.hpp"
-#include "cli_info_bytes.hpp"
-#include "cli_info_extents.hpp"
-#include "cli_info_water.hpp"
-#include "cli_info_density.hpp"
-#include "cli_info_audio.hpp"
-#include "cli_world_info.hpp"
-#include "cli_quest_objective.hpp"
-#include "cli_quest_reward.hpp"
-#include "cli_clone.hpp"
-#include "cli_remove.hpp"
-#include "cli_add.hpp"
-#include "cli_random.hpp"
-#include "cli_items_export.hpp"
-#include "cli_items_mutate.hpp"
-#include "cli_zone_create.hpp"
-#include "cli_tiles.hpp"
-#include "cli_zone_mgmt.hpp"
-#include "cli_strip.hpp"
-#include "cli_repair.hpp"
-#include "cli_makefile.hpp"
-#include "cli_zone_list.hpp"
-#include "cli_tilemap.hpp"
-#include "cli_deps.hpp"
-#include "cli_for_each.hpp"
-#include "cli_check.hpp"
-#include "cli_introspect.hpp"
-#include "cli_texture_helpers.hpp"
-#include "cli_mesh_info.hpp"
-#include "cli_zone_data.hpp"
-#include "cli_project_actions.hpp"
-#include "cli_zone_export.hpp"
 #include "cli_arg_required.hpp"
 #include "content_pack.hpp"
 #include "npc_spawner.hpp"
@@ -260,201 +199,21 @@ int main(int argc, char* argv[]) {
     }
 
     for (int i = 1; i < argc; i++) {
-        // Modular handler families: extracted from the in-line if/else
-        // chain below to keep main.cpp from sprawling further. Each
-        // family lives in its own .cpp; if it matches argv[i] it
-        // sets outRc and we exit. Otherwise fall through to the
-        // legacy in-line dispatch.
-        {
-            int outRc = 0;
-            if (wowee::editor::cli::handleGenAudio(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleZonePacks(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleAudits(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleReadmes(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleZoneInventory(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleProjectInventory(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleGenTexture(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleGenMesh(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleMeshIO(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleMeshEdit(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleWomInfo(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleFormatValidate(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleConvert(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleFormatInfo(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handlePack(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleContentInfo(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleZoneInfo(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleDataTree(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleDiff(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleSpawnAudit(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleItems(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleExtractInfo(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleExport(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleBake(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleMigrate(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleConvertSingle(i, argc, argv,
-                                                        dataPath, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleValidateInterop(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleGlbInspect(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleWomIo(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleWorldIo(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleInfoTree(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleInfoBytes(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleInfoExtents(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleInfoWater(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleInfoDensity(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleInfoAudio(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleWorldInfo(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleQuestObjective(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleQuestReward(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleClone(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleRemove(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleAdd(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleRandom(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleItemsExport(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleItemsMutate(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleZoneCreate(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleTiles(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleZoneMgmt(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleStrip(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleRepair(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleMakefile(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleZoneList(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleTilemap(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleDeps(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleForEach(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleCheck(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleIntrospect(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleTextureHelpers(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleMeshInfo(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleZoneData(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleProjectActions(i, argc, argv, outRc)) {
-                return outRc;
-            }
-            if (wowee::editor::cli::handleZoneExport(i, argc, argv, outRc)) {
-                return outRc;
-            }
+        // CLI handlers live in cli_dispatch.cpp's table-driven
+        // dispatcher. handleConvertSingle is the one outlier
+        // because it needs dataPath threaded in; everything else
+        // goes through tryDispatchAll. Either return path captures
+        // the handler's exit code via outRc.
+        int outRc = 0;
+        if (wowee::editor::cli::handleConvertSingle(i, argc, argv,
+                                                     dataPath, outRc)) {
+            return outRc;
         }
+        if (wowee::editor::cli::tryDispatchAll(i, argc, argv, outRc)) {
+            return outRc;
+        }
+        // GUI-state args don't return — they're absorbed and
+        // applied to the EditorApp after argv parsing finishes.
         if (std::strcmp(argv[i], "--data") == 0 && i + 1 < argc) {
             dataPath = argv[++i];
         } else if (std::strcmp(argv[i], "--adt") == 0 && i + 3 < argc) {
