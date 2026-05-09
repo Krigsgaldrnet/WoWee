@@ -3954,6 +3954,93 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCamo(int& i, int argc, char** argv) {
+    // Camouflage: 2-octave value noise thresholded into hard
+    // bg/fg blobs. Distinct from --gen-texture-noise-color (which
+    // smoothly lerps between the two colors): camo uses sharp
+    // edges to read as a real woodland-disruption pattern, like
+    // ghillie suits and military uniforms. Larger features come
+    // from the low-frequency octave; finer mottling from the
+    // higher octave.
+    std::string outPath = argv[++i];
+    std::string aHex    = argv[++i];   // dominant color
+    std::string bHex    = argv[++i];   // accent blob color
+    int cellSize = 32;     // low-frequency lattice in px
+    float threshold = 0.5f;
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, cellSize);
+    parseOptFloat(i, argc, argv, threshold);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellSize < 4 || cellSize > 1024 ||
+        threshold <= 0.0f || threshold >= 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-camo: invalid dims (W/H 1..8192, "
+            "cellSize 4..1024, threshold (0,1))\n");
+        return 1;
+    }
+    uint8_t ar, ag, ab, br_, bg_, bb_;
+    if (!parseHex(aHex, ar, ag, ab) ||
+        !parseHex(bHex, br_, bg_, bb_)) {
+        std::fprintf(stderr,
+            "gen-texture-camo: hex color is invalid\n");
+        return 1;
+    }
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    auto latticeNoise = [&](int x, int y, int cell, uint32_t s) -> float {
+        // Sample bilinear value noise on a `cell`-pixel lattice.
+        int lx = x / cell, ly = y / cell;
+        float fx = (x - lx * cell) / static_cast<float>(cell);
+        float fy = (y - ly * cell) / static_cast<float>(cell);
+        auto sample = [&](int gx, int gy) {
+            uint32_t h = hash32(static_cast<uint32_t>(gx) * 0x9E3779B1u
+                                ^ static_cast<uint32_t>(gy) * 0x85EBCA77u
+                                ^ s);
+            return (h % 1000) / 999.0f;
+        };
+        float v00 = sample(lx,     ly);
+        float v10 = sample(lx + 1, ly);
+        float v01 = sample(lx,     ly + 1);
+        float v11 = sample(lx + 1, ly + 1);
+        // Smoothstep weights for natural-looking blobs.
+        float u = fx * fx * (3.0f - 2.0f * fx);
+        float v = fy * fy * (3.0f - 2.0f * fy);
+        return (v00 * (1 - u) + v10 * u) * (1 - v) +
+               (v01 * (1 - u) + v11 * u) * v;
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const int fineCell = std::max(2, cellSize / 4);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            // Sum the two octaves: large blobs at full weight,
+            // fine mottling at 0.4× weight.
+            float v = 0.7f * latticeNoise(x, y, cellSize, seed)
+                    + 0.3f * latticeNoise(x, y, fineCell, seed ^ 0xA5A5A5A5u);
+            uint8_t r, g, b;
+            if (v >= threshold) { r = br_; g = bg_; b = bb_; }
+            else                { r = ar; g = ag; b = ab; }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-camo")) return 1;
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  a / b      : %s / %s\n", aHex.c_str(), bHex.c_str());
+    std::printf("  blobs      : cell=%d, threshold=%.2f, seed=%u\n",
+                cellSize, threshold, seed);
+    return 0;
+}
+
 int handlePinstripe(int& i, int argc, char** argv) {
     // Pinstripe: thin vertical lines at every `stride` x position,
     // with optional thicker "feature" line every Nth stripe so the
@@ -4856,6 +4943,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-woodgrain",      3, handleWoodgrain},
     {"--gen-texture-carbon",         3, handleCarbon},
     {"--gen-texture-pinstripe",      3, handlePinstripe},
+    {"--gen-texture-camo",           3, handleCamo},
 };
 }  // namespace
 
