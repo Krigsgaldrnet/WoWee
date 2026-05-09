@@ -3500,6 +3500,66 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleEmbroidery(int& i, int argc, char** argv) {
+    // Cross-stitch embroidery: a grid of X-shape stitches. Each
+    // cell holds an X formed by two diagonal strokes from cell
+    // corners through the center. Distinct from --gen-texture-
+    // checker (filled squares) and --gen-texture-knit (V-stitch
+    // chevron) — embroidery is the explicit two-direction
+    // diagonal stitch mark used by counted-thread textile work.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string threadHex = argv[++i];
+    int cellSize = 12;
+    int strokeW  = 2;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, cellSize);
+    parseOptInt(i, argc, argv, strokeW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellSize < 4 || cellSize > 1024 ||
+        strokeW < 1 || strokeW * 2 >= cellSize) {
+        std::fprintf(stderr,
+            "gen-texture-embroidery: invalid dims (W/H 1..8192, "
+            "cellSize 4..1024, strokeW 1..cellSize/2)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, tr, tg, tb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-embroidery")) return 1;
+    if (!parseHexOrError(threadHex, tr, tg, tb_,
+                         "gen-texture-embroidery")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float halfW = strokeW * 0.5f;
+    for (int y = 0; y < H; ++y) {
+        int yLocal = y % cellSize;
+        for (int x = 0; x < W; ++x) {
+            int xLocal = x % cellSize;
+            // X-shape test: pixel is on a diagonal stroke if
+            // |xLocal - yLocal| < strokeW (top-left to bottom-right)
+            // OR |xLocal + yLocal - cellSize| < strokeW
+            //                        (top-right to bottom-left).
+            float d1 = std::abs(static_cast<float>(xLocal) - yLocal);
+            float d2 = std::abs(static_cast<float>(xLocal) + yLocal -
+                                cellSize);
+            uint8_t r, g, b;
+            if (d1 < halfW || d2 < halfW) {
+                r = tr; g = tg; b = tb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-embroidery")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/thread  : %s / %s\n", bgHex.c_str(), threadHex.c_str());
+    std::printf("  cells      : %d, strokeW=%d\n", cellSize, strokeW);
+    return 0;
+}
+
 int handleMold(int& i, int argc, char** argv) {
     // Mold: Worley (cellular) noise thresholded into mold patches.
     // Each grid cell hosts a hash-jittered center; each pixel
@@ -5318,6 +5378,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-swirl",          3, handleSwirl},
     {"--gen-texture-ironbark",       3, handleIronbark},
     {"--gen-texture-mold",           3, handleMold},
+    {"--gen-texture-embroidery",     3, handleEmbroidery},
 };
 }  // namespace
 

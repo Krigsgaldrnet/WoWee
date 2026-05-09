@@ -179,6 +179,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Ironbark: vertical wood streaks + horizontal plate bands (mature hardwood / sycamore / ironwood)\n");
     std::printf("  --gen-texture-mold <out.png> <bgHex> <moldHex> [stride] [thresholdFrac] [seed] [W H]\n");
     std::printf("                         Mold: Worley-noise field patches (cellars / dungeon walls / sewer overflow / fungal growth)\n");
+    std::printf("  --gen-texture-embroidery <out.png> <bgHex> <threadHex> [cellSize] [strokeW] [W H]\n");
+    std::printf("                         Embroidery: grid of cross-stitch X marks (counted-thread textile / sampler / folk-art trim)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
