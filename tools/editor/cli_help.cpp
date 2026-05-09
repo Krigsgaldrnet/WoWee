@@ -861,6 +861,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSPN spawn entries (kind / entryId / position / respawn / wander radius / label)\n");
     std::printf("  --validate-wspn <wspn-base> [--json]\n");
     std::printf("                         Static checks: kind 0..2, finite position/scale/wander, doodads have respawn=0, no orphan entryId=0\n");
+    std::printf("  --export-wspn-json <wspn-base> [out.json]\n");
+    std::printf("                         Export binary .wspn to a human-editable JSON sidecar (defaults to <base>.wspn.json)\n");
+    std::printf("  --import-wspn-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wspn.json sidecar back into binary .wspn (accepts either kind int OR kindName string)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

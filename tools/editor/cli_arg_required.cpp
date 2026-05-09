@@ -31,6 +31,7 @@ const char* const kArgRequired[] = {
     "--export-wsnd-json", "--import-wsnd-json",
     "--gen-spawns", "--gen-spawns-camp", "--gen-spawns-village",
     "--info-wspn", "--validate-wspn",
+    "--export-wspn-json", "--import-wspn-json",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",
