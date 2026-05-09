@@ -2370,6 +2370,108 @@ int handleMosaic(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleRust(int& i, int argc, char** argv) {
+    // Metal with rust patches: smooth multi-octave noise field
+    // thresholded by `coverage` to make rust blobs, blended
+    // with the metal base. Per-pixel grain jitter on top so
+    // both metal and rust regions read with subtle variation.
+    std::string outPath = argv[++i];
+    std::string metalHex = argv[++i];
+    std::string rustHex = argv[++i];
+    uint32_t seed = 1;
+    float coverage = 0.4f;  // 0=clean metal, 1=fully oxidized
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { coverage = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        coverage < 0.0f || coverage > 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-rust: invalid dims (W/H 1..8192, coverage 0..1)\n");
+        return 1;
+    }
+    uint8_t mr, mg, mb, rr, rg, rb;
+    if (!parseHex(metalHex, mr, mg, mb)) {
+        std::fprintf(stderr,
+            "gen-texture-rust: '%s' is not a valid hex color\n",
+            metalHex.c_str());
+        return 1;
+    }
+    if (!parseHex(rustHex, rr, rg, rb)) {
+        std::fprintf(stderr,
+            "gen-texture-rust: '%s' is not a valid hex color\n",
+            rustHex.c_str());
+        return 1;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    float seedF = static_cast<float>(seed);
+    auto blob = [&](float x, float y) -> float {
+        // 3-octave smooth noise; sin/cos product avoids needing
+        // a permutation table.
+        float n = 0.0f, total = 0.0f;
+        float freq = 0.025f, amp = 1.0f;
+        for (int o = 0; o < 3; ++o) {
+            n += amp * (0.5f + 0.5f *
+                std::sin(x * freq + seedF * (1.0f + o)) *
+                std::cos(y * freq + seedF * (0.6f + o)));
+            total += amp;
+            freq *= 2.0f;
+            amp *= 0.5f;
+        }
+        return n / total;  // 0..1
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    float thresh = 1.0f - coverage;
+    int rustPixels = 0;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float n = blob(static_cast<float>(x), static_cast<float>(y));
+            // Smoothstep across a 0.12 band around threshold so
+            // rust patches feather into clean metal.
+            float t = std::clamp((n - thresh) / 0.12f, 0.0f, 1.0f);
+            if (t > 0.5f) ++rustPixels;
+            // Per-pixel grain jitter (separate small jitter on
+            // each channel) so neither material reads as flat.
+            float jitter = (next01() - 0.5f) * 0.08f;
+            float r = (mr * (1 - t) + rr * t) * (1.0f + jitter);
+            float g = (mg * (1 - t) + rg * t) * (1.0f + jitter);
+            float b = (mb * (1 - t) + rb * t) * (1.0f + jitter);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[i2 + 0] = static_cast<uint8_t>(std::clamp(r, 0.0f, 255.0f));
+            pixels[i2 + 1] = static_cast<uint8_t>(std::clamp(g, 0.0f, 255.0f));
+            pixels[i2 + 2] = static_cast<uint8_t>(std::clamp(b, 0.0f, 255.0f));
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-rust: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  metal/rust : %s / %s\n",
+                metalHex.c_str(), rustHex.c_str());
+    std::printf("  coverage   : %.2f (%d rust pixels)\n",
+                coverage, rustPixels);
+    std::printf("  seed       : %u\n", seed);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2449,6 +2551,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-mosaic") == 0 && i + 4 < argc) {
         outRc = handleMosaic(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-rust") == 0 && i + 3 < argc) {
+        outRc = handleRust(i, argc, argv); return true;
     }
     return false;
 }

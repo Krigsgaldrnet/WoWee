@@ -85,6 +85,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Wall with climbing vines: meandering vertical paths via random walk (default 8 vines)\n");
     std::printf("  --gen-texture-mosaic <out.png> <colorAHex> <colorBHex> <colorCHex> [tilePx] [seed] [W H]\n");
     std::printf("                         3-color mosaic: small square tiles with random color picks + grout (default 16px)\n");
+    std::printf("  --gen-texture-rust <out.png> <metalHex> <rustHex> [seed] [coverage] [W H]\n");
+    std::printf("                         Metal with rust patches: noise blob threshold + per-pixel grain (default coverage=0.4)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
