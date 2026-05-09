@@ -4586,6 +4586,79 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCorrugated(int& i, int argc, char** argv) {
+    // Corrugated metal sheeting: smooth cosine ridges along one
+    // axis. Each pixel's brightness comes from cos((x or y) /
+    // period * 2π) mapped from [-1,1] to [0,1] and used to lerp
+    // between bgHex (the trough/shadow color) and hiHex (the
+    // crest/highlight color). Vertical orientation by default
+    // (ridges run top→bottom, wave varies along X) which is the
+    // standard sheet-metal-roof look.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string hiHex   = argv[++i];
+    int period = 16;
+    char dir = 'v';        // 'v' = vertical ridges, 'h' = horizontal
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { period = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        const char* a = argv[++i];
+        if (a[0] == 'h' || a[0] == 'H') dir = 'h';
+        else if (a[0] == 'v' || a[0] == 'V') dir = 'v';
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        period < 2 || period > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-corrugated: invalid dims (W/H 1..8192, "
+            "period 2..1024)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, hr, hg, hb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(hiHex, hr, hg, hb_)) {
+        std::fprintf(stderr,
+            "gen-texture-corrugated: bg or highlight hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float twoPi = 6.28318530717958f;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            int v = (dir == 'v') ? x : y;
+            float phase = (static_cast<float>(v) / period) * twoPi;
+            float t = (std::cos(phase) + 1.0f) * 0.5f;
+            uint8_t r = static_cast<uint8_t>(br_ + t * (hr - br_));
+            uint8_t g = static_cast<uint8_t>(bg_ + t * (hg - bg_));
+            uint8_t b = static_cast<uint8_t>(bb_ + t * (hb_ - bb_));
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-corrugated: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/hi      : %s / %s\n", bgHex.c_str(), hiHex.c_str());
+    std::printf("  ridges     : period=%d (%s)\n", period,
+                dir == 'v' ? "vertical" : "horizontal");
+    return 0;
+}
+
 int handlePlanks(int& i, int argc, char** argv) {
     // Plank floor: horizontal "boards" of randomized length and tint
     // separated by thin dark seams. Each plank gets a hash-derived
@@ -4854,6 +4927,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-knit",           3, handleKnit},
     {"--gen-texture-chainmail",      3, handleChainmail},
     {"--gen-texture-planks",         3, handlePlanks},
+    {"--gen-texture-corrugated",     3, handleCorrugated},
 };
 }  // namespace
 

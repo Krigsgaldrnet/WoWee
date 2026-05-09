@@ -133,6 +133,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Chainmail: brick-offset ring outlines for armor/mail textures (interlocking metal rings)\n");
     std::printf("  --gen-texture-planks <out.png> <bgHex> <seamHex> [plankH] [grains/plank] [seed] [W H]\n");
     std::printf("                         Planks: horizontal floor boards with per-plank tint, grain streaks, and stagger seams\n");
+    std::printf("  --gen-texture-corrugated <out.png> <bgHex> <hiHex> [period] [v|h] [W H]\n");
+    std::printf("                         Corrugated: smooth cosine ridges between bg and hi (sheet-metal roofing / siding)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
