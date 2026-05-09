@@ -3366,6 +3366,123 @@ int handleShingles(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleFrost(int& i, int argc, char** argv) {
+    // Frost: scattered crystal nuclei with radial spikes.
+    // Each seed gets six thin lines radiating at 60° intervals
+    // (with a per-seed random angular offset so they don't all
+    // align). Line lengths are jittered per spike, and pixel
+    // intensity falls off linearly toward the end of each line
+    // so spikes fade naturally into the background.
+    std::string outPath = argv[++i];
+    std::string bgHex  = argv[++i];
+    std::string iceHex = argv[++i];
+    int seedCount = 80;
+    int rayLen    = 18;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seedCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { rayLen = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        seedCount < 1 || seedCount > 8192 ||
+        rayLen < 2 || rayLen > 256) {
+        std::fprintf(stderr,
+            "gen-texture-frost: invalid dims (W/H 1..8192, seeds 1..8192, ray 2..256)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, ir, ig, ib;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(iceHex, ir, ig, ib)) {
+        std::fprintf(stderr,
+            "gen-texture-frost: bg or ice hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Fill background.
+    for (size_t p = 0; p < pixels.size(); p += 3) {
+        pixels[p + 0] = br_;
+        pixels[p + 1] = bg_;
+        pixels[p + 2] = bb_;
+    }
+    // Deterministic RNG so re-runs reproduce the same frost.
+    uint32_t rng = static_cast<uint32_t>(seedCount) * 0x9E3779B9u +
+                   static_cast<uint32_t>(W) * 0x85EBCA6Bu +
+                   static_cast<uint32_t>(rayLen);
+    auto rngStep = [&]() {
+        rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+        return rng;
+    };
+    auto blendPixel = [&](int x, int y, float alpha) {
+        if (x < 0 || x >= W || y < 0 || y >= H) return;
+        if (alpha <= 0) return;
+        if (alpha > 1.0f) alpha = 1.0f;
+        size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+        // Linear blend from bg toward ice color by alpha.
+        pixels[idx + 0] = static_cast<uint8_t>(
+            pixels[idx + 0] + (ir - pixels[idx + 0]) * alpha);
+        pixels[idx + 1] = static_cast<uint8_t>(
+            pixels[idx + 1] + (ig - pixels[idx + 1]) * alpha);
+        pixels[idx + 2] = static_cast<uint8_t>(
+            pixels[idx + 2] + (ib - pixels[idx + 2]) * alpha);
+    };
+    constexpr float kPi = 3.14159265358979323846f;
+    for (int s = 0; s < seedCount; ++s) {
+        // Seed position uniformly random across the image.
+        float sx = (rngStep() & 0xFFFF) / 65535.0f * W;
+        float sy = (rngStep() & 0xFFFF) / 65535.0f * H;
+        // Angular jitter so spikes don't all align to the same
+        // 6-fold rosette.
+        float baseAngle = (rngStep() & 0xFFFF) / 65535.0f * kPi / 3.0f;
+        // 6 rays per nucleus at 60° spacing.
+        for (int r = 0; r < 6; ++r) {
+            float angle = baseAngle + r * (kPi / 3.0f);
+            float dx = std::cos(angle);
+            float dy = std::sin(angle);
+            // Per-spike length jitter (60-100% of nominal).
+            float lenScale = 0.6f + (rngStep() & 0xFFFF) / 65535.0f * 0.4f;
+            int spikeLen = static_cast<int>(rayLen * lenScale);
+            // Walk pixels along the ray. Alpha falls linearly
+            // from 1.0 at the seed to 0.0 at the end of the spike.
+            for (int t = 0; t < spikeLen; ++t) {
+                int px = static_cast<int>(sx + dx * t);
+                int py = static_cast<int>(sy + dy * t);
+                float alpha = 1.0f - static_cast<float>(t) / spikeLen;
+                blendPixel(px, py, alpha);
+            }
+        }
+        // Bright nucleus dot — a 2x2 block to make the seed
+        // visible even when its spikes are short.
+        for (int dyN = 0; dyN < 2; ++dyN) {
+            for (int dxN = 0; dxN < 2; ++dxN) {
+                int px = static_cast<int>(sx) + dxN;
+                int py = static_cast<int>(sy) + dyN;
+                blendPixel(px, py, 1.0f);
+            }
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-frost: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg / ice   : %s / %s\n", bgHex.c_str(), iceHex.c_str());
+    std::printf("  seeds      : %d (6-spike rosettes, ray %d px)\n",
+                seedCount, rayLen);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -3475,6 +3592,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-shingles") == 0 && i + 4 < argc) {
         outRc = handleShingles(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-frost") == 0 && i + 3 < argc) {
+        outRc = handleFrost(i, argc, argv); return true;
     }
     return false;
 }

@@ -158,7 +158,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-coral", "--gen-texture-flame", "--gen-texture-tartan",
         "--gen-texture-argyle", "--gen-texture-herringbone",
         "--gen-texture-scales", "--gen-texture-stained-glass",
-        "--gen-texture-shingles",
+        "--gen-texture-shingles", "--gen-texture-frost",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
