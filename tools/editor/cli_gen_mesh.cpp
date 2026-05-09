@@ -4655,6 +4655,140 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBed(int& i, int argc, char** argv) {
+    // Bed: 7-box bedroom prop — flat mattress slab, tall
+    // headboard at one end, short shorter footboard at the
+    // other, 4 corner legs, and a small pillow box at the
+    // headboard end. Pairs with --gen-mesh-table /
+    // --gen-mesh-bookshelf for inn rooms, manor bedrooms,
+    // barracks. The 42nd procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float length    = 2.0f;     // along Z (head-to-foot)
+    float width     = 1.2f;     // along X
+    float legHeight = 0.30f;
+    float matThick  = 0.20f;
+    float headH     = 1.0f;     // headboard height above mattress
+    float footH     = 0.4f;     // footboard height above mattress
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { length = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { legHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { matThick = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { headH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { footH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (length <= 0 || width <= 0 || legHeight <= 0 ||
+        matThick <= 0 || headH <= 0 || footH <= 0) {
+        std::fprintf(stderr, "gen-mesh-bed: all dims must be > 0\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    float halfL = length * 0.5f;
+    float halfW = width  * 0.5f;
+    float legT  = std::min(width, length) * 0.06f;  // square cross-section
+    float halfLeg = legT * 0.5f;
+    // Head end is at +Z, foot end at -Z.
+    // 4 legs: one per corner, inset from edges by half a leg-thickness.
+    float legX = halfW - halfLeg;
+    float legZ = halfL - halfLeg;
+    float legCY = legHeight * 0.5f;
+    addBox( legX, legCY,  legZ, halfLeg, legHeight * 0.5f, halfLeg);
+    addBox(-legX, legCY,  legZ, halfLeg, legHeight * 0.5f, halfLeg);
+    addBox( legX, legCY, -legZ, halfLeg, legHeight * 0.5f, halfLeg);
+    addBox(-legX, legCY, -legZ, halfLeg, legHeight * 0.5f, halfLeg);
+    // Mattress: spans full width × length, sits on top of legs.
+    float matBottomY = legHeight;
+    float matCY = matBottomY + matThick * 0.5f;
+    addBox(0, matCY, 0, halfW, matThick * 0.5f, halfL);
+    // Headboard: tall thin slab at +Z end, spanning full width.
+    // Sits on top of the mattress base (its bottom is at matBottomY).
+    float headThick = legT * 1.4f;
+    float headCY = matBottomY + headH * 0.5f;
+    addBox(0, headCY, halfL - headThick * 0.5f,
+           halfW, headH * 0.5f, headThick * 0.5f);
+    // Footboard: shorter slab at -Z end.
+    float footCY = matBottomY + footH * 0.5f;
+    addBox(0, footCY, -halfL + headThick * 0.5f,
+           halfW, footH * 0.5f, headThick * 0.5f);
+    // Pillow: small box on the mattress, near the headboard end.
+    float pillowW    = halfW * 1.6f;     // 80% of mattress width
+    float pillowL    = halfL * 0.25f;    // ~12.5% of mattress length
+    float pillowH    = matThick * 0.5f;
+    float pillowCY   = matBottomY + matThick + pillowH * 0.5f;
+    float pillowZ    = halfL - pillowL - headThick;
+    addBox(0, pillowCY, pillowZ,
+           pillowW * 0.5f, pillowH * 0.5f, pillowL * 0.5f);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = matBottomY + std::max({matThick + pillowH, headH, footH});
+    wom.boundMin = glm::vec3(-halfW, 0.0f,    -halfL);
+    wom.boundMax = glm::vec3( halfW, totalH,   halfL);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-bed: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  size       : %.3f x %.3f x %.3f (W x H x L)\n",
+                width, totalH, length);
+    std::printf("  mattress   : %.3f thick at y=%.3f\n",
+                matThick, matBottomY);
+    std::printf("  headboard  : %.3f tall (foot %.3f tall)\n",
+                headH, footH);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleLamppost(int& i, int argc, char** argv) {
     // Lamppost: 4-box urban prop — square base plinth, tall
     // vertical pole, lantern body box around the pole top,
@@ -5166,6 +5300,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-lamppost") == 0 && i + 1 < argc) {
         outRc = handleLamppost(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-bed") == 0 && i + 1 < argc) {
+        outRc = handleBed(i, argc, argv); return true;
     }
     return false;
 }
