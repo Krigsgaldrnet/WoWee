@@ -1017,6 +1017,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WTRN entries (npc / kind / spells with skill+level reqs / items with stock + restock)\n");
     std::printf("  --validate-wtrn <wtrn-base> [--json]\n");
     std::printf("                         Static checks: npcId>0+unique, kindMask>0, Trainer needs spells, Vendor needs items, no orphan offers\n");
+    std::printf("  --export-wtrn-json <wtrn-base> [out.json]\n");
+    std::printf("                         Export binary .wtrn to a human-editable JSON sidecar (defaults to <base>.wtrn.json)\n");
+    std::printf("  --import-wtrn-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wtrn.json sidecar back into binary .wtrn (accepts kindMask int OR kindList string array)\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

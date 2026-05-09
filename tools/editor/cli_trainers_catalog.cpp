@@ -179,6 +179,183 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each NPC emits scalar + greeting fields
+    // plus the spell-offer and item-offer arrays. The
+    // kindMask emits dual int + name forms.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWtrnExt(base);
+    if (outPath.empty()) outPath = base + ".wtrn.json";
+    if (!wowee::pipeline::WoweeTrainerLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wtrn-json: WTRN not found: %s.wtrn\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeTrainerLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["npcId"] = e.npcId;
+        je["kindMask"] = e.kindMask;
+        je["kindMaskName"] = wowee::pipeline::WoweeTrainer::kindMaskName(e.kindMask);
+        nlohmann::json km = nlohmann::json::array();
+        if (e.kindMask & wowee::pipeline::WoweeTrainer::Trainer) km.push_back("trainer");
+        if (e.kindMask & wowee::pipeline::WoweeTrainer::Vendor)  km.push_back("vendor");
+        je["kindList"] = km;
+        je["greeting"] = e.greeting;
+        nlohmann::json sa = nlohmann::json::array();
+        for (const auto& s : e.spells) {
+            sa.push_back({
+                {"spellId", s.spellId},
+                {"moneyCostCopper", s.moneyCostCopper},
+                {"requiredSkillId", s.requiredSkillId},
+                {"requiredSkillRank", s.requiredSkillRank},
+                {"requiredLevel", s.requiredLevel},
+            });
+        }
+        je["spells"] = sa;
+        nlohmann::json ia = nlohmann::json::array();
+        for (const auto& it : e.items) {
+            nlohmann::json ji;
+            ji["itemId"] = it.itemId;
+            // Emit "unlimited" string when stock is the sentinel
+            // value so JSON is friendlier to hand-edit. Importer
+            // accepts either form.
+            if (it.stockCount == wowee::pipeline::WoweeTrainer::kUnlimitedStock) {
+                ji["stockCount"] = "unlimited";
+            } else {
+                ji["stockCount"] = it.stockCount;
+            }
+            ji["restockSec"] = it.restockSec;
+            ji["extendedCost"] = it.extendedCost;
+            ji["moneyCostCopper"] = it.moneyCostCopper;
+            ia.push_back(ji);
+        }
+        je["items"] = ia;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wtrn-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wtrn\n", base.c_str());
+    std::printf("  npcs   : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wtrn.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWtrnExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wtrn-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wtrn-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "trainer") return wowee::pipeline::WoweeTrainer::Trainer;
+        if (s == "vendor")  return wowee::pipeline::WoweeTrainer::Vendor;
+        return 0;
+    };
+    wowee::pipeline::WoweeTrainer c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeTrainer::Entry e;
+            e.npcId = je.value("npcId", 0u);
+            if (je.contains("kindMask") && je["kindMask"].is_number_integer()) {
+                e.kindMask = static_cast<uint8_t>(je["kindMask"].get<int>());
+            } else if (je.contains("kindList") && je["kindList"].is_array()) {
+                for (const auto& f : je["kindList"]) {
+                    if (f.is_string()) e.kindMask |= kindFromName(f.get<std::string>());
+                }
+            }
+            e.greeting = je.value("greeting", std::string{});
+            if (je.contains("spells") && je["spells"].is_array()) {
+                for (const auto& js : je["spells"]) {
+                    wowee::pipeline::WoweeTrainer::SpellOffer s;
+                    s.spellId = js.value("spellId", 0u);
+                    s.moneyCostCopper = js.value("moneyCostCopper", 0u);
+                    s.requiredSkillId = js.value("requiredSkillId", 0u);
+                    s.requiredSkillRank = static_cast<uint16_t>(
+                        js.value("requiredSkillRank", 0));
+                    s.requiredLevel = static_cast<uint16_t>(
+                        js.value("requiredLevel", 1));
+                    e.spells.push_back(s);
+                }
+            }
+            if (je.contains("items") && je["items"].is_array()) {
+                for (const auto& ji : je["items"]) {
+                    wowee::pipeline::WoweeTrainer::ItemOffer it;
+                    it.itemId = ji.value("itemId", 0u);
+                    if (ji.contains("stockCount")) {
+                        const auto& sc = ji["stockCount"];
+                        if (sc.is_string() &&
+                            sc.get<std::string>() == "unlimited") {
+                            it.stockCount =
+                                wowee::pipeline::WoweeTrainer::kUnlimitedStock;
+                        } else if (sc.is_number_integer()) {
+                            it.stockCount = sc.get<uint32_t>();
+                        } else {
+                            it.stockCount =
+                                wowee::pipeline::WoweeTrainer::kUnlimitedStock;
+                        }
+                    } else {
+                        it.stockCount =
+                            wowee::pipeline::WoweeTrainer::kUnlimitedStock;
+                    }
+                    it.restockSec = ji.value("restockSec", 0u);
+                    it.extendedCost = ji.value("extendedCost", 0u);
+                    it.moneyCostCopper = ji.value("moneyCostCopper", 0u);
+                    e.items.push_back(it);
+                }
+            }
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeTrainerLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wtrn-json: failed to save %s.wtrn\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wtrn\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  npcs   : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -307,6 +484,12 @@ bool handleTrainersCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wtrn") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wtrn-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wtrn-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }
