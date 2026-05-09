@@ -62,6 +62,15 @@ inline bool parseHexOrError(const std::string& hex,
     return false;
 }
 
+// Print the canonical "Wrote <path>" + "  size : WxH" pair shown
+// at the start of every --gen-texture-* handler's success report.
+// 64 sites used the same two lines (with minor whitespace variation
+// that this helper normalizes to one consistent label width).
+inline void printPngWrote(const std::string& outPath, int W, int H) {
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+}
+
 // Inline pixel-write helper for the inner loops of procedural
 // texture handlers. 30 sites in cli_gen_texture.cpp open-coded
 // the same 4-line index-and-write block. Header-inline because

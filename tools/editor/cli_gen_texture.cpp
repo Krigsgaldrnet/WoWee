@@ -120,8 +120,7 @@ int handleCobble(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-cobble")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size         : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  stone/mortar : %s / %s\n",
                 stoneHex.c_str(), mortarHex.c_str());
     std::printf("  stone px     : %d\n", stonePx);
@@ -194,8 +193,7 @@ int handleMarble(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-marble")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size      : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  base/vein : %s / %s\n",
                 baseHex.c_str(), veinHex.c_str());
     std::printf("  sharpness : %.1f\n", sharpness);
@@ -288,8 +286,7 @@ int handleMetal(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-metal")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size        : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  base color  : %s\n", baseHex.c_str());
     std::printf("  orientation : %s\n", orientation.c_str());
     std::printf("  seed        : %u\n", seed);
@@ -374,8 +371,7 @@ int handleLeather(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-leather")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  base color : %s\n", baseHex.c_str());
     std::printf("  grain size : %d px\n", grainSize);
     std::printf("  seed       : %u\n", seed);
@@ -438,8 +434,7 @@ int handleSand(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-sand")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size           : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  base color     : %s\n", baseHex.c_str());
     std::printf("  ripple spacing : %d px\n", rippleSpacing);
     std::printf("  seed           : %u\n", seed);
@@ -504,8 +499,7 @@ int handleSnow(int& i, int argc, char** argv) {
         pixels[i2 + 2] = 255;
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-snow")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  base color : %s\n", baseHex.c_str());
     std::printf("  density    : %.4f (%d sparkles)\n",
                 density, sparkles);
@@ -594,8 +588,7 @@ int handleLava(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-lava")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size        : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  dark/hot    : %s / %s\n",
                 darkHex.c_str(), hotHex.c_str());
     std::printf("  crack scale : %d px\n", crackScale);
@@ -659,8 +652,7 @@ int handleGradient(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-gradient")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  direction  : %s\n",
                 horizontal ? "horizontal" : "vertical");
     std::printf("  from       : %s (rgb %u,%u,%u)\n",
@@ -738,8 +730,7 @@ int handleNoise(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-noise")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size  : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  seed  : %u\n", seed);
     std::printf("  type  : smooth value noise (16x16 bilinear lattice)\n");
     return 0;
@@ -810,8 +801,7 @@ int handleNoiseColor(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-noise-color")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size  : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  seed  : %u\n", seed);
     std::printf("  from  : %s\n", aHex.c_str());
     std::printf("  to    : %s\n", bHex.c_str());
@@ -867,8 +857,7 @@ int handleRadial(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-radial")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size   : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  center : %s (rgb %u,%u,%u)\n",
                 centerHex.c_str(), rc, gc, bc);
     std::printf("  edge   : %s (rgb %u,%u,%u)\n",
@@ -924,8 +913,7 @@ int handleStripes(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-stripes")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size      : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  direction : %s\n", dir.c_str());
     std::printf("  stripe    : %d px\n", stripePx);
     std::printf("  colors    : %s + %s\n", aHex.c_str(), bHex.c_str());
@@ -972,8 +960,7 @@ int handleDots(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-dots")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size      : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg        : %s\n", bgHex.c_str());
     std::printf("  dot       : %s\n", dotHex.c_str());
     std::printf("  radius    : %d px\n", radius);
@@ -1019,8 +1006,7 @@ int handleRings(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-rings")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size      : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  ring px   : %d\n", ringPx);
     std::printf("  colors    : %s + %s\n", aHex.c_str(), bHex.c_str());
     return 0;
@@ -1060,8 +1046,7 @@ int handleChecker(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-checker")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size     : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  cell px  : %d\n", cellPx);
     std::printf("  colors   : %s + %s\n", aHex.c_str(), bHex.c_str());
     return 0;
@@ -1112,8 +1097,7 @@ int handleBrick(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-brick")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size      : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  brick     : %d × %d px (%s)\n",
                 brickW, brickH, brickHex.c_str());
     std::printf("  mortar    : %d px (%s)\n",
@@ -1211,8 +1195,7 @@ int handleWood(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-wood")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size      : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  light/dark: %s / %s\n",
                 lightHex.c_str(), darkHex.c_str());
     std::printf("  spacing   : %d px\n", spacing);
@@ -1283,8 +1266,7 @@ int handleGrass(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-grass")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size      : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  base/blade: %s / %s\n",
                 baseHex.c_str(), bladeHex.c_str());
     std::printf("  density   : %.3f\n", density);
@@ -1346,8 +1328,7 @@ int handleFabric(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-fabric")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  warp/weft  : %s / %s\n",
                 warpHex.c_str(), weftHex.c_str());
     std::printf("  thread px  : %d\n", threadPx);
@@ -1416,8 +1397,7 @@ int handleTile(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-tile")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  tile/grout : %s / %s\n",
                 tileHex.c_str(), groutHex.c_str());
     std::printf("  tile px    : %d\n", tilePx);
@@ -1501,8 +1481,7 @@ int handleBark(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-bark")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  base/crack : %s / %s\n",
                 baseHex.c_str(), crackHex.c_str());
     std::printf("  density    : %.4f (%d cracks)\n",
@@ -1578,8 +1557,7 @@ int handleClouds(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-clouds")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  sky/cloud  : %s / %s\n",
                 skyHex.c_str(), cloudHex.c_str());
     std::printf("  coverage   : %.2f (%d cloud pixels)\n",
@@ -1643,8 +1621,7 @@ int handleStars(int& i, int argc, char** argv) {
         pixels[i2 + 2] = static_cast<uint8_t>(bb_ * (1 - t) + sb * t);
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-stars")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/star    : %s / %s\n",
                 bgHex.c_str(), starHex.c_str());
     std::printf("  density    : %.4f\n", density);
@@ -1715,8 +1692,7 @@ int handleVines(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-vines")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size        : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  wall/vine   : %s / %s\n",
                 wallHex.c_str(), vineHex.c_str());
     std::printf("  vines       : %d (%d painted pixels)\n",
@@ -1788,8 +1764,7 @@ int handleMosaic(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-mosaic")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  colors     : %s / %s / %s\n",
                 aHex.c_str(), bHex.c_str(), cHex.c_str());
     std::printf("  tile px    : %d\n", tilePx);
@@ -1867,8 +1842,7 @@ int handleRust(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-rust")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  metal/rust : %s / %s\n",
                 metalHex.c_str(), rustHex.c_str());
     std::printf("  coverage   : %.2f (%d rust pixels)\n",
@@ -1952,8 +1926,7 @@ int handleCircuit(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-circuit")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  pcb/trace  : %s / %s\n",
                 pcbHex.c_str(), traceHex.c_str());
     std::printf("  traces     : %d (~%d vias)\n", traceCount, viaCount);
@@ -2047,8 +2020,7 @@ int handleCoral(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-coral")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size        : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  water/coral : %s / %s\n",
                 waterHex.c_str(), coralHex.c_str());
     std::printf("  branches    : %d roots → %d total (with splits)\n",
@@ -2116,8 +2088,7 @@ int handleFlame(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-flame")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  dark/hot   : %s / %s\n",
                 darkHex.c_str(), hotHex.c_str());
     std::printf("  seed       : %u\n", seed);
@@ -2189,8 +2160,7 @@ int handleTartan(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-tartan")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  colors A/B/C: %s / %s / %s\n",
                 aHex.c_str(), bHex.c_str(), cHex.c_str());
     std::printf("  band px    : %d (repeat %d px)\n",
@@ -2262,8 +2232,7 @@ int handleArgyle(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-argyle")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  colors A/B  : %s / %s\n", aHex.c_str(), bHex.c_str());
     std::printf("  stitch     : %s\n", stitchHex.c_str());
     std::printf("  cell px    : %d\n", cellPx);
@@ -2325,8 +2294,7 @@ int handleHerringbone(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-herringbone")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg / line  : %s / %s\n", bgHex.c_str(), lineHex.c_str());
     std::printf("  strip H    : %d (slant flips per strip)\n", stripHeight);
     std::printf("  line       : width %d / spacing %d\n",
@@ -2404,8 +2372,7 @@ int handleScales(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-scales")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/scale/rim : %s / %s / %s\n",
                 bgHex.c_str(), scaleHex.c_str(), rimHex.c_str());
     std::printf("  cell       : %dx%d (radius %.1f, half-row stagger)\n",
@@ -2502,8 +2469,7 @@ int handleStainedGlass(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-stained-glass")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  lead       : %s\n", leadHex.c_str());
     std::printf("  glass A/B/C: %s / %s / %s\n",
                 aHex.c_str(), bHex.c_str(), cHex.c_str());
@@ -2570,8 +2536,7 @@ int handleShingles(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-shingles")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  base/shadow/seam: %s / %s / %s\n",
                 baseHex.c_str(), shadowHex.c_str(), seamHex.c_str());
     std::printf("  shingle    : %dx%d (shadow %d px, seam %d px)\n",
@@ -2670,8 +2635,7 @@ int handleFrost(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-frost")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg / ice   : %s / %s\n", bgHex.c_str(), iceHex.c_str());
     std::printf("  seeds      : %d (6-spike rosettes, ray %d px)\n",
                 seedCount, rayLen);
@@ -2755,8 +2719,7 @@ int handleParquet(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-parquet")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  wood A/B   : %s / %s (%s gap)\n",
                 woodAHex.c_str(), woodBHex.c_str(), gapHex.c_str());
     std::printf("  cell       : %d px (gap %d px, basket-weave)\n",
@@ -2847,8 +2810,7 @@ int handleBubbles(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-bubbles")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/fill/rim: %s / %s / %s\n",
                 bgHex.c_str(), fillHex.c_str(), rimHex.c_str());
     std::printf("  bubbles    : %d (radius %d-%d, rim %d px)\n",
@@ -2985,8 +2947,7 @@ int handleGingham(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-gingham")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/stripe/cross : %s / %s / %s\n",
                 bgHex.c_str(), stripeHex.c_str(), crossHex.c_str());
     std::printf("  spacing    : %d px (stripe width %d)\n",
@@ -3039,8 +3000,7 @@ int handleLattice(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-lattice")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg / line  : %s / %s\n", bgHex.c_str(), lineHex.c_str());
     std::printf("  diagonals  : ±45° at %d-px spacing, %d-px width\n",
                 lineSpacing, lineWidth);
@@ -3126,8 +3086,7 @@ int handleHoneycomb(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-honeycomb")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  fill / border : %s / %s\n",
                 fillHex.c_str(), borderHex.c_str());
     std::printf("  hex side   : %d px (%zu seeds total)\n",
@@ -3220,8 +3179,7 @@ int handleCracked(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-cracked")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg / crack : %s / %s\n", bgHex.c_str(), crackHex.c_str());
     std::printf("  seeds      : %d (max length %d, branching DFS)\n",
                 seedCount, maxLength);
@@ -3319,8 +3277,7 @@ int handleRunes(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-runes")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg / rune  : %s / %s\n", bgHex.c_str(), runeHex.c_str());
     std::printf("  runes      : %d (slot %d px, 3-5 strokes each)\n",
                 runeCount, gridSpacing);
@@ -3416,8 +3373,7 @@ int handleLeopard(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-leopard")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg / spot  : %s / %s\n", bgHex.c_str(), spotHex.c_str());
     std::printf("  spots      : %d (radius ~%d, 4 sub-circles each)\n",
                 spotCount, spotRadius);
@@ -3476,8 +3432,7 @@ int handleZebra(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-zebra")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/stripe  : %s / %s\n", bgHex.c_str(), stripeHex.c_str());
     std::printf("  stripes    : period %d (amplitude %d, wavelength %d px)\n",
                 stripePeriod, amplitude, wavelength);
@@ -3538,8 +3493,7 @@ int handleKnit(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-knit")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/stitch  : %s / %s\n", bgHex.c_str(), stitchHex.c_str());
     std::printf("  stitch     : %dx%d (stroke %d px)\n",
                 cellW, cellH, strokeWidth);
@@ -3628,8 +3582,7 @@ int handleRustStreaks(int& i, int argc, char** argv) {
     }
     if (!savePngOrError(outPath, W, H, pixels,
                         "gen-texture-rust-streaks")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/rust    : %s / %s\n", bgHex.c_str(), rustHex.c_str());
     std::printf("  streaks    : %d (seed %u)\n", streakCount, seed);
     return 0;
@@ -3695,8 +3648,7 @@ int handleBlueprint(int& i, int argc, char** argv) {
     }
     if (!savePngOrError(outPath, W, H, pixels,
                         "gen-texture-blueprint")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/line    : %s / %s\n", bgHex.c_str(), lineHex.c_str());
     std::printf("  minor      : stride=%d, W=%d\n", minorStride, minorW);
     std::printf("  major      : every %d, W=%d\n", majorEvery, majorW);
@@ -3785,8 +3737,7 @@ int handleBamboo(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-bamboo")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/bamboo  : %s / %s\n", bgHex.c_str(), bambooHex.c_str());
     std::printf("  stalks     : pitch=%d, nodeY=%d (%d-px band), seed=%u\n",
                 stalkW, nodeY, nodeBand, seed);
@@ -3838,8 +3789,7 @@ int handleMeshScreen(int& i, int argc, char** argv) {
     }
     if (!savePngOrError(outPath, W, H, pixels,
                         "gen-texture-mesh-screen")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/wire    : %s / %s\n", bgHex.c_str(), wireHex.c_str());
     std::printf("  grid       : stride=%d, wireW=%d\n", stride, wireW);
     return 0;
@@ -3911,8 +3861,7 @@ int handleSnakeSkin(int& i, int argc, char** argv) {
     }
     if (!savePngOrError(outPath, W, H, pixels,
                         "gen-texture-snake-skin")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/scale   : %s / %s\n", bgHex.c_str(), scaleHex.c_str());
     std::printf("  diamond    : %dx%d (outline %d px)\n",
                 cellW, cellH, outlineW);
@@ -3991,8 +3940,7 @@ int handleCamo(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-camo")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  a / b      : %s / %s\n", aHex.c_str(), bHex.c_str());
     std::printf("  blobs      : cell=%d, threshold=%.2f, seed=%u\n",
                 cellSize, threshold, seed);
@@ -4052,8 +4000,7 @@ int handlePinstripe(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-pinstripe")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/line    : %s / %s\n", bgHex.c_str(), lineHex.c_str());
     std::printf("  stripes    : stride=%d, lineW=%d, featureEvery=%d\n",
                 stride, lineW, featureEvery);
@@ -4109,8 +4056,7 @@ int handleCarbon(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-carbon")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/fiber   : %s / %s\n", bgHex.c_str(), fibHex.c_str());
     std::printf("  weave cell : %d\n", cellSize);
     return 0;
@@ -4179,8 +4125,7 @@ int handleWoodgrain(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-woodgrain")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  light/dark : %s / %s\n", lightHex.c_str(), darkHex.c_str());
     std::printf("  rings      : spacing=%d, seed=%u\n", spacing, seed);
     return 0;
@@ -4265,8 +4210,7 @@ int handleMoss(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-moss")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/moss    : %s / %s\n", bgHex.c_str(), mossHex.c_str());
     std::printf("  spots      : stride=%d, density=%d/100, seed=%u\n",
                 stride, density, seed);
@@ -4332,8 +4276,7 @@ int handleStuds(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-studs")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/stud    : %s / %s\n", bgHex.c_str(), studHex.c_str());
     std::printf("  studs      : R=%d on %d-stride grid\n", studR, stride);
     return 0;
@@ -4406,8 +4349,7 @@ int handleStarburst(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-starburst")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/ray     : %s / %s\n", bgHex.c_str(), rayHex.c_str());
     std::printf("  rays       : %d (beam width %.3f rad)\n",
                 rayCount, beamWidth);
@@ -4464,8 +4406,7 @@ int handleCaustics(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-caustics")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/hi      : %s / %s\n", bgHex.c_str(), hiHex.c_str());
     std::printf("  period     : %d\n", period);
     return 0;
@@ -4534,8 +4475,7 @@ int handleRope(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-rope")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/rope    : %s / %s\n", bgHex.c_str(), ropeHex.c_str());
     std::printf("  twist      : period=%d, strandW=%d\n", period, strandW);
     return 0;
@@ -4587,8 +4527,7 @@ int handleCorrugated(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-corrugated")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/hi      : %s / %s\n", bgHex.c_str(), hiHex.c_str());
     std::printf("  ridges     : period=%d (%s)\n", period,
                 dir == 'v' ? "vertical" : "horizontal");
@@ -4673,8 +4612,7 @@ int handlePlanks(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-planks")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/seam    : %s / %s\n", bgHex.c_str(), seamHex.c_str());
     std::printf("  plank H    : %d (grains/plank %d)\n",
                 plankH, grainsPerPlank);
@@ -4743,8 +4681,7 @@ int handleChainmail(int& i, int argc, char** argv) {
         }
     }
     if (!savePngOrError(outPath, W, H, pixels, "gen-texture-chainmail")) return 1;
-    std::printf("Wrote %s\n", outPath.c_str());
-    std::printf("  size       : %dx%d\n", W, H);
+    printPngWrote(outPath, W, H);
     std::printf("  bg/ring    : %s / %s\n", bgHex.c_str(), ringHex.c_str());
     std::printf("  ring       : R=%d on %dx%d brick (stroke %.2f px)\n",
                 ringR, cellW, cellH, strokeW);
