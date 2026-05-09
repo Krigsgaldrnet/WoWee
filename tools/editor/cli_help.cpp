@@ -95,6 +95,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Flame: vertical color gradient from dark base to hot top with noise flicker\n");
     std::printf("  --gen-texture-tartan <out.png> <colorAHex> <colorBHex> <colorCHex> [bandPx] [W H]\n");
     std::printf("                         Tartan plaid: 3-color crossing bands forming Scottish-style overlap pattern\n");
+    std::printf("  --gen-texture-argyle <out.png> <colorAHex> <colorBHex> <stitchHex> [cellPx] [W H]\n");
+    std::printf("                         Argyle: 45-rotated lozenge checkerboard with diagonal stitch lines (sweater knit)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

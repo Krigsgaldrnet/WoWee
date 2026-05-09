@@ -2880,6 +2880,97 @@ int handleTartan(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleArgyle(int& i, int argc, char** argv) {
+    // Argyle: classic sweater-knit pattern of rotated squares
+    // (lozenges) in checkerboard alternation, overlaid with
+    // diagonal stitch lines in a third color. The rotation is
+    // achieved by working in the rotated coord system (u, v) =
+    // (x + y, x - y); each tile becomes a unit cell there.
+    std::string outPath = argv[++i];
+    std::string aHex = argv[++i];
+    std::string bHex = argv[++i];
+    std::string stitchHex = argv[++i];
+    int cellPx = 64;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { cellPx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellPx < 8 || cellPx > 512) {
+        std::fprintf(stderr,
+            "gen-texture-argyle: invalid dims (W/H 1..8192, cellPx 8..512)\n");
+        return 1;
+    }
+    uint8_t ar, ag, ab, br, bg, bb_, sr_, sg_, sb_;
+    if (!parseHex(aHex, ar, ag, ab) ||
+        !parseHex(bHex, br, bg, bb_) ||
+        !parseHex(stitchHex, sr_, sg_, sb_)) {
+        std::fprintf(stderr,
+            "gen-texture-argyle: one of the hex colors is invalid\n");
+        return 1;
+    }
+    // Stitch lines are 2 pixels wide regardless of cell size — at
+    // very small cells they'd dominate, but cellPx>=8 keeps them
+    // visually subordinate to the diamond fill.
+    const int stitchHalfWidth = 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            // Rotate the lattice 45° by mapping to (u, v) = (x+y, x-y).
+            // Lozenge cells in the original frame become axis-aligned
+            // squares in (u, v) space, easy to checkerboard.
+            int u = x + y;
+            int v = x - y;
+            int uCell = u / cellPx;
+            int vCell;
+            // Floor division for negative v so the lattice stays
+            // consistent across the whole image (avoids a seam at x<y).
+            if (v >= 0) vCell = v / cellPx;
+            else        vCell = -((-v + cellPx - 1) / cellPx);
+            uint8_t r, g, b;
+            if (((uCell + vCell) & 1) == 0) {
+                r = ar; g = ag; b = ab;
+            } else {
+                r = br; g = bg; b = bb_;
+            }
+            // Stitch lines: 2-px-wide bands along the lattice grid
+            // (i.e. at u % cellPx ≈ 0 and v % cellPx ≈ 0). These are
+            // the diagonal lines characteristic of the argyle look.
+            int uMod = ((u % cellPx) + cellPx) % cellPx;
+            int vMod = ((v % cellPx) + cellPx) % cellPx;
+            bool onStitch =
+                (uMod <= stitchHalfWidth || uMod >= cellPx - stitchHalfWidth) ||
+                (vMod <= stitchHalfWidth || vMod >= cellPx - stitchHalfWidth);
+            if (onStitch) {
+                r = sr_; g = sg_; b = sb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-argyle: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  colors A/B  : %s / %s\n", aHex.c_str(), bHex.c_str());
+    std::printf("  stitch     : %s\n", stitchHex.c_str());
+    std::printf("  cell px    : %d\n", cellPx);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2974,6 +3065,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-tartan") == 0 && i + 4 < argc) {
         outRc = handleTartan(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-argyle") == 0 && i + 4 < argc) {
+        outRc = handleArgyle(i, argc, argv); return true;
     }
     return false;
 }
