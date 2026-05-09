@@ -3566,6 +3566,163 @@ int handleMushroom(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCart(int& i, int argc, char** argv) {
+    // Wooden cart: rectangular bed box + 2 cylindrical wheels
+    // mounted axis-along-Z on the sides at the bottom of the
+    // bed. Wheels are full cylinders (16-segment) so the round
+    // silhouette reads from any angle. The 30th procedural mesh
+    // primitive.
+    std::string womBase = argv[++i];
+    float bedLen = 1.6f;     // along X (cart length)
+    float bedWidth = 0.8f;   // along Z
+    float bedH = 0.5f;       // bed height (Y)
+    float wheelR = 0.35f;    // wheel radius
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { bedLen = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { bedWidth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { bedH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { wheelR = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (bedLen <= 0 || bedWidth <= 0 || bedH <= 0 || wheelR <= 0) {
+        std::fprintf(stderr,
+            "gen-mesh-cart: all dims must be positive\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    const float pi = 3.14159265358979f;
+    auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+        wowee::pipeline::WoweeModel::Vertex vtx;
+        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+        wom.vertices.push_back(vtx);
+        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    };
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Bed sits at y = wheelR (so wheels touch ground at y=0)
+    // up to y = wheelR + bedH.
+    float bedY = wheelR + bedH * 0.5f;
+    addBox(0, bedY, 0, bedLen * 0.5f, bedH * 0.5f, bedWidth * 0.5f);
+    // Wheels: cylinder with axis along Z, mounted on each side
+    // of the bed. Each wheel has 16 angular segments + 2 caps.
+    const int wheelSegs = 16;
+    float wheelThick = bedWidth * 0.08f;  // wheel thickness (along Z)
+    float wheelOffsetZ = bedWidth * 0.5f + wheelThick * 0.5f;
+    auto addWheel = [&](float cz) {
+        // Front face (z = cz + wheelThick/2)
+        float zFront = cz + wheelThick * 0.5f;
+        float zBack = cz - wheelThick * 0.5f;
+        uint32_t frontStart = static_cast<uint32_t>(wom.vertices.size());
+        for (int sg = 0; sg <= wheelSegs; ++sg) {
+            float u = static_cast<float>(sg) / wheelSegs;
+            float ang = u * 2.0f * pi;
+            glm::vec3 p(wheelR * std::cos(ang), wheelR + wheelR * std::sin(ang), zFront);
+            addV(p, {0, 0, 1}, {0.5f + 0.5f * std::cos(ang),
+                                 0.5f + 0.5f * std::sin(ang)});
+        }
+        uint32_t backStart = static_cast<uint32_t>(wom.vertices.size());
+        for (int sg = 0; sg <= wheelSegs; ++sg) {
+            float u = static_cast<float>(sg) / wheelSegs;
+            float ang = u * 2.0f * pi;
+            glm::vec3 p(wheelR * std::cos(ang), wheelR + wheelR * std::sin(ang), zBack);
+            addV(p, {0, 0, -1}, {0.5f + 0.5f * std::cos(ang),
+                                  0.5f + 0.5f * std::sin(ang)});
+        }
+        // Front cap fan
+        uint32_t fc = addV({0, wheelR, zFront}, {0, 0, 1}, {0.5f, 0.5f});
+        for (int sg = 0; sg < wheelSegs; ++sg) {
+            wom.indices.insert(wom.indices.end(),
+                {fc, frontStart + sg, frontStart + sg + 1});
+        }
+        // Back cap fan (reversed winding)
+        uint32_t bc = addV({0, wheelR, zBack}, {0, 0, -1}, {0.5f, 0.5f});
+        for (int sg = 0; sg < wheelSegs; ++sg) {
+            wom.indices.insert(wom.indices.end(),
+                {bc, backStart + sg + 1, backStart + sg});
+        }
+        // Side ring: connect each pair of front/back rim verts
+        // with a quad. Side normals point outward radially.
+        for (int sg = 0; sg < wheelSegs; ++sg) {
+            float u = static_cast<float>(sg) / wheelSegs;
+            float ang = u * 2.0f * pi;
+            float u2 = static_cast<float>(sg + 1) / wheelSegs;
+            float ang2 = u2 * 2.0f * pi;
+            glm::vec3 n0(std::cos(ang), std::sin(ang), 0);
+            glm::vec3 n1(std::cos(ang2), std::sin(ang2), 0);
+            uint32_t a = addV({wheelR * std::cos(ang), wheelR + wheelR * std::sin(ang), zFront}, n0, {u, 0});
+            uint32_t b = addV({wheelR * std::cos(ang), wheelR + wheelR * std::sin(ang), zBack}, n0, {u, 1});
+            uint32_t c = addV({wheelR * std::cos(ang2), wheelR + wheelR * std::sin(ang2), zBack}, n1, {u2, 1});
+            uint32_t d = addV({wheelR * std::cos(ang2), wheelR + wheelR * std::sin(ang2), zFront}, n1, {u2, 0});
+            wom.indices.insert(wom.indices.end(),
+                {a, b, c, a, c, d});
+        }
+    };
+    addWheel( wheelOffsetZ);
+    addWheel(-wheelOffsetZ);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxY = wheelR + bedH;
+    float maxZ = wheelOffsetZ + wheelThick * 0.5f;
+    wom.boundMin = glm::vec3(-bedLen * 0.5f, 0, -maxZ);
+    wom.boundMax = glm::vec3( bedLen * 0.5f, std::max(maxY, 2 * wheelR), maxZ);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-cart: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  bed       : %.3f × %.3f × %.3f\n",
+                bedLen, bedWidth, bedH);
+    std::printf("  wheels    : 2 × R=%.3f thickness=%.3f\n",
+                wheelR, wheelThick);
+    std::printf("  vertices  : %zu\n", wom.vertices.size());
+    std::printf("  triangles : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -3647,6 +3804,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-mushroom") == 0 && i + 1 < argc) {
         outRc = handleMushroom(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-cart") == 0 && i + 1 < argc) {
+        outRc = handleCart(i, argc, argv); return true;
     }
     return false;
 }
