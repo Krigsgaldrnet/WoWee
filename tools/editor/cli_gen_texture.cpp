@@ -3500,6 +3500,92 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleMold(int& i, int argc, char** argv) {
+    // Mold: Worley (cellular) noise thresholded into mold patches.
+    // Each grid cell hosts a hash-jittered center; each pixel
+    // computes its distance to the nearest center across 9 cells
+    // (current + 8 neighbors) and is painted as mold if that
+    // distance is under a fraction of stride. Distinct from
+    // --gen-texture-moss (single-spot per cell with hash-derived
+    // presence/jitter/radius) — mold has irregular field-shaped
+    // patches rather than discrete circles, mimicking real fungal
+    // growth. Useful for cellars, dungeon walls, plague zones,
+    // sewer overflow, food-warehouse spoilage.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string moldHex = argv[++i];
+    int stride = 18;
+    float thresholdFrac = 0.55f;     // 0..1 of half-stride to count as mold
+    uint32_t seed = 1;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, stride);
+    parseOptFloat(i, argc, argv, thresholdFrac);
+    parseOptUint(i, argc, argv, seed);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        stride < 4 || stride > 1024 ||
+        thresholdFrac <= 0.0f || thresholdFrac > 1.0f) {
+        std::fprintf(stderr,
+            "gen-texture-mold: invalid dims (W/H 1..8192, "
+            "stride 4..1024, thresholdFrac (0,1])\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, mr, mg, mb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-mold")) return 1;
+    if (!parseHexOrError(moldHex, mr, mg, mb_,
+                         "gen-texture-mold")) return 1;
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    auto cellHash = [&](int cx, int cy, uint32_t salt) -> uint32_t {
+        uint32_t h = static_cast<uint32_t>(cx) * 0x9E3779B1u
+                    ^ static_cast<uint32_t>(cy) * 0x85EBCA77u
+                    ^ seed ^ salt;
+        return hash32(h);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float threshold = thresholdFrac * stride;
+    for (int y = 0; y < H; ++y) {
+        int cellY = y / stride;
+        for (int x = 0; x < W; ++x) {
+            int cellX = x / stride;
+            // Distance to nearest center across 9 surrounding cells.
+            float minDist = 1e9f;
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    int cx = cellX + dx;
+                    int cy = cellY + dy;
+                    float jx = (cellHash(cx, cy, 1) % 1000) / 1000.0f;
+                    float jy = (cellHash(cx, cy, 2) % 1000) / 1000.0f;
+                    float scx = (cx + jx) * stride;
+                    float scy = (cy + jy) * stride;
+                    float ddx = x - scx;
+                    float ddy = y - scy;
+                    float d2 = ddx * ddx + ddy * ddy;
+                    if (d2 < minDist) minDist = d2;
+                }
+            }
+            float d = std::sqrt(minDist);
+            uint8_t r, g, b;
+            if (d < threshold) {
+                r = mr; g = mg; b = mb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-mold")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/mold    : %s / %s\n", bgHex.c_str(), moldHex.c_str());
+    std::printf("  Worley     : stride=%d, threshold=%.2f, seed=%u\n",
+                stride, thresholdFrac, seed);
+    return 0;
+}
+
 int handleIronbark(int& i, int argc, char** argv) {
     // Ironbark: vertical wood-grain streaks (like --gen-texture-
     // bark) overlaid with horizontal "plate" bands at regular
@@ -5231,6 +5317,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-dunes",          3, handleDunes},
     {"--gen-texture-swirl",          3, handleSwirl},
     {"--gen-texture-ironbark",       3, handleIronbark},
+    {"--gen-texture-mold",           3, handleMold},
 };
 }  // namespace
 
