@@ -3842,6 +3842,107 @@ int handleBanner(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleGrave(int& i, int argc, char** argv) {
+    // Tombstone: low rectangular base + vertical tablet on top.
+    // Tablet sits centered on the base; base is wider so the
+    // grave reads with a stable foundation. The 32nd procedural
+    // mesh primitive — useful for graveyards, undead zones,
+    // memorial set dressing.
+    std::string womBase = argv[++i];
+    float tabletW = 0.6f;     // along X
+    float tabletH = 1.0f;     // along Y
+    float tabletT = 0.15f;    // along Z (thickness)
+    float baseW = 0.8f;       // base wider than tablet
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { tabletW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { tabletH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { tabletT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (tabletW <= 0 || tabletH <= 0 || tabletT <= 0 || baseW <= 0 ||
+        baseW < tabletW) {
+        std::fprintf(stderr,
+            "gen-mesh-grave: all dims > 0; baseW must be >= tabletW\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Base: wider, lower. Sits at y=0 to baseH where baseH = 20% of tablet H.
+    float baseH = tabletH * 0.2f;
+    float baseDepth = tabletT * 1.5f;  // deeper than tablet for stability
+    addBox(0, baseH * 0.5f, 0,
+           baseW * 0.5f, baseH * 0.5f, baseDepth * 0.5f);
+    // Tablet: sits on top of base, centered.
+    float tabletY = baseH + tabletH * 0.5f;
+    addBox(0, tabletY, 0,
+           tabletW * 0.5f, tabletH * 0.5f, tabletT * 0.5f);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxY = baseH + tabletH;
+    float maxXZ = std::max(baseW * 0.5f, tabletW * 0.5f);
+    wom.boundMin = glm::vec3(-maxXZ, 0, -baseDepth * 0.5f);
+    wom.boundMax = glm::vec3( maxXZ, maxY,  baseDepth * 0.5f);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-grave: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  base       : %.3f × %.3f (h=%.3f)\n",
+                baseW, baseDepth, baseH);
+    std::printf("  tablet     : %.3f × %.3f × %.3f\n",
+                tabletW, tabletH, tabletT);
+    std::printf("  total H    : %.3f\n", maxY);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -3929,6 +4030,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-banner") == 0 && i + 1 < argc) {
         outRc = handleBanner(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-grave") == 0 && i + 1 < argc) {
+        outRc = handleGrave(i, argc, argv); return true;
     }
     return false;
 }
