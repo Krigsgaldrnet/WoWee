@@ -11,6 +11,7 @@ namespace cli {
 //   --export-glb     WOM -> glTF 2.0 binary (browsers, Three.js)
 //   --export-stl     WOM -> ASCII STL (slicers / 3D printers)
 //   --import-stl     ASCII STL -> WOM (round-trip from CAD tools)
+//   --import-obj     Wavefront OBJ -> WOM (round-trip from Blender etc.)
 //
 // Returns true if matched; outRc holds the exit code.
 bool handleWomIo(int& i, int argc, char** argv, int& outRc);
