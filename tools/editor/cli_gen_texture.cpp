@@ -3546,6 +3546,74 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBlueprint(int& i, int argc, char** argv) {
+    // Blueprint / engineer's grid: minor grid lines at every
+    // `minorStride` pixels with a thicker major line every
+    // `majorEvery` steps. The major lines repeat in both axes so
+    // the image reads as a sectioned drafting paper. Distinct
+    // from --gen-texture-mesh-screen (which has uniform line
+    // weight) — this is the periodic-emphasis variant for
+    // technical/architectural surfaces.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string lineHex = argv[++i];
+    int minorStride = 16;
+    int majorEvery  = 4;       // every 4 minor lines is a major line
+    int minorW = 1;
+    int majorW = 2;
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, minorStride);
+    parseOptInt(i, argc, argv, majorEvery);
+    parseOptInt(i, argc, argv, minorW);
+    parseOptInt(i, argc, argv, majorW);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        minorStride < 2 || minorStride > 1024 ||
+        majorEvery < 1 || majorEvery > 64 ||
+        minorW < 1 || minorW * 2 >= minorStride ||
+        majorW < minorW || majorW * 2 >= minorStride) {
+        std::fprintf(stderr,
+            "gen-texture-blueprint: invalid dims (W/H 1..8192, "
+            "minorStride 2..1024, majorEvery 1..64, "
+            "minorW 1..stride/2, majorW minorW..stride/2)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, lr, lg, lb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_,
+                         "gen-texture-blueprint")) return 1;
+    if (!parseHexOrError(lineHex, lr, lg, lb_,
+                         "gen-texture-blueprint")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int yLine = y / minorStride;
+        int yRem = y - yLine * minorStride;
+        bool yIsMajor = (yLine % majorEvery == 0) && (yRem < majorW);
+        bool yIsMinor = (yRem < minorW);
+        for (int x = 0; x < W; ++x) {
+            int xLine = x / minorStride;
+            int xRem = x - xLine * minorStride;
+            bool xIsMajor = (xLine % majorEvery == 0) && (xRem < majorW);
+            bool xIsMinor = (xRem < minorW);
+            uint8_t r, g, b;
+            if (xIsMajor || yIsMajor || xIsMinor || yIsMinor) {
+                r = lr; g = lg; b = lb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels,
+                        "gen-texture-blueprint")) return 1;
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/line    : %s / %s\n", bgHex.c_str(), lineHex.c_str());
+    std::printf("  minor      : stride=%d, W=%d\n", minorStride, minorW);
+    std::printf("  major      : every %d, W=%d\n", majorEvery, majorW);
+    return 0;
+}
+
 int handleBamboo(int& i, int argc, char** argv) {
     // Bamboo: vertical stalks with cylindrical sin² shading and
     // horizontal node bands at regular Y intervals. Each stalk
@@ -4671,6 +4739,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-snake-skin",     3, handleSnakeSkin},
     {"--gen-texture-mesh-screen",    3, handleMeshScreen},
     {"--gen-texture-bamboo",         3, handleBamboo},
+    {"--gen-texture-blueprint",      3, handleBlueprint},
 };
 }  // namespace
 
