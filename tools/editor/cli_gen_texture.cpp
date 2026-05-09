@@ -3961,6 +3961,113 @@ int handleLattice(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleHoneycomb(int& i, int argc, char** argv) {
+    // Honeycomb: hexagonal cell tiling. Hex centers sit on a
+    // triangular lattice (alternating rows shifted by half a
+    // horizontal step); each pixel is classified by which hex
+    // center it's nearest to (Voronoi cells of a triangular
+    // lattice are perfect hexagons). Pixels near a cell
+    // boundary become the border color.
+    std::string outPath  = argv[++i];
+    std::string fillHex  = argv[++i];
+    std::string borderHex = argv[++i];
+    int hexSide = 16;     // hex side length in pixels
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { hexSide = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        hexSide < 4 || hexSide > 256) {
+        std::fprintf(stderr,
+            "gen-texture-honeycomb: invalid dims (W/H 1..8192, hexSide 4..256)\n");
+        return 1;
+    }
+    uint8_t fr, fg, fb_, br_, bg_, bb_;
+    if (!parseHex(fillHex, fr, fg, fb_) ||
+        !parseHex(borderHex, br_, bg_, bb_)) {
+        std::fprintf(stderr,
+            "gen-texture-honeycomb: fill or border hex color is invalid\n");
+        return 1;
+    }
+    constexpr float kSqrt3 = 1.7320508075688772f;
+    // Pointy-top hex grid: horizontal step = hexSide * sqrt(3),
+    // vertical step = hexSide * 1.5; alternate rows shifted by
+    // half the horizontal step.
+    float hStep = hexSide * kSqrt3;
+    float vStep = hexSide * 1.5f;
+    // Generate seeds covering the image (with a 2-cell margin
+    // on each side so border pixels at the image edge always
+    // have a 'second nearest' to compare against).
+    struct Seed { float x, y; };
+    std::vector<Seed> seeds;
+    int rowMin = -2;
+    int rowMax = static_cast<int>(H / vStep) + 3;
+    int colMin = -2;
+    int colMax = static_cast<int>(W / hStep) + 3;
+    seeds.reserve((rowMax - rowMin + 1) * (colMax - colMin + 1));
+    for (int row = rowMin; row <= rowMax; ++row) {
+        float shift = (row & 1) ? hStep * 0.5f : 0.0f;
+        for (int col = colMin; col <= colMax; ++col) {
+            seeds.push_back({col * hStep + shift, row * vStep});
+        }
+    }
+    // Border ratio: pixels where second-nearest seed is within
+    // 1.04x of the nearest become border. Tuned so border is
+    // 1-2 px at hexSide=16 and scales naturally with hexSide.
+    const float boundaryRatio = 1.04f;
+    const float boundaryRatioSq = boundaryRatio * boundaryRatio;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        float fy = static_cast<float>(y);
+        for (int x = 0; x < W; ++x) {
+            float fx = static_cast<float>(x);
+            float bestSq = 1e30f, secondSq = 1e30f;
+            for (const auto& s : seeds) {
+                float dx = s.x - fx;
+                float dy = s.y - fy;
+                float d2 = dx * dx + dy * dy;
+                if (d2 < bestSq) {
+                    secondSq = bestSq;
+                    bestSq = d2;
+                } else if (d2 < secondSq) {
+                    secondSq = d2;
+                }
+            }
+            float ratioSq = (bestSq > 0.0f) ? secondSq / bestSq : 1e30f;
+            uint8_t r, g, b;
+            if (ratioSq < boundaryRatioSq) {
+                r = br_; g = bg_; b = bb_;
+            } else {
+                r = fr; g = fg; b = fb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-honeycomb: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  fill / border : %s / %s\n",
+                fillHex.c_str(), borderHex.c_str());
+    std::printf("  hex side   : %d px (%zu seeds total)\n",
+                hexSide, seeds.size());
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -4088,6 +4195,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-lattice") == 0 && i + 3 < argc) {
         outRc = handleLattice(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-honeycomb") == 0 && i + 3 < argc) {
+        outRc = handleHoneycomb(i, argc, argv); return true;
     }
     return false;
 }
