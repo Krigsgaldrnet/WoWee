@@ -1075,6 +1075,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WMS maps (id / type / expansion / max players) + areas (id / map / parent / level / faction / xp)\n");
     std::printf("  --validate-wms <wms-base> [--json]\n");
     std::printf("                         Static checks: ids unique, areas reference real maps, parent areas exist + same map, BG/Arena needs maxPlayers\n");
+    std::printf("  --gen-chars <wchc-base> [name]\n");
+    std::printf("                         Emit .wchc starter: 2 classes (Warrior + Mage) + 2 races (Human + Orc) + 4 outfits with WIT cross-refs\n");
+    std::printf("  --gen-chars-alliance <wchc-base> [name]\n");
+    std::printf("                         Emit .wchc Alliance set: 4 classes (Warrior/Paladin/Rogue/Mage) + 4 races (Human/Dwarf/NightElf/Gnome)\n");
+    std::printf("  --gen-chars-allraces <wchc-base> [name]\n");
+    std::printf("                         Emit .wchc all 8 classic races (4 Alliance + 4 Horde) + 9 classes (no DK)\n");
+    std::printf("  --info-wchc <wchc-base> [--json]\n");
+    std::printf("                         Print WCHC classes (id / power / hp scaling) + races (faction / starting zone) + outfit item lists\n");
+    std::printf("  --validate-wchc <wchc-base> [--json]\n");
+    std::printf("                         Static checks: class+race ids unique, baseHealth>0, faction availability set, outfit refs resolve\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
