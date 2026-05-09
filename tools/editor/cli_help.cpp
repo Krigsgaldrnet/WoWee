@@ -240,6 +240,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Bedroll: horizontal closed cylinder along Z axis with optional pillow box at +Z (camp set dressing)\n");
     std::printf("  --gen-mesh-workbench <wom-base> [length] [depth] [height] [legR] [topT] [viseSize] [trayH]\n");
     std::printf("                         Workbench: 4-legged top slab with optional vise at +X end and back tool tray (blacksmith / crafter)\n");
+    std::printf("  --gen-mesh-crate-stack <wom-base> [crateSize] [columns] [rows] [layers] [gap]\n");
+    std::printf("                         Crate stack: N×M×K cube grid with small gap between crates (warehouses, cargo holds, dockyards)\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
     std::printf("                         Table: flat top slab on 4 corner legs (default 1.6/1.0/0.85/0.10/0.06)\n");
     std::printf("  --gen-mesh-lamppost <wom-base> [poleH] [poleT] [baseSize] [lanternSize] [lanternH]\n");

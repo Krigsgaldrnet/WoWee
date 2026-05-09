@@ -5487,6 +5487,76 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCrateStack(int& i, int argc, char** argv) {
+    // Multi-crate stack: an N×M×K arrangement of cube crates with
+    // a small gap between each so they read as discrete shipping
+    // boxes rather than one merged solid. The first procedural
+    // mesh that explicitly composes a *scene* of multiple objects
+    // — useful for warehouses, cargo holds, dock loading bays,
+    // market stalls, dwarven mining caches. The 63rd procedural
+    // mesh primitive.
+    std::string womBase = argv[++i];
+    float crateSize = 0.40f;
+    int   columns = 2;             // X axis
+    int   rows    = 2;             // Z axis
+    int   layers  = 2;             // Y axis
+    float gap     = 0.02f;
+    parseOptFloat(i, argc, argv, crateSize);
+    parseOptInt(i, argc, argv, columns);
+    parseOptInt(i, argc, argv, rows);
+    parseOptInt(i, argc, argv, layers);
+    parseOptFloat(i, argc, argv, gap);
+    if (crateSize <= 0 || gap < 0 ||
+        columns < 1 || columns > 32 ||
+        rows < 1 || rows > 32 ||
+        layers < 1 || layers > 32) {
+        std::fprintf(stderr,
+            "gen-mesh-crate-stack: crateSize > 0; columns/rows/layers 1..32\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    const float cell = crateSize + gap;
+    const float halfBlock = crateSize * 0.5f;
+    const float xStart = -(columns - 1) * cell * 0.5f;
+    const float zStart = -(rows - 1) * cell * 0.5f;
+    int total = 0;
+    for (int ly = 0; ly < layers; ++ly) {
+        float cy = ly * cell + halfBlock;
+        for (int rz = 0; rz < rows; ++rz) {
+            float cz = zStart + rz * cell;
+            for (int cx = 0; cx < columns; ++cx) {
+                float xPos = xStart + cx * cell;
+                addFlatBox(wom, xPos, cy, cz,
+                           halfBlock, halfBlock, halfBlock);
+                ++total;
+            }
+        }
+    }
+    finalizeAsSingleBatch(wom);
+    float halfX = (columns - 1) * cell * 0.5f + halfBlock;
+    float halfZ = (rows - 1) * cell * 0.5f + halfBlock;
+    float topY  = (layers - 1) * cell + crateSize;
+    wom.boundMin = glm::vec3(-halfX, 0, -halfZ);
+    wom.boundMax = glm::vec3(+halfX, topY, +halfZ);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-crate-stack: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  layout     : %d × %d × %d (%d crates)\n",
+                columns, rows, layers, total);
+    std::printf("  crate      : %.3f cube, gap %.3f\n", crateSize, gap);
+    std::printf("  span       : %.3f × %.3f × %.3f\n",
+                halfX * 2.0f, topY, halfZ * 2.0f);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleWorkbench(int& i, int argc, char** argv) {
     // Crafter's workbench: flat top slab on 4 corner legs, plus
     // an optional vise box at the +X end of the top and a small
@@ -6388,6 +6458,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-chimney",        1, handleChimney},
     {"--gen-mesh-bedroll",        1, handleBedroll},
     {"--gen-mesh-workbench",      1, handleWorkbench},
+    {"--gen-mesh-crate-stack",    1, handleCrateStack},
     {"--gen-mesh-table",          1, handleTable},
     {"--gen-mesh-lamppost",       1, handleLamppost},
     {"--gen-mesh-bed",            1, handleBed},
