@@ -5161,6 +5161,57 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleWellPail(int& i, int argc, char** argv) {
+    // Wooden well-pail / bucket: a closed cylindrical body
+    // (collision-watertight) plus a thin horizontal handle bar
+    // floating just above the open-top side. Without rotation
+    // the handle is a straight box rather than a true semicircle,
+    // but the silhouette still reads as a bucket. The 86th
+    // procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float bodyR    = 0.14f;
+    float bodyH    = 0.18f;
+    float handleW  = 0.32f;       // horizontal extent of handle
+    float handleT  = 0.015f;      // handle thickness
+    float handleArc = 0.08f;      // distance handle floats above the rim
+    int   sides    = 14;
+    parseOptFloat(i, argc, argv, bodyR);
+    parseOptFloat(i, argc, argv, bodyH);
+    parseOptFloat(i, argc, argv, handleW);
+    parseOptFloat(i, argc, argv, handleT);
+    parseOptFloat(i, argc, argv, handleArc);
+    parseOptInt(i, argc, argv, sides);
+    if (bodyR <= 0 || bodyH <= 0 || handleW <= 0 || handleT <= 0 ||
+        handleArc < 0 || sides < 6 || sides > 64 ||
+        handleW * 0.5f < bodyR) {
+        std::fprintf(stderr,
+            "gen-mesh-well-pail: dims > 0; sides 6..64; "
+            "handleW/2 >= bodyR\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    addClosedCylinderY(wom, bodyR, 0.0f, bodyH, sides);
+    // Handle: thin box centered above the rim, spanning the
+    // pail diameter plus a small overhang so its ends look like
+    // they meet the rim's outside.
+    const float handleCY = bodyH + handleArc + handleT * 0.5f;
+    addFlatBox(wom, 0.0f, handleCY, 0.0f,
+               handleW * 0.5f, handleT * 0.5f, handleT * 0.5f);
+    finalizeAsSingleBatch(wom);
+    float maxR = std::max(bodyR, handleW * 0.5f);
+    float topY = bodyH + handleArc + handleT;
+    setCenteredBoundsXZ(wom, maxR, maxR, topY);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-well-pail")) return 1;
+    printWomWrote(womBase);
+    std::printf("  body       : R=%.3f x %.3f tall\n", bodyR, bodyH);
+    std::printf("  handle     : %.3f wide x %.3f thick at +%.3f arc\n",
+                handleW, handleT, handleArc);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleStove(int& i, int argc, char** argv) {
     // Pot-bellied wood stove: wide cylindrical body + thin
     // tall chimney column rising from the top of the body.
@@ -7486,6 +7537,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-standing-torch", 1, handleStandingTorch},
     {"--gen-mesh-scroll-case",    1, handleScrollCase},
     {"--gen-mesh-stove",          1, handleStove},
+    {"--gen-mesh-well-pail",      1, handleWellPail},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
