@@ -5161,6 +5161,78 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleMineCart(int& i, int argc, char** argv) {
+    // Mine cart: rectangular open-top bin on 4 wheel boxes. The
+    // bin uses the 5-piece basin construction from
+    // --gen-mesh-water-trough (bottom + 4 walls); wheels are
+    // 4 thin cube boxes at the corners. All axis-aligned —
+    // exercises every shared helper. Useful for mines, dwarven
+    // forges, gnomish junk-yards, abandoned-tunnel set dressing.
+    // The 73rd procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float length = 0.9f;
+    float width  = 0.5f;
+    float bodyH  = 0.45f;
+    float wallT  = 0.04f;
+    float wheelR = 0.08f;        // wheel half-edge (square approx)
+    float wheelInset = 0.05f;    // wheel inset from cart corners
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, width);
+    parseOptFloat(i, argc, argv, bodyH);
+    parseOptFloat(i, argc, argv, wallT);
+    parseOptFloat(i, argc, argv, wheelR);
+    parseOptFloat(i, argc, argv, wheelInset);
+    if (length <= 0 || width <= 0 || bodyH <= 0 || wallT <= 0 ||
+        wallT * 2 >= std::min(length, width) || wallT >= bodyH ||
+        wheelR <= 0 || wheelInset < 0 ||
+        wheelInset * 2 + wheelR * 2 > std::min(length, width)) {
+        std::fprintf(stderr,
+            "gen-mesh-mine-cart: dims > 0; walls/wheels must fit\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float L2 = length * 0.5f;
+    const float W2 = width  * 0.5f;
+    // Wheels first — sit on the ground (y from 0 to 2*wheelR),
+    // pushed inward from cart corners.
+    const float wheelY = wheelR;
+    const float wheelX = L2 - wheelInset - wheelR;
+    const float wheelZ = W2 - wheelInset - wheelR;
+    addFlatBox(wom, +wheelX, wheelY, +wheelZ, wheelR, wheelR, wheelR);
+    addFlatBox(wom, -wheelX, wheelY, +wheelZ, wheelR, wheelR, wheelR);
+    addFlatBox(wom, +wheelX, wheelY, -wheelZ, wheelR, wheelR, wheelR);
+    addFlatBox(wom, -wheelX, wheelY, -wheelZ, wheelR, wheelR, wheelR);
+    // Bin sits on top of the wheels: y from 2*wheelR to 2*wheelR+bodyH.
+    const float binBaseY = 2.0f * wheelR;
+    // Bin bottom slab.
+    addFlatBox(wom, 0.0f, binBaseY + wallT * 0.5f, 0.0f,
+               L2, wallT * 0.5f, W2);
+    // 4 perimeter walls.
+    const float wallCY = binBaseY + wallT + (bodyH - wallT) * 0.5f;
+    const float wallHY = (bodyH - wallT) * 0.5f;
+    addFlatBox(wom, +L2 - wallT * 0.5f, wallCY, 0.0f,
+               wallT * 0.5f, wallHY, W2);
+    addFlatBox(wom, -L2 + wallT * 0.5f, wallCY, 0.0f,
+               wallT * 0.5f, wallHY, W2);
+    const float innerL2 = L2 - wallT;
+    addFlatBox(wom, 0.0f, wallCY, +W2 - wallT * 0.5f,
+               innerL2, wallHY, wallT * 0.5f);
+    addFlatBox(wom, 0.0f, wallCY, -W2 + wallT * 0.5f,
+               innerL2, wallHY, wallT * 0.5f);
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, L2, W2, binBaseY + bodyH);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-mine-cart")) return 1;
+    printWomWrote(womBase);
+    std::printf("  bin        : %.3f x %.3f x %.3f (wallT %.3f)\n",
+                length, width, bodyH, wallT);
+    std::printf("  wheels     : 4 corners (R=%.3f, inset %.3f)\n",
+                wheelR, wheelInset);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleStoneBench(int& i, int argc, char** argv) {
     // Long stone bench: horizontal seat slab on 2 vertical block
     // supports near the ends. Distinct from --gen-mesh-bench
@@ -6828,6 +6900,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-archery-target", 1, handleArcheryTarget},
     {"--gen-mesh-gravel-pile",    1, handleGravelPile},
     {"--gen-mesh-stone-bench",    1, handleStoneBench},
+    {"--gen-mesh-mine-cart",      1, handleMineCart},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},

@@ -280,6 +280,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Gravel pile: hash-distributed stone cubes in a conical heap (mining / construction / rubble)\n");
     std::printf("  --gen-mesh-stone-bench <wom-base> [length] [depth] [seatH] [seatT] [supportW] [supportInset]\n");
     std::printf("                         Stone bench: long seat slab on 2 block supports near the ends (park / temple / ruined city)\n");
+    std::printf("  --gen-mesh-mine-cart <wom-base> [length] [width] [bodyH] [wallT] [wheelR] [wheelInset]\n");
+    std::printf("                         Mine cart: open-top bin (5-piece basin) on 4 wheel boxes (mines / dwarven forges / junk yards)\n");
     std::printf("  --gen-camp-pack <outDir>\n");
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-blacksmith-pack <outDir>\n");
