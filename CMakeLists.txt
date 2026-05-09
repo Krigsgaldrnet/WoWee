@@ -1306,6 +1306,7 @@ add_executable(wowee_editor
     tools/editor/cli_project_inventory.cpp
     tools/editor/cli_help.cpp
     tools/editor/cli_gen_texture.cpp
+    tools/editor/cli_gen_mesh.cpp
     tools/editor/editor_app.cpp
     tools/editor/editor_camera.cpp
     tools/editor/editor_viewport.cpp
