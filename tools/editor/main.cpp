@@ -569,7 +569,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-wood", "--gen-texture-grass", "--gen-texture-fabric",
         "--gen-texture-cobble", "--gen-texture-marble", "--gen-texture-metal",
         "--gen-texture-leather", "--gen-texture-sand", "--gen-texture-snow",
-        "--gen-texture-lava",
+        "--gen-texture-lava", "--gen-texture-tile",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",

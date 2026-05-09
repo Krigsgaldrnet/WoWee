@@ -1787,6 +1787,101 @@ int handleFabric(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleTile(int& i, int argc, char** argv) {
+    // Square stone tile pattern: each cell is one tile face,
+    // separated by grout lines on every grid edge. Tiles get
+    // small per-tile shade jitter so the surface doesn't read
+    // as a flat regular grid; grout is the constant separator
+    // color. Floors, plaza paving, dungeon walls.
+    std::string outPath = argv[++i];
+    std::string tileHex = argv[++i];
+    std::string groutHex = argv[++i];
+    int tilePx = 32;
+    int groutPx = 2;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { tilePx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { groutPx = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        tilePx < 4 || tilePx > 1024 ||
+        groutPx < 0 || groutPx > tilePx / 2) {
+        std::fprintf(stderr,
+            "gen-texture-tile: invalid dims (W/H 1..8192, tile 4..1024, grout < tile/2)\n");
+        return 1;
+    }
+    uint8_t tr, tg, tb, gr, gg, gb;
+    if (!parseHex(tileHex, tr, tg, tb)) {
+        std::fprintf(stderr,
+            "gen-texture-tile: '%s' is not a valid hex color\n",
+            tileHex.c_str());
+        return 1;
+    }
+    if (!parseHex(groutHex, gr, gg, gb)) {
+        std::fprintf(stderr,
+            "gen-texture-tile: '%s' is not a valid hex color\n",
+            groutHex.c_str());
+        return 1;
+    }
+    // Per-tile shade jitter. Hash the integer cell coords for
+    // a stable shade per tile so adjacent tiles look distinct.
+    auto cellShade = [](int cx, int cy) -> float {
+        uint32_t h = static_cast<uint32_t>(cx) * 374761393u +
+                     static_cast<uint32_t>(cy) * 668265263u;
+        h = (h ^ (h >> 13)) * 1274126177u;
+        h = h ^ (h >> 16);
+        float n = (h >> 8) * (1.0f / 16777216.0f);  // 0..1
+        return 0.92f + 0.16f * n;                    // 0.92..1.08
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int cy = y / tilePx;
+        int yInCell = y % tilePx;
+        bool yGrout = (yInCell < groutPx);
+        for (int x = 0; x < W; ++x) {
+            int cx = x / tilePx;
+            int xInCell = x % tilePx;
+            bool xGrout = (xInCell < groutPx);
+            size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+            if (xGrout || yGrout) {
+                pixels[i2 + 0] = gr;
+                pixels[i2 + 1] = gg;
+                pixels[i2 + 2] = gb;
+            } else {
+                float shade = cellShade(cx, cy);
+                pixels[i2 + 0] = static_cast<uint8_t>(
+                    std::clamp(tr * shade, 0.0f, 255.0f));
+                pixels[i2 + 1] = static_cast<uint8_t>(
+                    std::clamp(tg * shade, 0.0f, 255.0f));
+                pixels[i2 + 2] = static_cast<uint8_t>(
+                    std::clamp(tb * shade, 0.0f, 255.0f));
+            }
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-tile: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  tile/grout : %s / %s\n",
+                tileHex.c_str(), groutHex.c_str());
+    std::printf("  tile px    : %d\n", tilePx);
+    std::printf("  grout px   : %d\n", groutPx);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -1848,6 +1943,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-lava") == 0 && i + 3 < argc) {
         outRc = handleLava(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-tile") == 0 && i + 3 < argc) {
+        outRc = handleTile(i, argc, argv); return true;
     }
     return false;
 }

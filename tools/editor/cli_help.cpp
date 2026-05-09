@@ -73,6 +73,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Snow: soft cool-white base + scattered bright sparkle pixels (default density=0.005)\n");
     std::printf("  --gen-texture-lava <out.png> <darkHex> <hotHex> [seed] [crackScale] [W H]\n");
     std::printf("                         Lava: dark cooled crust with bright glowing cracks via Worley cell boundaries\n");
+    std::printf("  --gen-texture-tile <out.png> <tileHex> <groutHex> [tilePx] [groutPx] [W H]\n");
+    std::printf("                         Square stone tiles with grout grid (default 32px tiles, 2px grout)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
