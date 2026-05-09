@@ -4655,6 +4655,130 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleScarecrow(int& i, int argc, char** argv) {
+    // Scarecrow: 5-box cruciform farm pest deterrent — anchor
+    // post into the ground, vertical body, horizontal arm cross,
+    // round-ish head box at the top, and a brimmed hat box on
+    // the head. The cross silhouette reads as a scarecrow even
+    // without rotated geometry. The 54th procedural mesh
+    // primitive — useful for crop fields, abandoned villages,
+    // harvest set dressing.
+    std::string womBase = argv[++i];
+    float bodyHeight = 1.80f;
+    float armSpan    = 1.40f;     // total cross-arm width
+    float postT      = 0.06f;
+    float headSize   = 0.22f;
+    float hatSize    = 0.32f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { bodyHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { armSpan = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postT = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { headSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { hatSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (bodyHeight <= 0 || armSpan <= 0 || postT <= 0 ||
+        headSize <= 0 || hatSize <= 0) {
+        std::fprintf(stderr, "gen-mesh-scarecrow: all dims must be > 0\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Vertical body post — full bodyHeight.
+    float halfPost = postT * 0.5f;
+    float bodyCY = bodyHeight * 0.5f;
+    addBox(0, bodyCY, 0, halfPost, bodyHeight * 0.5f, halfPost);
+    // Cross-arm — horizontal, sits about 75% up the body.
+    float armT     = postT * 0.85f;
+    float halfArmT = armT * 0.5f;
+    float armCY    = bodyHeight * 0.72f;
+    addBox(0, armCY, 0, armSpan * 0.5f, halfArmT, halfArmT);
+    // Head — sits on top of the body. Slightly above the post
+    // tip so it visually sits on the post rather than passing
+    // through it.
+    float halfHead = headSize * 0.5f;
+    float headCY   = bodyHeight + halfHead;
+    addBox(0, headCY, 0, halfHead, halfHead, halfHead);
+    // Hat — wider than the head (the brim) but shorter
+    // (so the head still pokes through visually).
+    float halfHat = hatSize * 0.5f;
+    float hatH    = headSize * 0.40f;
+    float hatCY   = headCY + halfHead - hatH * 0.3f;
+    addBox(0, hatCY, 0, halfHat, hatH * 0.5f, halfHat);
+    // Hat crown — taller, narrower top of the hat (so the
+    // overall hat reads as a brim + crown silhouette).
+    float crownSize = hatSize * 0.55f;
+    float crownH    = headSize * 0.65f;
+    float halfCrown = crownSize * 0.5f;
+    float crownCY   = hatCY + hatH * 0.5f + crownH * 0.5f;
+    addBox(0, crownCY, 0, halfCrown, crownH * 0.5f, halfCrown);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = crownCY + crownH * 0.5f;
+    float halfArm = armSpan * 0.5f;
+    wom.boundMin = glm::vec3(-halfArm, 0.0f,    -halfHead);
+    wom.boundMax = glm::vec3( halfArm, totalH,   halfHead);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-scarecrow: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  total H    : %.3f\n", totalH);
+    std::printf("  body       : %.3f tall (%.3f square post)\n",
+                bodyHeight, postT);
+    std::printf("  arm span   : %.3f wide\n", armSpan);
+    std::printf("  head/hat   : %.3f / %.3f\n", headSize, hatSize);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleWeathervane(int& i, int argc, char** argv) {
     // Weathervane: 6-box rooftop wind indicator — base plate,
     // tall vertical post, perpendicular N-S and E-W cross arms
@@ -6614,6 +6738,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-weathervane") == 0 && i + 1 < argc) {
         outRc = handleWeathervane(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-scarecrow") == 0 && i + 1 < argc) {
+        outRc = handleScarecrow(i, argc, argv); return true;
     }
     return false;
 }

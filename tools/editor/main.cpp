@@ -162,6 +162,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-mailbox", "--gen-mesh-tombstone", "--gen-mesh-crate",
         "--gen-mesh-stool", "--gen-mesh-cauldron", "--gen-mesh-gate",
         "--gen-mesh-beehive", "--gen-mesh-weathervane",
+        "--gen-mesh-scarecrow",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
