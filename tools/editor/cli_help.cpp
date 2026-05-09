@@ -919,6 +919,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WQT entries (questId / level / giver / objectives / rewards / chain links)\n");
     std::printf("  --validate-wqt <wqt-base> [--json]\n");
     std::printf("                         Static checks: questId>0+unique, level>0+min<=max, title not empty, no rewards warning, daily needs repeatable\n");
+    std::printf("  --gen-objects <wgot-base> [name]\n");
+    std::printf("                         Emit .wgot starter object catalog: 1 chest + 1 mailbox + 1 sign\n");
+    std::printf("  --gen-objects-dungeon <wgot-base> [name]\n");
+    std::printf("                         Emit .wgot dungeon set: door + button + 2 chests (bandit + boss) + spike trap (cross-refs WLOT)\n");
+    std::printf("  --gen-objects-gather <wgot-base> [name]\n");
+    std::printf("                         Emit .wgot gathering nodes: Peacebloom (herb) + Tin Vein (ore) + Schools of Fish, with skill reqs\n");
+    std::printf("  --info-wgot <wgot-base> [--json]\n");
+    std::printf("                         Print WGOT entries (objectId / type / lock / loot / required skill / name)\n");
+    std::printf("  --validate-wgot <wgot-base> [--json]\n");
+    std::printf("                         Static checks: objectId>0+unique, size>0, time min<=max, gathering needs skill, chest warns on no loot\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

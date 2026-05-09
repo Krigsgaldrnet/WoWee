@@ -43,6 +43,7 @@
 #include "cli_loot_catalog.hpp"
 #include "cli_creatures_catalog.hpp"
 #include "cli_quests_catalog.hpp"
+#include "cli_objects_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -127,6 +128,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleLootCatalog,
     handleCreaturesCatalog,
     handleQuestsCatalog,
+    handleObjectsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
