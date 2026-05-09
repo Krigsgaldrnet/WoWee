@@ -989,6 +989,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WSPL spell entries (id / school / effect / cast/cd / mana / range / damage range / name)\n");
     std::printf("  --validate-wspl <wspl-base> [--json]\n");
     std::printf("                         Static checks: spellId>0+unique, name not empty, school 0..6, range/value min<=max, friendly+hostile incoherent\n");
+    std::printf("  --gen-achievements <wach-base> [name]\n");
+    std::printf("                         Emit .wach starter: 3 achievements (First Blood / Helping Hand / Coming of Age)\n");
+    std::printf("  --gen-achievements-bandit <wach-base> [name]\n");
+    std::printf("                         Emit .wach bandit-themed: 3 achievements with cross-refs to WCRT/WGOT/WQT bandit IDs\n");
+    std::printf("  --gen-achievements-meta <wach-base> [name]\n");
+    std::printf("                         Emit .wach 3 base achievements + 1 meta-achievement (Jack of All Trades, title 'the Versatile')\n");
+    std::printf("  --info-wach <wach-base> [--json]\n");
+    std::printf("                         Print WACH entries (id / points / faction / flags / criteria with kind+target+qty)\n");
+    std::printf("  --validate-wach <wach-base> [--json]\n");
+    std::printf("                         Static checks: id>0+unique, name not empty, faction 0..2, criteria need targetId+quantity>0\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
