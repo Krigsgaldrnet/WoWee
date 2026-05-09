@@ -4586,6 +4586,82 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCaustics(int& i, int argc, char** argv) {
+    // Water caustics: 4 superimposed sine waves running along
+    // x, y, x+y, and x-y, summed into [-4,+4] and remapped to
+    // [0,1]. The interference produces the classic shimmering
+    // diamond-mesh caustic pattern seen on pool floors and
+    // shallow streambeds. Two-color lerp from bgHex (depth) to
+    // hiHex (highlight).
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string hiHex   = argv[++i];
+    int period = 24;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { period = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        period < 4 || period > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-caustics: invalid dims (W/H 1..8192, "
+            "period 4..1024)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, hr, hg, hb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(hiHex, hr, hg, hb_)) {
+        std::fprintf(stderr,
+            "gen-texture-caustics: bg or highlight hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float twoPi = 6.28318530717958f;
+    const float invPeriod = 1.0f / period;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float fx = x * invPeriod * twoPi;
+            float fy = y * invPeriod * twoPi;
+            float fxy = (x + y) * invPeriod * twoPi * 0.7071f;
+            float fyx = (x - y) * invPeriod * twoPi * 0.7071f;
+            // Sum 4 waves; absolute-value the result so peaks are
+            // bright on either side of the wave (gives the classic
+            // caustic's bright-line network rather than a smooth
+            // checkerboard).
+            float v = std::abs(std::sin(fx)) * std::abs(std::sin(fy));
+            v += std::abs(std::sin(fxy)) * std::abs(std::sin(fyx));
+            float t = v * 0.5f;
+            if (t < 0) t = 0;
+            if (t > 1) t = 1;
+            uint8_t r = static_cast<uint8_t>(br_ + t * (hr - br_));
+            uint8_t g = static_cast<uint8_t>(bg_ + t * (hg - bg_));
+            uint8_t b = static_cast<uint8_t>(bb_ + t * (hb_ - bb_));
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-caustics: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/hi      : %s / %s\n", bgHex.c_str(), hiHex.c_str());
+    std::printf("  period     : %d\n", period);
+    return 0;
+}
+
 int handleRope(int& i, int argc, char** argv) {
     // Twisted rope/cordage: two interleaved sinusoidal strands
     // running along the Y axis. Each strand's X position oscillates
@@ -5020,6 +5096,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-planks",         3, handlePlanks},
     {"--gen-texture-corrugated",     3, handleCorrugated},
     {"--gen-texture-rope",           3, handleRope},
+    {"--gen-texture-caustics",       3, handleCaustics},
 };
 }  // namespace
 

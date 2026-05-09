@@ -137,6 +137,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Corrugated: smooth cosine ridges between bg and hi (sheet-metal roofing / siding)\n");
     std::printf("  --gen-texture-rope <out.png> <bgHex> <ropeHex> [period] [strandW] [W H]\n");
     std::printf("                         Rope: two interleaved sinusoidal strands with cylindrical highlight (twisted cordage)\n");
+    std::printf("  --gen-texture-caustics <out.png> <bgHex> <hiHex> [period] [W H]\n");
+    std::printf("                         Caustics: 4 superimposed sine waves (x/y/x+y/x-y) producing diamond-mesh water shimmer\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
