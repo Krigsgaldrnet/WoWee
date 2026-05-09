@@ -4300,6 +4300,124 @@ int handleRunes(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleLeopard(int& i, int argc, char** argv) {
+    // Leopard print: irregular spots scattered across a tan
+    // background. Each spot is the union of 3-4 small
+    // overlapping sub-circles at slightly offset positions —
+    // gives spots an organic non-circular silhouette without
+    // needing per-spot polygon authoring. Two colors total
+    // (background + spot) for the classic leopard look.
+    std::string outPath  = argv[++i];
+    std::string bgHex    = argv[++i];
+    std::string spotHex  = argv[++i];
+    int spotCount = 60;
+    int spotRadius = 8;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { spotCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { spotRadius = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        spotCount < 1 || spotCount > 4096 ||
+        spotRadius < 2 || spotRadius > 256) {
+        std::fprintf(stderr,
+            "gen-texture-leopard: invalid dims (W/H 1..8192, spots 1..4096, radius 2..256)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr_, sg_, sb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(spotHex, sr_, sg_, sb_)) {
+        std::fprintf(stderr,
+            "gen-texture-leopard: bg or spot hex color is invalid\n");
+        return 1;
+    }
+    // Each spot is composed of 4 sub-circles. Pre-generate the
+    // spot list so we can do a single pass per pixel.
+    struct Spot {
+        int cx[4], cy[4];     // sub-circle centers
+        int rSq;              // squared radius (shared)
+    };
+    std::vector<Spot> spots;
+    spots.reserve(spotCount);
+    uint32_t rng = static_cast<uint32_t>(spotCount) * 0x9E3779B9u +
+                   static_cast<uint32_t>(W) * 0x85EBCA6Bu +
+                   static_cast<uint32_t>(spotRadius);
+    auto rngStep = [&]() {
+        rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+        return rng;
+    };
+    for (int s = 0; s < spotCount; ++s) {
+        Spot sp;
+        // Sub-circle radius is 60% of nominal so the union
+        // approximates a single spot of approximately the
+        // requested radius.
+        int subR = std::max(2, spotRadius * 6 / 10);
+        sp.rSq = subR * subR;
+        // Spot center placed uniformly across the image with a
+        // half-radius padding so most spots stay inside.
+        int sx = static_cast<int>((rngStep() & 0xFFFF) / 65535.0f * W);
+        int sy = static_cast<int>((rngStep() & 0xFFFF) / 65535.0f * H);
+        // Sub-circles offset by up to 0.5 * spotRadius from
+        // the spot center, in 4 quadrants. Per-spot jitter
+        // makes them irregular.
+        int jitter = spotRadius / 2;
+        for (int k = 0; k < 4; ++k) {
+            int dx = static_cast<int>((rngStep() & 0xFF) - 128) * jitter / 128;
+            int dy = static_cast<int>((rngStep() & 0xFF) - 128) * jitter / 128;
+            sp.cx[k] = sx + dx;
+            sp.cy[k] = sy + dy;
+        }
+        spots.push_back(sp);
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (size_t p = 0; p < pixels.size(); p += 3) {
+        pixels[p + 0] = br_;
+        pixels[p + 1] = bg_;
+        pixels[p + 2] = bb_;
+    }
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            // Inside any spot if any sub-circle covers (x, y).
+            bool inSpot = false;
+            for (const auto& sp : spots) {
+                for (int k = 0; k < 4 && !inSpot; ++k) {
+                    int dx = sp.cx[k] - x;
+                    int dy = sp.cy[k] - y;
+                    if (dx * dx + dy * dy <= sp.rSq) inSpot = true;
+                }
+                if (inSpot) break;
+            }
+            if (inSpot) {
+                size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+                pixels[idx + 0] = sr_;
+                pixels[idx + 1] = sg_;
+                pixels[idx + 2] = sb_;
+            }
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-leopard: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg / spot  : %s / %s\n", bgHex.c_str(), spotHex.c_str());
+    std::printf("  spots      : %d (radius ~%d, 4 sub-circles each)\n",
+                spotCount, spotRadius);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -4436,6 +4554,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-runes") == 0 && i + 3 < argc) {
         outRc = handleRunes(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-leopard") == 0 && i + 3 < argc) {
+        outRc = handleLeopard(i, argc, argv); return true;
     }
     return false;
 }
