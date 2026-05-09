@@ -1638,6 +1638,159 @@ int handleChest(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleAnvil(int& i, int argc, char** argv) {
+    // Blacksmith anvil: stepped pedestal base + flat work
+    // surface (the "face") + tapered horn extending forward.
+    // Built from 3 boxes + a 4-vertex tapered prism for the
+    // horn. The 28th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float length = 1.0f;       // along X (face length)
+    float width = 0.4f;        // along Z
+    float hornLen = 0.5f;      // horn extending past face
+    float bodyH = 0.5f;        // total height
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { length = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { hornLen = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { bodyH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (length <= 0 || width <= 0 || hornLen < 0 || bodyH <= 0) {
+        std::fprintf(stderr,
+            "gen-mesh-anvil: length/width/bodyH > 0, hornLen >= 0\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        glm::vec3 ext(hx, hy, hz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*ext.x, f.du.y*ext.y, f.du.z*ext.z);
+            glm::vec3 dv = glm::vec3(f.dv.x*ext.x, f.dv.y*ext.y, f.dv.z*ext.z);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Pedestal: bottom 60% of total height, narrower base
+    // (4-step taper would be classic but for simplicity we use
+    // a wide base + narrow waist + wide cap structure as 3 boxes).
+    float baseH = bodyH * 0.25f;
+    float waistH = bodyH * 0.30f;
+    float capH = bodyH * 0.20f;
+    float faceH = bodyH * 0.25f;
+    float baseHx = length * 0.45f;
+    float baseHz = width * 0.55f;
+    float waistHx = length * 0.30f;
+    float waistHz = width * 0.40f;
+    float capHx = length * 0.50f;
+    float capHz = width * 0.55f;
+    float faceHx = length * 0.50f;
+    float faceHz = width * 0.50f;
+    float y0 = 0.0f;
+    addBox(0, y0 + baseH * 0.5f, 0, baseHx, baseH * 0.5f, baseHz);
+    y0 += baseH;
+    addBox(0, y0 + waistH * 0.5f, 0, waistHx, waistH * 0.5f, waistHz);
+    y0 += waistH;
+    addBox(0, y0 + capH * 0.5f, 0, capHx, capH * 0.5f, capHz);
+    y0 += capH;
+    addBox(0, y0 + faceH * 0.5f, 0, faceHx, faceH * 0.5f, faceHz);
+    // Horn: tapered prism extending in +X past the face. 6 verts
+    // (rectangle at face edge tapering to a point at the tip).
+    if (hornLen > 0.0f) {
+        float hornBaseX = faceHx;
+        float hornTipX = faceHx + hornLen;
+        float hornY0 = y0 + faceH * 0.25f;
+        float hornY1 = y0 + faceH * 0.75f;
+        float hornHz = faceHz * 0.6f;
+        // 4 base verts + 2 tip verts (tip is a vertical edge)
+        // Build 4 face triangles + 2 base/tip caps
+        glm::vec3 b00(hornBaseX, hornY0,  hornHz);
+        glm::vec3 b01(hornBaseX, hornY0, -hornHz);
+        glm::vec3 b10(hornBaseX, hornY1,  hornHz);
+        glm::vec3 b11(hornBaseX, hornY1, -hornHz);
+        glm::vec3 t0 (hornTipX,  (hornY0 + hornY1) * 0.5f,  0);
+        // Top face triangles (b10, b11, t0)
+        auto addTri = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+            glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            wom.vertices.push_back({a, n, {0, 0}});
+            wom.vertices.push_back({b, n, {1, 0}});
+            wom.vertices.push_back({c, n, {0.5f, 1}});
+            wom.indices.insert(wom.indices.end(), {base, base + 1, base + 2});
+        };
+        // 4 side faces converging to t0
+        addTri(b00, b01, t0);          // bottom
+        addTri(b11, b10, t0);          // top
+        addTri(b10, b00, t0);          // +Z side
+        addTri(b01, b11, t0);          // -Z side
+        // Base of horn (closes the rectangle on the face side).
+        // The base is hidden against the anvil face but include it
+        // so the mesh is watertight.
+        glm::vec3 baseN(-1, 0, 0);
+        uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+        wom.vertices.push_back({b00, baseN, {0, 0}});
+        wom.vertices.push_back({b10, baseN, {0, 1}});
+        wom.vertices.push_back({b11, baseN, {1, 1}});
+        wom.vertices.push_back({b01, baseN, {1, 0}});
+        wom.indices.insert(wom.indices.end(),
+            {base, base + 1, base + 2, base, base + 2, base + 3});
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float maxX = std::max(faceHx, faceHx + hornLen);
+    float maxZ = std::max({baseHz, waistHz, capHz, faceHz});
+    wom.boundMin = glm::vec3(-faceHx, 0, -maxZ);
+    wom.boundMax = glm::vec3( maxX, bodyH, maxZ);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-anvil: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  length × width : %.3f × %.3f\n", length, width);
+    std::printf("  body H         : %.3f\n", bodyH);
+    std::printf("  horn length    : %.3f\n", hornLen);
+    std::printf("  components     : 4 step pedestal + tapered horn\n");
+    std::printf("  vertices       : %zu\n", wom.vertices.size());
+    std::printf("  triangles      : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 
 }  // namespace
 
@@ -1677,6 +1830,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-chest") == 0 && i + 1 < argc) {
         outRc = handleChest(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-anvil") == 0 && i + 1 < argc) {
+        outRc = handleAnvil(i, argc, argv); return true;
     }
     return false;
 }

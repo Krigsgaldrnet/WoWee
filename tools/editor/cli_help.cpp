@@ -122,6 +122,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Tapered barrel: bulges in middle + 2 rim hoops (default 0.4/0.5/1.0/0.06)\n");
     std::printf("  --gen-mesh-chest <wom-base> [width] [depth] [bodyHeight] [lidHeight]\n");
     std::printf("                         Treasure chest: body box + lid box + 3 iron bands + lock plate (default 1.4×0.9×0.9)\n");
+    std::printf("  --gen-mesh-anvil <wom-base> [length] [width] [hornLength] [bodyHeight]\n");
+    std::printf("                         Blacksmith anvil: stepped pedestal + flat work surface + horn taper (default 1.0×0.4×0.5×0.5)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
