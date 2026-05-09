@@ -564,6 +564,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Brushed metal: directional anisotropic noise (orientation: horizontal|vertical)\n");
     std::printf("  --gen-texture-leather <out.png> <baseHex> [seed] [grainSize] [W H]\n");
     std::printf("                         Leather grain: irregular pebbled bumps via cellular noise (default grain=4px)\n");
+    std::printf("  --gen-texture-sand <out.png> <baseHex> [seed] [rippleSpacing] [W H]\n");
+    std::printf("                         Sand dunes: per-pixel grain noise + sinusoidal ripple bands (default ripple=24px)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
@@ -1155,7 +1157,7 @@ int main(int argc, char* argv[]) {
         "--gen-texture-rings", "--gen-texture-checker", "--gen-texture-brick",
         "--gen-texture-wood", "--gen-texture-grass", "--gen-texture-fabric",
         "--gen-texture-cobble", "--gen-texture-marble", "--gen-texture-metal",
-        "--gen-texture-leather",
+        "--gen-texture-leather", "--gen-texture-sand",
         "--validate-glb", "--info-glb", "--info-glb-tree", "--info-glb-bytes",
         "--validate-jsondbc", "--check-glb-bounds", "--validate-stl",
         "--validate-png", "--validate-blp",
@@ -20022,6 +20024,120 @@ int main(int argc, char* argv[]) {
             std::printf("  base color : %s\n", baseHex.c_str());
             std::printf("  grain size : %d px\n", grainSize);
             std::printf("  seed       : %u\n", seed);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-texture-sand") == 0 && i + 2 < argc) {
+            // Sand dunes pattern: per-pixel salt-and-pepper grain
+            // jitter (the individual grains of sand) overlaid with
+            // wide sinusoidal ripple bands (the wind-formed dune
+            // ridges). Result reads as windswept beach or desert.
+            std::string outPath = argv[++i];
+            std::string baseHex = argv[++i];
+            uint32_t seed = 1;
+            int rippleSpacing = 24;
+            int W = 256, H = 256;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { rippleSpacing = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { W = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { H = std::stoi(argv[++i]); } catch (...) {}
+            }
+            if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+                rippleSpacing < 4 || rippleSpacing > 512) {
+                std::fprintf(stderr,
+                    "gen-texture-sand: invalid dims (W/H 1..8192, rippleSpacing 4..512)\n");
+                return 1;
+            }
+            auto parseHex = [](std::string hex,
+                                uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
+                std::transform(hex.begin(), hex.end(), hex.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
+                auto fromHexC = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                    return -1;
+                };
+                int v[6];
+                if (hex.size() == 6) {
+                    for (int k = 0; k < 6; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[1]);
+                    g = static_cast<uint8_t>((v[2] << 4) | v[3]);
+                    b = static_cast<uint8_t>((v[4] << 4) | v[5]);
+                    return true;
+                }
+                if (hex.size() == 3) {
+                    for (int k = 0; k < 3; ++k) {
+                        v[k] = fromHexC(hex[k]);
+                        if (v[k] < 0) return false;
+                    }
+                    r = static_cast<uint8_t>((v[0] << 4) | v[0]);
+                    g = static_cast<uint8_t>((v[1] << 4) | v[1]);
+                    b = static_cast<uint8_t>((v[2] << 4) | v[2]);
+                    return true;
+                }
+                return false;
+            };
+            uint8_t br, bg, bb_;
+            if (!parseHex(baseHex, br, bg, bb_)) {
+                std::fprintf(stderr,
+                    "gen-texture-sand: '%s' is not a valid hex color\n",
+                    baseHex.c_str());
+                return 1;
+            }
+            uint32_t state = seed ? seed : 1u;
+            auto next01 = [&state]() -> float {
+                state = state * 1664525u + 1013904223u;
+                return (state >> 8) * (1.0f / 16777216.0f);
+            };
+            std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+            const float pi = 3.14159265358979f;
+            float seedF = static_cast<float>(seed);
+            // Pre-compute one ripple offset per row so dunes flow
+            // smoothly along Y rather than being identical at each row.
+            std::vector<float> rowPhase(H, 0.0f);
+            for (int y = 0; y < H; ++y) {
+                rowPhase[y] = std::sin(y * 0.05f + seedF) * rippleSpacing * 0.5f;
+            }
+            for (int y = 0; y < H; ++y) {
+                float phaseY = rowPhase[y];
+                for (int x = 0; x < W; ++x) {
+                    // Ripple shade: sine band aligned to (x + phaseY).
+                    float ripple = std::sin((x + phaseY) * 2.0f * pi /
+                                            rippleSpacing);
+                    float rippleShade = 1.0f + 0.10f * ripple;
+                    // Per-pixel grain noise: ±5% jitter.
+                    float grain = (next01() - 0.5f) * 0.10f;
+                    float shade = rippleShade + grain;
+                    size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+                    pixels[i2 + 0] = static_cast<uint8_t>(
+                        std::clamp(br * shade, 0.0f, 255.0f));
+                    pixels[i2 + 1] = static_cast<uint8_t>(
+                        std::clamp(bg * shade, 0.0f, 255.0f));
+                    pixels[i2 + 2] = static_cast<uint8_t>(
+                        std::clamp(bb_ * shade, 0.0f, 255.0f));
+                }
+            }
+            if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                                pixels.data(), W * 3)) {
+                std::fprintf(stderr,
+                    "gen-texture-sand: stbi_write_png failed for %s\n",
+                    outPath.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s\n", outPath.c_str());
+            std::printf("  size           : %dx%d\n", W, H);
+            std::printf("  base color     : %s\n", baseHex.c_str());
+            std::printf("  ripple spacing : %d px\n", rippleSpacing);
+            std::printf("  seed           : %u\n", seed);
             return 0;
         } else if (std::strcmp(argv[i], "--gen-mesh") == 0 && i + 2 < argc) {
             // Synthesize a procedural primitive WOM. Generates proper
