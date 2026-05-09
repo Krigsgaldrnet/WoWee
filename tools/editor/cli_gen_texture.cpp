@@ -3500,6 +3500,67 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleMoon(int& i, int argc, char** argv) {
+    // Moon disc: solid filled circle of color moonHex on a bg.
+    // Optional crescent: subtract a second disc of color bgHex
+    // offset by `phase` pixels along +X. With phase=0 the result
+    // is a full moon; with phase = moonR the result is roughly a
+    // half-moon; phase > moonR gives a thin crescent.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string moonHex = argv[++i];
+    int moonR = 80;
+    int phase = 0;     // 0 = full moon
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, moonR);
+    parseOptInt(i, argc, argv, phase);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        moonR < 4 || moonR > 4096 ||
+        phase < 0 || phase > 2 * moonR) {
+        std::fprintf(stderr,
+            "gen-texture-moon: invalid dims (W/H 1..8192, "
+            "moonR 4..4096, phase 0..2*moonR)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, mr, mg, mb_;
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-moon")) return 1;
+    if (!parseHexOrError(moonHex, mr, mg, mb_,
+                         "gen-texture-moon")) return 1;
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float cx = W * 0.5f;
+    const float cy = H * 0.5f;
+    const float shadowCX = cx + phase;       // shadow disc offset
+    const float moonR2 = static_cast<float>(moonR) * moonR;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float dx = x - cx;
+            float dy = y - cy;
+            bool inMoon = (dx * dx + dy * dy) <= moonR2;
+            float sdx = x - shadowCX;
+            bool inShadow = phase > 0 &&
+                             (sdx * sdx + dy * dy) <= moonR2;
+            uint8_t r, g, b;
+            if (inMoon && !inShadow) {
+                r = mr; g = mg; b = mb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-moon")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  bg/moon    : %s / %s\n", bgHex.c_str(), moonHex.c_str());
+    std::printf("  disc       : R=%d, phase=%d (%s)\n",
+                moonR, phase,
+                phase == 0 ? "full" :
+                (phase < moonR ? "gibbous" :
+                 (phase == moonR ? "half" : "crescent")));
+    return 0;
+}
+
 int handleBayer(int& i, int argc, char** argv) {
     // Classic 4x4 ordered-dither Bayer matrix tiled across the
     // image. Each pixel's color comes from interpolating bg → fg
@@ -5971,6 +6032,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-star",           3, handleStar},
     {"--gen-texture-halftone",       3, handleHalftone},
     {"--gen-texture-bayer",          3, handleBayer},
+    {"--gen-texture-moon",           3, handleMoon},
 };
 }  // namespace
 

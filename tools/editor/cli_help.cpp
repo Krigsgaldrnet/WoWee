@@ -197,6 +197,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Halftone: grid of dots whose radii grow with a v/h/r gradient (comic / newspaper print look)\n");
     std::printf("  --gen-texture-bayer <out.png> <aHex> <bHex> [cellSize] [W H]\n");
     std::printf("                         Bayer: 4x4 ordered-dither matrix tiled (retro / 8-bit / monochrome-CRT effects)\n");
+    std::printf("  --gen-texture-moon <out.png> <bgHex> <moonHex> [moonR] [phase] [W H]\n");
+    std::printf("                         Moon disc with optional crescent shadow (phase 0=full, =moonR=half, >moonR=crescent)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
