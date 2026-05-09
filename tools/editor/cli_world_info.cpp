@@ -582,6 +582,76 @@ int handleGenLightNight(int& i, int argc, char** argv) {
         "moonlit directional + far fog");
 }
 
+int handleValidateWow(int& i, int argc, char** argv) {
+    // Walk every entry in a .wow and report structural problems:
+    //   • unknown weather type id
+    //   • intensity bounds out of [0, 1] or min > max
+    //   • non-positive weight
+    //   • duration bounds invalid (min > max, or = 0)
+    //   • non-finite floats
+    // Returns 0 PASS / 1 FAIL.
+    std::string base = argv[++i];
+    bool jsonOut = (i + 1 < argc &&
+                    std::strcmp(argv[i + 1], "--json") == 0);
+    if (jsonOut) ++i;
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wow")
+        base = base.substr(0, base.size() - 4);
+    if (!wowee::pipeline::WoweeWeatherLoader::exists(base)) {
+        std::fprintf(stderr, "WOW not found: %s.wow\n", base.c_str());
+        return 1;
+    }
+    auto wow = wowee::pipeline::WoweeWeatherLoader::load(base);
+    std::vector<std::string> errors;
+    if (wow.entries.empty()) errors.push_back("no entries");
+    for (std::size_t k = 0; k < wow.entries.size(); ++k) {
+        const auto& e = wow.entries[k];
+        const std::string ks = std::to_string(k);
+        if (e.weatherTypeId > wowee::pipeline::WoweeWeather::Blizzard) {
+            errors.push_back("entry " + ks + " unknown typeId " +
+                              std::to_string(e.weatherTypeId));
+        }
+        if (!std::isfinite(e.minIntensity) ||
+            !std::isfinite(e.maxIntensity)) {
+            errors.push_back("entry " + ks + " intensity not finite");
+        }
+        if (e.minIntensity < 0.0f || e.maxIntensity > 1.0f) {
+            errors.push_back("entry " + ks + " intensity outside [0,1]");
+        }
+        if (e.minIntensity > e.maxIntensity) {
+            errors.push_back("entry " + ks + " minIntensity > maxIntensity");
+        }
+        if (!std::isfinite(e.weight) || e.weight <= 0.0f) {
+            errors.push_back("entry " + ks + " weight " +
+                              std::to_string(e.weight) + " <= 0");
+        }
+        if (e.maxDurationSec == 0) {
+            errors.push_back("entry " + ks + " maxDurationSec is 0");
+        }
+        if (e.minDurationSec > e.maxDurationSec) {
+            errors.push_back("entry " + ks +
+                              " minDurationSec > maxDurationSec");
+        }
+    }
+    if (jsonOut) {
+        nlohmann::json j;
+        j["wow"] = base + ".wow";
+        j["passed"] = errors.empty();
+        j["errorCount"] = errors.size();
+        j["errors"] = errors;
+        std::printf("%s\n", j.dump(2).c_str());
+        return errors.empty() ? 0 : 1;
+    }
+    if (errors.empty()) {
+        std::printf("WOW %s.wow PASSED — %zu entry/entries valid\n",
+                    base.c_str(), wow.entries.size());
+        return 0;
+    }
+    std::printf("WOW %s.wow FAILED — %zu error(s):\n",
+                base.c_str(), errors.size());
+    for (const auto& e : errors) std::printf("  - %s\n", e.c_str());
+    return 1;
+}
+
 int handleInfoWow(int& i, int argc, char** argv) {
     // Inspect a Wowee Open Weather (.wow) file: zone name +
     // per-entry weather type + intensity bounds + selection
@@ -731,6 +801,9 @@ bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--info-wow") == 0 && i + 1 < argc) {
         outRc = handleInfoWow(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--validate-wow") == 0 && i + 1 < argc) {
+        outRc = handleValidateWow(i, argc, argv); return true;
     }
     if (std::strcmp(argv[i], "--gen-weather-temperate") == 0 && i + 1 < argc) {
         outRc = handleGenWeatherTemperate(i, argc, argv); return true;

@@ -795,6 +795,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Emit a single-keyframe .wol with moonlit directional + far fog (always-night zone / shadow realm)\n");
     std::printf("  --info-wow <wow-base> [--json]\n");
     std::printf("                         Print WOW weather entries (zone + per-state type / intensity / weight / duration) and exit\n");
+    std::printf("  --validate-wow <wow-base> [--json]\n");
+    std::printf("                         Walk every WOW entry; check typeId / intensity bounds [0,1] / weight > 0 / duration min ≤ max\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
