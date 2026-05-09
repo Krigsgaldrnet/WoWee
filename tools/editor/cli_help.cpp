@@ -162,6 +162,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Cage: top/bottom frames + 4 corner posts + N bars per side (default 1.5×2.0, 5 bars)\n");
     std::printf("  --gen-mesh-throne <wom-base> [seatWidth] [seatHeight] [backHeight] [pedestalSize]\n");
     std::printf("                         Throne: pedestal + seat + backrest + 2 armrests (default 0.8/0.5/1.5/1.2)\n");
+    std::printf("  --gen-mesh-coffin <wom-base> [length] [width] [height]\n");
+    std::printf("                         Hexagonal coffin: narrow head + wide shoulder + tapered foot prism (default 2.0/0.8/0.6)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");

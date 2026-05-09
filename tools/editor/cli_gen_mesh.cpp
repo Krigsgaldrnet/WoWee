@@ -4518,6 +4518,143 @@ int handleThrone(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCoffin(int& i, int argc, char** argv) {
+    // Coffin: classic 6-sided "hexagonal" prism with the
+    // characteristic narrow-head / wide-shoulder / tapered-foot
+    // top-down profile that reads as a coffin from any angle.
+    // Six side faces + top lid + bottom panel — face-shared
+    // normals via separate vertex sets per face. The 38th
+    // procedural mesh primitive — useful for graveyard set
+    // dressing alongside --gen-mesh-grave.
+    std::string womBase = argv[++i];
+    float length = 2.0f;     // along Z
+    float width  = 0.8f;     // shoulder width along X
+    float height = 0.6f;     // along Y
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { length = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (length <= 0 || width <= 0 || height <= 0) {
+        std::fprintf(stderr,
+            "gen-mesh-coffin: length/width/height must be > 0\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    // Top-down hexagonal coffin profile (CCW from head looking
+    // down +Y). Head end is narrow, shoulder is widest, feet
+    // taper to a narrow toe — the canonical "casket" silhouette.
+    float hL = length * 0.5f;
+    float hW = width * 0.5f;
+    glm::vec2 ring[6] = {
+        { 0.0f,         hL          },  // p0 head tip
+        {-hW,           hL * 0.6f   },  // p1 left shoulder (widest)
+        {-hW * 0.8f,   -hL * 0.6f   },  // p2 left hip
+        { 0.0f,        -hL          },  // p3 foot tip
+        { hW * 0.8f,   -hL * 0.6f   },  // p4 right hip
+        { hW,           hL * 0.6f   },  // p5 right shoulder
+    };
+    auto addQuad = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d,
+                       glm::vec3 n) {
+        uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+        auto push = [&](glm::vec3 p, float u, float v) {
+            wowee::pipeline::WoweeModel::Vertex vtx;
+            vtx.position = p; vtx.normal = n; vtx.texCoord = {u, v};
+            wom.vertices.push_back(vtx);
+        };
+        push(a, 0, 0);
+        push(b, 1, 0);
+        push(c, 1, 1);
+        push(d, 0, 1);
+        wom.indices.insert(wom.indices.end(),
+            {base, base + 1, base + 2, base, base + 2, base + 3});
+    };
+    // Six side faces — each a quad from bottom-edge to top-edge
+    // of one segment of the hexagon. Normal is the outward
+    // perpendicular to the side edge in the XZ plane.
+    for (int s = 0; s < 6; ++s) {
+        const glm::vec2& a = ring[s];
+        const glm::vec2& b = ring[(s + 1) % 6];
+        glm::vec3 bot0(a.x, 0.0f,    a.y);
+        glm::vec3 bot1(b.x, 0.0f,    b.y);
+        glm::vec3 top1(b.x, height,  b.y);
+        glm::vec3 top0(a.x, height,  a.y);
+        // Outward normal: 90° CW rotation of edge vector in XZ
+        // (since vertices wind CCW looking down, outward is +X
+        // when edge goes -Z, i.e. swap & negate one component).
+        glm::vec2 edge = b - a;
+        glm::vec3 n(edge.y, 0.0f, -edge.x);
+        n = glm::normalize(n);
+        addQuad(bot0, bot1, top1, top0, n);
+    }
+    // Top lid: fan of 4 triangles from p0, all sharing +Y normal.
+    {
+        glm::vec3 normal(0.0f, 1.0f, 0.0f);
+        uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+        for (int v = 0; v < 6; ++v) {
+            wowee::pipeline::WoweeModel::Vertex vtx;
+            vtx.position = glm::vec3(ring[v].x, height, ring[v].y);
+            vtx.normal = normal;
+            // Cheap planar UV from top-down ring coords.
+            vtx.texCoord = { ring[v].x / width  + 0.5f,
+                             ring[v].y / length + 0.5f };
+            wom.vertices.push_back(vtx);
+        }
+        for (int t = 1; t < 5; ++t) {
+            wom.indices.insert(wom.indices.end(),
+                {base, base + static_cast<uint32_t>(t),
+                 base + static_cast<uint32_t>(t + 1)});
+        }
+    }
+    // Bottom panel: same fan but reversed winding for -Y normal.
+    {
+        glm::vec3 normal(0.0f, -1.0f, 0.0f);
+        uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+        for (int v = 0; v < 6; ++v) {
+            wowee::pipeline::WoweeModel::Vertex vtx;
+            vtx.position = glm::vec3(ring[v].x, 0.0f, ring[v].y);
+            vtx.normal = normal;
+            vtx.texCoord = { ring[v].x / width  + 0.5f,
+                             ring[v].y / length + 0.5f };
+            wom.vertices.push_back(vtx);
+        }
+        for (int t = 1; t < 5; ++t) {
+            wom.indices.insert(wom.indices.end(),
+                {base, base + static_cast<uint32_t>(t + 1),
+                 base + static_cast<uint32_t>(t)});
+        }
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-hW, 0.0f,    -hL);
+    wom.boundMax = glm::vec3( hW, height,   hL);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-coffin: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  length     : %.3f\n", length);
+    std::printf("  width      : %.3f (shoulder)\n", width);
+    std::printf("  height     : %.3f\n", height);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -4623,6 +4760,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-throne") == 0 && i + 1 < argc) {
         outRc = handleThrone(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-coffin") == 0 && i + 1 < argc) {
+        outRc = handleCoffin(i, argc, argv); return true;
     }
     return false;
 }
