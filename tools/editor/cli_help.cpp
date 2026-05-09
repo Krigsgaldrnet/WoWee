@@ -312,6 +312,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Urn: 4-tier vertical pottery vessel (foot + body + neck + lip) — temple / mausoleum / kitchen storage\n");
     std::printf("  --gen-mesh-candle <wom-base> [waxR] [waxH] [saucerR] [saucerH] [sides]\n");
     std::printf("                         Candle: thin wax pillar on optional saucer base (set saucerR=0 to skip) — chapels / vigil scenes\n");
+    std::printf("  --gen-mesh-lantern <wom-base> [baseR] [baseH] [globeR] [globeH] [neckR] [neckH] [capR] [capH] [sides]\n");
+    std::printf("                         Lantern: 4-tier base + glass-globe + neck + cap stack (hand lantern / oil lamp silhouette)\n");
     std::printf("  --gen-camp-pack <outDir>\n");
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-blacksmith-pack <outDir>\n");

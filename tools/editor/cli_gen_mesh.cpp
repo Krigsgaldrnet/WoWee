@@ -5161,6 +5161,64 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleLantern(int& i, int argc, char** argv) {
+    // Hand lantern: small base disc → wider glass-globe cylinder
+    // → narrow neck → wider top cap. 4 cylindrical tiers stacked,
+    // mimicking a hooded oil-lantern silhouette. Distinct from
+    // --gen-mesh-candle (just wax + saucer) and --gen-mesh-urn
+    // (4-tier pottery shape) — lantern's wide-narrow-wide tier
+    // sequence reads as glass enclosed by metal hood. The 81st
+    // procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float baseR  = 0.10f;
+    float baseH  = 0.03f;
+    float globeR = 0.13f;
+    float globeH = 0.18f;
+    float neckR  = 0.06f;
+    float neckH  = 0.04f;
+    float capR   = 0.14f;
+    float capH   = 0.05f;
+    int   sides  = 14;
+    parseOptFloat(i, argc, argv, baseR);
+    parseOptFloat(i, argc, argv, baseH);
+    parseOptFloat(i, argc, argv, globeR);
+    parseOptFloat(i, argc, argv, globeH);
+    parseOptFloat(i, argc, argv, neckR);
+    parseOptFloat(i, argc, argv, neckH);
+    parseOptFloat(i, argc, argv, capR);
+    parseOptFloat(i, argc, argv, capH);
+    parseOptInt(i, argc, argv, sides);
+    if (baseR <= 0 || baseH <= 0 || globeR <= 0 || globeH <= 0 ||
+        neckR <= 0 || neckH <= 0 || capR <= 0 || capH <= 0 ||
+        sides < 6 || sides > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-lantern: dims > 0; sides 6..64\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    float y = 0.0f;
+    addClosedCylinderY(wom, baseR, y, y + baseH, sides);
+    y += baseH;
+    addClosedCylinderY(wom, globeR, y, y + globeH, sides);
+    y += globeH;
+    addClosedCylinderY(wom, neckR, y, y + neckH, sides);
+    y += neckH;
+    addClosedCylinderY(wom, capR, y, y + capH, sides);
+    y += capH;
+    finalizeAsSingleBatch(wom);
+    float maxR = std::max({baseR, globeR, capR});
+    setCenteredBoundsXZ(wom, maxR, maxR, y);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-lantern")) return 1;
+    printWomWrote(womBase);
+    std::printf("  base / globe / neck / cap : %.3f / %.3f / %.3f / %.3f R\n",
+                baseR, globeR, neckR, capR);
+    std::printf("  total H    : %.3f (%d sides)\n", y, sides);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleCandle(int& i, int argc, char** argv) {
     // Wax pillar candle: thin tall wax cylinder optionally
     // standing on a wider shallow saucer base (the drip catcher).
@@ -7203,6 +7261,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-planter-box",    1, handlePlanterBox},
     {"--gen-mesh-urn",            1, handleUrn},
     {"--gen-mesh-candle",         1, handleCandle},
+    {"--gen-mesh-lantern",        1, handleLantern},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
