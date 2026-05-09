@@ -5161,6 +5161,62 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleStoneBench(int& i, int argc, char** argv) {
+    // Long stone bench: horizontal seat slab on 2 vertical block
+    // supports near the ends. Distinct from --gen-mesh-bench
+    // (wooden 4-leg bench with thinner construction) — this is
+    // the heavier stone variant for parks, temple courtyards,
+    // ruined cities, dwarven mead halls. The 72nd procedural
+    // mesh primitive.
+    std::string womBase = argv[++i];
+    float length    = 2.0f;
+    float depth     = 0.4f;
+    float seatH     = 0.45f;       // total bench top height
+    float seatT     = 0.10f;       // seat slab thickness
+    float supportW  = 0.20f;       // horizontal extent of each support
+    float supportInset = 0.15f;    // distance from end to support outer face
+    parseOptFloat(i, argc, argv, length);
+    parseOptFloat(i, argc, argv, depth);
+    parseOptFloat(i, argc, argv, seatH);
+    parseOptFloat(i, argc, argv, seatT);
+    parseOptFloat(i, argc, argv, supportW);
+    parseOptFloat(i, argc, argv, supportInset);
+    if (length <= 0 || depth <= 0 || seatH <= 0 || seatT <= 0 ||
+        seatT >= seatH || supportW <= 0 ||
+        supportInset < 0 ||
+        supportW + supportInset * 2 > length) {
+        std::fprintf(stderr,
+            "gen-mesh-stone-bench: dims > 0; seatT < seatH; "
+            "supports must fit within length\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    const float L2 = length * 0.5f;
+    const float D2 = depth  * 0.5f;
+    const float supportH = seatH - seatT;
+    // Two stone supports at the ends, inset by supportInset.
+    const float supportCX = L2 - supportInset - supportW * 0.5f;
+    addFlatBox(wom, +supportCX, supportH * 0.5f, 0.0f,
+               supportW * 0.5f, supportH * 0.5f, D2);
+    addFlatBox(wom, -supportCX, supportH * 0.5f, 0.0f,
+               supportW * 0.5f, supportH * 0.5f, D2);
+    // Long seat slab spanning the full length on top of supports.
+    addFlatBox(wom, 0.0f, supportH + seatT * 0.5f, 0.0f,
+               L2, seatT * 0.5f, D2);
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, L2, D2, seatH);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-stone-bench")) return 1;
+    printWomWrote(womBase);
+    std::printf("  bench      : %.3fL x %.3fD x %.3fH (seat %.3f thick)\n",
+                length, depth, seatH, seatT);
+    std::printf("  supports   : 2 at ±%.3f (W=%.3f)\n",
+                supportCX, supportW);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleGravelPile(int& i, int argc, char** argv) {
     // Irregular pile of small stones distributed in a roughly
     // conical heap. N cube-shaped stones get hash-derived
@@ -6753,6 +6809,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-forge",          1, handleForge},
     {"--gen-mesh-archery-target", 1, handleArcheryTarget},
     {"--gen-mesh-gravel-pile",    1, handleGravelPile},
+    {"--gen-mesh-stone-bench",    1, handleStoneBench},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
