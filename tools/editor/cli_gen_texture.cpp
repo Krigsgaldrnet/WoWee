@@ -4501,6 +4501,91 @@ int handleZebra(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleKnit(int& i, int argc, char** argv) {
+    // Knit: V-stitch pattern. Each stitch occupies a cellW x cellH
+    // cell; the stitch is the V-shape made by two diagonal strokes
+    // meeting at the apex (cellW/2, 0) and dropping to the cell's
+    // bottom corners. Cells tile contiguously in both axes, giving
+    // the iconic chevron-zigzag look of knitted fabric.
+    std::string outPath  = argv[++i];
+    std::string bgHex    = argv[++i];
+    std::string stitchHex = argv[++i];
+    int cellW = 16;
+    int cellH = 12;
+    int strokeWidth = 2;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { cellW = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { cellH = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { strokeWidth = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellW < 4 || cellW > 256 ||
+        cellH < 4 || cellH > 256 ||
+        strokeWidth < 1 || strokeWidth >= cellH) {
+        std::fprintf(stderr,
+            "gen-texture-knit: invalid dims (W/H 1..8192, cellW/H 4..256, "
+            "strokeWidth 1..cellH-1)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, sr, sg, sb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(stitchHex, sr, sg, sb_)) {
+        std::fprintf(stderr,
+            "gen-texture-knit: bg or stitch hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    // Slope of each V stroke: rise (cellH) over run (cellW/2)
+    // gives slope = 2*cellH/cellW. Vertical strokeWidth in pixels
+    // measures how far the pixel is from the ideal stroke line.
+    const float slope = 2.0f * cellH / static_cast<float>(cellW);
+    for (int y = 0; y < H; ++y) {
+        int localY = y % cellH;
+        for (int x = 0; x < W; ++x) {
+            int localX = x % cellW;
+            // Distance from stitch apex along x.
+            int d = std::abs(localX - cellW / 2);
+            float expectedY = d * slope;
+            // Pixel is "stitch" if its localY is within strokeWidth
+            // of the V stroke's expected y at this x.
+            uint8_t r, g, b;
+            if (std::fabs(localY - expectedY) < strokeWidth) {
+                r = sr; g = sg; b = sb_;
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-knit: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/stitch  : %s / %s\n", bgHex.c_str(), stitchHex.c_str());
+    std::printf("  stitch     : %dx%d (stroke %d px)\n",
+                cellW, cellH, strokeWidth);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -4643,6 +4728,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-zebra") == 0 && i + 3 < argc) {
         outRc = handleZebra(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-knit") == 0 && i + 3 < argc) {
+        outRc = handleKnit(i, argc, argv); return true;
     }
     return false;
 }
