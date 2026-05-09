@@ -4655,6 +4655,130 @@ int handleCoffin(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleSignpost(int& i, int argc, char** argv) {
+    // Signpost: 4-box wayfinding prop — stone base anchor at the
+    // ground, tall vertical pole, decorative cap, and one
+    // horizontal sign board mounted face-out from the pole near
+    // the top. Useful for crossroads, tavern fronts, town
+    // entrances, dungeon area markers. The 45th procedural mesh.
+    std::string womBase = argv[++i];
+    float postHeight    = 2.5f;
+    float postThickness = 0.10f;
+    float baseSize      = 0.30f;
+    float signWidth     = 0.80f;   // along Z (perpendicular to pole face)
+    float signHeight    = 0.35f;   // along Y
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { postThickness = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { baseSize = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { signWidth = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { signHeight = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (postHeight <= 0 || postThickness <= 0 || baseSize <= 0 ||
+        signWidth <= 0 || signHeight <= 0 ||
+        postThickness >= baseSize) {
+        std::fprintf(stderr,
+            "gen-mesh-signpost: dims > 0; post must fit in base\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addBox = [&](float cx, float cy, float cz,
+                      float hx, float hy, float hz) {
+        struct Face { glm::vec3 n, du, dv; };
+        Face faces[6] = {
+            {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+            {{0,-1, 0}, {1, 0, 0}, {0, 0,-1}},
+            {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+            {{-1,0, 0}, {0, 0,-1}, {0, 1, 0}},
+            {{0, 0, 1}, {-1,0, 0}, {0, 1, 0}},
+            {{0, 0,-1}, {1, 0, 0}, {0, 1, 0}},
+        };
+        glm::vec3 c(cx, cy, cz);
+        for (const Face& f : faces) {
+            glm::vec3 center = c + glm::vec3(f.n.x*hx, f.n.y*hy, f.n.z*hz);
+            glm::vec3 du = glm::vec3(f.du.x*hx, f.du.y*hy, f.du.z*hz);
+            glm::vec3 dv = glm::vec3(f.dv.x*hx, f.dv.y*hy, f.dv.z*hz);
+            uint32_t base = static_cast<uint32_t>(wom.vertices.size());
+            auto push = [&](glm::vec3 p, float u, float v) {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = f.n; vtx.texCoord = {u, v};
+                wom.vertices.push_back(vtx);
+            };
+            push(center - du - dv, 0, 0);
+            push(center + du - dv, 1, 0);
+            push(center + du + dv, 1, 1);
+            push(center - du + dv, 0, 1);
+            wom.indices.insert(wom.indices.end(),
+                {base, base + 1, base + 2, base, base + 2, base + 3});
+        }
+    };
+    // Base plinth at the floor.
+    float baseHeight = baseSize * 0.45f;
+    float halfBase = baseSize * 0.5f;
+    addBox(0, baseHeight * 0.5f, 0,
+           halfBase, baseHeight * 0.5f, halfBase);
+    // Pole rising above the base.
+    float poleBottomY = baseHeight;
+    float poleTopY    = baseHeight + postHeight;
+    float poleCY      = (poleBottomY + poleTopY) * 0.5f;
+    float halfPole    = postThickness * 0.5f;
+    addBox(0, poleCY, 0,
+           halfPole, postHeight * 0.5f, halfPole);
+    // Sign board: thin rectangle mounted on the pole near the top.
+    // signWidth runs along Z (the long axis), signHeight along Y,
+    // and a sliver of postThickness along X — a billboard that
+    // reads as a sign when viewed from either +Z or -Z.
+    float signCenterY = poleTopY - signHeight * 0.7f;
+    float signThickness = postThickness * 0.6f;
+    addBox(0, signCenterY, 0,
+           signThickness * 0.5f, signHeight * 0.5f, signWidth * 0.5f);
+    // Decorative cap on top of the pole.
+    float capHeight = postThickness * 0.8f;
+    float capCY = poleTopY + capHeight * 0.5f;
+    float halfCap = postThickness * 0.9f;
+    addBox(0, capCY, 0,
+           halfCap, capHeight * 0.5f, halfCap);
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    float totalH = capCY + capHeight * 0.5f;
+    float halfSignZ = signWidth * 0.5f;
+    wom.boundMin = glm::vec3(-std::max(halfBase, halfSignZ), 0.0f,    -halfSignZ);
+    wom.boundMax = glm::vec3( std::max(halfBase, halfSignZ), totalH,   halfSignZ);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-signpost: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  total H    : %.3f\n", totalH);
+    std::printf("  base       : %.3f square × %.3f tall\n",
+                baseSize, baseHeight);
+    std::printf("  pole       : %.3f square × %.3f tall\n",
+                postThickness, postHeight);
+    std::printf("  sign board : %.3f × %.3f (wide × tall)\n",
+                signWidth, signHeight);
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 int handleWell(int& i, int argc, char** argv) {
     // Well: 4 stone walls arranged in a square ring (hollow
     // interior so a player can see down the shaft) + 2 vertical
@@ -5552,6 +5676,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-well") == 0 && i + 1 < argc) {
         outRc = handleWell(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-signpost") == 0 && i + 1 < argc) {
+        outRc = handleSignpost(i, argc, argv); return true;
     }
     return false;
 }
