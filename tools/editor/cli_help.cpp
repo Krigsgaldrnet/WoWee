@@ -851,6 +851,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wsnd to a human-editable JSON sidecar (defaults to <base>.wsnd.json)\n");
     std::printf("  --import-wsnd-json <json-path> [out-base]\n");
     std::printf("                         Import a .wsnd.json sidecar back into binary .wsnd (accepts either kind int OR kindName string)\n");
+    std::printf("  --gen-spawns <wspn-base> [name]\n");
+    std::printf("                         Emit .wspn starter spawn catalog: 1 creature + 1 game object + 1 doodad near origin\n");
+    std::printf("  --gen-spawns-camp <wspn-base> [name]\n");
+    std::printf("                         Emit .wspn bandit-camp catalog: 4 creatures around a wander ring + 1 chest + 2 tents\n");
+    std::printf("  --gen-spawns-village <wspn-base> [name]\n");
+    std::printf("                         Emit .wspn village catalog: 6 friendly NPCs (mixed roles) + 2 signs + 4 corner trees\n");
+    std::printf("  --info-wspn <wspn-base> [--json]\n");
+    std::printf("                         Print WSPN spawn entries (kind / entryId / position / respawn / wander radius / label)\n");
+    std::printf("  --validate-wspn <wspn-base> [--json]\n");
+    std::printf("                         Static checks: kind 0..2, finite position/scale/wander, doodads have respawn=0, no orphan entryId=0\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
