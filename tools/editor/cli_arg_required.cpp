@@ -40,6 +40,8 @@ const char* const kArgRequired[] = {
     "--export-wlot-json", "--import-wlot-json",
     "--gen-creatures", "--gen-creatures-bandit", "--gen-creatures-merchants",
     "--info-wcrt", "--validate-wcrt",
+    "--gen-quests", "--gen-quests-chain", "--gen-quests-daily",
+    "--info-wqt", "--validate-wqt",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

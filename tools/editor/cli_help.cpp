@@ -904,7 +904,17 @@ void printUsage(const char* argv0) {
     std::printf("  --info-wcrt <wcrt-base> [--json]\n");
     std::printf("                         Print WCRT entries (id / level / hp / type / faction / npc-flags / name + subname)\n");
     std::printf("  --validate-wcrt <wcrt-base> [--json]\n");
-    std::printf("                         Static checks: creatureId>0+unique, level/hp>0, min<=max, attackSpeed>0, AI flag conflicts\n");
+    std::printf("                         Static checks: creatureId>0+unique, level/hp>0, min<=max, attackSpeed>0, behavior flag conflicts\n");
+    std::printf("  --gen-quests <wqt-base> [name]\n");
+    std::printf("                         Emit .wqt starter quest: 'Kill 10 Defias Bandits' giver=4001 (matches WCRT village innkeeper)\n");
+    std::printf("  --gen-quests-chain <wqt-base> [name]\n");
+    std::printf("                         Emit .wqt 3-quest chain: Investigate -> Recover -> Report (chained via prev/next questId)\n");
+    std::printf("  --gen-quests-daily <wqt-base> [name]\n");
+    std::printf("                         Emit .wqt daily repeatable quest with the Daily + Repeatable + AutoAccept flag combo\n");
+    std::printf("  --info-wqt <wqt-base> [--json]\n");
+    std::printf("                         Print WQT entries (questId / level / giver / objectives / rewards / chain links)\n");
+    std::printf("  --validate-wqt <wqt-base> [--json]\n");
+    std::printf("                         Static checks: questId>0+unique, level>0+min<=max, title not empty, no rewards warning, daily needs repeatable\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
