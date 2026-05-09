@@ -52,6 +52,7 @@ const char* const kArgRequired[] = {
     "--export-wfac-json", "--import-wfac-json",
     "--gen-locks", "--gen-locks-dungeon", "--gen-locks-professions",
     "--info-wlck", "--validate-wlck",
+    "--export-wlck-json", "--import-wlck-json",
     "--gen-skills", "--gen-skills-professions", "--gen-skills-weapons",
     "--info-wskl", "--validate-wskl",
     "--gen-weather-temperate", "--gen-weather-arctic",

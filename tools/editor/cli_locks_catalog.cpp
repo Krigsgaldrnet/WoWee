@@ -143,6 +143,153 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Mirrors the JSON pairs added for every other novel
+    // open format. Each lock emits scalar fields plus the
+    // 5 fixed channel slots; channel.kind emits dual int +
+    // name forms.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWlckExt(base);
+    if (outPath.empty()) outPath = base + ".wlck.json";
+    if (!wowee::pipeline::WoweeLockLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wlck-json: WLCK not found: %s.wlck\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeLockLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        std::string fs;
+        appendLockFlagsStr(fs, e.flags);
+        nlohmann::json je;
+        je["lockId"] = e.lockId;
+        je["name"] = e.name;
+        je["flags"] = e.flags;
+        nlohmann::json fa = nlohmann::json::array();
+        if (e.flags & wowee::pipeline::WoweeLock::DestructOnOpen) fa.push_back("destruct");
+        if (e.flags & wowee::pipeline::WoweeLock::RespawnOnKey)   fa.push_back("respawn");
+        if (e.flags & wowee::pipeline::WoweeLock::TrapOnFail)     fa.push_back("trap");
+        je["flagsList"] = fa;
+        nlohmann::json chans = nlohmann::json::array();
+        for (int k = 0; k < wowee::pipeline::WoweeLock::kChannelSlots; ++k) {
+            const auto& ch = e.channels[k];
+            chans.push_back({
+                {"slot", k},
+                {"kind", ch.kind},
+                {"kindName", wowee::pipeline::WoweeLock::channelKindName(ch.kind)},
+                {"skillRequired", ch.skillRequired},
+                {"targetId", ch.targetId},
+            });
+        }
+        je["channels"] = chans;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wlck-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source : %s.wlck\n", base.c_str());
+    std::printf("  locks  : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wlck.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWlckExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wlck-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wlck-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto kindFromName = [](const std::string& s) -> uint8_t {
+        if (s == "-" || s.empty()) return wowee::pipeline::WoweeLock::ChannelNone;
+        if (s == "item")           return wowee::pipeline::WoweeLock::ChannelItem;
+        if (s == "lockpick")       return wowee::pipeline::WoweeLock::ChannelLockpick;
+        if (s == "spell")          return wowee::pipeline::WoweeLock::ChannelSpell;
+        if (s == "damage")         return wowee::pipeline::WoweeLock::ChannelDamage;
+        return wowee::pipeline::WoweeLock::ChannelNone;
+    };
+    auto flagFromName = [](const std::string& s) -> uint32_t {
+        if (s == "destruct") return wowee::pipeline::WoweeLock::DestructOnOpen;
+        if (s == "respawn")  return wowee::pipeline::WoweeLock::RespawnOnKey;
+        if (s == "trap")     return wowee::pipeline::WoweeLock::TrapOnFail;
+        return 0;
+    };
+    wowee::pipeline::WoweeLock c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeLock::Entry e;
+            e.lockId = je.value("lockId", 0u);
+            e.name = je.value("name", std::string{});
+            if (je.contains("flags") && je["flags"].is_number_integer()) {
+                e.flags = je["flags"].get<uint32_t>();
+            } else if (je.contains("flagsList") && je["flagsList"].is_array()) {
+                for (const auto& f : je["flagsList"]) {
+                    if (f.is_string()) e.flags |= flagFromName(f.get<std::string>());
+                }
+            }
+            if (je.contains("channels") && je["channels"].is_array()) {
+                int slotIdx = 0;
+                for (const auto& jc : je["channels"]) {
+                    if (slotIdx >= wowee::pipeline::WoweeLock::kChannelSlots) break;
+                    auto& ch = e.channels[slotIdx];
+                    if (jc.contains("kind") && jc["kind"].is_number_integer()) {
+                        ch.kind = static_cast<uint8_t>(jc["kind"].get<int>());
+                    } else if (jc.contains("kindName") && jc["kindName"].is_string()) {
+                        ch.kind = kindFromName(jc["kindName"].get<std::string>());
+                    }
+                    ch.skillRequired = static_cast<uint16_t>(jc.value("skillRequired", 0));
+                    ch.targetId = jc.value("targetId", 0u);
+                    ++slotIdx;
+                }
+            }
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeLockLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wlck-json: failed to save %s.wlck\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wlck\n", outBase.c_str());
+    std::printf("  source : %s\n", jsonPath.c_str());
+    std::printf("  locks  : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -257,6 +404,12 @@ bool handleLocksCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wlck") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wlck-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wlck-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

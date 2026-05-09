@@ -961,6 +961,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WLCK lock entries with per-channel detail (kind / target / required skill rank)\n");
     std::printf("  --validate-wlck <wlck-base> [--json]\n");
     std::printf("                         Static checks: lockId>0+unique, at least 1 active channel, item/spell/lockpick need targetId\n");
+    std::printf("  --export-wlck-json <wlck-base> [out.json]\n");
+    std::printf("                         Export binary .wlck to a human-editable JSON sidecar (defaults to <base>.wlck.json)\n");
+    std::printf("  --import-wlck-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wlck.json sidecar back into binary .wlck (accepts kind/flag int OR name forms)\n");
     std::printf("  --gen-skills <wskl-base> [name]\n");
     std::printf("                         Emit .wskl starter: Swords + Common + First Aid + Mining (id=186) + Lockpicking (id=633) — matches WGOT/WLCK\n");
     std::printf("  --gen-skills-professions <wskl-base> [name]\n");
