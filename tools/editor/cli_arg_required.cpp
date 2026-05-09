@@ -63,7 +63,7 @@ const char* const kArgRequired[] = {
     "--gen-mesh-statue-base", "--gen-mesh-bird-bath",
     "--gen-mesh-planter-box", "--gen-mesh-urn", "--gen-mesh-candle",
     "--gen-mesh-lantern", "--gen-mesh-chalice",
-    "--gen-mesh-standing-torch",
+    "--gen-mesh-standing-torch", "--gen-mesh-scroll-case",
     "--gen-camp-pack", "--gen-blacksmith-pack", "--gen-village-pack",
     "--gen-temple-pack", "--gen-graveyard-pack",
     "--gen-garden-pack", "--gen-dock-pack", "--gen-tavern-pack",

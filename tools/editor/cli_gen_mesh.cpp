@@ -5161,6 +5161,57 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleScrollCase(int& i, int argc, char** argv) {
+    // Cylindrical scroll case / map tube: thin tall cylindrical
+    // body with an optional shorter wider cap on top. Distinct
+    // from --gen-mesh-chalice (foot + stem + bowl) and
+    // --gen-mesh-lantern (4-tier base/globe/neck/cap) — scroll
+    // case is the simplest 1-or-2-tier "tube with lid"
+    // silhouette. The 84th procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float bodyR = 0.04f;
+    float bodyH = 0.45f;
+    float capR  = 0.05f;       // 0 → no cap (just a stick)
+    float capH  = 0.04f;
+    int   sides = 14;
+    parseOptFloat(i, argc, argv, bodyR);
+    parseOptFloat(i, argc, argv, bodyH);
+    parseOptFloat(i, argc, argv, capR);
+    parseOptFloat(i, argc, argv, capH);
+    parseOptInt(i, argc, argv, sides);
+    if (bodyR <= 0 || bodyH <= 0 || capR < 0 ||
+        (capR > 0 && capR < bodyR) ||
+        (capR > 0 && capH <= 0) ||
+        sides < 6 || sides > 64) {
+        std::fprintf(stderr,
+            "gen-mesh-scroll-case: dims > 0; sides 6..64; "
+            "capR >= bodyR (or 0 to skip)\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    addClosedCylinderY(wom, bodyR, 0.0f, bodyH, sides);
+    float topY = bodyH;
+    if (capR > 0.0f) {
+        addClosedCylinderY(wom, capR, bodyH, bodyH + capH, sides);
+        topY += capH;
+    }
+    finalizeAsSingleBatch(wom);
+    float maxR = std::max(bodyR, capR);
+    setCenteredBoundsXZ(wom, maxR, maxR, topY);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-scroll-case")) return 1;
+    printWomWrote(womBase);
+    std::printf("  body       : R=%.3f x %.3f tall\n", bodyR, bodyH);
+    if (capR > 0.0f)
+        std::printf("  cap        : R=%.3f x %.3f thick\n", capR, capH);
+    else
+        std::printf("  cap        : (none)\n");
+    std::printf("  sides      : %d\n", sides);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleStandingTorch(int& i, int argc, char** argv) {
     // Standing floor torch: tall thin post with a wider shallow
     // fire-bowl cylinder on top. Distinct from --gen-mesh-brazier
@@ -7393,6 +7444,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-lantern",        1, handleLantern},
     {"--gen-mesh-chalice",        1, handleChalice},
     {"--gen-mesh-standing-torch", 1, handleStandingTorch},
+    {"--gen-mesh-scroll-case",    1, handleScrollCase},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-village-pack",        1, handleGenVillagePack},
