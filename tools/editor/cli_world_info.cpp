@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <fstream>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -582,6 +583,128 @@ int handleGenLightNight(int& i, int argc, char** argv) {
         "moonlit directional + far fog");
 }
 
+int handleExportWolJson(int& i, int argc, char** argv) {
+    // Export a binary .wol to a human-editable JSON sidecar.
+    // Pairs with --import-wol-json for the round-trip authoring
+    // workflow: export to JSON, hand-edit keyframe colors and
+    // times, import back to .wol.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (i + 1 < argc && argv[i + 1][0] != '-') outPath = argv[++i];
+    if (base.size() >= 4 && base.substr(base.size() - 4) == ".wol")
+        base = base.substr(0, base.size() - 4);
+    if (outPath.empty()) outPath = base + ".wol.json";
+    if (!wowee::pipeline::WoweeLightLoader::exists(base)) {
+        std::fprintf(stderr, "WOL not found: %s.wol\n", base.c_str());
+        return 1;
+    }
+    auto wol = wowee::pipeline::WoweeLightLoader::load(base);
+    if (!wol.isValid()) {
+        std::fprintf(stderr, "WOL parse failed: %s.wol\n", base.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    j["name"] = wol.name;
+    nlohmann::json kfs = nlohmann::json::array();
+    for (const auto& kf : wol.keyframes) {
+        kfs.push_back({
+            {"timeOfDayMin", kf.timeOfDayMin},
+            {"ambient",
+                {kf.ambientColor.r, kf.ambientColor.g, kf.ambientColor.b}},
+            {"directional",
+                {kf.directionalColor.r, kf.directionalColor.g,
+                 kf.directionalColor.b}},
+            {"directionalDir",
+                {kf.directionalDir.x, kf.directionalDir.y,
+                 kf.directionalDir.z}},
+            {"fog",
+                {kf.fogColor.r, kf.fogColor.g, kf.fogColor.b}},
+            {"fogStart", kf.fogStart},
+            {"fogEnd", kf.fogEnd},
+        });
+    }
+    j["keyframes"] = kfs;
+    std::ofstream os(outPath);
+    if (!os) {
+        std::fprintf(stderr,
+            "export-wol-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    os << j.dump(2) << '\n';
+    std::printf("Wrote %s (%zu keyframe%s)\n",
+                outPath.c_str(), wol.keyframes.size(),
+                wol.keyframes.size() == 1 ? "" : "s");
+    return 0;
+}
+
+int handleImportWolJson(int& i, int argc, char** argv) {
+    // Import a JSON sidecar back into binary .wol. Validates
+    // structural correctness before saving — invalid JSON or
+    // missing required fields fails out with a clear message.
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (i + 1 < argc && argv[i + 1][0] != '-') outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        // Strip ".wol.json" or ".json" tail.
+        if (outBase.size() >= 9 &&
+            outBase.substr(outBase.size() - 9) == ".wol.json") {
+            outBase = outBase.substr(0, outBase.size() - 9);
+        } else if (outBase.size() >= 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    if (outBase.size() >= 4 && outBase.substr(outBase.size() - 4) == ".wol") {
+        outBase = outBase.substr(0, outBase.size() - 4);
+    }
+    std::ifstream is(jsonPath);
+    if (!is) {
+        std::fprintf(stderr,
+            "import-wol-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { is >> j; } catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wol-json: parse error: %s\n", e.what());
+        return 1;
+    }
+    wowee::pipeline::WoweeLight wol;
+    try {
+        wol.name = j.value("name", std::string("Imported"));
+        for (const auto& jkf : j.at("keyframes")) {
+            wowee::pipeline::WoweeLight::Keyframe kf;
+            kf.timeOfDayMin = jkf.at("timeOfDayMin").get<uint32_t>();
+            auto a = jkf.at("ambient");
+            kf.ambientColor = {a[0], a[1], a[2]};
+            auto d = jkf.at("directional");
+            kf.directionalColor = {d[0], d[1], d[2]};
+            auto dd = jkf.at("directionalDir");
+            kf.directionalDir = {dd[0], dd[1], dd[2]};
+            auto f = jkf.at("fog");
+            kf.fogColor = {f[0], f[1], f[2]};
+            kf.fogStart = jkf.at("fogStart").get<float>();
+            kf.fogEnd = jkf.at("fogEnd").get<float>();
+            wol.keyframes.push_back(kf);
+        }
+    } catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wol-json: schema error: %s\n", e.what());
+        return 1;
+    }
+    if (!wowee::pipeline::WoweeLightLoader::save(wol, outBase)) {
+        std::fprintf(stderr,
+            "import-wol-json: failed to save %s.wol\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wol (%zu keyframe%s, name=%s)\n",
+                outBase.c_str(), wol.keyframes.size(),
+                wol.keyframes.size() == 1 ? "" : "s",
+                wol.name.c_str());
+    return 0;
+}
+
 int handleValidateWow(int& i, int argc, char** argv) {
     // Walk every entry in a .wow and report structural problems:
     //   • unknown weather type id
@@ -798,6 +921,12 @@ bool handleWorldInfo(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-light-night") == 0 && i + 1 < argc) {
         outRc = handleGenLightNight(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wol-json") == 0 && i + 1 < argc) {
+        outRc = handleExportWolJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wol-json") == 0 && i + 1 < argc) {
+        outRc = handleImportWolJson(i, argc, argv); return true;
     }
     if (std::strcmp(argv[i], "--info-wow") == 0 && i + 1 < argc) {
         outRc = handleInfoWow(i, argc, argv); return true;

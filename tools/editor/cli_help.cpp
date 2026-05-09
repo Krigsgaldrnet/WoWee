@@ -795,6 +795,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Emit a single-keyframe .wol with warm torchlit ambient + medium fog (dungeon / crypt interior)\n");
     std::printf("  --gen-light-night <wol-base> [zoneName]\n");
     std::printf("                         Emit a single-keyframe .wol with moonlit directional + far fog (always-night zone / shadow realm)\n");
+    std::printf("  --export-wol-json <wol-base> [out.json]\n");
+    std::printf("                         Export binary .wol to a human-editable JSON sidecar (defaults to <base>.wol.json)\n");
+    std::printf("  --import-wol-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wol.json sidecar back into binary .wol (round-trip with --export-wol-json)\n");
     std::printf("  --info-wow <wow-base> [--json]\n");
     std::printf("                         Print WOW weather entries (zone + per-state type / intensity / weight / duration) and exit\n");
     std::printf("  --validate-wow <wow-base> [--json]\n");
