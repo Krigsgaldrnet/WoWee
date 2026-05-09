@@ -40,6 +40,19 @@ inline void parseOptUint(int& i, int argc, char** argv, uint32_t& value) {
     }
 }
 
+// Common --json-output flag pattern: every --info-* / --validate-*
+// handler (~50 sites across the editor) writes the same three lines
+// to detect and consume an optional `--json` follower. Hoisted here
+// so future handlers can do `bool jsonOut = consumeJsonFlag(i, argc, argv);`
+// instead of the open-coded peek-and-advance.
+inline bool consumeJsonFlag(int& i, int argc, char** argv) {
+    if (i + 1 < argc && std::strcmp(argv[i + 1], "--json") == 0) {
+        ++i;
+        return true;
+    }
+    return false;
+}
+
 } // namespace cli
 } // namespace editor
 } // namespace wowee

@@ -1,4 +1,5 @@
 #include "cli_wom_info.hpp"
+#include "cli_arg_parse.hpp"
 
 #include "pipeline/wowee_model.hpp"
 #include "pipeline/wowee_building.hpp"
@@ -27,9 +28,7 @@ namespace {
 
 int handleInfo(int& i, int argc, char** argv) {
     std::string base = argv[++i];
-    bool jsonOut = (i + 1 < argc &&
-                    std::strcmp(argv[i + 1], "--json") == 0);
-    if (jsonOut) i++;
+    bool jsonOut = consumeJsonFlag(i, argc, argv);
     // Allow either "/path/to/file.wom" or "/path/to/file"; load() expects no extension.
     if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
         base = base.substr(0, base.size() - 4);
@@ -76,9 +75,7 @@ int handleInfoBatches(int& i, int argc, char** argv) {
     // for debugging 'why is this submesh transparent?' or
     // 'which batch has the bad UV?'.
     std::string base = argv[++i];
-    bool jsonOut = (i + 1 < argc &&
-                    std::strcmp(argv[i + 1], "--json") == 0);
-    if (jsonOut) i++;
+    bool jsonOut = consumeJsonFlag(i, argc, argv);
     if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
         base = base.substr(0, base.size() - 4);
     if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
@@ -165,9 +162,7 @@ int handleInfoTextures(int& i, int argc, char** argv) {
     // forms. Useful for tracking which textures are missing
     // before --pack-wcp would fail at runtime.
     std::string base = argv[++i];
-    bool jsonOut = (i + 1 < argc &&
-                    std::strcmp(argv[i + 1], "--json") == 0);
-    if (jsonOut) i++;
+    bool jsonOut = consumeJsonFlag(i, argc, argv);
     if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
         base = base.substr(0, base.size() - 4);
     if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
@@ -245,9 +240,7 @@ int handleInfoDoodads(int& i, int argc, char** argv) {
     // a building). Companion to --info-textures: where one
     // tracks GPU resources, this tracks scene composition.
     std::string base = argv[++i];
-    bool jsonOut = (i + 1 < argc &&
-                    std::strcmp(argv[i + 1], "--json") == 0);
-    if (jsonOut) i++;
+    bool jsonOut = consumeJsonFlag(i, argc, argv);
     if (base.size() >= 4 && base.substr(base.size() - 4) == ".wob")
         base = base.substr(0, base.size() - 4);
     if (!wowee::pipeline::WoweeBuildingLoader::exists(base)) {
@@ -307,9 +300,7 @@ int handleInfoAttachParticleSequence(int& i, int argc, char** argv) {
         kind = kSequence; cmdName = "info-sequences";
     }
     std::string path = argv[++i];
-    bool jsonOut = (i + 1 < argc &&
-                    std::strcmp(argv[i + 1], "--json") == 0);
-    if (jsonOut) i++;
+    bool jsonOut = consumeJsonFlag(i, argc, argv);
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         std::fprintf(stderr, "%s: cannot open %s\n", cmdName, path.c_str());
@@ -480,9 +471,7 @@ int handleInfoBones(int& i, int argc, char** argv) {
     // debugging skeleton structure when something looks wrong
     // in the renderer ('why is this bone not following its parent?').
     std::string path = argv[++i];
-    bool jsonOut = (i + 1 < argc &&
-                    std::strcmp(argv[i + 1], "--json") == 0);
-    if (jsonOut) i++;
+    bool jsonOut = consumeJsonFlag(i, argc, argv);
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         std::fprintf(stderr, "info-bones: cannot open %s\n", path.c_str());
@@ -548,9 +537,7 @@ int handleValidateWom(int& i, int argc, char** argv) {
     // failed check with details and exits non-zero on any
     // failure; clean models print a single OK line.
     std::string base = argv[++i];
-    bool jsonOut = (i + 1 < argc &&
-                    std::strcmp(argv[i + 1], "--json") == 0);
-    if (jsonOut) i++;
+    bool jsonOut = consumeJsonFlag(i, argc, argv);
     if (base.size() >= 4 && base.substr(base.size() - 4) == ".wom")
         base = base.substr(0, base.size() - 4);
     if (!wowee::pipeline::WoweeModelLoader::exists(base)) {
