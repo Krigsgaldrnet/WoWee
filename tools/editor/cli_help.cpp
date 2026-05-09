@@ -865,6 +865,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Export binary .wspn to a human-editable JSON sidecar (defaults to <base>.wspn.json)\n");
     std::printf("  --import-wspn-json <json-path> [out-base]\n");
     std::printf("                         Import a .wspn.json sidecar back into binary .wspn (accepts either kind int OR kindName string)\n");
+    std::printf("  --gen-items <wit-base> [name]\n");
+    std::printf("                         Emit .wit starter item catalog: 1 weapon + 1 chest + 1 potion + 1 quest item\n");
+    std::printf("  --gen-items-weapons <wit-base> [name]\n");
+    std::printf("                         Emit .wit weapon catalog: 5 entries spanning common -> legendary, both 1H and 2H\n");
+    std::printf("  --gen-items-armor <wit-base> [name]\n");
+    std::printf("                         Emit .wit full mail-armor set: head + chest + legs + feet + hands + cloak (BoE)\n");
+    std::printf("  --info-wit <wit-base> [--json]\n");
+    std::printf("                         Print WIT item entries (id / ilvl / quality / class / slot / buy price / name)\n");
+    std::printf("  --validate-wit <wit-base> [--json]\n");
+    std::printf("                         Static checks: itemId>0 + unique, weapon damage>0 + min<=max, equippable durability>0, sell<buy\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");

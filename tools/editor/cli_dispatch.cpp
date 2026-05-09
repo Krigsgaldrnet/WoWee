@@ -39,6 +39,7 @@
 #include "cli_world_map.hpp"
 #include "cli_sound_catalog.hpp"
 #include "cli_spawns_catalog.hpp"
+#include "cli_items_catalog.hpp"
 #include "cli_quest_objective.hpp"
 #include "cli_quest_reward.hpp"
 #include "cli_clone.hpp"
@@ -119,6 +120,7 @@ constexpr DispatchFn kDispatchTable[] = {
     handleWorldMap,
     handleSoundCatalog,
     handleSpawnsCatalog,
+    handleItemsCatalog,
     handleQuestObjective,
     handleQuestReward,
     handleClone,
