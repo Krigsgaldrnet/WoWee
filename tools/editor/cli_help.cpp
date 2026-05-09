@@ -135,6 +135,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Planks: horizontal floor boards with per-plank tint, grain streaks, and stagger seams\n");
     std::printf("  --gen-texture-corrugated <out.png> <bgHex> <hiHex> [period] [v|h] [W H]\n");
     std::printf("                         Corrugated: smooth cosine ridges between bg and hi (sheet-metal roofing / siding)\n");
+    std::printf("  --gen-texture-rope <out.png> <bgHex> <ropeHex> [period] [strandW] [W H]\n");
+    std::printf("                         Rope: two interleaved sinusoidal strands with cylindrical highlight (twisted cordage)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

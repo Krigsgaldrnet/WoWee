@@ -4586,6 +4586,97 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleRope(int& i, int argc, char** argv) {
+    // Twisted rope/cordage: two interleaved sinusoidal strands
+    // running along the Y axis. Each strand's X position oscillates
+    // as cellW/2 * sin(2π·y/period), and the second strand is phase-
+    // shifted by π so the two snake around each other forming the
+    // classic helical twist. Highlight banding within each strand
+    // (brightness * cos²) gives the rounded 3D appearance of
+    // tightened twine. Useful for hanging ropes, ship rigging,
+    // tied-bundle textures, suspension bridges, market awning ties.
+    std::string outPath = argv[++i];
+    std::string bgHex   = argv[++i];
+    std::string ropeHex = argv[++i];
+    int period = 24;
+    int strandW = 8;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { period = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { strandW = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        period < 4 || period > 1024 ||
+        strandW < 2 || strandW > W) {
+        std::fprintf(stderr,
+            "gen-texture-rope: invalid dims (W/H 1..8192, period 4..1024, "
+            "strandW 2..W)\n");
+        return 1;
+    }
+    uint8_t br_, bg_, bb_, rr_, rg_, rb_;
+    if (!parseHex(bgHex, br_, bg_, bb_) ||
+        !parseHex(ropeHex, rr_, rg_, rb_)) {
+        std::fprintf(stderr,
+            "gen-texture-rope: bg or rope hex color is invalid\n");
+        return 1;
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    const float twoPi = 6.28318530717958f;
+    const float pi    = 3.14159265358979f;
+    // Amplitude: strands swing across W/2 so the centerline is
+    // always inside the texture and the two strands cross at the
+    // image midline x = W/2.
+    const float amp = (W * 0.25f);
+    const float fStrandHalf = strandW * 0.5f;
+    for (int y = 0; y < H; ++y) {
+        float phase = (static_cast<float>(y) / period) * twoPi;
+        float cx1 = W * 0.5f + amp * std::sin(phase);
+        float cx2 = W * 0.5f + amp * std::sin(phase + pi);
+        for (int x = 0; x < W; ++x) {
+            float dx1 = std::abs(x - cx1);
+            float dx2 = std::abs(x - cx2);
+            float d = std::min(dx1, dx2);
+            uint8_t r, g, b;
+            if (d < fStrandHalf) {
+                // Brightness across the strand width: 1.0 at the
+                // centerline, 0.0 at the edge — gives the rounded
+                // highlight of a real cylindrical strand.
+                float t = 1.0f - (d / fStrandHalf);
+                float br = 0.55f + 0.45f * t * t;
+                r = static_cast<uint8_t>(rr_ * br);
+                g = static_cast<uint8_t>(rg_ * br);
+                b = static_cast<uint8_t>(rb_ * br);
+            } else {
+                r = br_; g = bg_; b = bb_;
+            }
+            size_t idx = (static_cast<size_t>(y) * W + x) * 3;
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-rope: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size       : %dx%d\n", W, H);
+    std::printf("  bg/rope    : %s / %s\n", bgHex.c_str(), ropeHex.c_str());
+    std::printf("  twist      : period=%d, strandW=%d\n", period, strandW);
+    return 0;
+}
+
 int handleCorrugated(int& i, int argc, char** argv) {
     // Corrugated metal sheeting: smooth cosine ridges along one
     // axis. Each pixel's brightness comes from cos((x or y) /
@@ -4928,6 +5019,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-chainmail",      3, handleChainmail},
     {"--gen-texture-planks",         3, handlePlanks},
     {"--gen-texture-corrugated",     3, handleCorrugated},
+    {"--gen-texture-rope",           3, handleRope},
 };
 }  // namespace
 
