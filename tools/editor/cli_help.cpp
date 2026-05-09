@@ -200,6 +200,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Hexagonal coffin: narrow head + wide shoulder + tapered foot prism (default 2.0/0.8/0.6)\n");
     std::printf("  --gen-mesh-bookshelf <wom-base> [width] [height] [depth] [shelves]\n");
     std::printf("                         Bookshelf: 5-panel cabinet with N-1 shelves and rows of varied book boxes (default 1.5/2.0/0.4/4)\n");
+    std::printf("  --gen-mesh-tent <wom-base> [length] [width] [height] [doorH] [doorW]\n");
+    std::printf("                         Tent: A-frame canvas tent — ridge along X, two sloped roof panels, two gables, door notch on +X (default 1.6/1.0/0.9/0.5/0.4)\n");
     std::printf("  --gen-mesh-table <wom-base> [width] [depth] [height] [legThick] [topThick]\n");
     std::printf("                         Table: flat top slab on 4 corner legs (default 1.6/1.0/0.85/0.10/0.06)\n");
     std::printf("  --gen-mesh-lamppost <wom-base> [poleH] [poleT] [baseSize] [lanternSize] [lanternH]\n");

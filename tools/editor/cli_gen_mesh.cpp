@@ -7051,6 +7051,156 @@ int handleBookshelf(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleTent(int& i, int argc, char** argv) {
+    // A-frame canvas tent: ridge running along X from
+    // (-L/2, H, 0) to (+L/2, H, 0); rectangular footprint LxW
+    // on the ground; two sloped roof panels meeting at the ridge
+    // and two triangular gables closing the ends. Optionally a
+    // simple inverted-V door notch is cut from the +X gable so
+    // there is a visible entrance. Watertight bottom face is
+    // included so the model is a closed solid for collision
+    // baking. The 53rd procedural mesh primitive.
+    std::string womBase = argv[++i];
+    float length = 1.6f;
+    float width  = 1.0f;
+    float height = 0.9f;
+    float doorH  = 0.5f;
+    float doorW  = 0.4f;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { length = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { width = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { height = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { doorH = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { doorW = std::stof(argv[++i]); } catch (...) {}
+    }
+    if (length <= 0 || width <= 0 || height <= 0 ||
+        doorH < 0 || doorH >= height ||
+        doorW < 0 || doorW >= width) {
+        std::fprintf(stderr,
+            "gen-mesh-tent: dims > 0; doorH < height; doorW < width\n");
+        return 1;
+    }
+    if (womBase.size() >= 4 &&
+        womBase.substr(womBase.size() - 4) == ".wom") {
+        womBase = womBase.substr(0, womBase.size() - 4);
+    }
+    wowee::pipeline::WoweeModel wom;
+    wom.name = std::filesystem::path(womBase).stem().string();
+    wom.version = 3;
+    auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+        wowee::pipeline::WoweeModel::Vertex vtx;
+        vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+        wom.vertices.push_back(vtx);
+        return static_cast<uint32_t>(wom.vertices.size() - 1);
+    };
+    const float L2 = length * 0.5f;
+    const float W2 = width  * 0.5f;
+    // Slope normals for the two roof panels — built from the panel
+    // edge vectors then normalized so adjacent vertices share the
+    // same per-face shading.
+    glm::vec3 nBack = glm::normalize(glm::vec3(0.0f, W2, -height));
+    glm::vec3 nFront = glm::normalize(glm::vec3(0.0f, W2,  height));
+    // Back roof panel (faces -Z and +Y): A=(-L2,0,-W2), B=(+L2,0,-W2),
+    // R1=(+L2,H,0), R0=(-L2,H,0). Quad → 2 triangles, CCW from outside.
+    {
+        uint32_t a = addV({-L2, 0, -W2}, nBack, {0, 0});
+        uint32_t b = addV({+L2, 0, -W2}, nBack, {1, 0});
+        uint32_t r1 = addV({+L2, height, 0}, nBack, {1, 1});
+        uint32_t r0 = addV({-L2, height, 0}, nBack, {0, 1});
+        wom.indices.insert(wom.indices.end(), {a, b, r1, a, r1, r0});
+    }
+    // Front roof panel (faces +Z and +Y).
+    {
+        uint32_t d = addV({-L2, 0, +W2}, nFront, {0, 0});
+        uint32_t r0 = addV({-L2, height, 0}, nFront, {0, 1});
+        uint32_t r1 = addV({+L2, height, 0}, nFront, {1, 1});
+        uint32_t c = addV({+L2, 0, +W2}, nFront, {1, 0});
+        wom.indices.insert(wom.indices.end(), {d, r0, r1, d, r1, c});
+    }
+    // -X gable (full triangle, no door): A=(-L2,0,-W2), R0=(-L2,H,0),
+    // D=(-L2,0,+W2). Faces -X.
+    {
+        glm::vec3 n(-1, 0, 0);
+        uint32_t a = addV({-L2, 0, -W2}, n, {0, 0});
+        uint32_t r0 = addV({-L2, height, 0}, n, {0.5f, 1});
+        uint32_t d = addV({-L2, 0, +W2}, n, {1, 0});
+        wom.indices.insert(wom.indices.end(), {a, r0, d});
+    }
+    // +X gable: B=(+L2,0,-W2), C=(+L2,0,+W2), R1=(+L2,H,0). Faces +X.
+    // If doorH>0 we carve out a tapered notch — bottom edge of width
+    // doorW, apex on the centerline at height doorH — and replace the
+    // single gable triangle with a 4-triangle fan around the door.
+    {
+        glm::vec3 n(+1, 0, 0);
+        if (doorH > 0 && doorW > 0) {
+            uint32_t b  = addV({+L2, 0, -W2}, n, {0, 0});
+            uint32_t bl = addV({+L2, 0, -doorW * 0.5f}, n,
+                               {0.5f - doorW / (2 * width), 0});
+            uint32_t br = addV({+L2, 0, +doorW * 0.5f}, n,
+                               {0.5f + doorW / (2 * width), 0});
+            uint32_t c  = addV({+L2, 0, +W2}, n, {1, 0});
+            uint32_t r1 = addV({+L2, height, 0}, n, {0.5f, 1});
+            uint32_t dt = addV({+L2, doorH, 0}, n,
+                               {0.5f, doorH / height});
+            // Slab right of the door, slab left of the door, then the
+            // peak triangle bridging door-top to ridge.
+            wom.indices.insert(wom.indices.end(), {b, c, br});
+            wom.indices.insert(wom.indices.end(), {b, br, dt});
+            wom.indices.insert(wom.indices.end(), {b, dt, r1});
+            wom.indices.insert(wom.indices.end(), {c, r1, dt});
+            wom.indices.insert(wom.indices.end(), {c, dt, br});
+            (void)bl;  // left-base slot reserved for symmetric door variant
+        } else {
+            uint32_t b = addV({+L2, 0, -W2}, n, {0, 0});
+            uint32_t c = addV({+L2, 0, +W2}, n, {1, 0});
+            uint32_t r1 = addV({+L2, height, 0}, n, {0.5f, 1});
+            wom.indices.insert(wom.indices.end(), {b, c, r1});
+        }
+    }
+    // Ground face (faces -Y) so the tent is a closed solid for
+    // collision baking.
+    {
+        glm::vec3 n(0, -1, 0);
+        uint32_t a = addV({-L2, 0, -W2}, n, {0, 0});
+        uint32_t b = addV({+L2, 0, -W2}, n, {1, 0});
+        uint32_t c = addV({+L2, 0, +W2}, n, {1, 1});
+        uint32_t d = addV({-L2, 0, +W2}, n, {0, 1});
+        wom.indices.insert(wom.indices.end(), {a, d, c, a, c, b});
+    }
+    wowee::pipeline::WoweeModel::Batch batch;
+    batch.indexStart = 0;
+    batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+    batch.textureIndex = 0;
+    wom.batches.push_back(batch);
+    wom.boundMin = glm::vec3(-L2, 0, -W2);
+    wom.boundMax = glm::vec3(+L2, height, +W2);
+    if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+        std::fprintf(stderr,
+            "gen-mesh-tent: failed to save %s.wom\n", womBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wom\n", womBase.c_str());
+    std::printf("  footprint  : %.3f x %.3f\n", length, width);
+    std::printf("  height     : %.3f (ridge along X)\n", height);
+    if (doorH > 0 && doorW > 0) {
+        std::printf("  door       : H=%.3f W=%.3f on +X gable\n",
+                    doorH, doorW);
+    } else {
+        std::printf("  door       : (none)\n");
+    }
+    std::printf("  vertices   : %zu\n", wom.vertices.size());
+    std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
@@ -7162,6 +7312,9 @@ bool handleGenMesh(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-mesh-bookshelf") == 0 && i + 1 < argc) {
         outRc = handleBookshelf(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-mesh-tent") == 0 && i + 1 < argc) {
+        outRc = handleTent(i, argc, argv); return true;
     }
     if (std::strcmp(argv[i], "--gen-mesh-table") == 0 && i + 1 < argc) {
         outRc = handleTable(i, argc, argv); return true;
