@@ -23,40 +23,6 @@ namespace {
 
 // Shared hex-color parser used by every texture generator.
 // Accepts "RRGGBB", "rgb", or those forms with a leading '#'.
-// Returns false on malformed input (caller should error out).
-bool parseHex(std::string hex, uint8_t& r, uint8_t& g, uint8_t& b) {
-    std::transform(hex.begin(), hex.end(), hex.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    if (!hex.empty() && hex[0] == '#') hex.erase(0, 1);
-    auto fromHexC = [](char c) -> int {
-        if (c >= '0' && c <= '9') return c - '0';
-        if (c >= 'a' && c <= 'f') return 10 + c - 'a';
-        return -1;
-    };
-    int v[6];
-    if (hex.size() == 6) {
-        for (int k = 0; k < 6; ++k) {
-            v[k] = fromHexC(hex[k]);
-            if (v[k] < 0) return false;
-        }
-        r = static_cast<uint8_t>((v[0] << 4) | v[1]);
-        g = static_cast<uint8_t>((v[2] << 4) | v[3]);
-        b = static_cast<uint8_t>((v[4] << 4) | v[5]);
-        return true;
-    }
-    if (hex.size() == 3) {
-        for (int k = 0; k < 3; ++k) {
-            v[k] = fromHexC(hex[k]);
-            if (v[k] < 0) return false;
-        }
-        r = static_cast<uint8_t>((v[0] << 4) | v[0]);
-        g = static_cast<uint8_t>((v[1] << 4) | v[1]);
-        b = static_cast<uint8_t>((v[2] << 4) | v[2]);
-        return true;
-    }
-    return false;
-}
-
 int handleCobble(int& i, int argc, char** argv) {
     // Cobblestone street pattern. Each pixel finds its
     // nearest "stone center" in a perturbed grid (Worley-
@@ -81,18 +47,8 @@ int handleCobble(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t sr, sg, sb, mr, mg, mb;
-    if (!parseHex(stoneHex, sr, sg, sb)) {
-        std::fprintf(stderr,
-            "gen-texture-cobble: '%s' is not a valid hex color\n",
-            stoneHex.c_str());
-        return 1;
-    }
-    if (!parseHex(mortarHex, mr, mg, mb)) {
-        std::fprintf(stderr,
-            "gen-texture-cobble: '%s' is not a valid hex color\n",
-            mortarHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(stoneHex, sr, sg, sb, "gen-texture-cobble")) return 1;
+    if (!parseHexOrError(mortarHex, mr, mg, mb, "gen-texture-cobble")) return 1;
     // Seeded hash → stone center jitter + per-stone tint.
     // Hash takes (cellX, cellY, seed) and returns 4 floats
     // in [0,1): two for offset, two for tint variation.
@@ -197,18 +153,8 @@ int handleMarble(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br, bg, bb_, vr, vg, vb;
-    if (!parseHex(baseHex, br, bg, bb_)) {
-        std::fprintf(stderr,
-            "gen-texture-marble: '%s' is not a valid hex color\n",
-            baseHex.c_str());
-        return 1;
-    }
-    if (!parseHex(veinHex, vr, vg, vb)) {
-        std::fprintf(stderr,
-            "gen-texture-marble: '%s' is not a valid hex color\n",
-            veinHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(baseHex, br, bg, bb_, "gen-texture-marble")) return 1;
+    if (!parseHexOrError(veinHex, vr, vg, vb, "gen-texture-marble")) return 1;
     // Cheap multi-octave noise: 4 sin/cos products at
     // doubling frequencies, seeded phase per octave. Smooth
     // and tiles imperfectly but for marble we want some
@@ -287,12 +233,7 @@ int handleMetal(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t mr, mg, mb;
-    if (!parseHex(baseHex, mr, mg, mb)) {
-        std::fprintf(stderr,
-            "gen-texture-metal: '%s' is not a valid hex color\n",
-            baseHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(baseHex, mr, mg, mb, "gen-texture-metal")) return 1;
     uint32_t state = seed ? seed : 1u;
     auto next01 = [&state]() -> float {
         state = state * 1664525u + 1013904223u;
@@ -377,12 +318,7 @@ int handleLeather(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t lr, lg, lb;
-    if (!parseHex(baseHex, lr, lg, lb)) {
-        std::fprintf(stderr,
-            "gen-texture-leather: '%s' is not a valid hex color\n",
-            baseHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(baseHex, lr, lg, lb, "gen-texture-leather")) return 1;
     // Per-cell hash (same idea as cobble, but smaller cells).
     auto hash01 = [seed](int cx, int cy, int comp) -> float {
         uint32_t h = static_cast<uint32_t>(cx) * 374761393u +
@@ -467,12 +403,7 @@ int handleSand(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br, bg, bb_;
-    if (!parseHex(baseHex, br, bg, bb_)) {
-        std::fprintf(stderr,
-            "gen-texture-sand: '%s' is not a valid hex color\n",
-            baseHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(baseHex, br, bg, bb_, "gen-texture-sand")) return 1;
     uint32_t state = seed ? seed : 1u;
     auto next01 = [&state]() -> float {
         state = state * 1664525u + 1013904223u;
@@ -536,12 +467,7 @@ int handleSnow(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br, bg, bb_;
-    if (!parseHex(baseHex, br, bg, bb_)) {
-        std::fprintf(stderr,
-            "gen-texture-snow: '%s' is not a valid hex color\n",
-            baseHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(baseHex, br, bg, bb_, "gen-texture-snow")) return 1;
     uint32_t state = seed ? seed : 1u;
     auto next01 = [&state]() -> float {
         state = state * 1664525u + 1013904223u;
@@ -610,18 +536,8 @@ int handleLava(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t dr, dg, db, hr, hg, hb;
-    if (!parseHex(darkHex, dr, dg, db)) {
-        std::fprintf(stderr,
-            "gen-texture-lava: '%s' is not a valid hex color\n",
-            darkHex.c_str());
-        return 1;
-    }
-    if (!parseHex(hotHex, hr, hg, hb)) {
-        std::fprintf(stderr,
-            "gen-texture-lava: '%s' is not a valid hex color\n",
-            hotHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(darkHex, dr, dg, db, "gen-texture-lava")) return 1;
+    if (!parseHexOrError(hotHex, hr, hg, hb, "gen-texture-lava")) return 1;
     auto hash01 = [seed](int cx, int cy, int comp) -> float {
         uint32_t h = static_cast<uint32_t>(cx) * 374761393u +
                      static_cast<uint32_t>(cy) * 668265263u +
@@ -722,18 +638,8 @@ int handleGradient(int& i, int argc, char** argv) {
     // Hex parser: shared local helper for both endpoints. Same
     // RRGGBB / RGB rules as --gen-texture.
     uint8_t r0, g0, b0, r1, g1, b1;
-    if (!parseHex(fromHex, r0, g0, b0)) {
-        std::fprintf(stderr,
-            "gen-texture-gradient: '%s' is not a valid hex color\n",
-            fromHex.c_str());
-        return 1;
-    }
-    if (!parseHex(toHex, r1, g1, b1)) {
-        std::fprintf(stderr,
-            "gen-texture-gradient: '%s' is not a valid hex color\n",
-            toHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(fromHex, r0, g0, b0, "gen-texture-gradient")) return 1;
+    if (!parseHexOrError(toHex, r1, g1, b1, "gen-texture-gradient")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
@@ -863,18 +769,8 @@ int handleNoiseColor(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t ra, ga, ba, rb, gb, bb;
-    if (!parseHex(aHex, ra, ga, ba)) {
-        std::fprintf(stderr,
-            "gen-texture-noise-color: '%s' is not a valid hex color\n",
-            aHex.c_str());
-        return 1;
-    }
-    if (!parseHex(bHex, rb, gb, bb)) {
-        std::fprintf(stderr,
-            "gen-texture-noise-color: '%s' is not a valid hex color\n",
-            bHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(aHex, ra, ga, ba, "gen-texture-noise-color")) return 1;
+    if (!parseHexOrError(bHex, rb, gb, bb, "gen-texture-noise-color")) return 1;
     // Same noise pipeline as --gen-texture-noise.
     const int latticeSize = 17;
     std::vector<float> lattice(latticeSize * latticeSize);
@@ -945,18 +841,8 @@ int handleRadial(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t rc, gc, bc, re, ge, be;
-    if (!parseHex(centerHex, rc, gc, bc)) {
-        std::fprintf(stderr,
-            "gen-texture-radial: '%s' is not a valid hex color\n",
-            centerHex.c_str());
-        return 1;
-    }
-    if (!parseHex(edgeHex, re, ge, be)) {
-        std::fprintf(stderr,
-            "gen-texture-radial: '%s' is not a valid hex color\n",
-            edgeHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(centerHex, rc, gc, bc, "gen-texture-radial")) return 1;
+    if (!parseHexOrError(edgeHex, re, ge, be, "gen-texture-radial")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     float cx = (W - 1) * 0.5f;
     float cy = (H - 1) * 0.5f;
@@ -1021,18 +907,8 @@ int handleStripes(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t ra, ga, ba, rb, gb, bb;
-    if (!parseHex(aHex, ra, ga, ba)) {
-        std::fprintf(stderr,
-            "gen-texture-stripes: '%s' is not a valid hex color\n",
-            aHex.c_str());
-        return 1;
-    }
-    if (!parseHex(bHex, rb, gb, bb)) {
-        std::fprintf(stderr,
-            "gen-texture-stripes: '%s' is not a valid hex color\n",
-            bHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(aHex, ra, ga, ba, "gen-texture-stripes")) return 1;
+    if (!parseHexOrError(bHex, rb, gb, bb, "gen-texture-stripes")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
@@ -1077,18 +953,8 @@ int handleDots(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br, bg, bb, dr, dg, db;
-    if (!parseHex(bgHex, br, bg, bb)) {
-        std::fprintf(stderr,
-            "gen-texture-dots: '%s' is not a valid hex color\n",
-            bgHex.c_str());
-        return 1;
-    }
-    if (!parseHex(dotHex, dr, dg, db)) {
-        std::fprintf(stderr,
-            "gen-texture-dots: '%s' is not a valid hex color\n",
-            dotHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br, bg, bb, "gen-texture-dots")) return 1;
+    if (!parseHexOrError(dotHex, dr, dg, db, "gen-texture-dots")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     float r2 = static_cast<float>(radius) * radius;
     for (int y = 0; y < H; ++y) {
@@ -1135,18 +1001,8 @@ int handleRings(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t ra, ga, ba, rb, gb, bb;
-    if (!parseHex(aHex, ra, ga, ba)) {
-        std::fprintf(stderr,
-            "gen-texture-rings: '%s' is not a valid hex color\n",
-            aHex.c_str());
-        return 1;
-    }
-    if (!parseHex(bHex, rb, gb, bb)) {
-        std::fprintf(stderr,
-            "gen-texture-rings: '%s' is not a valid hex color\n",
-            bHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(aHex, ra, ga, ba, "gen-texture-rings")) return 1;
+    if (!parseHexOrError(bHex, rb, gb, bb, "gen-texture-rings")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     float cx = (W - 1) * 0.5f;
     float cy = (H - 1) * 0.5f;
@@ -1191,18 +1047,8 @@ int handleChecker(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t ra, ga, ba, rb, gb, bb;
-    if (!parseHex(aHex, ra, ga, ba)) {
-        std::fprintf(stderr,
-            "gen-texture-checker: '%s' is not a valid hex color\n",
-            aHex.c_str());
-        return 1;
-    }
-    if (!parseHex(bHex, rb, gb, bb)) {
-        std::fprintf(stderr,
-            "gen-texture-checker: '%s' is not a valid hex color\n",
-            bHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(aHex, ra, ga, ba, "gen-texture-checker")) return 1;
+    if (!parseHexOrError(bHex, rb, gb, bb, "gen-texture-checker")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
@@ -1245,18 +1091,8 @@ int handleBrick(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br, bg, bb_, mr, mg, mb;
-    if (!parseHex(brickHex, br, bg, bb_)) {
-        std::fprintf(stderr,
-            "gen-texture-brick: '%s' is not a valid hex color\n",
-            brickHex.c_str());
-        return 1;
-    }
-    if (!parseHex(mortarHex, mr, mg, mb)) {
-        std::fprintf(stderr,
-            "gen-texture-brick: '%s' is not a valid hex color\n",
-            mortarHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(brickHex, br, bg, bb_, "gen-texture-brick")) return 1;
+    if (!parseHexOrError(mortarHex, mr, mg, mb, "gen-texture-brick")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     int rowH = brickH;  // total row height (brick + mortar)
     int halfBrick = brickW / 2;
@@ -1307,18 +1143,8 @@ int handleWood(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t lr, lg, lb, dr, dg, db;
-    if (!parseHex(lightHex, lr, lg, lb)) {
-        std::fprintf(stderr,
-            "gen-texture-wood: '%s' is not a valid hex color\n",
-            lightHex.c_str());
-        return 1;
-    }
-    if (!parseHex(darkHex, dr, dg, db)) {
-        std::fprintf(stderr,
-            "gen-texture-wood: '%s' is not a valid hex color\n",
-            darkHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(lightHex, lr, lg, lb, "gen-texture-wood")) return 1;
+    if (!parseHexOrError(darkHex, dr, dg, db, "gen-texture-wood")) return 1;
     // Tiny LCG so output is reproducible from `seed` alone
     // without pulling in <random>.
     uint32_t state = seed ? seed : 1u;
@@ -1418,18 +1244,8 @@ int handleGrass(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br, bg, bb_, gr, gg, gb;
-    if (!parseHex(baseHex, br, bg, bb_)) {
-        std::fprintf(stderr,
-            "gen-texture-grass: '%s' is not a valid hex color\n",
-            baseHex.c_str());
-        return 1;
-    }
-    if (!parseHex(bladeHex, gr, gg, gb)) {
-        std::fprintf(stderr,
-            "gen-texture-grass: '%s' is not a valid hex color\n",
-            bladeHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(baseHex, br, bg, bb_, "gen-texture-grass")) return 1;
+    if (!parseHexOrError(bladeHex, gr, gg, gb, "gen-texture-grass")) return 1;
     uint32_t state = seed ? seed : 1u;
     auto next01 = [&state]() -> float {
         state = state * 1664525u + 1013904223u;
@@ -1498,18 +1314,8 @@ int handleFabric(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t wr, wg, wb, fr, fg, fb;
-    if (!parseHex(warpHex, wr, wg, wb)) {
-        std::fprintf(stderr,
-            "gen-texture-fabric: '%s' is not a valid hex color\n",
-            warpHex.c_str());
-        return 1;
-    }
-    if (!parseHex(weftHex, fr, fg, fb)) {
-        std::fprintf(stderr,
-            "gen-texture-fabric: '%s' is not a valid hex color\n",
-            weftHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(warpHex, wr, wg, wb, "gen-texture-fabric")) return 1;
+    if (!parseHexOrError(weftHex, fr, fg, fb, "gen-texture-fabric")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (int y = 0; y < H; ++y) {
         int cy = y / threadPx;
@@ -1572,18 +1378,8 @@ int handleTile(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t tr, tg, tb, gr, gg, gb;
-    if (!parseHex(tileHex, tr, tg, tb)) {
-        std::fprintf(stderr,
-            "gen-texture-tile: '%s' is not a valid hex color\n",
-            tileHex.c_str());
-        return 1;
-    }
-    if (!parseHex(groutHex, gr, gg, gb)) {
-        std::fprintf(stderr,
-            "gen-texture-tile: '%s' is not a valid hex color\n",
-            groutHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(tileHex, tr, tg, tb, "gen-texture-tile")) return 1;
+    if (!parseHexOrError(groutHex, gr, gg, gb, "gen-texture-tile")) return 1;
     // Per-tile shade jitter. Hash the integer cell coords for
     // a stable shade per tile so adjacent tiles look distinct.
     auto cellShade = [](int cx, int cy) -> float {
@@ -1651,18 +1447,8 @@ int handleBark(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br, bg, bb_, cr, cg, cb;
-    if (!parseHex(baseHex, br, bg, bb_)) {
-        std::fprintf(stderr,
-            "gen-texture-bark: '%s' is not a valid hex color\n",
-            baseHex.c_str());
-        return 1;
-    }
-    if (!parseHex(crackHex, cr, cg, cb)) {
-        std::fprintf(stderr,
-            "gen-texture-bark: '%s' is not a valid hex color\n",
-            crackHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(baseHex, br, bg, bb_, "gen-texture-bark")) return 1;
+    if (!parseHexOrError(crackHex, cr, cg, cb, "gen-texture-bark")) return 1;
     uint32_t state = seed ? seed : 1u;
     auto next01 = [&state]() -> float {
         state = state * 1664525u + 1013904223u;
@@ -1748,18 +1534,8 @@ int handleClouds(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t sr, sg, sb, cr, cg, cb;
-    if (!parseHex(skyHex, sr, sg, sb)) {
-        std::fprintf(stderr,
-            "gen-texture-clouds: '%s' is not a valid hex color\n",
-            skyHex.c_str());
-        return 1;
-    }
-    if (!parseHex(cloudHex, cr, cg, cb)) {
-        std::fprintf(stderr,
-            "gen-texture-clouds: '%s' is not a valid hex color\n",
-            cloudHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(skyHex, sr, sg, sb, "gen-texture-clouds")) return 1;
+    if (!parseHexOrError(cloudHex, cr, cg, cb, "gen-texture-clouds")) return 1;
     float seedF = static_cast<float>(seed);
     auto cloudNoise = [&](float x, float y) -> float {
         // 4 octaves of sin/cos noise at doubling frequency,
@@ -1835,18 +1611,8 @@ int handleStars(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br, bg, bb_, sr, sg, sb;
-    if (!parseHex(bgHex, br, bg, bb_)) {
-        std::fprintf(stderr,
-            "gen-texture-stars: '%s' is not a valid hex color\n",
-            bgHex.c_str());
-        return 1;
-    }
-    if (!parseHex(starHex, sr, sg, sb)) {
-        std::fprintf(stderr,
-            "gen-texture-stars: '%s' is not a valid hex color\n",
-            starHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br, bg, bb_, "gen-texture-stars")) return 1;
+    if (!parseHexOrError(starHex, sr, sg, sb, "gen-texture-stars")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     // Background: flat fill.
     for (int p = 0; p < W * H; ++p) {
@@ -1910,18 +1676,8 @@ int handleVines(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t wr, wg, wb_, vr, vg, vb;
-    if (!parseHex(wallHex, wr, wg, wb_)) {
-        std::fprintf(stderr,
-            "gen-texture-vines: '%s' is not a valid hex color\n",
-            wallHex.c_str());
-        return 1;
-    }
-    if (!parseHex(vineHex, vr, vg, vb)) {
-        std::fprintf(stderr,
-            "gen-texture-vines: '%s' is not a valid hex color\n",
-            vineHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(wallHex, wr, wg, wb_, "gen-texture-vines")) return 1;
+    if (!parseHexOrError(vineHex, vr, vg, vb, "gen-texture-vines")) return 1;
     uint32_t state = seed ? seed : 1u;
     auto next01 = [&state]() -> float {
         state = state * 1664525u + 1013904223u;
@@ -1992,13 +1748,9 @@ int handleMosaic(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t ar, ag, ab, br, bg, bb_, cr, cg, cb;
-    if (!parseHex(aHex, ar, ag, ab) ||
-        !parseHex(bHex, br, bg, bb_) ||
-        !parseHex(cHex, cr, cg, cb)) {
-        std::fprintf(stderr,
-            "gen-texture-mosaic: one of the hex colors is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(aHex, ar, ag, ab, "gen-texture-mosaic")) return 1;
+    if (!parseHexOrError(bHex, br, bg, bb_, "gen-texture-mosaic")) return 1;
+    if (!parseHexOrError(cHex, cr, cg, cb, "gen-texture-mosaic")) return 1;
     auto cellPick = [seed](int cx, int cy) -> int {
         uint32_t h = static_cast<uint32_t>(cx) * 374761393u +
                      static_cast<uint32_t>(cy) * 668265263u +
@@ -2069,18 +1821,8 @@ int handleRust(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t mr, mg, mb, rr, rg, rb;
-    if (!parseHex(metalHex, mr, mg, mb)) {
-        std::fprintf(stderr,
-            "gen-texture-rust: '%s' is not a valid hex color\n",
-            metalHex.c_str());
-        return 1;
-    }
-    if (!parseHex(rustHex, rr, rg, rb)) {
-        std::fprintf(stderr,
-            "gen-texture-rust: '%s' is not a valid hex color\n",
-            rustHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(metalHex, mr, mg, mb, "gen-texture-rust")) return 1;
+    if (!parseHexOrError(rustHex, rr, rg, rb, "gen-texture-rust")) return 1;
     uint32_t state = seed ? seed : 1u;
     auto next01 = [&state]() -> float {
         state = state * 1664525u + 1013904223u;
@@ -2159,18 +1901,8 @@ int handleCircuit(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t pr, pg, pb, tr, tg, tb;
-    if (!parseHex(pcbHex, pr, pg, pb)) {
-        std::fprintf(stderr,
-            "gen-texture-circuit: '%s' is not a valid hex color\n",
-            pcbHex.c_str());
-        return 1;
-    }
-    if (!parseHex(traceHex, tr, tg, tb)) {
-        std::fprintf(stderr,
-            "gen-texture-circuit: '%s' is not a valid hex color\n",
-            traceHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(pcbHex, pr, pg, pb, "gen-texture-circuit")) return 1;
+    if (!parseHexOrError(traceHex, tr, tg, tb, "gen-texture-circuit")) return 1;
     uint32_t state = seed ? seed : 1u;
     auto next01 = [&state]() -> float {
         state = state * 1664525u + 1013904223u;
@@ -2252,18 +1984,8 @@ int handleCoral(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t wr, wg, wb_, cr, cg, cb;
-    if (!parseHex(waterHex, wr, wg, wb_)) {
-        std::fprintf(stderr,
-            "gen-texture-coral: '%s' is not a valid hex color\n",
-            waterHex.c_str());
-        return 1;
-    }
-    if (!parseHex(coralHex, cr, cg, cb)) {
-        std::fprintf(stderr,
-            "gen-texture-coral: '%s' is not a valid hex color\n",
-            coralHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(waterHex, wr, wg, wb_, "gen-texture-coral")) return 1;
+    if (!parseHexOrError(coralHex, cr, cg, cb, "gen-texture-coral")) return 1;
     uint32_t state = seed ? seed : 1u;
     auto next01 = [&state]() -> float {
         state = state * 1664525u + 1013904223u;
@@ -2354,18 +2076,8 @@ int handleFlame(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t dr, dg, db, hr, hg, hb;
-    if (!parseHex(darkHex, dr, dg, db)) {
-        std::fprintf(stderr,
-            "gen-texture-flame: '%s' is not a valid hex color\n",
-            darkHex.c_str());
-        return 1;
-    }
-    if (!parseHex(hotHex, hr, hg, hb)) {
-        std::fprintf(stderr,
-            "gen-texture-flame: '%s' is not a valid hex color\n",
-            hotHex.c_str());
-        return 1;
-    }
+    if (!parseHexOrError(darkHex, dr, dg, db, "gen-texture-flame")) return 1;
+    if (!parseHexOrError(hotHex, hr, hg, hb, "gen-texture-flame")) return 1;
     float seedF = static_cast<float>(seed);
     auto noise = [&](float x, float y) -> float {
         // Multi-octave smooth noise; lower freq dominates.
@@ -2435,13 +2147,9 @@ int handleTartan(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t ar, ag, ab, br, bg, bb_, cr_, cg_, cb_;
-    if (!parseHex(aHex, ar, ag, ab) ||
-        !parseHex(bHex, br, bg, bb_) ||
-        !parseHex(cHex, cr_, cg_, cb_)) {
-        std::fprintf(stderr,
-            "gen-texture-tartan: one of the hex colors is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(aHex, ar, ag, ab, "gen-texture-tartan")) return 1;
+    if (!parseHexOrError(bHex, br, bg, bb_, "gen-texture-tartan")) return 1;
+    if (!parseHexOrError(cHex, cr_, cg_, cb_, "gen-texture-tartan")) return 1;
     // 3-band repeat: A wide, B narrow, C medium. Repeat is
     // 6 × bandPx wide. Each band weight is constant within
     // its slice; the displayed pixel color is averaged from
@@ -2512,13 +2220,9 @@ int handleArgyle(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t ar, ag, ab, br, bg, bb_, sr_, sg_, sb_;
-    if (!parseHex(aHex, ar, ag, ab) ||
-        !parseHex(bHex, br, bg, bb_) ||
-        !parseHex(stitchHex, sr_, sg_, sb_)) {
-        std::fprintf(stderr,
-            "gen-texture-argyle: one of the hex colors is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(aHex, ar, ag, ab, "gen-texture-argyle")) return 1;
+    if (!parseHexOrError(bHex, br, bg, bb_, "gen-texture-argyle")) return 1;
+    if (!parseHexOrError(stitchHex, sr_, sg_, sb_, "gen-texture-argyle")) return 1;
     // Stitch lines are 2 pixels wide regardless of cell size — at
     // very small cells they'd dominate, but cellPx>=8 keeps them
     // visually subordinate to the diamond fill.
@@ -2600,12 +2304,8 @@ int handleHerringbone(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, lr_, lg_, lb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(lineHex, lr_, lg_, lb_)) {
-        std::fprintf(stderr,
-            "gen-texture-herringbone: bg or line hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-herringbone")) return 1;
+    if (!parseHexOrError(lineHex, lr_, lg_, lb_, "gen-texture-herringbone")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (int y = 0; y < H; ++y) {
         int rowOfStrips = y / stripHeight;
@@ -2667,13 +2367,9 @@ int handleScales(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, sr_, sg_, sb_, rr_, rg_, rb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(scaleHex, sr_, sg_, sb_) ||
-        !parseHex(rimHex, rr_, rg_, rb_)) {
-        std::fprintf(stderr,
-            "gen-texture-scales: bg, scale, or rim hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-scales")) return 1;
+    if (!parseHexOrError(scaleHex, sr_, sg_, sb_, "gen-texture-scales")) return 1;
+    if (!parseHexOrError(rimHex, rr_, rg_, rb_, "gen-texture-scales")) return 1;
     // Scale radius is 55% of cell width so adjacent scales in the
     // same row touch + slightly overlap, and rows interlock cleanly
     // through the half-row stagger.
@@ -2751,14 +2447,10 @@ int handleStainedGlass(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t lr_, lg_, lb_, ar, ag, ab, br, bg, bb_, cr_, cg_, cb_;
-    if (!parseHex(leadHex, lr_, lg_, lb_) ||
-        !parseHex(aHex, ar, ag, ab) ||
-        !parseHex(bHex, br, bg, bb_) ||
-        !parseHex(cHex, cr_, cg_, cb_)) {
-        std::fprintf(stderr,
-            "gen-texture-stained-glass: one of the hex colors is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(leadHex, lr_, lg_, lb_, "gen-texture-stained-glass")) return 1;
+    if (!parseHexOrError(aHex, ar, ag, ab, "gen-texture-stained-glass")) return 1;
+    if (!parseHexOrError(bHex, br, bg, bb_, "gen-texture-stained-glass")) return 1;
+    if (!parseHexOrError(cHex, cr_, cg_, cb_, "gen-texture-stained-glass")) return 1;
     // Deterministic seed placement — same image dimensions and
     // cellCount always yield the same cells, so re-running the
     // command reproduces previous output exactly.
@@ -2861,13 +2553,9 @@ int handleShingles(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, sr_, sg_, sb_, er_, eg_, eb_;
-    if (!parseHex(baseHex, br_, bg_, bb_) ||
-        !parseHex(shadowHex, sr_, sg_, sb_) ||
-        !parseHex(seamHex, er_, eg_, eb_)) {
-        std::fprintf(stderr,
-            "gen-texture-shingles: base/shadow/seam hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(baseHex, br_, bg_, bb_, "gen-texture-shingles")) return 1;
+    if (!parseHexOrError(shadowHex, sr_, sg_, sb_, "gen-texture-shingles")) return 1;
+    if (!parseHexOrError(seamHex, er_, eg_, eb_, "gen-texture-shingles")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (int y = 0; y < H; ++y) {
         int rowIdx = y / shingleH;
@@ -2931,12 +2619,8 @@ int handleFrost(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, ir, ig, ib;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(iceHex, ir, ig, ib)) {
-        std::fprintf(stderr,
-            "gen-texture-frost: bg or ice hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-frost")) return 1;
+    if (!parseHexOrError(iceHex, ir, ig, ib, "gen-texture-frost")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     // Fill background.
     for (size_t p = 0; p < pixels.size(); p += 3) {
@@ -3036,13 +2720,9 @@ int handleParquet(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t ar, ag, ab, br, bg, bb_, gr, gg, gb_;
-    if (!parseHex(woodAHex, ar, ag, ab) ||
-        !parseHex(woodBHex, br, bg, bb_) ||
-        !parseHex(gapHex,   gr, gg, gb_)) {
-        std::fprintf(stderr,
-            "gen-texture-parquet: woodA/woodB/gap hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(woodAHex, ar, ag, ab, "gen-texture-parquet")) return 1;
+    if (!parseHexOrError(woodBHex, br, bg, bb_, "gen-texture-parquet")) return 1;
+    if (!parseHexOrError(gapHex,   gr, gg, gb_, "gen-texture-parquet")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (int y = 0; y < H; ++y) {
         // Use floor division for negative coords (just-in-case
@@ -3132,13 +2812,9 @@ int handleBubbles(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, fr, fg, fb_, rr, rg, rb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(fillHex, fr, fg, fb_) ||
-        !parseHex(rimHex, rr, rg, rb_)) {
-        std::fprintf(stderr,
-            "gen-texture-bubbles: bg/fill/rim hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-bubbles")) return 1;
+    if (!parseHexOrError(fillHex, fr, fg, fb_, "gen-texture-bubbles")) return 1;
+    if (!parseHexOrError(rimHex, rr, rg, rb_, "gen-texture-bubbles")) return 1;
     // Deterministic seed placement so re-runs reproduce.
     struct Bubble { int x, y, r; int rimRsq; int rSq; };
     std::vector<Bubble> bubbles;
@@ -3227,12 +2903,8 @@ int handleSpiderWeb(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, wr, wg, wb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(webHex, wr, wg, wb_)) {
-        std::fprintf(stderr,
-            "gen-texture-spider-web: bg or web hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-spider-web")) return 1;
+    if (!parseHexOrError(webHex, wr, wg, wb_, "gen-texture-spider-web")) return 1;
     constexpr float kPi = 3.14159265358979323846f;
     const float cx = W * 0.5f;
     const float cy = H * 0.5f;
@@ -3315,13 +2987,9 @@ int handleGingham(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, sr, sg, sb_, cr_, cg_, cb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(stripeHex, sr, sg, sb_) ||
-        !parseHex(crossHex, cr_, cg_, cb_)) {
-        std::fprintf(stderr,
-            "gen-texture-gingham: bg/stripe/cross hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-gingham")) return 1;
+    if (!parseHexOrError(stripeHex, sr, sg, sb_, "gen-texture-gingham")) return 1;
+    if (!parseHexOrError(crossHex, cr_, cg_, cb_, "gen-texture-gingham")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (int y = 0; y < H; ++y) {
         bool inHStripe = ((y % stripeSpacing) < stripeWidth);
@@ -3378,12 +3046,8 @@ int handleLattice(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, lr, lg, lb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(lineHex, lr, lg, lb_)) {
-        std::fprintf(stderr,
-            "gen-texture-lattice: bg or line hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-lattice")) return 1;
+    if (!parseHexOrError(lineHex, lr, lg, lb_, "gen-texture-lattice")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
@@ -3435,12 +3099,8 @@ int handleHoneycomb(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t fr, fg, fb_, br_, bg_, bb_;
-    if (!parseHex(fillHex, fr, fg, fb_) ||
-        !parseHex(borderHex, br_, bg_, bb_)) {
-        std::fprintf(stderr,
-            "gen-texture-honeycomb: fill or border hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(fillHex, fr, fg, fb_, "gen-texture-honeycomb")) return 1;
+    if (!parseHexOrError(borderHex, br_, bg_, bb_, "gen-texture-honeycomb")) return 1;
     constexpr float kSqrt3 = 1.7320508075688772f;
     // Pointy-top hex grid: horizontal step = hexSide * sqrt(3),
     // vertical step = hexSide * 1.5; alternate rows shifted by
@@ -3533,12 +3193,8 @@ int handleCracked(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, cr_, cg_, cb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(crackHex, cr_, cg_, cb_)) {
-        std::fprintf(stderr,
-            "gen-texture-cracked: bg or crack hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-cracked")) return 1;
+    if (!parseHexOrError(crackHex, cr_, cg_, cb_, "gen-texture-cracked")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (size_t p = 0; p < pixels.size(); p += 3) {
         pixels[p + 0] = br_;
@@ -3630,12 +3286,8 @@ int handleRunes(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, rr_, rg_, rb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(runeHex, rr_, rg_, rb_)) {
-        std::fprintf(stderr,
-            "gen-texture-runes: bg or rune hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-runes")) return 1;
+    if (!parseHexOrError(runeHex, rr_, rg_, rb_, "gen-texture-runes")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     for (size_t p = 0; p < pixels.size(); p += 3) {
         pixels[p + 0] = br_;
@@ -3739,12 +3391,8 @@ int handleLeopard(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, sr_, sg_, sb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(spotHex, sr_, sg_, sb_)) {
-        std::fprintf(stderr,
-            "gen-texture-leopard: bg or spot hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-leopard")) return 1;
+    if (!parseHexOrError(spotHex, sr_, sg_, sb_, "gen-texture-leopard")) return 1;
     // Each spot is composed of 4 sub-circles. Pre-generate the
     // spot list so we can do a single pass per pixel.
     struct Spot {
@@ -3847,12 +3495,8 @@ int handleZebra(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, sr, sg, sb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(stripeHex, sr, sg, sb_)) {
-        std::fprintf(stderr,
-            "gen-texture-zebra: bg or stripe hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-zebra")) return 1;
+    if (!parseHexOrError(stripeHex, sr, sg, sb_, "gen-texture-zebra")) return 1;
     constexpr float kPi = 3.14159265358979323846f;
     const float twoPi = 2.0f * kPi;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
@@ -3913,12 +3557,8 @@ int handleKnit(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, sr, sg, sb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(stitchHex, sr, sg, sb_)) {
-        std::fprintf(stderr,
-            "gen-texture-knit: bg or stitch hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-knit")) return 1;
+    if (!parseHexOrError(stitchHex, sr, sg, sb_, "gen-texture-knit")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     // Slope of each V stroke: rise (cellH) over run (cellW/2)
     // gives slope = 2*cellH/cellW. Vertical strokeWidth in pixels
@@ -3983,12 +3623,8 @@ int handleCamo(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t ar, ag, ab, br_, bg_, bb_;
-    if (!parseHex(aHex, ar, ag, ab) ||
-        !parseHex(bHex, br_, bg_, bb_)) {
-        std::fprintf(stderr,
-            "gen-texture-camo: hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(aHex, ar, ag, ab, "gen-texture-camo")) return 1;
+    if (!parseHexOrError(bHex, br_, bg_, bb_, "gen-texture-camo")) return 1;
     auto hash32 = [](uint32_t x) -> uint32_t {
         x ^= x >> 16; x *= 0x7feb352d;
         x ^= x >> 15; x *= 0x846ca68b;
@@ -4071,12 +3707,8 @@ int handlePinstripe(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, lr, lg, lb;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(lineHex, lr, lg, lb)) {
-        std::fprintf(stderr,
-            "gen-texture-pinstripe: bg or line hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-pinstripe")) return 1;
+    if (!parseHexOrError(lineHex, lr, lg, lb, "gen-texture-pinstripe")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     const int featureW = lineW * 2;     // feature line is 2× normal width
     for (int y = 0; y < H; ++y) {
@@ -4133,12 +3765,8 @@ int handleCarbon(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, fr, fg, fb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(fibHex, fr, fg, fb_)) {
-        std::fprintf(stderr,
-            "gen-texture-carbon: bg or fiber hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-carbon")) return 1;
+    if (!parseHexOrError(fibHex, fr, fg, fb_, "gen-texture-carbon")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     const float pi = 3.14159265358979f;
     const float invCell = 1.0f / cellSize;
@@ -4198,12 +3826,8 @@ int handleWoodgrain(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t lr, lg, lb, dr, dg, db;
-    if (!parseHex(lightHex, lr, lg, lb) ||
-        !parseHex(darkHex, dr, dg, db)) {
-        std::fprintf(stderr,
-            "gen-texture-woodgrain: hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(lightHex, lr, lg, lb, "gen-texture-woodgrain")) return 1;
+    if (!parseHexOrError(darkHex, dr, dg, db, "gen-texture-woodgrain")) return 1;
     auto hash32 = [](uint32_t x) -> uint32_t {
         x ^= x >> 16; x *= 0x7feb352d;
         x ^= x >> 15; x *= 0x846ca68b;
@@ -4277,12 +3901,8 @@ int handleMoss(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, mr, mg, mb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(mossHex, mr, mg, mb_)) {
-        std::fprintf(stderr,
-            "gen-texture-moss: bg or moss hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-moss")) return 1;
+    if (!parseHexOrError(mossHex, mr, mg, mb_, "gen-texture-moss")) return 1;
     auto hash32 = [](uint32_t x) -> uint32_t {
         x ^= x >> 16; x *= 0x7feb352d;
         x ^= x >> 15; x *= 0x846ca68b;
@@ -4369,12 +3989,8 @@ int handleStuds(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, sr, sg, sb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(studHex, sr, sg, sb_)) {
-        std::fprintf(stderr,
-            "gen-texture-studs: bg or stud hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-studs")) return 1;
+    if (!parseHexOrError(studHex, sr, sg, sb_, "gen-texture-studs")) return 1;
     auto brighten = [](uint8_t c) -> uint8_t {
         int v = static_cast<int>(c) * 7 / 5;   // ×1.4
         return v > 255 ? 255 : static_cast<uint8_t>(v);
@@ -4442,12 +4058,8 @@ int handleStarburst(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, rr_, rg_, rb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(rayHex, rr_, rg_, rb_)) {
-        std::fprintf(stderr,
-            "gen-texture-starburst: bg or ray hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-starburst")) return 1;
+    if (!parseHexOrError(rayHex, rr_, rg_, rb_, "gen-texture-starburst")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     const float twoPi = 6.28318530717958f;
     const float cx = W * 0.5f;
@@ -4521,12 +4133,8 @@ int handleCaustics(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, hr, hg, hb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(hiHex, hr, hg, hb_)) {
-        std::fprintf(stderr,
-            "gen-texture-caustics: bg or highlight hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-caustics")) return 1;
+    if (!parseHexOrError(hiHex, hr, hg, hb_, "gen-texture-caustics")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     const float twoPi = 6.28318530717958f;
     const float invPeriod = 1.0f / period;
@@ -4590,12 +4198,8 @@ int handleRope(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, rr_, rg_, rb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(ropeHex, rr_, rg_, rb_)) {
-        std::fprintf(stderr,
-            "gen-texture-rope: bg or rope hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-rope")) return 1;
+    if (!parseHexOrError(ropeHex, rr_, rg_, rb_, "gen-texture-rope")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     const float twoPi = 6.28318530717958f;
     const float pi    = 3.14159265358979f;
@@ -4669,12 +4273,8 @@ int handleCorrugated(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, hr, hg, hb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(hiHex, hr, hg, hb_)) {
-        std::fprintf(stderr,
-            "gen-texture-corrugated: bg or highlight hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-corrugated")) return 1;
+    if (!parseHexOrError(hiHex, hr, hg, hb_, "gen-texture-corrugated")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     const float twoPi = 6.28318530717958f;
     for (int y = 0; y < H; ++y) {
@@ -4727,12 +4327,8 @@ int handlePlanks(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, sr, sg, sb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(seamHex, sr, sg, sb_)) {
-        std::fprintf(stderr,
-            "gen-texture-planks: bg or seam hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-planks")) return 1;
+    if (!parseHexOrError(seamHex, sr, sg, sb_, "gen-texture-planks")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     // Plank-index hash → per-plank brightness modulation in [-24, +24]
     // and an end-seam x position so the planks look staggered rather
@@ -4826,12 +4422,8 @@ int handleChainmail(int& i, int argc, char** argv) {
         return 1;
     }
     uint8_t br_, bg_, bb_, rr_, rg_, rb_;
-    if (!parseHex(bgHex, br_, bg_, bb_) ||
-        !parseHex(ringHex, rr_, rg_, rb_)) {
-        std::fprintf(stderr,
-            "gen-texture-chainmail: bg or ring hex color is invalid\n");
-        return 1;
-    }
+    if (!parseHexOrError(bgHex, br_, bg_, bb_, "gen-texture-chainmail")) return 1;
+    if (!parseHexOrError(ringHex, rr_, rg_, rb_, "gen-texture-chainmail")) return 1;
     std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
     const float halfStroke = strokeW * 0.5f;
     const float fRingR = static_cast<float>(ringR);
