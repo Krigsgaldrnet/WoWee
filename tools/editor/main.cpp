@@ -613,6 +613,8 @@ static void printUsage(const char* argv0) {
     std::printf("                         Doorway frame: two side posts + top lintel (default 2.5w × 4h)\n");
     std::printf("  --gen-mesh-archway <wom-base> [width] [pillarHeight] [thickness] [archSegs]\n");
     std::printf("                         Semicircular arched doorway: two pillars + curved keystone vault (default 12 segs)\n");
+    std::printf("  --gen-mesh-barrel <wom-base> [topRadius] [midRadius] [height] [hoopThickness]\n");
+    std::printf("                         Tapered barrel: bulges in middle + 2 rim hoops (default 0.4/0.5/1.0/0.06)\n");
     std::printf("                         Procedural tree: cylindrical trunk + spherical foliage (default 0.1/2.0/0.7)\n");
     std::printf("  --displace-mesh <wom-base> <heightmap.png> [scale]\n");
     std::printf("                         Offset each vertex along its normal by heightmap brightness × scale (default 1.0)\n");
@@ -1148,7 +1150,7 @@ int main(int argc, char* argv[]) {
         "--gen-mesh-rock", "--gen-mesh-pillar", "--gen-mesh-bridge",
         "--gen-mesh-tower", "--gen-mesh-house", "--gen-mesh-fountain",
         "--gen-mesh-statue", "--gen-mesh-altar", "--gen-mesh-portal",
-        "--gen-mesh-archway",
+        "--gen-mesh-archway", "--gen-mesh-barrel",
         "--gen-texture-gradient",
         "--gen-mesh-from-heightmap", "--export-mesh-heightmap",
         "--displace-mesh",
@@ -22325,6 +22327,119 @@ int main(int argc, char* argv[]) {
             std::printf("  apex Y     : %.3f\n", maxY);
             std::printf("  vertices   : %zu\n", wom.vertices.size());
             std::printf("  triangles  : %zu\n", wom.indices.size() / 3);
+            return 0;
+        } else if (std::strcmp(argv[i], "--gen-mesh-barrel") == 0 && i + 1 < argc) {
+            // Tapered barrel: cylindrical body whose radius bulges
+            // smoothly from `topRadius` at the rims to `midRadius`
+            // at the middle (the classic stave-cooper barrel
+            // silhouette), plus 2 raised hoop bands at 25% and 75%
+            // of the height. The 26th procedural mesh primitive.
+            std::string womBase = argv[++i];
+            float topR = 0.4f;        // radius at top and bottom rim
+            float midR = 0.5f;        // radius at the middle bulge
+            float height = 1.0f;
+            float hoopThick = 0.06f;  // hoop band radial protrusion
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { topR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { midR = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { height = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                try { hoopThick = std::stof(argv[++i]); } catch (...) {}
+            }
+            if (topR <= 0 || midR <= 0 || height <= 0 ||
+                hoopThick < 0 || hoopThick > 0.5f) {
+                std::fprintf(stderr,
+                    "gen-mesh-barrel: radii/height > 0, hoopThick 0..0.5\n");
+                return 1;
+            }
+            if (womBase.size() >= 4 &&
+                womBase.substr(womBase.size() - 4) == ".wom") {
+                womBase = womBase.substr(0, womBase.size() - 4);
+            }
+            wowee::pipeline::WoweeModel wom;
+            wom.name = std::filesystem::path(womBase).stem().string();
+            wom.version = 3;
+            const float pi = 3.14159265358979f;
+            const int segs = 16;        // angular subdivisions
+            const int rings = 12;       // vertical slices
+            auto addV = [&](glm::vec3 p, glm::vec3 n, glm::vec2 uv) -> uint32_t {
+                wowee::pipeline::WoweeModel::Vertex vtx;
+                vtx.position = p; vtx.normal = n; vtx.texCoord = uv;
+                wom.vertices.push_back(vtx);
+                return static_cast<uint32_t>(wom.vertices.size() - 1);
+            };
+            // Radius profile: smooth cosine bulge from rim to mid.
+            // r(t) = topR + (midR - topR) * sin(pi*t) where t in 0..1
+            // gives 0 at t=0/1 and 1 at t=0.5 — exact rim fit.
+            auto radiusAt = [&](float t) -> float {
+                return topR + (midR - topR) * std::sin(pi * t);
+            };
+            uint32_t firstRing = static_cast<uint32_t>(wom.vertices.size());
+            for (int ri = 0; ri <= rings; ++ri) {
+                float t = static_cast<float>(ri) / rings;
+                float y = t * height;
+                float r = radiusAt(t);
+                // Hoops: bump radius outward in two narrow bands.
+                float hoop1 = std::abs(t - 0.25f);
+                float hoop2 = std::abs(t - 0.75f);
+                if (hoop1 < 0.04f) r += hoopThick * (1.0f - hoop1 / 0.04f);
+                if (hoop2 < 0.04f) r += hoopThick * (1.0f - hoop2 / 0.04f);
+                for (int sg = 0; sg <= segs; ++sg) {
+                    float u = static_cast<float>(sg) / segs;
+                    float ang = u * 2.0f * pi;
+                    glm::vec3 p(r * std::cos(ang), y, r * std::sin(ang));
+                    glm::vec3 n(std::cos(ang), 0, std::sin(ang));
+                    addV(p, n, {u, t});
+                }
+            }
+            int rowSize = segs + 1;
+            for (int ri = 0; ri < rings; ++ri) {
+                for (int sg = 0; sg < segs; ++sg) {
+                    uint32_t i00 = firstRing + ri * rowSize + sg;
+                    uint32_t i01 = firstRing + ri * rowSize + sg + 1;
+                    uint32_t i10 = firstRing + (ri + 1) * rowSize + sg;
+                    uint32_t i11 = firstRing + (ri + 1) * rowSize + sg + 1;
+                    wom.indices.insert(wom.indices.end(),
+                        {i00, i10, i01, i01, i10, i11});
+                }
+            }
+            // End caps (top + bottom). topR is also the bottom-most
+            // and top-most ring radius since sin(0) = sin(pi) = 0.
+            uint32_t botCenter = addV({0, 0, 0}, {0, -1, 0}, {0.5f, 0.5f});
+            uint32_t topCenter = addV({0, height, 0}, {0, 1, 0}, {0.5f, 0.5f});
+            uint32_t botRing = firstRing;
+            uint32_t topRing = firstRing + rings * rowSize;
+            for (int sg = 0; sg < segs; ++sg) {
+                wom.indices.insert(wom.indices.end(),
+                    {botCenter, botRing + sg + 1, botRing + sg});
+                wom.indices.insert(wom.indices.end(),
+                    {topCenter, topRing + sg, topRing + sg + 1});
+            }
+            wowee::pipeline::WoweeModel::Batch batch;
+            batch.indexStart = 0;
+            batch.indexCount = static_cast<uint32_t>(wom.indices.size());
+            batch.textureIndex = 0;
+            wom.batches.push_back(batch);
+            float maxR = midR + hoopThick;
+            wom.boundMin = glm::vec3(-maxR, 0,    -maxR);
+            wom.boundMax = glm::vec3( maxR, height, maxR);
+            if (!wowee::pipeline::WoweeModelLoader::save(wom, womBase)) {
+                std::fprintf(stderr,
+                    "gen-mesh-barrel: failed to save %s.wom\n", womBase.c_str());
+                return 1;
+            }
+            std::printf("Wrote %s.wom\n", womBase.c_str());
+            std::printf("  rim R     : %.3f\n", topR);
+            std::printf("  bulge R   : %.3f\n", midR);
+            std::printf("  height    : %.3f\n", height);
+            std::printf("  hoops     : 2 (thickness %.3f)\n", hoopThick);
+            std::printf("  vertices  : %zu\n", wom.vertices.size());
+            std::printf("  triangles : %zu\n", wom.indices.size() / 3);
             return 0;
         } else if (std::strcmp(argv[i], "--displace-mesh") == 0 && i + 2 < argc) {
             // Displaces each vertex along its current normal by the
