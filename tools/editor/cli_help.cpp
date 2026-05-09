@@ -195,6 +195,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Star: solid N-pointed star polygon centered (medallions / shields / religious symbols)\n");
     std::printf("  --gen-texture-halftone <out.png> <bgHex> <dotHex> [stride] [maxR] [v|h|r] [W H]\n");
     std::printf("                         Halftone: grid of dots whose radii grow with a v/h/r gradient (comic / newspaper print look)\n");
+    std::printf("  --gen-texture-bayer <out.png> <aHex> <bHex> [cellSize] [W H]\n");
+    std::printf("                         Bayer: 4x4 ordered-dither matrix tiled (retro / 8-bit / monochrome-CRT effects)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");

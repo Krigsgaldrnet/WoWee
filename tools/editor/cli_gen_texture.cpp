@@ -3500,6 +3500,60 @@ int handleKnit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleBayer(int& i, int argc, char** argv) {
+    // Classic 4x4 ordered-dither Bayer matrix tiled across the
+    // image. Each pixel's color comes from interpolating bg → fg
+    // by the matrix value at (x mod 4, y mod 4) normalized to
+    // [0, 1]. Distinctive retro / dithered look — useful for
+    // 8-bit-style backdrops, monochrome-CRT effects, ordered-
+    // shadow approximations on low-bit palettes.
+    std::string outPath = argv[++i];
+    std::string aHex    = argv[++i];   // dark color (matrix value 0)
+    std::string bHex    = argv[++i];   // light color (matrix value 15)
+    int cellSize = 4;                  // pixels per matrix cell
+    int W = 256, H = 256;
+    parseOptInt(i, argc, argv, cellSize);
+    parseOptInt(i, argc, argv, W);
+    parseOptInt(i, argc, argv, H);
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        cellSize < 1 || cellSize > 256) {
+        std::fprintf(stderr,
+            "gen-texture-bayer: invalid dims (W/H 1..8192, "
+            "cellSize 1..256)\n");
+        return 1;
+    }
+    uint8_t ar, ag, ab, br_, bg_, bb_;
+    if (!parseHexOrError(aHex, ar, ag, ab, "gen-texture-bayer")) return 1;
+    if (!parseHexOrError(bHex, br_, bg_, bb_,
+                         "gen-texture-bayer")) return 1;
+    // 4x4 Bayer matrix values 0..15 (ordered-dither standard).
+    static const int kBayer4[4][4] = {
+        { 0,  8,  2, 10},
+        {12,  4, 14,  6},
+        { 3, 11,  1,  9},
+        {15,  7, 13,  5},
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int y = 0; y < H; ++y) {
+        int my = (y / cellSize) & 3;
+        for (int x = 0; x < W; ++x) {
+            int mx = (x / cellSize) & 3;
+            // Normalize 0..15 to 0..1 and interpolate.
+            float t = kBayer4[my][mx] / 15.0f;
+            uint8_t r = static_cast<uint8_t>(ar + t * (br_ - ar));
+            uint8_t g = static_cast<uint8_t>(ag + t * (bg_ - ag));
+            uint8_t b = static_cast<uint8_t>(ab + t * (bb_ - ab));
+            setPixelRGB(pixels, W, x, y, r, g, b);
+        }
+    }
+    if (!savePngOrError(outPath, W, H, pixels, "gen-texture-bayer")) return 1;
+    printPngWrote(outPath, W, H);
+    std::printf("  a / b      : %s / %s\n", aHex.c_str(), bHex.c_str());
+    std::printf("  cell       : %d px (4x4 matrix → %d-px tile)\n",
+                cellSize, cellSize * 4);
+    return 0;
+}
+
 int handleHalftone(int& i, int argc, char** argv) {
     // Halftone: regular grid of dots whose radii grow with a
     // configurable gradient direction (vertical, horizontal, or
@@ -5916,6 +5970,7 @@ constexpr TextureEntry kTextureTable[] = {
     {"--gen-texture-crackle",        3, handleCrackle},
     {"--gen-texture-star",           3, handleStar},
     {"--gen-texture-halftone",       3, handleHalftone},
+    {"--gen-texture-bayer",          3, handleBayer},
 };
 }  // namespace
 
