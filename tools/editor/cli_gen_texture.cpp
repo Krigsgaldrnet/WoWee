@@ -2580,6 +2580,126 @@ int handleCircuit(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleCoral(int& i, int argc, char** argv) {
+    // Coral reef: water-color background plus N branching tree
+    // shapes that grow from random anchor points. Each branch
+    // walks a curved path (random angle drift), splitting into
+    // 2-3 sub-branches at random intervals so the result reads
+    // as organic coral rather than straight lines.
+    std::string outPath = argv[++i];
+    std::string waterHex = argv[++i];
+    std::string coralHex = argv[++i];
+    uint32_t seed = 1;
+    int branchCount = 12;
+    int W = 256, H = 256;
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { seed = static_cast<uint32_t>(std::stoul(argv[++i])); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { branchCount = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { W = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (i + 1 < argc && argv[i + 1][0] != '-') {
+        try { H = std::stoi(argv[++i]); } catch (...) {}
+    }
+    if (W < 1 || H < 1 || W > 8192 || H > 8192 ||
+        branchCount < 0 || branchCount > 1024) {
+        std::fprintf(stderr,
+            "gen-texture-coral: invalid dims (W/H 1..8192, branchCount 0..1024)\n");
+        return 1;
+    }
+    uint8_t wr, wg, wb_, cr, cg, cb;
+    if (!parseHex(waterHex, wr, wg, wb_)) {
+        std::fprintf(stderr,
+            "gen-texture-coral: '%s' is not a valid hex color\n",
+            waterHex.c_str());
+        return 1;
+    }
+    if (!parseHex(coralHex, cr, cg, cb)) {
+        std::fprintf(stderr,
+            "gen-texture-coral: '%s' is not a valid hex color\n",
+            coralHex.c_str());
+        return 1;
+    }
+    uint32_t state = seed ? seed : 1u;
+    auto next01 = [&state]() -> float {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) * (1.0f / 16777216.0f);
+    };
+    std::vector<uint8_t> pixels(static_cast<size_t>(W) * H * 3, 0);
+    for (int p = 0; p < W * H; ++p) {
+        size_t i2 = static_cast<size_t>(p) * 3;
+        pixels[i2 + 0] = wr; pixels[i2 + 1] = wg; pixels[i2 + 2] = wb_;
+    }
+    auto setPx = [&](int x, int y) {
+        if (x < 0 || y < 0 || x >= W || y >= H) return;
+        size_t i2 = (static_cast<size_t>(y) * W + x) * 3;
+        pixels[i2 + 0] = cr; pixels[i2 + 1] = cg; pixels[i2 + 2] = cb;
+    };
+    // Recursive branch growth via explicit stack (no real
+    // recursion to avoid blowing through stack for deep splits).
+    struct Branch { float x, y, angle, length, thickness; };
+    std::vector<Branch> stack;
+    int totalBranches = 0;
+    for (int b = 0; b < branchCount; ++b) {
+        // Anchor at the bottom edge, growing upward
+        Branch root;
+        root.x = next01() * W;
+        root.y = H - 1;
+        root.angle = -3.14159f * 0.5f + (next01() - 0.5f) * 0.6f;
+        root.length = 30 + next01() * 40;
+        root.thickness = 2.0f;
+        stack.push_back(root);
+        while (!stack.empty()) {
+            Branch br = stack.back();
+            stack.pop_back();
+            ++totalBranches;
+            float x = br.x, y = br.y;
+            int steps = static_cast<int>(br.length);
+            for (int s = 0; s < steps; ++s) {
+                // Random walk + slight upward bias
+                br.angle += (next01() - 0.5f) * 0.15f;
+                x += std::cos(br.angle);
+                y += std::sin(br.angle);
+                int rad = static_cast<int>(std::ceil(br.thickness));
+                for (int dy = -rad; dy <= rad; ++dy) {
+                    for (int dx = -rad; dx <= rad; ++dx) {
+                        if (dx*dx + dy*dy > rad*rad) continue;
+                        setPx(static_cast<int>(x) + dx,
+                              static_cast<int>(y) + dy);
+                    }
+                }
+                // Split occasionally
+                if (next01() < 0.05f && br.thickness > 1.0f) {
+                    Branch child;
+                    child.x = x; child.y = y;
+                    child.angle = br.angle + (next01() - 0.5f) * 1.2f;
+                    child.length = br.length * (0.4f + next01() * 0.3f);
+                    child.thickness = br.thickness * 0.7f;
+                    if (stack.size() < 256) stack.push_back(child);
+                }
+            }
+        }
+    }
+    if (!stbi_write_png(outPath.c_str(), W, H, 3,
+                        pixels.data(), W * 3)) {
+        std::fprintf(stderr,
+            "gen-texture-coral: stbi_write_png failed for %s\n",
+            outPath.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  size        : %dx%d\n", W, H);
+    std::printf("  water/coral : %s / %s\n",
+                waterHex.c_str(), coralHex.c_str());
+    std::printf("  branches    : %d roots → %d total (with splits)\n",
+                branchCount, totalBranches);
+    std::printf("  seed        : %u\n", seed);
+    return 0;
+}
+
 }  // namespace
 
 bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
@@ -2665,6 +2785,9 @@ bool handleGenTexture(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--gen-texture-circuit") == 0 && i + 3 < argc) {
         outRc = handleCircuit(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--gen-texture-coral") == 0 && i + 3 < argc) {
+        outRc = handleCoral(i, argc, argv); return true;
     }
     return false;
 }

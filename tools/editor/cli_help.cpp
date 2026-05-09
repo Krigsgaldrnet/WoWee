@@ -89,6 +89,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Metal with rust patches: noise blob threshold + per-pixel grain (default coverage=0.4)\n");
     std::printf("  --gen-texture-circuit <out.png> <pcbHex> <traceHex> [seed] [traceCount] [W H]\n");
     std::printf("                         Sci-fi PCB pattern: orthogonal traces with right-angle turns + via dots (default 24 traces)\n");
+    std::printf("  --gen-texture-coral <out.png> <waterHex> <coralHex> [seed] [branchCount] [W H]\n");
+    std::printf("                         Coral reef: branching tree shapes via random angle walks (default 12 branches)\n");
     std::printf("  --add-texture-to-zone <zoneDir> <png-path> [renameTo]\n");
     std::printf("                         Copy an existing PNG into <zoneDir> (optionally renaming it on the way in)\n");
     std::printf("  --gen-mesh <wom-base> <cube|plane|sphere|cylinder|torus|cone|ramp> [size]\n");
