@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -149,6 +150,210 @@ int handleInfo(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleExportJson(int& i, int argc, char** argv) {
+    // Export a .wit to a human-editable JSON sidecar.
+    // Mirrors WOL/WOW/WOMX/WSND/WSPN JSON pairs. Each entry
+    // round-trips all 18 scalar fields plus the stats array.
+    // Both quality / itemClass / inventoryType emit dual int +
+    // name forms so a hand-author can use either.
+    std::string base = argv[++i];
+    std::string outPath;
+    if (parseOptArg(i, argc, argv)) outPath = argv[++i];
+    base = stripWitExt(base);
+    if (outPath.empty()) outPath = base + ".wit.json";
+    if (!wowee::pipeline::WoweeItemLoader::exists(base)) {
+        std::fprintf(stderr,
+            "export-wit-json: WIT not found: %s.wit\n", base.c_str());
+        return 1;
+    }
+    auto c = wowee::pipeline::WoweeItemLoader::load(base);
+    nlohmann::json j;
+    j["name"] = c.name;
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : c.entries) {
+        nlohmann::json je;
+        je["itemId"] = e.itemId;
+        je["displayId"] = e.displayId;
+        je["quality"] = e.quality;
+        je["qualityName"] = wowee::pipeline::WoweeItem::qualityName(e.quality);
+        je["itemClass"] = e.itemClass;
+        je["itemClassName"] = wowee::pipeline::WoweeItem::classNameOf(e.itemClass);
+        je["itemSubClass"] = e.itemSubClass;
+        je["inventoryType"] = e.inventoryType;
+        je["slotName"] = wowee::pipeline::WoweeItem::slotName(e.inventoryType);
+        je["flags"] = e.flags;
+        je["requiredLevel"] = e.requiredLevel;
+        je["itemLevel"] = e.itemLevel;
+        je["sellPriceCopper"] = e.sellPriceCopper;
+        je["buyPriceCopper"] = e.buyPriceCopper;
+        je["maxStack"] = e.maxStack;
+        je["durability"] = e.durability;
+        je["damageMin"] = e.damageMin;
+        je["damageMax"] = e.damageMax;
+        je["attackSpeedMs"] = e.attackSpeedMs;
+        nlohmann::json sa = nlohmann::json::array();
+        for (const auto& s : e.stats) {
+            sa.push_back({
+                {"type", s.type},
+                {"typeName", wowee::pipeline::WoweeItem::statName(s.type)},
+                {"value", s.value},
+            });
+        }
+        je["stats"] = sa;
+        je["name"] = e.name;
+        je["description"] = e.description;
+        arr.push_back(je);
+    }
+    j["entries"] = arr;
+    std::ofstream out(outPath);
+    if (!out) {
+        std::fprintf(stderr,
+            "export-wit-json: cannot write %s\n", outPath.c_str());
+        return 1;
+    }
+    out << j.dump(2) << "\n";
+    out.close();
+    std::printf("Wrote %s\n", outPath.c_str());
+    std::printf("  source  : %s.wit\n", base.c_str());
+    std::printf("  entries : %zu\n", c.entries.size());
+    return 0;
+}
+
+int handleImportJson(int& i, int argc, char** argv) {
+    std::string jsonPath = argv[++i];
+    std::string outBase;
+    if (parseOptArg(i, argc, argv)) outBase = argv[++i];
+    if (outBase.empty()) {
+        outBase = jsonPath;
+        std::string suffix = ".wit.json";
+        if (outBase.size() > suffix.size() &&
+            outBase.substr(outBase.size() - suffix.size()) == suffix) {
+            outBase = outBase.substr(0, outBase.size() - suffix.size());
+        } else if (outBase.size() > 5 &&
+                   outBase.substr(outBase.size() - 5) == ".json") {
+            outBase = outBase.substr(0, outBase.size() - 5);
+        }
+    }
+    outBase = stripWitExt(outBase);
+    std::ifstream in(jsonPath);
+    if (!in) {
+        std::fprintf(stderr,
+            "import-wit-json: cannot read %s\n", jsonPath.c_str());
+        return 1;
+    }
+    nlohmann::json j;
+    try { in >> j; }
+    catch (const std::exception& e) {
+        std::fprintf(stderr,
+            "import-wit-json: bad JSON in %s: %s\n",
+            jsonPath.c_str(), e.what());
+        return 1;
+    }
+    auto qualityFromName = [](const std::string& s) -> uint8_t {
+        if (s == "poor")      return wowee::pipeline::WoweeItem::Poor;
+        if (s == "common")    return wowee::pipeline::WoweeItem::Common;
+        if (s == "uncommon")  return wowee::pipeline::WoweeItem::Uncommon;
+        if (s == "rare")      return wowee::pipeline::WoweeItem::Rare;
+        if (s == "epic")      return wowee::pipeline::WoweeItem::Epic;
+        if (s == "legendary") return wowee::pipeline::WoweeItem::Legendary;
+        if (s == "artifact")  return wowee::pipeline::WoweeItem::Artifact;
+        if (s == "heirloom")  return wowee::pipeline::WoweeItem::Heirloom;
+        return wowee::pipeline::WoweeItem::Common;
+    };
+    auto classFromName = [](const std::string& s) -> uint8_t {
+        if (s == "consumable")   return wowee::pipeline::WoweeItem::Consumable;
+        if (s == "container")    return wowee::pipeline::WoweeItem::Container;
+        if (s == "weapon")       return wowee::pipeline::WoweeItem::Weapon;
+        if (s == "gem")          return wowee::pipeline::WoweeItem::Gem;
+        if (s == "armor")        return wowee::pipeline::WoweeItem::Armor;
+        if (s == "reagent")      return wowee::pipeline::WoweeItem::Reagent;
+        if (s == "projectile")   return wowee::pipeline::WoweeItem::Projectile;
+        if (s == "trade-goods")  return wowee::pipeline::WoweeItem::TradeGoods;
+        if (s == "recipe")       return wowee::pipeline::WoweeItem::Recipe;
+        if (s == "quiver")       return wowee::pipeline::WoweeItem::Quiver;
+        if (s == "quest")        return wowee::pipeline::WoweeItem::Quest;
+        if (s == "key")          return wowee::pipeline::WoweeItem::Key;
+        if (s == "misc")         return wowee::pipeline::WoweeItem::Misc;
+        return wowee::pipeline::WoweeItem::Misc;
+    };
+    auto slotFromName = [](const std::string& s) -> uint8_t {
+        if (s == "-" || s.empty()) return wowee::pipeline::WoweeItem::NonEquip;
+        if (s == "head")      return wowee::pipeline::WoweeItem::Head;
+        if (s == "neck")      return wowee::pipeline::WoweeItem::Neck;
+        if (s == "shoulders") return wowee::pipeline::WoweeItem::Shoulders;
+        if (s == "shirt")     return wowee::pipeline::WoweeItem::Body;
+        if (s == "chest")     return wowee::pipeline::WoweeItem::Chest;
+        if (s == "waist")     return wowee::pipeline::WoweeItem::Waist;
+        if (s == "legs")      return wowee::pipeline::WoweeItem::Legs;
+        if (s == "feet")      return wowee::pipeline::WoweeItem::Feet;
+        if (s == "wrists")    return wowee::pipeline::WoweeItem::Wrists;
+        if (s == "hands")     return wowee::pipeline::WoweeItem::Hands;
+        if (s == "finger")    return wowee::pipeline::WoweeItem::Finger;
+        if (s == "trinket")   return wowee::pipeline::WoweeItem::Trinket;
+        if (s == "weapon-1h") return wowee::pipeline::WoweeItem::Weapon1H;
+        if (s == "shield")    return wowee::pipeline::WoweeItem::Shield;
+        if (s == "ranged")    return wowee::pipeline::WoweeItem::Ranged;
+        if (s == "cloak")     return wowee::pipeline::WoweeItem::Cloak;
+        if (s == "weapon-2h") return wowee::pipeline::WoweeItem::Weapon2H;
+        return wowee::pipeline::WoweeItem::NonEquip;
+    };
+    wowee::pipeline::WoweeItem c;
+    c.name = j.value("name", std::string{});
+    if (j.contains("entries") && j["entries"].is_array()) {
+        for (const auto& je : j["entries"]) {
+            wowee::pipeline::WoweeItem::Entry e;
+            e.itemId = je.value("itemId", 0u);
+            e.displayId = je.value("displayId", 0u);
+            if (je.contains("quality") && je["quality"].is_number_integer()) {
+                e.quality = static_cast<uint8_t>(je["quality"].get<int>());
+            } else if (je.contains("qualityName") && je["qualityName"].is_string()) {
+                e.quality = qualityFromName(je["qualityName"].get<std::string>());
+            }
+            if (je.contains("itemClass") && je["itemClass"].is_number_integer()) {
+                e.itemClass = static_cast<uint8_t>(je["itemClass"].get<int>());
+            } else if (je.contains("itemClassName") && je["itemClassName"].is_string()) {
+                e.itemClass = classFromName(je["itemClassName"].get<std::string>());
+            }
+            e.itemSubClass = static_cast<uint8_t>(je.value("itemSubClass", 0));
+            if (je.contains("inventoryType") && je["inventoryType"].is_number_integer()) {
+                e.inventoryType = static_cast<uint8_t>(je["inventoryType"].get<int>());
+            } else if (je.contains("slotName") && je["slotName"].is_string()) {
+                e.inventoryType = slotFromName(je["slotName"].get<std::string>());
+            }
+            e.flags = je.value("flags", 0u);
+            e.requiredLevel = static_cast<uint16_t>(je.value("requiredLevel", 0));
+            e.itemLevel = static_cast<uint16_t>(je.value("itemLevel", 1));
+            e.sellPriceCopper = je.value("sellPriceCopper", 0u);
+            e.buyPriceCopper = je.value("buyPriceCopper", 0u);
+            e.maxStack = static_cast<uint16_t>(je.value("maxStack", 1));
+            e.durability = static_cast<uint16_t>(je.value("durability", 0));
+            e.damageMin = je.value("damageMin", 0u);
+            e.damageMax = je.value("damageMax", 0u);
+            e.attackSpeedMs = je.value("attackSpeedMs", 0u);
+            if (je.contains("stats") && je["stats"].is_array()) {
+                for (const auto& js : je["stats"]) {
+                    wowee::pipeline::WoweeItem::Stat s;
+                    s.type = static_cast<uint8_t>(js.value("type", 0));
+                    s.value = static_cast<int16_t>(js.value("value", 0));
+                    e.stats.push_back(s);
+                }
+            }
+            e.name = je.value("name", std::string{});
+            e.description = je.value("description", std::string{});
+            c.entries.push_back(std::move(e));
+        }
+    }
+    if (!wowee::pipeline::WoweeItemLoader::save(c, outBase)) {
+        std::fprintf(stderr,
+            "import-wit-json: failed to save %s.wit\n", outBase.c_str());
+        return 1;
+    }
+    std::printf("Wrote %s.wit\n", outBase.c_str());
+    std::printf("  source  : %s\n", jsonPath.c_str());
+    std::printf("  entries : %zu\n", c.entries.size());
+    return 0;
+}
+
 int handleValidate(int& i, int argc, char** argv) {
     std::string base = argv[++i];
     bool jsonOut = consumeJsonFlag(i, argc, argv);
@@ -270,6 +475,12 @@ bool handleItemsCatalog(int& i, int argc, char** argv, int& outRc) {
     }
     if (std::strcmp(argv[i], "--validate-wit") == 0 && i + 1 < argc) {
         outRc = handleValidate(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--export-wit-json") == 0 && i + 1 < argc) {
+        outRc = handleExportJson(i, argc, argv); return true;
+    }
+    if (std::strcmp(argv[i], "--import-wit-json") == 0 && i + 1 < argc) {
+        outRc = handleImportJson(i, argc, argv); return true;
     }
     return false;
 }

@@ -877,6 +877,10 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WIT item entries (id / ilvl / quality / class / slot / buy price / name)\n");
     std::printf("  --validate-wit <wit-base> [--json]\n");
     std::printf("                         Static checks: itemId>0 + unique, weapon damage>0 + min<=max, equippable durability>0, sell<buy\n");
+    std::printf("  --export-wit-json <wit-base> [out.json]\n");
+    std::printf("                         Export binary .wit to a human-editable JSON sidecar (defaults to <base>.wit.json)\n");
+    std::printf("  --import-wit-json <json-path> [out-base]\n");
+    std::printf("                         Import a .wit.json sidecar back into binary .wit (accepts quality/class/slot int OR name string)\n");
     std::printf("  --gen-loot <wlot-base> [name]\n");
     std::printf("                         Emit .wlot starter loot catalog: 1 creature with 1 drop slot, 1 item @ 50%%, 0..50 copper\n");
     std::printf("  --gen-loot-bandit <wlot-base> [name]\n");
