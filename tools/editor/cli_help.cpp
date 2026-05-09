@@ -272,6 +272,8 @@ void printUsage(const char* argv0) {
     std::printf("                         Blacksmith forge: stone hearth + smaller hood + optional chimney (smithy / armorer set dressing)\n");
     std::printf("  --gen-mesh-archery-target <wom-base> [faceR] [faceT] [sides] [postH] [postW] [beamT]\n");
     std::printf("                         Archery target: round face cylinder on a 2-post stand with cross-beam (training yard / fair scene)\n");
+    std::printf("  --gen-mesh-gravel-pile <wom-base> [stoneCount] [baseR] [pileH] [maxStoneSize] [seed]\n");
+    std::printf("                         Gravel pile: hash-distributed stone cubes in a conical heap (mining / construction / rubble)\n");
     std::printf("  --gen-camp-pack <outDir>\n");
     std::printf("                         Convenience: emit tent + firepit + bedroll + canopy + woodpile + haystack into outDir as 6 .wom files\n");
     std::printf("  --gen-blacksmith-pack <outDir>\n");

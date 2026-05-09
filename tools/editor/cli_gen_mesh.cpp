@@ -5161,6 +5161,73 @@ int handleTent(int& i, int argc, char** argv) {
     return 0;
 }
 
+int handleGravelPile(int& i, int argc, char** argv) {
+    // Irregular pile of small stones distributed in a roughly
+    // conical heap. N cube-shaped stones get hash-derived
+    // (x, z, y, size) such that more numerous stones land near
+    // the base and the pile thins toward the top. Useful for
+    // mine entrances, construction sites, quarries, ruined
+    // walls, abandoned-fort rubble. The 71st procedural mesh
+    // primitive — and the second multi-box "scene" composite
+    // (after --gen-mesh-crate-stack), but using irregular
+    // hashed placement instead of a regular grid.
+    std::string womBase = argv[++i];
+    int   stoneCount = 24;
+    float baseR      = 0.6f;        // base radius of the cone
+    float pileH      = 0.5f;        // approx height of pile
+    float maxStoneSize = 0.10f;
+    uint32_t seed    = 1;
+    parseOptInt(i, argc, argv, stoneCount);
+    parseOptFloat(i, argc, argv, baseR);
+    parseOptFloat(i, argc, argv, pileH);
+    parseOptFloat(i, argc, argv, maxStoneSize);
+    parseOptUint(i, argc, argv, seed);
+    if (baseR <= 0 || pileH <= 0 || maxStoneSize <= 0 ||
+        stoneCount < 1 || stoneCount > 1024) {
+        std::fprintf(stderr,
+            "gen-mesh-gravel-pile: dims > 0; stoneCount 1..1024\n");
+        return 1;
+    }
+    stripExt(womBase, ".wom");
+    wowee::pipeline::WoweeModel wom;
+    initWomDefaults(wom, womBase);
+    auto hash32 = [](uint32_t x) -> uint32_t {
+        x ^= x >> 16; x *= 0x7feb352d;
+        x ^= x >> 15; x *= 0x846ca68b;
+        x ^= x >> 16; return x;
+    };
+    auto rand01 = [&](int idx, uint32_t salt) {
+        return (hash32(static_cast<uint32_t>(idx) ^ salt ^ seed) % 10000)
+                / 10000.0f;
+    };
+    for (int k = 0; k < stoneCount; ++k) {
+        // Polar (r, θ) gives even distribution across the disc.
+        // sqrt(rand) for r so stones aren't bunched at the center.
+        float radial = std::sqrt(rand01(k, 0)) * baseR;
+        float ang    = rand01(k, 1) * 2.0f * 3.14159265f;
+        float cx = radial * std::cos(ang);
+        float cz = radial * std::sin(ang);
+        // Stones with smaller radial position can stack higher.
+        float yMax = pileH * (1.0f - radial / baseR);
+        float cy = rand01(k, 2) * yMax;
+        float size = maxStoneSize *
+                      (0.4f + 0.6f * rand01(k, 3));   // 40-100% of max
+        addFlatBox(wom, cx, cy + size * 0.5f, cz,
+                   size * 0.5f, size * 0.5f, size * 0.5f);
+    }
+    finalizeAsSingleBatch(wom);
+    setCenteredBoundsXZ(wom, baseR + maxStoneSize, baseR + maxStoneSize,
+                         pileH + maxStoneSize);
+    if (!saveWomOrError(wom, womBase, "gen-mesh-gravel-pile")) return 1;
+    printWomWrote(womBase);
+    std::printf("  stones     : %d (max size %.3f)\n",
+                stoneCount, maxStoneSize);
+    std::printf("  pile       : R=%.3f, H=%.3f (seed %u)\n",
+                baseR, pileH, seed);
+    printWomMeshStats(wom);
+    return 0;
+}
+
 int handleArcheryTarget(int& i, int argc, char** argv) {
     // Archery target: round face on a 2-post stand. The face is a
     // short cylinder oriented along the Z axis (its flat circular
@@ -6666,6 +6733,7 @@ constexpr MeshEntry kMeshTable[] = {
     {"--gen-mesh-outhouse",       1, handleOuthouse},
     {"--gen-mesh-forge",          1, handleForge},
     {"--gen-mesh-archery-target", 1, handleArcheryTarget},
+    {"--gen-mesh-gravel-pile",    1, handleGravelPile},
     {"--gen-camp-pack",           1, handleGenCampPack},
     {"--gen-blacksmith-pack",     1, handleGenBlacksmithPack},
     {"--gen-mesh-table",          1, handleTable},
