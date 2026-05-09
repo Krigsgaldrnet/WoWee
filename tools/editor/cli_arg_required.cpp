@@ -49,6 +49,8 @@ const char* const kArgRequired[] = {
     "--export-wgot-json", "--import-wgot-json",
     "--gen-factions", "--gen-factions-alliance", "--gen-factions-wildlife",
     "--info-wfac", "--validate-wfac",
+    "--gen-locks", "--gen-locks-dungeon", "--gen-locks-professions",
+    "--info-wlck", "--validate-wlck",
     "--gen-weather-temperate", "--gen-weather-arctic",
     "--gen-weather-desert", "--gen-weather-stormy",
     "--gen-zone-atmosphere",

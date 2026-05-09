@@ -947,6 +947,16 @@ void printUsage(const char* argv0) {
     std::printf("                         Print WFAC entries (id / parent / flags / enemy + friend counts / name)\n");
     std::printf("  --validate-wfac <wfac-base> [--json]\n");
     std::printf("                         Static checks: factionId>0+unique, name not empty, threshold ordering, no self-enemy, no enemy/friend overlap\n");
+    std::printf("  --gen-locks <wlck-base> [name]\n");
+    std::printf("                         Emit .wlck starter: 2 locks (Iron Door key+force, Wooden Chest force-only) — lockId=1 matches WGOT\n");
+    std::printf("  --gen-locks-dungeon <wlck-base> [name]\n");
+    std::printf("                         Emit .wlck dungeon set: light/heavy lockpicks (lockId=2 matches WGOT bandit chest), boss-key seal\n");
+    std::printf("  --gen-locks-professions <wlck-base> [name]\n");
+    std::printf("                         Emit .wlck profession-keyed locks at lockpick rank 1/100/175/250 (junkbox tier progression)\n");
+    std::printf("  --info-wlck <wlck-base> [--json]\n");
+    std::printf("                         Print WLCK lock entries with per-channel detail (kind / target / required skill rank)\n");
+    std::printf("  --validate-wlck <wlck-base> [--json]\n");
+    std::printf("                         Static checks: lockId>0+unique, at least 1 active channel, item/spell/lockpick need targetId\n");
     std::printf("  --gen-weather-temperate <wow-base> [zoneName]\n");
     std::printf("                         Emit .wow weather schedule: clear-dominant + occasional rain + fog (forest / grassland)\n");
     std::printf("  --gen-weather-arctic <wow-base> [zoneName]\n");
